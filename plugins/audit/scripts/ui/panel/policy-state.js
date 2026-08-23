@@ -103,12 +103,17 @@ const PKINDS=['skills','agents','mcp'];
 const PKLABEL={skills:'Skills',agents:'Subagents',mcp:'MCP servers'};
 
 /**
- * What the capability table is showing: which kind, the search text, and
- * whether it is cut down to violations. Shared by the tab and the expanded
- * dialog, so expanding never costs you your place.
- * @type {{kind: string, q: string, bad: boolean}}
+ * What the capability table is showing: which kind, the search text, whether it
+ * is cut down to violations, and which RULELESS areas the reader has asked for a
+ * column for. Shared by the tab and the expanded dialog, so expanding never
+ * costs you your place.
+ *
+ * `cols` is cleared when the kind changes, the way `q` is: "which area has no
+ * column here" is asked per kind, and a tag revealed while reading skills says
+ * nothing about subagents.
+ * @type {{kind: string, q: string, bad: boolean, cols: string[]}}
  */
-const PF={kind:'skills',q:'',bad:false};
+const PF={kind:'skills',q:'',bad:false,cols:[]};
 // --- the draft, and what it is compared against ---------------------------------
 // The nodes the last save left behind — the ✓/✗ box and, if the file had moved
 // under the reader, the mismatch warning. A save re-renders the whole view to pick
@@ -450,6 +455,92 @@ const pRuleKey=r=>JSON.stringify([r.scope||null,r.list,r.pattern]);
 function pServerRules(kind){const m={};
  ((POLICY.rules||{})[kind]||[]).forEach(r=>{m[pRuleKey(r)]=r;});return m;}
 
+// --- which area columns the table draws -----------------------------------------
+// ONE COLUMN PER AREA DOES NOT SCALE. The tags come from the plan, not from this
+// file, so eight areas is eight selects on every row and a sideways scroll of `—`.
+// A column is drawn for an area that CARRIES A RULE, and the reader can ask for any
+// of the others by name.
+//
+// "Carries a rule" and "is active" are DIFFERENT PREDICATES and the difference is
+// the whole reason this is written down. An area rule applies only while some phase
+// in that area has work in progress, so a dormant area's rules decide nothing today
+// - and decide everything the moment that phase starts. Hiding a dormant area that
+// carries a rule would therefore hide a rule that is one status change from being
+// enforced, which is exactly the surprise the `dormant` label exists to remove. So
+// liveness decides how a column is LABELLED and never whether it exists.
+//
+// Revealing a column writes nothing. The cells inside one are the same `pCell`
+// selects as any other column, so `pSetRule` stays the one writer and `pAddPattern`
+// stays the only way to state a glob - a pill decides what is on screen and that is
+// all it decides.
+
+/**
+ * Does this scope state a rule at all?
+ *
+ * Generous on purpose. A non-empty list is a rule, and so is a MALFORMED value:
+ * `"deny": "nope"` is something a person wrote into the config, the server
+ * reports it as a finding, and a column that vanished on it would be hiding the
+ * reader's own file. An EMPTY list is not a rule - the same reading `pPrune`
+ * takes when it deletes one, and `"areas":{"web":{"deny":[]}}` is a rule that
+ * looks like a rule and is not one.
+ *
+ * @param {Object} src - a scope object: one area's `{allow, deny}`
+ * @returns {boolean} whether either list states anything
+ */
+const pStatesRule=src=>['deny','allow'].some(l=>{const v=src&&src[l];
+ return Array.isArray(v)?v.length>0:v!=null;});
+
+/**
+ * The area tags one block states a rule for, in one kind.
+ *
+ * @param {PolicyBlock|null} block - the draft, or the saved block
+ * @param {string} kind - a kind from `PKINDS`
+ * @returns {string[]} the tags, in whatever order the object holds them; the
+ *   caller orders them by `areaInfo`, which is the server's own order
+ */
+function pRuledAreas(block,kind){
+ const areas=pKindCfg(block,kind).areas;
+ if(!areas||typeof areas!=='object')return [];
+ return Object.keys(areas).filter(tag=>pStatesRule(areas[tag]));}
+
+/**
+ * Which area columns the capability table draws, which it leaves out, and which
+ * ones are the reader's to ask for.
+ *
+ * BOTH BLOCKS ARE CONSULTED, draft and saved, and the union is deliberate: a
+ * reader who puts a cell back to `—` empties that area and `pPrune` removes it,
+ * so a draft-only predicate would take the column away in the same repaint that
+ * put the "unsaved" badge inside it - the edit and the evidence of the edit would
+ * disappear together.
+ *
+ * @param {string} kind - a kind from `PKINDS`
+ * @returns {{shown: Object[], hidden: Object[], ruleless: Object[]}} `areaInfo`
+ *   entries in the server's order. `ruleless` is every area with no rule for this
+ *   kind, drawn or not, and `hidden` is the part of it that has no column right
+ *   now - what the strip above the table has to name, because an area without a
+ *   column must never read as an area without a rule
+ */
+function pCols(kind){
+ const info=(POLICY&&POLICY.areaInfo)||[];
+ const ruled=new Set(pRuledAreas(PDRAFT,kind)
+   .concat(pRuledAreas(POLICY&&POLICY.stored,kind)));
+ const drawn=a=>ruled.has(a.tag)||PF.cols.indexOf(a.tag)>=0;
+ return {shown:info.filter(drawn),hidden:info.filter(a=>!drawn(a)),
+   ruleless:info.filter(a=>!ruled.has(a.tag))};}
+
+/**
+ * Put one ruleless area's column on screen, or take it away again.
+ *
+ * @param {string} tag - an area tag
+ * @returns {void} it moves `PF.cols` and touches no policy at all; the caller
+ *   redraws. An area that carries a rule is not offered this control, because a
+ *   column that could be hidden while it decides something is a column that can
+ *   read as "no rule here"
+ */
+function pToggleCol(tag){
+ const i=PF.cols.indexOf(tag);
+ if(i>=0)PF.cols.splice(i,1);else PF.cols.push(tag);}
+
 // --- the capability table, given the whole viewport -----------------------------
 // ONE builder (pCapTable, below) serves the Policy tab and the expanded dialog.
 // Its `full` flag decides only the element ids — a document may hold one element
@@ -484,12 +575,12 @@ function polFullFill(){
  if(!POLFULL||!POLFULL.open||!POLICY)return;
  const kind=PF.kind,rows=((POLICY.resolved||{})[kind]||[]);
  const cap=pCapTable(kind,rows,true);
- POLFULL.replaceChildren(
+ POLFULL.replaceChildren(...[
    el('div',{class:'bhead'},
      el('h3',{},PKLABEL[kind]+' — what this project can reach'),
      el('button',{class:'bx',title:'close','aria-label':'close',
        onclick:()=>POLFULL.close()},'\u2715')),
-   cap.tools,cap.body);}
+   cap.tools,cap.colstrip,cap.body].filter(Boolean));}
 /**
  * Open the expanded capability table, building it the first time.
  *

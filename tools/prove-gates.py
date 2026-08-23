@@ -185,6 +185,19 @@ TABLE = (
  # list - the plugin README, which is where a reader runs commands from.
  ("sweep_doc_drift", "plugins/audit/README.md", "after", "\n## Install\n",
   "\nRun the suites:\n\n```bash\npython3 tools/sweep-selftests.py\n```\n", REF, "s15"),
+ # Two rows, one per direction, because the document graph fails in two ways and only
+ # one of them is loud. The SILENT one first: the link is REPOINTED at a file that
+ # exists, so nothing dangles and the changelog simply stops being reachable - which is
+ # what a README reorganisation does, and what nothing in this tree noticed before.
+ # `CHANGELOG.md` is the target because it has exactly one inbound link, so the
+ # mutation isolates the orphan half instead of tripping both at once.
+ ("doc_link_drift", "README.md", "sub", r"^- \[CHANGELOG\]\(CHANGELOG\.md\)",
+  (r"\(CHANGELOG\.md\)", "(LICENSE)"), REF, "dl1"),
+ # ...and the loud one: a target that names nothing, the shape a rename leaves behind.
+ # The quickstart is reached from several documents, so this one cannot orphan it and
+ # tests the resolution rather than the reachability.
+ ("doc_link_drift", "README.md", "sub", r"^- \[QUICKSTART\]\(QUICKSTART\.md\)",
+  (r"\(QUICKSTART\.md\)", "(QUICKSTART-moved.md)"), REF, "dl1"),
  # The absolute path is BUILT, never spelled - same rule as the `.py` name below,
  # and the same rule `test__refs.py` follows for its own fixtures. This table lives
  # in `tools/`, which `absolute_reach_violations` scans, so a literal here IS the

@@ -125,6 +125,23 @@ def _cases(check):
         check(name, verdict == expected,
               "expected %s, got %s" % (expected, verdict))
 
+    def plant_plan(project_dir):
+        """A manifest that exists with nothing running — the middle rung.
+
+        F52 graded the plan-coverage class on `plan_gate_mode`, so a fixture with
+        no manifest is now on the observe rung and reports nothing. The (f) and
+        (h) fixtures below are about REAL git integration and nested-gitRoot path
+        handling, and neither can be proven by a silence that the grading would
+        produce whatever git did. They opt in, so their subject is still theirs.
+        """
+        d = Path(project_dir) / "docs" / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "audit-plan.json").write_text(json.dumps({
+            "meta": {"version": 2},
+            "phases": [{"id": "P0", "title": "p", "status": "done", "tasks": [
+                {"id": "P0.1", "title": "t", "status": "done"}]}],
+        }), encoding="utf-8")
+
     def seed(sid, *, use_cfg=None, state_dir=None, cwd=None, dirty=()):
         """Run the session's baseline pass (A2) with a known dirty set, so each
         case below tests ATTRIBUTION of new dirt, not the baseline itself
@@ -137,6 +154,11 @@ def _cases(check):
                  dirty=list(dirty))
 
     # (a) a bash-only new source file → warn once, then stays silent
+    #
+    # The plan is planted first because F52 graded the plan-coverage class: with
+    # no manifest this fixture is on the observe rung and every case here would
+    # pass through silence, testing nothing. The (gr) group owns that rung.
+    plant_plan(tmp)
     s = "bw-a"
     seed(s)
     _expect("a1 new dirty source file warns", "warn",
@@ -325,6 +347,7 @@ def _cases(check):
     _detail_f = ""
     gitrepo = tmp / "repo"
     (gitrepo / "src").mkdir(parents=True, exist_ok=True)
+    plant_plan(gitrepo)
     os.environ["CLAUDE_PROJECT_DIR"] = str(gitrepo)
     try:
         subprocess.run(["git", "init", "-q"], cwd=str(gitrepo), check=True,
@@ -413,6 +436,7 @@ def _cases(check):
     proj = tmp / "proj"
     sub = proj / "sub"
     (sub / "src").mkdir(parents=True, exist_ok=True)
+    plant_plan(proj)
     os.environ["CLAUDE_PROJECT_DIR"] = str(proj)
     cfg_nested = _config._deep_merge(_config.DEFAULTS, {"gitRoot": "sub"})
     try:
@@ -632,6 +656,100 @@ def _cases(check):
                                     "provably read-only" if _want else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
+    # (rwq) F51/F56: the predicate decided on RAW TEXT, so a shell metacharacter
+    # sitting inside a quoted SEARCH PATTERN was read as shell syntax. Grepping
+    # for `>` or `&&` or `${` is not a redirect, a background job or an expansion,
+    # and this is a repo whose most ordinary command greps its own source.
+    #
+    # Several spellings, one cause, and the two directions fail at different
+    # lines: the hostile scan runs over the whole string before anything is
+    # split, and the splitter is a regex that cuts inside quotes. `xargs` is
+    # simply absent from the allowlist with a reader on either side of it, and fd
+    # duplication (`2>&1`) names no file at all - the old `/dev/null` regex could
+    # not see it, so its `&` reached the hostile scan and every stderr-merging
+    # read was watched.
+    #
+    # THE LAST PAIRS ARE THE OTHER DIRECTION, and they are why this group cannot
+    # be judged by the read side alone: `sed` takes its suffix ATTACHED, so an
+    # exact-token flag match sees `-i.bak` as an ordinary argument and calls a
+    # real in-place write a read. On a BSD `sed` that is the only spelling that
+    # works, so the form that goes unseen is the form anyone here would type.
+    for _tag, _cmd, _want in (
+            ("gtinpat", 'grep -n "cost > 5" f.py', True),
+            ("andinpat", 'grep -n "a && b" f.py', True),
+            ("expinpat", 'grep -n "${VAR}" f.py', True),
+            ("subinpat", 'grep -n "$(date)" f.py', True),
+            ("heredocinpat", 'grep -rn "<<EOF" f.py', True),
+            ("altinpat", 'grep -n "READ_ONLY\\|read_only" f.py | head', True),
+            ("xargswc", 'find . -name "*.py" | xargs wc -l', True),
+            ("fdmerge", 'grep x f.py 2>&1', True),
+            ("devnullmerge", 'ls >/dev/null 2>&1', True),
+            ("fdtostderr", 'grep x f.py >&2', True),
+            ("xargsgrep", 'ls | xargs -0 grep -l x', True),
+            ("sedattached", 'sed -i.bak s/a/b/ f.py', False),
+            ("sedlongform", 'sed --in-place=.bak s/a/b/ f.py', False),
+            ("realredirect", 'echo hi > f.py', False),
+            ("devnullprefix", 'cat a > /dev/null.bak', False),
+            ("execsedi", 'find . -exec sed -i s/a/b/ {} +', False),
+            ("unbalanced", 'grep -n "unbalanced f.py', False),
+            # Putting `xargs` on the allowlist to fix the read side opened three
+            # writes on the other: its command was never judged. Recursion, the
+            # way `-exec` is judged — and these cases are the only reason the
+            # regression was seen at all, which is F55 in one group.
+            ("xargsrm", 'find . -name "*.tmp" | xargs rm', False),
+            ("xargsrmf", 'find . | xargs -n1 rm -f', False),
+            ("xargsmv", 'ls | xargs -I{} mv {} /tmp', False),
+            ("xargsbare", 'xargs', False)):
+        check("rwq1-%s %r is %s" % (_tag, _cmd,
+                               "provably read-only" if _want else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
+    # (gr) F52: the plan-coverage class is GRADED, like the plan gate beside it.
+    #
+    # `require-plan.py` resolves evidence into a tier through
+    # `_config.plan_gate_mode` so that installing the plugin does not start acting
+    # in projects that never opted in — the README says so as a promise. This hook
+    # never called it. It asked `in_progress_files`, which returns an empty set
+    # both for "no manifest" and for "a manifest with nothing running", so a repo
+    # with no plan read as a repo where nothing is covered and every shell write
+    # in it was reported. With F51 live that meant a stranger's first `grep`.
+    _gr = tmp / "noplan"
+    (_gr / "src").mkdir(parents=True, exist_ok=True)
+
+    def _gr_decide(sid, dirty, use_cfg=None):
+        data = {"tool_name": "Bash", "tool_input": {"command": "x"},
+                "session_id": sid, "cwd": str(_gr)}
+        M.decide(dict(data), cfg=use_cfg or cfg, state_dir=sd, dirty=[])
+        return M.decide(data, cfg=use_cfg or cfg, state_dir=sd, dirty=list(dirty))
+
+    _prev_gr = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(_gr)
+    try:
+        _v, _d = _gr_decide("bw-gr1", ["src/stranger.ts"])
+        check("gr1 no manifest: the plan-coverage class says nothing, because "
+              "there is no plan for it to be uncovered by", _v == "silent",
+              repr((_v, _d)))
+        # THE HALF THAT MATTERS. Without it, deleting the class would pass gr1.
+        _v, _d = _gr_decide("bw-gr2", ["docs/audit/journal/2026-08.a.jsonl"])
+        check("gr2 ...while the journal class in the SAME plan-less repo still "
+              "reports - only plan coverage is graded, because only it needs a "
+              "plan to mean anything",
+              _v == "warn" and "audit journal" in _d, repr((_v, _d)))
+        cfg_enforced = _config._deep_merge(_config.DEFAULTS, {"enforce": True})
+        _v, _d = _gr_decide("bw-gr3", ["src/stranger.ts"], use_cfg=cfg_enforced)
+        check("gr3 `enforce: true` reports with no manifest at all - the escape "
+              "hatch someone chose, rather than a default that surprises them",
+              _v == "warn" and "src/stranger.ts" in _d, repr((_v, _d)))
+        plant_plan(_gr)
+        _v, _d = _gr_decide("bw-gr4", ["src/stranger.ts"])
+        check("gr4 ...and the same file in the same repo warns once it HAS a "
+              "plan - the grading removes a claim, not the guard",
+              _v == "warn" and "src/stranger.ts" in _d, repr((_v, _d)))
+    finally:
+        if _prev_gr is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_gr
     # THE GUARD FOR THE TAGS THEMSELVES, and it has to live here. Every fixture
     # in one of those tables goes through a single `check()` call site, so
     # `_harness.label_faults()` is right to say nothing about a repeated id
@@ -649,7 +767,6 @@ def _cases(check):
           % (_tag_dupes, _tag_unaddressable),
           _tag_dupes == [] and _tag_unaddressable == []
           and all(_rows for _fam, _rows in _tag_tables))
-
     # (gt) the git call itself, pinned as data rather than spied on.
     #
     # `-uall` is LOAD-BEARING and measured: on a fixture of 4000 untracked,

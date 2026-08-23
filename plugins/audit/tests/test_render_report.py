@@ -1015,6 +1015,110 @@ def _cases(check):
           "tr.phase,tr.task,tr.taskdetail{display:table-row!important" in _print
           and "archive prints expanded" in M._CSS.lower())
 
+    # --- pr: the sort option the panel had and this page did not --------------
+    # dd60a11 gave `phase.priority` a badge here and a `sort: priority` option in
+    # the panel's Overview, and named the gap it left: this page's sort control
+    # never gained the option. The design constraint is that the ORDER has one
+    # expression - `_priority.sort_key` - so the server stamps a rank per row and
+    # the client sorts by a number it was handed. There is no comparator in the
+    # script to disagree with Python.
+    _prm = {"meta": {"title": "pin"}, "bugs": [], "phases": [
+        {"id": "Q1", "title": "unpinned first", "status": "pending",
+         "tasks": [{"id": "Q1.1", "title": "t", "status": "pending"}]},
+        {"id": "Q2", "title": "tier three", "status": "pending", "priority": 3,
+         "tasks": [{"id": "Q2.1", "title": "t", "status": "pending"}]},
+        {"id": "Q3", "title": "unpinned second", "status": "pending",
+         "tasks": [{"id": "Q3.1", "title": "t", "status": "pending"}]},
+        {"id": "Q4", "title": "tier one", "status": "pending", "priority": 1,
+         "tasks": [{"id": "Q4.1", "title": "t", "status": "pending"}]}]}
+    _prs = _lib.rollup(_prm, [], [])
+    _prh = M.render_html(_prm, _prs, "r", None)
+    _prhm = _markup(_prh)
+    _prranks = [(int(_o), _pid) for _pid, _o
+                in re.findall(r'id="phase-(\w+)"[^>]*data-porder="(\d+)"', _prhm)]
+    _prorder = [_pid for _, _pid in sorted(_prranks)]
+    check("pr1 the phases table offers the sort control, spelled the way the "
+          "panel's Overview spells it - value and label both `priority`, against "
+          "`plan order`. One vocabulary across the two surfaces or a reader "
+          "learns the words twice",
+          re.search(r'<select[^>]*id="audit-sort"', _prhm) is not None
+          and '<option value="plan">plan order</option>' in _prhm
+          and '<option value="priority">priority</option>' in _prhm,
+          repr(_prhm[_prhm.index('class="sortpick"'):][:220])
+          if 'class="sortpick"' in _prhm else "no sortpick in the markup")
+    check("pr2 every phase row carries its execution rank, once - the number the "
+          "control sorts by. Counted, not probed: a rank emitted twice is two "
+          "answers to one question and `in` cannot see it",
+          _prhm.count("data-porder=") == len(_prm["phases"])
+          and len(_prranks) == len(_prm["phases"])
+          and sorted(_o for _o, _ in _prranks) == list(range(len(_prranks))),
+          repr(_prranks))
+    # THE AGREEMENT PIN, and it is deliberately not a comparison against
+    # `_priority.ranks`. That would be the value compared with itself: the page
+    # is built from `ranks`, and `order()` now reads `ranks` too. The ready list
+    # comes through `rank_ready` - a DIFFERENT function over the same `sort_key` -
+    # so this compares what the page will DISPLAY against what the orchestrator
+    # will RUN, computed by another path.
+    check("pr3 the ranks the page stamps order the phases exactly as the "
+          "orchestrator's own ready list walks them. Two functions, one "
+          "comparator; if the report ever grew a second opinion about order, "
+          "this is the case that would say so",
+          _prorder == [_r.split(".")[0] for _r in _prs["ready"]],
+          "page=%r  ready=%r" % (_prorder, _prs["ready"]))
+    check("pr3b ...and the fixture can tell the two apart: the priority order is "
+          "NOT the manifest order, so pr3 cannot pass by the ranks simply being "
+          "the positions they were written in",
+          _prorder != [_p["id"] for _p in _prm["phases"]]
+          and _prorder == ["Q4", "Q2", "Q1", "Q3"],
+          repr(_prorder))
+    check("pr4 the table still ARRIVES in manifest order inside its segment - "
+          "the written plan is the plan, and priority is an overlay the reader "
+          "turns on. The rank is a number on the row, never a re-sort by the "
+          "renderer",
+          _prhm.index('id="phase-Q1"') < _prhm.index('id="phase-Q2"')
+          < _prhm.index('id="phase-Q3"') < _prhm.index('id="phase-Q4"'))
+    check("pr5 SECOND-DIRECTION CASE: a plan with no priority anywhere renders "
+          "NO control and NO rank - byte-for-byte the page it was before the "
+          "option existed. Reads vacuous, passes by construction on the code "
+          "before this change, and is what goes red if an absent tier ever "
+          "becomes tier 0 (every plan would grow a select) or if the control "
+          "were emitted unconditionally (a dropdown reordering nothing)",
+          "data-porder" not in _sghm and "audit-sort" not in _sghm
+          and _report_html.phase_ranks(_sgm) == [])
+    # A source-property pin, not a behaviour one, and the label says so: what it
+    # holds is that the client's whole knowledge of order is one attribute read.
+    # The behaviour - that the numbers really do order the rows - is
+    # tools/ui-tests/phase-order.test.mjs, which runs the assembled script.
+    _ords = M._SCRIPT[M._SCRIPT.index("const ORDERS = {"):]
+    _ords = _ords[:_ords.index("};")]
+    check("pr6 SOURCE PROPERTY: the report's script carries no comparator. Two "
+          "arrow functions, one attribute read, and no mention of a tier or a "
+          "null - the panel re-expressed `sort_key` in JavaScript and this "
+          "deliberately does not, because two places deciding one order are two "
+          "orders",
+          _ords.count("=>") == 2
+          and "getAttribute('data-porder')" in _ords
+          and "null" not in _ords and "tier" not in _ords,
+          repr(_ords))
+    check("pr7 the choice rides the shareable fragment and the local fallback, "
+          "like the View select beside it - a toolbar select is part of the view "
+          "somebody sends as a link, unlike a column-header poke",
+          "put('so', phaseOrder" in M._SCRIPT
+          and "HASH.so" in M._SCRIPT
+          and "audit-sort" in M._SCRIPT)
+    check("pr8 the sort select is styled by the SAME rule as the view select, "
+          "not a copy of it - two labelled selects in one toolbar that disagreed "
+          "about padding would read as two kinds of control",
+          ".viewpick,.sortpick{display:inline-flex" in M._CSS
+          and ".viewpick select,.sortpick select{" in M._CSS
+          # Counted rather than probed for absence, because the shared selector
+          # ITSELF ends in `.sortpick{` - the first spelling of this clause
+          # asserted that substring was absent and went red on the very rule it
+          # was written to protect. Two occurrences are the two shared rules; a
+          # third is a copy that has started drifting.
+          and M._CSS.count(".sortpick") == 2
+          and M._CSS.count(".viewpick") == 2)
+
     # --- ex: per-segment export (D2, v0.36) -----------------------------------
     # CSV of the data, PNG of the charts (redrawn from the embedded data onto a
     # canvas - never DOM-to-canvas), and a print mode that isolates one

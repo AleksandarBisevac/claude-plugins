@@ -61,6 +61,26 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
       ready: (rollup.ready || []).length,
       outcomes: (rollup.phases || []).filter((p) => p.desiredOutcome).length,
       firstPhase: (rollup.phases || [])[0] ? (rollup.phases || [])[0].id : null,
+      // Two search terms, derived rather than written down: one word that only an
+      // OUTCOME carries, and one that only the fields a row DRAWS carry. The row
+      // owes the reader a visible basis for the first and must spend no second
+      // line on the second, and a term hard-coded here would be testing the demo
+      // manifest's prose instead of the rule.
+      ...(() => {
+        const ph = rollup.phases || [];
+        const words = (v) => String(v || '').toLowerCase().match(/[a-z]{4,}/g) || [];
+        const drawn = ph.map((p) => (p.id + ' ' + (p.title || '') + ' '
+          + (p.area || []).join(' ')).toLowerCase()).join(' ');
+        const outcomes = ph.map((p) => String(p.desiredOutcome || '').toLowerCase())
+          .join(' ');
+        const uniq = (xs) => [...new Set(xs)];
+        return {
+          outcomeOnly: uniq(ph.flatMap((p) => words(p.desiredOutcome)))
+            .find((w) => !drawn.includes(w)) || null,
+          drawnOnly: uniq(ph.flatMap((p) => words(p.id + ' ' + (p.title || '') + ' '
+            + (p.area || []).join(' ')))).find((w) => !outcomes.includes(w)) || null,
+        };
+      })(),
     };
   });
   // ov (F-P-5): Overview follows the report's table, so it opens on a VIEW —
@@ -77,8 +97,88 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
   if (await rows() !== facts.phases) {
     fail(`overview: ${await rows()} phase rows for ${facts.phases} phases in the rollup`);
   }
-  if (facts.outcomes && !(await page.locator('#over .ovout').count())) {
-    fail(`overview: ${facts.outcomes} phases carry a desiredOutcome and none is shown`);
+  // ov (P2/4): the outcome used to be a second line on EVERY row — prose that is
+  // near-identical from row to row, so it doubled every row's height and separated
+  // none of them. It is on the row's tooltip and at the head of the opened detail
+  // now, and a row spends a line on it in exactly one case: the search matched
+  // there and nowhere the row draws. That case is the one no substring pin can
+  // check, because the claim is that the words the reader typed are ON SCREEN.
+  if (facts.outcomes) {
+    const spent = await page.locator('#over .ovout').count();
+    const tip = await page.evaluate(() => {
+      const of = (r) => (STATE.rollup.phases || []).find(
+        (p) => p.id === r.getAttribute('data-phase'));
+      const rows = [...document.querySelectorAll('#over .ovrow')]
+        .filter((r) => (of(r) || {}).desiredOutcome);
+      return {
+        rows: rows.length,
+        carried: rows.filter((r) => (r.getAttribute('title') || '')
+          .includes(of(r).desiredOutcome)).length,
+      };
+    });
+    if (spent) {
+      fail(`overview: ${spent} rows spend a second line on their outcome with no `
+         + `search on — that is the doubled row height this removed`);
+    } else if (!tip.rows || tip.carried !== tip.rows) {
+      fail(`overview: ${tip.carried} of ${tip.rows} rows with an outcome carry it `
+         + `on the tooltip, so hovering answers nothing`);
+    } else {
+      note(`overview: ${tip.rows} rows carry their outcome on hover and none spends `
+         + `a line on it`);
+    }
+    // Matched THERE and nowhere visible: the row must show the outcome, and the
+    // term must be inside what it shows — the line is clipped to one line, so the
+    // head of a long outcome is no proof the match is on screen.
+    if (facts.outcomeOnly) {
+      await page.fill('#ovq', facts.outcomeOnly);
+      await page.waitForTimeout(250);
+      const basis = await page.evaluate((t) => {
+        const lines = [...document.querySelectorAll('#over .ovrow')]
+          .map((r) => r.querySelector('[data-ovhit="outcome"]'))
+          .map((n) => (n ? n.textContent : null));
+        return {
+          rows: lines.length,
+          shown: lines.filter((s) => s !== null).length,
+          carrying: lines.filter((s) => s && s.toLowerCase().includes(t)).length,
+        };
+      }, facts.outcomeOnly);
+      if (!basis.rows) {
+        fail(`overview: "${facts.outcomeOnly}" is a word only an outcome carries and `
+           + `searching it matched no row — the search no longer reaches the field`);
+      } else if (basis.shown !== basis.rows || basis.carrying !== basis.rows) {
+        fail(`overview: ${basis.rows} rows matched on their outcome alone, `
+           + `${basis.shown} show it and ${basis.carrying} show the matching words `
+           + `— the rest are in the list with no basis on them`);
+      } else {
+        note(`overview: ${basis.rows} rows matched on "${facts.outcomeOnly}" and each `
+           + `shows the matching words`);
+      }
+      await page.fill('#ovq', '');
+      await page.waitForTimeout(200);
+    } else {
+      note('overview: no word occurs in an outcome and nowhere a row draws, so the '
+         + 'match-basis line could not be exercised on this manifest');
+    }
+    // ...and the other direction, which is the whole point of the change: a match
+    // the row already explains costs nothing.
+    if (facts.drawnOnly) {
+      await page.fill('#ovq', facts.drawnOnly);
+      await page.waitForTimeout(250);
+      const extra = await page.locator('#over .ovout').count();
+      const got = await rows();
+      if (!got) {
+        fail(`overview: "${facts.drawnOnly}" is a word the rows themselves carry and `
+           + `searching it matched nothing`);
+      } else if (extra) {
+        fail(`overview: ${extra} of ${got} rows explain a match the row already `
+           + `shows — the second line is back, for nothing`);
+      } else {
+        note(`overview: a match on a field the row draws costs no second line `
+           + `(${got} rows)`);
+      }
+      await page.fill('#ovq', '');
+      await page.waitForTimeout(200);
+    }
   }
 
   // A task-status pill scopes the phase list to the phases carrying that status.
@@ -173,6 +273,14 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
         want: tasks,
         cols: det ? [...det.querySelectorAll('th')].map((h) => h.textContent) : [],
         edit: !!(det && det.querySelector('[data-ovedit]')),
+        // The outcome's real home now that no row carries it: in full (the row's
+        // line is a window), and ABOVE the table rather than a footnote to it.
+        wantPurpose: !!((STATE.rollup.phases || []).find((p) => p.id === pid) || {})
+          .desiredOutcome,
+        purpose: det && det.querySelector('[data-ovpurpose]')
+          ? det.querySelector('[data-ovpurpose]').textContent : null,
+        purposeLeads: !!(det && det.firstElementChild
+          && det.firstElementChild.hasAttribute('data-ovpurpose')),
       };
     }, firstId);
     if (!inPlace.stayed || inPlace.expanded !== 'true' || !inPlace.detail) {
@@ -187,6 +295,10 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
     } else if (!inPlace.edit) {
       fail('overview: the detail offers no way to Composition — the click used to '
          + 'go there, so removing it without a named replacement strands the reader');
+    } else if (inPlace.wantPurpose && !inPlace.purposeLeads) {
+      fail(`overview: the phase has a desiredOutcome and the opened detail does not `
+         + `lead with it (${JSON.stringify(inPlace.purpose)}) — no row carries it `
+         + `any more, so this is where it is read`);
     } else {
       note(`overview: a phase opens in place with its ${inPlace.rows} tasks in the `
          + `report's columns, and Composition is a named press`);
@@ -675,26 +787,99 @@ export async function assertPolicyWorks(page, statePath,
     note(`policy: ${wantReq} required capabilit(ies) shown locked`);
   }
 
-  // --- area columns say which of them decides anything today ------------------
-  const cols = await page.evaluate(() => ({
-    oracle: (POLICY.areaInfo || []).map((a) => [a.tag, a.active]),
-    rendered: [...document.querySelectorAll('#policy th.ar')].map((th) =>
-      [th.firstChild.textContent, !th.classList.contains('dormant'),
-       (th.querySelector('.mut') || {}).textContent]),
-  }));
+  // --- area columns: the areas that carry a rule, and the rest offered by name -
+  // One column per area does not scale — the tags come from the plan — so a column
+  // is drawn for an area that CARRIES A RULE and the others are offered in a strip.
+  // The oracle is re-derived from POLICY.stored HERE rather than read off `pCols`,
+  // so this compares two independent answers instead of a value with itself.
+  const cols = await page.evaluate(() => {
+    const states = (tag) => {
+      const a = ((((POLICY.stored || {})[PF.kind] || {}).areas || {})[tag]) || {};
+      return ['deny', 'allow'].some((l) => (Array.isArray(a[l]) ? a[l].length > 0
+        : a[l] != null));
+    };
+    const info = POLICY.areaInfo || [];
+    return {
+      all: info.map((a) => [a.tag, a.active]),
+      oracle: info.filter((a) => states(a.tag)).map((a) => [a.tag, a.active]),
+      offered: info.filter((a) => !states(a.tag)).map((a) => a.tag),
+      rendered: [...document.querySelectorAll('#policy th.ar')].map((th) =>
+        [th.firstChild.textContent, !th.classList.contains('dormant'),
+         (th.querySelector('.mut') || {}).textContent]),
+      strip: [...document.querySelectorAll('#policy [data-pcols] [data-pcol]')]
+        .map((b) => [b.getAttribute('data-pcol'), b.getAttribute('aria-pressed')]),
+    };
+  });
   const colsOk = cols.oracle.length === cols.rendered.length
     && cols.oracle.every(([tag, live], i) => cols.rendered[i][0] === tag
       && cols.rendered[i][1] === live
       && cols.rendered[i][2] === (live ? 'live' : 'dormant'));
-  if (!cols.oracle.length || !cols.oracle.some(([, live]) => live)
-      || !cols.oracle.some(([, live]) => !live)) {
-    fail(`policy: the fixture's areas are ${JSON.stringify(cols.oracle)} — it needs `
-       + `both a live and a dormant one or the column check proves nothing`);
+  if (!cols.oracle.length || !cols.offered.length
+      || !cols.all.some(([, live]) => live) || !cols.all.some(([, live]) => !live)) {
+    fail(`policy: the fixture's areas are ${JSON.stringify(cols.all)} with rules on `
+       + `${JSON.stringify(cols.oracle.map(([t]) => t))} — it needs one area with a `
+       + `rule and one without, and a live and a dormant one, or neither the hiding `
+       + `nor the labelling could be checked`);
   } else if (!colsOk) {
     fail(`policy: area columns ${JSON.stringify(cols.rendered)} do not match the `
-       + `server's ${JSON.stringify(cols.oracle)}`);
+       + `areas the block states a rule for, ${JSON.stringify(cols.oracle)}`);
+  } else if (JSON.stringify(cols.strip.map(([t]) => t)) !== JSON.stringify(cols.offered)
+             || cols.strip.some(([, on]) => on !== 'false')) {
+    // A HIDDEN COLUMN MUST NEVER READ AS "no rule here". Every area without one is
+    // named on screen and pressable, and none of them starts pressed.
+    fail(`policy: the areas with no column are ${JSON.stringify(cols.offered)} and `
+       + `the strip offers ${JSON.stringify(cols.strip)} — an area that is neither a `
+       + `column nor named is an area a reader would read as having no rule`);
   } else {
-    note(`policy: ${cols.oracle.length} area columns, each naming whether it is live`);
+    note(`policy: ${cols.oracle.length} of ${cols.all.length} areas carry a rule and `
+       + `get a column, each naming whether it is live; the rest are named in the `
+       + `strip (${cols.offered.join(', ')})`);
+  }
+
+  // The reveal, driven. Done IN-PAGE rather than through Playwright's click so
+  // there is no selector race: `renderPolicy` is synchronous, so the DOM is already
+  // rebuilt when evaluate returns, and the button the second press needs is a NEW
+  // node — hence the re-query. This is also the only place the `dormant` label on a
+  // column is still exercised, since the fixture's rule sits on its live area.
+  const reveal = await page.evaluate(() => {
+    const first = document.querySelector('#policy [data-pcols] [data-pcol]');
+    if (!first) return null;
+    const tag = first.getAttribute('data-pcol');
+    const heads = () => [...document.querySelectorAll('#policy th.ar')].map((th) =>
+      [th.firstChild.textContent, th.classList.contains('dormant'),
+       (th.querySelector('.mut') || {}).textContent]);
+    const before = heads();
+    const stored = JSON.stringify(POLICY.stored);
+    first.click();
+    const on = heads();
+    const again = document.querySelector(`#policy [data-pcol="${CSS.escape(tag)}"]`);
+    if (again) again.click();
+    return { tag, before, on, off: heads(), stored,
+             storedAfter: JSON.stringify(POLICY.stored),
+             dirty: editRows('policy').length };
+  });
+  const wantDormant = reveal
+    && !(cols.all.find(([t]) => t === reveal.tag) || [null, false])[1];
+  const added = reveal
+    ? reveal.on.filter((r) => !reveal.before.some((p) => p[0] === r[0])) : [];
+  if (!reveal) {
+    fail('policy: no [data-pcol] control for the areas without a rule — a hidden '
+       + 'column would be both unreachable and unexplained');
+  } else if (added.length !== 1 || added[0][0] !== reveal.tag
+             || added[0][1] !== wantDormant
+             || added[0][2] !== (wantDormant ? 'dormant' : 'live')) {
+    fail(`policy: pressing the ${reveal.tag} pill added ${JSON.stringify(added)} `
+       + `rather than one column labelled ${wantDormant ? 'dormant' : 'live'}`);
+  } else if (JSON.stringify(reveal.off) !== JSON.stringify(reveal.before)) {
+    fail(`policy: pressing it again left ${JSON.stringify(reveal.off)} rather than `
+       + `the ${reveal.before.length} column(s) it started with`);
+  } else if (reveal.stored !== reveal.storedAfter || reveal.dirty) {
+    fail(`policy: revealing a column changed the policy (${reveal.dirty} unsaved `
+       + `change(s)) — the pill decides what is on screen and nothing else`);
+  } else {
+    note(`policy: ${reveal.tag} has no rule, so no column; its pill adds one `
+       + `labelled ${wantDormant ? 'dormant' : 'live'}, takes it away again, and `
+       + `writes nothing`);
   }
 
   // --- the block as written, including the patterns no switch can express -----

@@ -116,14 +116,45 @@ function midElide(s,max){if(!s||s.length<=max)return s||'';
  const keep=max-1,head=Math.ceil(keep*0.38);return s.slice(0,head)+'…'+s.slice(s.length-(keep-head));}
 $('#proj').textContent=midElide(PROJECT,56);
 $('#proj').title=PROJECT;
-// Which installed plugin is serving this panel — same words and same place as the
-// report's stamp, because it answers the same question. The panel is where the
-// question actually gets asked: the plugin cache is keyed BY VERSION, so
-// `marketplace update` followed by a reload can leave you driving a build you did
-// not intend, with nothing on screen to say so. Omitted entirely when the version
-// cannot be read: a stamp with no basis is worse than no stamp.
-if(VERSION)$('#proj').append(el('span',{class:'mut',
-  title:'The plugin version serving this panel'},' · audit '+VERSION));
+// Which installed plugin is serving this panel — the same component as the report's
+// stamp (`.stampv`), because it answers the same question, but beside the product
+// name rather than trailing the project path. It used to be appended to `#proj`,
+// where it lost every contest for that line's width: the path is elided to fill it,
+// so the stamp was pushed past the clip and was invisible on any project whose path
+// is long enough to elide. Here nothing competes with it. The h1 already reads
+// "audit", so the stamp carries the number alone rather than repeating the name.
+// The panel is where the question actually gets asked: the plugin cache is keyed BY
+// VERSION, so `marketplace update` followed by a reload can leave you driving a
+// build you did not intend, with nothing on screen to say so. Omitted entirely when
+// the version cannot be read: a stamp with no basis is worse than no stamp.
+if(VERSION)$('#brand').append(el('span',{class:'stampv',
+  title:'The plugin version serving this panel'},'v'+VERSION));
+/**
+ * Mark the header when it has room for the version stamp beside the title, so the
+ * CSS can show it there — and leave it hidden when it has not.
+ *
+ * Measured, not assumed, for the same reason tabsOverflow() is: this column is
+ * shrunk by whatever the topbar's buttons and the identity pill leave it, and a
+ * stamp that does not fit takes its width out of the title instead, wrapping it
+ * onto another line and making a sticky bar taller that everything below is
+ * offset against. `.roomy` is added FIRST and kept only if the row still fits
+ * inside the column, because the question is whether it fits when it is shown;
+ * asking it while the stamp is hidden always answers yes.
+ *
+ * The observer is not belt and braces over the resize listener. The identity pill
+ * is rendered from /api/state after this file has run and takes its width out of
+ * this column when it lands, and no resize event is fired for that — the same
+ * reason the report observes its own topbar rather than only listening to the
+ * window.
+ *
+ * @returns {void}
+ */
+function stampRoom(){const b=$('#brand');if(!b||!$('.stampv'))return;
+ b.classList.add('roomy');
+ if(b.scrollWidth>b.clientWidth+1)b.classList.remove('roomy');}
+stampRoom();
+if(window.ResizeObserver&&$('#brand'))new ResizeObserver(stampRoom).observe($('#brand'));
+addEventListener('resize',stampRoom,{passive:true});
 // ---------- the light/dark choice, and the two topbar buttons ----------
 /**
  * The element the chosen mode is written on, and the key it is remembered under.
@@ -279,7 +310,13 @@ const uKeyEl=(k,cls)=>isUncat(k)
  * renaming one breaks a link somebody saved.
  */
 // ---------- tabs, the toast, and where the reader was ----------
-const TABS=['guards','comp','over','usage','policy','props','look'],SCROLL={};
+// IN NAV ORDER, and that is now load-bearing rather than incidental: the first
+// entry IS the panel's landing view and the fallback for an unrecognised
+// fragment, so this tuple and the strip in panel.html are one order, not two
+// hand-kept ones. Overview leads because the common visit is "where are we",
+// not "I am changing config" - Settings was first only because it was built
+// first.
+const TABS=['over','comp','usage','policy','props','guards','look'],SCROLL={};
 let CURTAB=null;
 /**
  * Show one view, hide the rest, and put the reader back where they were in it.
@@ -298,7 +335,7 @@ let CURTAB=null;
  * @returns {void}
  */
 function showTab(t,push){
- if(!TABS.includes(t))t='guards';
+ if(!TABS.includes(t))t=TABS[0];
  closeCombo();   // the menu is on <body>, not in the view being hidden
  if(CURTAB)SCROLL[CURTAB]=window.scrollY;
  CURTAB=t;
@@ -342,14 +379,14 @@ addEventListener('hashchange',()=>{const t=(location.hash||'').replace(/^#\/?/,'
 function initialTab(){const h=(location.hash||'').replace(/^#\/?/,'').split('!')[0];
  if(TABS.includes(h))return h;
  const s=storageGet('audit-panel-tab');if(TABS.includes(s))return s;
- // WITH NO PLAN YET, SETTINGS IS THE WRONG PLACE TO LAND. It is a wall of
- // configuration for an audit that does not exist, and the one screen that says
- // what to do next was two clicks away - measured on a fresh `git init` repo.
- // Only the DEFAULT moves: an explicit fragment still wins above, and so does a
- // remembered tab, so this fires exactly once, on the visit that has neither.
- // STATE is loaded before boot() routes the first tab, so this is answerable
- // here rather than after a repaint.
- return (STATE&&STATE.rollup)?'guards':'over';}
+ // The first view, whatever it is. This was briefly a conditional - Overview when
+ // no plan existed, Settings otherwise - and reordering the strip absorbed it: if
+ // Overview leads because "where are we" is the common visit, that is as true of a
+ // populated repo as of an empty one, and a landing that disagreed with the top of
+ // the list would be its own surprise. Only the DEFAULT is decided here; an
+ // explicit fragment is an instruction somebody sent and a remembered tab is this
+ // reader's own choice, and both are answered above.
+ return TABS[0];}
 /**
  * The one transient banner, for an outcome nobody has to act on.
  *

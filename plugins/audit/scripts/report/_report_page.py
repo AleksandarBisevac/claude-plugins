@@ -210,14 +210,21 @@ def _held_by(ph, done_ids):
 
 
 # --- phase rows ----------------------------------------------------------------
-def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None):
+def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
+                prank=None):
     """One phase's rows — the group row, its task-filter row and its task rows.
 
     Extracted from render_html's former inline loop when segmentation (D1)
     made the iteration two levels deep; the MARKUP is byte-identical to what
     the loop emitted, plus `data-seg` on every row (the hook the archive gate
     and the per-segment print isolation select whole segments by) and the
-    advisory owner suffix on the area tags (D4)."""
+    advisory owner suffix on the area tags (D4).
+
+    pr: `prank` is this phase's position in EXECUTION order, from
+    `_priority.ranks` — the number the sort control orders by, rather than a
+    rule the script re-derives. `None` means no phase in the plan is pinned and
+    the attribute is left off entirely, so the row is byte-identical to what it
+    was before the sort option existed."""
     pid = psum["id"]
     areas = psum["area"] if isinstance(psum.get("area"), list) \
         else _areas_of(ph.get("area"))
@@ -264,13 +271,15 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None):
                       % (_ncancelled, _ncancelled)) if _ncancelled else ""
     out.append(
         '<tr class="phase" id="phase-%s" data-phase="%s" data-status="%s"%s '
-        'data-seg="%s" data-area="%s" tabindex="0" '
+        'data-seg="%s" data-area="%s"%s tabindex="0" '
         'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
         '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s%s%s %s'
         '<span class="pmatch" hidden></span>%s</td></tr>'
         % (e(pid), e(pid), e(psum["status"]),
            ' data-held="1"' if held else "",
-           seg, e(" ".join(areas)), ncol, e(pid), e(psum["title"]),
+           seg, e(" ".join(areas)),
+           "" if prank is None else ' data-porder="%d"' % prank,
+           ncol, e(pid), e(psum["title"]),
            area_tags, _chip(psum["status"]), blocked_mark, cancelled_mark,
            held_mark, stamp,
            _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
@@ -554,8 +563,8 @@ def _doc_actions(fragment):
 
 
 def _table_tools(manifest, summary):
-    """Search, the status chips, the view select and expand-all — the controls
-    that act on the phases table and on nothing else.
+    """Search, the status chips, the view select, the sort select and
+    expand-all — the controls that act on the phases table and on nothing else.
 
     The chips are rendered HERE, not built by the script. Built in JS they were
     invisible to anything that does not run it — a printed page, a reader with
@@ -564,6 +573,22 @@ def _table_tools(manifest, summary):
     always present; the script only attaches behaviour to them.
     """
     statuses = sorted({p["status"] for p in summary["phases"] if p.get("status")})
+    # pr: the sort select, and only where a phase is actually pinned. The panel's
+    # Overview grew `sort: priority` and this did not, so the same plan answered
+    # "what runs first" in one surface and not the other. The option is spelled
+    # the way the panel spells it — value and label both `priority`, against
+    # `plan order` — because a reader who learns the words in one surface has to
+    # find them in the other. Withheld when nothing is pinned: every use of it
+    # would then be a no-op, which is the defect the one-author Author cell in
+    # `_global_filter_row` already refuses to ship, and withholding it is also
+    # what keeps a plan with no `priority` rendering byte-for-byte as before.
+    sortpick = (
+        '<span class="sortpick"><label class="tbl" for="audit-sort">Sort:</label>'
+        '<select id="audit-sort" aria-label="Sort: the order the phases are '
+        'listed in">'
+        '<option value="plan">plan order</option>'
+        '<option value="priority">priority</option></select></span>'
+    ) if _report_html.any_phase_pinned(manifest) else ""
     return (
         '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
@@ -580,6 +605,7 @@ def _table_tools(manifest, summary):
         '<option value="active">Active &amp; pending</option>'
         '<option value="archived">Archived (done &amp; cancelled)</option>'
         '<option value="all">All phases</option></select></span>'
+        '%s'
         '<button type="button" id="audit-expand" class="btn">expand all</button>'
         # Shown only while something is actually filtering. It is a second copy of
         # the empty state's button on purpose: the More-filters panel is drawn OVER
@@ -591,7 +617,7 @@ def _table_tools(manifest, summary):
         "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
         "— every row is shown.</span></noscript></div>"
         % (_chip_buttons(statuses, "data-ps", "fchip"),
-           _filter_panel(manifest)))
+           _filter_panel(manifest), sortpick))
 
 
 def _phases_block(manifest, summary, owners, workers=None):
@@ -656,11 +682,15 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
     by machines, and reordering it would change every diff against an earlier
     render for a purely presentational reason.
     """
-    pairs = list(zip(
-        [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
-        summary["phases"]))
+    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
+    # pr: zipped in rather than looked up by id, because the rollup entry beside
+    # it is already matched positionally against this same filtered list — one
+    # alignment rule for both, and a phase with no id (or two sharing one) can
+    # therefore not be handed another phase's rank. `[]` when nothing is pinned
+    # spreads to `None` per row, which is what suppresses the attribute.
+    ranks = _report_html.phase_ranks(manifest) or [None] * len(phases)
     by_seg = {}
-    for pair in pairs:
+    for pair in zip(phases, summary["phases"], ranks):
         by_seg.setdefault(_seg_of(pair[1]["status"]), []).append(pair)
     out = []
     for seg in [s for s in _report_html.SEG_ORDER if by_seg.get(s)]:
@@ -684,9 +714,9 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
                 % (_report_html.SEG_LABEL[seg], _fmt.plural(sn, "phase")))
         out.append('<tr class="seghead" data-seg="%s"><td colspan="%d">%s%s'
                    "</td></tr>" % (seg, ncol, head, exports))
-        for ph, psum in by_seg[seg]:
+        for ph, psum, prank in by_seg[seg]:
             out.append(_phase_rows(ph, psum, seg, ncol, cols, done_ids, owners,
-                                   workers))
+                                   workers, prank))
     return out
 
 

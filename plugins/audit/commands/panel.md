@@ -44,7 +44,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   The plan gate's tier is one select (**How hard the gate pushes**, v0.34): its preset also
   reads the legacy `enforce` flag, and choosing a tier writes `planGate` while deleting
   `enforce` — one statement of the gate's tier, not two keys contradicting each other.
-- **Composition** — set `meta.reviewSkill`, per-task `skills[]` / `model`, per-phase
+- **Plan & models** (route `comp`) — set `meta.reviewSkill`, per-task `skills[]` / `model`, per-phase
   `review.model`, `meta.buildCommands` — via an autocomplete **populated by discovery** of
   the skills & agents actually available (project `.claude/`, `~/.claude/`, installed
   plugins). The model fields carry the same autocomplete with three named sources (v0.34):
@@ -73,7 +73,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
 - **Areas, over the API only (v0.28).** `GET /api/areas` returns the `meta.areas` registry plus
   every tag the phases actually use — which are registered, which are typos, which roots are
   missing — and `PUT /api/areas` replaces the registry wholesale through the same writer, lock,
-  validation and change echo as Composition. There is **no form for it yet**; say so rather than
+  validation and change echo as Plan & models. There is **no form for it yet**; say so rather than
   sending someone looking for a tab that is not there. Edit `meta.areas` by hand, or let
   `/audit:init` write it.
 - **Help, over the API only (v0.31).** `GET /api/help` serves every config and manifest field
@@ -84,7 +84,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   than sending someone clicking for an ⓘ that is not there. For a question the schema does not
   answer, ask for the `audit:guide` subagent by name — it reads the plugin's own docs and cites
   them, and it is read-only.
-- **Nothing is written without showing you what** — on both Settings and Composition. Save
+- **Nothing is written without showing you what** — on both Settings and Plan & models. Save
   opens a dialog listing every change as `P1.2 · model · sonnet → opus`, together with any
   phase that is running elsewhere *right now*; Cancel writes nothing and keeps your edits.
   **Discard** says how many changes it would throw away and is dead while there are none,
@@ -106,7 +106,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   bug **status strips** that are both the legend and the filter (press one to scope the phase
   list), search over id / title / area / desired outcome, sort by plan order, progress or
   status, optional **group by area** from `meta.areas`, each phase row showing its desired
-  outcome and opening that phase in Composition, and a **Ready now** card with the exact
+  outcome and opening that phase in Plan & models, and a **Ready now** card with the exact
   `/audit:run <id>` to copy. Bug statuses here are *effective* — a bug materialized into a task
   reads `Fixed` once that task is done, which is what the counts above them use. A **Plan
   gate** card (v0.34) names the tier in force and its source (`planGate`, legacy `enforce`,

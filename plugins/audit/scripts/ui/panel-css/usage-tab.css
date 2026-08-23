@@ -1,13 +1,45 @@
 /* usage tab */
 .uctx{font-size:.74rem;color:var(--muted);margin:0 0 var(--sp-2)}
+/* The sticky bar, and it now holds two things rather than two rows: the Filters
+   fold and the one control that must not be folded away with them. `flex-start`
+   and not `center` for that reason - an open fold is four lines tall and Export
+   would float halfway down it. */
 .ufil{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;gap:var(--sp-1);
- align-items:center;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
+ align-items:flex-start;margin:0 0 var(--sp-1);padding:var(--sp-1) 0;
  background:var(--surface);border-bottom:1px solid var(--border)}
-/* Two rows, not one wrapping heap. Nine controls on one line wrap wherever the
-   viewport happens to break, which puts "to" above its date input as often as
+/* THE SAME COMPONENT AS THE REPORT'S More-filters control, under the same name
+   and with the same count badge, because it answers the same question: a
+   disclosure that hides an active filter is how a reader concludes rows are
+   missing. Only the arrangement differs, and it differs for a stated reason -
+   the report's is an absolutely positioned overlay because the bar it hangs from
+   is what --sectools-h pins the whole document against, while this one sits in
+   the flow of a card that pins nothing. There is no shared stylesheet layer to
+   hold the summary pill yet, so the declarations are the report's twin rather
+   than its extraction; `report-css/controls.css` carries the other copy. */
+.fdetails{flex:1 1 20rem;min-width:0}
+.fdetails>summary{cursor:pointer;font:inherit;font-size:.78rem;line-height:1;
+ display:inline-flex;align-items:center;gap:.4em;padding:var(--sp-0) var(--sp-2);
+ border-radius:var(--pill);border:1px solid var(--field-border);
+ background:var(--surface);color:var(--text);list-style:none}
+.fdetails>summary::-webkit-details-marker{display:none}
+.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
+.fdetails[open]>summary::after{content:"\25B4"}
+.fdetails>summary:hover{border-color:var(--field-border-hover);
+ background:var(--surface-2)}
+.fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* What is narrowing the view, on the SHUT control. The chip row above says it in
+   words, but the chips scroll away under this sticky bar and the fold does not,
+   so this is the last thing left saying the numbers below are a subset. */
+.fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+/* Two rows, not one wrapping heap. Nine control sites on one line wrap wherever
+   the viewport happens to break, which puts "to" above its date input as often as
    beside it. The split is by JOB - who and what on top, when and how far down -
-   so the pairs that read together cannot be separated by a reflow. */
+   so the pairs that read together cannot be separated by a reflow. Inside the
+   fold they are block children, so the vertical rhythm is theirs to declare;
+   `flex:1 1 100%` is kept because the row is still a flex CONTAINER for its own
+   controls and the basis costs nothing where nothing reads it. */
 .ufrow{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;flex:1 1 100%}
+.fdetails .ufrow{margin-top:var(--sp-1)}
 .ufil .combo{flex:1 1 9rem;min-width:7.5rem}
 .ufil input,.ufil select{font:inherit;font-size:.78rem;width:100%;
  padding:var(--sp-0) var(--sp-1);border-radius:var(--radius);

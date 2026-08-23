@@ -32,6 +32,22 @@ function renderUsage(){closeCombo();const c=$('#usage');
    // buttons are replaced by this redraw too, and one of them is where closing
    // the browse dialog puts the caret.
    keepBack=keepQ?null:focusKeep('#usage');
+ // Whether the Filters fold is standing open, carried across the teardown the
+ // same way the caret above is — read off the OUTGOING element, never held in a
+ // variable of its own. Two reasons, and the first is measured: `toggle` is
+ // queued as a TASK, so a repaint in the same turn as the click on the summary
+ // would rebuild the fold before any handler had run and emit it shut. (A
+ // browser driver hits that every time; a hand at human speed never does, which
+ // is exactly the kind of race that ships.) The second is that a variable beside
+ // the DOM is a second place one fact lives, and they drift. `proposals-view`
+ // reads its own <details> back the same way.
+ //
+ // The first pass finds nothing and the fold is therefore SHUT, which is the
+ // whole point of it: an arriving tab leads with its numbers, and the chip row
+ // says what is scoping them. It stays shut on a shared link with filters
+ // already on — the chips name those, and a fold that opened itself would put
+ // the wall of controls back on exactly the screens people send each other.
+ const foldOpen=!!c.querySelector('details[data-uffold][open]');
  c.textContent='';tipHide();
  const card=el('div',{class:'card'});
  const done=()=>{c.append(card);
@@ -74,9 +90,25 @@ function renderUsage(){closeCombo();const c=$('#usage');
    settingsLink('rates undated: date them in Settings','usage.pricingAsOf'));
  card.append(ctx);
 
- // filters, on two rows: WHO and WHAT above, WHEN and the way out below.
- // Typeahead for the dimensions with hundreds of values, a plain select for the
- // two that have three — a select states its whole domain at a glance, which a
+ // Active filters FIRST, above the fold that holds the controls. This row is not
+ // decoration: the fold is shut on arrival, so it is the only statement of what
+ // is scoping every number below, and an active filter nobody can see is a lie
+ // about all of them. Each chip names one filter and IS the way out of it.
+ // `range` is in the list because it is not a DIMS slot, which made it the one
+ // filter that could be on with nothing on screen naming it.
+ const on=uOnFilters();
+ if(on.length){
+  const chips=el('div',{class:'uchips'});
+  on.forEach(d=>chips.append(el('button',{class:'uchip',
+    title:d==='range'?'back to all time':'remove this filter',
+    'data-uchip':d,onclick:()=>uLiftF(d)},el('span',{class:'ck'},fName(d)),
+    fVal(d),el('span',{class:'cx'},'x'))));
+  chips.append(el('button',{class:'lnk',onclick:clearAll},'clear all'));
+  card.append(chips);}
+
+ // filters, on two rows inside one fold: WHO and WHAT above, WHEN and how far
+ // down. Typeahead for the dimensions with hundreds of values, a plain select for
+ // the two that have three — a select states its whole domain at a glance, which a
  // typeahead hides behind a keystroke, and hiding a two-value domain is silly.
  const uniq=dim=>[...new Set(USAGE.facts.map(f=>f[F[dim]]).filter(Boolean))].sort();
  const totalsFor=dim=>{const m=new Map();
@@ -187,21 +219,30 @@ function renderUsage(){closeCombo();const c=$('#usage');
      o.title='would draw '+pts[v]+' points; the chart caps at '+MAXPTS;}
     if(UF.bin===v)o.selected=true;sel.append(o);});
   r2.append(sel);}
- r2.append(el('button',{class:'btn small push',type:'button','data-ucsv':'1',
+ // The two rows fold away behind one summary, so the tab opens on its numbers
+ // instead of on eleven-and-more controls. `<details>` and not a scripted
+ // popover: it opens, closes, takes focus and answers the keyboard with nothing
+ // of ours running, which is the same reason the report's own More-filters panel
+ // is one. The count on the summary is what stops a shut fold hiding an active
+ // filter from a reader who has scrolled the chip row out from under the sticky
+ // bar — the report's `.fcount` for the same job, under the same name.
+ // No handler on any of it: `<details>` opens, closes, takes focus and answers
+ // the keyboard on its own, and the state it ends up in is read back off it at
+ // the top of the next pass.
+ const fold=el('details',{class:'fdetails','data-uffold':'1',
+   open:foldOpen?'':null},
+  el('summary',{'data-ufilters':'1'},'Filters',
+    on.length?el('span',{class:'fcount'},' · '+on.length+' on'):null),
+  r1,r2);
+ // Export stays OUTSIDE the fold. It is not a filter, and behind a summary that
+ // says "Filters" nobody would find it again — while what it downloads is
+ // exactly the rows the fold above just narrowed.
+ filt.append(fold,el('button',{class:'btn small push',type:'button',
+   'data-ucsv':'1',
    title:'Download the rows behind this view as CSV — one row per bucket, phase, '
      +'task, model, person, agent and attribution, with the filters applied',
    onclick:()=>uExport(uFiltered())},'Export CSV'));
- filt.append(r1,r2);
  card.append(filt);
-
- // active-filter chips: what is scoping the view, and a way out of each
- if(uAnyFilter()){
-  const chips=el('div',{class:'uchips'});
-  UORDER.forEach(d=>chips.append(el('button',{class:'uchip',title:'remove this filter',
-    'data-uchip':d,onclick:()=>setF(d,'')},el('span',{class:'ck'},fName(d)),
-    fVal(d),el('span',{class:'cx'},'x'))));
-  chips.append(el('button',{class:'lnk',onclick:clearAll},'clear all'));
-  card.append(chips);}
 
  card.append(...uPerson());
 
@@ -374,5 +415,8 @@ document.addEventListener('keydown',e=>{
  // else, and the state follows the box rather than diverging from it.
  const a=document.activeElement;
  if(a&&a.id==='uq'){if(UF.q)setF('q','');return;}
- if(UORDER.length){setF(UORDER[UORDER.length-1],'');}
- else if(UF.range!=='all'){UF.range='all';renderUsage();}});
+ // Two steps and not one pass over uOnFilters(): the range rides at the END of
+ // that list, so popping the last element would drop it FIRST and reverse the
+ // order this key has always had. Both steps lift through the one helper.
+ if(UORDER.length){uLiftF(UORDER[UORDER.length-1]);}
+ else if(UF.range!=='all'){uLiftF('range');}});

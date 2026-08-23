@@ -1801,6 +1801,17 @@ SHARED_CONCERNS = (
      "nothing, so hoisting cost no state. Only the DATA half stayed behind, as a "
      "predicate, because one surface holds its days as a sorted array and the "
      "other as an object and each has a reason."),
+    ("heatmap row shapes", "shared/calendar.js",
+     r"re:function (dayRows|weekRows|weekdayRows|dateRows|monthRows|heatRows)\(", 0,
+     "EXTRACTED, and its own row rather than folded into the calendar above "
+     "because the two failed differently and one of them failed in PRODUCTION. "
+     "The calendar's copies agreed; these did not have to, and the branch that "
+     "chose between them was wrong in both surfaces at once - month, year and "
+     "all shared one builder, so Month drew Week's seven weekday rows with each "
+     "cell summed over the four-or-so occurrences of that weekday. A reader "
+     "reported it as a copy of the weekly view. The needle names the old "
+     "spellings AND the new ones, because what would bring the defect back is "
+     "someone retyping a row builder into a surface under either."),
     ("day <-> milliseconds", "shared/dates.js", r"re:864e5|86400000", 0,
      "EXTRACTED as DAY_MS. The needle is the CONSTANT rather than one spelling "
      "of the arithmetic - a narrower pattern found five of the nine and a shell "

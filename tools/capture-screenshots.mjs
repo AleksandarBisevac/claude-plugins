@@ -61,7 +61,7 @@
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { rmSync, mkdirSync, readFileSync, statSync,
+import { rmSync, mkdirSync, readFileSync, statSync, cpSync,
          writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir, release } from 'node:os';
@@ -410,7 +410,199 @@ async function tabTo(page, t) {
   return false;
 }
 
+/**
+ * Open the Usage tab's Filters fold — and say what it looked like on arrival.
+ *
+ * TWO JOBS, and the first is mechanical. The usage filters live behind a
+ * `<details>` now, and Playwright refuses to type into or select from a control
+ * inside a shut one: `element is not visible`, after a 30-second wait that reads
+ * as a dead panel rather than as a fold nobody opened. Every measurement in this
+ * file that drives a usage filter needs it open, and `tabTo` is the only place
+ * that the next leg to be written cannot forget.
+ *
+ * The second is the half no `'…' in UI_HTML` pin can reach, which is why it is
+ * here and not in test__panel_page.py. Whether the tab LEADS with its numbers is
+ * a fact about a rendered document: the fold must be shut when the tab is first
+ * opened, the chip row must sit above it, and the summary must carry a count
+ * whenever something is filtering — a shut fold that says nothing while a filter
+ * is on is how a reader concludes the numbers are missing rows. All three are
+ * checked once per page, before this function changes the state it is reading.
+ *
+ * CALLED FROM THE LEGS THAT DRIVE A FILTER, deliberately not from `tabTo`. Every
+ * `tabTo(page, 'usage')` would then leave the fold open, including the one the
+ * committed `panel-usage` screenshot is taken through — and that shot's whole job
+ * is to show the default the tab actually opens in. What a leg needs open, a leg
+ * opens.
+ */
+async function openUsageFilters(page) {
+  if (!(await page.$('#usage details[data-uffold]'))) {
+    fail('usage: no Filters fold in the tab — the filter controls are not behind '
+       + 'a disclosure, so the measurements below are against a layout nobody '
+       + 'designed');
+    return;
+  }
+  const st = await page.evaluate(() => {
+    const d = document.querySelector('#usage details[data-uffold]');
+    const c = document.querySelector('#usage .uchips');
+    return {
+      open: d.open,
+      summary: (d.querySelector('summary') || {}).textContent,
+      counted: !!d.querySelector('.fcount'),
+      chips: document.querySelectorAll('#usage [data-uchip]').length,
+      // DOCUMENT_POSITION_FOLLOWING: the fold comes after the chip row.
+      chipsFirst: c ? c.compareDocumentPosition(d) === 4 : null,
+    };
+  });
+  if (!page.__usageFoldSeen) {
+    page.__usageFoldSeen = true;
+    if (st.open) {
+      fail('usage: the Filters fold was already open when the tab was first '
+         + 'reached. The tab is meant to open on its numbers; a fold that opens '
+         + 'itself puts the wall of controls back above them.');
+    } else {
+      note('usage: the Filters fold arrives shut');
+    }
+    if (st.chips && !st.counted) {
+      fail(`usage: ${st.chips} filter(s) are on and the shut fold's summary reads `
+         + `"${st.summary}" with no count on it — a fold that hides an active `
+         + 'filter is how a reader concludes rows are missing');
+    }
+    if (st.chips && st.chipsFirst === false) {
+      fail('usage: the chip row is not above the fold, so a shut fold leaves '
+         + 'nothing on screen naming what is scoping every number below it');
+    }
+  }
+  if (!st.open) await page.click('#usage summary[data-ufilters]');
+}
+
 /** The defect this whole script exists to prevent. */
+/**
+ * Does the phases table's `Sort:` control actually MOVE the phase blocks?
+ *
+ * A substring pin can say the `<option>` was emitted and `_priority.ranks()`
+ * stamped a `data-porder`. It cannot say a block moved, because the move walks
+ * real siblings inside each segment with `insertBefore` — and the report's own
+ * interactive gate cannot say it either, since it drives the COMMITTED example
+ * and that plan carries no priority at all, so the control is not on the page.
+ * A conditional check on a page that never has the control is spelled exactly
+ * like a passing one.
+ *
+ * So this drives a fixture the gate builds: the committed example plan, copied
+ * and then pinned through `set-priority.py` — the real write path, not a hand-
+ * edited JSON. `examples/` is untouched, which keeps `gen-demo-manifest.py`'s
+ * recorded reason intact ("the fixture's whole point is a plan running in
+ * written order", and the committed screenshots show that order).
+ *
+ * The block boundary is the next phase row OR the next `tr.seghead`. A seghead
+ * PRECEDES its segment and stays put, so walking only to the next phase absorbs
+ * the following segment's heading into whichever block is last — and "last"
+ * changes when the order does, which reads as rows crossing a boundary when
+ * nothing moved.
+ */
+async function assertPhaseOrderMoves(page) {
+  const sel = '#audit-sort';
+  if (!(await page.$(sel))) {
+    fail('report/order: the prioritised fixture rendered no Sort control, so the '
+       + 'phase-order checks below would assert nothing about a page nobody ships');
+    return;
+  }
+  const opts = await page.$$eval(`${sel} option`, (o) => o.map((x) => x.value));
+  if (opts.join() !== 'plan,priority') {
+    fail(`report/order: the Sort control offers ${JSON.stringify(opts)}; the panel `
+       + 'offers plan and priority, and one name per surface is the rule');
+  }
+  if (await page.$eval(sel, (s) => s.value) !== 'plan') {
+    fail('report/order: the report does not open in plan order — written order is '
+       + 'the plan, and priority is an overlay a reader chooses');
+  }
+
+  const shape = () => Array.from(document.querySelectorAll('tr.phase')).map((tr) => {
+    const rows = [];
+    let n = tr.nextElementSibling;
+    while (n && !n.classList.contains('phase') && !n.classList.contains('seghead')) {
+      rows.push([n.className, n.getAttribute('data-phase'),
+                 n.getAttribute('data-detail') || ''].join('|'));
+      n = n.nextElementSibling;
+    }
+    return { id: tr.getAttribute('data-phase'), seg: tr.getAttribute('data-seg'),
+             rank: Number(tr.getAttribute('data-porder')), rows };
+  });
+  const heads = () => Array.from(document.querySelectorAll('tr.seghead'))
+    .map((r) => r.getAttribute('data-seg'));
+
+  const plan = await page.evaluate(shape);
+  const planHeads = await page.evaluate(heads);
+  if (!plan.length) {
+    fail('report/order: no phase rows in the prioritised fixture');
+    return;
+  }
+  if (plan.some((p) => !p.rows.length)) {
+    fail('report/order: a phase block reads as having no rows of its own, so the '
+       + 'comparison below would be between two empty lists');
+    return;
+  }
+
+  await page.selectOption(sel, 'priority');
+  await page.waitForTimeout(200);
+  const prio = await page.evaluate(shape);
+
+  const ids = (s) => s.map((p) => p.id);
+  if (ids(plan).slice().sort().join() !== ids(prio).slice().sort().join()) {
+    fail(`report/order: re-ordering changed the SET of phases, ${JSON.stringify(ids(plan))} `
+       + `-> ${JSON.stringify(ids(prio))}`);
+  }
+  if (ids(plan).join() === ids(prio).join()) {
+    fail('report/order: picking priority moved nothing, so every assertion here is '
+       + 'about one list read twice — the fixture must pin a phase that is not '
+       + 'already first in its segment');
+  }
+  for (const seg of [...new Set(prio.map((p) => p.seg))]) {
+    const ranks = prio.filter((p) => p.seg === seg).map((p) => p.rank);
+    const asc = ranks.slice().sort((a, b) => a - b);
+    if (ranks.join() !== asc.join()) {
+      fail(`report/order: segment ${seg} lists ranks ${JSON.stringify(ranks)}, which is `
+         + 'not the order the server stamped — the client is deciding an order the '
+         + 'comparator already decided');
+    }
+  }
+  const bySeg = (s) => JSON.stringify(s.reduce((a, p) => {
+    (a[p.seg] = a[p.seg] || []).push(p.id); return a;
+  }, {}));
+  if (new Set(prio.map((p) => p.seg)).size !== new Set(plan.map((p) => p.seg)).size) {
+    fail(`report/order: a phase left its segment, ${bySeg(plan)} -> ${bySeg(prio)} — `
+       + 'priority sorts inside a segment and never promotes across one');
+  }
+  const rowsOf = (s) => JSON.stringify(s.slice()
+    .sort((a, b) => a.id.localeCompare(b.id)).map((p) => [p.id, p.rows]));
+  if (rowsOf(prio) !== rowsOf(plan)) {
+    fail('report/order: a phase did not keep its own rows through the move — the '
+       + 'block moved without the rows that belong to it');
+  }
+  const strays = prio.flatMap((p) => p.rows
+    .map((r) => r.split('|')[1]).filter((d) => d !== p.id));
+  if (strays.length) {
+    fail(`report/order: ${strays.length} row(s) now sit under a phase they do not `
+       + 'belong to');
+  }
+
+  await page.selectOption(sel, 'plan');
+  await page.waitForTimeout(200);
+  const back = await page.evaluate(shape);
+  if (ids(back).join() !== ids(plan).join()) {
+    fail(`report/order: plan order did not come back exactly, ${JSON.stringify(ids(plan))} `
+       + `-> ${JSON.stringify(ids(back))}`);
+  }
+  if (rowsOf(back) !== rowsOf(plan)) {
+    fail('report/order: the rows did not come back with their phases');
+  }
+  if ((await page.evaluate(heads)).join() !== planHeads.join()) {
+    fail('report/order: the segment headings moved, so a block was inserted past one');
+  }
+  note(`report/order: ${ids(plan).join(',')} -> ${ids(prio).join(',')} by priority and `
+     + `back, rows and ${planHeads.length} segment heading(s) intact`);
+}
+
+
 async function assertBarsPainted(page, label) {
   const bars = await page.evaluate(() => {
     const out = [];
@@ -642,6 +834,10 @@ async function assertUsageWorks(page) {
   if (!(await page.locator('#usage .utile').count())) {
     fail('usage: no KPI tiles — the tab did not render'); return;
   }
+  // Everything below types into or selects from a filter, and the filters live
+  // behind a shut <details>. This also records what the fold looked like on
+  // arrival, which is the claim no substring pin can make.
+  await openUsageFilters(page);
   await compare('unfiltered', 'true');
 
   // --- sparklines -----------------------------------------------------------
@@ -1392,9 +1588,35 @@ async function assertUsageWorks(page) {
         }
       }
 
-      // Month names the month; the grid aggregates back to weekday rows.
+      // Month names the month and draws THE DAYS OF THAT MONTH.
+      //
+      // It used to aggregate back to seven weekday rows, sharing one branch with
+      // year and all, so Month repainted Week's picture with each cell summed
+      // over the four-or-so occurrences of that weekday. Reported as "it should
+      // show the days of the month, and for each day the accumulated spend;
+      // honestly it looks like a copy of the weekly view."
+      //
+      // THE WHOLE GRID is compared, not the row count: a count alone cannot say
+      // that two controls draw two pictures, and that was the defect. The print
+      // is every row label plus every cell's intensity band.
+      const gridPrint = () => page.evaluate(() =>
+        [...document.querySelectorAll('#usage table.uhm tbody tr')].map((tr) =>
+          tr.querySelector('th').textContent + '|'
+          + [...tr.querySelectorAll('i')]
+            .map((i) => i.getAttribute('data-l')).join('')).join('\n'));
+      const rowsIn = (print) => (print ? print.split('\n').length : 0);
+      await page.click('#usage [data-uhg=week]');
+      await page.waitForTimeout(300);
+      const weekPrint = await gridPrint();
+      if (rowsIn(weekPrint) !== 7) {
+        fail(`usage: Week granularity drew ${rowsIn(weekPrint)} rows — a week is `
+           + 'its seven dates, clipped ones included');
+      } else {
+        note('usage: Week draws the seven dates of one week');
+      }
       await page.click('#usage [data-uhg=month]');
       await page.waitForTimeout(300);
+      const monPrint = await gridPrint();
       const mon = await page.evaluate(() => {
         const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
         const last = days[days.length - 1];
@@ -1404,14 +1626,19 @@ async function assertUsageWorks(page) {
         return {
           want: name + ' ' + last.slice(0, 4),
           period: document.querySelector('#usage [data-uhmperiod]').textContent,
-          rows: document.querySelectorAll('#usage table.uhm tbody tr').length,
+          len: new Date(Date.UTC(+last.slice(0, 4), +last.slice(5, 7), 0)).getUTCDate(),
         };
       });
-      if (!mon.period.includes(mon.want) || mon.rows !== 7) {
-        fail(`usage: Month granularity reads "${mon.period}" with ${mon.rows} `
-           + `rows — want "${mon.want}" over 7 weekday rows`);
+      if (!mon.period.includes(mon.want) || rowsIn(monPrint) !== mon.len) {
+        fail(`usage: Month granularity reads "${mon.period}" with `
+           + `${rowsIn(monPrint)} rows — want "${mon.want}" over one row per date `
+           + `of that month (${mon.len})`);
+      } else if (monPrint === weekPrint) {
+        fail('usage: Month and Week drew the IDENTICAL grid — two controls, one '
+           + 'picture, which is the defect this pair of clicks exists for');
       } else {
-        note(`usage: Month names "${mon.want}" over weekday rows`);
+        note(`usage: Month names "${mon.want}" over its ${mon.len} dates, and it `
+           + 'is not the grid Week drew');
       }
 
       // None of that navigation may grow a page scroll box (assertHintsFit's
@@ -1429,14 +1656,19 @@ async function assertUsageWorks(page) {
 
       // The custom range IS the panel's day filter: scope to a mid..end
       // window and the heatmap's whole universe becomes that window.
-      // F-P-13: a granularity that CANNOT differ from All says so, and a dead
+      // F-P-13: a granularity the ledger holds exactly ONE of says so, and a dead
       // arrow says why it is dead.
       //
       // Reported as "the filters do not work — Year instead of Month shows the
-      // same chart". It did, and correctly: a ledger inside one calendar year
-      // draws the same grid at Year as at All, and there is no neighbouring year
-      // holding tokens, so both arrows park. Every part of that was true and none
-      // of it was on the screen, which is the whole defect.
+      // same chart". Two things were true at once: month, year and all shared one
+      // row builder (fixed in shared/calendar.js, and the Month clicks above are
+      // where that is checked), AND a ledger inside one calendar year has no
+      // neighbouring year holding tokens, so both arrows park. This block is the
+      // second half. Its predicate did not change with the reshape — what changed
+      // is the reason it gives: a grain the ledger holds one period of cannot
+      // step, and its window is the whole ledger, so every cell in it is a cell
+      // All already shows. Nothing is lost by withholding it, because the finer
+      // grains stay on the ladder.
       {
         const g = await page.evaluate(async () => {
           const out = {};
@@ -1457,14 +1689,14 @@ async function assertUsageWorks(page) {
           }),
         }));
         const nav = await readNav();
-        // A granularity that cannot differ from All is NOT OFFERED. It used to be
-        // offered-and-dimmed; the same reader reported that twice as broken ("I can
-        // still pick them and the grid does not change"), which is what a dimmed
-        // control that still accepts a click earns.
+        // A granularity the ledger holds one period of is NOT OFFERED. It used to
+        // be offered-and-dimmed; the same reader reported that twice as broken ("I
+        // can still pick them and the grid does not change"), which is what a
+        // dimmed control that still accepts a click earns.
         if (g.oneYear && nav.offered.includes('year')) {
           fail(`usage: the ledger (${g.span[0]}..${g.span[1]}) is inside one year, so Year `
-             + `can only draw the grid All already draws — it must not be offered: `
-             + JSON.stringify(nav.offered));
+             + `can neither step nor reach a cell All is missing — it must not be `
+             + `offered: ` + JSON.stringify(nav.offered));
         } else if (g.oneYear && !/Year/.test(nav.why || '')) {
           fail('usage: Year is missing from the ladder with nothing saying why — a gap '
              + `is not an explanation: why=${JSON.stringify(nav.why)}`);
@@ -1499,6 +1731,21 @@ async function assertUsageWorks(page) {
 
       await page.click('#usage [data-uhg=all]');
       await page.waitForTimeout(200);
+      // All is the seven weekday aggregates, and after the reshape it is the ONLY
+      // rung that draws them. Week is also seven rows, so a count cannot separate
+      // the two and the fingerprint has to — this is the closest pair the ladder
+      // still has.
+      const allPrint = await gridPrint();
+      if (rowsIn(allPrint) !== 7) {
+        fail(`usage: All drew ${rowsIn(allPrint)} rows — it is the weekly rhythm of `
+           + 'the whole span, which is seven');
+      } else if (allPrint === weekPrint || allPrint === monPrint) {
+        fail('usage: All drew the same grid as another granularity — every rung '
+           + 'must partition the period its own way');
+      } else {
+        note('usage: All draws the seven weekday aggregates, and no other rung '
+           + 'draws that grid');
+      }
       const win = await page.evaluate(() => {
         const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
         const mid = days[Math.floor(days.length / 2)];
@@ -2142,6 +2389,8 @@ async function assertViewerIdentity(page) {
   }, pick.name);
   await page.waitForTimeout(250);
   try {
+    // The my-spend control sits in the filter rows, so it is behind the fold.
+    await openUsageFilters(page);
     const chip = page.locator('#usage [data-umine]');
     if (!(await chip.count())) {
       fail('usage: the viewer has a name and there is no "my spend" chip'); return;
@@ -2194,7 +2443,12 @@ async function assertViewerIdentity(page) {
  * can only be wrong in a file nobody diffs.
  */
 async function captureConfirmDialog(page) {
-  const inputs = page.locator('#comp tr.task .tmodel input');
+  // NOT `.first()` over every task row: a row whose task (or whose phase) has
+  // finished is frozen, and its model box is disabled, so a fill() against it
+  // waits for an element that will never become editable and fails as a timeout
+  // rather than as the layout claim this function makes. The subject was always
+  // "a model box a reader can change" — `:not([data-frozen])` says so outright.
+  const inputs = page.locator('#comp tr.task:not([data-frozen]) .tmodel input');
   const n = Math.min(3, await inputs.count());
   if (n < 2) { fail('composition: fewer than two task rows to edit for the confirm shot'); return; }
   for (let i = 0; i < n; i++) {
@@ -2203,7 +2457,7 @@ async function captureConfirmDialog(page) {
     await box.fill(was === 'opus' ? 'sonnet' : 'opus');
   }
   await page.waitForTimeout(200);
-  await page.locator('#comp').getByRole('button', { name: 'Save composition' }).click();
+  await page.locator('#comp').getByRole('button', { name: 'Save plan & models' }).click();
   await awaitConfirmDialog(page);
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll('dialog.confirm tbody tr')].length);
@@ -2360,6 +2614,31 @@ async function awaitConfirmDialog(page) {
   }
 }
 
+/**
+ * The first task a reader could actually change, as the page itself decides it.
+ *
+ * A finished task, or any task inside a finished phase, is frozen by design, and
+ * `fill()` against a disabled box does not fail as the claim its caller is making
+ * - it fails sixty retries later as a TimeoutError, which reads like a hang. So
+ * the choice is made up front, and made with `segOf`: the panel's own segment
+ * classifier, reached through the page rather than restated here, so this cannot
+ * drift from the rule the UI applies.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<{id: string, phaseId: string, was: (string|null)}|null>}
+ *   the task, or null when the fixture has no editable one at all
+ */
+async function firstEditableTask(page) {
+  return page.evaluate(() => {
+    const c = STATE.composition || {};
+    const st = {};
+    (c.phases || []).forEach((p) => { st[p.id] = p.status; });
+    const t = (c.tasks || []).find((x) => segOf(x.status) !== 'archived'
+      && segOf(st[x.phaseId]) !== 'archived');
+    return t ? { id: t.id, phaseId: t.phaseId, was: t.model == null ? null : t.model } : null;
+  });
+}
+
 async function assertConfirmFlowWorks(page) {
   assertNoHandAssignedPolledState();
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2367,11 +2646,8 @@ async function assertConfirmFlowWorks(page) {
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(300);
 
-  const target = await page.evaluate(() => {
-    const t = ((STATE.composition || {}).tasks || [])[0];
-    return t ? { id: t.id, phaseId: t.phaseId, was: t.model == null ? null : t.model } : null;
-  });
-  if (!target) { fail('composition: the fixture has no task to edit'); return; }
+  const target = await firstEditableTask(page);
+  if (!target) { fail('composition: the fixture has no EDITABLE task to edit'); return; }
   const NEW = target.was === 'opus' ? 'haiku' : 'opus';
 
   // The same hand-off Overview uses: filter to the phase and open it.
@@ -2383,7 +2659,7 @@ async function assertConfirmFlowWorks(page) {
     fail(`composition: no row for ${target.id} after opening ${target.phaseId}`); return;
   }
   const modelInput = row.locator('.tmodel input');
-  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save plan & models' });
   const discardBtn = page.locator('#comp [data-discard=comp]');
   const onDisk = () => page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
@@ -2709,15 +2985,33 @@ async function assertConfirmFlowWorks(page) {
       // NOT path.join: this function declares its own `path` const further down,
       // which shadows the module import and puts it in TDZ up here.
       readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
+    // PAINTED, not merely present. This used to read the text of `#proj` and
+    // pass on a substring, which is how the stamp spent releases being invisible
+    // while this stayed green: it was appended to the END of the project-path
+    // line, and that line is nowrap + ellipsis, so the version sat past the clip
+    // edge — in the DOM, on no screen. A gate that cannot tell those two apart is
+    // not guarding the thing its label names. So this asks the geometry instead:
+    // a real box, inside the bar it belongs to.
     const shown = await page.evaluate(() => {
-      const p = document.getElementById('proj');
-      return p ? p.textContent : '';
+      const s = document.querySelector('.top .stampv');
+      if (!s) return null;
+      const r = s.getBoundingClientRect();
+      const bar = document.querySelector('.top').getBoundingClientRect();
+      const brand = document.querySelector('.top .brand');
+      return {
+        text: s.textContent,
+        // the stamp yields to a cramped header by design, so report that state:
+        // a failure here is either "wrong text" or "no room", and they differ.
+        roomy: !!brand && brand.classList.contains('roomy'),
+        painted: r.width > 0 && r.left >= bar.left - 1 && r.right <= bar.right + 1,
+      };
     });
-    if (!shown.includes('audit ' + want)) {
+    if (!shown || shown.text !== 'v' + want || !shown.painted) {
       fail(`panel: the topbar does not name the build serving it — wanted `
-         + `"audit ${want}", topbar reads ${JSON.stringify(shown)}`);
+         + `"v${want}" painted inside the bar, got ${JSON.stringify(shown)}`);
     } else {
-      note(`panel: the topbar names the build serving it (audit ${want})`);
+      note(`panel: the topbar names the build serving it (v${want}), painted `
+         + `inside the bar rather than merely present in the DOM`);
     }
   }
 
@@ -2857,9 +3151,18 @@ async function assertSkillTriState(page) {
   await page.waitForTimeout(200);
   // A phase holding TWO tasks with empty skills: one becomes the opt-out, the
   // other stays [] so the filter check has both sides in one viewport.
+  // ...and an EDITABLE one. A finished phase, or a finished task inside a live
+  // one, has its chips frozen, so a click on the opt-out chip waits for a button
+  // that will never enable and reports a timeout instead of the tri-state claim.
+  // `segOf` is the page's own classifier rather than a done/cancelled list kept
+  // here, which is the same reason the UI itself calls it.
   const pick = await page.evaluate(() => {
+    const c = STATE.composition || {};
+    const st = {};
+    (c.phases || []).forEach((x) => { st[x.id] = x.status; });
     const byP = {};
-    ((STATE.composition || {}).tasks || []).forEach((t) => {
+    (c.tasks || []).forEach((t) => {
+      if (segOf(st[t.phaseId]) === 'archived' || segOf(t.status) === 'archived') return;
       (byP[t.phaseId] = byP[t.phaseId] || []).push(t);
     });
     for (const pid of Object.keys(byP)) {
@@ -2869,7 +3172,7 @@ async function assertSkillTriState(page) {
     return null;
   });
   if (!pick) {
-    fail('skills: the fixture has no phase with two empty-skills tasks to drive');
+    fail('skills: the fixture has no OPEN phase with two empty-skills tasks to drive');
     return;
   }
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2928,7 +3231,7 @@ async function assertSkillTriState(page) {
     note('skills: "needs skills" keeps the []-task and drops the opted-out one');
   }
   // --- save: the dialog names the answer, the file holds a real null ----------
-  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save composition' });
+  const saveBtn = page.locator('#comp').getByRole('button', { name: 'Save plan & models' });
   await saveBtn.click();
   await awaitConfirmDialog(page);
   const dlg = await page.evaluate(() =>
@@ -3081,6 +3384,8 @@ async function assertComboSearchCount(page) {
        + `the combo's overflow footer cannot exist here and this check is blind`);
     return;
   }
+  // The task combo is one of the filter rows, so it is behind the fold.
+  await openUsageFilters(page);
   const inp = page.locator('#usage input[aria-label="filter by task"]');
   if (!(await inp.count())) { fail('usage: no task filter combo'); return; }
   await inp.click();
@@ -3153,7 +3458,11 @@ async function assertComboDescriptionSearch(page) {
        + `only match for "${term}" (${JSON.stringify(want)}) — re-aim the oracle`);
     return;
   }
-  const inp = page.locator('#comp input[placeholder^="search a skill"]').first();
+  // NAMED, not positional. This used `placeholder^="search a skill"` with
+  // `.first()`, which the task-row adder also matches - it worked only while the
+  // config cards sat above the table, and reordering them pointed it at a control
+  // inside a collapsed phase.
+  const inp = page.locator('#comp input[data-skillpick="reviewSkill"]');
   await inp.click();
   await inp.fill(term);
   // POLL, do not sleep-and-peek. A fixed 300ms then one read made this flaky:
@@ -3298,11 +3607,15 @@ async function assertModelCombo(page, project) {
        + '(F-C-1); the runstatus freeze is not holding');
   }
   // Open a real task-model combo and find the probe on screen, un-clipped.
-  const pid = await page.evaluate(() =>
-    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  // The phase of an EDITABLE task, not simply the first task's: opening a
+  // finished phase leaves only frozen rows, and the `:not([data-frozen])` model
+  // box below would then match nothing at all.
+  const picked = await firstEditableTask(page);
+  if (!picked) { fail('composition: the fixture has no editable task to type into'); return; }
+  const pid = picked.phaseId;
   await page.evaluate((p) => openInComp(p), pid);
   await page.waitForTimeout(300);
-  const box = page.locator('#comp tr.task .tmodel input').first();
+  const box = page.locator('#comp tr.task:not([data-frozen]) .tmodel input').first();
   await box.click();
   await box.fill('ledger-only');
   await page.waitForTimeout(250);
@@ -3681,8 +3994,12 @@ async function assertFilterPersistence(page, browser, panelUrl) {
  * UF/COMPF state they always had; a dirty form is left alone and says why.
  */
 async function assertLiveData(page, project) {
-  const pid = await page.evaluate(() =>
-    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  // The phase of an EDITABLE task, not simply the first task's: opening a
+  // finished phase leaves only frozen rows, and the `:not([data-frozen])` model
+  // box below would then match nothing at all.
+  const picked = await firstEditableTask(page);
+  if (!picked) { fail('composition: the fixture has no editable task to type into'); return; }
+  const pid = picked.phaseId;
   const who = await page.evaluate(() => {
     const t = {};
     for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
@@ -3735,7 +4052,7 @@ async function assertLiveData(page, project) {
   }
 
   // The dirty leg: typed work survives the next refresh, with the notice up.
-  const box = page.locator('#comp tr.task .tmodel input').first();
+  const box = page.locator('#comp tr.task:not([data-frozen]) .tmodel input').first();
   await box.click();
   await box.fill('dirty-probe');
   await page.waitForTimeout(200);
@@ -3746,7 +4063,7 @@ async function assertLiveData(page, project) {
     [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m),
   mark2, { timeout: 6500 }).then(() => true, () => false);
   const dirty = await page.evaluate(() => ({
-    value: (document.querySelector('#comp tr.task .tmodel input') || {}).value,
+    value: (document.querySelector('#comp tr.task:not([data-frozen]) .tmodel input') || {}).value,
     stale: !!document.querySelector('#comp [data-stale=comp]'),
     compTitle: [...document.querySelectorAll('#comp tr.phase strong')]
       .some((n) => n.textContent === 'LIVE-PROBE-TITLE-TWO'),
@@ -3960,11 +4277,23 @@ async function assertComboOverlay(page, project) {
        + `table frame does not grow`);
   }
   // d. a mousedown on the menu's padding (not an item) must not close it.
+  // The probe is taken at the TOP EDGE'S HORIZONTAL CENTRE, not at the corner.
+  // It used to read `left + 2, top + 2`, which is outside the menu: the sheet
+  // rounds this box by var(--radius), and a point 2px along each axis from a
+  // 9px corner sits beyond the curve — ((9-2)^2)*2 > 9^2 — so hit-testing sent
+  // the click straight through the cut-out to whatever was painted behind. That
+  // made the case a question about the BACKDROP rather than about the menu, and
+  // it answered "pass" only while the thing behind the corner was harmless;
+  // shifting the menu a few px sideways put a phase-row <td> there, whose click
+  // toggles the row, and the case failed for a reason it was never testing.
+  // Centred, the point is clear of both corners at any radius, and it is still
+  // the padding band and not an item: the border is 1px and the padding 4px, so
+  // the first .combo-it begins 5px down.
   const pad = await page.evaluate(() => {
     const m = [...document.querySelectorAll('.combo-menu')]
       .find((x) => !x.classList.contains('hidden'));
     const r = m.getBoundingClientRect();
-    return { x: r.left + 2, y: r.top + 2 };
+    return { x: r.left + r.width / 2, y: r.top + 2 };
   });
   await page.mouse.move(pad.x, pad.y);
   await page.mouse.down(); await page.mouse.up();
@@ -5678,6 +6007,48 @@ async function main() {
            + `resized across the ladder: ${[...new Set(ladderErrors)].slice(0, 3).join(' | ')}`);
       }
       await ladderCtx.close();
+
+      // ---- the same example, PINNED, so the Sort control is on the page ------
+      // No shot is taken here: the published pictures show written order on
+      // purpose. This exists because the control cannot be reached from the
+      // committed artifact at all, and an unreachable check is a green one.
+      const prioDir = path.join(work, 'acme-prio');
+      mkdirSync(prioDir, { recursive: true });
+      cpSync(path.join(REPO, 'examples', 'acme-store', 'audit-plan.json'),
+             path.join(prioDir, 'audit-plan.json'));
+      cpSync(path.join(REPO, 'examples', 'acme-store', 'phases'),
+             path.join(prioDir, 'phases'), { recursive: true });
+      // Through the real write path, so a change that breaks writing a priority
+      // breaks this too. BF1 is last in the array and P3 is held by P2, which is
+      // the pair the feature exists for: one phase reached first, one pinned and
+      // still waiting.
+      py([resolveScript('set-priority.py'),
+          path.join(prioDir, 'audit-plan.json'), 'BF1', '1']);
+      py([resolveScript('set-priority.py'),
+          path.join(prioDir, 'audit-plan.json'), 'P3', '2']);
+      const prioOut = path.join(prioDir, 'out');
+      py([resolveScript('render-report.py'),
+          path.join(prioDir, 'audit-plan.json'), '--out-dir', prioOut],
+         { CLAUDE_PROJECT_DIR: prioDir });
+
+      const { server: prioServer, port: prioPort } = await serveDir(prioOut);
+      servers.push(prioServer);
+      const prioCtx = await browser.newContext({
+        viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
+        reducedMotion: 'reduce', colorScheme: 'light',
+      });
+      const prioPage = await prioCtx.newPage();
+      const prioErrors = [];
+      prioPage.on('pageerror', (e) => prioErrors.push(String(e.message).split('\n')[0]));
+      await prioPage.goto(`http://127.0.0.1:${prioPort}/acme-store-audit.html`,
+                          { waitUntil: 'load' });
+      await settle(prioPage);
+      await assertPhaseOrderMoves(prioPage);
+      if (prioErrors.length) {
+        fail(`report/order: the prioritised report logged ${prioErrors.length} script `
+           + `error(s): ${[...new Set(prioErrors)].slice(0, 3).join(' | ')}`);
+      }
+      await prioCtx.close();
     }
 
     // ---- panel shots, from a generated 50 x 20 fixture --------------------------
@@ -5727,6 +6098,14 @@ async function main() {
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
       note(`panel tabs present: ${tabs.join(', ')}`);
+      // NAME THE VIEW, do not inherit it. Everything from here to the help drawer
+      // photographs and drives Settings, and it used to arrive there by landing
+      // there: `guards` led the strip, so a fresh load opened it. It does not any
+      // more - Overview leads - and the failure that change produced is the reason
+      // this line exists: the drawer click found a control inside a hidden view and
+      // spent its whole timeout on it. The shot above it would have been the wrong
+      // tab entirely, and silently.
+      await tabTo(page, 'guards');
       for (const t of ['guards', 'comp', 'over', 'usage', 'policy', 'props']) {
         if (!tabs.includes(t)) {
           fail(`panel has no ${t} tab — the fixture or the UI is out of date`);
@@ -6421,6 +6800,14 @@ async function main() {
       // for (any host frame clipped it; the screen edge now clamps it).
       await tabTo(mob, 'usage');
       await mob.waitForTimeout(400);
+      // The task combo lives inside the Filters fold, and Playwright will not
+      // click into a shut `<details>` — it waits the full 30s and the timeout
+      // reads like a dead panel rather than a closed disclosure. This is the
+      // fourth leg that drives a usage filter; the other three call the same
+      // helper, and a leg that opens the fold itself would be a second way of
+      // doing it. `mob` keeps its own first-visit assertions, so the fold is
+      // held to arriving shut at 390px too, not only at desktop width.
+      await openUsageFilters(mob);
       const mobInp = mob.locator('#usage input[aria-label="filter by task"]');
       if (!(await mobInp.count())) {
         fail('usage at 390px: no task combo to open');

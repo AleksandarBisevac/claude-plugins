@@ -36,11 +36,68 @@ tr.task>td{background:var(--surface)}
 tr.task:hover>td{background:var(--surface-2)}
 tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding-left:var(--sp-4);
  border-left:3px solid var(--st,var(--border))}
-td.ttitle{max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-td.tmodel input{width:6.5rem;padding:var(--sp-0) var(--sp-1);font-size:.8rem}
+/* A task title WRAPS; it does not get cut off, and it does not set the column's
+   width either. The old rule did both of the wrong things: 22rem of nowrap plus
+   an ellipsis meant the column sat at its cap, 20 of 67 titles here were clipped
+   and readable only by hovering for the title tooltip, and every SHORTER title
+   then trailed up to 201px of dead space before the status column - which is the
+   gap that gets reported as "unexplained".
+   18rem is not a taste: the widest title measures 555px, and two lines of 18rem
+   hold 576, so this is the narrowest round cap at which nothing needs a third
+   line. Phase titles (widest 403px) clear it as well, which matters because they
+   join this column when phase rows stop being one colspan band.
+   `break-word` and not `anywhere`: these titles break at spaces, and `anywhere`
+   would hyphenate mid-identifier in a column full of them. */
+td.ttitle{max-width:18rem;white-space:normal;overflow-wrap:break-word}
 td.tskills{min-width:15rem}
-.comp-review{display:flex;align-items:center;gap:var(--sp-0);margin-left:auto;font-weight:400;color:var(--muted);font-size:.72rem}
-.comp-review input{width:8rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
+/* ONE box shape for every editable field in this table, and it is one rule
+   because the alternative kept losing. Three of these four were sized by hand
+   and the fourth was not sized at all, so each new control inherited the base
+   control instead and arrived a third taller than its neighbours: the priority
+   menu came in at 37px and the skills search at 41px beside a 30px model box, in
+   the same row. Height is stated rather than left to the line box because a
+   <select> cannot be reached by `line-height` - the UA sheet pins it to `normal`
+   with !important - so a shape shared with an <input> has to be given the number
+   outright. Widths are NOT shared and follow below: what these hold differs (a
+   model id, a skill query, a single digit) even though the box does not. */
+td.tmodel input,td.tskills input,.comp-review input,.comp-priority select{
+ height:1.875rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
+td.tmodel input{width:6.5rem}
+/* The pair at the right end of a phase header row, each a field behind the same
+   kind of muted label, so the wrapper is written once. Only .comp-review takes
+   the auto margin: it is the first of the two, so one margin carries both to the
+   right end. Giving the second one as well would split the free space between
+   them and open a gap down the middle instead.
+   `flex:0 0 auto` is the no-collision clause and it is load-bearing. A flex item
+   shrinks by default, so a phase with a long title ate into these two rather than
+   into itself: P8 in this repo's own plan squeezed the review group to 175px for
+   184px of content, and the 9px difference painted straight over the control
+   beside it. A form field is not the slack in a row — the space a long title
+   needs comes out of the title, which is what the scrolling wrap is for. */
+/* A closed phase reads as a record rather than a form. The cue is on the CONTROLS
+   only — the row's own text keeps full contrast, because the point is to go on
+   reading a done phase easily, not to grey out its title. `cursor:not-allowed`
+   over `opacity` alone so the reason is felt on hover as well as seen; the title
+   attribute the JS sets carries the words. */
+tr[data-frozen] :where(input,select,textarea,button):disabled{
+ opacity:.5;cursor:not-allowed;background:var(--surface-2)}
+/* The phase-row legend: the two words and their ⓘ, once, above the end of the
+   table they label. Right-aligned for the same reason .comp-review takes an auto
+   margin — both sit at the row's right-hand end, so the reference reads over the
+   controls rather than over the phase titles. */
+.phlegend{display:flex;justify-content:flex-end;align-items:center;gap:var(--sp-2);
+ margin:0 0 var(--sp-0);font-size:.72rem;color:var(--muted)}
+.phlegend-t{font-style:italic}
+.comp-review,.comp-priority{--comp-ctl-w:8rem;flex:0 0 auto;display:flex;align-items:center;gap:var(--sp-0);font-weight:400;color:var(--muted);font-size:.72rem}
+.comp-review{margin-left:auto}
+/* Width is the one thing the pair does NOT take from the shared shape above,
+   because a model id is a long string and a tier is one character. The menu's
+   widest option is an em dash, which needs about 58px of box, so 8rem was two
+   thirds empty. A PARAMETER rather than a second rule: the width is declared
+   once, below, and each wrapper only says what to put in it — so the two values
+   sit next to each other here instead of drifting apart in two distant blocks. */
+.comp-priority{--comp-ctl-w:4rem}
+.comp-review input,.comp-priority select{width:var(--comp-ctl-w)}
 /* The model combos (mc) size to their hosts, not to the .combo default of
    18rem — a phase header row and a 6.5rem table cell both hold one. */
 .comp-review .combo{flex:0 1 auto;min-width:0}

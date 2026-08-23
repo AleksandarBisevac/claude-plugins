@@ -39,9 +39,13 @@ td{padding:.5rem .75rem;text-align:left;vertical-align:top;border-bottom:1px sol
 td.when,td.mono{font-variant-numeric:tabular-nums}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is
-   how a reader ends up reading "View:" over an unrelated line. */
-.viewpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
-.viewpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
+   how a reader ends up reading "View:" over an unrelated line.
+   pr: Sort: joins the selector rather than copying the rule. Two labelled
+   selects side by side in one toolbar that did not agree on their padding or
+   their border would read as two kinds of control, and the second copy is
+   where they would stop agreeing. */
+.viewpick,.sortpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
+.viewpick select,.sortpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
   border:1px solid var(--field-border);border-radius:var(--radius);
   background:var(--surface);color:var(--text)}
 /* bl (F-P-4): "something in here is stuck" and "some of this was dropped" —

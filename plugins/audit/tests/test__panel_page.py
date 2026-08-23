@@ -211,8 +211,31 @@ def _cases(check):
           "if(par&&typeof par==='object'&&!Object.keys(par).length)" in M.UI_HTML)
     check("Settings keeps the route, the screenshot name and the pinned id it "
           "already had - an internal id is an address, not a description",
-          "data-t=guards aria-current=\"true\">Settings<" in M.UI_HTML
+          # `aria-current` used to be asserted here too, and it was never this
+          # pin's subject: it marks whichever tab LEADS the strip, which is now
+          # Overview. The claim this case is named for is that the route id stayed
+          # `guards` while the visible word is "Settings".
+          "data-t=guards>Settings<" in M.UI_HTML
           and "$('#guards')" in M.UI_HTML)
+
+    # ORDER BECAME LOAD-BEARING, so it gets a case that says so. It never had one
+    # because it never decided anything: the landing was the hard-coded string
+    # 'guards' and the strip was a separate hand-kept list, so the two could not
+    # disagree in a way anyone noticed. `initialTab()` returns TABS[0] now and
+    # `showTab` falls back to it, which makes the tuple the landing rule and the
+    # strip what a reader sees. Two orders that drifted apart would highlight one
+    # view and open another.
+    _tabs_src = M.UI_HTML[M.UI_HTML.index("const TABS=["):
+                          M.UI_HTML.index("],SCROLL={}")]
+    _tab_ids = re.findall(r"'([a-z]+)'", _tabs_src)
+    _strip_ids = re.findall(r'<button class="tab[^"]*" data-t=([a-z]+)', M.UI_HTML)
+    check("the nav strip and TABS are ONE order, and its first entry is where the "
+          "panel lands - Overview leads because \"where are we\" is the common "
+          "visit, and Settings led only because it was built first",
+          _tab_ids == _strip_ids and _tab_ids and _tab_ids[0] == "over"
+          and "return TABS[0];}" in M.UI_HTML
+          and "if(!TABS.includes(t))t=TABS[0];" in M.UI_HTML,
+          repr({"TABS": _tab_ids, "strip": _strip_ids}))
     check("one Save for four cards, and it is reachable from all of them",
           M.UI_HTML.count("'/api/config'") == 1 and ".savebar{position:sticky" in M.UI_HTML)
     # --- the three facts the form has to state out loud ------------------------
@@ -264,6 +287,30 @@ def _cases(check):
           and "word-break" not in _sub and "text-overflow:ellipsis" in _sub)
     check("and the full path survives in the tooltip, so nothing is lost",
           "$('#proj').title=PROJECT" in M.UI_HTML)
+    # --- and the version stamp is not on that line ------------------------------
+    # CONSTRUCTS, not the behaviour. Whether the stamp is READABLE is settled in a
+    # browser — capture-screenshots.mjs reads the topbar and compares it against
+    # plugin.json — and no substring here can see a clip. What these hold is where
+    # the stamp is BUILT and what it is drawn with, which is what the clip fed on:
+    # appended to `#proj` it began after a path that had already spent the whole
+    # line, so on any path long enough to elide the version was off the end of it.
+    check("the version stamp is built beside the title rather than appended to "
+          "the project path, and is still omitted when there is no version",
+          "if(VERSION)$('#brand').append(" in M.UI_HTML
+          and "$('#proj').append(" not in M.UI_HTML
+          and "<div class=brand id=brand><h1>" in M.UI_HTML)
+    check("the stamp is seated on the title's baseline, in the muted token at the "
+          "smallest type step - the declarations, not the paint",
+          ".brand{display:flex;align-items:baseline" in M.UI_HTML
+          and ".stampv{font-family:var(--mono);font-size:var(--t-label);"
+              "color:var(--muted)" in M.UI_HTML)
+    check("whether there is room for it is MEASURED, and re-measured when the "
+          "topbar's own contents change - the pill lands after this file runs and "
+          "fires no resize, so a listener alone would decide once and be wrong",
+          "function stampRoom(" in M.UI_HTML
+          and "new ResizeObserver(stampRoom).observe(" in M.UI_HTML
+          and "addEventListener('resize',stampRoom" in M.UI_HTML
+          and ".brand:not(.roomy) .stampv{display:none}" in M.UI_HTML)
 
     # --- app shell -------------------------------------------------------------
     check("shell: navigation at the side, actions on top",
@@ -428,7 +475,13 @@ def _cases(check):
     check("overview: a phase opens IN PLACE, and going to Composition is an "
           "explicit, named press rather than what a click happens to do",
           "onclick:()=>{OVF.open[p.id]=!open;renderOver();}" in M.UI_HTML
-          and "onclick:()=>openInComp(p.id)},'Edit in Composition')" in M.UI_HTML
+          # The visible name moved to "Plan & models" - the ROUTE is still `comp`
+          # and `openInComp` is still the function, the same split Settings has
+          # carried since it was `guards`. The negative below keeps its old
+          # wording on purpose: it names the string the removed behaviour used to
+          # emit, so rewriting it would assert the absence of something that never
+          # existed.
+          and "onclick:()=>openInComp(p.id)},'Edit in Plan & models')" in M.UI_HTML
           and "title:'open '+p.id+' in Composition',onclick:()=>openInComp(p.id)"
           not in M.UI_HTML)
     check("overview: ...and openInComp still exists for that press, unchanged",
@@ -818,10 +871,55 @@ def _cases(check):
           "const cur=()=>{const v=getPath(cfg,'guardEdits.customRules');" in M.UI_HTML
           and "setPath(cfg,'guardEdits.customRules',[])" not in M.UI_HTML)
 
-    check("overview: the phase row says what the phase is FOR, not only what it "
-          "is called",
-          "p.desiredOutcome?el('span',{class:'ovout'" in M.UI_HTML
+    # ov (P2/4): the outcome was on EVERY row, and across rows it is near-identical
+    # prose - it doubled the row height and separated nothing. It moved to the row's
+    # tooltip and to the head of the opened detail. The risk the removal carries is
+    # that the SEARCH still reaches the outcome, so a row can be in a filtered list
+    # because of a field the row no longer draws: a claim with its basis off screen.
+    # The behaviour of the two helpers below is executed in
+    # tools/ui-tests/overview-outcome.test.mjs; these are the source properties
+    # that suite and the browser gate depend on.
+    check("ovo1 no row carries an UNCONDITIONAL outcome line - that is the defect, "
+          "and one call site left behind reintroduces it on every row",
+          "p.desiredOutcome?el('span',{class:'ovout'" not in M.UI_HTML
           and ".ovout{" in M.UI_HTML)
+    check("ovo2 the row's tooltip carries it, so hovering still answers what the "
+          "phase is for without opening anything",
+          "title:(open?'collapse ':'expand ')+p.id\n"
+          "      +(p.desiredOutcome?' \u2014 '+p.desiredOutcome:'')," in M.UI_HTML)
+    check("ovo3 a row that matched on the outcome ALONE shows it, windowed on the "
+          "hit - the line is clipped to one line, so the head of an outcome is no "
+          "proof the term the reader typed is on screen",
+          "ovOutcomeIsBasis(p,term)?el('span',{class:'ovout','data-ovhit':'outcome',"
+          in M.UI_HTML
+          and "+ovExcerpt(p.desiredOutcome,term,64)):null);" in M.UI_HTML)
+    # The two spellings of "which fields does the row draw" must be ONE, or the
+    # filter can match on a field the basis test believes is visible - and then the
+    # row is in the list with nothing on it carrying the term. There is no second
+    # list: the filter reads ovShownText too.
+    _ovfields = M.UI_HTML.count("(p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')")
+    check("ovo4 the visible-field list exists ONCE and the search filter reads it, "
+          "rather than spelling it out a second time",
+          _ovfields == 1
+          and "const ovShownText=p=>(p.id+' '+(p.title||'')+' '" in M.UI_HTML
+          and "const hitP=p=>(!term||(ovShownText(p)+' '" in M.UI_HTML,
+          repr(_ovfields))
+    _ovdet = M.UI_HTML[M.UI_HTML.index("function ovDetail(p){"):
+                       M.UI_HTML.index("function applyCardOrder(view){")]
+    # find(), not index(): a detail that lost the line entirely must FAIL this case
+    # rather than raise and take every case below it with it. And counted, because
+    # index() reads the first hit - a second copy appended after the table is two
+    # answers to one question and passed an ordering assertion.
+    _ovpos = _ovdet.find("'Desired: '+p.desiredOutcome")
+    _ovtab = _ovdet.find("tableHead([")
+    check("ovo5 ...and the opened detail LEADS with the outcome, ONCE, above the "
+          "task table: read after its tasks it is a footnote to them",
+          _ovdet.count("'Desired: '+p.desiredOutcome") == 1
+          and 0 <= _ovpos < _ovtab,
+          repr((_ovpos, _ovtab)))
+    check("ovo6 the search box still says it reaches the outcome, which is what "
+          "makes the basis line owed rather than decorative",
+          "id, title, area, outcome" in M.UI_HTML)
     check("overview: sort and group-by-area consume the rollup's own areas registry",
           # Through fillOptions since the five plain option loops became one; the
           # pair list is what identifies THIS select.
@@ -864,6 +962,80 @@ def _cases(check):
     check("pri7 the confirm dialog computes a priority row, so the client's list "
           "and the server's echo stay two readings of one pair of values",
           "if(('priority' in pv)&&!cfSame(p.priority,pv.priority))" in M.UI_HTML)
+    # PROPERTIES OF THE SOURCE, not of the painted box: only the browser gates can
+    # say the two controls line up. What source text CAN say is that one rule
+    # decides their shape and ONE declaration their width - which is the thing
+    # that was missing, since the priority wrapper shipped with no rule at all and
+    # its <select> took the base control's size while the input beside it had been
+    # sized by hand. The width is a per-wrapper parameter because the two hold
+    # different things (a model id against a single digit); what must not come
+    # back is a second `width:` on either control, which is how the pair drifts.
+    check("pri9 ALL FOUR editable fields of this table get their box shape from "
+          "one rule, and the phase pair its width from one declaration - three "
+          "were sized by hand and the fourth not at all, which is how a 41px "
+          "skills box and a 37px priority menu ended up beside a 30px model box",
+          "td.tmodel input,td.tskills input,.comp-review input,.comp-priority select{"
+          in M.UI_HTML
+          and ".comp-review,.comp-priority{" in M.UI_HTML
+          and ".comp-review input,.comp-priority select{" in M.UI_HTML
+          # Counted, not merely present. A `not in` on `.comp-priority select{width:`
+          # reads like the negative to write here and is worthless: the shared
+          # rule's own selector list ENDS with `.comp-priority select` and is
+          # followed by `{width:`, so the clause matches the very thing it was
+          # meant to forbid and can never fail. These two count the structure
+          # instead - one width declaration, and exactly two values feeding it.
+          and M.UI_HTML.count("width:var(--comp-ctl-w)") == 1
+          and M.UI_HTML.count("--comp-ctl-w:") == 2)
+    # The collision this repo's own plan produced: P8's title left the review
+    # group 9px short of its content and it painted over the control beside it. A
+    # default flex item shrinks, and a fixed-size form field must not - so this
+    # asserts the clause, in the wrapper rule, that says so. It is a construct
+    # pin standing in for a layout fact no Python case can see; the browser gates
+    # own whether anything actually overlaps.
+    check("pri10 neither phase-row control is allowed to shrink - a long title "
+          "takes its space from the title, never out of a form field",
+          "flex:0 0 auto" in M.UI_HTML[
+              M.UI_HTML.index(".comp-review,.comp-priority{"):
+              M.UI_HTML.index(".comp-review{margin-left:auto}")])
+    # The reading order and the freeze both hang off ONE classifier. Pinning the
+    # reuse is the point: a second done/cancelled list inside the composition tab
+    # would be free to disagree with the Overview and the report about a status,
+    # and the disagreement would show as a phase that is editable on one screen
+    # and frozen on another.
+    check("pri11 Plan & models reads in the report's order - active work, then "
+          "what has not started, then what is closed - through the SAME segment "
+          "classifier the Overview and the report use, not a second copy of it",
+          "const SEG_ORDER={active:0,pending:1,archived:2};" in M.UI_HTML
+          and "SEG_ORDER[segOf(a[0].status)]-SEG_ORDER[segOf(b[0].status)]"
+          in M.UI_HTML
+          # decorated with the index, so plan order survives inside a segment
+          and "comp.phases.map((p,i)=>[p,i])" in M.UI_HTML
+          and "||(a[1]-b[1])" in M.UI_HTML)
+    check("pri12 finished work is a RECORD, and EITHER status closes a task row: "
+          "the phase's, because a task in a cancelled phase will never run, and "
+          "the task's own, because a done task has already run - so its model and "
+          "skills say what ran rather than what to run",
+          "const frozen=segOf(ph.status)==='archived';" in M.UI_HTML
+          and "const tFrozen=frozen||segOf(t.status)==='archived';" in M.UI_HTML
+          # WIRED, both halves. Defining freezeControls and calling it on only one
+          # of the two rows would leave a whole class of controls live.
+          and "freezeControls(pr,frozenWhy)" in M.UI_HTML
+          and "freezeControls(tr,tWhy)" in M.UI_HTML
+          and "function freezeControls(root,why){" in M.UI_HTML)
+    # A SOURCE property, and the negative is the whole point: `text-overflow` is
+    # what a narrow column invites somebody to add back, and adding it would
+    # restore exactly the defect this replaced - a title readable only on hover.
+    # The tooltip that propped that up is asserted gone in the same case, because
+    # leaving it behind is how the two halves drift apart.
+    check("pri13 a task title WRAPS rather than being cut off, and nothing "
+          "re-adds the ellipsis or the hover tooltip that used to stand in for "
+          "the words it hid",
+          "td.ttitle{max-width:18rem;white-space:normal;overflow-wrap:break-word}"
+          in M.UI_HTML
+          and "text-overflow" not in M.UI_HTML[
+              M.UI_HTML.index("td.ttitle{"):M.UI_HTML.index("td.tskills{")]
+          and "el('td',{class:'ttitle'},t.title||'')" in M.UI_HTML
+          and "class:'ttitle',title:" not in M.UI_HTML)
     check("overview: an empty result says so and offers the way back",
           "No phase matches this filter." in M.UI_HTML
           and "'data-ovclear':'1'" in M.UI_HTML)
@@ -920,8 +1092,8 @@ def _cases(check):
     # its own HOME; these guard the constructs those checks depend on.
     check("the policy tab is registered, routable and has a view container",
           "data-t=policy>Policy<" in M.UI_HTML and "<div id=policy" in M.UI_HTML
-          and "const TABS=['guards','comp','over','usage','policy','props',"
-              "'look']" in M.UI_HTML)
+          and "'policy'" in M.UI_HTML[M.UI_HTML.index("const TABS=["):
+                                       M.UI_HTML.index("],SCROLL={}")])
     # --- pr (F-P-32): Proposals ------------------------------------------------
     # Parked phases had no surface in the panel at all: /audit:init can park every
     # synthesized phase, and the tab that shows the plan showed nothing. These pin
@@ -1126,6 +1298,64 @@ def _cases(check):
     check("area columns come from the server's own view of them and say which are "
           "deciding anything today",
           "POLICY.areaInfo" in M.UI_HTML and "a.active?'live':'dormant'" in M.UI_HTML)
+    # --- pc: one column per area does not scale ------------------------------
+    # The tags come from the PLAN, so the width of this table was a function of how
+    # many areas a project happens to tag: eight of them is eight selects on every
+    # row and a sideways scroll of em-dashes. A column is drawn for an area that
+    # CARRIES A RULE.
+    #
+    # These are SOURCE-PROPERTY pins and say so in their labels, because the
+    # behaviour cannot be checked from here: `... in UI_HTML` cannot tell "only the
+    # areas with a rule" from "all of them", from "none of them", or from the wrong
+    # predicate entirely. Those are asserted where they can be executed, in
+    # tools/ui-tests/policy-columns.test.mjs, and each wrong one is mutated in
+    # tools/ui-tests/mutants.test.mjs. The strip's paint is driven in
+    # capture-screenshots --check (assertPolicyWorks).
+    check("pc1 there is ONE predicate for the column set and one reader of it - a "
+          "second would be a second opinion about which rules are on screen "
+          "(the answers themselves are in tools/ui-tests/policy-columns.test.mjs)",
+          "function pCols(kind){" in M.UI_HTML
+          and M.UI_HTML.count("pCols(") == 2
+          and "const cset=pCols(kind),cols=cset.shown;" in M.UI_HTML)
+    check("pc2 ...and liveness is not that predicate: `active` decides the LABEL "
+          "on a column and never whether it exists, because a dormant area's rule "
+          "is one status change away from being enforced",
+          "ruled.has(a.tag)||PF.cols.indexOf(a.tag)>=0" in M.UI_HTML
+          and "a.active?'live':'dormant'" in M.UI_HTML
+          and "pStatesRule(areas[tag])" in M.UI_HTML)
+    check("pc3 an area with no column is NAMED rather than dropped, in the panel's "
+          "own strip grammar - the kind switch and the default switch above it are "
+          "the same component, so this needed no rule of its own",
+          "'data-pcols':'1'" in M.UI_HTML
+          and "class:'ovpill',type:'button','data-pcol'" in M.UI_HTML
+          and "'data-pcol':a.tag" in M.UI_HTML)
+    check("pc4 ...the strip names the set it is listing, and BOTH branches of its "
+          "sentence are written. The second looks vacuous - it says nothing is "
+          "hidden when nothing is - and it is the only thing that fails if the "
+          "claim becomes unconditional",
+          "'Areas with no rule'" in M.UI_HTML
+          and "'no column of their own — press one to add it'" in M.UI_HTML
+          and "'every area has a column'" in M.UI_HTML
+          and "cset.hidden.length" in M.UI_HTML)
+    # THE WHOLE BODY, as bytes, and not a slice around it. A window bounded by
+    # `.index("\n\n")` would shrink silently if a blank line were ever added inside
+    # the function, and the negative clauses ("no pSetRule in here") would then keep
+    # passing about three characters. Three lines are cheap to pin outright: any
+    # edit to them is a review checkpoint, which is exactly what a control that
+    # must not write anything deserves.
+    check("pc5 revealing a column is NOT a second way to write a rule: the control "
+          "moves PF.cols and nothing else, so pSetRule and pAddPattern stay the "
+          "only writers",
+          "function pToggleCol(tag){\n const i=PF.cols.indexOf(tag);\n"
+          " if(i>=0)PF.cols.splice(i,1);else PF.cols.push(tag);}" in M.UI_HTML
+          and "onclick:()=>{pToggleCol(a.tag);renderPolicy();}}" in M.UI_HTML)
+    check("pc6 a reveal is scoped to the kind it was made in, and the strip is an "
+          "OPTIONAL child of both copies of the table - append() stringifies a "
+          "null where el() drops it, which is the browse dialog's lesson",
+          "const PF={kind:'skills',q:'',bad:false,cols:[]};" in M.UI_HTML
+          and "PF.kind=k;PF.q='';PF.cols=[];PNOTE=null;renderPolicy();" in M.UI_HTML
+          and M.UI_HTML.count("cap.tools,cap.colstrip,cap.body].filter(Boolean));")
+              == 2)
     check("emptying a list removes it, and the container with it - the same "
           "convention Settings writes the config with",
           "function pPrune(" in M.UI_HTML
@@ -1222,7 +1452,13 @@ def _cases(check):
     check("bn1 the branch card is WIRED: the composition view calls it, so a part "
           "that assembles but is never invoked cannot pass. Assembly alone would "
           "- both sides of the byte-identity check are built from the same tuple",
-          "c.append(branchCard(comp,patch));" in M.UI_HTML)
+          # The call and the placement are two statements now: the card is built
+          # with the other config cards and appended AFTER the table, which is what
+          # putting the view's main object on top required. The claim is unchanged
+          # and is spelled as its two halves - invoked, and actually placed - which
+          # says it more exactly than one line doing both ever did.
+          "const bcard=branchCard(comp,patch);" in M.UI_HTML
+          and "c.append(tcard,meta,bcard);" in M.UI_HTML)
     check("bn2 the card writes patch.meta.branch and NOTHING else on the form's "
           "draft - it rides the Composition save, so a stray write to another "
           "meta key would be saved under a confirm dialog that never listed it",
@@ -1833,11 +2069,17 @@ def _cases(check):
           "*DAY_MS)" in M.UI_HTML)
     # An explanation computed by a second copy of "what matches" is an explanation
     # that can contradict the view it is explaining.
+    #
+    # The last clause used to read `for(const d of UORDER.concat(` - the loop's
+    # own spelling of "and the range too", which the chip row spelled a second
+    # time and `uAnyFilter` a third. It is `uOnFilters()` in all three now, so
+    # this clause names the shared list instead of one copy of it: the diagnosis
+    # cannot blame a filter the chips do not show, or miss one they do.
     check("the diagnosis re-runs uFiltered with one slot blanked instead of "
-          "re-implementing the match",
+          "re-implementing the match, and walks the same list the chips do",
           "const keep=UF[d];UF[d]=d==='range'?'all':'';" in _emp
           and "const n=uFiltered().length;UF[d]=keep;" in _emp
-          and "for(const d of UORDER.concat(" in _emp)
+          and "for(const d of uOnFilters()){" in _emp)
     check("one filter doing the emptying is named, counted and liftable on its "
           "own — clear-all throws away the ones that were fine",
           "plural(n,'row matches','rows match')+' everything else.'" in _emp
@@ -1911,6 +2153,103 @@ def _cases(check):
           "because a scale is a drawing decision and not a measurement",
           "const peak=Math.max(...head.map(x=>x[1][0]))||1;" in M.UI_HTML
           and "const rng=(hi-lo)||1;" in M.UI_HTML)
+
+    # --- uf: the filters fold, and the active ones stay above it ----------------
+    # The tab used to open on a wall of controls with no number in sight. They are
+    # behind one <details> now, and the chips that were BELOW them are above it.
+    #
+    # ALL OF THESE ARE CLAIMS ABOUT SOURCE TEXT and they are labelled as such:
+    # whether the fold actually paints, opens, and keeps its state under the
+    # reader's hand is a browser claim and belongs to capture-screenshots.mjs.
+    # What source text CAN say - and nothing else can - is that there is one list
+    # of what is filtering, that the count on the summary is read off that same
+    # list, and that nothing derives the fold's open state from the filters.
+    _ru = M.UI_HTML[M.UI_HTML.index("function renderUsage()"):
+                    M.UI_HTML.index("// --- Esc pops the last filter")]
+    # `find`, not `index`: a missing literal has to report a FAILED case, not
+    # raise out of the middle of the suite and take every case after it with it.
+    _i_chips, _i_bar = (_ru.find("card.append(chips);"),
+                        _ru.find("card.append(filt);"))
+    check("uf1: the chip row is appended to the card BEFORE the sticky bar the "
+          "fold sits in, so a tab whose fold is shut still leads with what is "
+          "scoping it (chips at %d, bar at %d) - SOURCE order; that the shut "
+          "fold really paints under them is capture-screenshots.mjs's"
+          % (_i_chips, _i_bar),
+          "const fold=el('details',{class:'fdetails','data-uffold':'1'," in _ru
+          and "el('summary',{'data-ufilters':'1'},'Filters'," in _ru
+          and 0 <= _i_chips < _i_bar)
+    check("uf2: the chips and the count on the summary are ONE read of ONE list "
+          "- a second read is how a chip row and a badge come to describe the "
+          "same screen differently (reads of uOnFilters() in renderUsage: %d)"
+          % (_ru.count("uOnFilters()"),),
+          "const on=uOnFilters();" in _ru
+          and "on.forEach(d=>chips.append(el('button',{class:'uchip'," in _ru
+          and "on.length?el('span',{class:'fcount'},' · '+on.length+' on')"
+              ":null" in _ru
+          and _ru.count("uOnFilters()") == 1)
+    # Counted over the whole of renderUsage rather than over a slice around the
+    # <details>. The slice that used to sit here ended at `filt.append(fold,`,
+    # which is the literal uf6 below is there to mutate - so proving uf6 red
+    # RAISED out of this line and took every case after it with it. An endpoint
+    # that another case exists to remove is not an endpoint.
+    #
+    # NO MODULE STATE FOR IT, and that is the measured shape rather than a
+    # preference. The first version kept a `UFOPEN` flag written from the fold's
+    # own `toggle` handler, and a browser driver reopened the fold, changed a
+    # filter in the same turn and got it back SHUT every time: `toggle` is queued
+    # as a task, so the repaint rebuilt the fold before the handler had run. A
+    # hand at human speed never sees it. The state is read off the OUTGOING
+    # element now - one place the fact lives, and the same thing proposals-view
+    # does with its own <details>.
+    check("uf3: the fold's open state is the READER's - read back off the "
+          "outgoing element at the top of the pass, never held in a variable "
+          "beside the DOM and never derived from the filters (reads of "
+          "foldOpen: %d, `open:` in renderUsage: %d)"
+          % (_ru.count("foldOpen"), _ru.count("open:")),
+          "const foldOpen=!!c.querySelector('details[data-uffold][open]');" in _ru
+          and "open:foldOpen?'':null" in _ru
+          # Two: the read and the one use. A third would be something deciding
+          # the fold for the reader - the "it opens itself whenever a filter is
+          # on" mutation, which no other case here can see. And no `UFOPEN`
+          # anywhere: a second home for this fact is the race described above.
+          and _ru.count("foldOpen") == 2
+          and "UFOPEN" not in M.UI_HTML
+          and _ru.count("open:") == 1)
+    check("uf4: the range preset wears a chip like every other filter - it is "
+          "not a DIMS slot, so it was the one filter that could be on with "
+          "nothing on screen naming it",
+          "const uOnFilters=()=>UORDER.concat(UF.range==='all'?[]:['range']);"
+          in M.UI_HTML
+          and "const uAnyFilter=()=>uOnFilters().length>0;" in M.UI_HTML
+          and "title:d==='range'?'back to all time':'remove this filter'," in _ru)
+    check("uf5: and every way out of a filter goes through uLiftF, which is "
+          "what keeps the range's own default out of every call site - blanking "
+          "it instead reaches parseInt('') and throws on the Date (hand-written "
+          "`UF.range='all';renderUsage();`: %d, hand-written `setF(d,'')`: %d)"
+          % (M.UI_HTML.count("UF.range='all';renderUsage();"),
+             M.UI_HTML.count("setF(d,'')")),
+          "function uLiftF(d){" in M.UI_HTML
+          and "if(d!=='range'){setF(d,'');return;}" in M.UI_HTML
+          and "onclick:()=>uLiftF(d)}" in _ru
+          and "const toAll=()=>uLiftF('range');" in M.UI_HTML
+          and M.UI_HTML.count("UF.range='all';renderUsage();") == 1
+          and M.UI_HTML.count("setF(d,'')") == 1)
+    check("uf6: Export stayed OUTSIDE the fold - it is not a filter, and behind "
+          "a summary saying 'Filters' nobody would find it again",
+          "filt.append(fold,el('button',{class:'btn small push',type:'button',"
+          in _ru
+          and "r2.append(el('button',{class:'btn small push'" not in M.UI_HTML)
+    check("uf7: the summary is a pill and a disclosure the platform draws, "
+          "under the report's own component name, and the count badge sits on "
+          "the SHUT control where it is the last thing left saying so",
+          ".fdetails>summary{cursor:pointer;font:inherit;font-size:.78rem;"
+          in M.UI_HTML
+          and '.fdetails[open]>summary::after{content:"\\25B4"}' in M.UI_HTML
+          and ".fdetails .fcount{font-weight:700;color:var(--accent);"
+              "font-variant-numeric:tabular-nums}" in M.UI_HTML
+          # The bar holds a fold and a button now, so a centred cross axis would
+          # float Export halfway down an open fold.
+          and "align-items:flex-start;margin:0 0 var(--sp-1)" in M.UI_HTML)
 
     # --- v0.34 C1 (cs): combo search over name+description+source -------------
     # String pins over one inline script, as ever: the behaviour (the footer
@@ -2034,8 +2373,10 @@ def _cases(check):
           "tearing the view down no longer takes it along",
           "function closeCombo(" in M.UI_HTML
           and M.UI_HTML.count("closeCombo();") >= 5
-          and "function showTab(t,push){\n if(!TABS.includes(t))t='guards';\n closeCombo();"
-          in M.UI_HTML)
+          and "function showTab(t,push){" in M.UI_HTML
+          # The call WITH its own comment, which appears nowhere else - enough to
+          # place it inside showTab without pinning the lines around it.
+          and " closeCombo();   // the menu is on <body>," in M.UI_HTML)
     check("co: a mousedown anywhere in the menu keeps the input's focus, so a "
           "scrollbar drag or a click on the footer no longer closes it (F-P-1d)",
           "CMENU.addEventListener('mousedown',e=>e.preventDefault());" in M.UI_HTML)
@@ -2301,7 +2642,16 @@ def _cases(check):
         "button.dtopic": ("ok", "343x78.6"),
         "button.filt": ("ok", "47.6x29.2"),
         "button.ovpill": ("ok", "60.5x29.9"),
-        "button.ovrow": ("ok", "301x147.2"),
+        # was ("ok", "301x147.2"), a TWO-LINE row: the abbreviated outcome
+        # used to sit on its own line under the title. That line moved to the
+        # row's tooltip and the opened detail, so the recorded figure stopped
+        # describing the shape it is the evidence for. Re-measured in Chromium
+        # at all three densities - 42.2 comfortable, 40.5 compact, 44.2
+        # spacious - and the TIGHTEST is the one recorded, because that is the
+        # reading the >= 24 verdict has to survive. The width is whatever the
+        # container gives the row, which is why the old 301 does not reappear
+        # and why only the height says anything here.
+        "button.ovrow": ("ok", "860.4x40.5"),
         "button.subtab": ("ok", "72.3x30"),
         "button.tab": ("ok", "60.1x38.7"),
         "button.tab.on": ("ok", "62.2x38.7"),

@@ -761,6 +761,42 @@ def _phase_meta_div(phase):
     return ('<div class="pmeta muted">%s</div>' % " · ".join(bits)) if bits else ""
 
 
+def any_phase_pinned(manifest):
+    """Whether any phase carries a tier the run will honour.
+
+    THE ONE PREDICATE BOTH HALVES OF THE SORT OPTION READ. A sort control the
+    page offers must be backed by a rank on every row, and a rank on every row
+    with no control is dead weight; deciding each separately is how the two
+    become a dropdown that reorders nothing. So the toolbar asks this before
+    emitting the control and `phase_ranks` asks it before emitting the numbers.
+
+    `_priority.tier_of`, not the raw field: `priority: "1"` orders nothing, so a
+    plan carrying only invalid values has nothing to sort by and is not offered
+    the choice. A plan with no `priority` at all therefore renders exactly as it
+    did before this existed — which is this feature's two-direction case, and
+    the reason the committed example artifacts did not move.
+    """
+    return any(_priority.tier_of(p) is not None
+               for p in (manifest.get("phases") or []) if isinstance(p, dict))
+
+
+def phase_ranks(manifest):
+    """Where each phase sits in EXECUTION order, positionally against the same
+    `[p for p in phases if isinstance(p, dict)]` list the rollup and the table
+    rows are built from — or `[]` when no phase is pinned.
+
+    The report's table arrives in MANIFEST order and stays that way; these are
+    emitted as `data-porder` so the client's sort orders by a number it was
+    GIVEN. `_priority.ranks` is the only thing that computes them, which is what
+    keeps the report's sort and the orchestrator's own walk from becoming two
+    orders — the client has no comparator to drift.
+    """
+    if not any_phase_pinned(manifest):
+        return []
+    return _priority.ranks([p for p in (manifest.get("phases") or [])
+                            if isinstance(p, dict)])
+
+
 def _bar(done, total):
     # Fill width is a CSS var so the stylesheet can animate 0 -> --w on load.
     pct = int(round(100.0 * done / total)) if total else 0

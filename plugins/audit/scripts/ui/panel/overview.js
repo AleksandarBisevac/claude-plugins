@@ -202,8 +202,66 @@ function ovCopy(btn,text){
 const ovStamp=v=>{const s=String(v||'');if(!s)return '';
  const i=s.indexOf('T');return i<0?s:s.slice(0,i)+' '+s.slice(i+1,i+6);};
 /**
+ * The phase text a ROW puts on screen: its id, its title and its area tags.
+ *
+ * One spelling, read by the search filter and by the match-basis test, because
+ * those two must never disagree about which fields are visible — a field the
+ * filter matches on and this list forgets is a row with no basis on it.
+ * @param {{id: string, title: (string|undefined), area: (string[]|undefined)}} p -
+ *   the phase, from the rollup
+ * @returns {string} the three fields joined by spaces, lower-cased for matching
+ */
+const ovShownText=p=>(p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')).toLowerCase();
+/**
+ * Did the search term match this phase ONLY where the row does not show it?
+ *
+ * The row carries no outcome line any more, and the search still reaches the
+ * outcome. So a row can sit in a filtered list with nothing on it containing the
+ * term. That, and only that, is when the row owes the reader the outcome: when a
+ * visible field already carries the term, showing it again is the noise this
+ * change removed.
+ * @param {{desiredOutcome: (string|undefined)}} p - the phase, from the rollup
+ * @param {string} term - the search term; case is normalised here rather than
+ *   trusted from the caller, so one lower-casing missed upstream cannot make
+ *   this quietly answer false
+ * @returns {boolean} true when the outcome is the only basis for the match
+ */
+const ovOutcomeIsBasis=(p,term)=>{const t=String(term||'').toLowerCase();
+ return !!t&&String(p.desiredOutcome||'').toLowerCase().includes(t)
+   &&!ovShownText(p).includes(t);};
+/**
+ * A window of `text` around the first case-insensitive hit for `term`.
+ *
+ * Windowed rather than truncated, and that is the whole reason it exists: the
+ * outcome line is clipped to ONE line, so the head of a long outcome is all a
+ * row can show — and a hit further in would be claimed by a row and be off
+ * screen. Centring on the hit is what makes the basis actually visible.
+ * @param {string} text - the full outcome
+ * @param {string} term - the term to centre on; when it does not occur, the head
+ *   is returned rather than nothing, so a caller that got its own condition
+ *   wrong still renders the field instead of an empty span
+ * @param {number} width - how many characters of context to keep in total; a
+ *   term longer than that widens the window rather than being cut in half
+ * @returns {string} the window, with an ellipsis on each side that was cut
+ */
+function ovExcerpt(text,term,width){
+ const s=String(text||''),w=Math.max(String(term||'').length,width|0);
+ if(s.length<=w)return s;
+ const at=term?s.toLowerCase().indexOf(String(term).toLowerCase()):-1;
+ if(at<0)return s.slice(0,w).trim()+'…';
+ // Centre the hit, then clamp to both ends: a hit near the tail must not be
+ // pushed back off screen by a window that walked past the end of the string.
+ const pad=Math.floor((w-String(term).length)/2);
+ const from=Math.min(Math.max(at-pad,0),Math.max(s.length-w,0)),to=from+w;
+ return (from>0?'…':'')+s.slice(from,to).trim()+(to<s.length?'…':'');}
+/**
  * A phase's tasks, in the columns the report's table uses — id, title, status,
- * risk (coloured TEXT, not a pill), commit and when it finished.
+ * risk (coloured TEXT, not a pill), commit and when it finished, led by what the
+ * phase is FOR.
+ *
+ * The outcome leads rather than trailing the table: this is where it lives now
+ * that the row does not carry it, and a purpose read after its tasks is a
+ * footnote to them.
  *
  * Read-only on purpose: this tab is for reading the plan, and the one place that
  * edits it is named at the end rather than reached by accident.
@@ -215,6 +273,8 @@ const ovStamp=v=>{const s=String(v||'');if(!s)return '';
 function ovDetail(p){
  const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id);
  const box=el('div',{class:'ovdetail','data-ovdetail':p.id});
+ if(p.desiredOutcome)box.append(el('div',{class:'mut small','data-ovpurpose':p.id},
+   'Desired: '+p.desiredOutcome));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{
   const tb=el('tbody');
@@ -230,11 +290,10 @@ function ovDetail(p){
     el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));});
   box.append(el('table',{class:'ovtasks'},
     tableHead(['id','title','status','risk','commit','done (UTC)']),tb));}
- if(p.desiredOutcome)box.append(el('div',{class:'mut small'},'Desired: '+p.desiredOutcome));
  box.append(el('div',{class:'row',style:'margin-top:.4rem'},
    el('button',{class:'btn small','data-ovedit':p.id,type:'button',
-     title:'Composition is where tasks, models and skills are changed',
-     onclick:()=>openInComp(p.id)},'Edit in Composition')));
+     title:'Plan & models is where tasks, models and skills are changed',
+     onclick:()=>openInComp(p.id)},'Edit in Plan & models')));
  return box;}
 
 /**
@@ -380,8 +439,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 
  // --- phases -------------------------------------------------------------------
  const term=OVF.q.trim().toLowerCase();
- const hitP=p=>(!term||((p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')+' '
-     +(p.desiredOutcome||'')).toLowerCase().includes(term)))
+ const hitP=p=>(!term||(ovShownText(p)+' '
+     +String(p.desiredOutcome||'').toLowerCase()).includes(term))
    &&(!OVF.ts||!!((pStatus[p.id]||{})[OVF.ts]));
  // Matched and in-view are two different sets on purpose: the difference between
  // them is what the "outside this view" line is able to report.
@@ -434,7 +493,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   // is still one press away, named, inside the detail.
   const row=el('button',{class:'ovrow'+(open?' open':''),type:'button',
     'data-status':p.status||'','data-phase':p.id,'aria-expanded':open?'true':'false',
-    title:(open?'collapse ':'expand ')+p.id,
+    title:(open?'collapse ':'expand ')+p.id
+      +(p.desiredOutcome?' — '+p.desiredOutcome:''),
     onclick:()=>{OVF.open[p.id]=!open;renderOver();}},
    el('span',{class:'ovtri'}),
    el('span',{class:'pid'},p.id),
@@ -458,9 +518,14 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
    OVF.ts?el('span',{class:'ovmatch'},((pStatus[p.id]||{})[OVF.ts]||0)+' '+label(OVF.ts).toLowerCase()):null,
    el('span',{class:'bar'},el('i',{style:'width:'+w+'%'})),
    el('span',{class:'mut'},p.done+'/'+p.total),
-   // The line the plan is actually about. It was in the rollup all along and the
-   // panel showed the title, which says what the phase is called, not what it is for.
-   p.desiredOutcome?el('span',{class:'ovout',title:p.desiredOutcome},p.desiredOutcome):null);
+   // The outcome, ONLY when it is the reason this row is in the list. It used to
+   // be on every row, where it read as near-identical prose that doubled the row
+   // height and separated nothing; it is on the tooltip and in the detail now.
+   // Windowed on the hit, because the line is clipped to one line and the head of
+   // an outcome need not contain the term the reader typed.
+   ovOutcomeIsBasis(p,term)?el('span',{class:'ovout','data-ovhit':'outcome',
+     title:p.desiredOutcome},'matched in outcome: '
+     +ovExcerpt(p.desiredOutcome,term,64)):null);
   if(!open)return row;
   return el('div',{class:'ovwrap'},row,ovDetail(p));}
  if(!ordered.length){
@@ -553,7 +618,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
       onclick:e=>ovCopy(e.currentTarget,cmd)},'Copy')));});
  // The remainder is COUNTED rather than dropped, and it names where the rest is.
  if(ready.length>RSHOW)rcard.append(el('div',{class:'mut'},
-   '+'+(ready.length-RSHOW)+' more ready — see Composition'));
+   '+'+(ready.length-RSHOW)+' more ready — see Plan & models'));
  c.append(rcard);
 
  // --- bugs ---------------------------------------------------------------------

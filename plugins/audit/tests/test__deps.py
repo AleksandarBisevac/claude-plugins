@@ -1031,6 +1031,11 @@ def _cases(check):
                                "fillOptions(sel, pairs, cur)"),
         "heatmap calendar": ("function startOf(g, d) { return d; }",
                              "periodStart(g, d)"),
+        # The miss sample is a CALL, because every surface still calls heatRows -
+        # a needle that fired on the call would report the two readers this row
+        # exists to permit.
+        "heatmap row shapes": ("function weekdayRows(lo, hi) { return []; }",
+                               "heatRows(g, win, days, hoursOf)"),
         "caret restore": ("n.setSelectionRange(caret,caret)",
                           "restoreCaret(n,caret,back)"),
     }

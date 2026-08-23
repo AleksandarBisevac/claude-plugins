@@ -104,3 +104,102 @@
     });
   }
 
+  // --- the order the phases are listed in -------------------------------------
+
+  /**
+   * Every row that belongs to one phase, in the order the table has them NOW.
+   *
+   * Walked from the DOM rather than assembled from `tasksOf` and `tfOf`, and
+   * that is not a preference: `wireSort` above permutes the task rows in the
+   * table while deliberately leaving the index in document order (`.slice()`
+   * before `.sort()`), so rebuilding a phase's block from the index would
+   * silently undo a column sort the reader had just asked for.
+   *
+   * @param {HTMLTableRowElement} pr - the phase's group row
+   * @returns {HTMLTableRowElement[]} the group row, its task-filter row, and
+   *   its task and detail rows, in table order
+   */
+  function blockOf(pr) {
+    const rows = [pr];
+    for (let n = pr.nextElementSibling;
+         n && !n.classList.contains('phase') && !n.classList.contains('seghead');
+         n = n.nextElementSibling) rows.push(n);
+    return rows;
+  }
+
+  /**
+   * Re-order the phase blocks INSIDE each segment, leaving the segments and the
+   * rows inside a phase where they are.
+   *
+   * Within a segment and not across the table, because the segments are already
+   * an ordering by whether the work can run at all — active, then pending, then
+   * the archive — and a done phase pinned first still cannot run. Sorting over
+   * that would answer "what runs first" with a finished phase.
+   *
+   * @param {(pr: HTMLTableRowElement) => number} rank - the number to order a
+   *   phase's group row by, ascending
+   * @returns {void}
+   */
+  function orderPhaseBlocks(rank) {
+    segRows.forEach((sh) => {
+      const mine = phaseRows.filter((pr) => pr.__seg === sh.__seg);
+      // Read every block BEFORE moving anything: the first insertBefore changes
+      // the sibling chain the rest of the walks would have followed.
+      const blocks = mine.map(blockOf);
+      let anchor = sh;
+      mine
+        // The position in `phaseRows` is the tie-break, and `phaseRows` is the
+        // order the page LOADED in — so `plan` is a rank of 0 for everything
+        // and this restores the written plan exactly, with no second record of
+        // it to keep in step.
+        .map((pr, i) => [rank(pr), i])
+        .sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
+        .forEach((entry) => {
+          blocks[entry[1]].forEach((r) => {
+            anchor.parentNode.insertBefore(r, anchor.nextSibling);
+            anchor = r;
+          });
+        });
+    });
+  }
+
+  /**
+   * The orders the phases table offers, by the name the control uses.
+   *
+   * `priority` reads `data-porder`, which `_priority.ranks` computed on the
+   * server. The client is handed a NUMBER and never the rule: re-expressing
+   * `sort_key` here is the one way the report's order could come to disagree
+   * with the order the orchestrator actually walks, and there is nothing here
+   * to disagree with it.
+   *
+   * @type {Object<string, (pr: HTMLTableRowElement) => number>}
+   */
+  const ORDERS = {
+    plan: () => 0,
+    priority: (pr) => +pr.getAttribute('data-porder'),
+  };
+
+  /**
+   * Switch the phases table between the written plan and the priority overlay.
+   *
+   * Refuses an order it cannot honour rather than reordering by NaN: an unknown
+   * name, or `priority` on a plan where the renderer emitted no ranks and so no
+   * select. Both are reachable only from a hand-edited fragment, and a table
+   * shuffled into an arbitrary order is worse than one that ignored the request.
+   *
+   * @param {string} v - order name; anything else is ignored
+   * @returns {void}
+   */
+  function setPhaseOrder(v) {
+    if (!ORDERS[v] || !sortSel) return;
+    phaseOrder = v;
+    if (sortSel.value !== v) sortSel.value = v;
+    orderPhaseBlocks(ORDERS[v]);
+    refresh();                       // which also writes the choice to the link
+  }
+
+  if (sortSel) {
+    sortSel.value = phaseOrder;
+    sortSel.addEventListener('change', () => setPhaseOrder(sortSel.value));
+  }
+

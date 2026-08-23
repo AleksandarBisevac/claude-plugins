@@ -368,11 +368,18 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
                             "is running")
         return
     if mode == "observe":
+        # The shell-write guard shares this tier and does NOT behave the same way
+        # in it: the plan gate records and reports at observe, guard-bash-writes
+        # goes silent, because "no in_progress task covers this" is true of every
+        # file in a repo with no plan. Said here rather than in a check of its
+        # own, so the tier is computed once - and said at all because a quiet
+        # guard and a broken guard look identical from the outside.
         rep.ok("plan gate",
                "observe - no manifest at %s, so out-of-plan edits are recorded and "
-               "reported once per session, never blocked. Run /audit:init to enforce, "
-               "or set \"planGate\": \"deny\" to enforce without a manifest"
-               % manifest_rel)
+               "reported once per session, never blocked; the shell-write guard's "
+               "plan-coverage class is silent on this tier for the same reason. Run "
+               "/audit:init to enforce, or set \"planGate\": \"deny\" to enforce "
+               "without a manifest" % manifest_rel)
     elif mode == "warn":
         rep.ok("plan gate",
                "warn - a manifest exists but no phase is in_progress, so out-of-plan "

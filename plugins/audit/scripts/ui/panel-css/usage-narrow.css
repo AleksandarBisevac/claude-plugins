@@ -18,9 +18,17 @@
  .udates{flex:1 1 100%;flex-wrap:wrap}
  .ufil input[type=date]{flex:1 1 calc(50% - 3rem);min-width:0}
  .ufil .push{margin-left:0}
- /* And it stops pinning. Nine controls stacked at this width measure 311px, which
-    on an 844px phone is a sticky bar owning 37% of the screen for the whole scroll
-    - the same shape as the report's filter panel covering the table it filtered.
-    Above the breakpoint the bar is two lines and worth pinning; here it is not. */
+ /* The fold takes the whole line here and Export drops under it. Beside a 20rem
+    basis on a 360px screen there is no line left for a button, and a shrunk fold
+    would put the summary's own count on a second row. */
+ .fdetails{flex:1 1 100%}
+ /* And it stops pinning. Stacked at this width the control rows measure 311px,
+    which on an 844px phone is a sticky bar owning 37% of the screen for the whole
+    scroll - the same shape as the report's filter panel covering the table it
+    filtered. The fold changed which STATE that describes, not whether it is worth
+    guarding against: shut, the bar is one summary line and would pin happily, but
+    the reader who opens it at this width gets the same 311px back, and a bar that
+    is sticky only while it is small is a layout that moves under the hand that
+    opened it. Above the breakpoint the open bar is two lines and worth pinning. */
  .ufil{position:static}
 }

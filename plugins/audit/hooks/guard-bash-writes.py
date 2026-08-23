@@ -167,8 +167,13 @@ _READ_ONLY_CMDS = frozenset((
     "uniq", "wc", "tr", "jq", "find", "ls", "stat", "file", "basename", "dirname",
     "echo", "printf", "pwd", "true", "false", "test", "which", "type", "env",
     "date", "du", "df", "nl", "column", "comm", "diff", "cmp", "shasum", "md5sum",
-    "xxd", "od", "realpath", "readlink", "seq", "yes", "tee",
+    "xxd", "od", "realpath", "readlink", "seq", "yes", "tee", "xargs",
 ))
+# `xargs` was the absence that started F51. It runs another command, and the
+# segment split already puts that command in a segment of its own —
+# `find … | xargs wc -l` is `find …` and `xargs wc -l`, both judged. What made it
+# a writer was simply not being on this list, and `find | xargs wc -l` is the
+# measuring idiom this project's own documents reach for.
 # Sub-commands of `git` that write. `git` itself is on the list above because
 # `git status`/`log`/`diff` are the most common reads in any session.
 _GIT_WRITES = frozenset((
@@ -177,45 +182,183 @@ _GIT_WRITES = frozenset((
     "remote", "reset", "restore", "rm", "stash", "submodule", "switch", "tag",
     "worktree", "config", "update-index", "update-ref", "notes", "replace",
 ))
-# Flags that turn a reader into a writer.
+# Flags that turn a reader into a writer, matched as WHOLE tokens. `sed` also
+# takes its backup suffix attached — `-i.bak`, `--in-place=.bak` — and an exact
+# membership test called those an ordinary argument, so a real in-place write
+# came back provably-read-only and the guard said nothing (F56). BSD `sed`
+# refuses a bare `-i`, so the attached form is the only one that works on a Mac:
+# the spelling that went unseen is the spelling anyone here would type.
+# `_write_flag()` below is the membership test; this set is what it reads.
 _WRITE_FLAGS = frozenset(("-i", "--in-place", "-delete"))
+# Operators that end one command and begin another. Compared as TOKENS, so a
+# `;` or a `&&` inside a quoted search pattern is text rather than syntax.
+_OP_TOKENS = frozenset((";", "|", "||", "&&", "&"))
+# Redirections. `>` and friends name a destination, so any surviving one puts the
+# command on the watched side — but only the ones the SHELL would treat as a
+# redirect. `grep -n "cost > 5"` names nothing (F51).
+_REDIRECT_TOKENS = frozenset((">", ">>", "<", "<<", "<<<", ">&", "<&", ">|"))
+# Substitution and expansion, again as tokens: grepping FOR `$(`, `${` or a
+# backtick is not running a subshell.
+_SUBST_TOKENS = frozenset(("`", "$", "(", ")"))
+# `xargs` runs another command, exactly as `-exec` does, and the honest question
+# is what THAT command is. Putting `xargs` on the allowlist without this made
+# `find … | xargs rm` provably-read-only — the false-negative twin of the
+# false positive it was added to fix. These flags take a value, so the value is
+# not the command.
+_XARGS_VALUE_FLAGS = frozenset((
+    "-n", "-P", "-I", "-i", "-L", "-s", "-d", "-E", "-a",
+    "--max-args", "--max-procs", "--replace", "--max-lines", "--max-chars",
+    "--delimiter", "--eof", "--arg-file",
+))
 # `-exec` and its relatives are NOT among them, though they were. They run
 # another command, and the only honest question is what THAT command is:
 # `find . -name '*.py' -exec cat {} +` is a read, and calling it a write is how
 # the most ordinary sweep in this repo got blamed for another session's file.
 _EXEC_FLAGS = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
-# find ends an -exec clause with `;` or `+`. The `;` is written `\;`, and by the
-# time this runs the segment splitter below has already eaten the `;` as a
-# separator — so a lone trailing backslash is an ending too.
-_EXEC_END = frozenset((";", "\\;", "+", "\\"))
-# A redirect to /dev/null writes nothing, whatever the descriptor. `2>/dev/null`
-# is the most ordinary read idiom there is, and the blanket `>` scan below read
-# it as hostile — so a command that discards stderr could not be proven to read,
-# and inherited the tree's dirt. The lookahead is what separates `/dev/null`
-# from `/dev/null.bak`.
-_DEVNULL_REDIRECT = re.compile(r"[0-9]*>>?\s*/dev/null(?=\s|$)")
+# find ends an -exec clause with `;` or `+`. The `;` is written `\;` in a shell,
+# and `_tokenize` resolves that escape — so what arrives here is a bare `;`,
+# which is ALSO an operator token. The two are told apart by position and
+# nothing else, which is why `_split_exec_clauses` runs before the operator
+# split: a `;` that closes an open `-exec` is not a command separator.
+#
+# The old spellings are gone with the mechanism that needed them. The regex
+# splitter used to eat the `;` before this set was consulted, so a lone trailing
+# backslash had to count as an ending; there is no longer a stage that can eat it.
+_EXEC_END = frozenset((";", "+"))
+def _tokenize(text):
+    """Shell words and operators, or None when the text cannot be parsed.
 
+    THE WHOLE OF F51 IS THAT THIS DID NOT EXIST. Every decision below used to be
+    taken on the raw string: the hostile scan ran `">" in text`, and the segment
+    split was `re.split(r"&&|\\|\\||[|;]|\\n", text)`. Neither knows what a quote
+    is, so `grep -n "cost > 5"` was a redirect, `grep -n "a && b"` was two
+    commands, and `grep -n "READ_ONLY\\|read_only" f.py | head` was cut inside its
+    own pattern into a fragment whose first word is not a command name. Grepping
+    for shell punctuation is the most ordinary thing done in this repo.
 
-def _exec_clauses(words):
-    """The argv of every `-exec`/`-ok` clause in a find command.
+    `punctuation_chars=True` is what makes an operator its own token instead of
+    gluing it to the word beside it — without it `echo "x"; ls` yields `x;` and
+    the split misses the `;` entirely.
 
-    Each is judged by `_command_is_read_only` in turn, so `-exec` costs a proof
-    of the inner command rather than acting as a blanket write flag. A clause
-    with no command comes back empty, and an empty command proves nothing —
-    which is the answer that keeps a malformed find on the watched side.
+    None means "the shell would read this differently than any split here can":
+    unbalanced quotes, and anything else `shlex` refuses. Returning it keeps the
+    command on the WATCHED side, which is the standing choice of this file —
+    an unrecognised command is attributable, because the cost of a stray notice
+    is a line of text and the cost of a miss is a write nobody was told about.
+    Before this, an unbalanced quote reached the allowlist and passed.
+
+    `shlex` IS IMPORTED HERE, NOT AT MODULE SCOPE, and `tools/bench-hooks.py`
+    named this hook when it refused the eager version. Every hook pays its
+    module-level imports on every matching tool call, and this one is on both a
+    Bash and an Edit matcher — the Edit lane returns without ever asking about a
+    command. Same reason `subprocess` is imported inside `_git_dirty` below.
     """
-    clauses, i = [], 0
-    while i < len(words):
-        if words[i] not in _EXEC_FLAGS:
+    import shlex
+    try:
+        lex = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        return list(lex)
+    except ValueError:
+        return None
+
+
+def _drop_harmless_redirects(toks):
+    """Remove redirect groups that name no file: `[fd]> /dev/null` and `[fd]>& fd`.
+
+    The token-level twin of a regex that read `[0-9]*>>?\\s*/dev/null(?=\\s|$)`.
+    That regex could not see `2>&1` at all, so its `&` reached the hostile scan
+    and every stderr-merging read — `grep x f.py 2>&1`, and `ls >/dev/null 2>&1`
+    where BOTH redirects are harmless — was watched. Descriptor duplication
+    writes to a descriptor, never to a path.
+
+    The `/dev/null.bak` distinction the old lookahead protected still holds, and
+    for a better reason: the target is now a whole token, so it either equals
+    `/dev/null` or it does not.
+    """
+    out, i = [], 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok in _REDIRECT_TOKENS and i + 1 < len(toks):
+            target = toks[i + 1]
+            harmless = (target == "/dev/null"
+                        or (tok in (">&", "<&") and target.isdigit()))
+            if harmless:
+                if out and out[-1].isdigit():
+                    out.pop()               # the leading descriptor, e.g. the 2 of 2>&1
+                i += 2
+                continue
+        out.append(tok)
+        i += 1
+    return out
+
+
+def _write_flag(tok):
+    """Does this token turn a reader into a writer?
+
+    Whole-token membership plus the attached-value spellings of the in-place
+    family, which is F56: `-i.bak` and `--in-place=.bak` are the same capability
+    as `-i` wearing a suffix, and only the bare form was ever matched.
+    """
+    if tok in _WRITE_FLAGS:
+        return True
+    if tok.startswith("--in-place="):
+        return True
+    if tok.startswith("--output"):
+        return True
+    return (tok.startswith("-i") and not tok.startswith("--") and len(tok) > 2)
+
+
+def _xargs_command(rest):
+    """The argv `xargs` will run, or [] when there is none to judge.
+
+    Same contract as `_exec_clauses`: the flags are skipped, the first remaining
+    word is the command, and an empty result proves nothing — which keeps a bare
+    or malformed `xargs` on the watched side rather than inheriting `echo`'s
+    harmlessness by default.
+    """
+    i = 0
+    while i < len(rest):
+        tok = rest[i]
+        if not tok.startswith("-"):
+            return rest[i:]
+        if tok in _XARGS_VALUE_FLAGS:
+            i += 2                          # the value is not the command
+        else:
+            i += 1
+    return []
+
+
+def _split_exec_clauses(toks):
+    """Every `-exec`/`-ok` clause's argv, and the tokens left over.
+
+    Each clause is judged in turn, so `-exec` costs a proof of the inner command
+    rather than acting as a blanket write flag. A clause with no command comes
+    back empty, and an empty command proves nothing — which is the answer that
+    keeps a malformed find on the watched side.
+
+    IT RETURNS THE REMAINDER because the clause has to leave the token stream
+    before the operator split sees it. `find … -exec grep -l foo {} \\;` reaches
+    here as a trailing `;`, and a `;` is how one command ends and another begins:
+    left in place it cut the find in half and the empty second half proved
+    nothing, so a case that had passed for as long as `-exec` has been judged
+    went red. Consuming the terminator with its clause is what tells the two
+    meanings of `;` apart.
+    """
+    clauses, rest, i = [], [], 0
+    while i < len(toks):
+        if toks[i] not in _EXEC_FLAGS:
+            rest.append(toks[i])
             i += 1
             continue
         i += 1
         argv = []
-        while i < len(words) and words[i] not in _EXEC_END:
-            argv.append(words[i])
+        while i < len(toks) and toks[i] not in _EXEC_END:
+            argv.append(toks[i])
             i += 1
+        if i < len(toks):
+            i += 1                    # the terminator belongs to the clause
         clauses.append(argv)
-    return clauses
+    return clauses, rest
 
 
 def _command_is_read_only(command):
@@ -234,26 +377,47 @@ def _command_is_read_only(command):
     ignored for the Bash one. So this only ever REMOVES an attribution, and only
     when the command provably cannot write - an unrecognised command is still
     watched exactly as before.
+
+    F51 IS WHY THIS TOKENIZES FIRST. Every check used to read the raw string, so
+    a shell metacharacter inside a quoted SEARCH PATTERN was taken for shell
+    syntax and the most ordinary command in this repo - grepping its own source
+    for punctuation - was called a writer. `_tokenize` is the fix, and everything
+    after it asks its questions of tokens.
     """
-    text = (command or "").strip()
-    if not text:
-        return False
-    # Removed BEFORE the hostile scan rather than exempted inside it: what is
-    # left is then scanned in full, so a second redirect to a REAL file in the
-    # same command is still there to be caught.
-    text = _DEVNULL_REDIRECT.sub(" ", text)
-    # Anything that can name a destination, spawn a shell, or substitute another
-    # command is out of scope for a proof. `>` covers redirection wherever it
-    # appears, including inside a quoted awk program.
-    for hostile in (">", "<<", "`", "$(", "${", "&"):
-        if hostile in text:
+    toks = _tokenize((command or "").strip())
+    if not toks:
+        return False              # empty, or unparseable: both stay watched
+    return _tokens_are_read_only(toks)
+
+
+def _tokens_are_read_only(toks):
+    """The proof itself, over shell TOKENS.
+
+    Separate from `_command_is_read_only` so `-exec` and `xargs` can recurse on
+    the argv they already hold instead of joining it back into a string and
+    re-splitting it — a round trip that loses exactly the quoting F51 was about.
+    """
+    toks = _drop_harmless_redirects(toks)
+    for tok in toks:
+        if tok in _REDIRECT_TOKENS or tok in _SUBST_TOKENS:
             return False
-    segments = [seg for seg in re.split(r"&&|\|\||[|;]|\n", text)
-                if seg.strip()]
-    if not segments:
+    # BEFORE the operator split, because a clause's `\;` terminator arrives as a
+    # bare `;` and would otherwise be read as the end of the command.
+    clauses, toks = _split_exec_clauses(toks)
+    for argv in clauses:
+        if not argv or not _tokens_are_read_only(argv):
+            return False
+    segments, current = [], []
+    for tok in toks:
+        if tok in _OP_TOKENS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(tok)
+    segments.append(current)
+    if not any(segments):
         return False
-    for seg in segments:
-        words = seg.split()
+    for words in segments:
         # Leading VAR=value assignments are not the command.
         while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
             words = words[1:]
@@ -269,11 +433,12 @@ def _command_is_read_only(command):
                 return False
         if name == "tee":
             return False          # tee's whole purpose is a destination
-        for argv in _exec_clauses(rest):
-            if not _command_is_read_only(" ".join(argv)):
+        if name == "xargs":
+            argv = _xargs_command(rest)
+            if not argv or not _tokens_are_read_only(argv):
                 return False
         for flag in rest:
-            if flag in _WRITE_FLAGS or flag.startswith("--output"):
+            if _write_flag(flag):
                 return False
     return True
 
@@ -536,6 +701,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     exts = _config.source_exts(cfg)
     plugin_wrote = _plugin_wrote(sd, session_id)
     in_prog = None
+    plan_mode = None
     others = None
     suspicious = []
     attributed = []
@@ -574,6 +740,25 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         if _config.matches_exempt(rel, exempt):
             continue
         if not any(rel.lower().endswith(x) for x in exts):
+            continue
+        # F52. THE PLAN-COVERAGE CLASS IS GRADED, and only this class: the journal
+        # and lock classes above bind their claim to evidence of their own and mean
+        # the same thing in a repo with no plan. This one does not. `in_progress_
+        # files` returns an empty set both for "no manifest" and for "a manifest
+        # with nothing running" — its own docstring in `_config` says so — so
+        # without asking `manifest_state` the guard reads a repo that never opted
+        # in as a repo where nothing is covered, and reports every shell write in
+        # it. `plan_gate_mode` is the resolver `require-plan.py` was graded with
+        # and this hook never called; its docstring is the argument: "in a repo
+        # with no manifest there is no plan, so there is nothing to enforce."
+        #
+        # Resolved lazily and once, like `in_prog` beside it — the answer cannot
+        # change inside one pass, and a session in a plan-less repo should not pay
+        # to be told nothing.
+        if plan_mode is None:
+            plan_mode = _config.plan_gate_mode(
+                cfg, _config.manifest_state(root, manifest_rel))
+        if plan_mode == "observe":
             continue
         if in_prog is None:
             in_prog = _config.in_progress_files(root, manifest_rel)

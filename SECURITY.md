@@ -324,8 +324,10 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 
    **This paragraph used to say it detects ANY shell write into an unplanned
    source file. It does not, and has not since F-P-24.** The real predicate is
-   narrower in four ways, and every exemption is there because the broad version
-   was reporting something that was not true:
+   narrower than that, and every exemption below is there because the broad
+   version was reporting something that was not true. The count that used to
+   stand here rotted the first time an exemption was added; the list is the
+   thing to read:
 
    - **A NEW dirty path**, relative to a baseline the session's first Bash pass
      seeds silently — not every unplanned write, only one that appears between
@@ -334,11 +336,17 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      bound the evidence to the operation instead of to the tree: a command
      provably unable to write is absorbed and no path is attributed to it. That
      only ever *removes* an attribution — an unrecognised command is still
-     watched exactly as before. `/dev/null` redirects are substituted out of the
-     command text before the scan (any other `>` in the same command survives),
-     and a `find … -exec` clause is graded on the command it runs — `-exec cat {}
-     +` is absorbed, `-exec sed -i …` is not, and a clause naming no command
-     proves nothing and stays watched.
+     watched exactly as before. **The proof is taken over shell TOKENS, not over
+     the command text** — before F51 it read the raw string, so a metacharacter
+     inside a quoted search pattern was taken for shell syntax and `grep -n
+     "cost > 5"` was a redirect. Redirects that name no file are dropped
+     (`2>/dev/null`, `2>&1`); any other `>` in the same command survives. A
+     command the shell would parse differently than any splitter here can —
+     unbalanced quotes, a heredoc — is watched, because a stray notice costs a
+     line of text and a miss costs a write nobody was told about. A `find …
+     -exec` clause and an `xargs` command are each graded on what they run:
+     `-exec cat {} +` and `xargs wc -l` are absorbed, `-exec sed -i …` and
+     `xargs rm` are not, and a clause naming no command proves nothing.
    - **With another session writing in the same window it drops the authorship
      claim, not the finding.** A path another session claims is attributed there
      and never mentioned here; for the rest, the report states what is actually
@@ -349,6 +357,14 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      could exonerate each other for a file neither wrote.
    - **The path must be a source file** — not exempt, not the manifest or its
      lock, not written by an edit tool, and not covered by an `in_progress` task.
+   - **The plan-coverage class is graded on the same evidence as the plan gate**,
+     through `_config.plan_gate_mode`: in a repo with no manifest there is no
+     plan, so "no task covers this" is vacuously true of every file and the class
+     says nothing. `enforce: true` (or `planGate`) restores it as a decision
+     someone made. The journal and lock classes are NOT graded — each binds its
+     claim to evidence of its own and means the same thing in a repo with no
+     plan. Before this, installing the plugin armed the class in every repo on
+     the machine, including ones that never opted in.
 
    So the honest ceiling here is not coverage but **attribution**. It sees a tree
    diff plus the text of one command, and where those two cannot name an author

@@ -141,6 +141,29 @@ def sort_key(phase, index):
     return (_PRIORITISED, tier, index)
 
 
+def ranks(phases):
+    """Each phase's POSITION in execution order, positionally — `ranks[i]` is
+    where `phases[i]` runs.
+
+    `order()` answers "what runs next"; this answers "where in the run does THIS
+    phase sit", and a renderer that must keep SHOWING the written plan needs the
+    second. The HTML report emits these as `data-porder` so its sort control
+    orders by a number the server computed: the client re-expressing
+    `sort_key` in JavaScript is the one way this feature could grow a second
+    opinion about order, and there is nothing here for it to re-express.
+
+    This is the module's only permutation — `order()` reads it rather than
+    sorting again, so a change to the comparator cannot land in one and miss
+    the other.
+    """
+    items = list(phases or [])
+    ranked = sorted(range(len(items)), key=lambda i: sort_key(items[i], i))
+    out = [0] * len(items)
+    for rank, i in enumerate(ranked):
+        out[i] = rank
+    return out
+
+
 def order(phases):
     """`phases` re-ordered by `sort_key` — a NEW list, never sorted in place.
 
@@ -149,8 +172,10 @@ def order(phases):
     was written. Execution order changes; the written plan does not.
     """
     items = list(phases or [])
-    ranked = sorted(range(len(items)), key=lambda i: sort_key(items[i], i))
-    return [items[i] for i in ranked]
+    out = [None] * len(items)
+    for i, rank in enumerate(ranks(items)):
+        out[rank] = items[i]
+    return out
 
 
 def rank_ready(rows):

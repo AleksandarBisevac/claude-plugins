@@ -123,6 +123,35 @@ def _cases(check):
     check("n6 an empty or absent phase list is an empty order, not a crash",
           M.order([]) == [] and M.order(None) == [])
 
+    # --- ranks(): the same permutation, read the other way ---------------------
+    # `order()` answers "what runs next"; `ranks()` answers "where does THIS
+    # phase sit", which is what a renderer needs when it must keep showing the
+    # plan as written and still hand the client a number to sort by. The report
+    # emits these as `data-porder`. They are one permutation on purpose - a
+    # second `sorted()` over `sort_key` would be a second order.
+    check("q1 ranks() is a bijection onto the positions, and it orders two "
+          "phases exactly as sort_key compares them. Asserted as a PROPERTY "
+          "against the comparator rather than against a re-typed permutation, "
+          "so the case cannot agree with a bug it copied",
+          sorted(M.ranks(shared)) == list(range(len(shared)))
+          and all((M.ranks(shared)[i] < M.ranks(shared)[j])
+                  == (M.sort_key(shared[i], i) < M.sort_key(shared[j], j))
+                  for i in range(len(shared)) for j in range(len(shared))
+                  if i != j),
+          repr(M.ranks(shared)))
+    check("q2 ranks() and order() are inverses - `order(ph)[ranks(ph)[i]]` is "
+          "`ph[i]`, by identity and not by equality, because two phase dicts "
+          "can compare equal and still be different rows",
+          all(M.order(shared)[M.ranks(shared)[i]] is shared[i]
+              for i in range(len(shared))))
+    check("q3 SECOND-DIRECTION CASE: with no priority anywhere every phase keeps "
+          "its own position, so the ranks are the identity and a page stamping "
+          "them changes no order at all. Reads vacuous, and is what goes red the "
+          "day an absent tier becomes tier 0 and every plan grows a pin",
+          M.ranks(plain) == list(range(len(plain)))
+          and M.ranks([]) == [] and M.ranks(None) == [],
+          repr(M.ranks(plain)))
+
     # --- the key itself -------------------------------------------------------
     check("k1 sort_key is a TUPLE, so a per-task tier is a member added later "
           "rather than a rewrite of the comparison",

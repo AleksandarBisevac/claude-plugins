@@ -53,6 +53,11 @@
      */
     function put(k, v) { if (v) parts.push(k + '=' + encodeURIComponent(v)); }
     put('v', viewMode === defaultView ? '' : viewMode);
+    // Beside the view for the same reason the view is here: a toolbar select is
+    // part of the view somebody would send as a link, unlike a column-header
+    // sort, which is a poke at one table. The default is omitted, so a report
+    // nobody has re-ordered still mints no fragment of its own.
+    put('so', phaseOrder === defaultOrder ? '' : phaseOrder);
     put('q', q ? q.value.trim() : '');
     put('ps', phaseStatus);
     // Space-joined, mirroring the data-area attribute — one separator rule for

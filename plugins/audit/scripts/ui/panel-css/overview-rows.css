@@ -35,6 +35,11 @@ table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
 .ovrow:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
 .ovrow .pid{font-family:var(--mono);font-size:.8rem;color:var(--muted);flex:0 0 3rem}
 .ovrow .ptitle{flex:1 1 12rem;min-width:8rem}
+/* The outcome line, which a row shows ONLY when the search matched there and
+   nowhere the row already renders. It used to be on every row: near-identical
+   prose that doubled the row height and separated nothing. It keeps its own
+   line (flex-basis 100%) and one line only — the text is a window centred on
+   the hit, and the clip is the belt to that brace. */
 .ovout{flex:1 1 100%;font-size:.76rem;color:var(--muted);margin:.1rem 0 0 3.75rem;
  max-width:80ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ovmatch{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}

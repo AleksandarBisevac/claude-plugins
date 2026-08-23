@@ -18,11 +18,14 @@
  *   carry a search box, and whether the frame caps its own height — in the
  *   dialog the dialog is the frame. It also drops the Expand button, because an
  *   expand control in an expanded view says nothing
- * @returns {{tools: HTMLElement, body: HTMLElement}} the toolbar and the table,
- *   separately, so a caller can put them in different containers. `body` is the
- *   empty-state note when nothing matches, and that note distinguishes "nothing
- *   matches this filter" from "nothing of this kind was discovered" — the second
- *   is not a filter problem and offers no Clear
+ * @returns {{tools: HTMLElement, colstrip: (HTMLElement|null),
+ *   body: HTMLElement}} the toolbar, the area-column strip and the table,
+ *   separately, so a caller can put them in different containers. `colstrip` is
+ *   null when every area already has a column, because there is then nothing
+ *   hidden to say anything about. `body` is the empty-state note when nothing
+ *   matches, and that note distinguishes "nothing matches this filter" from
+ *   "nothing of this kind was discovered" — the second is not a filter problem
+ *   and offers no Clear
  */
 function pCapTable(kind,rows,full){
  const q=PF.q.trim().toLowerCase();
@@ -50,7 +53,26 @@ function pCapTable(kind,rows,full){
    type:'button','aria-label':'expand the capability table to full screen',
    title:'Expand — read the whole table without the frame. Esc closes it.',
    onclick:()=>polFullOpen()},'⤢ Expand'));
- const cols=POLICY.areaInfo||[];
+ // A column is drawn for an area that CARRIES A RULE — see `pCols`, which also
+ // says why liveness is not the predicate. The areas with none are offered here by
+ // name, pressed meaning "on screen": a hidden column must never be able to read
+ // as "no rule here", so the ones without one are listed rather than dropped.
+ const cset=pCols(kind),cols=cset.shown;
+ const colstrip=cset.ruleless.length?el('div',{class:'ovstrip','data-pcols':'1'},
+   el('span',{class:'ovlbl'},'Areas with no rule'),
+   cset.ruleless.map(a=>el('button',{class:'ovpill',type:'button','data-pcol':a.tag,
+     'aria-pressed':PF.cols.indexOf(a.tag)>=0?'true':'false',
+     'aria-label':'the '+a.tag+' column',
+     title:'no rule for '+PKLABEL[kind].toLowerCase()+' in area '+a.tag+', so no '
+       +'column by default. Press to add one — it shows the column and writes '
+       +'nothing.',
+     onclick:()=>{pToggleCol(a.tag);renderPolicy();}},a.tag)),
+   // The sentence is CONDITIONAL, and the empty case is the one worth having: with
+   // every area on screen there is nothing hidden, and a line saying otherwise
+   // would be the defect this strip exists to prevent, pointing the other way.
+   el('span',{class:'mut small'},cset.hidden.length
+     ?'no column of their own — press one to add it'
+     :'every area has a column')):null;
  const head2=tableHead(['capability','source','rule'].concat(
    cols.map(a=>({attrs:{class:'ar'+(a.active?'':' dormant'),
      title:a.active
@@ -84,7 +106,7 @@ function pCapTable(kind,rows,full){
      onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null)
  :el('div',{class:'poltblwrap'+(full?' full':''),id:full?'poltblfull':'poltbl'},
    el('table',{class:'poltbl'},head2,tb));
- return {tools:tools,body:body};}
+ return {tools:tools,colstrip:colstrip,body:body};}
 
 /**
  * Draw the whole Policy tab from `POLICY` and `PDRAFT`.
@@ -216,7 +238,7 @@ function renderPolicy(){closeCombo();
  PKINDS.forEach(k=>kstrip.append(el('button',{class:'ovpill',type:'button','data-pk':k,
    'aria-pressed':PF.kind===k?'true':'false',
    title:'the '+PKLABEL[k].toLowerCase()+' this project can reach',
-   onclick:()=>{PF.kind=k;PF.q='';PNOTE=null;renderPolicy();}},
+   onclick:()=>{PF.kind=k;PF.q='';PF.cols=[];PNOTE=null;renderPolicy();}},
    PKLABEL[k],el('b',{},String(((POLICY.resolved||{})[k]||[]).length)))));
  card.append(kstrip);
  const kind=PF.kind,rows=((POLICY.resolved||{})[kind]||[]);
@@ -246,7 +268,9 @@ function renderPolicy(){closeCombo();
  // "full screen" copy of a table that disagrees with the table is worse than
  // the scrolling it was meant to relieve.
  const cap=pCapTable(kind,rows,false);
- card.append(cap.tools,cap.body);
+ // Filtered, never stringified: append() writes the literal word "null" for an
+ // absent child, unlike el(). The browse dialog paid for that lesson once.
+ card.append(...[cap.tools,cap.colstrip,cap.body].filter(Boolean));
  // --- the block as written ----------------------------------------------------
  card.append(el('h3',{class:'sub2'},flabel('Rules as written',
    'The block for this kind, in the order the guard reads it: deny before allow, '

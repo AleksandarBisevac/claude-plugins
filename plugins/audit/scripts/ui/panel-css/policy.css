@@ -1,8 +1,13 @@
 /* ---- policy switchboard ---------------------------------------------------
-   A wide table by construction: one column per area, and an area can be added
-   without asking this stylesheet. So it scrolls INSIDE its own frame — the
-   document never scrolls sideways, which on a phone is the difference between a
-   table you can read and a page that slides out from under you. */
+   Still a wide table, and still narrower than it was: an area gets a column only
+   while it carries a rule (`pCols`), so the width follows the POLICY rather than
+   the plan's tag list, and the areas without one are offered as `.ovpill`s in an
+   `.ovstrip` above the table — no rule of its own here, deliberately, because the
+   kind switch and the default switch right above it are the same control in the
+   same grammar. The frame stays: the column count is still the reader's to raise,
+   so the table scrolls INSIDE it and the document never scrolls sideways, which on
+   a phone is the difference between a table you can read and a page that slides
+   out from under you. */
 .poltblwrap{border:1px solid var(--border);border-radius:var(--radius);
  overflow:auto;max-height:34rem;margin:.4rem 0}
 table.poltbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.8rem}

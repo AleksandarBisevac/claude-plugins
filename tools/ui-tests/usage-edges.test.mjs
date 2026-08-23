@@ -80,3 +80,79 @@ describe('a /api/usage response that is JSON but not the usage payload', () => {
     expect(emptyStateFor({ facts: [], enabled: true, counts: {} })).toBe(null);
   });
 });
+
+describe('the filters that are on, once the controls fold away', () => {
+  // The controls sit behind a shut <details> now, so the chip row above it is the
+  // only thing on screen saying the numbers below are a subset. That makes "which
+  // filters are on" a list the page cannot afford to hold two opinions about --
+  // and it is behaviour, not source text, so it belongs here rather than in
+  // test__panel_page.py's pins.
+  const panel = () => {
+    const { ctx } = loadPanel();
+    // A well-formed empty ledger: every mutator below re-renders, and this is the
+    // payload renderUsage returns early from in a stub DOM.
+    vm.runInContext('USAGE = { facts: [], enabled: true, counts: {} };', ctx);
+    return { ctx, run: (src) => vm.runInContext(src, ctx) };
+  };
+
+  it('counts the range preset, which wears no UF slot of its own', () => {
+    const { run } = panel();
+    // The fixture that separates the two implementations: the chip row used to
+    // walk UORDER alone, and the range is not in it. So this is precisely the
+    // state where a filter was on and nothing on screen named it.
+    run("UORDER = []; UF.range = '30';");
+    expect(run('uOnFilters()')).toEqual(['range']);
+    expect(run('uAnyFilter()')).toBe(true);
+  });
+
+  it('keeps the range LAST, so Escape still pops it after the dimensions', () => {
+    const { run } = panel();
+    run("UF.model = 'opus'; UORDER = ['model']; UF.range = '30';");
+    expect(run('uOnFilters()')).toEqual(['model', 'range']);
+  });
+
+  it('and reports nothing on when nothing is on', () => {
+    // The second-direction case, and the one that looks vacuous: it passes on the
+    // pre-change code by construction and is the only one that fails if the list
+    // (or the chip row, or the summary's count) becomes unconditional.
+    const { run } = panel();
+    run("UORDER = []; UF.range = 'all'; UF.model = '';");
+    expect(run('uOnFilters()')).toEqual([]);
+    expect(run('uAnyFilter()')).toBe(false);
+  });
+
+  it('lifts the range back to its default rather than blanking it', () => {
+    const { run } = panel();
+    run("UF.range = '30';");
+    run("uLiftF('range');");
+    expect(run('UF.range')).toBe('all');
+    expect(run('uOnFilters()')).toEqual([]);
+    // WHY 'all' and not '': uFiltered reads any other value as a preset in days,
+    // and parseInt('') is NaN. This is the buggy version, run on purpose, so the
+    // case above is known to separate the two rather than merely to pass.
+    run("UF.range = '';");
+    expect(() => run('uFiltered()')).toThrow();
+  });
+
+  it('lifts an ordinary dimension by blanking its slot', () => {
+    const { run } = panel();
+    run("setF('model', 'opus');");
+    expect(run('uOnFilters()')).toEqual(['model']);
+    run("uLiftF('model');");
+    expect(run('UF.model')).toBe('');
+    expect(run('uOnFilters()')).toEqual([]);
+  });
+
+  // WHAT IS DELIBERATELY NOT HERE: whether the Filters fold arrives shut, stays
+  // as the reader left it across a repaint, and shows a count while something is
+  // filtering. Two cases for that were written and deleted rather than kept,
+  // because nothing here could make them fail: the fold's state is read off the
+  // rendered <details>, the stub document's querySelector returns a stub for
+  // every selector, and it has no createElementNS at all -- so a renderUsage
+  // over a real ledger dies in the chart long before the fold, and one over an
+  // empty ledger returns before it. A case that cannot go red is the failure
+  // this suite exists to prevent. The claim lives where it can be measured:
+  // openUsageFilters in tools/capture-screenshots.mjs checks all three against a
+  // real browser, and test__panel_page.py's uf3 pins that the state has exactly
+  // one home.
+});

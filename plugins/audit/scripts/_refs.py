@@ -48,6 +48,14 @@ DELIBERATELY NOT SCANNED, each because a stale path there is correct rather than
 either; `manifest_moved_files()` checks the manifest itself, which is the source those
 two are rendered from.
 
+THE SUBJECT GREW, AND IT GREW ALONG ONE LINE: what one file CLAIMS about another, checked
+against the tree. A document naming a script that is gone is the original case; a document
+whose sweep command names a retired glob, a published `curl` pinned to a moving ref, and a
+link pointing at a page nobody kept are the same shape. `doc_link_drift()` is the newest and
+the one that needed no precedent at all: nothing here had ever asked whether a document is
+*reachable*, so a page could be added, linked once, and silently orphaned by the next edit to
+whatever linked it.
+
 KNOWN LIMIT, STATED RATHER THAN HIDDEN. Matching is per line, so a path split across two
 adjacent string literals is invisible — `_deps.py` spells one as `"...plugins/audit/
 scripts/" "_deps.py --render..."` and this module does not see it. Joining the file first
@@ -67,6 +75,7 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 import hashlib
 import json
 import os
+import posixpath
 import re
 import sys
 
@@ -121,6 +130,12 @@ SURFACES = (
     ("CONTRIBUTING.md", BARE),
     ("CLAUDE.md", BARE),
     ("README.md", BARE),
+    # The two documents the audience split added. A quickstart names no script path
+    # today and the compatibility contract names the validators that hold it - both
+    # are listed so that a path either one grows is stat'd from the day it is written,
+    # rather than the day somebody remembers this table exists.
+    ("QUICKSTART.md", BARE),
+    ("COMPATIBILITY.md", BARE),
     ("SECURITY.md", BARE),
     # The plugin's own sources, where an unanchored `scripts/x.py` is a fixture about
     # somebody else's repo rather than a reference to ours. See the module docstring.
@@ -1017,6 +1032,158 @@ def sweep_doc_drift(repo_root=None):
     for rel in sorted(listed - seen):
         out.append((rel, "is in SWEEP_DOCS but the walk cannot reach it, so the scan "
                          "has gone blind rather than clean"))
+    return out
+
+
+# --- the document graph -------------------------------------------------------
+# NOTHING IN THIS TREE HELD A DOCUMENT'S DISCOVERABILITY, and the gap was total: no
+# rule enumerated the root-level documents, none counted them, and none asked whether
+# one is linked from anywhere at all. There was no Markdown link checker of any kind.
+# A document nobody links to is a document nobody reads, and it fails SILENTLY - every
+# gate green, the page simply never reached.
+#
+# That became load-bearing the moment the documentation was split by audience, because
+# the split's whole value is that a new reader's path to first success is SHORT, and a
+# path is a property of the link graph rather than of any one file. Written while the
+# graph was still clean - measured, nothing dangling and no unreachable root document
+# - which is the only cheap moment to start holding one, exactly as `sweep_doc_drift`
+# above says of its own list.
+#
+# Two directions, asymmetric on purpose, and what each half is ABOUT is the reason:
+#
+#   * a LINK is a claim about another file, so every one the walk can reach is
+#     resolved - in a skill, in the plugin README, anywhere. A claim is checkable
+#     wherever it is written, and the file it names either exists or does not;
+#   * REACHABILITY is a property of the PUBLISHED ROOT, so only root-level documents
+#     are required to have an inbound link. A document under `docs/` or a `SKILL.md`
+#     is reached by being named rather than by being linked, and requiring a link for
+#     each would need a blanket exemption - which is noise wearing a rule's clothes.
+#
+# Inline links only (`[text](target)`, images with them). Reference-style links and
+# autolinks are not resolved, so this UNDER-reports rather than over-reports, the same
+# limit the header of this file states about a path split across two literals. The
+# `.gitignore` caveat above applies unchanged: directories it names are pruned, an
+# ignored FILE of a scanned extension stays a candidate, and `git ls-files` may not be
+# used because these suites run over an export with no `.git` in it.
+
+# The root of the graph: where a reader arrives, so it needs no inbound link. Not an
+# exemption - an exemption is something that could be removed, and this cannot be.
+DOC_ENTRY = "README.md"
+
+# Root-level documents reached some other way, each with the reason attached rather
+# than left to a commit message. Checked in BOTH directions: an entry that has stopped
+# being a root document, or that something links to after all, is reported - otherwise
+# this becomes a place where dead exemptions accumulate and the rule quietly stops
+# covering what it claims. Same shape, and same argument, as `EXCLUDED` above.
+UNLINKED_BY_DESIGN = (
+    ("CLAUDE.md",
+     "loaded by the harness at the start of every session, so a reader never arrives "
+     "by following a link and adding one would not make it any more read"),
+)
+
+# `[text](target)`, and `![alt](src)` with it - an image whose file is gone is the same
+# defect as a link whose page is gone. The angle brackets Markdown permits around a
+# target are stripped; a title after the target is not matched, which is part of the
+# under-reporting the header states rather than a bug to fix quietly.
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(\s*<?([^)>\s]+)>?\s*\)")
+
+
+def _doc_links(rel, text):
+    """[(written, target), ...] — the in-repo links `rel` makes, target repo-relative.
+
+    A link to another host, a `mailto:` or an anchor inside the same page is not a
+    claim about a file in this tree and is not yielded at all. A `None` target means
+    the link resolves OUTSIDE the repository, which is a finding rather than something
+    to stat: `../thing` from the root reaches the machine, and a document may not.
+    """
+    here = rel.rsplit("/", 1)[0] if "/" in rel else ""
+    out = []
+    for match in _MD_LINK_RE.finditer(text):
+        written = match.group(1)
+        if written.startswith("#") or written.startswith("//"):
+            continue
+        if "://" in written or written.startswith("mailto:"):
+            continue
+        target = written.split("#", 1)[0].split("?", 1)[0]
+        if not target:
+            continue
+        joined = posixpath.normpath(posixpath.join(here, target))
+        if joined == ".." or joined.startswith("../"):
+            out.append((written, None))
+            continue
+        out.append((written, joined))
+    return out
+
+
+def doc_link_drift(repo_root=None):
+    """[(doc, problem), ...] — the ways the document graph stops holding.
+
+    Three findings, and the middle one is the reason this exists:
+
+      * **a link that names nothing** — the loud half. A page moved or was renamed and
+        the pointer to it stayed, so a reader following it lands on a 404 while every
+        other gate is green;
+      * **a root-level document nothing links to** — the silent half, and the one a
+        documentation split creates. Adding a page adds a page whose discoverability
+        rests on somebody having remembered a link, and nothing here noticed when that
+        link went away;
+      * **an exemption that no longer describes the tree** — a declared entry that has
+        stopped being a root document, or that is linked after all. Without this the
+        table becomes the place a real orphan hides behind a stale reason.
+
+    A document it cannot read is REPORTED, never skipped: "I could not resolve this
+    file's links" and "this file's links are fine" are different answers, and skipping
+    is the second one told as the first.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return [(".gitignore", problem)]
+    out = []
+    linked = {}
+    docs = _iter_docs(root, patterns, _MD_EXT)
+    for rel in docs:
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)),
+                      "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, "cannot be read, so the links in it cannot be resolved "
+                             "and it is unclear rather than clean: %s" % exc))
+            continue
+        for written, target in _doc_links(rel, text):
+            if target is None:
+                out.append((rel, "links to %r, which resolves outside the repository"
+                                 % (written,)))
+                continue
+            if target != rel:
+                linked.setdefault(target, set()).add(rel)
+            if not os.path.exists(os.path.join(root, target.replace("/", os.sep))):
+                out.append((rel, "links to %r, which is not in the tree - either the "
+                                 "link rotted or the file moved" % (written,)))
+    roots = [rel for rel in docs if "/" not in rel]
+    excused = dict(UNLINKED_BY_DESIGN)
+    if DOC_ENTRY not in roots:
+        out.append((DOC_ENTRY, "is the entry point reachability is measured from and "
+                               "the walk cannot see it, so every other document would "
+                               "read as unreachable at once"))
+    for rel in roots:
+        if rel == DOC_ENTRY or rel in excused:
+            continue
+        if rel not in linked:
+            out.append((rel, "is a root-level document nothing links to, so a reader "
+                             "following links never reaches it - link it from %s, or "
+                             "declare it in UNLINKED_BY_DESIGN with the reason"
+                             % (DOC_ENTRY,)))
+    for rel, _why in UNLINKED_BY_DESIGN:
+        if rel not in roots:
+            out.append((rel, "is declared UNLINKED_BY_DESIGN but is not a root-level "
+                             "document the walk reaches, so the exemption excuses "
+                             "nothing and hides the next real orphan"))
+        elif rel in linked:
+            out.append((rel, "is declared UNLINKED_BY_DESIGN but %s links to it, so "
+                             "the exemption has outlived its reason"
+                             % (", ".join(sorted(linked[rel])),)))
     return out
 
 
