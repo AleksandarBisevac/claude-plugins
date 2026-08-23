@@ -171,7 +171,19 @@ TABLE = (
  ("tests_import_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_tests():\n    import test__output\n    return test__output\n",
   DEP, "tb7"),
- ("navigability_violations", S + "panel/_panel_composition.py", "drop",
+ # TWO CONSTRAINTS, and this row lost the first one silently. The target must be
+ # a file the rule APPLIES to (400+ lines) AND one carrying EXACTLY the two
+ # markers it needs, because `drop` removes ONE line: a file with fourteen
+ # markers still has thirteen afterwards and never violates.
+ #
+ # It named `panel/_panel_composition.py` until F91 moved `_proposals_view` out
+ # of it. At 344 lines the rule had nothing to say there any more, so the
+ # mutation proved nothing and this gate reported STAYED GREEN while the lint
+ # itself was fine - one change making an unrelated gate stop asserting, with no
+ # test going red anywhere. A row naming a file NEAR the threshold is a row with
+ # an expiry date, which is why the replacement is 253 lines clear of it rather
+ # than the two closer candidates.
+ ("navigability_violations", "plugins/audit/hooks/require-plan.py", "drop",
   r"^# -{2,}", None, DEP, "n1"),
  ("ui_navigability_violations", "plugins/audit/scripts/ui/panel/composition.js",
   "drop", r"^ {0,2}//\s+-{2,}", None, DEP, "u1"),
