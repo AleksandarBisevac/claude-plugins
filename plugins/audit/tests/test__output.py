@@ -39,6 +39,10 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _output as M                                # noqa: E402
+# `us8` asserts the anchor's doc-suffix set has ONE home: the ui/ walk here and
+# `declared_asset_drift()` a layer up must skip the same files, or a README lands
+# inside a digest, or an asset lands outside the comparison.
+import _ui_theme                                   # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
@@ -1532,6 +1536,213 @@ def _cases(check):
               is None
           and M._prose_number_claim("It was one file and is six, because the "
                                     "checks shared it for one reason") is None)
+
+    # --- us: which files a surface's pictures are OF (F85) --------------------
+    # `_refs.screenshot_capture_drift()` and `tools/capture-screenshots.mjs` both
+    # need this answer and neither may hold its own copy of it, so every case here
+    # is about the ONE walk they share. The rule's own cases live beside sc1-sc10
+    # in test__refs.py; these are about the walk underneath it.
+    _us_live = M.ui_surface_digests()
+    check("us1 the real tree files every `ui/` part under a surface, and both "
+          "surfaces come back with a digest - the case that goes red the day a "
+          "directory is added under `ui/` whose name answers nobody: %r"
+          % ((_us_live["error"], _us_live["unassigned"]),),
+          _us_live["error"] is None and _us_live["unassigned"] == []
+          and sorted(_us_live["digests"]) == sorted(M.UI_SURFACES)
+          and len(set(_us_live["digests"].values())) == len(M.UI_SURFACES))
+    _us_src = M.ui_surface_sources()
+    check("us2 ...over a real set of parts rather than an empty one, and the two "
+          "surfaces are not the same set - a walk that reached nothing would "
+          "return the same clean shape us1 accepts: %r"
+          % ({"panel": len(_us_src["sources"]["panel"]),
+              "report": len(_us_src["sources"]["report"])},),
+          min(len(v) for v in _us_src["sources"].values()) > 5
+          and set(_us_src["sources"]["panel"]) != set(_us_src["sources"]["report"])
+          and "panel.html" in _us_src["sources"]["panel"])
+    check("us3 the FILING CONVENTION is what answers, so a part added under an "
+          "existing directory is covered without anyone declaring it - and an "
+          "unfamiliar directory returns no surface rather than a guess",
+          M.ui_surfaces_of("panel/core.js") == ("panel",)
+          and M.ui_surfaces_of("panel-css/app-shell.css") == ("panel",)
+          and M.ui_surfaces_of("panel.html") == ("panel",)
+          and M.ui_surfaces_of("report/filters.js") == ("report",)
+          and M.ui_surfaces_of("report-css/shell.css") == ("report",)
+          and M.ui_surfaces_of("shared/dates.js") == M.UI_SURFACES
+          and M.ui_surfaces_of("widgets/thing.js") == ())
+
+    tmp = tempfile.mkdtemp(prefix="audit-uisrc-")
+    try:
+        def _us_write(rel, text):
+            path = os.path.join(tmp, "scripts", *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            with io.open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+
+        def _us_digests():
+            return M.ui_surface_digests(os.path.join(tmp, "scripts"))
+
+        _us_scripts = os.path.join(tmp, "scripts")
+        _us_write("_ui_theme.py", "TOKEN_CSS = ':root{--bg:#fff}'\n")
+        _us_write("ui/panel.html", "<!doctype html>\n")
+        _us_write("ui/panel/core.js", "const el = 1;\n")
+        _us_write("ui/panel-css/app-shell.css", ".shell{}\n")
+        _us_write("ui/report/filters.js", "const chips = 1;\n")
+        _us_write("ui/report-css/shell.css", ".rshell{}\n")
+        _us_write("ui/shared/dates.js", "const DAY = 1;\n")
+        _us_base = _us_digests()
+        check("us4 a fixture tree digests both surfaces, so every case below "
+              "fails for the reason it names: %r" % (_us_base["error"],),
+              _us_base["error"] is None and _us_base["unassigned"] == []
+              and sorted(_us_base["digests"]) == sorted(M.UI_SURFACES))
+
+        # THE CASE THAT MAKES THIS A RULE RATHER THAN A NUISANCE. A digest that
+        # fires on everything asks for every picture back on every commit and gets
+        # switched off; both directions are asserted in one case so neither can be
+        # read as an accident of which file was picked.
+        _us_write("ui/report/filters.js", "const chips = 2;\n")
+        _us_rep = _us_digests()["digests"]
+        _us_write("ui/report/filters.js", "const chips = 1;\n")
+        _us_write("ui/panel/core.js", "const el = 2;\n")
+        _us_pan = _us_digests()["digests"]
+        _us_write("ui/panel/core.js", "const el = 1;\n")
+        check("us5 a report source moves the REPORT digest and leaves the panel's "
+              "alone, and a panel source the other way - the separation the whole "
+              "rule rests on: %r"
+              % ({"report-edit": [s for s in M.UI_SURFACES
+                                  if _us_rep[s] != _us_base["digests"][s]],
+                  "panel-edit": [s for s in M.UI_SURFACES
+                                 if _us_pan[s] != _us_base["digests"][s]]},),
+              _us_rep["report"] != _us_base["digests"]["report"]
+              and _us_rep["panel"] == _us_base["digests"]["panel"]
+              and _us_pan["panel"] != _us_base["digests"]["panel"]
+              and _us_pan["report"] == _us_base["digests"]["report"])
+
+        _us_write("ui/shared/dates.js", "const DAY = 2;\n")
+        _us_shared = _us_digests()["digests"]
+        _us_write("ui/shared/dates.js", "const DAY = 1;\n")
+        check("us6 a `shared/` part moves BOTH, because both assemblies list it - "
+              "the one place where firing on everything is the right answer: %r"
+              % (_us_shared,),
+              _us_shared["panel"] != _us_base["digests"]["panel"]
+              and _us_shared["report"] != _us_base["digests"]["report"])
+
+        # The edge that had to be argued rather than assumed: the token layer is a
+        # `.py`, it is not under `ui/`, and it is in the digest because `TOKEN_CSS`
+        # heads one stylesheet and is substituted into the other. A colour moving
+        # there moves every picture, so a rule blind to it would sleep through the
+        # change most likely to matter.
+        _us_write("_ui_theme.py", "TOKEN_CSS = ':root{--bg:#000}'\n")
+        _us_token = _us_digests()["digests"]
+        _us_write("_ui_theme.py", "TOKEN_CSS = ':root{--bg:#fff}'\n")
+        check("us7 the TOKEN LAYER is in both digests though it lives outside "
+              "`ui/` - a palette edit is the change most likely to move every "
+              "pixel and the one a walk over `ui/` alone cannot see: %r"
+              % (_us_token,),
+              _us_token["panel"] != _us_base["digests"]["panel"]
+              and _us_token["report"] != _us_base["digests"]["report"])
+
+        # The second direction, and it looks vacuous on purpose: it passes on a
+        # digest that never fires. It is the only case that fails if the walk
+        # starts reading something that is not a part - a README, a dotfile, the
+        # mtime - and it is why us5's negative halves mean anything.
+        _us_write("ui/report/README.md", "# what these parts are\n")
+        _us_write("ui/panel/README.md", "# and these\n")
+        _us_write("ui/.DS_Store_probe", "junk\n")
+        _us_doc = _us_digests()
+        check("us8 documentation and dotfiles are NOT parts, so adding them moves "
+              "no digest and asks for no re-capture - the guard against a walk "
+              "that fires on everything, and the suffix set has one home: %r"
+              % (_us_doc["digests"] == _us_base["digests"],),
+              _us_doc["digests"] == _us_base["digests"]
+              and _us_doc["unassigned"] == []
+              and _ui_theme._DOC_SUFFIXES is M.UI_DOC_EXT)
+
+        _us_write("ui/widgets/thing.js", "const w = 1;\n")
+        _us_odd = _us_digests()
+        os.remove(os.path.join(_us_scripts, "ui", "widgets", "thing.js"))
+        check("us9 a part under a directory no surface claims is REPORTED, never "
+              "dropped - a part covered by no digest is a part whose change could "
+              "never turn a picture red, which is the silence this whole rule is "
+              "against: %r" % (_us_odd["unassigned"],),
+              _us_odd["unassigned"] == ["widgets/thing.js"]
+              and _us_odd["digests"] == _us_base["digests"])
+
+        # A missing member must not be answered with a digest over the remainder:
+        # that value is stable, comparable, and about a different tree. REMOVED
+        # rather than chmod-ed, because `chmod 000` does not stop a read on the
+        # windows runner and the case would then be untested on exactly one of the
+        # two platforms CI runs.
+        os.remove(os.path.join(_us_scripts, "_ui_theme.py"))
+        _us_unreadable = _us_digests()
+        _us_write("_ui_theme.py", "TOKEN_CSS = ':root{--bg:#fff}'\n")
+        check("us10 a member that cannot be read empties the digests and names "
+              "the file - a digest over a PARTIAL set is a wrong answer wearing "
+              "the shape of a right one: %r" % (_us_unreadable,),
+              _us_unreadable["digests"] == {}
+              and _us_unreadable["error"] is not None
+              and "_ui_theme.py" in _us_unreadable["error"])
+
+        shutil.rmtree(os.path.join(_us_scripts, "ui", "report"))
+        shutil.rmtree(os.path.join(_us_scripts, "ui", "report-css"))
+        _us_gone = _us_digests()
+        check("us11 a surface left with no part of its own is an ERROR, not a "
+              "digest over the token layer alone - that value would be stable and "
+              "comparable and would clear every picture of a surface that is no "
+              "longer there: %r" % (_us_gone,),
+              _us_gone["digests"] == {} and _us_gone["error"] is not None
+              and "report" in _us_gone["error"])
+
+        _us_empty = M.ui_surface_digests(os.path.join(tmp, "nowhere"))
+        # The message is asserted, not merely the presence of one: an ignored
+        # `onerror` leaves an empty walk, which the no-parts branch below would
+        # then report in different words - a right-looking error about the wrong
+        # thing, and the reader sent to look for a deleted part.
+        check("us12 an absent `ui/` is reported AS UNWALKABLE, because os.walk "
+              "reports a missing tree by yielding nothing and raising nothing - "
+              "the exact shape a renamed directory takes: %r" % (_us_empty,),
+              _us_empty["digests"] == {} and _us_empty["error"] is not None
+              and "cannot be walked" in _us_empty["error"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp(prefix="audit-uiframe-")
+    try:
+        def _us2_write(rel, text):
+            path = os.path.join(tmp, "scripts", *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            with io.open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+
+        # THE FRAMING CASE, and the fixture is the whole of it. Each member enters
+        # the hash as `name length` and then its bytes, so a byte moved ACROSS a
+        # part boundary is visible even though the concatenation is unchanged -
+        # which is what a badly resolved merge between two adjacent parts looks
+        # like. The contents are deliberately not real part shapes: two files whose
+        # bytes merely SWAP would separate no implementation, because concatenating
+        # them the other way round already produces a different stream. This one
+        # produces the same stream and is the only shape that fails when the
+        # framing is dropped.
+        _us2_write("_ui_theme.py", "T = 1\n")
+        _us2_write("ui/panel.html", "<!doctype html>\n")
+        _us2_write("ui/panel-css/a.css", ".a{}\n")
+        _us2_write("ui/panel/one.js", "AB")
+        _us2_write("ui/panel/two.js", "C\n")
+        _us2_write("ui/report/r.js", "R\n")
+        _us2_write("ui/report-css/r.css", ".r{}\n")
+        _before = M.ui_surface_digests(os.path.join(tmp, "scripts"))["digests"]
+        _us2_write("ui/panel/one.js", "A")
+        _us2_write("ui/panel/two.js", "BC\n")
+        _after = M.ui_surface_digests(os.path.join(tmp, "scripts"))["digests"]
+        check("us13 a byte moved ACROSS a part boundary changes the panel digest "
+              "though the concatenated bytes are identical, so the name and the "
+              "length of each member are inside the hash: %r"
+              % ((_before["panel"][:12], _after["panel"][:12]),),
+              _before["panel"] != _after["panel"]
+              and _before["report"] == _after["report"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 

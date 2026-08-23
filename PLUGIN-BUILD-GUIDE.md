@@ -791,6 +791,28 @@ exists to enable is decoration. `_output.py` is exempt by name, for two reasons:
 the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
 would read as compliant.
 
+**`ui_surface_digests()` answers which files a surface's pictures are OF** (F85), and it lives at
+the anchor for the same reason the kept-files walk does: two readers at two layers, and a copy in
+either would be the second implementation of "which files" that F85's round exists to remove.
+`_refs.screenshot_capture_drift()` at layer 1 holds the rule; `tools/capture-screenshots.mjs`
+asks over a pipe and records the answer beside each image rather than computing its own. Membership
+is **derived from the filing convention** by `ui_surfaces_of()` — `panel/`, `panel-css/`, `report/`
+and `report-css/` name their surface, `panel.html` names it in its stem, `shared/` ships in every
+one — so a part added under an existing directory is covered the day it lands, and a directory the
+convention cannot place is **reported** rather than dropped, because a part no digest covers is a
+part whose change no picture could ever be red about. The digest is over raw bytes with each member
+framed as `name length` (git's own framing, so two parts cannot trade contents unnoticed) and it
+includes `_ui_theme.py`, which is outside `ui/`: `TOKEN_CSS` heads the report's stylesheet and is
+substituted into the panel's, so a palette edit moves every picture. `_panel_ui.py` and
+`_report_ui.py` are deliberately out — they carry part order and the tag wrappers, both already
+pinned by name in their assembly suites, and admitting them would oblige `_report_html.py`, then
+every module that emits markup, then the fixture manifests, at which point every commit reddens
+every picture. The **renderer is the stated limit** of this rule, not an oversight. Three shapes
+return an error with the digests left empty rather than a value over what remains: a tree that
+cannot be walked, a tree with no part in it, and a surface holding nothing but `shared/` — all
+three are how a renamed directory presents, and a digest over the remainder would be stable,
+comparable and about a tree that is not there.
+
 **`prose_number_claims()` is where this repo's most frequent defect goes to die.** A number
 written into prose rots, because nothing compares it to the thing it describes — F29, F39 and
 F43 are all one bug, and every earlier response was to correct the figure, which buys one green
@@ -1053,6 +1075,24 @@ sidecar being edited into agreement without the pictures being the ones captured
 make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
 scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
 missing basis against a producer never asked to record one.
+
+**That version answered only half the question, and F85 is the other half.** "Was this captured
+at this release" is not "does this picture still show the current UI", and the difference was
+live: commits landed under `scripts/ui/` after the last re-capture, the recorded version was
+still current, and this rule was green over pictures of a panel that had since moved. Pixels
+cannot close it — F18 settled that — but the UI's **sources** are committed bytes, so a digest
+over them is host-independent by construction where the rendered page, which paints the project
+path, is not. Each entry therefore also carries the **surface** it is a picture of and the digest
+of that surface's sources, from `_output.ui_surface_digests()` described above, and
+`_ui_source_findings()` compares it. **Per surface**, which is what makes it a rule rather than a
+nuisance: a report-only change reddens the report's pictures and asks for none of the panel's
+back. The surface comes off the **entry**, written by the leg that opened the shutter — never
+inferred from a `panel-` prefix, which would be a second opinion about which surface a picture is
+of, held by a naming habit rather than by the code that took it. An entry with **no** digest is a
+finding and not silence: absence is not agreement, so the rule is red until a capture has written
+one, and the repair is the capture rather than a default filled in here. The digest comparison
+runs **after** the version comparison, because both repairs are the same command and one finding
+per picture is what a reader can act on.
 
 `--selftest`.
 

@@ -1430,6 +1430,45 @@ def artifact_version_drift(repo_root=None):
 SHOT_DIR_REL = "docs/screenshots"
 _CAPTURED_AT = SHOT_DIR_REL + "/captured-at.json"
 
+# The directory `_output.ui_surface_digests()` is handed. Spelled repo-relative
+# because this rule is given a ROOT - a fixture, in every case but the live one -
+# and the anchor's own copy is absolute and always the real tree.
+_UI_SCRIPTS_REL = PLUGIN_REL + "/scripts"
+_UI_DIR_REL = _UI_SCRIPTS_REL + "/ui"
+
+
+def _ui_source_findings(rel, entry, digests):
+    """[(rel, line, problem), ...] - what one image's recorded UI sources say now.
+
+    A MISSING DIGEST IS A FINDING, NOT SILENCE. Absence is not agreement: an entry
+    with no digest makes the same claim every picture makes and nothing can settle
+    it, which is the state F85 found. The consequence is deliberate - this rule is
+    red until a capture has written one, and a re-capture is the repair rather than
+    a default filled in here.
+
+    The surface comes off the ENTRY, written by the leg that took the shot, and is
+    never inferred from the file name. A rule that read `panel-` off the front would
+    be a second opinion about which surface a picture is of, and the capture's own
+    answer is the one the pixels came from.
+    """
+    surface = entry.get("surface")
+    digest = entry.get("uiDigest")
+    if not isinstance(digest, str) or not digest:
+        return [(rel, 0, "records no UI source digest, so whether it still shows "
+                         "the current UI is unknown rather than settled - re-run "
+                         "`node tools/capture-screenshots.mjs`")]
+    if surface not in digests:
+        return [(rel, 0, "records the surface %r, which is not one this tree "
+                         "assembles (%s), so the digest beside it stands for "
+                         "nothing" % (surface, ", ".join(sorted(digests))))]
+    if digests[surface] != digest:
+        return [(rel, 0, "was captured from %s sources digesting %s and they now "
+                         "digest %s - the recorded version still agrees, so this "
+                         "is the UI moving under a picture nobody re-shot; re-run "
+                         "`node tools/capture-screenshots.mjs`"
+                         % (surface, digest[:12], digests[surface][:12]))]
+    return []
+
 
 def screenshot_capture_drift(repo_root=None):
     """[(rel, line, problem), ...] - a committed screenshot that no longer shows this build.
@@ -1448,7 +1487,21 @@ def screenshot_capture_drift(repo_root=None):
     topbar names `plugin.json`'s version before any shutter opens, so what the
     sidecar writes down is what was already checked.
 
-    Four answers, and the first three are the loud ones:
+    TWO QUESTIONS, NOT ONE, AND THE SECOND ARRIVED LATER. "Was this captured at
+    this release" is what the version answers, and F85 is the proof that it is not
+    the whole question: commits landed under `scripts/ui/` after the last
+    re-capture, the recorded version was still current, and this rule was green
+    over pictures of a panel that had since moved. "Does this picture still show
+    the current UI" needs a basis of its own, so each entry also carries the digest
+    of the SOURCES its surface is assembled from, and `_ui_source_findings()`
+    compares that. PER SURFACE, which is what makes it a rule rather than a
+    nuisance: a report-only change reddens the report's pictures and leaves the
+    panel's alone, and `_output.ui_surface_digests()` is the one home for which
+    files each of those is.
+
+    Answers. The first four STOP the rule rather than adding to a list, because each
+    of them leaves the comparison with no basis at all and every image would then be
+    reported for want of one:
 
     - no sidecar, or one that will not parse: reported. The pictures make a claim
       and nothing can settle it, which is the state this rule exists to end - and
@@ -1458,9 +1511,15 @@ def screenshot_capture_drift(repo_root=None):
     - not one image in the directory: reported. A candidate set that narrowed to
       nothing must not be spelled the same way as a set that all agrees, and that is
       the shape a moved output directory takes;
-    - otherwise one finding per image whose recorded version is not the current one,
-      naming BOTH, plus one per image the sidecar does not mention and one per entry
-      whose file is gone or whose bytes have changed since it was written.
+    - UI sources that cannot be walked: reported, for the same reason - there is
+      then nothing for any recorded digest to be compared against;
+    - otherwise a list: one per `ui/` part belonging to no surface, because a part
+      no picture's digest covers is a part whose change could never turn one red;
+      one per image whose recorded version is not the current one, naming BOTH; one
+      per image the sidecar does not mention; one per entry whose file is gone or
+      whose bytes have changed since it was written; and one per image whose
+      recorded source digest is absent, names a surface this tree does not
+      assemble, or no longer matches.
 
     WHAT THE HASH IS FOR. Without it the sidecar could be edited into agreement
     while the pictures stayed stale, and this rule would pass on a file someone
@@ -1503,7 +1562,18 @@ def screenshot_capture_drift(repo_root=None):
                  "is missing or unreadable, so %d committed image(s) claim a build "
                  "with nothing to settle the claim - re-run "
                  "`node tools/capture-screenshots.mjs`" % (len(names),))]
+    ui = _output.ui_surface_digests(
+        os.path.join(root, *_UI_SCRIPTS_REL.split("/")))
+    if ui["error"]:
+        # No fallback: without a digest to compare against, every image below
+        # would clear for want of a comparison rather than because it agrees.
+        return [(_UI_DIR_REL, 0, ui["error"])]
     out = []
+    for unplaced in ui["unassigned"]:
+        out.append((_UI_DIR_REL + "/" + unplaced, 0,
+                    "ships in no surface this tree assembles, so no picture's "
+                    "source digest covers it and changing it could never turn one "
+                    "red"))
     for name in names:
         rel = SHOT_DIR_REL + "/" + name
         entry = images.get(name)
@@ -1526,6 +1596,11 @@ def screenshot_capture_drift(repo_root=None):
             out.append((rel, 0, "was captured at %s but plugin.json says %s - "
                                 "re-run the capture and commit the result"
                                 % (entry.get("version"), version)))
+        else:
+            # LAST, because the repairs are the same command and one finding per
+            # image is what a reader can act on. A stale version already says
+            # "re-capture"; saying it twice about one picture is noise.
+            out.extend(_ui_source_findings(rel, entry, ui["digests"]))
     for name in sorted(images):
         if name not in names:
             out.append((_CAPTURED_AT, 0,

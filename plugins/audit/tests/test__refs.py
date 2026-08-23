@@ -41,6 +41,12 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _refs as M                                  # noqa: E402
 import _loader                                     # noqa: E402  (the reference resolver)
+# The one home for which files a surface's pictures are OF, asked here the way
+# `tools/capture-screenshots.mjs` asks it. Seeding a fixture's sidecar from it is
+# what a capture does and is not circular: every RED case below then edits a source
+# WITHOUT re-recording, so the two sides of the comparison come from two different
+# states of the tree.
+import _output                                     # noqa: E402
 
 
 # --- fixture paths: built, never spelled --------------------------------------
@@ -771,17 +777,18 @@ def _cases(check):
           "Python for the ASSEMBLED page now. This is the case that goes red when a "
           "join creeps back: %r" % (_joins,),
           not _joins)
-    check("d2 ...and TWELVE resolver calls are really there, resolving by BASENAME "
+    check("d2 ...and THIRTEEN resolver calls are really there, resolving by BASENAME "
           "with no folder argument. Reads vacuous beside d1 and is the half that fails "
           "if the call sites were deleted rather than converted - the ninth arrived "
           "when the polled-state guard stopped reading ui/panel.js by path and started "
-          "asking _panel_ui.py for the assembled page, and the last three when the "
-          "report leg grew a PINNED fixture of its own: two set-priority.py writes and "
-          "the render that reads them. The number is exact on purpose - a floor would "
-          "go on passing while a site was deleted, which is the only thing this case "
-          "is for (got %d)"
+          "asking _panel_ui.py for the assembled page, three more when the "
+          "report leg grew a PINNED fixture of its own (two set-priority.py writes and "
+          "the render that reads them), and the newest when the run started asking "
+          "_output.py which UI sources each surface's pictures are of. The number is "
+          "exact on purpose - a floor would go on passing while a site was deleted, "
+          "which is the only thing this case is for (got %d)"
           % (_mjs.count("resolveScript('"),),
-          _mjs.count("resolveScript('") == 12
+          _mjs.count("resolveScript('") == 13
           and not re.search(r"resolveScript\('[^']*[/\\]", _mjs))
     _gif = _tool_src(_GIF_TOOL)
     check("d3 the Python tool carries no join of the SCRIPTS constant at all - it can "
@@ -1619,13 +1626,21 @@ def _cases(check):
     with open(os.path.join(M.REPO_ROOT, M._CAPTURED_AT.replace("/", os.sep)),
               "r", encoding="utf-8") as fh:
         _sc_rec = json.load(fh)["images"]
+    _sc_live_ui = _output.ui_surface_digests()
     check("sc2 ...and it cleared a real set rather than an empty one - sc1 returns "
           "[] over a directory it never reached too, and telling those two apart is "
           "the whole point of the rule: every committed .png has an entry, every "
-          "entry names a committed .png, and every recorded version is the one "
-          "plugin.json carries: %r" % (len(_sc_pngs),),
+          "entry names a committed .png, every recorded version is the one "
+          "plugin.json carries, and every entry names a surface this tree "
+          "assembles and carries THAT surface's live source digest: %r"
+          % (len(_sc_pngs),),
           len(_sc_pngs) > 5 and sorted(_sc_rec) == _sc_pngs
-          and set(v.get("version") for v in _sc_rec.values()) == set([_pv]))
+          and set(v.get("version") for v in _sc_rec.values()) == set([_pv])
+          and set(v.get("surface") for v in _sc_rec.values())
+              == set(_output.UI_SURFACES)
+          and [n for n, v in sorted(_sc_rec.items())
+               if v.get("uiDigest")
+               != _sc_live_ui["digests"].get(v.get("surface"))] == [])
 
     tmp = tempfile.mkdtemp()
     _sc_a = M.SHOT_DIR_REL + "/one.png"
@@ -1634,11 +1649,49 @@ def _cases(check):
         _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
         _write(tmp, _sc_a, "PIXELS-ONE\n")
         _write(tmp, _sc_b, "PIXELS-TWO\n")
-        _sc_ok = {"one.png": {"sha256": _sc_digest(tmp, _sc_a), "version": _pv},
-                  "two.png": {"sha256": _sc_digest(tmp, _sc_b), "version": _pv}}
+        # The UI the fixture's pictures are OF. Both surfaces need a part of their
+        # own or the walk reports a surface that is gone, so this is the smallest
+        # tree the rule can actually clear - and `one.png` is a panel picture while
+        # `two.png` is a report one, which is what makes the separation cases below
+        # able to say anything.
+        _sc_ui_dir = M._UI_DIR_REL
+        _sc_panel_src = _sc_ui_dir + "/panel/core.js"
+        _sc_report_src = _sc_ui_dir + "/report/filters.js"
+        _sc_shared_src = _sc_ui_dir + "/shared/dates.js"
+        _sc_token = M._UI_SCRIPTS_REL + "/_ui_theme.py"
+        _write(tmp, _sc_ui_dir + "/panel.html", "<!doctype html>\n")
+        _write(tmp, _sc_panel_src, "const el = 1;\n")
+        _write(tmp, _sc_ui_dir + "/panel-css/app-shell.css", ".shell{}\n")
+        _write(tmp, _sc_report_src, "const chips = 1;\n")
+        _write(tmp, _sc_ui_dir + "/report-css/shell.css", ".rshell{}\n")
+        _write(tmp, _sc_shared_src, "const DAY = 1;\n")
+        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#fff}'\n")
+
+        def _sc_ui_now():
+            """The digests a capture running against this fixture would record."""
+            return _output.ui_surface_digests(
+                os.path.join(tmp, *M._UI_SCRIPTS_REL.split("/")))["digests"]
+
+        def _sc_entries(surfaces=None, digests=None):
+            """The sidecar a clean capture of this fixture would leave behind."""
+            faces = surfaces if surfaces is not None else {"one.png": "panel",
+                                                           "two.png": "report"}
+            marks = digests if digests is not None else _sc_ui_now()
+            out = {}
+            for name, rel in (("one.png", _sc_a), ("two.png", _sc_b)):
+                entry = {"sha256": _sc_digest(tmp, rel), "version": _pv}
+                if faces.get(name) is not None:
+                    entry["surface"] = faces[name]
+                if marks.get(faces.get(name)) is not None:
+                    entry["uiDigest"] = marks[faces[name]]
+                out[name] = entry
+            return out
+
+        _sc_ok = _sc_entries()
         _sc_sidecar(tmp, _sc_ok)
-        check("sc3 a fixture whose sidecar agrees with the BYTES and the VERSION is "
-              "green, so every case below fails for the reason it names: %r"
+        check("sc3 a fixture whose sidecar agrees with the BYTES, the VERSION and "
+              "the SOURCE DIGEST of the surface each picture is of is green, so "
+              "every case below fails for the reason it names: %r"
               % (M.screenshot_capture_drift(tmp),),
               M.screenshot_capture_drift(tmp) == [])
 
@@ -1713,8 +1766,136 @@ def _cases(check):
               "basis, and a guessed one would be worse than none: %r" % (_sc_nover,),
               len(_sc_nover) == 1 and _sc_nover[0][0] == M._PLUGIN_JSON_REL
               and "no readable version" in _sc_nover[0][2])
+
+        # --- sc11-sc19 (F85): the picture against the UI it is a picture OF ----
+        # The version answers "captured at this release". It cannot answer "still
+        # shows this UI", and it did not: commits landed under `scripts/ui/` after
+        # the last re-capture and this rule stayed green over stale pixels. Every
+        # case below leaves the VERSION agreeing, so nothing here can pass for the
+        # older reason.
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+        _write(tmp, _sc_b, "PIXELS-TWO\n")
+        _sc_sidecar(tmp, _sc_entries())
+
+        def _sc_named(findings, rel):
+            """The findings about one image, by path."""
+            return [f for f in findings if f[0] == rel]
+
+        # THE SEPARATION, BOTH DIRECTIONS IN TWO CASES. A digest that fired on
+        # everything would ask for every picture back on every commit and would be
+        # switched off, so the negative half of each is the load-bearing half.
+        _write(tmp, _sc_panel_src, "const el = 2;\n")
+        _sc_pan = M.screenshot_capture_drift(tmp)
+        _write(tmp, _sc_panel_src, "const el = 1;\n")
+        check("sc11 a changed PANEL source reddens the panel picture and NOT the "
+              "report one, naming the surface and both digests - this is F85's own "
+              "shape, and the version still agrees throughout: %r" % (_sc_pan,),
+              len(_sc_pan) == 1 and _sc_pan[0][0] == _sc_a
+              and "panel sources" in _sc_pan[0][2]
+              and "nobody re-shot" in _sc_pan[0][2]
+              and _sc_named(_sc_pan, _sc_b) == [])
+
+        _write(tmp, _sc_report_src, "const chips = 2;\n")
+        _sc_rep = M.screenshot_capture_drift(tmp)
+        _write(tmp, _sc_report_src, "const chips = 1;\n")
+        check("sc12 ...and a changed REPORT source reddens the report picture and "
+              "NOT the panel one. Both directions, because one of them alone is "
+              "also what a rule that reddens everything prints: %r" % (_sc_rep,),
+              len(_sc_rep) == 1 and _sc_rep[0][0] == _sc_b
+              and "report sources" in _sc_rep[0][2]
+              and _sc_named(_sc_rep, _sc_a) == [])
+
+        _write(tmp, _sc_shared_src, "const DAY = 2;\n")
+        _sc_both = M.screenshot_capture_drift(tmp)
+        _write(tmp, _sc_shared_src, "const DAY = 1;\n")
+        check("sc13 a changed `shared/` part reddens BOTH, because both assemblies "
+              "ship it - the one place where firing on everything is the right "
+              "answer, and the case that fails if `shared/` is quietly filed under "
+              "one surface: %r" % (_sc_both,),
+              len(_sc_both) == 2 and len(_sc_named(_sc_both, _sc_a)) == 1
+              and len(_sc_named(_sc_both, _sc_b)) == 1)
+
+        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#000}'\n")
+        _sc_tok = M.screenshot_capture_drift(tmp)
+        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#fff}'\n")
+        check("sc14 a changed TOKEN LAYER reddens both, though it is a `.py` "
+              "outside `ui/` - a palette edit moves every pixel and a walk over "
+              "`ui/` alone would sleep through the change most likely to matter: "
+              "%r" % (_sc_tok,),
+              len(_sc_tok) == 2 and len(_sc_named(_sc_tok, _sc_a)) == 1
+              and len(_sc_named(_sc_tok, _sc_b)) == 1)
+
+        _sc_nodig = _sc_entries()
+        del _sc_nodig["one.png"]["uiDigest"]
+        _sc_sidecar(tmp, _sc_nodig)
+        _sc_missing = M.screenshot_capture_drift(tmp)
+        check("sc15 an entry with NO source digest is a finding, not silence - "
+              "absence is not agreement, and this is why the rule is red until a "
+              "capture has written one rather than defaulting into a pass: %r"
+              % (_sc_missing,),
+              len(_sc_missing) == 1 and _sc_missing[0][0] == _sc_a
+              and "records no UI source digest" in _sc_missing[0][2])
+
+        _sc_wrongface = _sc_entries()
+        _sc_wrongface["one.png"]["surface"] = "nowhere"
+        _sc_sidecar(tmp, _sc_wrongface)
+        _sc_face = M.screenshot_capture_drift(tmp)
+        check("sc16 an entry naming a surface this tree does not assemble is "
+              "reported rather than compared - a digest with nothing to compare it "
+              "to must not be spelled the same way as one that matches: %r"
+              % (_sc_face,),
+              len(_sc_face) == 1 and _sc_face[0][0] == _sc_a
+              and "'nowhere'" in _sc_face[0][2]
+              and "stands for nothing" in _sc_face[0][2])
+
+        _sc_sidecar(tmp, _sc_entries())
+        _write(tmp, _sc_ui_dir + "/widgets/thing.js", "const w = 1;\n")
+        _sc_unplaced = M.screenshot_capture_drift(tmp)
+        os.remove(os.path.join(tmp, (_sc_ui_dir + "/widgets/thing.js")
+                                    .replace("/", os.sep)))
+        check("sc17 a `ui/` part under a directory no surface claims is named - it "
+              "is covered by no picture's digest, so changing it could never turn "
+              "one red, which is the silence this rule exists to end: %r"
+              % (_sc_unplaced,),
+              len(_sc_unplaced) == 1
+              and _sc_unplaced[0][0] == _sc_ui_dir + "/widgets/thing.js"
+              and "no surface this tree assembles" in _sc_unplaced[0][2])
+
+        # THE SECOND-DIRECTION CASE, and it looks vacuous on purpose: it passes on
+        # a rule that never fires. It is the only one that fails if the comparison
+        # becomes unconditional - a rule permanently red once any source has ever
+        # moved is a rule people delete.
+        _write(tmp, _sc_panel_src, "const el = 3;\n")
+        _sc_sidecar(tmp, _sc_entries())
+        _sc_recaptured = M.screenshot_capture_drift(tmp)
+        check("sc18 a source that changed and was then RE-RECORDED, exactly as a "
+              "re-capture records it, reports nothing again: %r"
+              % (_sc_recaptured,), _sc_recaptured == [])
+
+        shutil.rmtree(os.path.join(tmp, *(_sc_ui_dir.split("/"))))
+        _sc_nosrc = M.screenshot_capture_drift(tmp)
+        check("sc19 UI sources that cannot be walked are ONE finding and the rule "
+              "stops - every image would otherwise be reported for want of a "
+              "comparison rather than because it disagrees, which is a red run "
+              "pointing at the wrong repair: %r" % (_sc_nosrc,),
+              len(_sc_nosrc) == 1 and _sc_nosrc[0][0] == _sc_ui_dir
+              and "unknown rather than unchanged" in _sc_nosrc[0][2])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # A value that has to exist in two languages, pinned rather than commented.
+    # The capture writes a LEG name into each entry and this rule looks it up among
+    # the SURFACES; a leg whose name is not a surface would put sc16's finding on
+    # every picture it took, and a surface no leg is named after would never be
+    # photographed at all. Both directions, from one comparison.
+    _sc_legs = re.search(r"const LEGS = \[([^\]]*)\]", _mjs)
+    _sc_leg_names = sorted(re.findall(r"'([^']+)'", _sc_legs.group(1))
+                           ) if _sc_legs else []
+    check("sc20 the capture's legs and the surfaces this rule knows are the same "
+          "names - the claim is about two files in two languages, so it is tested "
+          "rather than written in a comment: %r"
+          % ((_sc_leg_names, sorted(_output.UI_SURFACES)),),
+          _sc_leg_names == sorted(_output.UI_SURFACES))
 
     # --- F36: a command's flags vs the README row that catalogues them ---------
     # The defect this exists for was live when it was written: /audit:status had
