@@ -15,9 +15,10 @@ while `CLAUDE.md` named it as their enforcer and the tree carried 113 of them. T
 is exactly the finding a one-off report loses the next time the lint is edited.
 
 So the answer is a TABLE plus the run. Each row breaks the thing a gate guards - not
-the gate itself - and names the case that must fail. `redfirst.sh` does the mutating,
-because a second implementation of mutate-run-restore is a second place for a
-mutation to be stranded.
+the gate itself - and names the case that must fail: by the leading id its label
+carries, or by `substr("some words from the label")` for the many suites whose labels
+are sentences. `redfirst.sh` does the mutating, because a second implementation of
+mutate-run-restore is a second place for a mutation to be stranded.
 
 WHAT IT COSTS. One suite per row, so a full run is minutes rather than seconds, and
 it MUTATES THE WORKING TREE while it runs (restoring each time, under redfirst's
@@ -28,6 +29,7 @@ still exists exactly once, and that no load-bearing lint is missing a row - whic
 the half that rots, and it is safe to run inside the parallel sweep that runs every
 other suite.
 """
+import ast
 import io
 import os
 import re
@@ -87,7 +89,39 @@ def _doc_claim_payload(count):
 
 
 # (lint, file, kind, anchor, payload, suite, expected case label)
+# --- naming the case a row is about -------------------------------------------
+# A row's last field names the case whose failure IS the proof, and there are two
+# spellings of that because the tree has two kinds of label. A leading identifier
+# (`pp1`, `sc10`) is one; a sentence is the other, and the suites that open theirs
+# with `the`, `a`, `no`, `every` or a colon-suffixed group tag are most of them:
 #
+#   grep -hoE 'check\("[^ "]+' plugins/audit/tests/*.py | sed 's/check("//' \
+#     | grep -vE '^[a-z]+[0-9]' | sort -u
+#
+# Reading the first token was the only way in, so no row could point into any of
+# those suites and the coarse whole-suite verdict was all they could ever get -
+# which is the weaker claim this table exists to avoid (F74).
+#
+# The suites are NOT migrated to leading ids. Their labels are readable sentences,
+# which is the right thing for whoever reads the failure; what was missing is
+# machine addressability, so the machine side is what changed.
+def substr(text):
+    """A selector that names a case by a piece of its LABEL, not by a leading id.
+
+    For the suites whose labels are sentences, and for a case sharing a family
+    id with its siblings - `substr("sc9 the panel")` reaches one of four `sc9`
+    cases that `AMBIGUOUS LABEL` is otherwise right to refuse.
+
+    IT MUST STILL BE UNIQUE, and that is not a weakening of F63's rule but the
+    same rule read one level up: the whole `RED, WRONG CASE` guarantee rests on
+    the row naming exactly one case, so a selector matching two is refused
+    exactly as a duplicated id is. A substring is enough to be unique and short
+    enough to stay readable in the table.
+    """
+    return ("substr", text)
+
+
+# (lint, file, kind, anchor, payload, suite, the case that must go red)#
 # kinds: "after" appends payload after anchor; "replace" swaps anchor for payload;
 # "drop" removes the first line matching the anchor regex; "suffix" appends payload
 # to it; "sub" applies payload as a (pattern, replacement) pair to it.
@@ -157,11 +191,16 @@ TABLE = (
  # violation it exists to prove. Written spelled out first, and it turned the real
  # tree red: `ar1` then failed on this file for every row in the table.
  ("absolute_reach_violations", S + "_fmt.py", "after", INSTALL, None, REF, "ar1"),
+ # BOTH ROWS BELOW USED TO NAME NO CASE, and the coarse verdict was the only
+ # thing available to them - not because their suite could not be named, but
+ # because nobody had looked. The names here were read off a live run of each
+ # row (F74): `cf1` is the only case the flag mutation reddens, and the URL
+ # mutation reddens the version-pin family, of which `p1` is one.
  ("command_flag_drift", "plugins/audit/commands/status.md", "suffix",
-  r"^argument-hint:", " [--probe-flag]", REF, None),
+  r"^argument-hint:", " [--probe-flag]", REF, "cf1"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
-  (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, None),
+  (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
 
  # The published page whose stamp nothing compared. It is the ARTIFACT that is
  # mutated, not a source file - the claim lives in the committed bytes, so there is
@@ -279,33 +318,120 @@ def coverage(script_dir=None):
     return [n for n in gate_names(script_dir) if n not in named]
 
 
-# --- running ------------------------------------------------------------------
-def label_hits(text, label):
-    """How many of a suite's cases - passing or failing - are named `label`.
+# --- the verdict, as a pure function of the report ----------------------------
+COARSE = "RED (SUITE ONLY)"
 
-    THE OTHER END OF F63. Every verdict below keys on the row's label, so the
-    whole `RED, WRONG CASE` guarantee rests on that label naming exactly one
-    case, and until this counted them nothing here could tell the difference
-    between the case going red and its NAMESAKE going red. `pn10` named two
-    cases in `test__output.py` while this file was already reading labels off
-    `test__output.py`'s report.
+# The verdicts that count as a gate proven. `COARSE` is one of them and says so
+# in its own name: the row's mutation did redden its suite, and that is all it
+# claims. A verdict list beats `!= "RED"` here because "proven" now has two
+# strengths and a reader of the summary should be able to see which they got.
+PROVEN = ("RED", COARSE)
 
-    Counted over PASS lines as well as FAIL ones, because ambiguity is a
-    property of the suite and not of what this mutation happened to break: a
-    label whose twin passed is exactly as unattributable.
+
+def selector_text(target):
+    """The text a row's selector matches on, whichever spelling it is."""
+    return target[1] if isinstance(target, tuple) else target
+
+
+def _selector_says(target):
+    """How to name the selector in a message, so the two spellings read apart."""
+    if isinstance(target, tuple):
+        return "a case whose label contains %r" % (target[1],)
+    return "the case named %s" % (target,)
+
+
+def matches(label, target):
+    """Does one rendered case label satisfy a row's selector?
+
+    `label` is everything a report printed after `PASS `/`FAIL `. The id
+    spelling reads the leading token, which is the key `_harness.case_id()`
+    hands out and the one thing about a label that is checked for uniqueness.
     """
-    hits = 0
+    if isinstance(target, tuple):
+        return target[1] in label
+    return label.split(None, 1)[:1] == [target]
+
+
+def case_labels(text, only_failing=False):
+    """Every case label a rendered report printed, in order.
+
+    PASS lines count too, unless a caller asks otherwise, because ambiguity is
+    a property of the suite and not of what this mutation happened to break: a
+    selector whose twin PASSED is exactly as unattributable.
+    """
+    out = []
     for line in text.splitlines():
-        if not (line.startswith("PASS ") or line.startswith("FAIL ")):
-            continue
-        if line.split(None, 2)[1:2] == [label]:
-            hits += 1
-    return hits
+        if line.startswith("FAIL "):
+            out.append(line[5:])
+        elif line.startswith("PASS ") and not only_failing:
+            out.append(line[5:])
+    return out
 
 
+def case_hits(text, target):
+    """How many of a suite's cases the row's selector names.
+
+    THE OTHER END OF F63. Every verdict below keys on the selector, so the whole
+    `RED, WRONG CASE` guarantee rests on it naming exactly one case, and until
+    this counted them nothing here could tell the difference between the case
+    going red and its NAMESAKE going red. `pn10` named two cases in
+    `test__output.py` while this file was already reading labels off
+    `test__output.py`'s report.
+    """
+    return sum(1 for label in case_labels(text) if matches(label, target))
+
+
+def failing_ids(text):
+    """The leading token of every failing case, for the report's detail column."""
+    return [label.split(None, 1)[0]
+            for label in case_labels(text, only_failing=True)
+            if label.split(None, 1)]
+
+
+def verdict(target, gate, suite):
+    """`(verdict, detail)` for a suite that went red - a pure function of its report.
+
+    SPLIT FROM `prove()` BECAUSE THE INTERESTING BRANCHES ARE THE ONES A LIVE RUN
+    NEVER TAKES. An ambiguous selector, a selector naming nothing, and a row that
+    names no case at all are all states of the TABLE, so driving them through
+    `prove()` would mean mutating the tree to prove something about a string. Here
+    they are a rendered report written out in the selftest, and the sweep runs
+    them with everything else.
+    """
+    base = os.path.basename(suite)
+    ids = ", ".join(failing_ids(gate)[:4])
+    if target is None:
+        # SAID OUT LOUD, because a coarse claim wearing the same word as a precise
+        # one is how "I could not be precise here" becomes invisible. Every case in
+        # every suite is now nameable - `substr()` reaches the ones an id cannot -
+        # so a row without a selector is a choice, and this is the line that asks
+        # the next author to make it deliberately.
+        return (COARSE,
+                "no case named: the claim is only that %s went red. Any case can "
+                "be named - a leading id, or substr() for a label that is a "
+                "sentence" % (base,))
+    hits = case_hits(gate, target)
+    # BEFORE the wrong-case verdict, because that verdict is the thing being
+    # checked: with the selector naming no case it is a rot report dressed as a
+    # gate finding, and with it naming two it is worthless for this row.
+    if hits == 0:
+        return ("LABEL GONE",
+                "%s is not in %s any more" % (_selector_says(target), base))
+    if hits > 1:
+        return ("AMBIGUOUS LABEL",
+                "%d cases in %s match %r, so a red one credits nothing"
+                % (hits, base, selector_text(target)))
+    if not any(matches(label, target)
+               for label in case_labels(gate, only_failing=True)):
+        return ("RED, WRONG CASE",
+                "expected %s, got %s" % (_selector_says(target), ids))
+    return ("RED", ids)
+
+
+# --- running ------------------------------------------------------------------
 def prove(row, repo=None):
     """Mutate, run the suite, restore. Returns a dict; never raises on a red gate."""
-    lint, rel, _kind, _anchor, _payload, suite, label = row
+    lint, rel, _kind, _anchor, _payload, suite, target = row
     old, new = mutation(row, repo)
     if old is None:
         return {"lint": lint, "verdict": "UNANCHORED", "detail": new, "cases": []}
@@ -319,8 +445,7 @@ def prove(row, repo=None):
         gate = io.open(log, encoding="utf-8", errors="replace").read()
     except OSError:
         gate = ""
-    cases = [ln.split(None, 2)[1] for ln in gate.splitlines()
-             if ln.startswith("FAIL ") and len(ln.split(None, 2)) > 1]
+    cases = failing_ids(gate)
     if "REDFIRST FAILED" in text:
         return {"lint": lint, "verdict": "STAYED GREEN",
                 "detail": "the gate asserts nothing about this", "cases": []}
@@ -328,37 +453,22 @@ def prove(row, repo=None):
         last = [ln for ln in text.splitlines() if ln.strip()]
         return {"lint": lint, "verdict": "ERROR",
                 "detail": (last[-1][:70] if last else "no output"), "cases": cases}
-    if label is not None:
-        # BEFORE the wrong-case verdict, because that verdict is the thing being
-        # checked: with the label naming no case it is a rot report dressed as a
-        # gate finding, and with it naming two it is worthless for this row.
-        hits = label_hits(gate, label)
-        if hits == 0:
-            return {"lint": lint, "verdict": "LABEL GONE",
-                    "detail": "no case in %s is named %s any more"
-                              % (os.path.basename(suite), label),
-                    "cases": cases}
-        if hits > 1:
-            return {"lint": lint, "verdict": "AMBIGUOUS LABEL",
-                    "detail": "%d cases in %s are named %s, so a red one credits "
-                              "nothing" % (hits, os.path.basename(suite), label),
-                    "cases": cases}
-    if label is not None and label not in cases:
-        return {"lint": lint, "verdict": "RED, WRONG CASE",
-                "detail": "expected %s, got %s" % (label, ", ".join(cases[:4])),
-                "cases": cases}
-    return {"lint": lint, "verdict": "RED", "detail": ", ".join(cases[:4]),
-            "cases": cases}
+    said, detail = verdict(target, gate, suite)
+    return {"lint": lint, "verdict": said, "detail": detail, "cases": cases}
 
 
 def render(rows, missing, stream=None):
     out = stream if stream is not None else sys.stdout
-    bad = [r for r in rows if r["verdict"] != "RED"]
+    bad = [r for r in rows if r["verdict"] not in PROVEN]
+    coarse = [r for r in rows if r["verdict"] == COARSE]
     for r in rows:
         out.write("  %-28s %-16s %s\n" % (r["lint"], r["verdict"], r["detail"]))
     out.write("\n")
     for name in missing:
         out.write("  NOT PROVEN AT ALL: %s has no row in the table\n" % (name,))
+    for r in coarse:
+        out.write("  NAMES NO CASE: %s is proven only by its whole suite going "
+                  "red\n" % (r["lint"],))
     out.write("%d of %d gates proven red%s\n"
               % (len(rows) - len(bad), len(rows),
                  ("; %d lint(s) missing a row" % len(missing)) if missing else ""))
@@ -389,53 +499,52 @@ def main(argv):
 
 
 # --- selftest -----------------------------------------------------------------
-def _cases():
+def _cases(check):
     """Everything that can rot, checked WITHOUT mutating anything."""
-    out = []
     names = gate_names()
-    out.append(("c0", len(names) >= 15 and "house_style_violations" in names,
-                "the gate set is DERIVED from the three modules by name, so a lint "
-                "added later shows up here rather than being quietly unproven "
-                "(%d found)" % (len(names),)))
+    check("c0 the gate set is DERIVED from the three modules by name, so a lint "
+          "added later shows up here rather than being quietly unproven "
+          "(%d found)" % (len(names),),
+          len(names) >= 15 and "house_style_violations" in names)
 
     missing = coverage()
-    out.append(("c1", missing == [],
-                "...and every one of them has a row in the table. This is the case "
-                "that fails the day somebody adds a lint and no mutation proves it: "
-                "%r" % (missing,)))
+    check("c1 ...and every one of them has a row in the table. This is the case "
+          "that fails the day somebody adds a lint and no mutation proves it: "
+          "%r" % (missing,),
+          missing == [])
 
     unanchored = []
     for row in TABLE:
         old, new = mutation(row)
         if old is None:
             unanchored.append((row[0], row[1], new))
-    out.append(("c2", unanchored == [],
-                "every row's anchor is still in the tree, exactly once. An anchor "
-                "that has moved makes `redfirst.sh` exit on a usage error, which "
-                "reads nothing like 'this gate is no longer proven': %r"
-                % (unanchored,)))
+    check("c2 every row's anchor is still in the tree, exactly once. An anchor "
+          "that has moved makes `redfirst.sh` exit on a usage error, which "
+          "reads nothing like 'this gate is no longer proven': %r"
+          % (unanchored,),
+          unanchored == [])
 
     changed = []
     for row in TABLE:
         old, new = mutation(row)
         if old is not None and old == new:
             changed.append(row[0])
-    out.append(("c3", changed == [],
-                "...and every mutation actually CHANGES the text - a row whose new "
-                "text equals its old one would report a green gate as proven: %r"
-                % (changed,)))
+    check("c3 ...and every mutation actually CHANGES the text - a row whose new "
+          "text equals its old one would report a green gate as proven: %r"
+          % (changed,),
+          changed == [])
 
     labelled = [r[0] for r in TABLE if r[6] is not None]
-    out.append(("c4", len(labelled) >= 12,
-                "most rows name the CASE that must fail, not just 'the suite went "
-                "red' - a mutation can turn a suite red through a case that has "
-                "nothing to do with the gate (%d of %d rows)"
-                % (len(labelled), len(TABLE))))
+    check("c4 most rows name the CASE that must fail, not just 'the suite went "
+          "red' - a mutation can turn a suite red through a case that has "
+          "nothing to do with the gate (%d of %d rows)"
+          % (len(labelled), len(TABLE)),
+          len(labelled) >= 12)
 
     suites = set(r[5] for r in TABLE)
-    out.append(("c5", all(os.path.isfile(os.path.join(REPO, s)) for s in suites),
-                "every suite the table drives exists: %s"
-                % (", ".join(sorted(os.path.basename(s) for s in suites)),)))
+    check("c5 every suite the table drives exists: %s"
+          % (", ".join(sorted(os.path.basename(s) for s in suites)),),
+          all(os.path.isfile(os.path.join(REPO, s)) for s in suites))
 
     # Three answers from one fixture, and each one is a different mutation: `2`
     # fails if occurrences are found rather than counted, `1` fails if the
@@ -447,31 +556,106 @@ def _cases():
                "note: pn11 is the case the row names, said in prose\n"
                "\n"
                "SELFTEST FAILED: 2/3 cases passed\n")
-    out.append(("c7", (label_hits(_report, "pn10"), label_hits(_report, "pn11"),
-                       label_hits(_report, "pn12")) == (2, 1, 0),
-                "a row's label is COUNTED in the suite's report, not merely "
-                "found in it - two cases wearing one name make every verdict "
-                "below meaningless for that row. F63; `_harness.run()` enforces "
-                "the other half, for every suite"))
+    check("c7 a row's selector is COUNTED in the suite's report, not merely "
+          "found in it - two cases wearing one name make every verdict "
+          "below meaningless for that row. F63; `_harness.run()` enforces "
+          "the other half, for every suite",
+          (case_hits(_report, "pn10"), case_hits(_report, "pn11"),
+           case_hits(_report, "pn12")) == (2, 1, 0))
 
-    out.append(("c6", "--selftest" in sys.argv[1:] or True,
-                "THIS SUITE MUTATES NOTHING. It is run by the parallel sweep "
-                "alongside every other file in the tree - `python3 "
-                "tools/sweep-selftests.py` prints how many - and a mutation "
-                "there would change what every other file sees mid-run, so the "
-                "expensive half lives in main() and nothing above this line "
-                "writes to the tree"))
-    return out
+    # -- naming a case that has no leading id (F74) ----------------------------
+    # THE FIXTURE IS A REAL SUITE'S OUTPUT, trimmed. `test__panel_viewer.py`
+    # opens every label with one group tag, so the tag names every case in it and
+    # the words after it are the only thing that tells them apart - which is
+    # what a hand-written `t1`/`t2` fixture would have hidden.
+    _sentences = ("PASS viewer: the first call really does resolve\n"
+                  "FAIL viewer: with no identity file and no environment "
+                  "moved, the second call resolves NOTHING\n"
+                  "\n"
+                  "SELFTEST FAILED: 1/2 cases passed\n")
+    check("c8 an id selector reads the LEADING token and nothing else, so a "
+          "suite whose labels open with a word or a group tag cannot be named "
+          "by one - which is F74 stated as a measurement rather than as a "
+          "complaint",
+          case_hits(_sentences, "resolves") == 0
+          and case_hits(_sentences, "viewer:") == 2)
+    check("c9 ...and a substr() selector reaches exactly one of those two "
+          "cases, by the words that tell them apart",
+          case_hits(_sentences, substr("no identity file")) == 1
+          and case_hits(_sentences, substr("the first call")) == 1)
+    check("c10 a selector matching TWO cases is refused, in either spelling - "
+          "the group tag and a substring that is not specific enough fail the "
+          "same way, because the RED-WRONG-CASE guarantee rests on the "
+          "selector naming one case",
+          verdict("viewer:", _sentences, DEP)[0] == "AMBIGUOUS LABEL"
+          and verdict(substr("call"), _sentences, DEP)[0] == "AMBIGUOUS LABEL")
+    # THE DISTINGUISHABILITY CASE. A selector that names nothing and a gate that
+    # noticed nothing are two different findings - one is a rotted table, the
+    # other is a lint asserting nothing - and reporting either as the other sends
+    # the reader to the wrong file. STAYED GREEN is `prove()`'s, and the two
+    # strings are asserted apart here rather than trusted to differ.
+    _gone = verdict(substr("a wording nothing in this suite carries"),
+                    _sentences, DEP)
+    check("c11 a selector naming NOTHING says the table has rotted, and says it "
+          "differently from a gate that stayed green: %r" % (_gone,),
+          _gone[0] == "LABEL GONE" and _gone[0] != "STAYED GREEN"
+          and "test__deps.py" in _gone[1])
+    check("c12 a selector naming exactly one FAILING case is the proof, and one "
+          "naming exactly one case that PASSED is 'red, wrong case' - the pair, "
+          "because a version that only counted matches would call both of them "
+          "proven",
+          verdict(substr("no identity file"), _sentences, DEP)[0] == "RED"
+          and verdict(substr("the first call"), _sentences, DEP)[0]
+          == "RED, WRONG CASE")
 
+    # -- the coarse verdict says it is coarse ----------------------------------
+    _coarse = verdict(None, _sentences, DEP)
+    check("c13 a row that names no case gets a verdict of its OWN, which names "
+          "the suite and says a case could have been named: %r" % (_coarse,),
+          _coarse[0] == COARSE and "test__deps.py" in _coarse[1]
+          and "substr()" in _coarse[1])
+    _buf = io.StringIO()
+    _code = render([{"lint": "probe_drift", "verdict": COARSE, "detail": "d",
+                     "cases": []}], [], stream=_buf)
+    check("c14 ...and it still counts as PROVEN - the row's mutation did redden "
+          "its suite - while the summary says out loud that this one names no "
+          "case: %r" % (_buf.getvalue(),),
+          _code == 0 and "NAMES NO CASE: probe_drift" in _buf.getvalue())
+    # c15 LOOKS VACUOUS AND IS THE SECOND-DIRECTION CASE: it passes on a render
+    # that never learned about the coarse verdict, and it is the only one here
+    # that fails if that line starts printing for every row.
+    _buf = io.StringIO()
+    render([{"lint": "probe_drift", "verdict": "RED", "detail": "x1",
+             "cases": ["x1"]}], [], stream=_buf)
+    check("c15 a row that DOES name its case gets no such line, so the notice "
+          "means something when it appears",
+          "NAMES NO CASE" not in _buf.getvalue())
+
+    # ASSERTED FROM THE AST, because the old form was `"--selftest" in
+    # sys.argv[1:] or True` - a comment wearing a PASS line, which cannot fail and
+    # so guaranteed nothing about the property it names. `prove()` is what mutates
+    # (it shells out to redfirst.sh), so the checkable statement is that the suite
+    # never reaches it.
+    _c6_tree = ast.parse(io.open(__file__, encoding="utf-8").read())
+    _c6_fns = [_n for _n in _c6_tree.body
+               if isinstance(_n, ast.FunctionDef) and _n.name == "_cases"]
+    _c6_calls = sorted(set(
+        (_c.func.id if isinstance(_c.func, ast.Name) else _c.func.attr)
+        for _fn in _c6_fns for _c in ast.walk(_fn)
+        if isinstance(_c, ast.Call)
+        and ((isinstance(_c.func, ast.Name) and _c.func.id == "prove")
+             or (isinstance(_c.func, ast.Attribute)
+                 and isinstance(_c.func.value, ast.Name)
+                 and _c.func.value.id == "subprocess"))))
+    check("c6 THIS SUITE MUTATES NOTHING. It is run by the parallel sweep "
+          "alongside every other suite in the tree, and a mutation here would "
+          "change what all of them see mid-run - so the expensive half lives "
+          "in main() and this suite never reaches `prove()`: %r" % (_c6_calls,),
+          len(_c6_fns) == 1 and _c6_calls == [])
 
 def _selftest():
-    rows = _cases()
-    bad = [r for r in rows if not r[1]]
-    for name, ok, why in rows:
-        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
-    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
-                                      len(rows) - len(bad), len(rows)))
-    return 1 if bad else 0
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 if __name__ == "__main__":

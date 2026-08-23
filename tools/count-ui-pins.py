@@ -158,19 +158,18 @@ def _fixture(tmp, name, src):
     return path
 
 
-def _cases():
+def _cases(check):
     import shutil
     import tempfile
-    out = []
 
     real = collect()
-    out.append(("p0", real["pins"]["total"] > 20
-                and all(real["perTarget"][t] > 0 for t in TARGETS),
-                "every one of the four targets carries pins in the real tree "
-                "(%r). A zero here would print as a small change budget rather "
-                "than as a broken scanner, which is the whole reason the figures "
-                "were deleted from CLAUDE.md and replaced by this command"
-                % (real["perTarget"],)))
+    check("p0 every one of the four targets carries pins in the real tree "
+          "(%r). A zero here would print as a small change budget rather "
+          "than as a broken scanner, which is the whole reason the figures "
+          "were deleted from CLAUDE.md and replaced by this command"
+          % (real["perTarget"],),
+          real["pins"]["total"] > 20
+          and all(real["perTarget"][t] > 0 for t in TARGETS))
 
     tmp = tempfile.mkdtemp(prefix="count-ui-pins-")
     try:
@@ -179,16 +178,16 @@ def _cases():
                  '    assert "literal" in M.UI_HTML\n'
                  '    assert json.dumps(cfg()) in M.UI_HTML\n')
         got = collect(tmp)
-        out.append(("p1", got["pins"] == {"literal": 1, "computed": 1, "total": 2,
-                                          "cssShaped": 0},
-                    "a LITERAL left-hand side and a COMPUTED one are counted apart. "
-                    "A change budget needs the split: a computed pin cannot be read "
-                    "by eye, and a regex could not express one at all: %r"
-                    % (got["pins"],)))
-        out.append(("p2", got["perTarget"]["UI_HTML"] == 2
-                    and got["perFile"] == {"test_fx.py": 2},
-                    "...and both are attributed to their target and their file, "
-                    "because that is what the command is asked for"))
+        check("p1 a LITERAL left-hand side and a COMPUTED one are counted apart. "
+              "A change budget needs the split: a computed pin cannot be read "
+              "by eye, and a regex could not express one at all: %r"
+              % (got["pins"],),
+              got["pins"] == {"literal": 1, "computed": 1, "total": 2,
+                              "cssShaped": 0})
+        check("p2 ...and both are attributed to their target and their file, "
+              "because that is what the command is asked for",
+              got["perTarget"]["UI_HTML"] == 2
+              and got["perFile"] == {"test_fx.py": 2})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -198,12 +197,12 @@ def _cases():
                  'def f():\n'
                  '    win = M.UI_HTML[src.index("a"):src.index("b")]\n')
         got = collect(tmp)
-        out.append(("p3", got["indexSlices"]["total"] == 1,
-                    "THE HISTORICAL DEFECT: an order assertion is ONE slice, not "
-                    "the two `.index()` calls that bound it. Counting the calls is "
-                    "what put a wrong figure into CLAUDE.md twice, and 2 is exactly "
-                    "what the wrong version prints here (got %d)"
-                    % (got["indexSlices"]["total"],)))
+        check("p3 THE HISTORICAL DEFECT: an order assertion is ONE slice, not "
+              "the two `.index()` calls that bound it. Counting the calls is "
+              "what put a wrong figure into CLAUDE.md twice, and 2 is exactly "
+              "what the wrong version prints here (got %d)"
+              % (got["indexSlices"]["total"],),
+              got["indexSlices"]["total"] == 1)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -214,11 +213,11 @@ def _cases():
                  '    assert ("a long needle "\n'
                  '            "continued on the next line") in M.UI_HTML\n')
         got = collect(tmp)
-        out.append(("p4", got["pins"]["literal"] == 1,
-                    "a pin whose literal is SPLIT ACROSS LINES is still one pin - "
-                    "the closing line reads `in M.UI_HTML)` with no literal on it, "
-                    "and that blind spot is why a documented grep under-reported by "
-                    "dozens: %r" % (got["pins"],)))
+        check("p4 a pin whose literal is SPLIT ACROSS LINES is still one pin - "
+              "the closing line reads `in M.UI_HTML)` with no literal on it, "
+              "and that blind spot is why a documented grep under-reported by "
+              "dozens: %r" % (got["pins"],),
+              got["pins"]["literal"] == 1)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -227,30 +226,24 @@ def _cases():
         _fixture(tmp, "big.py", "x = 1\n" * (LONG_FILE_LINES + 1))
         _fixture(tmp, "small.py", "x = 1\n" * (LONG_FILE_LINES - 1))
         got = long_files(dirs=(tmp,), limit=LONG_FILE_LINES)
-        out.append(("p5", got[tmp] == 1 and got["total"] == 1,
-                    "THE PAIR: one file over the limit and one under it, in the "
-                    "same directory, and only one is counted - a version that "
-                    "counted files would answer 2 and a version that counted none "
-                    "would answer 0 (%r)" % (got,)))
+        check("p5 THE PAIR: one file over the limit and one under it, in the "
+              "same directory, and only one is counted - a version that "
+              "counted files would answer 2 and a version that counted none "
+              "would answer 0 (%r)" % (got,),
+              got[tmp] == 1 and got["total"] == 1)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    out.append(("p6", real["pins"]["cssShaped"]
-                == real["perTarget"]["_CSS"] + real["perTarget"]["TOKEN_CSS"],
-                "the CSS subtotal is DERIVED from the two targets it covers rather "
-                "than counted a second time - a subtotal presented as if it covered "
-                "everything is one of the six figures that rotted in CLAUDE.md"))
-    return out
+    check("p6 the CSS subtotal is DERIVED from the two targets it covers rather "
+          "than counted a second time - a subtotal presented as if it covered "
+          "everything is one of the six figures that rotted in CLAUDE.md",
+          real["pins"]["cssShaped"]
+          == real["perTarget"]["_CSS"] + real["perTarget"]["TOKEN_CSS"])
 
 
 def _selftest():
-    rows = _cases()
-    bad = [r for r in rows if not r[1]]
-    for name, ok, why in rows:
-        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
-    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
-                                      len(rows) - len(bad), len(rows)))
-    return 1 if bad else 0
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 def main(argv):

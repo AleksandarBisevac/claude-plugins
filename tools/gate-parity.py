@@ -543,25 +543,24 @@ def main(argv):
 
 
 # --- selftest -----------------------------------------------------------------
-def _cases():
-    out = []
+def _cases(check):
     real = parity()
-    out.append(("p0", real["missing"] == [] and real["stale_exemptions"] == [],
-                "THE LIVE CLAIM: every description of the gate set names the "
-                "same gates and no exemption has gone stale (%s) - %r"
-                % (", ".join("%s=%d" % (k, v)
-                             for k, v in sorted(real["counts"].items())),
-                   real["missing"] + real["stale_exemptions"])))
+    check("p0 THE LIVE CLAIM: every description of the gate set names the "
+          "same gates and no exemption has gone stale (%s) - %r"
+          % (", ".join("%s=%d" % (k, v)
+                       for k, v in sorted(real["counts"].items())),
+             real["missing"] + real["stale_exemptions"]),
+          real["missing"] == [] and real["stale_exemptions"] == [])
 
-    out.append(("p1", underread_sides(real["counts"]) == [],
-                "...and every side was really READ, so p0 is not a row of empty "
-                "sets agreeing: every side clears a floor of %d, the larger of the "
-                "absolute term and the largest side's share. It is also the case a "
-                "floor set too HIGH fails - the sides legitimately differ in size, "
-                "so a floor AT the largest count would report the smallest side as "
-                "unread: %r / %r"
-                % (read_floor(real["counts"]), real["counts"],
-                   underread_sides(real["counts"]))))
+    check("p1 ...and every side was really READ, so p0 is not a row of empty "
+          "sets agreeing: every side clears a floor of %d, the larger of the "
+          "absolute term and the largest side's share. It is also the case a "
+          "floor set too HIGH fails - the sides legitimately differ in size, "
+          "so a floor AT the largest count would report the smallest side as "
+          "unread: %r / %r"
+          % (read_floor(real["counts"]), real["counts"],
+             underread_sides(real["counts"])),
+          underread_sides(real["counts"]) == [])
 
     # THE FIXTURE VALUE IS THE OLD FLOOR'S BLIND SPOT (F69), which is the only
     # reason this case is worth anything: `p1` compared each count with a fixed
@@ -569,44 +568,44 @@ def _cases():
     # and they disagree about it.
     rotted = dict((label, 14) for label, _r in SIDES)
     rotted["CLAUDE.md"] = 6
-    out.append(("p2", underread_sides(rotted) == [("CLAUDE.md", 6, 7)],
-                "a document that rotted while the other sides stood IS reported, "
-                "by name and with both numbers - the count it named and the floor "
-                "the rest of the tree sets: %r" % (underread_sides(rotted),)))
+    check("p2 a document that rotted while the other sides stood IS reported, "
+          "by name and with both numbers - the count it named and the floor "
+          "the rest of the tree sets: %r" % (underread_sides(rotted),),
+          underread_sides(rotted) == [("CLAUDE.md", 6, 7)])
 
     empty = dict((label, 0) for label, _r in SIDES)
-    out.append(("p3", underread_sides(empty)
-                == [(label, 0, FLOOR_MINIMUM) for label, _r in SIDES],
-                "...and a run where NOTHING was read reports every side, at the "
-                "ABSOLUTE floor. This is the direction the derived term cannot "
-                "cover on its own - a fraction of nothing is nothing, and a floor "
-                "of 0 would let the emptiest possible read pass: %r"
-                % (underread_sides(empty),)))
+    check("p3 ...and a run where NOTHING was read reports every side, at the "
+          "ABSOLUTE floor. This is the direction the derived term cannot "
+          "cover on its own - a fraction of nothing is nothing, and a floor "
+          "of 0 would let the emptiest possible read pass: %r"
+          % (underread_sides(empty),),
+          underread_sides(empty)
+          == [(label, 0, FLOOR_MINIMUM) for label, _r in SIDES])
 
     live = scratch_isolation()
-    out.append(("sc0", live["violations"] == [] and live["examined"] > 0,
-                "THE LIVE CLAIM: no runnable line in verify.sh names a temp path a "
-                "second run would share, over %d runnable line(s) - the count is "
-                "here so this cannot be an empty read agreeing with itself: %r"
-                % (live["examined"], live["violations"])))
+    check("sc0 THE LIVE CLAIM: no runnable line in verify.sh names a temp path a "
+          "second run would share, over %d runnable line(s) - the count is "
+          "here so this cannot be an empty read agreeing with itself: %r"
+          % (live["examined"], live["violations"]),
+          live["violations"] == [] and live["examined"] > 0)
 
     fixed = _scratch_violations("run() {\n  cmd >/tmp/verify-step.log 2>&1\n}\n")
-    out.append(("sc1", len(fixed["violations"]) == 1,
-                "...and a fixed path IS reported, which is what tells sc0 apart "
-                "from a rule that cannot fire at all: %r" % (fixed["violations"],)))
+    check("sc1 ...and a fixed path IS reported, which is what tells sc0 apart "
+          "from a rule that cannot fire at all: %r" % (fixed["violations"],),
+          len(fixed["violations"]) == 1)
 
     derived = _scratch_violations(
         'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n')
-    out.append(("sc2", derived["violations"] == [] and derived["examined"] == 1,
-                "the ONE derivation may name the root - deriving it is what makes "
-                "the path unique - and the line was READ rather than skipped, so "
-                "this is an exemption and not a blind spot: %r" % (derived,)))
+    check("sc2 the ONE derivation may name the root - deriving it is what makes "
+          "the path unique - and the line was READ rather than skipped, so "
+          "this is an exemption and not a blind spot: %r" % (derived,),
+          derived["violations"] == [] and derived["examined"] == 1)
 
     prose = _scratch_violations("# it used to write /tmp/verify-step.log\n")
-    out.append(("sc3", prose["violations"] == [] and prose["examined"] == 0,
-                "a comment naming the old path is history, not a command - and "
-                "`examined` says 0 instead of letting the empty result read as "
-                "clean, which is the half sc0 pairs with: %r" % (prose,)))
+    check("sc3 a comment naming the old path is history, not a command - and "
+          "`examined` says 0 instead of letting the empty result read as "
+          "clean, which is the half sc0 pairs with: %r" % (prose,),
+          prose["violations"] == [] and prose["examined"] == 0)
 
     # THE INVENTED GATE NAMES BELOW CARRY THE JAVASCRIPT MODULE EXTENSION, and it is
     # not decoration: `_refs.tool_basename_drift()` holds that a `.py` basename
@@ -618,10 +617,10 @@ def _cases():
     # thing it is protecting is the rule rather than these names.
     body = _shell_command_lines(
         "# node tools/ghost.mjs\n  ruff check x  # ruff check y\n")
-    out.append(("c0", body == ["ruff check x"],
-                "a commented invocation is NOT an invocation, and a trailing "
-                "comment is cut - all three files discuss their own gates at "
-                "length, so without this every mention would register: %r" % (body,)))
+    check("c0 a commented invocation is NOT an invocation, and a trailing "
+          "comment is cut - all three files discuss their own gates at "
+          "length, so without this every mention would register: %r" % (body,),
+          body == ["ruff check x"])
 
     yml = _yaml_run_lines(
         "      - name: something about tools/ghost.mjs\n"
@@ -632,12 +631,12 @@ def _cases():
         "          # a comment about tools/commented-fixture\n"
         "          python tools/block-fixture\n"
         "      - name: after the block, tools/after.mjs\n")
-    out.append(("c1", yml == ["node tools/real.mjs", "python tools/block-fixture"],
-                "a workflow is mostly KEYS: only `run:` values and their block "
-                "scalars are commands, so renaming a step cannot change the gate "
-                "set. Written as 'every non-comment line' first, and a step name "
-                "mentioning verify.sh registered as an invocation of it: %r"
-                % (yml,)))
+    check("c1 a workflow is mostly KEYS: only `run:` values and their block "
+          "scalars are commands, so renaming a step cannot change the gate "
+          "set. Written as 'every non-comment line' first, and a step name "
+          "mentioning verify.sh registered as an invocation of it: %r"
+          % (yml,),
+          yml == ["node tools/real.mjs", "python tools/block-fixture"])
 
     md = _markdown_fence_lines(
         DOC_REL,
@@ -645,32 +644,32 @@ def _cases():
         "```bash\n# a comment about tools/commented-fixture\n"
         "node tools/real.mjs  # a trailing note about tools/trailing-fixture\n"
         "```\n\nMore prose about tools/after.mjs.\n")
-    out.append(("c2", md == ["node tools/real.mjs"],
-                "a Markdown document is mostly PROSE, and this one argues about its "
-                "own gates for pages: only fenced blocks are commands. The reader "
-                "comes from `_refs`, which already owns 'the runnable region of a "
-                "document' for the sweep-shape rule - a second definition of that is "
-                "how two rules come to disagree about what a document says. The "
-                "TRAILING note is cut as well, which it was not: an annotated command "
-                "in a fence named a gate the identical annotation in verify.sh did "
-                "not, and a list a reader is meant to annotate is what this side is: "
-                "%r" % (md,)))
+    check("c2 a Markdown document is mostly PROSE, and this one argues about its "
+          "own gates for pages: only fenced blocks are commands. The reader "
+          "comes from `_refs`, which already owns 'the runnable region of a "
+          "document' for the sweep-shape rule - a second definition of that is "
+          "how two rules come to disagree about what a document says. The "
+          "TRAILING note is cut as well, which it was not: an annotated command "
+          "in a fence named a gate the identical annotation in verify.sh did "
+          "not, and a list a reader is meant to annotate is what this side is: "
+          "%r" % (md,),
+          md == ["node tools/real.mjs"])
 
     tmp = _output.REPO_ROOT  # any real directory; the point is the missing file
     res = parity(os.path.join(tmp, "no-such-repo-dir"))
-    out.append(("m0", len(res["stale_exemptions"]) == len(SIDES)
-                and all("could not be read" in n
-                        for _g, _s, n in res["stale_exemptions"]),
-                "every unreadable side is a NAMED failure, not perfect parity - "
-                "empty sets for all three would report three missing files as "
-                "agreement: %r" % (res["stale_exemptions"],)))
+    check("m0 every unreadable side is a NAMED failure, not perfect parity - "
+          "empty sets for all three would report three missing files as "
+          "agreement: %r" % (res["stale_exemptions"],),
+          len(res["stale_exemptions"]) == len(SIDES)
+          and all("could not be read" in n
+                  for _g, _s, n in res["stale_exemptions"]))
 
     seen = gates_in(os.path.join(REPO, VERIFY_REL))
-    out.append(("g0", "npx vitest" in seen and "ruff" in seen
-                and "tools/sweep-selftests.py" in seen,
-                "the extractor finds an external gate, a linter and a repo script "
-                "in the real verify.sh - three different shapes, so a pattern that "
-                "silently stopped matching one of them fails here"))
+    check("g0 the extractor finds an external gate, a linter and a repo script "
+          "in the real verify.sh - three different shapes, so a pattern that "
+          "silently stopped matching one of them fails here",
+          "npx vitest" in seen and "ruff" in seen
+          and "tools/sweep-selftests.py" in seen)
 
     fx = tempfile.mkdtemp(prefix="gate-parity-")
     commented = os.path.join(fx, "commented.sh")
@@ -680,51 +679,51 @@ def _cases():
     io.open(running, "w", encoding="utf-8").write("node tools/ghost.mjs\n")
     seen_c, seen_r = gates_in(commented), gates_in(running)
     shutil.rmtree(fx, ignore_errors=True)
-    out.append(("g1", seen_c == set() and seen_r == set(["tools/ghost.mjs"]),
-                "THE PAIR: two fixtures differing ONLY in whether the mention is a "
-                "comment give OPPOSITE answers, so the comment rule is doing work "
-                "rather than the extractor finding nothing either way. Asserting "
-                "the empty one alone would pass on a version that always returned "
-                "an empty set (%r vs %r)" % (seen_c, seen_r)))
+    check("g1 THE PAIR: two fixtures differing ONLY in whether the mention is a "
+          "comment give OPPOSITE answers, so the comment rule is doing work "
+          "rather than the extractor finding nothing either way. Asserting "
+          "the empty one alone would pass on a version that always returned "
+          "an empty set (%r vs %r)" % (seen_c, seen_r),
+          seen_c == set() and seen_r == set(["tools/ghost.mjs"]))
 
     labels = set(label for label, _r in SIDES)
     bad_side = [(g, s) for g, sides, _w in ABSENT_BY_DESIGN for s in sides
                 if s not in labels]
-    out.append(("e0", bad_side == [],
-                "every exemption names a side that EXISTS - a row pointing at a "
-                "label nothing reads is a row that can never be wrong: %r"
-                % (bad_side,)))
+    check("e0 every exemption names a side that EXISTS - a row pointing at a "
+          "label nothing reads is a row that can never be wrong: %r"
+          % (bad_side,),
+          bad_side == [])
 
     dead = [(g, s) for g, s, n in real["stale_exemptions"]
             if "does nothing" in n or "any more" in n]
-    out.append(("e1", dead == [],
-                "no exemption names a side that RUNS the gate, and none names a "
-                "gate no side runs. The first stays green under a check that only "
-                "asks about its own side; the second is a row that cannot be "
-                "reported missing and therefore asserts nothing - the reason "
-                "`prove-gates.py` had no row until a side named it: %r" % (dead,)))
+    check("e1 no exemption names a side that RUNS the gate, and none names a "
+          "gate no side runs. The first stays green under a check that only "
+          "asks about its own side; the second is a row that cannot be "
+          "reported missing and therefore asserts nothing - the reason "
+          "`prove-gates.py` had no row until a side named it: %r" % (dead,),
+          dead == [])
 
-    out.append(("e2", all(sides for _g, sides, _w in ABSENT_BY_DESIGN)
-                and all(why.strip() for _g, _s, why in ABSENT_BY_DESIGN),
-                "and every row carries at least one side and a REASON, because an "
-                "exemption without one is a decision nobody can disagree with "
-                "(%d rows)" % (len(ABSENT_BY_DESIGN),)))
+    check("e2 and every row carries at least one side and a REASON, because an "
+          "exemption without one is a decision nobody can disagree with "
+          "(%d rows)" % (len(ABSENT_BY_DESIGN),),
+          all(sides for _g, sides, _w in ABSENT_BY_DESIGN)
+          and all(why.strip() for _g, _s, why in ABSENT_BY_DESIGN))
 
     buf = io.StringIO()
     code = render({"missing": [("tools/x.mjs", "ci.yml", "why")],
                    "stale_exemptions": [], "counts": {"verify.sh": 3}}, stream=buf)
-    out.append(("r0", code == 1 and "tools/x.mjs" in buf.getvalue()
-                and "ci.yml" in buf.getvalue() and "why" in buf.getvalue(),
-                "a gap exits 1 and names the gate, the SIDE it is missing from, and "
-                "what to do about it - two sides made 'missing' unambiguous and "
-                "three do not"))
+    check("r0 a gap exits 1 and names the gate, the SIDE it is missing from, and "
+          "what to do about it - two sides made 'missing' unambiguous and "
+          "three do not",
+          code == 1 and "tools/x.mjs" in buf.getvalue()
+          and "ci.yml" in buf.getvalue() and "why" in buf.getvalue())
 
     buf = io.StringIO()
     code = render({"missing": [], "stale_exemptions": [],
                    "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    out.append(("r1", code == 0 and "every side names" in buf.getvalue(),
-                "and parity exits 0 saying so - 'nothing to report' must not read "
-                "like 'nothing was compared'"))
+    check("r1 and parity exits 0 saying so - 'nothing to report' must not read "
+          "like 'nothing was compared'",
+          code == 0 and "every side names" in buf.getvalue())
 
     # --- the fourth side ------------------------------------------------------
     # F61: CLAUDE.md's list said of itself that it was one of the sides being
@@ -733,80 +732,74 @@ def _cases():
     # compared - and four real files would put the readers under test instead.
     agreed = dict((label, set(["tools/alpha.mjs", "tools/beta.mjs"])) for label, _r in SIDES)
     same = compare(agreed, table=())
-    out.append(("x0", same["missing"] == [] and same["stale_exemptions"] == [],
-                "THE SECOND DIRECTION, and it looks vacuous on purpose: sides that "
-                "name the same gates report nothing. It is the only case that fails "
-                "if the comparison starts firing unconditionally, which is the other "
-                "way x1 could be green for a bad reason: %r" % (same,)))
+    check("x0 THE SECOND DIRECTION, and it looks vacuous on purpose: sides that "
+          "name the same gates report nothing. It is the only case that fails "
+          "if the comparison starts firing unconditionally, which is the other "
+          "way x1 could be green for a bad reason: %r" % (same,),
+          same["missing"] == [] and same["stale_exemptions"] == [])
 
     short = dict(agreed)
     short["CLAUDE.md"] = set(["tools/alpha.mjs"])
     gap = compare(short, table=())
-    out.append(("x1", [(g, s) for g, s, _n in gap["missing"]]
-                == [("tools/beta.mjs", "CLAUDE.md")],
-                "a gate the other sides name and CLAUDE.md does not is reported "
-                "against CLAUDE.md BY NAME, and nothing else is reported. The whole "
-                "of F61 is that this could not happen: the document telling readers "
-                "it was compared was not in SIDES: %r" % (gap["missing"],)))
+    check("x1 a gate the other sides name and CLAUDE.md does not is reported "
+          "against CLAUDE.md BY NAME, and nothing else is reported. The whole "
+          "of F61 is that this could not happen: the document telling readers "
+          "it was compared was not in SIDES: %r" % (gap["missing"],),
+          [(g, s) for g, s, _n in gap["missing"]]
+          == [("tools/beta.mjs", "CLAUDE.md")])
 
     lone = dict((label, set()) for label, _r in SIDES)
     lone["CLAUDE.md"] = set(["tools/lone.mjs"])
     others = tuple(l for l, _r in SIDES if l != "CLAUDE.md")
     unrowed = compare(lone, table=())
     rowed = compare(lone, table=(("tools/lone.mjs", others, "a reason"),))
-    out.append(("x2", sorted(s for _g, s, _n in unrowed["missing"])
-                == sorted(others)
-                and rowed["missing"] == [] and rowed["stale_exemptions"] == [],
-                "THE PAIR behind the two rows CLAUDE.md alone carries: a gate only "
-                "it names is reported against every other side until a row says why, "
-                "and the row then silences exactly those. Neither half was reachable "
-                "before the fourth side, which is why `prove-gates.py` could not be "
-                "given a row that asserted anything: %r vs %r"
-                % (unrowed["missing"], rowed)))
+    check("x2 THE PAIR behind the two rows CLAUDE.md alone carries: a gate only "
+          "it names is reported against every other side until a row says why, "
+          "and the row then silences exactly those. Neither half was reachable "
+          "before the fourth side, which is why `prove-gates.py` could not be "
+          "given a row that asserted anything: %r vs %r"
+          % (unrowed["missing"], rowed),
+          sorted(s for _g, s, _n in unrowed["missing"])
+          == sorted(others)
+          and rowed["missing"] == [] and rowed["stale_exemptions"] == [])
 
     forgot = dict((label, set(["tools/alpha.mjs"])) for label, _r in SIDES)
     del forgot["CLAUDE.md"]
     unread = compare(forgot, table=())
-    out.append(("x3", unread["missing"] == []
-                and [(g, s) for g, s, _n in unread["stale_exemptions"]]
-                == [("CLAUDE.md", "-")],
-                "a caller that read no gate set for a side gets a NAMED failure "
-                "instead of a verdict over the sides it did remember - substituting "
-                "an empty set would report the unread side as absent from nothing "
-                "and disagreeing with everything: %r" % (unread,)))
+    check("x3 a caller that read no gate set for a side gets a NAMED failure "
+          "instead of a verdict over the sides it did remember - substituting "
+          "an empty set would report the unread side as absent from nothing "
+          "and disagreeing with everything: %r" % (unread,),
+          unread["missing"] == []
+          and [(g, s) for g, s, _n in unread["stale_exemptions"]]
+          == [("CLAUDE.md", "-")])
 
     doc = gates_in(os.path.join(REPO, CLAUDE_REL))
-    out.append(("x4", doc is not None and "tools/sweep-selftests.py" in doc
-                and "tools/redfirst.sh" not in doc,
-                "REAL DOCUMENT, BOTH DIRECTIONS: CLAUDE.md's fences are read, and "
-                "`tools/redfirst.sh` - which it names in PROSE and no side runs - is "
-                "not. Several rows in the table rest on that scope, and a reader "
-                "widened to the whole document would invent a gate every other side "
-                "is missing: %r" % (sorted(doc or []),)))
+    check("x4 REAL DOCUMENT, BOTH DIRECTIONS: CLAUDE.md's fences are read, and "
+          "`tools/redfirst.sh` - which it names in PROSE and no side runs - is "
+          "not. Several rows in the table rest on that scope, and a reader "
+          "widened to the whole document would invent a gate every other side "
+          "is missing: %r" % (sorted(doc or []),),
+          doc is not None and "tools/sweep-selftests.py" in doc
+          and "tools/redfirst.sh" not in doc)
 
     buf = io.StringIO()
     listed = render_list({"verify.sh": set(["tools/alpha.mjs"]), "ci.yml": set(),
                           "CONTRIBUTING.md": None,
                           "CLAUDE.md": set(["tools/alpha.mjs"])}, stream=buf)
     shown = buf.getvalue()
-    out.append(("l0", listed == 1 and all(label in shown for label, _r in SIDES)
-                and "x" in shown and "?" in shown,
-                "--list heads a column per side, derived from SIDES. It was two "
-                "hard-coded columns, so a side it did not know about was invisible "
-                "in the one output that exists to show what each side invokes - and "
-                "an unreadable side prints `?` rather than reading as a side that "
-                "runs nothing: %r" % (shown,)))
-    return out
+    check("l0 --list heads a column per side, derived from SIDES. It was two "
+          "hard-coded columns, so a side it did not know about was invisible "
+          "in the one output that exists to show what each side invokes - and "
+          "an unreadable side prints `?` rather than reading as a side that "
+          "runs nothing: %r" % (shown,),
+          listed == 1 and all(label in shown for label, _r in SIDES)
+          and "x" in shown and "?" in shown)
 
 
 def _selftest():
-    rows = _cases()
-    bad = [r for r in rows if not r[1]]
-    for name, ok, why in rows:
-        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
-    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
-                                      len(rows) - len(bad), len(rows)))
-    return 1 if bad else 0
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 if __name__ == "__main__":

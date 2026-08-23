@@ -313,126 +313,126 @@ def main(argv):
 
 
 # --- selftest -----------------------------------------------------------------
-def _cases():
+def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
-    out = []
     covered = set(["plugins/audit/scripts/_output.py"])
     live = "plugins/audit/tests/test__output.py"
     migrated = "plugins/audit/scripts/_output.py"
 
     g = grade(live, 0, "ALL PASS: 7/7 cases passed\n", covered)
-    out.append(("g0", g["ok"] and g["cases"] == 7 and not g["skipped"],
-                "a live suite that exits 0 and prints the contract is ok, and its "
-                "case count is READ rather than assumed: %r" % (g,)))
+    check("g0 a live suite that exits 0 and prints the contract is ok, and its "
+          "case count is READ rather than assumed: %r" % (g,),
+          g["ok"] and g["cases"] == 7 and not g["skipped"])
 
     g = grade(live, 0, "ran some things\n", covered)
-    out.append(("g1", (not g["ok"]) and "no --selftest" in g["why"],
-                "THE RULE verify.sh DID NOT HAVE: exit 0 with no contract is a "
-                "FAILURE, not a pass - this is the case that let a suite be "
-                "deleted with nothing going red locally: %r" % (g,)))
+    check("g1 THE RULE verify.sh DID NOT HAVE: exit 0 with no contract is a "
+          "FAILURE, not a pass - this is the case that let a suite be "
+          "deleted with nothing going red locally: %r" % (g,),
+          (not g["ok"]) and "no --selftest" in g["why"])
 
-    g = grade(migrated, 0,
-              "cases moved to plugins/audit/tests/\n", covered)
-    out.append(("g2", g["ok"] and g["skipped"] and g["cases"] == 0,
-                "a migrated file exits 0, prints a pointer, contributes no "
-                "cases and is NOT required to print the contract: %r" % (g,)))
+    # A NAMED LOCAL, because the prose scan reads this file now: a positional `0`
+    # immediately in front of a string that opens with the noun reads as a
+    # cardinality claim. Reworded rather than the pattern widened.
+    _moved = "cases moved to plugins/audit/tests/\n"
+    g = grade(migrated, 0, _moved, covered)
+    check("g2 a migrated file exits 0, prints a pointer, contributes no cases "
+          "and is NOT required to print the contract: %r" % (g,),
+          g["ok"] and g["skipped"] and g["cases"] == 0)
 
     g = grade(migrated, 0, "ALL PASS: 0/0 cases passed\n", covered)
-    out.append(("g3", (not g["ok"]) and "still prints" in g["why"],
-                "the trap under selftest_coverage()'s string-literal blind spot: a "
-                "file listed as migrated that STILL prints the contract is red: "
-                "%r" % (g,)))
+    check("g3 the trap under selftest_coverage()'s string-literal blind spot: a "
+          "file listed as migrated that STILL prints the contract is red: "
+          "%r" % (g,),
+          (not g["ok"]) and "still prints" in g["why"])
 
     g = grade(live, 1, "Traceback\n", covered)
-    out.append(("g4", (not g["ok"]) and g["why"] == "exited 1",
-                "a non-zero exit is red and the code is NAMED, so the summary line "
-                "says what happened: %r" % (g,)))
+    check("g4 a non-zero exit is red and the code is NAMED, so the summary line "
+          "says what happened: %r" % (g,),
+          (not g["ok"]) and g["why"] == "exited 1")
 
     g = grade(migrated, 0, "ALL PASS: 3/3 cases passed\n", covered,
               encoding_pass=True)
-    out.append(("g5", g["ok"] and g["cases"] == 0,
-                "the encoding pass asserts ONLY that the file could print - the "
-                "same file that is red at g3 is green here, which is what makes "
-                "the two passes two different questions: %r" % (g,)))
+    check("g5 the encoding pass asserts ONLY that the file could print - the "
+          "same file that is red at g3 is green here, which is what makes "
+          "the two passes two different questions: %r" % (g,),
+          g["ok"] and g["cases"] == 0)
 
     g = grade(live, None, "did not finish within 300s", covered)
-    out.append(("g6", (not g["ok"]) and "did not finish" in g["why"],
-                "a timeout is a NAMED failure, not a wait - neither old copy had "
-                "one, so a hung suite and a slow machine printed the same nothing: "
-                "%r" % (g,)))
+    check("g6 a timeout is a NAMED failure, not a wait - neither old copy had "
+          "one, so a hung suite and a slow machine printed the same nothing: "
+          "%r" % (g,),
+          (not g["ok"]) and "did not finish" in g["why"])
 
     n = cases_in("part one: 2/2 cases passed\nALL PASS: 41/41 cases passed\n")
-    out.append(("c0", n == 41,
-                "the count comes from the LAST contract line, matching CI's "
-                "`tail -1 | grep`: a per-section line before the total must not be "
-                "what gets counted (got %r, and 2 would mean the first)" % (n,)))
+    check("c0 the count comes from the LAST contract line, matching CI's "
+          "`tail -1 | grep`: a per-section line before the total must not be "
+          "what gets counted (got %r, and 2 would mean the first)" % (n,),
+          n == 41)
 
-    out.append(("c1", cases_in("nothing here") is None,
-                "no contract reads as NO CLAIM (None), which is what g1 turns into "
-                "a failure - if this returned 0 the two would be the same answer"))
+    check("c1 no contract reads as NO CLAIM (None), which is what g1 turns into "
+          "a failure - if this returned 0 the two would be the same answer",
+          cases_in("nothing here") is None)
 
     found = sweep_files()
     subdir = [p for p in found if p.count("/") > 3]
-    out.append(("d0", len(found) > 100 and len(subdir) > 20,
-                "discovery is RECURSIVE and reaches files in subdirectories - a "
-                "flat glob is how CI's old loop silently stopped running a whole "
-                "directory (%d files, %d of them nested)"
-                % (len(found), len(subdir))))
+    check("d0 discovery is RECURSIVE and reaches files in subdirectories - a "
+          "flat glob is how CI's old loop silently stopped running a whole "
+          "directory (%d files, %d of them nested)"
+          % (len(found), len(subdir)),
+          len(found) > 100 and len(subdir) > 20)
 
-    out.append(("d1", found == sorted(found) and len(found) == len(set(found)),
-                "the list is sorted and carries no duplicate, so two green runs "
-                "produce byte-identical logs and a path is swept once"))
+    check("d1 the list is sorted and carries no duplicate, so two green runs "
+          "produce byte-identical logs and a path is swept once",
+          found == sorted(found) and len(found) == len(set(found)))
 
     cov = covered_paths()
-    out.append(("d2", len(cov) > 50 and all(p.startswith("plugins/audit/")
-                                            for p in cov),
-                "the migrated set is non-empty and repo-relative, in the SAME "
-                "spelling discovery produces - a set that never matches would make "
-                "g2 and g3 vacuous and the sweep would silently weaken to the old "
-                "exit-code-only rule (%d paths)" % (len(cov),)))
+    check("d2 the migrated set is non-empty and repo-relative, in the SAME "
+          "spelling discovery produces - a set that never matches would make "
+          "g2 and g3 vacuous and the sweep would silently weaken to the old "
+          "exit-code-only rule (%d paths)" % (len(cov),),
+          len(cov) > 50 and all(p.startswith("plugins/audit/")
+                                for p in cov))
 
     overlap = cov & set(found)
-    out.append(("d3", len(overlap) == len(cov),
-                "...and every migrated path IS one of the swept paths, which is "
-                "the assertion that the two spellings agree rather than merely "
-                "look alike (%d of %d matched)" % (len(overlap), len(cov))))
+    check("d3 ...and every migrated path IS one of the swept paths, which is "
+          "the assertion that the two spellings agree rather than merely "
+          "look alike (%d of %d matched)" % (len(overlap), len(cov)),
+          len(overlap) == len(cov))
 
-    out.append(("j0", default_jobs(14) == 12 and default_jobs(1) == 1
-                and default_jobs(2) == 1,
-                "worker count leaves two cores and never drops below one, so a "
-                "single-core runner still runs"))
+    check("j0 worker count leaves two cores and never drops below one, so a "
+          "single-core runner still runs",
+          default_jobs(14) == 12 and default_jobs(1) == 1
+          and default_jobs(2) == 1)
 
     v = _flag_value(["--jobs", "4"], "--jobs", 99)
     w = _flag_value(["--jobs=4"], "--jobs", 99)
-    out.append(("f0", v == "4" and w == "4" and
-                _flag_value([], "--jobs", 99) == 99,
-                "both flag spellings read the same value and the fallback survives "
-                "an empty argv"))
+    check("f0 both flag spellings read the same value and the fallback survives "
+          "an empty argv",
+          v == "4" and w == "4" and
+          _flag_value([], "--jobs", 99) == 99)
 
     buf = io.StringIO()
     code = render([grade(live, 0, "1/1 cases passed\n", covered),
                    grade("plugins/audit/scripts/_deps.py", 1, "boom\n", covered)], 4,
                   stream=buf)
     text = buf.getvalue()
-    out.append(("r0", code == 1 and text.count("FAIL") == 2
-                and "boom" in text
-                and text.rstrip().endswith("%d cases" % 1),
-                "a red render exits 1, names the file twice (table and summary), "
-                "reproduces the child's output IN FULL, and ends with the counts "
-                "so `tail -12` of a failed step is the useful part"))
+    check("r0 a red render exits 1, names the file twice (table and summary), "
+          "reproduces the child's output IN FULL, and ends with the counts "
+          "so `tail -12` of a failed step is the useful part",
+          code == 1 and text.count("FAIL") == 2
+          and "boom" in text and text.rstrip().endswith("%d cases" % 1))
 
     buf = io.StringIO()
     code = render([grade(live, 0, "5/5 cases passed\n", covered)], 4, stream=buf)
-    out.append(("r1", code == 0 and "FAIL" not in buf.getvalue()
-                and ("%d cases" % 5) in buf.getvalue(),
-                "a green render exits 0, says FAIL nowhere, and still prints the "
-                "count - so 'all ok' and 'nothing ran' cannot read the same"))
-
+    check("r1 a green render exits 0, says FAIL nowhere, and still prints the "
+          "count - so 'all ok' and 'nothing ran' cannot read the same",
+          code == 0 and "FAIL" not in buf.getvalue()
+          and ("%d cases" % 5) in buf.getvalue())
     buf = io.StringIO()
     render([grade(migrated, 0, "moved\n", covered)], 4, stream=buf)
-    out.append(("r2", "cases live in tests/" in buf.getvalue(),
-                "a migrated file is reported as SKIPPED with its reason rather "
-                "than as a silent zero, which is the row CI printed by hand"))
+    check("r2 a migrated file is reported as SKIPPED with its reason rather "
+          "than as a silent zero, which is the row CI printed by hand",
+          "cases live in tests/" in buf.getvalue())
 
     # A fixture, NOT this file: `run_one` appends `--selftest`, so pointing it at
     # this module would have it run its own suite, which runs this case, which
@@ -451,36 +451,30 @@ def _cases():
         "import sys\n"
         "sys.stdout.write('fixture: 4/4 cases passed\\n')\n")
     ran = run_one(child, timeout=30)
-    out.append(("x0", ran["code"] == 0 and cases_in(ran["output"]) == 4,
-                "run_one really starts a child and captures its stream, and the "
-                "grader reads the child's OWN number back out - so the impure half "
-                "is exercised and 4 could not have come from anywhere else "
-                "(exit %r, read %r)" % (ran["code"], cases_in(ran["output"]))))
+    check("x0 run_one really starts a child and captures its stream, and the "
+          "grader reads the child's OWN number back out - so the impure half "
+          "is exercised and 4 could not have come from anywhere else "
+          "(exit %r, read %r)" % (ran["code"], cases_in(ran["output"])),
+          ran["code"] == 0 and cases_in(ran["output"]) == 4)
 
     io.open(child, "w", encoding="utf-8").write("import sys; sys.exit(3)\n")
     ran = run_one(child, timeout=30)
-    out.append(("x0b", ran["code"] == 3,
-                "...and the child's exit code is carried through unchanged rather "
-                "than collapsed to 0/1, which is what makes g4's message name a "
-                "real number (got %r)" % (ran["code"],)))
+    check("x0b ...and the child's exit code is carried through unchanged rather "
+          "than collapsed to 0/1, which is what makes g4's message name a "
+          "real number (got %r)" % (ran["code"],),
+          ran["code"] == 3)
 
     missing = os.path.join(tempfile.gettempdir(), "sweep-no-such-file-xyz")
     ran = run_one(missing, timeout=5)
-    out.append(("x1", ran["code"] != 0,
-                "a file that cannot run reports a failure rather than an empty "
-                "green row (code %r)" % (ran["code"],)))
+    check("x1 a file that cannot run reports a failure rather than an empty "
+          "green row (code %r)" % (ran["code"],),
+          ran["code"] != 0)
 
-    return out
 
 
 def _selftest():
-    rows = _cases()
-    bad = [r for r in rows if not r[1]]
-    for name, ok, why in rows:
-        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
-    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
-                                      len(rows) - len(bad), len(rows)))
-    return 1 if bad else 0
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 if __name__ == "__main__":

@@ -187,21 +187,18 @@ def drifted(artifacts=None):
     return out
 
 
-def _selftest():
-    cases, failed = [], []
-
-    def check(label, cond):
-        cases.append(label)
-        if not cond:
-            failed.append(label)
-            sys.stdout.write("FAIL %s\n" % label)
-        else:
-            sys.stdout.write("PASS %s\n" % label)
-
+def _cases(check):
+    # TWO COMPUTATIONS, NOT ONE, and the reason is what this case used to be: it
+    # compared the parse against a constant that its own arithmetic cancelled back
+    # to a round number the parse never returns, then said `or ... is not None`.
+    # The equality was false on every run and the case passed on the `or`, so what
+    # it asserted was "parsing did not crash" while claiming to assert the epoch.
+    _ra_stamp = "generated 2023-11-14 22:13 UTC"
+    _ra_want = calendar.timegm((2023, 11, 14, 22, 13, 0, 0, 0, 0))
     check("ra1 a stamp is read back as the epoch that produced it, so a render "
-          "pinned to it reproduces the same minute",
-          stamp_epoch("generated 2023-11-14 22:13 UTC") == 1700000000 - 60 * 13 + 60 * 13
-          or stamp_epoch("generated 2023-11-14 22:13 UTC") is not None)
+          "pinned to it reproduces the same minute: %r vs %r"
+          % (stamp_epoch(_ra_stamp), _ra_want),
+          stamp_epoch(_ra_stamp) == _ra_want)
     check("ra2 a round trip through time.gmtime lands on the same string, which "
           "is what makes the byte comparison exact rather than approximate",
           time.strftime("%Y-%m-%d %H:%M UTC",
@@ -216,16 +213,18 @@ def _selftest():
               for rel, _m, _p in ARTIFACTS)
           and all(os.path.exists(os.path.join(REPO, rel))
                   for rel, _b in GENERATED_ARTIFACTS))
-    # The live one. It is the point of the tool, and it is deliberately last so
-    # the cheap cases have already reported when a render is slow.
+    # The live one, and it is deliberately last for the reader rather than for the
+    # stream: the shared runner prints nothing until every case has run, so a slow
+    # render delays the whole report and the ordering buys no early news. What it
+    # does buy is a report whose expensive case is the last line before the tally.
     _live = drifted()
     check("ra5 every committed rendered artifact matches what its source renders "
           "today - %r" % (_live,), _live == [])
 
-    sys.stdout.write("\n%s: %d/%d cases passed\n"
-                     % ("SELFTEST FAILED" if failed else "ALL PASS",
-                        len(cases) - len(failed), len(cases)))
-    return 1 if failed else 0
+
+def _selftest():
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 def main():
