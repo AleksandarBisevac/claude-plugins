@@ -40,6 +40,7 @@ to every gate the repo had:
 
 Exit codes: 0 ok — 1 a budget violation (with --gate) or a failed selftest — 2 usage.
 """
+import ast
 import io
 import json
 import os
@@ -77,14 +78,99 @@ _FIX_LEAN = "lean-hook" + _EXT
 _FIX_BROKEN = "broken-hook" + _EXT
 
 # --- the import budget --------------------------------------------------------
-# Every hook imports `_config`, and `_config` reaches the config file, the exempt
-# globs and the lock files. This is that floor, MEASURED rather than reasoned about:
-# it is the intersection of what all ten hooks pull, so it moves only when the
-# shared helper does — which is exactly when a reviewer should have to look.
-SHARED_FLOOR = frozenset((
-    "_config", "_weakrefset", "contextlib", "copy", "fcntl", "fnmatch", "glob",
-    "grp", "importlib", "io", "ntpath", "pathlib", "pwd", "weakref",
+# THE FLOOR IS DERIVED, and it used to be a frozen list. That list was measured on
+# one interpreter and compared on every other, and the stdlib import graph is not
+# stable across versions: measured here, `_config` pulls `warnings` on 3.13 and does
+# not on 3.14, and pulls `fcntl` and `io` on 3.14 and does not on 3.13. CI runs
+# 3.12, so six hooks were "1 module beyond budget: warnings" there while the same
+# command on the same commit said "within budget" locally. Three green certifications
+# of a red tree came out of that.
+#
+# The comment this replaces carried TWO definitions and only noticed one. The cause
+# it named — "every hook imports `_config`, and `_config` reaches the config file,
+# the exempt globs and the lock files" — is exact and measurable. The method it then
+# described, "the intersection of what all the hooks pull", is a different claim that
+# happened to agree, and it is the one that can RISE: if every hook grew heavier at
+# once the intersection would grow with them and the gate would pass through the very
+# regression it exists for.
+#
+# So the cause is what is measured, in the SAME interpreter that will judge the
+# hooks. `_config` is added back by name because the probe loads it under its own
+# module name, so it never appears in its own result — but it does appear in every
+# hook's, which imports it.
+_FLOOR_MODULE = "_config.py"
+
+
+def shared_floor(hooks_dir=None, python=None):
+    """The modules a hook cannot avoid, on THIS interpreter, or None if unmeasurable.
+
+    None rather than an empty set on failure, and every caller reports it: an empty
+    floor would fail every hook for the wrong reason, which is the shape a probe that
+    stopped working takes.
+    """
+    pulled = modules_pulled(_FLOOR_MODULE, hooks_dir=hooks_dir, python=python)
+    if pulled is None:
+        return None
+    return frozenset(pulled | {"_config"})
+
+
+# THE DERIVED FLOOR ANSWERS ONE QUESTION AND A SECOND ONE HAS TO BE ASKED SEPARATELY.
+# "What is unavoidable on this interpreter" is what the derivation measures. "And is
+# that still what we agreed to pay" is a different question, and the frozen list was
+# answering both — badly at the first and by accident at the second.
+#
+# It matters most here of anywhere: `_config.py` is excluded from the hook
+# measurement because it is not invoked, it is what they all import, so nothing
+# bounded it at all. An eager import added there is paid by every hook on every
+# matching call — seven times over on one edit, per `hooks.json`. A floor derived
+# from `_config` would simply absorb it and report every hook `within budget`,
+# turning the loudest regression this tool can catch into silence.
+#
+# So the second question is asked of the SOURCE, not of the runtime graph:
+# `_config.py`'s module-scope imports, read from the AST. That is version-independent
+# by construction — it is what the file says, not what an interpreter happens to drag
+# behind it — and unlike a list of names somebody thought expensive, it catches an
+# addition whether or not anyone would have called it expensive. `warnings`, the
+# module that made CI red, is on no expensive list anywhere.
+CONFIG_IMPORTS = frozenset((
+    "copy", "fnmatch", "json", "os", "pathlib", "re", "sys", "time",
 ))
+
+
+def _module_scope_imports(path):
+    """Top-level import names in one file, or None if it cannot be read or parsed."""
+    try:
+        with io.open(path, "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (IOError, OSError, UnicodeDecodeError, SyntaxError):
+        return None
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            names.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+def floor_regressions(hooks_dir=None):
+    """[(module, why)] — what the shared helper imports beyond what was agreed.
+
+    Reported in BOTH directions. An addition is the regression; a removal means the
+    declaration outlived the code, and a declaration nobody trimmed is how this list
+    would come to permit an import that is no longer there.
+    """
+    here = hooks_dir or HOOKS_DIR
+    got = _module_scope_imports(os.path.join(here, _FLOOR_MODULE))
+    if got is None:
+        return [(None, "_config.py could not be read or parsed, so what every hook "
+                       "pays for cannot be established - reported rather than passed")]
+    out = [(m, "imported by _config at module scope, so EVERY hook pays for it on "
+               "EVERY matching call") for m in sorted(got - CONFIG_IMPORTS)]
+    out += [(m, "declared here but no longer imported by _config - trim it, or this "
+                "list starts permitting what is not there") 
+            for m in sorted(CONFIG_IMPORTS - got)]
+    return out
 
 # What one named hook may add, and the reason it may. A reason is required by the
 # selftest, not by convention: an allowance nobody can explain is an allowance that
@@ -161,12 +247,17 @@ def budget_violations(hooks_dir=None, python=None):
     gate that silently skips what it cannot measure is not a gate.
     """
     out = []
+    # Measured once, with the interpreter that will judge the hooks. Taking it from
+    # a constant is what made this gate disagree with itself across versions.
+    floor = shared_floor(hooks_dir=hooks_dir, python=python)
+    if floor is None:
+        return [(_FLOOR_MODULE, None, ())]
     for hook in hook_files(hooks_dir):
         pulled = modules_pulled(hook, hooks_dir=hooks_dir, python=python)
         if pulled is None:
             out.append((hook, None, ()))
             continue
-        allowed = set(SHARED_FLOOR)
+        allowed = set(floor)
         allowed.update(EXTRA_ALLOWED.get(hook, {}).get("modules", ()))
         extra = sorted(pulled - allowed)
         if extra:
@@ -304,22 +395,76 @@ def _cases(check):
     check("h2 a hook that cannot be probed reads as None, never as an empty set",
           modules_pulled(_FIX_ABSENT) is None)
 
+    _floor = shared_floor()
     pulled = modules_pulled("guard-edits.py")
-    check("h3 the probe really observes imports - a known hook pulls the shared "
-          "floor",
-          pulled is not None and SHARED_FLOOR.issubset(pulled))
+    check("h3 the probe really observes imports - a known hook pulls the floor "
+          "measured on THIS interpreter. Asserting a frozen list here is what made "
+          "this case pass locally and fail on CI: the floor differs by version, and "
+          "the constant was a snapshot of whichever one measured it",
+          _floor is not None and pulled is not None and _floor.issubset(pulled))
 
-    # The floor is a MEASURED intersection, so a stale entry is a real defect: it
-    # would silently widen every hook's allowance. Verified against the tree.
-    per_hook = {}
-    for h in hooks:
-        got = modules_pulled(h)
-        if got is not None:
-            per_hook[h] = got
-    check("h4 every hook still pulls the whole declared floor - a floor entry no "
-          "hook needs is an allowance nobody asked for",
-          bool(per_hook)
-          and all(SHARED_FLOOR.issubset(v) for v in per_hook.values()))
+    check("h4 every hook still pulls the whole floor - an entry no hook needs is an "
+          "allowance nobody asked for, and deriving the floor does not excuse that: "
+          "it is derived from `_config`, not from the hooks, so it can still name "
+          "something none of them reach",
+          bool(_floor) and all(_floor.issubset(v) for v in
+                               (modules_pulled(h) or _floor for h in hooks)))
+
+    # The half a derived floor CANNOT answer, and the reason it is asked of the
+    # source rather than of the runtime graph.
+    check("h4b `_config` imports exactly what was agreed - the derived floor absorbs "
+          "anything added there and would report every hook `within budget`, which "
+          "turns the costliest regression this tool can catch into silence: %r"
+          % (floor_regressions(),),
+          floor_regressions() == [])
+
+    # h4c: the removal direction. `CONFIG_IMPORTS` is a declaration, and a declaration
+    # nobody trims starts permitting what is no longer there - so a name it keeps that
+    # `_config` has stopped importing is a finding too, not a tidy-up.
+    _fl = tempfile.mkdtemp(prefix="bench-hooks-floor-")
+    try:
+        with io.open(os.path.join(_fl, _FLOOR_MODULE), "w", encoding="utf-8") as fh:
+            fh.write("import os\n")
+        _drift = floor_regressions(hooks_dir=_fl)
+        _added = [m for m, _w in _drift if m and m not in CONFIG_IMPORTS]
+        _gone = [m for m, _w in _drift if m in CONFIG_IMPORTS]
+        check("h4c a declared import `_config` no longer makes IS reported - the "
+              "list would otherwise go on allowing what is not there, and only the "
+              "addition half was pinned until a mutation that removed this reporting "
+              "coloured nothing: added=%r gone=%r" % (_added, _gone),
+              not _added and sorted(_gone) == sorted(CONFIG_IMPORTS - {"os"}))
+        # ...and the file being unreadable is its own answer, never an empty one.
+        with io.open(os.path.join(_fl, _FLOOR_MODULE), "w", encoding="utf-8") as fh:
+            fh.write("this is not python(\n")
+        _bad = floor_regressions(hooks_dir=_fl)
+        check("h4d an unparseable `_config` is REPORTED - 'I cannot establish what "
+              "every hook pays for' must not be spelled like 'it pays for what was "
+              "agreed': %r" % (_bad,),
+              len(_bad) == 1 and _bad[0][0] is None)
+    finally:
+        import shutil as _sh3
+        _sh3.rmtree(_fl, ignore_errors=True)
+
+    # h4e: and both halves reach the DECISION. Removing the floor half from the gate
+    # turned nothing red until this existed - the check was computed, rendered, and
+    # consulted by nothing that could fail.
+    # Asked over a fixture that HAS drift, never over the clean tree. Comparing
+    # `gate_findings()[0]` with `floor_regressions()` on a healthy repo compares two
+    # empty lists: it passes just as happily when the wiring is cut, which is exactly
+    # what a mutation severing it proved - it coloured nothing.
+    _w = tempfile.mkdtemp(prefix="bench-hooks-wired-")
+    try:
+        with io.open(os.path.join(_w, _FLOOR_MODULE), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport urllib\n")
+        _g = gate_findings(hooks_dir=_w)
+        _floor_half = [m for m, _w2 in _g[0]]
+        check("h4e `--gate` decides on BOTH halves - a floor change reaches the "
+              "decision rather than only the printout. A check that is rendered and "
+              "consulted by nothing that can fail is not a gate: %r" % (_floor_half,),
+              isinstance(_g, tuple) and len(_g) == 2 and "urllib" in _floor_half)
+    finally:
+        import shutil as _sh4
+        _sh4.rmtree(_w, ignore_errors=True)
 
     check("h5 every EXTRA_ALLOWED entry names a hook that exists and carries a "
           "reason - an allowance nobody can explain outlives its need",
@@ -332,6 +477,14 @@ def _cases(check):
     # the real `budget_violations`.
     tmp = tempfile.mkdtemp(prefix="bench-hooks-selftest-")
     try:
+        # A hooks directory without `_config.py` is not one: the floor is what
+        # that file drags in, so the fixture carries a minimal stand-in rather
+        # than asking the real tree for it. `os` alone, so a fixture hook that
+        # imports only `os` is genuinely on the floor and `h7` still means what
+        # its label says.
+        with io.open(os.path.join(tmp, _FLOOR_MODULE), "w",
+                     encoding="utf-8") as fh:
+            fh.write("import os\n")
         with io.open(os.path.join(tmp, _FIX_GREEDY), "w",
                      encoding="utf-8") as fh:
             fh.write("import subprocess\nimport ast\n")
@@ -357,6 +510,14 @@ def _cases(check):
         # be unloadable while still being a `.py` the lister returns.
         broken = tempfile.mkdtemp(prefix="bench-hooks-broken-")
         try:
+            # A hooks directory without `_config.py` is not one: the floor is what
+            # that file drags in, so the fixture carries a minimal stand-in rather
+            # than asking the real tree for it. `os` alone, so a fixture hook that
+            # imports only `os` is genuinely on the floor and `h7` still means what
+            # its label says.
+            with io.open(os.path.join(broken, _FLOOR_MODULE), "w",
+                             encoding="utf-8") as fh:
+                fh.write("import os\n")
             with io.open(os.path.join(broken, _FIX_BROKEN), "w",
                          encoding="utf-8") as fh:
                 fh.write("import os\nthis is not python(\n")
@@ -386,6 +547,23 @@ def _cases(check):
               [(_FIX_GREEDY, ["subprocess"], ("subprocess",))]))
 
 
+def gate_findings(hooks_dir=None, python=None):
+    """`(floor_drift, budget_violations)` — everything `--gate` decides on.
+
+    A function rather than a block inside `main()` so a case can assert that BOTH
+    halves reach the decision. They did not, at first: the source half was computed
+    and rendered, and removing it from the gate turned nothing red - a check that
+    exists without deciding anything, which is the shape this repo keeps finding.
+
+    The floor half is returned first because it is reported first, and that ordering
+    is the point rather than presentation: if `_config` has grown, every hook is
+    "within budget" only because the floor grew with it, so printing the hooks above
+    the reason would put a reassurance over the fact that voids it.
+    """
+    return (floor_regressions(hooks_dir=hooks_dir),
+            budget_violations(hooks_dir=hooks_dir, python=python))
+
+
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
     return run(_cases)
@@ -396,9 +574,14 @@ def main(argv):
     if "--selftest" in argv:
         return _selftest()
     if "--gate" in argv:
-        violations = budget_violations()
+        drift, violations = gate_findings()
+        if drift:
+            print("shared floor: %d change(s) to what EVERY hook pays for"
+                  % len(drift))
+            for mod, why in drift:
+                print("  %-14s %s" % (mod if mod else "-", why))
         print(render_violations(violations))
-        return 1 if violations else 0
+        return 1 if (drift or violations) else 0
     data = measure()
     if "--json" in argv:
         print(json.dumps(data, indent=2, sort_keys=True))

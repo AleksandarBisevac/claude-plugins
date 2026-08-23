@@ -693,8 +693,22 @@ jobs:
           # hook swings between repeats by more than a deferred import is worth, so
           # a ceiling would either flake here or fail to see the regression it
           # exists for. This diffs sys.modules after loading each hook against a
-          # measured floor, which is exact and platform-independent enough to run
-          # once. Its own cases run inside the selftest job's sweep.
+          # floor DERIVED in the same interpreter, which is what makes running it
+          # once sound.
+          #
+          # It used to say "measured floor, exact and platform-independent enough to
+          # run once", and that sentence was the justification for the single run
+          # while being false: the floor was a frozen list snapshotted on whichever
+          # interpreter produced it, and the stdlib import graph is not stable across
+          # versions. `_config` pulls `warnings` on 3.13 and not on 3.14; this job
+          # runs 3.12. Six hooks were "beyond budget" here while the same command on
+          # the same commit said "within budget" on a developer's machine, and a tree
+          # was certified green three times over that gap.
+          #
+          # Deriving the floor cannot answer whether `_config` itself has grown - the
+          # floor would simply absorb it - so `floor_regressions()` asks that of the
+          # SOURCE, and the gate fails on either half. Its own cases run inside the
+          # selftest job's sweep.
           python tools/bench-hooks.py --gate
       - name: vermin holds the 3.8 floor
         run: |
