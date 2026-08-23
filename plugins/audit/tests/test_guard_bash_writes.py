@@ -393,6 +393,7 @@ def _cases(check):
     # (h) NESTED gitRoot: project dir is NOT git, git repo is in a subdir.
     # With gitRoot config the guard runs git there and reports project-relative.
     _detail_h = ""
+    ok_h2 = False
     proj = tmp / "proj"
     sub = proj / "sub"
     (sub / "src").mkdir(parents=True, exist_ok=True)
@@ -413,13 +414,140 @@ def _cases(check):
         verdict, detail = M.decide(data, cfg=cfg_nested, state_dir=sd)
         # project-relative path is gitRoot-prefixed: sub/src/shellmade.ts
         ok = verdict == "warn" and "sub/src/shellmade.ts" in detail
+        # F84 asks git which tree a command ran in, from the command's own cwd,
+        # and `gitRoot` is what that REFINES rather than replaces. h1 covers the
+        # cwd git cannot answer for at all (the project dir is not a repo, so the
+        # declaration stands); this covers the cwd it CAN answer for - a
+        # subdirectory of the declared git root - where the answer must come back
+        # as the watched tree and the monorepo write must still be reported.
+        M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                  "session_id": "bw-h2", "cwd": str(sub / "src")},
+                 cfg=cfg_nested, state_dir=sd)
+        (sub / "src" / "deeper.ts").write_text("export const d=1\n",
+                                               encoding="utf-8")
+        _vh2, _dh2 = M.decide({"tool_name": "Bash",
+                               "tool_input": {"command": "x"},
+                               "session_id": "bw-h2",
+                               "cwd": str(sub / "src")},
+                              cfg=cfg_nested, state_dir=sd)
+        ok_h2 = _vh2 == "warn" and "sub/src/deeper.ts" in _dh2
     except Exception as exc:  # pragma: no cover
-        ok = False
+        ok = ok_h2 = False
         _detail_h = "nested git integration error: %s" % exc
     finally:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
     check("h1 nested gitRoot: git runs in subdir, path project-relative",
           ok, _detail_h)
+    check("h2 ...and a command run INSIDE that git root is recognised as the "
+          "watched tree, so the monorepo write is still reported - gitRoot is "
+          "refined by git's answer, never replaced by it", ok_h2, _detail_h)
+
+    # (wt) F84: WHICH TREE DID THE COMMAND RUN IN. `_config.repo_root` answers
+    # where the CONFIG lives, and CLAUDE_PROJECT_DIR wins there on purpose - a
+    # worktree should not need its own copy of the project's config. It stays
+    # pinned to the primary checkout while an agent works inside a git worktree,
+    # so `git status` ran in one tree while the command ran in another and that
+    # tree's dirt was handed to this command. Reported live: a read-only sweep in
+    # an agent worktree was told it had modified source files a parallel session
+    # was editing in the primary checkout - clean in the worktree, dirty in the
+    # primary tree.
+    #
+    # TWO REAL TREES, not an injected `dirty` list and not a stubbed
+    # `command_tree`. The whole question is what git says about a linked worktree,
+    # and a fake here would encode the assumption under test instead of checking
+    # it. Paths are compared by BASENAME and by phrase, never byte for byte:
+    # `--show-toplevel` answers with forward slashes on Windows while `str(Path)`
+    # does not, and CI runs both platforms.
+    _detail_wt = ""
+    _wt_ok = _wt_named = _wt_own = _wt_once = _wt_ro = _wt_sep = False
+    wta = tmp / "wt-primary"
+    (wta / "src").mkdir(parents=True, exist_ok=True)
+    plant_plan(wta)
+    wtb = tmp / "wt-linked"
+    wtsep = tmp / "wt-separate"
+    wtsd = wta / ".claude" / "state"
+    os.environ["CLAUDE_PROJECT_DIR"] = str(wta)
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=str(wta), check=True,
+                       capture_output=True, timeout=20)
+        subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+                        "commit", "-q", "--allow-empty", "-m", "base"],
+                       cwd=str(wta), check=True, capture_output=True, timeout=20)
+        subprocess.run(["git", "worktree", "add", "-q", str(wtb), "-b",
+                        "wt-phase"], cwd=str(wta), check=True,
+                       capture_output=True, timeout=30)
+        wtsep.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=str(wtsep), check=True,
+                       capture_output=True, timeout=20)
+
+        def _wt(sid, cwd, command="python3 tools/gen.py"):
+            return M.decide({"tool_name": "Bash",
+                             "tool_input": {"command": command},
+                             "session_id": sid, "cwd": str(cwd)},
+                            cfg=cfg, state_dir=wtsd)
+
+        # baseline from the watched tree, while it is still clean of source
+        _wt("bw-wt", wta)
+        # a parallel session dirties the WATCHED tree, and the linked worktree
+        # stays clean - which is the shape that was verified in the report
+        (wta / "src" / "theirs.ts").write_text("export const x=1\n",
+                                               encoding="utf-8")
+        _v, _d = _wt("bw-wt", wtb)
+        # Counted, not merely absent: the pre-fix notice names the path exactly
+        # once, so zero occurrences is the discriminating measurement.
+        _wt_ok = (_v == "warn" and _d.count("src/theirs.ts") == 0
+                  and "cannot say what the command wrote" in _d)
+        _wt_named = (os.path.basename(str(wtb)) in _d
+                     and "linked worktree of the same repository" in _d)
+        _v1b, _d1b = _wt("bw-wt", wtb)
+        # The REASON, not just the verdict: a repeat pass is silent on the
+        # pre-fix hook too (the path had already been warned about), so
+        # `== "silent"` alone passed with the fix removed.
+        _wt_once = _v1b == "silent" and "already said" in _d1b
+        # THE OTHER DIRECTION, and it is the one that looks vacuous: a fix that
+        # decided EVERY command ran elsewhere would pass the three above and
+        # retire the guard. The same dirt, seen from the watched tree, is still
+        # reported by name.
+        _wt("bw-wt2", wta)
+        (wta / "src" / "mine.ts").write_text("export const y=1\n",
+                                             encoding="utf-8")
+        _v2, _d2 = _wt("bw-wt2", wta)
+        _wt_own = _v2 == "warn" and "src/mine.ts" in _d2
+        # A read-only command from another tree costs neither a notice nor the
+        # `git rev-parse` behind one: the proof about the OPERATION answers first,
+        # which is what keeps an ordinary sweep in a worktree quiet.
+        _wt("bw-wt3", wta)
+        (wta / "src" / "third.ts").write_text("export const z=1\n",
+                                              encoding="utf-8")
+        _v3, _d3 = _wt("bw-wt3", wtb, command="grep -rn theirs src")
+        _wt_ro = _v3 == "silent" and "read-only command" in _d3
+        # ...and a checkout that is not a worktree of this repository is named as
+        # what it is. Without this the phrase could be hard-coded and nobody
+        # would know which branch produced it.
+        _wt("bw-wt4", wta)
+        _v4, _d4 = _wt("bw-wt4", wtsep)
+        _wt_sep = _v4 == "warn" and "separate git repository" in _d4
+    except Exception as exc:  # pragma: no cover
+        _detail_wt = "worktree integration error: %s" % exc
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    check("wt1 THE REPORTED BUG: a command run in a linked worktree is not "
+          "handed the watched tree's dirt - the notice names no path, because "
+          "the guard never looked at the tree the command ran in",
+          _wt_ok, _detail_wt)
+    check("wt2 ...and it names BOTH trees plus how it knows, so the reader can "
+          "act on it", _wt_named, _detail_wt)
+    check("wt3 the plain claim survives for the tree the guard DOES watch - the "
+          "second-direction case for wt1, which a fix that always cried "
+          "'another tree' would fail", _wt_own, _detail_wt)
+    check("wt4 the other-tree notice is said once per tree, not on every shell "
+          "call from it", _wt_once, _detail_wt)
+    check("wt5 a read-only command from another tree is absorbed by the "
+          "operation proof before the tree question is ever asked",
+          _wt_ro, _detail_wt)
+    check("wt6 an unrelated checkout is called a separate repository, not a "
+          "worktree - the branch `--git-common-dir` decides",
+          _wt_sep, _detail_wt)
 
     # (dn) `2>/dev/null` is the most ordinary read idiom there is, and the
     # blanket "any `>` is hostile" check read it as a write - which put
@@ -574,6 +702,107 @@ def _cases(check):
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:
         os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+
+    # (sr) WHICH ROOT THE STATE DIRECTORY IS RESOLVED FROM, which is the coupling
+    # F84 sits on. `stateDir` is the CONFIG question: `_config.state_dir` is
+    # `root / cfg["stateDir"]`, the value comes out of the project's config file,
+    # and the plugin tells consumers to gitignore it at the project root. Two
+    # features depend on every session in that directory resolving the SAME root:
+    #
+    #   * `_other_sessions` (the (os) group, 9b45c54) subtracts a peer's claim
+    #     from THIS tree's dirt. Narrow the directory per tree and a same-checkout
+    #     peer becomes invisible, so a write another session made comes back as
+    #     this command's - and every worktree case still passes.
+    #   * the F-F3 sidecar (the (k) group) has ONE writer, `journal-writes`, which
+    #     resolves the directory the same way. Move one and not the other and the
+    #     guard reads an empty sidecar, which is indistinguishable from "the plugin
+    #     appended nothing" - F-F3 reopened in the quiet direction.
+    #
+    # NOTHING HERE INJECTS `state_dir`. Every other group in this file passes it,
+    # so the resolution itself has never been under test; and in a fixture whose
+    # git root IS the project dir the two candidate directories coincide and any
+    # mutation is invisible. So the fixture is a monorepo: `gitRoot: "sub"` puts
+    # `<proj>/.claude/state` and `<proj>/sub/.claude/state` in different places,
+    # which is the one shape where resolving from the tree instead of the project
+    # can be seen at all.
+    _detail_sr = ""
+    _sr_peer = _sr_plain = _sr_one_dir = False
+    srp = tmp / "sr-proj"
+    srsub = srp / "sub"
+    (srsub / "src").mkdir(parents=True, exist_ok=True)
+    plant_plan(srp)
+    cfg_sr = _config._deep_merge(_config.DEFAULTS, {"gitRoot": "sub"})
+    _sr_real = srp / ".claude" / "state"
+    _sr_narrowed = srsub / ".claude" / "state"
+    os.environ["CLAUDE_PROJECT_DIR"] = str(srp)
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=str(srsub), check=True,
+                       capture_output=True, timeout=20)
+
+        def _sr(sid):
+            return M.decide({"tool_name": "Bash",
+                             "tool_input": {"command": "python3 tools/gen.py"},
+                             "session_id": sid, "cwd": str(srp)}, cfg=cfg_sr)
+
+        _sr("sr-a")
+        (srsub / "src" / "theirs.ts").write_text("export const x=1\n",
+                                                 encoding="utf-8")
+        _peer = _sr_real / "bash-writes-sr-peer.json"
+        _config.ensure_local_dir(_sr_real)
+        with open(str(_peer), "w", encoding="utf-8") as fh:
+            json.dump({"toolEdited": ["sub/src/theirs.ts"], "seenDirty": [],
+                       "warned": [], "baselined": True}, fh)
+        # Forward, not backward: the peer must have acted INSIDE the window this
+        # pass covers, and a tie counts as outside on a coarse-mtime filesystem.
+        _mine = _sr_real / "bash-writes-sr-a.json"
+        _t = os.path.getmtime(str(_mine)) + 60
+        os.utime(str(_peer), (_t, _t))
+        _v, _d = _sr("sr-a")
+        _sr_peer = _v == "silent" and "sr-peer" in _d
+        # The second direction, and the one that would quietly disappear: with the
+        # peer file exactly where it is, a path NOBODY claims is still reported.
+        # Without it, a change that read every sibling as a claim on everything
+        # would pass the case above.
+        _sr("sr-b")
+        (srsub / "src" / "nobody.ts").write_text("export const y=1\n",
+                                                 encoding="utf-8")
+        _v2, _d2 = _sr("sr-b")
+        _sr_plain = _v2 == "warn" and "sub/src/nobody.ts" in _d2
+        # F-F3's one directory, driven through the REAL writer the way (k) does -
+        # `_jw` is the module loaded there - and then read with the guard's OWN
+        # reader out of the directory the guard actually wrote its state into.
+        # Asserted as a non-empty set naming the appended row, because "the
+        # plugin's write was not blamed" is vacuously true of an empty sidecar.
+        _srsid = "sr-ff3"
+        _srdata = {"tool_name": "Edit", "session_id": _srsid,
+                   "tool_input": {"file_path": "docs/audit/audit-plan.json",
+                                  "new_string": "x"}, "cwd": str(srp)}
+        _srjrel = None
+        for _e in _jw.post_entries(_srdata, cfg=cfg_sr, root=str(srp)):
+            _p = _config._load_journal_lib().append(str(srp), _e, config=cfg_sr)
+            if _p:
+                _jw.record_plugin_write(str(srp), cfg_sr, _srdata, _p)
+                _srjrel = _config.rel_path(srp, _p)
+        _sr(_srsid)
+        _slots = [d / ("bash-writes-%s.json" % _srsid)
+                  for d in (_sr_real, _sr_narrowed)]
+        _landed = [s for s in _slots if s.exists()]
+        _pw = M._plugin_wrote(_landed[0].parent, _srsid) if _landed else set()
+        _sr_one_dir = (len(_landed) == 1 and _landed[0].parent == _sr_real
+                       and _srjrel is not None and _srjrel in _pw)
+    except Exception as exc:  # pragma: no cover
+        _detail_sr = "state-root integration error: %s" % exc
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    check("sr1 a same-checkout peer's claim is found through the REAL state "
+          "directory - resolved from the project dir, not from the git tree",
+          _sr_peer, _detail_sr)
+    check("sr2 ...while a path no peer claims is still reported from that same "
+          "directory - the second-direction case for sr1",
+          _sr_plain, _detail_sr)
+    check("sr3 the guard's own state file and journal-writes' F-F3 sidecar land "
+          "in ONE directory, and the guard's reader finds a NON-EMPTY set there "
+          "naming the row the plugin appended", _sr_one_dir, _detail_sr)
 
     # (i) session state lands in a self-ignoring dir
     import shutil as _sh

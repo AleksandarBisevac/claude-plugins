@@ -329,6 +329,23 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    stand here rotted the first time an exemption was added; the list is the
    thing to read:
 
+   - **ONE working tree — the configured `gitRoot` — and it says so when a
+     command ran in another.** `git status` runs there, and every path in the
+     session's state file is a path in that tree. It used to pick that tree with
+     `CLAUDE_PROJECT_DIR`, which is the right answer to "where does the config
+     live" and the wrong one to "which tree did this command touch": the variable
+     stays pinned to the primary checkout while an agent works inside a git
+     worktree, so a read-only sweep in the worktree was told it had modified
+     source files a parallel session was editing in the primary tree — clean
+     where the command ran, dirty where the guard looked. The tree is now git's
+     own answer for the command's working directory (`rev-parse
+     --show-toplevel`), and `--git-common-dir` separates a linked worktree of
+     this repository from a stranger's checkout. A command from a tree this
+     guard does not watch gets a notice naming both trees, once per tree,
+     instead of an attribution — so shell writes made from there are not checked
+     against the plan at all. Opening a session **in** the worktree (what
+     `/audit:worktree` prints) restores full coverage, because the hooks then
+     resolve their project directory to it.
    - **A NEW dirty path**, relative to a baseline the session's first Bash pass
      seeds silently — not every unplanned write, only one that appears between
      two of this hook's own looks at the tree.
@@ -366,9 +383,10 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      plan. Before this, installing the plugin armed the class in every repo on
      the machine, including ones that never opted in.
 
-   So the honest ceiling here is not coverage but **attribution**. It sees a tree
-   diff plus the text of one command, and where those two cannot name an author
-   it now says so out loud instead of guessing.
+   So the honest ceiling here is not coverage but **attribution**, and attribution
+   is **per tree**. It sees one tree's diff plus the text of one command, and where
+   those two cannot name an author — or cannot even name the tree the command ran
+   in — it now says so out loud instead of guessing.
 2. **Subagents do not inherit parent hooks** in all versions
    (anthropics/claude-code#43772). Mitigations: the `/audit` orchestrator —
    not its subagents — performs all manifest writes and commits; since 0.6.0

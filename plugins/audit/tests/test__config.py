@@ -819,6 +819,120 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp_h, ignore_errors=True)
 
+    # (w) command_tree — WHICH TREE DID THIS COMMAND RUN IN, which is not the
+    # question `repo_root` answers. F84: `repo_root` says where the CONFIG lives
+    # and CLAUDE_PROJECT_DIR wins there on purpose, because the config belongs to
+    # the project and a worktree should not need its own copy. It stays pinned to
+    # the primary checkout while an agent works inside a worktree, so
+    # `guard-bash-writes` ran `git status` in one tree while the command ran in
+    # another and blamed the command for the other tree's dirt.
+    #
+    # REAL TREES, including a real `git worktree add`. The subject is what git
+    # says, so a fake would only restate the assumption. `--show-toplevel`
+    # answers with forward slashes on Windows, so nothing below compares a path
+    # byte for byte; the assertions are on `watched`, on the basis clause, and on
+    # `_same_dir`, which is the comparison the subject itself uses.
+    wroot = Path(tempfile.mkdtemp(prefix="cfg-tree-"))
+    try:
+        wprim = wroot / "primary"
+        (wprim / "pkg").mkdir(parents=True, exist_ok=True)
+        wlink = wroot / "linked"
+        wother = wroot / "other"
+        wcfg = M._deep_merge(M.DEFAULTS, {})
+        # Through `attempt`, not called bare: the contract under test is that
+        # nothing here raises, and a bare call turns a broken contract into a
+        # dead suite rather than one red case.
+        _okw1, _gotw1 = _harness.attempt(M.command_tree, None, wprim, wcfg)
+        check("w1 garbage in, an answer out - this module never raises, and the "
+              "caller is a PostToolUse hook",
+              _okw1 and _gotw1["watched"] is True, repr(_gotw1))
+        # THE DIRECTION THAT PROTECTS `gitRoot`. With no cwd, and with a cwd git
+        # cannot place, the project's own declaration of which tree to watch is
+        # the only evidence there is, so it stands. Failing the other way would
+        # hand any command a silence by running it somewhere git cannot answer
+        # about - and a miss costs a write nobody was told about.
+        _w2 = M.command_tree({"cwd": ""}, wprim, wcfg)
+        check("w2 no cwd in the payload: the watched tree stands, and the basis "
+              "says why", _w2["watched"] is True
+              and "no working directory" in _w2["basis"])
+        _w3 = M.command_tree({"cwd": str(wroot)}, wprim, wcfg)
+        check("w3 a cwd git cannot place: the watched tree stands - which is "
+              "what keeps a monorepo's gitRoot declaration working when the "
+              "project dir is not itself a repo",
+              _w3["watched"] is True and "names no working tree" in _w3["basis"])
+        _ini = ["git", "init", "-q"]
+        subprocess.run(_ini, cwd=str(wprim), check=True, capture_output=True,
+                       timeout=20)
+        subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+                        "commit", "-q", "--allow-empty", "-m", "base"],
+                       cwd=str(wprim), check=True, capture_output=True,
+                       timeout=20)
+        subprocess.run(["git", "worktree", "add", "-q", str(wlink), "-b", "w"],
+                       cwd=str(wprim), check=True, capture_output=True,
+                       timeout=30)
+        wother.mkdir(parents=True, exist_ok=True)
+        subprocess.run(_ini, cwd=str(wother), check=True, capture_output=True,
+                       timeout=20)
+        _w4 = M.command_tree({"cwd": str(wprim / "pkg")}, wprim, wcfg)
+        check("w4 a subdirectory of the watched tree IS the watched tree - git "
+              "is asked, not the path separator counted",
+              _w4["watched"] is True and M._same_dir(_w4["tree"], wprim))
+        _w5 = M.command_tree({"cwd": str(wlink)}, wprim, wcfg)
+        check("w5 a linked worktree is NOT the watched tree, and is named as a "
+              "worktree of the same repository - which is the difference between "
+              "a phase that walked out of view and a stranger's checkout",
+              _w5["watched"] is False and M._same_dir(_w5["tree"], wlink)
+              and _w5["basis"] == "a linked worktree of the same repository")
+        # The other direction for w5's SENTENCE: without it the clause could be
+        # hard-coded and no case would know which branch produced it.
+        _w6 = M.command_tree({"cwd": str(wother)}, wprim, wcfg)
+        check("w6 ...while an unrelated checkout is called a separate "
+              "repository", _w6["watched"] is False
+              and _w6["basis"] == "a separate git repository")
+        # THE OBSERVED SHAPE `_shares_repository`'s join exists for, captured from
+        # the real tool rather than assumed (git 2.50.1, 2026-08-23):
+        # `--git-common-dir` is RELATIVE to the directory git ran in for an
+        # ordinary checkout and ABSOLUTE from a linked worktree. Taking it for a
+        # path is what a hand-written fixture would have agreed with; w5 goes red
+        # if the join is dropped, and this says why.
+        _cprim = M._git_rev_parse(wprim, ["--git-common-dir"])
+        _clink = M._git_rev_parse(wlink, ["--git-common-dir"])
+        check("w7 git answers --git-common-dir relative to where it ran for an "
+              "ordinary checkout and absolute from a linked worktree - the two "
+              "shapes one join has to cover",
+              bool(_cprim) and bool(_clink)
+              and not os.path.isabs(_cprim[0]) and os.path.isabs(_clink[0]),
+              repr((_cprim, _clink)))
+        check("w8 a directory that does not exist is a refusal, not an answer",
+              M._git_rev_parse(wroot / "nope", ["--show-toplevel"]) is None)
+
+        # THE AGREEMENT ACROSS THE IMPORT BOUNDARY. `scripts/governance/_locks`
+        # already resolves `--git-common-dir` and joins a relative answer against
+        # the directory it asked from - "the shared git dir, so the locks span
+        # every worktree of one clone". `hooks/` may import nothing from
+        # `scripts/`, so `_shares_repository` holds the same logic by the layer
+        # rule rather than by accident, and a comment saying two copies agree is
+        # still two copies.
+        #
+        # Each side is asked THROUGH ITS OWN INSTRUMENT and the verdicts are
+        # compared - no third copy of the join is written here, which is what a
+        # test recomputing the arithmetic would have been. Both directions, so a
+        # side that answered "same repository" for everything would fail.
+        _lk = M._load_lock_lib()
+        _by_lock_same = (_lk is not None and _lk.lock_dir(str(wprim)) is not None
+                         and _lk.lock_dir(str(wprim)) == _lk.lock_dir(str(wlink)))
+        _by_lock_diff = (_lk is not None
+                         and _lk.lock_dir(str(wother)) != _lk.lock_dir(str(wprim)))
+        _by_tree_same = _w5["basis"] == "a linked worktree of the same repository"
+        _by_tree_diff = _w6["basis"] == "a separate git repository"
+        check("w9 hooks and scripts agree about which trees share one repository "
+              "- each through its own instrument, which is how the duplication "
+              "the layer rule forces stays honest",
+              _by_lock_same and _by_lock_diff and _by_tree_same and _by_tree_diff,
+              repr((_by_lock_same, _by_lock_diff, _by_tree_same, _by_tree_diff)))
+    finally:
+        shutil.rmtree(str(wroot), ignore_errors=True)
+
     # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
     # state/, logs/ and the ledger hold live tokens, person identities and
     # session scratch; none of it belongs in git. The dirs make THEMSELVES

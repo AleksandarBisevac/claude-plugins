@@ -367,6 +367,173 @@ def git_root_rel(cfg):
     return "" if gr in ("", ".") else gr
 
 
+# --- the tree question, which is not the config question ----------------------
+# `repo_root()` above answers WHERE THE CONFIG LIVES, and CLAUDE_PROJECT_DIR wins
+# there deliberately: the config belongs to the project, and a worktree should not
+# need its own copy of it. It is the wrong answer to a second question this plugin
+# also asks - WHICH TREE DID THIS COMMAND TOUCH - and the two came apart the first
+# time an agent worked inside a git worktree (F84). The env var stays pinned to the
+# primary checkout, so `guard-bash-writes` ran `git status` there and told a
+# read-only sweep in the worktree that it had modified files a parallel session was
+# editing in the other tree.
+#
+# Git already tells the two trees apart, and nothing here re-derives it: a
+# worktree's `--show-toplevel` is the worktree, its `--git-common-dir` is the shared
+# `.git`. Path arithmetic cannot stand in for either - an agent worktree sits UNDER
+# the project directory, so every containment test calls it the same tree.
+def _same_dir(a, b):
+    """Do two path strings name the same directory on disk?
+
+    `os.path.realpath` on both sides, which is the whole implementation. A raw
+    string comparison gets this wrong in two ways the suites produce on their own:
+    a trailing separator, and the symlinked temp root every `mkdtemp` fixture sits
+    under (`/var` -> `/private/var` on macOS)."""
+    try:
+        return os.path.realpath(str(a)) == os.path.realpath(str(b))
+    except Exception:
+        return False
+
+
+def _git_rev_parse(cwd, fields):
+    """`git rev-parse` answers for `cwd`, one string per field, or None.
+
+    A LIST of fields because `rev-parse` answers several questions in one process,
+    and the caller pays for processes rather than for questions.
+
+    None means git declined to answer at all - not a repository, no git on PATH, a
+    directory that does not exist, a call that did not finish. Nothing is salvaged
+    from a non-zero exit, and that is not the discarded-stdout mistake: `rev-parse`
+    writes its answer to stdout only when it succeeds, so keeping stdout on failure
+    would be keeping an empty string and calling it a path.
+
+    THE RETURNCODE TEST IS DEFENSIVE and no case can currently distinguish it.
+    What was observed is a refusal exiting 128 with EMPTY stdout, which the field
+    count below already rejects; the test stays for a non-zero exit that prints a
+    partial answer, which `rev-parse` was not seen to do. Labelled rather than
+    deleted, and labelled rather than left looking load-bearing.
+
+    `subprocess` IS IMPORTED INSIDE. Every hook imports this module at module scope
+    on every matching tool call and most of them never ask git anything - the same
+    budget that made `guard-bash-writes` import it inside `_git_dirty`."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", str(cwd), "rev-parse"] + list(fields),
+                             capture_output=True, timeout=5, text=True)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    lines = [ln.strip() for ln in out.stdout.splitlines()]
+    return lines if len(lines) == len(fields) else None
+
+
+def _shares_repository(cwd, common_dir, watching):
+    """Is the `.git` behind `cwd` the same one the watched tree uses?
+
+    Separates a linked worktree of THIS repository from an unrelated checkout,
+    which is the difference between "the phase worktree walked out of view" and
+    "you are in somebody else's repo". That is its whole job: it changes the
+    sentence a notice prints and never the verdict.
+
+    `--git-common-dir` COMES BACK RELATIVE TO THE DIRECTORY GIT RAN IN for an
+    ordinary checkout, and absolute from a linked worktree. Probed rather than
+    assumed (git 2.50.1, 2026-08-23):
+
+        git -C <repo>     rev-parse --git-common-dir  ->  .git
+        git -C <repo>/a/b rev-parse --git-common-dir  ->  ../../.git
+        git -C <worktree> rev-parse --git-common-dir  ->  /abs/<repo>/.git
+
+    so both answers are joined against the directory they were asked from before
+    anything compares them; `os.path.join` returns an absolute right-hand side
+    unchanged, which is what lets one expression cover both shapes. Reading it as
+    an absolute path is the mistake a hand-written fake would have agreed with.
+
+    THE SAME INSTRUMENT ALREADY EXISTS on the other side of the import boundary:
+    `scripts/governance/_locks.lock_dir()` resolves `--git-common-dir` and joins a
+    relative answer against the directory it asked from, so that "the locks span
+    every worktree of one clone". `hooks/` may import nothing from `scripts/`, so
+    this is a duplication the layer rule forces rather than one to tidy away - and
+    the agreement is pinned by a case (`w9` in `test__config.py`) instead of
+    asserted in a comment.
+
+    It costs the second `git rev-parse` of the pass, and only ever runs once the
+    trees have already been established to differ."""
+    ours = _git_rev_parse(watching, ["--git-common-dir"])
+    if not ours or not ours[0]:
+        return False
+    return _same_dir(os.path.join(str(cwd), common_dir),
+                     os.path.join(str(watching), ours[0]))
+
+
+def command_tree(data, root, cfg):
+    """Which WORKING TREE did this tool call run in, against the one we watch.
+
+    -> {"tree", "watching", "watched", "basis"}
+       tree      the tree git named for the payload's cwd, or None when it named
+                 none
+       watching  the tree the caller watches - `git_root_dir(root, cfg)`, so the
+                 project's `gitRoot` declaration is what this refines and never
+                 what it replaces
+       watched   may the caller attribute what it sees in `watching` to this call?
+       basis     why - the clause a notice prints, because a claim with no basis
+                 is the defect this function exists inside of
+
+    `watched` IS TRUE WHENEVER THE TREE CANNOT BE ESTABLISHED, and that direction
+    is chosen rather than inherited. `gitRoot` is the project's own declaration of
+    which tree to watch, so with no evidence to the contrary the declaration
+    stands; only positive evidence that the command ran somewhere else takes the
+    claim away. Failing the other way would hand any command a silence by running
+    it somewhere git cannot answer about, and for the guard that reads this a
+    stray notice costs a line of text while a miss costs a write nobody was told
+    about.
+
+    The equal-path short circuit is not an optimisation looking for a home: the
+    ordinary case is a session whose cwd IS the watched tree, and it is answered
+    without starting a process at all. Only a cwd that differs pays git.
+
+    WHAT THE PAYLOAD CARRIES, probed against the real harness rather than reasoned
+    about (Claude Code 2.1.241, 2026-08-23; a PostToolUse Bash hook dumping stdin,
+    driven by `claude -p` over four separate Bash calls):
+
+        1) `pwd`                 -> cwd = <project>
+        2) `cd sub/deep && pwd`  -> cwd = <project>/sub/deep
+        3) `pwd`                 -> cwd = <project>/sub/deep
+        4) `cd <project>/wt`     -> cwd = <project>/wt          (a linked worktree)
+
+    So `cwd` is present on every call, it is the shell's directory AFTER the
+    command ran, and it tracks a `cd` both within one call and across calls - while
+    `CLAUDE_PROJECT_DIR` stayed `<project>` throughout and the hook PROCESS's own
+    `os.getcwd()` was `<project>` too, not the shell's. The payload was already
+    carrying the answer; F84 is `repo_root()`'s preference order discarding it. The
+    empty-cwd branch above is therefore defensive: no payload without the field was
+    observed, and the branch exists because a hook must not raise over one.
+
+    RESIDUAL, and the probe is what names it correctly: a command is placed where
+    the shell ENDED UP. One that walks INTO a tree and writes there is placed
+    right; one that writes and then walks OUT - `sed -i x && cd ../elsewhere` - is
+    reported against `../elsewhere`. Nothing in the payload separates those, and
+    inferring it from the command text is the raw-string reading F51 was about."""
+    watching = git_root_dir(root, cfg)
+    cwd = str((data or {}).get("cwd") or "")
+    if not cwd:
+        return {"tree": None, "watching": str(watching), "watched": True,
+                "basis": "the hook payload named no working directory"}
+    if _same_dir(cwd, watching):
+        return {"tree": str(watching), "watching": str(watching),
+                "watched": True, "basis": "the command ran in the watched tree"}
+    got = _git_rev_parse(cwd, ["--show-toplevel", "--git-common-dir"])
+    if not got or not got[0]:
+        return {"tree": None, "watching": str(watching), "watched": True,
+                "basis": "git names no working tree for %s" % cwd}
+    if _same_dir(got[0], watching):
+        return {"tree": got[0], "watching": str(watching), "watched": True,
+                "basis": "the command ran in the watched tree"}
+    return {"tree": got[0], "watching": str(watching), "watched": False,
+            "basis": ("a linked worktree of the same repository"
+                      if _shares_repository(cwd, got[1], watching)
+                      else "a separate git repository")}
+
+
 def state_dir(root, cfg):
     return root / (cfg.get("stateDir") or DEFAULTS["stateDir"])
 

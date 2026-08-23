@@ -65,7 +65,7 @@ policy, and that is what the right column is.
 | Manifest writes against another live session's lock | `--ff-only` into the resolved parent, never a rebase |
 | Every plan and config write — journalled, hash-chained | `git -C <gitRoot>`; gate commands from the project dir |
 | Token spend — attributed to a phase and a task | Spawn the executor with the task id in its description |
-| Unaccounted shell writes — reported in-band, where a plan exists to be outside of | Skills invoked before any code is written |
+| Unaccounted shell writes in the watched tree — reported in-band, where a plan exists to be outside of | Skills invoked before any code is written |
 | Source changed with no test — nudged |  |
 | Explorer cannot write, reviewer cannot edit, executor has no web tools |  |
 | The manifest — referentially validated, by exit code |  |

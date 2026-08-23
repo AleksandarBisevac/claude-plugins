@@ -22,6 +22,15 @@ Two branches by tool_name:
       session). PostToolUse cannot undo the write — but the model gets told,
       in-band, that it just sidestepped the plan gate.
 
+Attribution is PER TREE, and the tree is git's own answer rather than an env var.
+`_config.repo_root` (CLAUDE_PROJECT_DIR, else the payload cwd) says where the CONFIG
+lives; it does not say which tree a command touched, and it stays pinned to the
+primary checkout while an agent works inside a worktree. So `git status` used to run
+in one tree while the command ran in another, and that tree's dirt was handed to this
+command (F84). `_config.command_tree` asks git from the command's own working
+directory; a command from a tree this guard does not watch gets a notice naming both
+trees, once per tree, instead of an attribution.
+
 Attribution reads the OTHER sessions in this checkout before it blames this one.
 Parallel phases in one working tree are a feature of this product, so "new since
 my last snapshot" was never the same claim as "written by this command". Every
@@ -34,7 +43,12 @@ authorship claim is dropped — see UNPROVEN_TEMPLATE.
 
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
-   "baselined": bool}
+   "baselined": bool, "gitTimeout": bool, "otherTrees": [abs path...]}
+  `otherTrees` is the ONLY key here that is not a repo-relative path, and the
+  difference is load-bearing: every rel in this file is a path in the ONE tree
+  this guard watches, which is what lets a sibling session's rels be read as
+  claims about the same files. `otherTrees` names trees that were declined, so
+  it is a list of absolute directories and never a claim about a file.
   `baselined` marks that the session's FIRST Bash pass has seeded seenDirty
   with the tree's pre-existing dirt (silently) — only dirt appearing after
   that baseline is ever attributed to a shell command.
@@ -153,6 +167,27 @@ UNPROVEN_TEMPLATE = (
     "an in_progress task or use the Edit/Write tools (which the plan gate "
     "reviews); if it is not, it belongs to the other session. This is a "
     "non-blocking notice; nothing was reverted."
+)
+
+# A command that ran in a WORKING TREE this guard is not watching, said once per
+# tree. F84: the guard watches ONE tree - `git status` runs in the configured
+# gitRoot, and every path in the session's state file is a path in that tree - but
+# it was choosing that tree with `CLAUDE_PROJECT_DIR`, which answers where the
+# CONFIG lives and stays pinned to the primary checkout while an agent works inside
+# a worktree. So dirt a parallel session was making in the primary tree was handed
+# to a read-only sweep running in the worktree. Both trees are named because a
+# guard that quietly stopped covering one would be indistinguishable from a guard
+# that found nothing there, and the way back is a fact about the setup rather than
+# about the command, so it is said once.
+OTHER_TREE_TEMPLATE = (
+    "[bash-write-guard] That shell command ran in %s (%s), and this guard watches "
+    "%s. It cannot say what the command wrote: it has looked only at the watched "
+    "tree, and what is dirty there belongs to whoever is working there. So shell "
+    "writes made from that tree are NOT being checked against the plan, and "
+    "nothing is being attributed to this command. This is said once per tree. To "
+    "guard a worktree, open its own session in it - `/audit:worktree` prints the "
+    "command - and the hooks resolve their project directory to the worktree "
+    "instead."
 )
 
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
@@ -457,11 +492,12 @@ def _load_state(state_dir, session_id):
                     "seenDirty": list(data.get("seenDirty") or []),
                     "warned": list(data.get("warned") or []),
                     "baselined": bool(data.get("baselined")),
-                    "gitTimeout": bool(data.get("gitTimeout"))}
+                    "gitTimeout": bool(data.get("gitTimeout")),
+                    "otherTrees": list(data.get("otherTrees") or [])}
     except Exception:
         pass
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
-            "gitTimeout": False}
+            "gitTimeout": False, "otherTrees": []}
 
 
 def _save_state(state_dir, session_id, state):
@@ -687,6 +723,42 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         _save_state(sd, session_id, state)
         return ("silent", "read-only command: %d path(s) appeared but not from "
                           "this call" % (len(absorbed),))
+
+    # F84: THE TREE THE COMMAND RAN IN IS NOT THE TREE THIS GUARD WATCHES, so
+    # nothing seen here belongs to it. `_config.repo_root` answers where the config
+    # lives and CLAUDE_PROJECT_DIR wins there on purpose - a worktree should not
+    # need its own copy of the project's config - but it is the wrong answer to
+    # "which tree did this command touch", and an agent working inside a worktree is
+    # where the two came apart. Reported rather than swallowed: a guard that goes
+    # quiet in a tree looks exactly like a guard that found nothing in it.
+    #
+    # The dirt is ABSORBED, for the reason the read-only branch above absorbs it: it
+    # came from outside this session, and holding it back would only move the false
+    # accusation onto the next command that happens to be a writer.
+    #
+    # NO RECORD HERE LEARNS A TREE, and that is a decision rather than an omission.
+    # Every rel in this state file - seenDirty, toolEdited, warned - and every rel in
+    # a sibling session's file is a path in the watched tree, because every session
+    # sharing this stateDir resolves the same project directory. One path space
+    # describing one tree is what lets `_other_sessions` subtract a peer's claim from
+    # this tree's dirt at all (9b45c54), and it is why the sidecar `journal-writes`
+    # writes is found where this hook looks for it (F-F3). Measuring a second tree
+    # here would put two path spaces in one file and make a tree field mandatory on
+    # records that have none - after which an old record is AMBIGUOUS rather than
+    # wrong, which is worse. So the second tree is declined, not half-measured.
+    tree = _config.command_tree(data, root, cfg)
+    if not tree["watched"]:
+        state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))
+        said = list(state.get("otherTrees") or [])
+        if tree["tree"] in said:
+            _save_state(sd, session_id, state)
+            return ("silent", "command ran in another working tree (%s), already "
+                              "said this session" % tree["tree"])
+        said.append(tree["tree"])
+        state["otherTrees"] = said
+        _save_state(sd, session_id, state)
+        return ("warn", OTHER_TREE_TEMPLATE % (tree["tree"], tree["basis"],
+                                               tree["watching"]))
 
     # Read before this pass overwrites the file: it is the moment this session
     # last looked at the tree, and therefore the far end of the window in which
