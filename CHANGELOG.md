@@ -4,6 +4,50 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+**The manifest layout is a choice with a name, and it goes both ways.** `/audit:layout
+sharded|single-file` replaces `/audit:migrate` as the command that decides how the manifest is
+stored -- an index plus one file per phase, or one file. The old name described a version upgrade,
+and there was never one to do: single-file and sharded are two current shapes of one schema, a
+single-file manifest does not go out of date, and installing a newer plugin never made migrating
+due. The documents had already been corrected twice; the command's own name was the last thing in
+the product still saying otherwise.
+
+**`/audit:init` now asks**, at the point where the question is answerable -- after the plan is
+approved, so the phase count is on screen -- and phrases it by what actually decides it: parallel
+phases across separate worktrees, or a plan big enough that loading every phase to run one costs
+real context, versus one session and a handful of phases. **The default is one file**, which is
+what every manifest was before the question existed, so accepting it changes nothing for anyone.
+Choosing sharded calls the same splitter `/audit:layout` calls, rather than hand-writing shards.
+
+**Going back has a cost, and the command says it before it writes.** Assembling shards into one
+file is not the forward path with a word swapped. It reads the index AND every shard, and those
+are governed by different locks, so the index lock is not enough: a phase run holds `phase-<id>`
+and writes only its own shard, and assembling underneath one yields a single file mixed from two
+moments with nothing downstream to say so. `/audit:layout single-file` refuses while any `phase-*`
+lock is held, names the phase worktrees and unmerged `audit/*` branches whose shard edits would
+otherwise merge into a file nothing assembles, and afterwards names every shard file left on disk
+-- unread, still committed, still looking authoritative -- so that `git rm` and the assembled file
+land as one commit.
+
+**`/audit:doctor` states the layout and its cost instead of nominating a fix.** The line read
+`single-file layout (meta.version < 3); /audit:migrate splits it into per-phase shards`, which
+turned a supported shape into a to-do every time it was read. It now names the layout, what that
+layout costs (running one phase loads them all; two worktrees running phases in parallel write the
+same file) and no command at all. It also stopped reading `meta.version` as the layout: the layout
+is `_manifest_io.is_sharded()` -- the phase stubs -- which is the reading every writer in the
+plugin already used, and the doctor held the only second copy of it. Where the stamp and the stubs
+disagree, that disagreement is now a finding of its own instead of being reported as a layout.
+
+### Deprecated
+
+- **`/audit:migrate` is an alias for `/audit:layout sharded` and will be removed in a future
+  release.** It still works and still does exactly that, kept so existing transcripts, runbooks
+  and older documents resolve. When it goes, a runbook whose line says `/audit:migrate` fails at
+  that line -- so anything written down is worth changing to `/audit:layout sharded` now, while
+  both spellings work. No manifest is affected either way: the alias is a name, not a format.
+
 ## [0.43.0] - 2026-08-21
 
 **A granularity that cannot differ from All is no longer offered.** The heatmap's Year and

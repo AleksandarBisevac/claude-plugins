@@ -66,7 +66,8 @@ lock): read the current maximum from the assembled manifest, add one, write, rel
 so two sessions on one machine can never mint the same id (the lock serializes the
 read‑modify‑write). Across machines (no shared lock) a rare duplicate can still arise on
 divergent branches; `validate-manifest.py`'s repo‑wide unique‑id check catches it after
-merge, and `/audit:migrate --renumber` repairs it.
+merge, and `/audit:layout <sharded|single-file> --renumber` repairs it (either direction —
+bugs live in the index in both layouts).
 
 - **Task**: `<phaseId>.<n>` where `n` = highest existing numeric suffix in that phase + 1 (`P2.4` → next is `P2.5`).
 - **Bug**: `BUG-<n>` where `n` = highest existing bug number + 1, repo-wide (`BUG-3` → next is `BUG-4`).

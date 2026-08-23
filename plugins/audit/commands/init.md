@@ -1,5 +1,5 @@
 ---
-description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings, then presents the proposed phases for approval BEFORE writing — approve to materialize, or park them as proposals for later /audit:propose materialize.'
+description: 'Multi-agent codebase audit that GENERATES the audit manifest (phases/tasks) at manifestPath. Interviews you for scope/goals, fans out parallel read-only explorers, synthesizes findings, then presents the proposed phases for approval BEFORE writing — approve to materialize, or park them as proposals for later /audit:propose materialize. Asks which manifest layout to write (one file, the default, or one file per phase for parallel worktrees).'
 argument-hint: '[optional scope/goals — you will be interviewed for the rest]'
 allowed-tools: Read, Write, Edit, Bash, Agent, Glob, Grep, AskUserQuestion
 ---
@@ -321,6 +321,29 @@ materialization is a move, not a rebuild. `fileIndex` entries for parked tasks
 are NOT written — the index covers live tasks only; materialize derives them
 from `payload.phase.tasks[].files`.
 
+### 6.2 Layout — one file, or one file per phase
+
+Ask once (AskUserQuestion), **after** the plan is approved, because the plan's size is half the
+criterion and until now there was no size. Phrase it by what actually decides it, never by a
+version number:
+
+- **One file (default)** — one session at a time, a handful of phases. One file, one diff, no index
+  to keep in step. This is what every manifest before this question was, so accepting the default
+  changes nothing for anyone.
+- **One file per phase (sharded)** — you will run phases **in parallel from separate git
+  worktrees**, or the plan is big enough that loading every phase in order to run one costs real
+  context. An index (`meta` · `bugs` · `fileIndex`) plus `phases/<phaseId>.json`.
+
+Put the approved plan's phase count in the question, so the second criterion is answerable rather
+than hypothetical. And say that **neither shape goes out of date and the choice is not final** —
+`/audit:layout <sharded|single-file>` moves an existing manifest either way — so the question does
+not read as a commitment it is not.
+
+**Skip it entirely when nothing was materialized.** Everything parked as proposals means `phases[]`
+is empty, and a layout for zero phases is a choice about nothing: write the single file and leave
+the question for `/audit:layout` once a phase exists. Skipping is not defaulting quietly — say
+which layout was written and why the question was not worth asking yet.
+
 ## 7. Write + validate
 
 1. `mkdir -p` the manifest's parent directory; Write the manifest as decided in
@@ -331,13 +354,24 @@ from `payload.phase.tasks[].files`.
 3. If `npx` is available, also run
    `npx ajv-cli validate --spec=draft2020 -s "${CLAUDE_PLUGIN_ROOT}/schema/audit-plan.schema.json" -d <manifestPath>`;
    if npx is missing, skip silently.
+4. **If step 6.2 chose sharded, split it now** — never hand-write shards:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/migrate-manifest.py" <manifestPath> --to=sharded
+   ```
+   One splitter, one implementation: it validates the source, backs it up, writes the index and
+   shards atomically, then re-validates the result and restores the backup on any failure. If it
+   refuses, the single file you just wrote is what stays on disk — report the refusal and the
+   layout the user actually has, never the layout they asked for.
 
 ## 8. Report
 
 **Materialized (fully or partly):** per-phase table (`id — title — task count —
 dimensions covered`), total task count by `tests.mode` and `risk`, what was
 deferred and why, any open questions for the human, and the handoff: **next run
-`/audit:status`, then `/audit:phase P0`**.
+`/audit:status`, then `/audit:phase P0`**. Name the layout that was written, and
+when it is sharded, that the index and every `phases/*.json` are new files to
+`git add` — plus that the `.bak-<UTC>` the split left behind is a copy of the file
+written moments earlier, so on a fresh init it is noise and safe to delete.
 
 **Parked (any):** a proposal table (`PROP-id — reserved phase — title — tasks`)
 and the handoff: `/audit:propose list`, then
