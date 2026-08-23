@@ -415,7 +415,13 @@ def _cases(check):
     _ado_ok = {"onComplete": {"remainingWork": 0},
                "comments": {"onBlocked": True, "onComplete": False},
                "sprint": {"team": "Core", "mode": "current"},
-               "pull": {"areaPath": "A", "tags": ["t"]}}
+               "pull": {"areaPath": "A", "tags": ["t"]},
+               "hierarchy": {"levels": {"Task": 1},
+                             "fetchedAt": "2026-08-24T00:00:00Z",
+                             "basis": "captured for this case"},
+               "parentCandidates": {"items": [{"id": 41}],
+                                    "fetchedAt": "2026-08-24T00:00:00Z",
+                                    "basis": "captured for this case"}}
     _unreached = []
     for _lvl in M.INLINE_ANCHORS:
         _cfg = dict((k, dict(v)) for k, v in _ado_ok.items())

@@ -299,10 +299,10 @@
                 "object",
                 "null"
               ],
-              "description": "What THIS project supplies to the board's fields, per work item type: {work item type name: {ADO field name: literal value}}, merged into the create payload BEFORE the conformance gate grades it. `conventions` can only REFUSE, and the connector's create payload is title, description, state, area, iteration, tags and a parent link \u2014 so on a governed board whose Task really owes Microsoft.VSTS.Common.Activity and Microsoft.VSTS.Scheduling.OriginalEstimate, an honest `conventions` block gated out every CREATE and the block that let a push through was a deliberately weakened description of the board. Keyed by TYPE NAME, the same vocabulary `types.{bug,task,pbi}` resolve to, so a board that renames its types is configured in one vocabulary. Absent/null supplies nothing, which is exactly today's behaviour. Values are LITERALS \u2014 there is no substitution language, because the fields carrying manifest data are the ones the connector already maps, and those are refused here (see scripts/manifest/_ado_fields.py: naming a connector-mapped field, or one ADO reports as readOnly, is a validation finding). A readOnly field is refused rather than attempted because attempting it can look like it worked: measured 2026-08-24, `--fields System.Parent=<id>` created the item, reported success and left no parent and no relation.",
+              "description": "What THIS project supplies to the board's fields, per work item type: {work item type name: {ADO field name: literal value}}, merged into the create payload BEFORE the conformance gate grades it. `conventions` can only REFUSE, and the connector's create payload is title, description, state, area, iteration, tags and a parent link — so on a governed board whose Task really owes Microsoft.VSTS.Common.Activity and Microsoft.VSTS.Scheduling.OriginalEstimate, an honest `conventions` block gated out every CREATE and the block that let a push through was a deliberately weakened description of the board. Keyed by TYPE NAME, the same vocabulary `types.{bug,task,pbi}` resolve to, so a board that renames its types is configured in one vocabulary. Absent/null supplies nothing, which is exactly today's behaviour. Values are LITERALS — there is no substitution language, because the fields carrying manifest data are the ones the connector already maps, and those are refused here (see scripts/manifest/_ado_fields.py: naming a connector-mapped field, or one ADO reports as readOnly, is a validation finding). A readOnly field is refused rather than attempted because attempting it can look like it worked: measured 2026-08-24, `--fields System.Parent=<id>` created the item, reported success and left no parent and no relation.",
               "additionalProperties": {
                 "type": "object",
-                "description": "One work item type's template: ADO field reference name (or display name \u2014 ADO resolves both) -> the literal value to send. Numbers stay numbers; Microsoft.VSTS.Scheduling.OriginalEstimate is not a string.",
+                "description": "One work item type's template: ADO field reference name (or display name — ADO resolves both) -> the literal value to send. Numbers stay numbers; Microsoft.VSTS.Scheduling.OriginalEstimate is not a string.",
                 "additionalProperties": {
                   "type": [
                     "string",
@@ -545,6 +545,104 @@
                     "type": "string",
                     "minLength": 1
                   }
+                }
+              }
+            },
+            "hierarchy": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "CACHED EVIDENCE, written by /audit:sync parents and never by hand: which work item types this project ranks above which, so the plugin can tell a parent link that is the right way round from one that is not. ASKED, NEVER SHIPPED — a Bug is a requirement on one board and a task on the next (the same payload's `bugsBehavior`), so a table shipped with the plugin would be wrong on the second board and confidently so. ABSENT = there is no basis for the type check, every item reports 'not verified', and the create proceeds: a missing basis is a thing to say, not a thing to guess around. Structural checks (an item under itself, a declared loop) need none of this and run offline.",
+              "properties": {
+                "levels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "{work item type name: backlog rank}, e.g. {\"Task\": 1, \"Product Backlog Item\": 2, \"Feature\": 3, \"Epic\": 4}. A parent must rank ABOVE its child; equal ranks are a NOTE and never a refusal, because a Bug under a Product Backlog Item is rank 2 under rank 2 wherever bugsBehavior is asRequirements and teams do it deliberately."
+                },
+                "fetchedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "ISO timestamp of the fetch. Evidence with no moment is evidence nobody can age."
+                },
+                "basis": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "One sentence naming where these ranks came from, including the command that re-derives them — so a stale cache can be checked rather than believed."
+                }
+              }
+            },
+            "parentCandidates": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "CACHED CONVENIENCE, written by /audit:sync parents: the parent-shaped work items on this board at the moment of the fetch, so a picker can offer them instead of asking for an id from memory. NEVER AN AUTHORITY — nothing resolves, validates or refuses against this list, and an item missing from it is not a wrong parent, only one that was created since the fetch. Absent = nobody has fetched a list, which is not a defect.",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "description": "The candidates, in the order the query returned them.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "areaPath": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "url": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "fetchedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "ISO timestamp of the fetch."
+                },
+                "basis": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "One sentence naming the query these came from, so a reader can tell an empty list from an unfiltered one."
                 }
               }
             }
@@ -805,6 +903,10 @@
           "items": {
             "$ref": "#/$defs/task"
           }
+        },
+        "adoParent": {
+          "$ref": "#/$defs/adoParent",
+          "description": "The existing work item THIS phase hangs under, overriding meta.ado.parentWorkItem for this phase alone. A sibling of `ado`, never a field inside it: `ado` is written only by sync, this is authored."
         }
       }
     },
@@ -949,6 +1051,10 @@
         },
         "ado": {
           "$ref": "#/$defs/adoLink"
+        },
+        "adoParent": {
+          "$ref": "#/$defs/adoParent",
+          "description": "The existing work item THIS task hangs under when meta.ado.phaseWorkItems is false. INERT while phaseWorkItems is on (the task hangs under its phase's work item) — /audit:sync warns rather than ignoring it silently."
         }
       }
     },
@@ -1336,6 +1442,60 @@
             "null"
           ],
           "description": "ISO timestamp of the drop, the counterpart of materializedAt. Set only when status is 'dropped'."
+        }
+      }
+    },
+    "adoParent": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "description": "The EXISTING Azure DevOps work item THIS phase (or, with phaseWorkItems false, this task) hangs under — an AUTHORED declaration, and a sibling of `ado` rather than a field inside it, because `ado` is an adoLink written only by /audit:sync and this is written by a person or by a pull. Three states, the shape meta.ado.tag and every stateMap value already read: ABSENT falls through to meta.ado.parentWorkItem (byte-identical to the behaviour before this key existed); an OBJECT names that work item; explicit NULL means it hangs under nothing even when the fallback is set, which is what makes uncategorised a declared outcome rather than an accident. An object rather than a bare integer because two spellings of one answer are two answers, and because the hierarchy check, the push plan and the panel all need the basis beside the id. INERT on a task while meta.ado.phaseWorkItems is on — the task hangs under its phase's work item, and the ignored declaration draws a warning rather than being silently dropped. Resolved by scripts/manifest/_ado_parent.py, which every surface calls.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The parent work item's id in the configured project. Required whenever adoParent is an object — write null instead to declare that this item hangs under nothing."
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The parent's work item type name (e.g. 'Feature'), as the BASIS for the hierarchy check: a parent must sit above its child on this project's backlog, and this is the only offline way to know what the parent is. Absent/null = nobody recorded it, and every surface reports the type check as 'not verified' rather than guessing."
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The parent's title when it was last observed. Informational — it is what makes a push plan readable ('#103205 (Q3 platform hardening)') instead of a bare number."
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Web link to the parent work item."
+        },
+        "source": {
+          "enum": [
+            "declared",
+            "imported",
+            null
+          ],
+          "description": "Where the declaration came from: 'declared' = somebody wrote it, 'imported' = /audit:sync pull read it off the board. ABSENT/null = unrecorded, and is never backfilled with a guess — the same rule adoLink.origin follows, for the same reason."
+        },
+        "observedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of when the basis fields above were last seen on the board. Absent/null = never observed, which is an honest answer about a hand-written declaration."
         }
       }
     }

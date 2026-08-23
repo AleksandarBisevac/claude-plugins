@@ -148,14 +148,23 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
              # A property of the board, so absent means "no standard to meet".
              "conventions",
              # U4: the EXISTING work item audit phases hang under, so the work
-             # lands inside a team's backlog rather than beside it.
+             # lands inside a team's backlog rather than beside it. Still read,
+             # still right for "all of this audit hangs under Feature X", and
+             # the FALLBACK now that a phase may declare its own `adoParent`.
              "parentWorkItem",
              # U-FIELDS: the other half of `conventions`. That block can only
              # REFUSE, and the connector's create payload had no way to supply a
              # governed board's required fields - so the honest standard gated
              # out every CREATE. This one is what the manifest SUPPLIES, per
              # work item type. Absent = today's behaviour exactly.
-             "fields"}
+             "fields",
+             # U-PARENT: the two caches /audit:sync parents writes. Both are
+             # EVIDENCE - a `fetchedAt` and a basis each - and neither is
+             # authored: `hierarchy` is this project's own type ranks (asked,
+             # never shipped: the same payload's bugsBehavior puts a Bug in a
+             # different place on the next board), `parentCandidates` is a
+             # picker's convenience and never an authority.
+             "hierarchy", "parentCandidates"}
 # Keys inside meta.branch (the naming convention). Enumerated for the same reason
 # meta.ado is: a typo like `slugMaxLen` or `defaulttype` would otherwise be a
 # convention that silently never applies.
@@ -173,6 +182,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # connector v2: phase-level work item link, written by /audit:sync
                # when meta.ado.phaseWorkItems is true:
                "ado",
+               # U-PARENT: which EXISTING work item THIS phase hangs under,
+               # overriding meta.ado.parentWorkItem for this phase alone. A
+               # SIBLING of `ado` and never a field inside it, because `ado` is
+               # an adoLink sync writes and this is authored:
+               "adoParent",
                # v0.19: optional spend budget for this phase, in USD. Optional on
                # purpose — most phases will not carry one, and the surfaces render
                # an absent budget as "—" rather than as 0% or 100%.
@@ -198,6 +212,10 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",
               "risk", "verifiedBy", "bugId", "ado",
+              # U-PARENT: this task's own parent, honoured when
+              # meta.ado.phaseWorkItems is false and INERT (warned, never
+              # silently dropped) when it is on:
+              "adoParent",
               # workstream B: written by /audit:task move -- {id, phase, at},
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
@@ -479,6 +497,8 @@ INLINE_ANCHORS = (
     "meta.ado.comments",
     "meta.ado.sprint",
     "meta.ado.pull",
+    "meta.ado.hierarchy",
+    "meta.ado.parentCandidates",
 )
 
 

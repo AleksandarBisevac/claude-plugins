@@ -91,6 +91,8 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
           _ado_fields.py                  # meta.ado.fields: what this project supplies to those fields
+          _ado_parent.py                  # where ONE item hangs on the board, and whether that place can be true
+          resolve-ado-parent.py           # the door onto it: resolve, check the hierarchy, refuse a link nothing can build
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
           _ado_drift.py                   # who wrote a linked work item last, and whether pushing overwrites them
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
@@ -232,6 +234,7 @@ L0:
 L1:
   _ado_conventions -> _output
   _ado_fields -> _output
+  _ado_parent -> _output
   _areas -> _output
   _branch -> _output
   _cli_fmt -> _output
@@ -256,8 +259,8 @@ L2:
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
-  _manifest_crossrefs -> _manifest_io, _manifest_vocab, _output, _priority
-  _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
+  _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
+  _manifest_phases -> _ado_parent, _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _priority, _ui_theme
@@ -322,6 +325,7 @@ L7:
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
+  resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
   set-priority -> _manifest_io, _output, _panel_write, _priority
   validate-config -> _config_rules, _output
@@ -1467,6 +1471,81 @@ data into a field the connector does not map — a change to the mapping table, 
 config key invents. It would also force every literal to grow a brace escape and every value to
 become a string, when an estimate has to stay a number. A value that *looks* like a placeholder
 is warned about, because writing those characters onto a board is visible garbage.
+
+### `plugins/audit/scripts/manifest/_ado_parent.py`
+Where **one** audit item hangs on somebody else's board, and whether that place can be true
+(layer 1). `meta.ado.parentWorkItem` is a single integer for the whole manifest, so every phase
+an audit creates was forced under one Feature — the plugin overriding a product owner's decision
+about where work belongs. A phase (and a task, when `phaseWorkItems` is false) may now declare its
+own `adoParent`, and that key becomes the fallback it always described itself as. Nothing is
+deprecated and nothing warns about it: "all of this audit hangs under Feature X" is a real intent,
+and a warning on a key that is still the right answer teaches people to skip warnings.
+
+**Three states, and the third is the whole point.** Absent falls through to the fallback —
+byte-identical to the behaviour before the key existed, which is what `ap20` pins. An object names
+a work item and carries the basis beside the id (`type`, `title`, `source`, `observedAt`). An
+explicit `null` hangs under nothing *even when the fallback is set*, which is what makes
+uncategorised a **declared** outcome rather than an accident. The same shape `meta.ado.tag` and
+every `stateMap` value already read.
+
+**Why layer 1, and why everything arrives as an argument.** `_manifest_crossrefs` and
+`_manifest_ado` are both layer 2, so neither can import the other while both need the same answer —
+as do `resolve-ado-parent.py` at layer 7 and the panel after it. A second expression of "which
+parent" would *be* a second parent. It is also why the module owns its own unknown-key loop:
+`_manifest_vocab` is a layer-mate, and `ap9` pins the two loops to one answer rather than a comment
+claiming they agree.
+
+**Two surfaces, and they are allowed to disagree.** `hierarchy_violations()` returns `refusals`
+(every link the connector must not create) alongside `findings`/`warnings` (how a *manifest* is
+graded), and the two are computed in one place so no call site re-derives a severity. A loop an
+authored `adoParent` puts there is a finding; a loop reachable through `meta.ado.parentWorkItem`
+alone is a warning and the manifest still validates — that key predates the feature, and
+`COMPATIBILITY.md` promises a file which validates keeps validating for the whole major line.
+The push refuses both, identically, because a `validate-manifest.py` question and a
+`resolve-ado-parent.py` question are not the same question. The split reads the whole **loop**
+rather than the row being graded, and that is not fussiness: with `phaseWorkItems` on a task
+inherits its parent from its phase, so a loop created entirely by the old single `parentWorkItem`
+contains a `phase`-sourced task, and a per-row test would fail a manifest its author never touched.
+
+**Three tiers, and only the first is free.** Tier A is structural and offline — an item under
+itself, or under something this manifest already hangs under it — so it always has a basis and it
+*refuses the create*. It is also the tier that earns its keep: ADO does **not** check an API-created parent
+link against the process hierarchy, and a Product Backlog Item whose `System.Parent` is its own
+Task exists on a live board right now. Tier B reads `meta.ado.hierarchy`, this project's own
+backlog ranks: an inverted pair is refused, an **equal** pair is a note and never a refusal (a Bug
+under a PBI is rank 2 under rank 2 wherever `bugsBehavior` is `asRequirements`, and a checker that
+refuses a deliberate arrangement gets switched off), and with no cache every link reports `not
+verified` while the create proceeds. Tier C is the server's answer, and it degrades **per item**
+like the existing invalid-state fallback — never an aborted batch.
+
+**The ranks are asked, never shipped.** The payload that ranks Task under Product Backlog Item
+under Feature under Epic also carries `bugsBehavior`, and neither measured project's type list
+names `Bug` at all — that field is the only thing placing it. The same organization runs one
+project at `asRequirements` and another at `asTasks`, so a table shipped here would be wrong on the
+second board and confidently so.
+
+### `plugins/audit/scripts/manifest/resolve-ado-parent.py`
+The door onto `_ado_parent` (layer 7), same shape as `check-ado-item.py` over `_ado_conventions`:
+a real command because the caller is orchestrator prose reaching Python through Bash, and a
+`python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses.
+
+**A gate, unlike `explain-ado-drift.py`.** Exit 1 means "do not create these parent links", and
+that is the right severity here where it is not there: "somebody else moved this card" is a
+difference of opinion between two teams, while a loop is a link nothing can build. Exit 2 is
+unreadable input, an unknown flag, or a scope naming nothing — **never** 1, because saying "this
+does not belong" about something we could not read is the confident wrong answer, and "resolved:
+nothing" about an id that does not exist reads exactly like a healthy plan.
+
+**Exit 0 includes "no parent anywhere."** Uncategorised work is an answer and a create, not an
+error; `conventions.requireParent` is the board saying otherwise and is graded where the whole
+plan can be seen.
+
+**The hierarchy is computed over the whole plan; the verdict is scoped.** A loop is a property of
+the graph and not of the item you asked about, so `--phase P3` still finds one that leaves P3 —
+and the refusals outside the scope are counted and named rather than dropped, without changing the
+exit code. The narrowing happens once, in `scope_result()`: the printed refusals and the exit code
+came from two separate walks while this file was being written, which is exactly the shape that
+lets a command exit 1 over something it never printed.
 
 ### `plugins/audit/scripts/manifest/_manifest_ado.py`
 `meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front

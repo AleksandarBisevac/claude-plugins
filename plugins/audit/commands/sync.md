@@ -1,6 +1,6 @@
 ---
 description: 'Sync the audit manifest with Azure DevOps work items — push manifest bugs/tasks/phases to ADO (board states, sprint stamp, Remaining Work, comments), pull assigned ADO bugs or sprint items into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
-argument-hint: 'push [bugs|tasks|all] [--task <id> | --phase <id>] | pull [bugs|sprint] | status'
+argument-hint: 'push [bugs|tasks|all] [--task <id> | --phase <id>] | pull [bugs|sprint] | parents | status'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__azure-devops__wit_*, mcp__azure-devops__work
 ---
 
@@ -13,7 +13,8 @@ The orchestrator additionally **echoes** already-linked items on status transiti
 (update-only — see `orchestrator.md` → "ADO echo"); this command is the reconciler that
 heals whatever the echo missed.
 
-**`$ARGUMENTS`**: first token is the subcommand. Unknown/empty → print usage and stop.
+**`$ARGUMENTS`**: first token is the subcommand — `push`, `pull`, `parents` or
+`status`. Unknown/empty → print usage and stop.
 
 ## 0. Preflight
 
@@ -114,12 +115,29 @@ failed echo.
    happens inside this confirm-gated, index-locked run. Every in-scope phase lacking
    `phase.ado` gets a CREATE in the plan.
 
-   **Where that branch hangs.** With `meta.ado.parentWorkItem` set, every created
-   phase item gets it as its parent (and with `phaseWorkItems` false, tasks do), so
-   audit work lands INSIDE the team's existing Feature/Epic rather than beside it.
-   Absent/null keeps today's behaviour — the connector builds a free-standing branch,
-   which is correct and which nobody planning from that board will see. Say which
-   happened in the plan: `parent: #<id>` or `parent: none (free-standing branch)`.
+   **Where that branch hangs — per item, resolved by one function.** A phase may
+   declare its own `adoParent`; `meta.ado.parentWorkItem` is the manifest-wide
+   FALLBACK, still read and still the right answer for "all of this audit hangs
+   under Feature X". Do NOT re-derive the precedence here — run the door, which is
+   the same code the validator and the panel ask:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-ado-parent.py" \
+     <manifest> [--all | --phase <id> | --task <id>] [--json]
+   ```
+
+   Exit 0 = every in-scope item has a place (**including "no parent anywhere"** —
+   uncategorised work is an answer and a create, not an error). **Exit 1 = a
+   hierarchy violation: do NOT create those parent links**, carry the findings into
+   the plan below. Exit 2 = unreadable input or a scope naming nothing — stop, and
+   never read it as a pass.
+
+   The rules it applies, so the plan can be read: a task under `phaseWorkItems`
+   hangs under its phase's work item and its own `adoParent` is INERT (warned, not
+   ignored); an item's own `adoParent` beats the fallback; an explicit `null` means
+   it hangs under nothing *even when the fallback is set*; absent falls through to
+   `meta.ado.parentWorkItem`; neither is a free-standing branch nobody planning from
+   that board will see.
 2. Build the plan: for each in-scope item —
    - `item.ado` **null/absent** → CREATE (`az boards work-item create --type <type>
      --title ... --fields ... --output json`);
@@ -191,6 +209,22 @@ failed echo.
    does not arbitrate who owns a card. It just stops describing somebody else's
    card as if it were ours, and stops reporting a difference as if only two
    readings existed.
+
+3b. **The parent block, printed verbatim from the door.** `resolve-ado-parent.py`
+   emits one line per item — `<kind> <id> -> #<parent> -- <basis>` — plus a head
+   line carrying BOTH counts, `R refused by the hierarchy check` and `U
+   uncategorised (no parent anywhere)`, **and both are printed even at zero**: a
+   number that appears only on bad news cannot be told apart from a number nobody
+   computed, and the confirm gate is where the operator has no other way to learn
+   the check ran. Below them come the links the type check could not verify, with
+   the reason (`meta.ado.hierarchy` not cached → run `/audit:sync parents`), and the
+   equal-rank NOTES, which are never refusals.
+
+   Do not re-render those lines — paste what the door printed. A second rendering
+   is a second answer, and the first thing to disagree would be a count.
+
+   A refused item is never offered for creation, exactly like a
+   `meta.ado.conventions` refusal: fix the declaration (or the board) and re-run.
 4. **Assignment proposal** (only when `meta.ado.identityMap` has entries): for each
    CREATE in the plan, resolve the item's phase — a task's own phase; a bug reaches a
    phase only through its materialized `taskId` (an unmaterialized bug has no phase and
@@ -230,9 +264,27 @@ failed echo.
    - **Tags**: read the item's current tags, merge in the provenance tag
      (`meta.ado.tag`; absent = `audit-plugin`, null = none), write the union —
      never write the tag list blind.
-   - **Parent links** (`phaseWorkItems`): after a phase's children exist, link each to
-     the phase PBI (`az boards work-item relation add --id <child> --relation-type
-     parent --target-id <pbi>`) — read existing relations first, skip if linked.
+   - **Parent links**: the resolved parent from step 1 for each phase (and, with
+     `phaseWorkItems` false, each task); with `phaseWorkItems` on, each of a phase's
+     children is linked to the phase PBI after it exists. **The argument contract
+     and the read-back are in tracker-sync.md → "Parent links"** and are not
+     restated here, because a second spelling of that call is where a swap hides.
+     Three things are non-negotiable at this step:
+     - **the item being UPDATED is the CHILD** — both transports agree, and the
+       table there shows them side by side;
+     - **read `System.Parent` back off the child and assert it equals the intended
+       parent.** A swapped call SUCCEEDS — both ids are legal work items and the
+       response says nothing about direction — so the read-back is the only thing
+       that catches it. It is one field on an item this step already touched;
+     - **a mismatch, or a link the server rejects, degrades PER ITEM**: report it
+       with both ids, keep the item and everything that succeeded, and continue —
+       the same shape as the invalid-state fallback. Never abort the batch over a
+       parent link.
+     Read existing relations first and skip when the link is already there.
+     **A parent is applied at CREATE only.** A changed `adoParent` on an
+     already-linked item is reported by `status` as parent drift and never silently
+     re-parented: the board side may have been moved by a person, and re-parenting
+     behind their back is the same override this feature exists to undo.
    - **Comments** (opt-in via `meta.ado.comments`): `onBlocked` → on a task entering
      its blocked-state, comment with attempts, last `outcome.technical` and blockers;
      `onComplete` → on the done move, comment with the sign-off note and the task's
@@ -251,8 +303,10 @@ re-pull imports nothing. Never modify ADO during `pull`.
 
 ### `pull bugs`
 
-1. Query candidate bugs:
-   `az boards query --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '<project>' AND [System.WorkItemType] = '<types.bug>' AND [System.State] <> 'Closed'"`
+1. Query candidate bugs, **selecting the parent in the SAME query** — WIQL can
+   `SELECT [System.Parent]`, so capturing where a card already hangs costs nothing
+   and adds no per-item call:
+   `az boards query --wiql "SELECT [System.Id], [System.Parent] FROM WorkItems WHERE [System.TeamProject] = '<project>' AND [System.WorkItemType] = '<types.bug>' AND [System.State] <> 'Closed'"`
    (add an AreaPath clause when `meta.ado.areaPath` is set).
 2. Drop already-linked items (dedup rule above).
 3. For each remaining item, show `id | title | state | assignee` and ask
@@ -261,7 +315,16 @@ re-pull imports nothing. Never modify ADO during `pull`.
    conventions doc: next `BUG-<n>`, `status: "open"`, title/description from the work
    item, `repro` from its repro steps,
    `ado: {id, url, lastSyncedAt, origin: "imported"}` — the card was made by
-   somebody else and a later push has to be able to say so. `reportedBy`
+   somebody else and a later push has to be able to say so.
+   **When the card has a board parent, write `adoParent: {id, type, title, url,
+   source: "imported", observedAt: <ISO now>}`** — a SIBLING of `ado`, never a field
+   inside it, because `ado` is the link sync writes and `adoParent` is a declaration
+   about where the work belongs. **A card with NO parent gets no `adoParent` key at
+   all — not `null`.** Absent means "fall through to `meta.ado.parentWorkItem`";
+   `null` means "hangs under nothing", and a pull is not entitled to make that
+   declaration on the operator's behalf. `type` and `title` come from the same
+   fetch; they are the BASIS the hierarchy check reads, and without them every link
+   reports `not verified`. `reportedBy`
    comes from the work item's assignee (creator when unassigned) via **reverse lookup**
    in `meta.ado.identityMap`: when some entry's VALUE matches that ADO identity
    (case-insensitively), write the LEDGER identity — the key — so the imported bug's
@@ -300,11 +363,62 @@ the live plan without `/audit:propose materialize`.
    `ado: {id, url, lastSyncedAt, iterationPath, origin: "imported"}` on the phase
    (the proposal's own `origin` above says which SPRINT it came from; `ado.origin`
    says who made the CARD, and both are needed once a push starts writing to it),
+   plus `adoParent` on the phase when the PBI has a board parent — same rule and
+   same reason as `pull bugs` above: `SELECT [System.Parent]` in the same query, no
+   key at all when there is none,
    child tasks from the PBI's child work items (each carrying its own `ado` link
    with `origin: "imported"`, `files: []`), and a
    description noting `imported from ADO — scope files/tests before running`. Orphan
    sprint tasks (no selected parent) group under one final proposal. Revalidate.
 6. Report + handoff: `/audit:propose list` → `materialize`.
+
+## Subcommand: `parents`
+
+**Read-only against ADO.** It writes exactly two keys of the manifest —
+`meta.ado.hierarchy` and `meta.ado.parentCandidates` — under the concurrency lock,
+and revalidates after. It creates nothing, updates no work item, and changes no
+`adoParent`: a declaration about where work belongs is the operator's, and a fetch
+is not entitled to make one.
+
+Both keys are **cached evidence**, so both carry a `fetchedAt` and a one-sentence
+`basis` naming the query. Evidence with no moment cannot be aged, and evidence with
+no basis has to be trusted rather than checked.
+
+1. **The ladder** — which work item type may parent which, asked of THIS project:
+
+   ```bash
+   az devops invoke --area work --resource backlogconfiguration \
+     --route-parameters project=<project> --api-version 7.1
+   ```
+
+   Write `meta.ado.hierarchy = {levels: {<type>: <rank>}, fetchedAt, basis}` from
+   `taskBacklog`, `requirementBacklog` and each `portfolioBacklogs[]` — and place
+   `Bug` from the payload's `bugsBehavior`, which is the only field that says where
+   it goes (the type lists do not name it). tracker-sync.md → "Backlog levels"
+   carries the shape. **No table ships with the plugin**: the same organization runs
+   one project at `asRequirements` and another at `asTasks`, so a shipped ladder
+   would be wrong on the second board and confidently so.
+
+2. **The candidates** — the parent-shaped items on this board right now, so a picker
+   can offer them instead of asking for an id from memory. WIQL over the types that
+   rank ABOVE the audit's own (from step 1), scoped by `meta.ado.pull.areaPath` or
+   `meta.ado.areaPath` when either is set:
+
+   ```
+   SELECT [System.Id], [System.WorkItemType], [System.Title], [System.State], [System.AreaPath]
+   FROM WorkItems WHERE [System.TeamProject] = '<project>' AND [System.WorkItemType] IN (...)
+   ```
+
+   Write `meta.ado.parentCandidates = {items: [{id, type, title, state, areaPath,
+   url}], fetchedAt, basis}`. **Never an authority**: nothing resolves, validates or
+   refuses against this list, and an item missing from it is not a wrong parent —
+   only one created since the fetch. Say how the list was scoped in `basis`, so an
+   empty list can be told from an unfiltered one.
+
+3. Report what was written, then run the resolver over the whole plan so the
+   operator sees what the new ladder changes:
+   `resolve-ado-parent.py <manifest> --all`. A link that read `not verified` before
+   this run may now be a NOTE or a refusal, and that is the point of having fetched.
 
 ## Subcommand: `status`
 
@@ -333,6 +447,26 @@ Read-only, no ADO writes, no manifest writes.
    Append each row's card provenance from `ado.origin` — `created here` /
    `imported from ADO` / `origin unknown` — because "we made this card" and "we
    adopted somebody's card" are different things to be about to write to.
+3b. **Parent drift** — one more cell on the same row, `parent?`. A parent is
+   applied at CREATE only, so a linked item whose `adoParent` no longer matches the
+   board is a difference to REPORT and never one to fix silently: the card may have
+   been moved by a person, and re-parenting behind them is the same override this
+   feature exists to undo. From the `System.Parent` you already fetched in step 3
+   (it comes back on a plain `show`, no `--expand relations`) against the resolved
+   parent from `resolve-ado-parent.py --json`:
+   - `parent ok` — they agree;
+   - `parent drift: manifest #<a>, board #<b> — applied at create only, so push
+     will NOT re-parent` — say both ids and say that push leaves it alone, or the
+     reader will wait for a fix that is not coming;
+   - `parent: none declared, board #<b>` — the board hangs it somewhere this
+     manifest does not describe, which is information and not a defect;
+   - `parent: #<a> declared, board none` — declared but never applied, usually an
+     item linked before the declaration was written.
+
+   Close with the counts, **printed even at zero**: `parents: N ok, M drifted, K
+   uncategorised`. Suggest nothing per row here — `status` is read-only, and the
+   remedy for real drift is a human decision about somebody's board.
+
 4. **Identity mapping** (only when `meta.ado.identityMap` has entries): per item, append
    one compact `owner` column to the table above, resolving the item's phase-area owner
    exactly as push step 4 does — `<ledger id> → <mapped ADO identity>` when mapped,
@@ -370,6 +504,12 @@ Read-only, no ADO writes, no manifest writes.
   column not backed by a state is reported as unreachable, not faked (tracker-sync.md).
 - No creation from the orchestrator echo — the echo UPDATES linked items only;
   creation lives here, behind this command's confirm gate.
+- No silent RE-parenting. A parent is applied at CREATE; a changed `adoParent` on a
+  linked item is reported as drift by `status` and left alone, because the board side
+  may have been moved by a person and this command does not fight that.
+- No hierarchy table shipped with the plugin, and no guessing when the cache is
+  absent: `parents` asks the project, and an unfetched ladder reports every link as
+  `not verified` while the create proceeds. A missing basis is a thing to say.
 - No silent assignment from `identityMap`, and no `task.assignee` field — the map lives
   in `meta.ado`, push asks before every `--assigned-to`, and pull labels new imports
   without ever rewriting existing rows.

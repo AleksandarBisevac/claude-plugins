@@ -267,13 +267,32 @@ def _cases(check):
     check("ac38 ...as a WARNING and never a finding, so an already-linked plan "
           "that only ever updates is not called invalid: %r" % (_f,),
           _f == [])
+    # REWRITTEN AT U-PARENT, on purpose. This pair used to pin the opposite: a
+    # `requireParent` with no `parentWorkItem` drew a warning, which was right
+    # while ONE integer parented the whole manifest. A phase may declare its own
+    # `adoParent` now, so an absent `parentWorkItem` is the commonest GOOD
+    # config - and a warning on a working setup is how people learn to skip
+    # warnings, which is how a real refusal gets missed. The question moved to
+    # `_manifest_crossrefs._check_ado_parents`, which can see the phases and
+    # names the items that really have nowhere to go.
     _f, _w = _meta(conventions={"tagVocabulary": {"*": []}, "requireParent": True})
-    check("ac39 requireParent with no parentWorkItem is warned - the created "
-          "phase item would have nothing to hang under",
-          any("requireParent" in x and "parentWorkItem" in x for x in _w))
+    check("ac39 requireParent with `parentWorkItem` merely ABSENT is silent "
+          "here: a phase may declare its own adoParent, so this block cannot "
+          "tell a good config from a bad one and must not guess: %r" % (_w,),
+          not any("requireParent" in x for x in _w))
+    _f, _w = _meta(parentWorkItem=None,
+                   conventions={"tagVocabulary": {"*": []}, "requireParent": True})
+    check("ac40 ...but an EXPLICIT null is a declaration that the fallback is "
+          "off, which is the one thing a bare `ado` block CAN prove - so it "
+          "draws exactly one line, pointing at the check that names the items: "
+          "%r" % (_w,),
+          len([x for x in _w if "requireParent" in x]) == 1
+          and "Validate the manifest" in "".join(_w))
+    # The second direction: a line that became unconditional would fire here too.
     _f, _w = _meta(parentWorkItem=101,
                    conventions={"tagVocabulary": {"*": []}, "requireParent": True})
-    check("ac40 ...and is silent once parentWorkItem names one: %r" % (_w,),
+    check("ac42 ...and a set parentWorkItem is silent, because there IS a "
+          "fallback and nothing about that config is in doubt: %r" % (_w,),
           not any("requireParent" in x for x in _w))
     # Every legitimate spelling stays silent, or the warning is noise people
     # learn to skip - which is how a real refusal gets missed later.

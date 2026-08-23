@@ -54,6 +54,7 @@ OUT = "plugins/audit/tests/test__output.py"
 DEP = "plugins/audit/tests/test__deps.py"
 REF = "plugins/audit/tests/test__refs.py"
 CFG = "plugins/audit/tests/test__config_rules.py"
+ADP = "plugins/audit/tests/test__ado_parent.py"
 
 # The anchor every scripts/ row appends after: present once in every module, and
 # nothing below it depends on what follows.
@@ -78,7 +79,16 @@ _GATE_NAMED = ("selftest_coverage", "entries_missing_guard",
 # happened: `config/_config_rules.py` grew the config-vocabulary comparison and its
 # `*_drift` names were invisible here until this tuple named the directory.
 _GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
-                 os.path.join("config", "_config_rules.py"))
+                 os.path.join("config", "_config_rules.py"),
+                 # SCOPED TO ONE MODULE, not to `manifest/`. Adding the
+                 # directory would demand rows for `_ado_conventions`'
+                 # `provenance_tag_violations` and `conformance_violations`
+                 # too, and neither has one yet - a coverage rule that arrives
+                 # already failing gets an exemption written for it on day one,
+                 # which is how an exemption table stops meaning anything. The
+                 # two missing rows are recorded as their own fault; this names
+                 # the module whose lint ships with this change.
+                 os.path.join("manifest", "_ado_parent.py"))
 
 # (lint, file, kind, anchor, payload, suite, expected case label)#
 # `count` is a number OR the word for it: the second row of each pair exists to
@@ -249,7 +259,16 @@ TABLE = (
  # change when the pictures are re-captured, and renaming one leaves the picture
  # unrecorded and the record picture-less at once.
  ("screenshot_capture_drift", "docs/screenshots/captured-at.json", "sub",
-  r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"), # The config vocabulary. Three rows for the tree-bound half, because it has three
+  r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"), # The hierarchy check, on the tier that can be broken without a network and
+ # without a cache. `_loop_from` walking UP the declared parent edges is the
+ # whole of tier A past the self-parent case, and a walk that never finds a loop
+ # is the SILENT failure: every plan validates, and the item that hangs under its
+ # own child is created exactly as ADO already accepts it. `hp2` is the case,
+ # and it is the one modelled on the pair that exists on a live board.
+ ("hierarchy_violations", S + "manifest/_ado_parent.py", "replace",
+  "    chain, seen, cursor = [], set(), start",
+  "    return None\n    chain, seen, cursor = [], set(), start", ADP, "hp2"),
+ # The config vocabulary. Three rows for the tree-bound half, because it has three
  # failure modes and only the first announces itself. `ui` was read by `_ui_theme`,
  # written by the panel, validated and defaulted - and unpublished in the schema for
  # its whole life, because `additionalProperties: true` accepts anything (F79). So

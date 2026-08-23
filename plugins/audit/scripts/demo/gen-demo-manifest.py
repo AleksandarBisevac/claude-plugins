@@ -698,6 +698,45 @@ SCHEMA_EXEMPTIONS = {
         "generator does not build. Coverage lives in tests/test__priority.py "
         "(the comparator) and tests/test_set_priority.py (the write). REVISIT "
         "when the panel's phase row grows a priority badge worth a screenshot.",
+    "phase.adoParent":
+        "which EXISTING Azure DevOps work item this phase hangs under. The "
+        "fixture carries no `meta.ado` at all - the demo is a plan, not a "
+        "connected board - so a parent id here would name a work item in a "
+        "project the demo does not have, and every surface that renders it "
+        "would print a link to nothing. Coverage is "
+        "tests/test__ado_parent.py (the resolution and the hierarchy tiers) "
+        "and tests/test_resolve_ado_parent.py (the door). REVISIT when the "
+        "demo grows a connector card worth a screenshot, which is the same "
+        "trigger meta.branch carries.",
+    "task.adoParent":
+        "the same field one level down, honoured only when "
+        "meta.ado.phaseWorkItems is false. Same reason and same revisit "
+        "trigger as phase.adoParent: without a meta.ado there is no project "
+        "for an id to mean anything in.",
+    "adoParent.id":
+        "a field of adoParent, which this fixture does not take. An id is the "
+        "one part that cannot be invented: it names a real work item on a real "
+        "board, and a made-up one in a published demo is a link readers "
+        "follow into a 404.",
+    "adoParent.type":
+        "a field of adoParent, which this fixture does not take: it is the "
+        "BASIS for the backlog-rank check, and a type name with no project "
+        "behind it grades against a hierarchy nobody fetched.",
+    "adoParent.title":
+        "a field of adoParent, which this fixture does not take: the title of "
+        "a work item this demo does not link to is not a fact about the demo.",
+    "adoParent.url":
+        "a field of adoParent, which this fixture does not take: a URL into an "
+        "organization the demo does not have is the one thing worse than an "
+        "absent link, because it looks clickable.",
+    "adoParent.source":
+        "a field of adoParent, which this fixture does not take. Absent means "
+        "unrecorded, which is the honest state for a declaration nobody "
+        "wrote; stamping 'declared' here would put a provenance on nothing.",
+    "adoParent.observedAt":
+        "a field of adoParent, which this fixture does not take: the moment a "
+        "basis nobody observed was observed is not a fact, and this generator "
+        "is deterministic with no wall-clock by construction.",
     "claim.at":
         "a field of phase.claim, which the default fixture does not take: the "
         "timestamp a lease nobody holds would carry is not a fact about the demo. "

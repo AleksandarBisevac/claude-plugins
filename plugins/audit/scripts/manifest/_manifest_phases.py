@@ -55,6 +55,7 @@ _output.install_path()
 import _manifest_io as _mio  # noqa: E402  (TERMINAL: what 'finished' means everywhere)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
+import _ado_parent as _parent  # noqa: E402  (what an `adoParent` declaration may say)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -174,6 +175,20 @@ def _check_areas(manifest):
     return (findings, warnings)
 
 
+def _add_parent(obj, where, findings, warnings):
+    """Fold `_ado_parent`'s shape check into the walk's two accumulators.
+
+    A three-line adapter rather than a call at each of the two sites, because
+    the walk writes into lists and `_ado_parent` returns a pair - and the day
+    that mismatch is spelled out twice is the day one of the two forgets the
+    warnings half. `_ado_parent` is at layer 1 beside `_manifest_vocab`, so
+    this module reaches it downward like any other word it borrows.
+    """
+    pf, pw = _parent.declaration_findings(obj, where)
+    findings.extend(pf)
+    warnings.extend(pw)
+
+
 # --- the walk --------------------------------------------------------------------
 def _walk_phases(phases):
     """One pass over every phase and every task: (index, findings, warnings).
@@ -215,6 +230,10 @@ def _walk_phases(phases):
         _unknown_keys(phase, KNOWN_PHASE, pwhere, w)
         # connector v2: phaseWorkItems writes a phase-level adoLink
         _check_ado(phase, pwhere, f)
+        # U-PARENT: the AUTHORED half beside it. Shape only here - where the
+        # parent resolves to and whether that place can be true are questions
+        # about the whole plan, and `_manifest_crossrefs` asks them.
+        _add_parent(phase, pwhere, f, w)
         if pid:
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
@@ -284,6 +303,7 @@ def _walk_phases(phases):
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             _check_ado(task, twhere, f)
+            _add_parent(task, twhere, f, w)
             # The id-prefix rule (workstream B) -- the hand-move detector.
             # /audit:task move renumbers a task into its target phase, so an id
             # that does not match `<phaseId>.<int>` means the object was dragged
