@@ -1565,6 +1565,50 @@ def _cases(check):
               % (M.artifact_version_drift(tmp),),
               M.artifact_version_drift(tmp) == [])
 
+        # av10-av12: the FILE half of the format, which the directory half cannot
+        # reach. `av9` covers a page inside an ignored DIRECTORY; this is a page
+        # ignored BY NAME - what `docs/audit/audit-report.html` is in the real tree.
+        # Gitignored, untracked, on no branch, and reported as a stale published page
+        # on any machine that had ever rendered one.
+        _av_named = "kept/generated-report.html"
+        _write(tmp, ".gitignore",
+               "# fixture\n%s/\n%s\n" % (_av_ignored, _av_named))
+        _write(tmp, _av_page, _av_html % _pv)
+        _write(tmp, _av_named, _av_html % _stale)
+        check("av14 a page `.gitignore` names BY FILE is not published either - this "
+              "rule's own first line says COMMITTED, and its finding would otherwise "
+              "depend on what somebody last rendered on this machine rather than on "
+              "anything in the commit: %r" % (M.artifact_version_drift(tmp),),
+              M.artifact_version_drift(tmp) == [])
+        # The direction that would vanish. Dropping ignored files is a NARROWING, so
+        # its failure mode is silence - and silence here reads exactly like a tree
+        # that is current, which is the defect av8 exists for.
+        _write(tmp, _av_page, _av_html % _stale)
+        _d = M.artifact_version_drift(tmp)
+        check("av15 ...and a page that is NOT ignored is still reported when its "
+              "stamp is stale - the narrowing must cost the ignored file and nothing "
+              "else: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == _av_page and _stale in _d[0][2])
+        _write(tmp, _av_page, _av_html % _pv)
+        # And the reader itself, both halves: one line must not be read as both, or a
+        # rule taking both would prune a path twice for two different reasons.
+        _dirs, _dprob = M._output._ignored_dirs(tmp)
+        _files, _fprob = M._output._ignored_files(tmp)
+        check("av16 a trailing slash decides which half reads a line - `%s/` "
+              "is a directory pattern and not a file one, `%s` is a file pattern "
+              "and not a directory one: %r / %r"
+              % (_av_ignored, _av_named, _dirs, _files),
+              _dprob is None and _fprob is None
+              and _av_ignored in _dirs and _av_named not in _dirs
+              and _av_named in _files and _av_ignored not in _files)
+        # Put the fixture back the way the cases below expect to find it. This block
+        # both wrote a file and rewrote `.gitignore`, and the next case DROPS the
+        # ignore line on purpose - so a leftover here would be reported by it and
+        # read as that case failing, which is a defect in this file rather than in
+        # the rule either case is about.
+        os.remove(os.path.join(tmp, _av_named.replace("/", os.sep)))
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _av_ignored)
+
         _write(tmp, ".gitignore", "# fixture\n")
         _d = M.artifact_version_drift(tmp)
         check("av10 ...and the direction that proves av9 tests the derivation rather "

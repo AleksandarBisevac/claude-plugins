@@ -205,6 +205,43 @@ def _ignored_dirs(root):
     return tuple(sorted(set(out))), None
 
 
+def _ignored_files(root):
+    """`(patterns, problem)` - the FILE paths `.gitignore` declares, same contract.
+
+    The other half of `_ignored_dirs()`, and deliberately not merged with it: a rule
+    whose subject is "what this repo keeps as source" wants ignored files SCANNED -
+    an untracked scratch file of a scanned extension is scanned like any other, and
+    the way to opt out is a row somebody wrote. A rule whose subject is a COMMITTED
+    artifact wants them gone, because a scratch render is not a published page and a
+    finding about one depends on what somebody last rendered here rather than on the
+    commit.
+
+    Two subjects, two candidate sets, one format read twice - which is why this is a
+    separate reader taken by the rules that need it rather than a change to the walk
+    every rule shares.
+
+    Only the unambiguous half again: a line that does NOT end in `/` and carries no
+    glob metacharacter names a file. Anything else is a pattern, and reading patterns
+    would be implementing gitignore.
+    """
+    try:
+        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, ("unreadable, so the files this repo does not keep "
+                      "cannot be derived: %s" % exc)
+    out = []
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or line.endswith("/"):
+            continue
+        rel = line.strip("/")
+        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
+            continue
+        out.append(rel)
+    return tuple(sorted(set(out))), None
+
+
 def _is_ignored(rel_dir, patterns):
     """Whether the directory at `rel_dir` is one the patterns name.
 
@@ -225,16 +262,31 @@ def _is_ignored(rel_dir, patterns):
     return False
 
 
-def kept_files(root, patterns, exts):
-    """Relative paths of every file of `exts` this repo KEEPS, sorted."""
+def kept_files(root, patterns, exts, drop=None):
+    """Relative paths of every file of `exts` this repo KEEPS, sorted.
+
+    `drop` is OPTIONAL and defaults to today's behaviour on purpose: ignored
+    DIRECTORIES are always pruned, because one of them holds whole checkouts of this
+    repo and a scan that walked them would report every finding once per agent.
+    Ignored FILES are pruned only for a caller that asks, because whether they belong
+    in the candidate set is a property of the RULE's subject and not of the walk -
+    see `_ignored_files()`.
+
+    Passing `drop` never widens the set, so a caller that adds it can only stop
+    reporting things; a caller that forgets it keeps exactly the answer it had.
+    """
     out = []
     for base, dirs, files in os.walk(root):
         rel_base = os.path.relpath(base, root).replace(os.sep, "/")
         prefix = "" if rel_base == "." else rel_base + "/"
         dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
         for name in sorted(files):
-            if name.endswith(exts):
-                out.append(prefix + name)
+            if not name.endswith(exts):
+                continue
+            rel = prefix + name
+            if drop and _is_ignored(rel, drop):
+                continue
+            out.append(rel)
     return sorted(out)
 
 

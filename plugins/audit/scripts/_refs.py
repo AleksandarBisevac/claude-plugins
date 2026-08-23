@@ -1357,7 +1357,23 @@ def _stamp_pages(root):
     patterns, problem = _ignored_dirs(root)
     if problem is not None:
         return None, problem
-    return _iter_docs(root, patterns, STAMP_EXT), None
+    # THE ONLY CALLER THAT DROPS IGNORED FILES, because it is the only one whose
+    # subject is a COMMITTED page. The docstring above says so in its first line,
+    # and the reason it gives for reading `.gitignore` at all - "scratch renders
+    # would be read as published pages" - is exactly what the directory half alone
+    # could not deliver: `docs/audit/audit-report.html` is gitignored, untracked
+    # and on no branch, and it was reported as a stale published page on any
+    # machine that had ever rendered one. The finding then depended on what
+    # somebody last ran here rather than on anything in the commit.
+    #
+    # NOT an entry in a table: the exemption is the category "not committed", not
+    # this file. A row per generated artifact is a hand list that grows with every
+    # new one, and `EXCLUDED` already carries this same path for a DIFFERENT rule -
+    # two tables naming one file for two reasons is how they come to disagree.
+    ignored, problem = _output._ignored_files(root)
+    if problem is not None:
+        return None, problem
+    return _iter_docs(root, patterns, STAMP_EXT, drop=ignored), None
 
 
 def _artifact_stamps(text):
