@@ -137,6 +137,52 @@ def _cases(check):
           "against: a bug status legal in BUG_STATUS is legal here",
           _f == [] and _w == [], "f=%r w=%r" % (_f, _w))
 
+    # --- the two caches /audit:sync parents writes ----------------------------
+    # EVIDENCE, not configuration: each carries a `fetchedAt` and a `basis`, and
+    # ABSENT is an answer rather than a gap - with no ranks the type check has
+    # no basis, every link reports `not verified`, and the create proceeds.
+    check("ma30 absent hierarchy and parentCandidates are silent - a project "
+          "nobody has fetched is not a misconfigured one",
+          M.check_ado_meta({"organization": "o", "project": "p"}) == ([], []))
+    _f, _w = M.check_ado_meta({"hierarchy": {
+        "levels": {"Task": 1, "Feature": 3},
+        "fetchedAt": "2026-08-24T00:00:00Z", "basis": "az devops invoke ..."}})
+    check("ma31 ...and a well-formed cache is silent on both channels: %r"
+          % ((_f, _w),), (_f, _w) == ([], []))
+    for _bad, _why in (({"levels": []}, "levels that is not a mapping"),
+                       ({"levels": {"Task": "1"}}, "a rank that is not an int"),
+                       ({"levels": {"Task": True}}, "a rank that is a bool"),
+                       ({"fetchedAt": 7}, "a fetchedAt that is not a string"),
+                       ({"basis": []}, "a basis that is not a string")):
+        _f, _w = M.check_ado_meta({"hierarchy": _bad})
+        check("ma32 hierarchy with %s is a finding, because every surface "
+              "would misread it: %r" % (_why, _f), len(_f) == 1)
+    _f, _w = M.check_ado_meta({"hierarchy": {"levels": {}}})
+    check("ma33 an EMPTY ladder is a warning naming the gap between how it "
+          "looks and what it does - it ranks nothing, so every link reports "
+          "'not verified' while the block looks like a fetched answer: %r"
+          % (_w,), _f == [] and len(_w) == 1 and "not verified" in _w[0])
+    _f, _w = M.check_ado_meta({"hierarchy": {"Levels": {"Task": 1}}})
+    check("ma34 ...and a mis-cased key inside it is a did-you-mean WARNING, "
+          "the same line this file draws everywhere else - the hint is a "
+          "case-fold lookup and never an edit distance, so it does not guess: "
+          "%r" % (_w,),
+          _f == [] and len(_w) == 1 and "did you mean 'levels'" in _w[0])
+    _f, _w = M.check_ado_meta({"parentCandidates": {
+        "items": [{"id": 41, "type": "Feature", "title": "Q3"}],
+        "fetchedAt": "2026-08-24T00:00:00Z", "basis": "WIQL over Features"}})
+    check("ma35 a well-formed candidate list is silent: %r" % ((_f, _w),),
+          (_f, _w) == ([], []))
+    for _bad, _why in (({"items": {}}, "items that is not an array"),
+                       ({"items": [{"title": "no id"}]}, "a candidate with no id"),
+                       ({"items": ["41"]}, "a candidate that is not an object")):
+        _f, _w = M.check_ado_meta({"parentCandidates": _bad})
+        check("ma36 parentCandidates with %s is a finding: %r" % (_why, _f),
+              len(_f) == 1)
+    check("ma37 both cache keys are known meta.ado keys, so neither arrives as "
+          "a did-you-mean warning about itself",
+          {"hierarchy", "parentCandidates"} <= M.KNOWN_ADO)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -150,13 +150,69 @@ User Story → Requirement → Issue** that exists, report the pick in the push 
 and write it back into `meta.ado.types.pbi` inside the same confirm-gated run — so
 the choice is deterministic afterwards and visible in the file.
 
-### Parent links (phase → children)
+### Parent links — the argument contract, both transports side by side
 
-Relation type `System.LinkTypes.Hierarchy-Reverse` (child → parent). CLI:
-`az boards work-item relation add --id <childId> --relation-type parent
---target-id <pbiId>`; MCP fast path: `wit_work_item_link_write`. Idempotency: read
-the child's existing relations first (`az boards work-item relation show --id
-<childId>`) and skip when the parent link already exists.
+Relation type `System.LinkTypes.Hierarchy-Reverse` (child → parent).
+
+**THE ITEM BEING UPDATED IS THE CHILD.** Both transports agree, and they are written
+here together because that is the only way to see that they do:
+
+| | the CHILD goes in | the PARENT goes in |
+|---|---|---|
+| `az boards work-item relation add` | `--id` | `--target-id` |
+| MCP `wit_work_item_link_write` (`action: "link"`) | `updates[].id` | `updates[].linkToId` |
+
+```bash
+az boards work-item relation add --id <CHILD> --relation-type parent --target-id <PARENT>
+```
+```jsonc
+// wit_work_item_link_write
+{ "action": "link",
+  "updates": [ { "id": <CHILD>, "linkToId": <PARENT>, "type": "parent" } ] }
+```
+
+**Swap them and ADO accepts it.** Both ids are integers, both ends of a hierarchy
+link are legal work items, and nothing in the response says which way round the
+result went — so a swapped call succeeds, the board shows the child parenting its
+own parent, and the next person to notice is whoever plans from that board. This is
+not hypothetical: work item 30 on the live gate board is a Product Backlog Item whose
+`System.Parent` is 31, a Task that was meant to be its child.
+
+**So read it back.** After the link call, re-read the CHILD and assert
+`fields["System.Parent"] == <PARENT>`:
+
+```bash
+az boards work-item show --id <CHILD> -o json    # fields["System.Parent"]
+```
+
+`System.Parent` is `readOnly: true` — it can never be written through `--fields`, and
+it comes back on a plain `show` with no `--expand relations`, so the read-back is one
+field on an item the push is already touching. A mismatch is **reported per item and
+never assumed away**: keep what succeeded, name the item and both ids, and continue —
+the same per-item degradation the invalid-state fallback uses. That read is the only
+thing that would have caught the swap.
+
+**Idempotency**: read the child's existing relations first (`az boards work-item
+relation show --id <childId>`) and skip when the parent link already exists.
+
+### Backlog levels — which type may parent which
+
+`az devops invoke --area work --resource backlogconfiguration --route-parameters
+project=<project> --api-version 7.1` returns this project's own ladder:
+`taskBacklog.rank`, `requirementBacklog.rank` and each `portfolioBacklogs[].rank`,
+each with the `workItemTypes[].name` it admits.
+
+**A Bug is placed by `bugsBehavior` and by nothing else.** The type lists do not name
+it: `asRequirements` ranks Bug with the requirement backlog, `asTasks` with the task
+backlog, and the same organization can run one project each way. That is why the
+plugin ships no hierarchy table — it caches this project's answer in
+`meta.ado.hierarchy` (`/audit:sync parents`), and with no cache reports every parent
+link as `not verified` rather than grading against a guess.
+
+**ADO does not enforce the ladder on an API-created link.** The structural checks in
+`scripts/manifest/_ado_parent.py` — an item under itself, an item under something the
+manifest already hangs under it — need neither this payload nor a network, and they
+are what the parent gate refuses on.
 
 ### Current-iteration resolution (`sprint.mode: "current"`)
 

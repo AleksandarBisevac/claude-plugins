@@ -181,7 +181,18 @@ LAYERS = (
      # `_manifest_vocab` is: `_manifest_ado` at L2 grades the config through it,
      # and the writing side will grade the ITEM through it, so a copy in either
      # place would be a second answer to "does this belong here".
-     "_ado_conventions"),
+     "_ado_conventions",
+     # `_ado_parent` is WHERE one audit item hangs on the board and whether that
+     # place can be true. At the floor for `_priority`'s reason exactly, and it
+     # is a layer fact rather than a preference: `_manifest_crossrefs` and
+     # `_manifest_ado` are both L2, so neither can import the other while both
+     # need the SAME answer - as do `resolve-ado-parent` at L7 and the panel
+     # after it. A second expression of "which parent" would BE a second parent.
+     # `meta.ado`, the phase list and ADO's backlog payload all arrive as
+     # ARGUMENTS, which is also why it owns its own unknown-key loop:
+     # `_manifest_vocab` is a layer-MATE, so borrowing that one is the sideways
+     # edge this lint refuses, and a case pins the two answers equal.
+     "_ado_parent"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
@@ -410,6 +421,14 @@ LAYERS = (
      # card" is the normal state of a board with several teams, and a non-zero exit
      # would label it an error and be switched off within a day.
      "explain-ado-drift",
+     # `resolve-ado-parent` is the door onto `_ado_parent`: where each item
+     # would hang, and whether that place can be true. A command for the reason
+     # `check-ado-item` is one - the caller is orchestrator PROSE reaching
+     # Python through Bash, and a `python3 -c` naming a source path is the shape
+     # `guard-secrets-read` refuses. A GATE (exit 1 refuses a link) unlike
+     # `explain-ado-drift`, because a loop is not a difference of opinion
+     # between two teams - it is a link nothing can build.
+     "resolve-ado-parent",
      # `resolve-branch` is the door onto `_branch`: which branch a phase forks
      # from, and what it is called. A command rather than a prose instruction
      # because a TEMPLATE has cases prose cannot carry, and rather than a

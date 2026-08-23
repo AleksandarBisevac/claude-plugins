@@ -53,6 +53,7 @@ _output.install_path()
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
 import _manifest_io as _mio  # noqa: E402  (the id -> status map, and what 'satisfied' means)
 import _priority  # noqa: E402  (the ONE expression of execution order and its rules)
+import _ado_parent as _parent  # noqa: E402  (where each item hangs, and whether it can)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -287,6 +288,92 @@ def _check_priority(manifest, phases):
                      % (phase.get("id") or "?", _priority.tier_of(phase),
                         ", ".join(waiting)))
     return ([], w)
+
+
+# --- where the work hangs on the board -------------------------------------------
+def _ado_meta(manifest):
+    """`meta.ado`, or None when this manifest has no connector configured."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    ado = meta.get("ado") if isinstance(meta, dict) else None
+    return ado if isinstance(ado, dict) else None
+
+
+def _require_parent_warnings(ado, rows):
+    """`conventions.requireParent` graded against the PLAN, not against a hunch.
+
+    F-P-18's warning lived in `_manifest_ado`, where only the `ado` block is
+    visible, and fired whenever `requireParent` was true and `parentWorkItem`
+    was unset. That was right while one integer parented the whole manifest and
+    became a FALSE ALARM the moment a phase could declare its own: the commonest
+    good config now has no `parentWorkItem` at all. What a bare block can still
+    prove stayed there; the question that needs the phases is asked here, and it
+    names the items rather than predicting them.
+
+    WARNINGS, never findings, for the reason the tag half already gives: once
+    every item is linked a push does UPDATES, the conformance gate runs on
+    CREATE only, and the contradiction lies dormant. Calling that setup invalid
+    would fail its CI on upgrade over a config that works.
+    """
+    conventions = ado.get("conventions")
+    if not isinstance(conventions, dict) or conventions.get("requireParent") is not True:
+        return []
+    # `source == "phase"` is EXCLUDED, and not as a convenience. A task under
+    # `phaseWorkItems` whose phase is not linked yet resolves to no id because
+    # the phase item does not exist YET - the same push creates it and hangs the
+    # task under it. Counting those as homeless would report a warning about
+    # every task in an unpushed plan, which is the false alarm this whole
+    # function was moved here to stop being.
+    homeless = [r for r in rows if r["parent"] is None and r["source"] != "phase"]
+    if not homeless:
+        return []
+    return ["meta.ado.conventions.requireParent is true, and %d item(s) resolve "
+            "to no parent at all (%s) - the conformance gate refuses a CREATE "
+            "without one, so a push would create nothing for them. Give each an "
+            "`adoParent`, set meta.ado.parentWorkItem as the fallback, or drop "
+            "requireParent."
+            % (len(homeless),
+               ", ".join("%s %s" % (r["kind"], r["id"] or "?")
+                         for r in homeless[:6]))]
+
+
+def _check_ado_parents(manifest, phases):
+    """Where every item would hang, and whether that place can be true.
+
+    Returns (findings, warnings), and the split is the whole decision:
+
+      TIER A -> FINDINGS. Structural, offline, and it always has a basis: an
+      item under itself, or under something this manifest already hangs under
+      it. Nothing outside this file is needed to know that is impossible, so
+      calling the manifest invalid is honest. It is also the tier that catches
+      the live bug - ADO does NOT check an API-created parent link against the
+      process hierarchy, so a Product Backlog Item whose parent is its own Task
+      exists on a real board right now.
+
+      TIER B -> WARNINGS. It reads `meta.ado.hierarchy`, which is a CACHE with a
+      `fetchedAt`: refusing a whole manifest on evidence that may be a month old
+      would fail a CI run over a stale file, and the loud stop already exists at
+      push time. Equal rank is a note there and a note here.
+
+    NOT VERIFIED IS SILENT HERE, and only here. `validate()` is run on every
+    manifest write; a line per link saying the type ranks were never fetched
+    would arrive hundreds of times and teach people to skip warnings. The place
+    it is counted and printed is where the decision is being made - the push
+    plan, and `resolve-ado-parent.py`.
+    """
+    ado = _ado_meta(manifest)
+    if ado is None:
+        return ([], [])
+    inv = _parent.inventory(phases, ado)
+    hierarchy = ado.get("hierarchy")
+    levels = hierarchy.get("levels") if isinstance(hierarchy, dict) else None
+    result = _parent.hierarchy_violations(
+        inv["rows"], levels if isinstance(levels, dict) else None)
+    findings = [e["message"] for e in result["refusals"] if e["tier"] == "A"]
+    warnings = list(inv["warnings"])
+    warnings.extend(e["message"] for e in result["refusals"] if e["tier"] != "A")
+    warnings.extend(e["message"] for e in result["warnings"])
+    warnings.extend(_require_parent_warnings(ado, inv["rows"]))
+    return (findings, warnings)
 
 
 # --- fileIndex, bugs and proposals -----------------------------------------------

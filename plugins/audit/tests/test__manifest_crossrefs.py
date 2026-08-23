@@ -308,6 +308,107 @@ def _cases(check):
           _rules.validate(_pplan(_two))[0] == [],
           repr(_rules.validate(_pplan(_two))[0]))
 
+    # --- where the work hangs on the board ------------------------------------
+    # The SEVERITY SPLIT is the whole decision here, so both halves are counted
+    # rather than asserted present: tier A is offline, always has a basis and
+    # makes the manifest INVALID; tier B reads a cache with a `fetchedAt` and
+    # can only ever warn, because refusing a manifest on month-old evidence
+    # would red somebody's CI over a stale file.
+    def _plan(ado, phases):
+        return {"meta": {"version": 2, "ado": ado}, "phases": phases}
+
+    _loop = _plan({"phaseWorkItems": False},
+                  [{"id": "P1", "title": "P1", "status": "pending",
+                    "ado": {"id": 501}, "adoParent": {"id": 500}, "tasks": []},
+                   {"id": "P2", "title": "P2", "status": "pending",
+                    "ado": {"id": 500}, "adoParent": {"id": 501}, "tasks": []}])
+    _f, _w = M._check_ado_parents(_loop, _loop["phases"])
+    check("ap30 a declared loop between two phases is a FINDING once per phase "
+          "- offline, with no meta.ado.hierarchy in that manifest at all, "
+          "because the structural tier stands on the manifest's own ids: %r"
+          % (_f,), len(_f) == 2 and _w == [])
+    check("ap31 ...and it reaches every consumer through `validate()`, not "
+          "only a direct caller: %r"
+          % ([x for x in _rules.validate(_loop)[0]
+              if "declare the other" in x],),
+          len([x for x in _rules.validate(_loop)[0]
+               if "declare the other" in x]) == 2)
+
+    _inverted = _plan({"phaseWorkItems": False,
+                       "types": {"pbi": "Product Backlog Item"},
+                       "hierarchy": {"levels": {"Task": 1,
+                                                "Product Backlog Item": 2},
+                                     "fetchedAt": "2026-08-24T00:00:00Z",
+                                     "basis": "captured for this case"}},
+                      [{"id": "P1", "title": "P1", "status": "pending",
+                        "ado": {"id": 800},
+                        "adoParent": {"id": 41, "type": "Task"}, "tasks": []}])
+    _f, _w = M._check_ado_parents(_inverted, _inverted["phases"])
+    check("ap32 an INVERTED backlog rank is a WARNING and never a finding - the "
+          "ranks are a cache with a fetchedAt, and 41 is not an id this "
+          "manifest carries, so nothing structural can explain this: %r"
+          % ((_f, _w),),
+          _f == [] and len(_w) == 1 and "rank" in _w[0])
+    check("ap33 ...so `validate()` still calls that manifest VALID, which is "
+          "what keeps a month-old cache from reddening somebody's CI: %r"
+          % (_rules.validate(_inverted)[0],),
+          _rules.validate(_inverted)[0] == [])
+    # The second direction. A check that fired unconditionally would light up
+    # here too, and every case above would still pass.
+    _fine = _plan({"phaseWorkItems": False, "parentWorkItem": 41,
+                   "types": {"pbi": "Product Backlog Item"},
+                   "hierarchy": {"levels": {"Task": 1,
+                                            "Product Backlog Item": 2,
+                                            "Feature": 3},
+                                 "fetchedAt": "2026-08-24T00:00:00Z",
+                                 "basis": "captured for this case"}},
+                  [{"id": "P1", "title": "P1", "status": "pending",
+                    "ado": {"id": 800},
+                    "adoParent": {"id": 41, "type": "Feature"}, "tasks": []}])
+    check("ap34 a legitimate parent produces no finding and no warning at all: "
+          "%r" % (M._check_ado_parents(_fine, _fine["phases"]),),
+          M._check_ado_parents(_fine, _fine["phases"]) == ([], []))
+    check("ap35 ...and NOT VERIFIED is silent HERE and only here: validate() "
+          "runs on every manifest write, so a line per link saying the ranks "
+          "were never fetched would arrive hundreds of times and teach people "
+          "to skip warnings. It is counted and printed where the decision is "
+          "made instead: %r"
+          % (M._check_ado_parents(_plan({"phaseWorkItems": False},
+                                        _fine["phases"]),
+                                  _fine["phases"]),),
+          M._check_ado_parents(_plan({"phaseWorkItems": False},
+                                     _fine["phases"]),
+                               _fine["phases"]) == ([], []))
+    check("ap36 a manifest with no meta.ado at all is not asked the question, "
+          "because there is no board for anything to hang on",
+          M._check_ado_parents({"meta": {}}, _fine["phases"]) == ([], []))
+
+    # --- requireParent, graded against the plan rather than a hunch -----------
+    _homeless = _plan({"phaseWorkItems": False,
+                       "conventions": {"requireParent": True}},
+                      [{"id": "P1", "title": "P1", "status": "pending",
+                        "adoParent": {"id": 41}, "tasks": []},
+                       {"id": "P2", "title": "P2", "status": "pending",
+                        "tasks": []}])
+    _f, _w = M._check_ado_parents(_homeless, _homeless["phases"])
+    check("ap37 requireParent names the item that really has nowhere to go and "
+          "not the one that declared a parent - the manifest-aware half of the "
+          "warning `_manifest_ado` gave up when an absent parentWorkItem "
+          "stopped meaning anything: %r" % (_w,),
+          _f == [] and len([x for x in _w if "requireParent" in x]) == 1
+          and "P2" in _w[-1] and "P1" not in _w[-1])
+    _covered = _plan({"phaseWorkItems": False,
+                      "conventions": {"requireParent": True}},
+                     [{"id": "P1", "title": "P1", "status": "pending",
+                       "adoParent": {"id": 41}, "tasks": []},
+                      {"id": "P2", "title": "P2", "status": "pending",
+                       "adoParent": {"id": 42}, "tasks": []}])
+    check("ap38 ...and a plan where every phase declares one is SILENT, with "
+          "no meta.ado.parentWorkItem anywhere - the config the old blanket "
+          "warning called broken: %r"
+          % (M._check_ado_parents(_covered, _covered["phases"]),),
+          M._check_ado_parents(_covered, _covered["phases"]) == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -125,6 +125,109 @@ def _check_identity_map(meta, findings, warnings):
                    ", ".join(repr(k) for k in keys)))
 
 
+# --- the two caches /audit:sync parents writes -----------------------------------
+def _check_evidence_stamp(block, where, findings):
+    """`fetchedAt` and `basis` — the two fields that make a cache EVIDENCE.
+
+    Shared by both caches because they are the same claim: a cached fact with
+    no moment cannot be aged and one with no basis cannot be checked, so a
+    reader has to either trust it or throw it away. Wrong TYPES are findings
+    here for the file's standing reason - a `fetchedAt` that is a number would
+    be misread as a timestamp by every surface that prints it.
+    """
+    for key in ("fetchedAt", "basis"):
+        val = block.get(key)
+        if key in block and val is not None and not isinstance(val, str):
+            findings.append("%s.%s: must be a string or null, got %s"
+                            % (where, key, type(val).__name__))
+
+
+def _check_hierarchy(ado, findings, warnings):
+    """`meta.ado.hierarchy` — this project's own type ranks, cached.
+
+    WRITTEN BY `/audit:sync parents`, NEVER BY HAND, and absent is not a defect:
+    with no cache there is no basis for the type check, every item reports `not
+    verified`, and the create proceeds. The structural half of the hierarchy
+    check needs none of this and runs offline, which is why a missing cache
+    costs a note rather than a gate.
+    """
+    if "hierarchy" not in ado:
+        return
+    block = ado.get("hierarchy")
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        findings.append("meta.ado.hierarchy: must be an object {levels, "
+                        "fetchedAt, basis} or null (absent = the type ranks "
+                        "were never fetched, which is an answer), got %s"
+                        % type(block).__name__)
+        return
+    _unknown_keys(block, {"levels", "fetchedAt", "basis"},
+                  "meta.ado.hierarchy", warnings)
+    _check_evidence_stamp(block, "meta.ado.hierarchy", findings)
+    levels = block.get("levels")
+    if "levels" in block and levels is not None:
+        if not isinstance(levels, dict):
+            findings.append("meta.ado.hierarchy.levels: must be an object of "
+                            "work item type -> backlog rank, got %s"
+                            % type(levels).__name__)
+        else:
+            bad = [k for k, v in levels.items()
+                   if isinstance(v, bool) or not isinstance(v, int)]
+            if bad:
+                findings.append("meta.ado.hierarchy.levels: every rank must be "
+                                "an integer (%d bad: %r)"
+                                % (len(bad), sorted(bad)[:3]))
+            if not levels:
+                # An empty ladder ranks nothing, so every link reports `not
+                # verified` while the block LOOKS like a fetched answer. That
+                # gap between appearance and effect is exactly what needs
+                # saying - remove the key to mean "never fetched".
+                warnings.append("meta.ado.hierarchy.levels is empty, so the "
+                                "type check has no basis and every parent "
+                                "link reports 'not verified' - remove the key "
+                                "instead, or re-run /audit:sync parents")
+
+
+def _check_parent_candidates(ado, findings, warnings):
+    """`meta.ado.parentCandidates` — a picker's convenience, never an authority.
+
+    Nothing resolves, validates or refuses against this list, so the shape is
+    all there is to grade: an item missing from it is not a wrong parent, only
+    one created since the fetch. That is stated here because a cached LIST is
+    the shape most likely to be mistaken for a rule the next time somebody
+    reads this file.
+    """
+    if "parentCandidates" not in ado:
+        return
+    block = ado.get("parentCandidates")
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        findings.append("meta.ado.parentCandidates: must be an object {items, "
+                        "fetchedAt, basis} or null, got %s"
+                        % type(block).__name__)
+        return
+    _unknown_keys(block, {"items", "fetchedAt", "basis"},
+                  "meta.ado.parentCandidates", warnings)
+    _check_evidence_stamp(block, "meta.ado.parentCandidates", findings)
+    items = block.get("items")
+    if "items" in block and items is not None:
+        if not isinstance(items, list):
+            findings.append("meta.ado.parentCandidates.items: must be an array "
+                            "of {id, type, title, state, areaPath, url}, got %s"
+                            % type(items).__name__)
+        else:
+            bad = [x for x in items
+                   if not isinstance(x, dict)
+                   or isinstance(x.get("id"), bool)
+                   or not isinstance(x.get("id"), int)]
+            if bad:
+                findings.append("meta.ado.parentCandidates.items: every "
+                                "candidate needs an integer work item id "
+                                "(%d bad: %r)" % (len(bad), bad[:2]))
+
+
 # --- the connector config --------------------------------------------------------
 def _conventions_contradictions(ado):
     """Where `conventions` and the rest of `meta.ado` disagree. Returns warnings.
@@ -164,15 +267,30 @@ def _conventions_contradictions(ado):
                    "meta.ado.tag to something tagVocabulary admits, add \"*\" to "
                    "tagVocabulary, or set meta.ado.tag to null." % (line,))
 
-    pwi = ado.get("parentWorkItem")
-    if conventions.get("requireParent") is True and pwi is None:
-        top = ("phase work item" if ado.get("phaseWorkItems") is not False
-               else "task")
-        out.append("meta.ado.conventions.requireParent is true but "
-                   "meta.ado.parentWorkItem is not set, so the created %s has "
-                   "nothing to hang under and the conformance gate would refuse "
-                   "it. Set meta.ado.parentWorkItem to the Feature/Epic this "
-                   "audit belongs under, or drop requireParent." % (top,))
+    # NARROWED AT U-PARENT, and the narrowing is the point. This used to fire
+    # whenever `requireParent` was true and `parentWorkItem` was unset, which
+    # was right while ONE integer parented the whole manifest. Now a phase may
+    # declare its own `adoParent`, so an absent `parentWorkItem` is the
+    # commonest GOOD config and that warning became a false alarm - and a false
+    # alarm on a working setup is how people learn to skip warnings.
+    #
+    # What is left is the one thing THIS block can prove on its own. An
+    # explicit `parentWorkItem: null` is a declaration that the fallback is off,
+    # so with `requireParent` on, every item now owes its own declaration -
+    # which is information about the config in front of you, not a prediction
+    # about a plan this function cannot see. WHICH items owe one is
+    # `_manifest_crossrefs._check_ado_parents`' question, because answering it
+    # needs the phases, and the panel's PUT /api/ado comes through this same
+    # door with no phases behind it.
+    if (conventions.get("requireParent") is True
+            and "parentWorkItem" in ado and ado.get("parentWorkItem") is None):
+        top = ("phase" if ado.get("phaseWorkItems") is not False else "task")
+        out.append("meta.ado.conventions.requireParent is true and "
+                   "meta.ado.parentWorkItem is explicitly null, so there is no "
+                   "manifest-wide fallback: every %s must carry its own "
+                   "`adoParent` or the conformance gate refuses its CREATE. "
+                   "Validate the manifest to have the ones that do not named."
+                   % (top,))
     return out
 
 
@@ -349,6 +467,9 @@ def check_ado_meta(ado):
         elif isinstance(pwi, int) and not isinstance(pwi, bool) and pwi <= 0:
             f.append("meta.ado.parentWorkItem must be a positive work item id, "
                      "got %r" % (pwi,))
+
+    _check_hierarchy(ado, f, w)
+    _check_parent_candidates(ado, f, w)
 
     # `conventions` is graded by `_ado_conventions`, not here. Same reason this
     # module reads `_manifest_vocab`'s words rather than its own: the panel's

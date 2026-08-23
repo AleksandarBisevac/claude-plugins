@@ -4,6 +4,91 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+**A parent per phase, because one integer was the plugin overriding a product owner.**
+`meta.ado.parentWorkItem` is a single work item id for the whole manifest, so every phase
+an audit created was forced under one Feature. A plan that audits three subsystems usually
+belongs under three different Features, and the only way to say that was to run three
+manifests. A phase — and a task, when `phaseWorkItems` is false — may now declare its own
+`adoParent`, and `meta.ado.parentWorkItem` becomes the fallback it always described itself
+as. **Nothing is deprecated and nothing warns about it**: "all of this audit hangs under
+Feature X" is a real and common intent, and a warning on a key that is still the right
+answer teaches people to skip warnings, which is how a real refusal gets missed later.
+
+**Three states, and the third is what the feature is for.** Absent falls through to the
+fallback — byte-identical to the behaviour before the key existed, which is pinned by a
+case that looks vacuous and is the only one that fails if `adoParent` ever becomes
+load-bearing on a file that does not carry it. An object names a work item and carries the
+basis beside the id (`type`, `title`, `source`, `observedAt`), because the hierarchy check,
+the push plan and a picker all have to say where a parent came from and whether anybody
+looked. An explicit `null` hangs under nothing **even when the fallback is set**, which is
+what makes uncategorised a *declared* outcome rather than an accident. `meta.ado.tag` and
+every `stateMap` value already read this way. An object and never a bare integer: two
+spellings of one answer are two answers.
+
+**Azure DevOps does not check a parent link against its own hierarchy, so the plugin does.**
+Measured on a live board: work item 30 there is a Product Backlog Item whose `System.Parent`
+is 31, a Task that was meant to be its child — accepted on write, never reported, still
+sitting there. The new check has three tiers and they fail differently on purpose. The
+**structural** tier is offline and always has a basis (an item under itself, or under
+something the manifest already hangs under it) and it refuses. The **type-level** tier reads
+this project's own backlog ranks and warns: an inverted pair is named, an **equal** pair is a
+note and never a refusal — a Bug under a Product Backlog Item is rank 2 under rank 2 wherever
+`bugsBehavior` is `asRequirements`, and a checker that refuses a deliberate arrangement gets
+switched off. A link the **server** rejects degrades per item like the invalid-state
+fallback, and never aborts a batch.
+
+**The ranks are asked, never shipped.** `/audit:sync parents` is a new read-only subcommand
+that fetches this project's backlog configuration into `meta.ado.hierarchy` and a picker's
+candidate list into `meta.ado.parentCandidates` — both cached evidence, each with a
+`fetchedAt` and a `basis` naming the query that re-derives it. No table ships with the
+plugin, because a `Bug` is a requirement on one project and a task on the next: the same
+organization runs one each way, and the payload's `bugsBehavior` is the only field that
+places it. **With no cache the type check reports `not verified` and the create proceeds** —
+a missing basis is a thing to say, not a thing to guess around — and both counts, refused and
+uncategorised, are printed in the confirm plan **even at zero**, because a number that
+appears only on bad news cannot be told apart from a number nobody computed.
+
+**A parent is applied at CREATE only.** A changed `adoParent` on an already-linked item is
+reported by `/audit:sync status` as parent drift and never silently re-parented: the board
+side may have been moved by a person, and re-parenting behind them is the same override this
+feature exists to undo.
+
+### Fixed
+
+**The parent-link call was written down once and driven with its arguments swapped, and ADO
+accepted it.** Both ids are legal work items, both ends of a hierarchy link are integers, and
+nothing in the response says which way round the result went — so the swap succeeded and the
+board showed a child parenting its own parent. `reference/tracker-sync.md` now states the
+contract with **both transports side by side** (`--id`/`--target-id` for the CLI,
+`updates[].id`/`updates[].linkToId` for the MCP tool — the item being updated is the CHILD in
+both), `commands/sync.md` points at that one spelling instead of carrying a second, and the
+push **reads `System.Parent` back off the child** and asserts it equals the intended parent.
+That read is one field on an item the push already touched, it is the only thing that would
+have caught this, and a mismatch is reported per item rather than assumed away.
+
+### Compatibility
+
+**A manifest that describes a work item hierarchy nothing can build can now be invalid**, and
+that is the one carve-out from *Validation stays additive* — written into
+`COMPATIBILITY.md`'s *Not promised* list rather than left to be discovered. It applies
+whichever key produced the parent, `meta.ado.parentWorkItem` included: the promise that key
+carries is that it keeps being **read**, not that every value of it keeps being accepted, and
+a manifest that validated while describing a loop was validating a push that would quietly
+build one. The carve-out is bounded by structure — decided offline from ids the manifest
+already carries, so it cannot change under a file that has not changed — and the type-level
+half can never do it, because a cache with a `fetchedAt` must not be able to invalidate a
+manifest.
+
+**A warning that became a false alarm was removed rather than reworded.**
+`meta.ado.conventions.requireParent` with no `meta.ado.parentWorkItem` used to draw one, and
+that was right while one integer parented everything. It is now the commonest *good* config,
+so the question moved to where the phases are visible: the validator names the items that
+really have nowhere to go. What a bare `meta.ado` block can still prove stayed behind — an
+**explicit** `parentWorkItem: null` beside `requireParent` says the fallback is deliberately
+off, so every item owes its own declaration.
+
 ## [1.0.0] - 2026-08-23
 
 **The version number starts promising something.** `COMPATIBILITY.md` was written before

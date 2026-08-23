@@ -152,6 +152,7 @@ _check_file_index = _crossrefs._check_file_index
 _check_bugs = _crossrefs._check_bugs
 _check_proposals = _crossrefs._check_proposals
 _check_priority = _crossrefs._check_priority
+_check_ado_parents = _crossrefs._check_ado_parents
 
 
 # --- the document's header --------------------------------------------------------
@@ -301,6 +302,7 @@ def validate(manifest):
     add(_check_bugs(manifest, index))
     add(_check_proposals(manifest, index))
     add(_check_priority(manifest, phases))
+    add(_check_ado_parents(manifest, phases))
     return (f, w)
 
 
