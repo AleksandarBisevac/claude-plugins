@@ -394,12 +394,16 @@ def _cases(check):
                                      layers=bw_layers)
         bw_by = lambda name: [v for v in bw_hits if v[0] == name]  # noqa: E731
 
+        # THE TAG IS THE WHOLE FIXTURE STEM, NOT ITS FIRST LETTER (F75). `aliaser`
+        # and `attrer` share one, so two of these three cases printed `bw1-a` and a
+        # `prove-gates.py` row naming it could credit either - which is the verdict
+        # that table exists to make impossible.
         for spelling, name in (("`_load = basemod._load`", "aliaser.py"),
                                ("`from basemod import _load`", "fromer.py"),
                                ("`basemod._load(...)`", "attrer.py")):
             check("bw1-%s a wrapper borrowed as %s is followed to the call site in "
                   "the BORROWING file, where the `.py` literal is: %r"
-                  % (name[0], spelling, bw_hits),
+                  % (os.path.splitext(name)[0], spelling, bw_hits),
                   len([v for v in bw_by(name)
                        if "runtime-loads high (layer 2) from layer 1" in v[1]]) == 1)
 
@@ -1110,21 +1114,32 @@ def _cases(check):
     # tree, reduced: a `//` comment containing `/*`, a string containing `//`, and
     # a regex literal containing a quote. The direction of every failure here is
     # UNDER-counting, which reads as "no duplication".
+    #
+    # EACH FIXTURE CARRIES ITS OWN LABEL TAG (F75). One `check()` call site is one
+    # authored assertion, so `_harness.label_faults()` is right to stay quiet about
+    # a family sharing an id - but `prove-gates.py` credits a mutation to the case
+    # whose id went red, and it refuses a row naming an id that more than one case
+    # printed. A tag per fixture is what makes one construct here nameable from that
+    # table. It is a tag rather than the loop INDEX because an index renames every
+    # fixture below the one inserted, which is the silent half of the same defect:
+    # the row still resolves, to a different construct than it was written for.
     _co = [
-        ("// a note about .claude/themes/*.json\nreal();\n", "real();",
+        ("linecomment", "// a note about .claude/themes/*.json\nreal();\n",
+         "real();",
          "a /* inside a LINE comment must not open a block comment - it did, and "
          "swallowed 150 lines of appearance-view.js including a real occurrence"),
-        ("const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
+        ("string", "const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
          "a // inside a STRING must not start a comment - which is why stripping "
          "line comments first is not the fix either"),
-        ("const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
+        ("regex", "const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
          "a quote inside a REGEX literal must not open a string; three of these "
          "ship in ui/ as CSV quoters"),
-        ("/* block\n * spanning\n */ after();\n", "after();",
+        ("block", "/* block\n * spanning\n */ after();\n", "after();",
          "and a real block comment is still removed"),
     ]
-    for _src, _want, _why in _co:
-        check("sc9 comment scanner: %s" % (_why,), _want in M._code_only(_src))
+    for _tag, _src, _want, _why in _co:
+        check("sc9-%s comment scanner: %s" % (_tag, _why),
+              _want in M._code_only(_src))
     check("sc10 ...and the scanner keeps line numbers, so a scout reporting a hit "
           "sends a reader to the right line: a three-line block comment leaves "
           "three newlines behind",
@@ -1410,22 +1425,52 @@ def _cases(check):
           "and completeness claims were wrong when these two did (F43): %r"
           % (_dpn[:6],),
           _dpn == [])
-    # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise,
-    # and this scan now spans three files, so a per-file count is what says the
-    # walk reached all of them rather than stopping after the first.
-    _dpn_lines = []
-    for _dname in M._PROSE_DOCS:
-        try:
-            with open(os.path.join(M._output.REPO_ROOT, _dname),
-                      "r", encoding="utf-8") as _dfh:
-                _dpn_lines.append((_dname, len(_dfh.read().split("\n"))))
-        except (OSError, UnicodeDecodeError):
-            _dpn_lines.append((_dname, 0))
-    check("dpn1 dpn0 read all %d documents rather than an empty string - %r"
-          % (len(M._PROSE_DOCS), _dpn_lines),
-          len(_dpn_lines) == 3
-          and all(n > 100 for _d, n in _dpn_lines)
-          and max(n for _d, n in _dpn_lines) > 500)
+    # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise.
+    #
+    # TWO TERMS, F69's shape. `scan_floor()` holds the scanned set against the
+    # candidate count the walk produced, which catches an exemption row that grew;
+    # the second term is a PLAIN recursive walk for `.md` under the plugin, which
+    # needs no `.gitignore` and so cannot fail the way the derivation can. A
+    # derivation collapsing is the failure a floor derived from it cannot see.
+    _dpn_scan = M._output.prose_scan_set((".md",))
+    _dpn_plain = 0
+    for _droot, _ddirs, _dfiles in os.walk(M._output.PLUGIN_ROOT):
+        _ddirs[:] = [_d for _d in _ddirs if _d != "__pycache__"]
+        _dpn_plain += len([_f for _f in _dfiles if _f.endswith(".md")])
+    check("dpn1 dpn0 read the tree, by two measures that fail differently - %d "
+          "document(s) scanned of %d candidate(s), floor %d, against %d `.md` "
+          "found under the plugin by a walk that reads no `.gitignore`"
+          % (len(_dpn_scan["paths"]), _dpn_scan["candidates"],
+             M._output.scan_floor(_dpn_scan["candidates"]), _dpn_plain),
+          _dpn_scan["problem"] is None
+          and len(_dpn_scan["paths"])
+              >= M._output.scan_floor(_dpn_scan["candidates"])
+          and _dpn_scan["candidates"] > _dpn_plain)
+    # THE THREE DOCUMENTS THAT USED TO BE THE WHOLE LIST, now the seed of a
+    # BLINDNESS check rather than the input. Each claims to be a definition of how
+    # this repo works, so a derivation that stopped reaching one of them has gone
+    # quiet rather than clean - `_refs.sweep_doc_drift()` keeps its list for the
+    # same reason. This is the direction dpn1's floor cannot cover: the walk can
+    # lose a specific document while staying far above any count.
+    _dpn_seed = [_d for _d in M._PROSE_DOCS if _d not in _dpn_scan["paths"]]
+    check("dpn2b the derived set still reaches every document that was named by "
+          "hand before it - a walk that dropped one of these would report the "
+          "same clean list it reports now: %r" % (_dpn_seed,),
+          _dpn_seed == [])
+    # AND THE POINT OF DERIVING IT: the PRODUCT is in the set now. A stale count
+    # in the plugin's README or in a `commands/*.md` is a defect a USER meets, and
+    # not one of these was read by anything while the list was three files long.
+    _dpn_product = dict(
+        (_label, len([_r for _r in _dpn_scan["paths"] if _r.startswith(_label)]))
+        for _label in ("plugins/audit/commands/", "plugins/audit/reference/",
+                       "plugins/audit/skills/", "plugins/audit/agents/",
+                       "plugins/audit/scripts/ui/", ".claude/skills/"))
+    check("dpn2c ...and the set reaches the PRODUCT - the plugin's README, its "
+          "commands, its reference docs, its skills and agents - plus the "
+          "per-surface part counts under `scripts/ui/`, which is where F64 was "
+          "found: %r" % (_dpn_product,),
+          "plugins/audit/README.md" in _dpn_scan["paths"]
+          and all(_dpn_product.values()))
     check("dpn2 an unreadable document returns a NAMED finding, not the same "
           "empty list a clean one returns - F21's rule, and the reason a clean "
           "dpn0 means 'looked and found nothing' rather than 'could not look'",
@@ -1460,6 +1505,54 @@ def _cases(check):
               "list, and an empty list is also what a broken scanner returns: %r"
               % (_dpn_hits,),
               _dpn_hits == [("FIXTURE.md", 1, "stayed at 17")])
+        # F59: the docs are where the word-spelled count was FOUND, so the
+        # delegation has to carry that spelling too - a `_deps` that saw only
+        # digits would be the second grammar dpn3 forbids, arriving as a gap
+        # instead of as a `def`. The LAST line is the second direction: a
+        # number-word below the table's floor, sitting in the shape that would
+        # fire on it, and on a line of its own so that nothing else exempts it.
+        # That line is why this case goes red if the table is WIDENED as well as
+        # if the word spelling is dropped - and the first draft of it was wrong,
+        # because it shared a line with the basis and so could never fire.
+        _dpn_word = os.path.join(_dpn_tmp, "WORDS.md")
+        with open(_dpn_word, "w", encoding="utf-8") as fh:
+            fh.write("`OFF_SCHEMA` records the thirteen cases that have no twin.\n"
+                     "It stood at eleven cases that day, and was wrong by Friday.\n"
+                     "all fifteen of them (`73042a1` - print it with\n"
+                     "`python3 -c \"...\"`); a migrated file still exits 0.\n"
+                     "and all three are honest about what a violation does.\n")
+        _dpn_word_hits = M.doc_prose_numbers([_dpn_word])
+        check("dpn5 a count spelled as a WORD is reported by the DOC scan too, "
+              "with its line number, while the historical line, the line whose "
+              "basis lands on the next one, and a number-word below the table's "
+              "floor are all left alone. F59 was found in a comment, and the "
+              "same claim in a document is the same defect: %r"
+              % (_dpn_word_hits,),
+              _dpn_word_hits == [("WORDS.md", 1, "thirteen cases")])
+        # F76: the delegation carries the SENTENCE scope too, and a document is
+        # where wrapping is worst - every one of these is hard-wrapped, so a
+        # tense marker and its number routinely land on different lines. Both
+        # directions are in one fixture: line 2's number is excused by a marker
+        # that sits on line 1 (the counterfactual this scan reported as a claim
+        # before), and line 3's is NOT excused by the marker two clauses earlier
+        # on its own line (the stale count that sat unread behind one). A single
+        # expected finding is what separates them - a scan reading physical lines
+        # reports the first and misses the second, so it can match neither.
+        _dpn_wrap = os.path.join(_dpn_tmp, "WRAP.md")
+        with open(_dpn_wrap, "w", encoding="utf-8") as fh:
+            fh.write("nothing pinned it, so the count was replaced by a "
+                     "constant and all\n"
+                     "146 cases stayed green after the split.\n"
+                     "TWO NAMES, BECAUSE IT ALREADY HAD ITS OWN `check`. 102 of "
+                     "the 131 cases\n"
+                     "go through a wrapper.\n")
+        _dpn_wrap_hits = M.doc_prose_numbers([_dpn_wrap])
+        check("dpn6 the document scan reads the sentence across the WRAP, in "
+              "both directions - a marker one line up excuses the number under "
+              "it, and a marker in an earlier sentence on the number's own line "
+              "does not. One finding, and which line it names is the whole "
+              "assertion: %r" % (_dpn_wrap_hits,),
+              _dpn_wrap_hits == [("WRAP.md", 3, "131 cases")])
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 

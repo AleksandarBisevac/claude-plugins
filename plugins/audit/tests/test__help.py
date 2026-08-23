@@ -90,7 +90,7 @@ def _cases(check):
         # has no position in the import order. It stays inside the `try` for the
         # other half of the original reason - the `except` below turns a missing
         # panel into a NAMED failing case rather than an import error that takes
-        # the remaining 59 cases with it.
+        # every remaining case with it.
         import _panel_settings
         bound = set(_panel_settings._settings_paths())
     except Exception as exc:                                # pragma: no cover

@@ -6,14 +6,16 @@ The cases for `audit-doctor.py`, moved out of it - an entry point.
 the test file substitutes underscores; see `test_migrate_manifest.py` for both
 halves of that rule. `M` is the module under test.
 
-MOVED WHOLE, AND THAT IS A DECISION. 1,254 lines, 148 cases, and 53 of them call
-`diagnose()` on ONE fixture directory that is mutated step by step - a config
-written, a manifest broken, a lock aged, a journal row appended, a hook marker
-touched - so each case asks what the doctor says about the repo AS IT NOW STANDS.
-Only two cases call a check function directly (`check_policy`, `check_ado`). It is
-an integration suite, not 148 unit cases wearing one prefix, and splitting it or
-re-shaping the cases would change WHAT is tested rather than where it lives. The
-sequence, the fixture and the ordering are byte-identical to what
+MOVED WHOLE, AND THAT IS A DECISION. Nearly every case here calls `diagnose()` on
+ONE fixture directory that is mutated step by step - a config written, a manifest
+broken, a lock aged, a journal row appended, a hook marker touched - so each case
+asks what the doctor says about the repo AS IT NOW STANDS. Only two call a check
+function directly (`check_policy`, `check_ado`); the split is
+`grep -c 'M.diagnose(' plugins/audit/tests/test_audit_doctor.py` against
+`python3 plugins/audit/tests/test_audit_doctor.py --selftest | tail -1`. It is an
+integration suite, not that many unit cases wearing one prefix, and splitting it
+or re-shaping the cases would change WHAT is tested rather than where it lives.
+The sequence, the fixture and the ordering are byte-identical to what
 `audit-doctor.py` ran.
 
 ONE `KNOWN_LAYER_DEBT` ENTRY RETIRED WITH THIS MOVE, AND ONLY ONE. `_deps` walks
@@ -1007,7 +1009,7 @@ def _cases(check):
         os.remove(os.path.join(tmp, "plan.json"))
 
         # The OTHER direction, and it was missing: nothing pinned the NUMBER, so
-        # `n_tasks` could have been replaced by a constant 0 and all 146 cases
+        # `n_tasks` could have been replaced by a constant 0 and the whole suite
         # stayed green (measured, by doing exactly that). A count that no case
         # reads is not a checked count. The fixture is 2 phases holding 3 tasks
         # UNEVENLY - one phase with 1, one with 2 - so the assertion separates a

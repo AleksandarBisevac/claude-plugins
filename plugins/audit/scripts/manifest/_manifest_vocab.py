@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-The manifest's vocabulary, and the four shape checks every level of it shares.
+The manifest's vocabulary, and the shape checks every level of it shares.
 
 Split out of `_manifest_rules.py`, which was 1,406 lines, and cut here because
 this is the one piece with no rule in it: an enumeration of the words the
 orchestrator understands, plus the small checks that are asked of a phase, a
-task and a bug alike. Four modules need them (`_manifest_phases`,
-`_manifest_ado`, `_manifest_crossrefs` and `_manifest_rules` itself), and a
-vocabulary copied into four files is four vocabularies that will disagree the
-first time one of them learns a word.
+task and a bug alike. Several modules need them, and a vocabulary copied into
+each is as many vocabularies as there are copies - all of which agree until the
+first time one of them learns a word. Who imports it is derived, not listed here,
+because the list was wrong in both halves when somebody finally ran the graph:
+
+    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
+    e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_vocab'))"
 
 LAYER 1, AND THAT IS WHY `TERMINAL` IS NOT HERE. Every other name below is a
 literal or a `re` pattern, so this module reaches nothing but `_output` and can
-sit at the floor where all four consumers can import it. `TERMINAL` is
+sit at the floor where every consumer can import it. `TERMINAL` is
 `_manifest_io`'s (layer 1 as well), so holding it here would put this module at
 layer 2 and push `_manifest_rules` past the layer its own consumers leave free.
 It stays re-exported from `_manifest_rules`, where the phase walk reads it.
@@ -24,16 +27,20 @@ do with a key nobody recognises is to name it and carry on.
 THE `KNOWN_*` SETS ARE CHECKED AGAINST THE SCHEMA, NOT TRUSTED. Every one of
 them restates vocabulary `schema/audit-plan.schema.json` already owns, so
 `SCHEMA_ANCHORS` records where each set lives in that document and `OFF_SCHEMA`
-records, with a reason each, the thirteen keys that deliberately have no schema
+records, with a reason each, every key that deliberately has no schema
 counterpart. `_help.schema_vocab_drift()` compares the two and names what
 disagrees. IF YOU ADD A KEY HERE, the schema is where it has to exist first; if
 it must not, it belongs in `OFF_SCHEMA` with the reason written down. The
-comparison lives in `_help` rather than here because the tree's one schema walk
-does - see the SCHEMA_ANCHORS comment for why that is a layer fact and not a
-preference. `SUBSET_ANCHORS` and `INLINE_ANCHORS` say the same thing about the
-other two shapes a vocabulary takes here: a RECOMMENDED subset, checked for
-containment, and a nested level whose vocabulary is a set literal at its
-`_unknown_keys()` call rather than a set on this module at all.
+comparison lives in `_help` rather than here because the walk that can SEE these
+keys does, a layer up. This is NOT the tree's only schema walk: the other one,
+`gen-demo-manifest.schema_fields()`, keys a field by `$def` NAME, so an inline
+object has no owner to attribute a sub-key to and every `meta.ado` sub-key is
+outside its reach - see the SCHEMA_ANCHORS comment for that measurement, and for
+why the layer settles where the comparison goes. `SUBSET_ANCHORS` and
+`INLINE_ANCHORS` say the same thing about the other two shapes a vocabulary takes
+here: a RECOMMENDED subset, checked for containment, and a nested level whose
+vocabulary is a set literal at its `_unknown_keys()` call rather than a set on
+this module at all.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_vocab.py` - see
@@ -213,7 +220,7 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #
 # LINTED, NOT DERIVED. Three reasons, in order of weight:
 #
-# 1. THE SETS ARE DELIBERATELY WIDER THAN THE SCHEMA. Thirteen keys above have no
+# 1. THE SETS ARE DELIBERATELY WIDER THAN THE SCHEMA. Some keys above have no
 #    schema counterpart at all — `OFF_SCHEMA` names each one and says why. They are
 #    legacy or tolerated spellings the schema dropped in v0.3.0 and the orchestrator
 #    still accepts in a pre-0.3 manifest. Derivation can express "equal to the
@@ -221,23 +228,72 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #    about `signOffChecklist` on every 0.2.0 manifest that still validates, or need
 #    this same hand-written table unioned back on — at which point the literal is
 #    back and only harder to read.
-# 2. THE ONE SCHEMA WALK IN THE TREE SITS A LAYER ABOVE THIS MODULE. `_help.fields()`
-#    already chases `$ref`, `$defs`, `items` and `additionalProperties`, and `_help`
-#    is at layer 2. This module is at layer 1 because four layer-2 modules import it,
-#    so importing `_help` here is an upward edge `_deps.layer_violations()` fails —
-#    and the alternative, a second walk written here, is the duplication being
-#    removed rather than deleted. So the COMPARISON lives with the walk, in
-#    `_help.schema_vocab_drift()`, and this module states the two things it is the
-#    right place to state: WHERE in the schema each set lives, and WHICH of its keys
-#    the schema does not have.
-# 3. Deriving costs about 0.43 ms per process — read 0.023 + `json.loads` 0.122 +
-#    `_help.fields()` 0.285, the mean of 200 in-process runs over the 46,220-byte
-#    `schema/audit-plan.schema.json` — which measured end to end is 1.2-3.2 ms of a
-#    24-33 ms `import _manifest_vocab` process. This is the WEAKEST of the three and
-#    is recorded so nobody re-argues it from the usual premise: nothing on the
-#    per-tool-call hook path imports this module (hooks resolve `_manifest_io.py` by
-#    basename through `_config.find_script()` and never reach here), so the cost
-#    would land on `validate-manifest.py` and the panel, not on every edit.
+# 2. THERE IS MORE THAN ONE SCHEMA WALK IN THIS TREE AND ONLY ONE OF THEM CAN SEE
+#    THESE KEYS. `_help.fields()` chases `$ref`, `$defs`, `items` and
+#    `additionalProperties` and keys what it finds by DOCUMENT PATH
+#    (`meta.ado.conventions`), which is the shape a per-LEVEL known-key set needs.
+#    `gen-demo-manifest.schema_fields()` is the other one, and it asks a different
+#    question — does a FIXTURE exercise the schema — so it keys a field
+#    `<owner>.<field>` with the owner a `$def` NAME, and its own docstring says why
+#    it must: "owners are named things only". `meta.ado` is an INLINE object with no
+#    `$def`, so that walk records `meta.ado` as one leaf of `meta` and stops; no
+#    owner it knows is `ado` and no field it reports is owned by `ado`, which puts
+#    every key `KNOWN_ADO` guards outside its reach. `KNOWN_ADO` is precisely the
+#    level this check exists for, so "reuse the demo generator's walk" — the obvious
+#    suggestion, and one that has been made here — would have dropped that level in
+#    silence. Two walks, two questions; not one walk duplicated.
+#
+#    THAT IS ASSERTED, NOT STATED. This comment said the opposite — one walk, only
+#    walk — in three places at once for as long as nothing counted, and a uniqueness
+#    claim with nothing counting is how it got there. `mv34` and `mv35` in
+#    `plugins/audit/tests/test__manifest_vocab.py` print the owners and the counts
+#    and go red the day the other walk COULD answer this question, and `mv36` fails
+#    if a file arrives that this paragraph does not account for:
+#
+#      grep -rln '[$]defs' plugins/audit/scripts/    # both walks, and this comment
+#
+#    LAYER, WHICH SETTLES WHERE THE COMPARISON GOES. `_help` is at layer 2 and
+#    `gen-demo-manifest` is an entry point above it. This module is at layer 1
+#    because its importers ALL sit above it - the graph command in the docstring
+#    prints them, and `_deps._layer_of` their layers - so reaching either is an
+#    upward edge
+#    `_deps.layer_violations()` fails — and the alternative, another walk written
+#    here, is the duplication being removed rather than deleted. So the COMPARISON
+#    lives with the walk it uses, in `_help.schema_vocab_drift()`, and this module
+#    states the two things it is the right place to state: WHERE in the schema each
+#    set lives, and WHICH of its keys the schema does not have.
+# 3. Deriving costs a fraction of a millisecond per process, against an import that
+#    already costs milliseconds. The read, the `json.loads` and the `_help.fields()`
+#    walk are one call; the import it would join is the other half of the pair:
+#
+#      S=plugins/audit/scripts
+#      PYTHONPATH=$S/config python3 -m timeit -s 'import _help' '_help.manifest_fields()'
+#      PYTHONPATH=$S/manifest python3 -X importtime -c 'import _manifest_vocab'
+#
+#    THE FIGURES ARE NOT WRITTEN DOWN, AND THAT IS THE REPAIR (F60). They were, with
+#    the schema's byte count beside them, and naming the tree is the only reason the
+#    rot was catchable at all — but a timing here moves with the SCHEMA and with the
+#    INTERPRETER independently, and re-running the first line above returned
+#    essentially the figure recorded next to a byte count the file had long outgrown.
+#    Repeats on one machine disagree, too. A number that can be stale and still look
+#    right is not a basis; the command is, and it measures the checkout you are
+#    standing in. Run both lines on the machine you care about — this is CPU,
+#    interpreter version and page cache, so a millisecond taken from someone else's
+#    laptop was never checkable here in the first place.
+#
+#    This is the WEAKEST of the three and is recorded so nobody re-argues it from the
+#    usual premise: nothing on the per-tool-call hook path imports this module, so the
+#    cost would land on `validate-manifest.py` and the panel, not on every edit.
+#
+#    THAT PREMISE IS ASSERTED, NOT STATED. `hooks/` may not import `scripts/` at all,
+#    so the exposure is what they RUNTIME-load by basename through
+#    `_config.find_script()` — `_manifest_io.py` among them — and what those in turn
+#    import. All but one of those roots sits at layer 1 beside this module, where
+#    `_deps.layer_violations()` refuses the edge as not strictly downward; the
+#    exception is `usage_ledger.py` at layer 3, which `meter-usage.py` loads on every
+#    tool call, so an `import _manifest_vocab` there would be legal, downward and
+#    silent. `mv37` in `plugins/audit/tests/test__manifest_vocab.py` walks the real
+#    import graph out of those roots and goes red the day one of them reaches here.
 #
 # `SCHEMA_ANCHORS` says where each set is defined, spelled as the dotted path
 # `_help.fields()` produces and `_help.COMPOSITION_PATHS` already uses; `""` is the

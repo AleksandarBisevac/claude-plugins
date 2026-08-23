@@ -69,7 +69,9 @@ the rest of the suite - `remind-tdd`'s selftest already hand-rolled exactly that
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import os
+import re
 import sys
 import traceback
 
@@ -148,6 +150,56 @@ def module_source(mod):
         return fh.read()
 
 
+def _module_body_offset(text):
+    """Where the CODE starts, for text that is a Python module with a docstring.
+
+    A marker quoted in a module's own docstring is prose ABOUT the code, so a
+    slice that starts there is a check about the wrong region - F21 was that
+    twice in one day. Both firings were loud, and the polarity that is not
+    happened to be absent rather than impossible: with the two markers named
+    either side of the flag in one plausible sentence, the `--name-only`
+    security case in `test__panel_viewer.py` passes on the docstring's prose
+    while guarding nothing - measured by injecting such a sentence into that
+    module's docstring and taking the slice, not argued from the shape.
+    Rewording the docstring - the repair that closed F21 - leaves that one edit
+    away, for every marker in every suite. Starting below the docstring does
+    not.
+
+    Text that is not a Python module keeps every byte: `ast.parse` refuses it
+    and the offset is zero. Text that IS one and has no docstring keeps every
+    byte too, because the first statement is then code the caller may point at.
+    """
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return 0
+    if not tree.body:
+        return 0
+    first = tree.body[0]
+    if not isinstance(first, ast.Expr):
+        return 0
+    if not isinstance(first.value, ast.Constant):
+        return 0
+    if not isinstance(first.value.value, str):
+        return 0
+    end_line = getattr(first, "end_lineno", None)
+    if end_line is None:
+        return 0
+    return len("".join(text.splitlines(True)[:end_line]))
+
+
+def _only_in_docstring(text, offset, marker):
+    """The half of a missing-marker message that says where the marker actually is.
+
+    "You moved it" and "you are pointing at your own prose" are different
+    diagnoses and the caller cannot tell them apart from the marker alone.
+    """
+    if offset and marker in text[:offset]:
+        return (" below its module docstring - it appears only INSIDE that "
+                "docstring, which is prose ABOUT the code and not the code")
+    return ""
+
+
 def between(text, start, end):
     """The slice of `text` after the first `start` and before the next `end`.
 
@@ -163,19 +215,97 @@ def between(text, start, end):
 
     An escape from here is not a crash: `run()` records it as a failing case with
     the traceback, so a marker that has moved is reported by name.
+
+    THE SLICE STARTS BELOW A MODULE DOCSTRING, which is where every marker this
+    is ever pointed at lives. `_module_body_offset` carries the reason and the
+    measurement; F21 is the entry.
     """
-    i = text.find(start)
+    offset = _module_body_offset(text)
+    body = text[offset:]
+    i = body.find(start)
     if i < 0:
-        raise ValueError("between(): start marker %r is not in the text - the "
+        raise ValueError("between(): start marker %r is not in the text%s - the "
                          "slice cannot be taken, and a whole-text fallback would "
-                         "be a check about the wrong region" % (start,))
-    j = text.find(end, i + len(start))
+                         "be a check about the wrong region"
+                         % (start, _only_in_docstring(text, offset, start)))
+    j = body.find(end, i + len(start))
     if j < 0:
-        raise ValueError("between(): end marker %r is not in the text after %r - "
+        raise ValueError("between(): end marker %r is not in the text after %r%s - "
                          "the slice would silently run to the end of the file and "
                          "every `not in` case over it would pass vacuously"
-                         % (end, start))
-    return text[i + len(start):j]
+                         % (end, start, _only_in_docstring(text, offset, end)))
+    return body[i + len(start):j]
+
+
+# --- two cases wearing one name -----------------------------------------------
+# A leading token is an IDENTIFIER when it carries a digit: `pn10`, `sc9`, `h2b`,
+# `bw1-a`. A leading `the`, `every` or `viewer:` is an English word or a group
+# tag, and a suite spelled that way cannot be named from a `prove-gates.py` row
+# at all - so it is not held to a convention it never adopted.
+_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+
+
+def case_id(label):
+    """The label's leading token when it is an identifier, else None.
+
+    NOT A FORMATTING DETAIL. `tools/prove-gates.py` credits a mutation to the
+    case that went red by taking exactly this token off a `FAIL <label>` line -
+    it is the key the whole proof harness attributes by. F63 is what happens
+    when two cases claim one key: the "RED, WRONG CASE" verdict that stops an
+    unrelated breakage being called a proof is defeated for that key, silently,
+    and a rule proven through the other case reads as proven.
+    """
+    head = label.split(None, 1)
+    if not head or not _CASE_ID.match(head[0]):
+        return None
+    return head[0]
+
+
+def label_faults(labels, sites):
+    """Extra FAILING cases for two cases wearing one name; empty when clean.
+
+    Two spellings of one defect, reported apart because they fail apart: an
+    identifier claimed from more than one `check()` CALL SITE, and a whole label
+    printed more than once.
+
+    WHY THE CALL SITE AND NOT THE OCCURRENCE COUNT. A suite may legitimately
+    print one identifier many times - `t3 0 is not a tier`, `t3 -3 is not a
+    tier`, seven fixtures driven from one loop over one rule - and crediting a
+    mutation to that family is exactly right, because the family IS one authored
+    assertion. Measured over the tree rather than argued from the shape, and
+    written in the past tense because the count is evidence for a decision and
+    not a fact to keep true: 31 identifiers across 19 suites repeated that way
+    the day this shipped, so a rule that counted occurrences would have called
+    every one of them a duplicate and renumbered the family idiom wherever it
+    appears. One call site is one authored assertion; two hand-written cases
+    claiming `pn10` are two.
+
+    `sites` maps an identifier to the set of caller line numbers that produced
+    it. `run()` collects it because a line number is the one thing a rendered
+    report has already thrown away, and it is what turns "this id is ambiguous"
+    into two places to go and look.
+    """
+    faults = []
+    for cid in sorted(sites):
+        lines = sorted(sites[cid])
+        if len(lines) > 1:
+            faults.append(
+                ("DUPLICATE CASE ID `%s` - claimed by %d separate check() call "
+                 "sites, at lines %s. prove-gates.py credits a mutation to the "
+                 "case whose id went red, so an id naming two cases defeats that "
+                 "verdict silently (F63)"
+                 % (cid, len(lines), ", ".join(str(n) for n in lines)),
+                 False, ""))
+    seen = {}
+    for label in labels:
+        seen[label] = seen.get(label, 0) + 1
+    for label in sorted(seen):
+        if seen[label] > 1:
+            faults.append(
+                ("DUPLICATE CASE LABEL printed %d times, so no reader and no "
+                 "tool can tell the two apart: %r" % (seen[label], label),
+                 False, ""))
+    return faults
 
 
 def _render(cases):
@@ -216,11 +346,22 @@ def run(body):
     whole reason this wrapper exists. It is a FAILING case rather than a silent
     truncation, so a suite that dies half way cannot exit 0 with a plausible-looking
     `ALL PASS` over the cases that did run.
+
+    EVERY SUITE ALSO GETS THE UNIQUENESS CHECK FOR FREE, because this is the one
+    place that has already seen every label the suite produced - `label_faults()`
+    carries what it rules and why. The caller's line number comes from
+    `sys._getframe`, not from `inspect` or `traceback`: both of those read the
+    source file to build a frame record, and this runs once per case across
+    thousands of cases in one sweep.
     """
     cases = []
+    sites = {}
 
     def check(label, cond, detail=""):
         cases.append((label, bool(cond), str(detail)))
+        cid = case_id("%s" % (label,))
+        if cid is not None:
+            sites.setdefault(cid, set()).add(sys._getframe(1).f_lineno)
 
     try:
         body(check)
@@ -230,6 +371,7 @@ def run(body):
                       "every case after this point did NOT run", False,
                       "%s: %s" % (type(exc).__name__, exc)))
 
+    cases.extend(label_faults([c[0] for c in cases], sites))
     text, passed, total = _render(cases)
     print(text)
     return 0 if passed == total and total else 1
@@ -380,6 +522,81 @@ def _cases(check):
           "the tally line is not a case",
           _labels(text) == ["one", "two (why)"])
 
+    # -- two cases wearing one name (F63) --------------------------------------
+    # THE TWO CALLS BELOW MUST SIT ON DIFFERENT LINES. Written as a one-line
+    # lambda they would share one call site, the rule would correctly stay
+    # silent, and the case would pass against a `run()` that never learned any
+    # of this - the fixture, not the assertion, is what tells the two versions
+    # apart.
+    def _claims_one_id_twice(c):
+        c("dup7 first case claiming the id", True)
+        c("dup7 second case claiming the SAME id", True)
+
+    out_dup, code_dup = _capture(run, _claims_one_id_twice)
+    check("u1 an id claimed from two check() call sites is reported by NAME, "
+          "with the count and both line numbers. F63: prove-gates.py credits a "
+          "mutation to the case whose id went red, so an ambiguous id defeats "
+          "its 'RED, WRONG CASE' verdict silently",
+          "FAIL DUPLICATE CASE ID `dup7`" in out_dup
+          and "2 separate check() call sites" in out_dup, out_dup)
+    check("u2 ...and the report says so as a FAILING case, so a suite nothing "
+          "can attribute cannot exit 0. The mutation this catches is reporting "
+          "the duplicate as a detail hung off a passing line",
+          code_dup == 1
+          and "SELFTEST FAILED: 2/3 cases passed" in out_dup, out_dup)
+    # u3 AND u4 LOOK VACUOUS AND ARE THE SECOND-DIRECTION CASES. Both pass on
+    # the pre-F63 code by construction, and they are the only ones here that
+    # fail if the rule starts firing where it should not: u3 if it fires
+    # unconditionally, u4 if it counts OCCURRENCES instead of call sites.
+    check("u3 a suite whose ids are all distinct is told nothing at all",
+          label_faults(["a1 one", "a2 two"],
+                       {"a1": set([10]), "a2": set([11])}) == [])
+    # THROUGH `run()`, NOT THROUGH `label_faults()` DIRECTLY. A hand-built
+    # `sites` dict would assert nothing about the half that keys on the call
+    # site, so the mutation this case exists for - collecting one key per case
+    # instead of one per call site - would leave it green.
+    def _one_site_many_fixtures(c):
+        for _bad in (0, -3, None, 1.5):
+            c("t3 %r is not a tier, so the phase sorts as unprioritised"
+              % (_bad,), True)
+
+    out_fam, code_fam = _capture(run, _one_site_many_fixtures)
+    check("u4 ...and one id printed many times from ONE call site is not a "
+          "duplicate: `t3 0 is not a tier`, `t3 -3 is not a tier`, fixtures "
+          "driven from one loop over one rule, which is one authored assertion. "
+          "Counting occurrences instead would have called 31 ids across 19 "
+          "suites duplicates the day this was written - measured, which is why "
+          "the rule reads the call site and not the count",
+          code_fam == 0 and "DUPLICATE" not in out_fam, out_fam)
+    _same = label_faults(["...and a refused PUT wrote nothing"] * 2, {})
+    check("u5 a whole label printed twice is the other spelling of the defect "
+          "and fails apart from the first: there is no id to name, and no "
+          "reader and no tool can tell the two lines apart",
+          len(_same) == 1 and _same[0][1] is False
+          and "printed 2 times" in _same[0][0], repr(_same))
+    check("u6 an id has to carry a digit, so a suite whose labels open with "
+          "`the`, `every` or `viewer:` is not held to a convention it never "
+          "adopted - while `bw1-a`, `h2b` and `pn10` are ids",
+          [case_id(_lbl) for _lbl in
+           ("the page renders", "viewer: a GET and nothing else",
+            "bw1-a a borrowed wrapper", "h2b every SUBDIRECTORY",
+            "pn10 COMPLETENESS is caught")]
+          == [None, None, "bw1-a", "h2b", "pn10"])
+    # A NAMED LOCAL BELOW rather than the same call twice, which is the whole
+    # reason now. It arrived for a different one: the prose scanner used to split
+    # an identifier on the underscore, so a numeric index in front of `case_id(`
+    # read as a cardinality claim, and naming the local was the rewording. The
+    # scanner keeps an identifier whole since F77, so the workaround is no longer
+    # load-bearing - kept because computing one id twice in one assertion is
+    # worse, not because anything forces it.
+    _pn10b_id = case_id("pn10b the BARE count")
+    check("u7 the id is read here the way prove-gates.py reads it back off a "
+          "rendered line - two spellings of one key, pinned rather than "
+          "commented, because that tool is the only consumer and a comment "
+          "claiming they agree is not a test that they do",
+          _render([("pn10b the BARE count", False, "")])[0]
+          .splitlines()[0].split(None, 2)[1] == _pn10b_id)
+
     # -- module_source(): the subject's file, never the test's -----------------
     import _output as _ms_probe
 
@@ -418,6 +635,56 @@ def _cases(check):
     check("s5 END is looked for AFTER start, so a marker that also appears "
           "before it cannot produce an empty slice",
           between("END aaa START middle END zzz", "START", "END") == " middle ")
+
+    # -- between(): a marker in the module docstring is prose, not code --------
+    # F21's remainder. Each fixture below is chosen so the pre-fix and post-fix
+    # implementations DISAGREE - a fixture both versions answer the same way
+    # would leave these green against a `between()` that never learned this.
+    _prose = ('"""`def target` runs with PAYLOAD before `def stop` ranks it.\n'
+              '"""\n'
+              'def target():\n'
+              '    return 1\n'
+              '\n'
+              'def stop():\n'
+              '    return 2\n')
+    # Through `attempt`, not bare: a mutation that makes this marker unfindable
+    # would otherwise escape and stop the suite AT this line, so the cases below
+    # would not run and a red-first proof would learn nothing about them.
+    _p_ok, _p_sl = attempt(between, _prose, "def target", "def stop")
+    check("s6 the QUIET polarity of F21: with both markers named either side of "
+          "a payload in the docstring, the pre-fix slice was that sentence and "
+          "the payload was IN it, so the case passed guarding nothing. The slice "
+          "is now the code, and the payload is absent from it",
+          _p_ok is True and "PAYLOAD" not in _p_sl and "return 1" in _p_sl,
+          repr(_p_sl))
+    _only_doc = ('"""The slice runs from `def gone` to `def alsogone`.\n'
+                 '"""\n'
+                 'def real():\n'
+                 '    return 1\n')
+    _d_ok, _d_msg = attempt(between, _only_doc, "def gone", "def alsogone")
+    check("s7 ...and F21's LOUD polarity now says which of the two diagnoses it "
+          "is: a marker that exists only in the docstring raises, and the "
+          "message names the docstring rather than only the marker",
+          _d_ok is False and "module docstring" in _d_msg, _d_msg)
+    # s8 LOOKS VACUOUS AND IS THE SECOND-DIRECTION CASE. It passes on the
+    # pre-fix code by construction; it is the only one here that fails if
+    # `_module_body_offset` starts returning an offset for anything - a broad
+    # `except`, or dropping the `isinstance` guards - because this text opens
+    # with a quoted string and is NOT a Python module.
+    _notpy = '"START only-in-the-leading-string END" {not python at all\n'
+    _n_ok, _n_sl = attempt(between, _notpy, "START", "END")
+    check("s8 text that is not a Python module keeps every byte: a leading "
+          "quoted string is not a docstring just because it looks like one",
+          _n_ok is True and _n_sl == " only-in-the-leading-string ", repr(_n_sl))
+    _nodoc = 'import os\n\n\ndef target():\n    return 1\n\n\ndef stop():\n    return 2\n'
+    check("s9 a module whose first statement is CODE keeps every byte too - the "
+          "caller may legitimately point at it, so only a docstring is skipped",
+          _module_body_offset(_nodoc) == 0, repr(_nodoc[:12]))
+    check("s10 the offset lands exactly where the docstring ends, not a line "
+          "either side of it - an off-by-one here would either re-admit the "
+          "prose or eat the first line of code",
+          _prose[_module_body_offset(_prose):].startswith("def target"),
+          repr(_prose[_module_body_offset(_prose):][:20]))
 
 
 def _selftest():

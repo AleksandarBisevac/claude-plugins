@@ -2,7 +2,7 @@
 """
 The cases for `_locks.py` — the lock library, and the boundary that made it one.
 
-`audit-lock.py`'s own 68 cases live in `test_audit_lock.py` and run over these
+`audit-lock.py`'s own cases live in `test_audit_lock.py` and run over these
 same functions through that command's aliases; they are not repeated here. What
 this file asserts is the thing that suite structurally cannot: that there is ONE
 implementation, that `audit-lock.py` re-exports it rather than keeping a copy,
@@ -11,7 +11,7 @@ whole reason four callers could stop loading a command to ask about a lock.
 
 WHY THAT IS WORTH ITS OWN FILE. A split leaves two ways to be wrong and only one
 of them shows up in behaviour. The first — the extraction broke something — is
-what the 68 cases next door catch, and they caught a real one (`audit-task`'s
+what the cases next door catch, and they caught a real one (`audit-task`'s
 acquire path). The second is silent: someone pastes a helper back into
 `audit-lock.py`, both files work, both suites stay green, and the two drift for
 months. Only an identity assertion fails on that, and only if something makes it.

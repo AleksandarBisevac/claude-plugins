@@ -35,14 +35,20 @@ two copies of a procedure is one copy and one lie.
   render it).
 - **Do not write a number into prose when something already prints it.** This is the repo's
   most frequent defect (F29, F39, F43 are one bug three times), and it is now a lint:
-  `_output.prose_number_claims()` over `hooks/` + `scripts/` and `_deps.doc_prose_numbers()`
-  over this file, `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` fail the build on a
+  `_output.prose_number_claims()` over every `.py` this repo keeps and
+  `_deps.doc_prose_numbers()` over every `.md` — both sets **derived** off `.gitignore`, so a
+  file added here is scanned by default and excluding one means a row in
+  `_output.PROSE_SCAN_EXEMPT` with a reason. They fail the build on a
   present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``) or
-  completeness (`all N of them`, `all N … have`) claim. Three things stay legal on purpose:
-  **history** (`it stood at N that day`), a number **carrying the command that re-derives it**
-  — the basis may sit on the next line, because prose wraps — and the repair itself, which is
-  to delete the number and keep the pointer. When a number really is informative, carry the
-  basis; a basis makes a claim checkable, but only deleting the number stops it rotting.
+  completeness (`all N of them`, `all N … have`) claim — and the number may be spelled as a
+  word, which is F59: `_numeral_span()` reads both spellings, for every shape, from one fixed
+  table. Three things stay legal on purpose: **history** (`it stood at N that day`), a number
+  **carrying the command that re-derives it** — the basis may sit on the next line, because
+  prose wraps — and the repair itself, which is to delete the number and keep the pointer.
+  `CONTRIBUTING.md`'s *Writing a count that is allowed* states those three affirmatively, with
+  one example each; read it before writing a number rather than after a build refuses one.
+  When a number really is informative, carry the basis; a basis makes a claim checkable, but
+  only deleting the number stops it rotting.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 - **`COMPATIBILITY.md` is a contract, not a description.** It promises that a `meta.version`
   the plugin accepts keeps being accepted and that a config key it reads keeps being read. So
@@ -149,15 +155,22 @@ part is for. Assets of 400+ lines also owe one section marker per 400 lines, enf
 the checks a version bump owes. Prefer it: running these by hand cost two red CI
 runs in one day, both from a forgotten step rather than a broken change.
 
-The commands it calls, which remain the definition:
+The commands it calls, with the manifest and plugin-structure half handed to
+`CONTRIBUTING.md`. `gate-parity.py` holds that hand-off gate by gate, so what is left
+out here is left out on the record and not by omission:
 
 ```bash
 python3 tools/sweep-selftests.py           # hooks + scripts + tests, in parallel
 python3 tools/sweep-selftests.py --selftest
-python3 tools/gate-parity.py               # this list, verify.sh and ci.yml, compared
+python3 tools/gate-parity.py               # every description of the gate set, compared
+python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+python3 tools/check-rendered-artifacts.py  # the committed artifacts, byte for byte
+python3 tools/capture-demo-gif.py --check  # the demo GIF's preconditions
+node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
+node tools/capture-screenshots.mjs --check
 ```
 
 **The sweep is one runner, and CI runs the same one.** It used to be a serial `for` loop
@@ -168,12 +181,19 @@ holds the union of both rules, and it runs the tree across all cores but two. Re
 wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape
 for a bisect.
 
-**`gate-parity.py` is why that cannot come back.** This list, `tools/verify.sh` and
-`.github/workflows/ci.yml` were three hand-maintained copies of one gate set and had drifted
-in both directions at once — the sweep above, `vitest` (which ran only in CI, so a change under
-`scripts/ui/` could reach a push with none of its suites having run), and `vermin`'s directory
-list. A gate added to one side and not the other now fails the build by name, and every
-declared exemption carries a reason that is itself checked.
+**`gate-parity.py` is why that cannot come back.** `tools/verify.sh`,
+`.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list are hand-maintained descriptions
+of one gate set, and they had drifted in both directions at once — the sweep above, `vitest`
+(which ran only in CI, so a change under `scripts/ui/` could reach a push with none of its
+suites having run), and `vermin`'s directory list. A gate added to one side and not another
+now fails the build by name, and every declared exemption carries a reason that is itself
+checked.
+
+**This list was the last side added, and what got it added was reading it.** It had said of
+itself that it was one of the sides being compared, while being the one side nothing read —
+and it was missing the hook import budget, the artifact comparison and the demo gate from the
+whole document, and both browser gates from this list. Which sides it reads comes from
+running it — a sentence here is the thing that was wrong.
 
 **Every `--selftest` block lives in `plugins/audit/tests/`, not in the module it tests**
 (`73042a1` — count them with
@@ -185,10 +205,10 @@ a defect it names. The runner enforces the other half of that, which the old loo
 migrated file that STILL prints the contract is red, because the classifier reads string
 literals and a file assembling the line would otherwise slip past both.
 
-`CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set. The
-browser-level gates (`tools/capture-screenshots.mjs --check`,
-`tools/check-report-interactive.mjs`) are the only thing that can prove the report actually
-paints and stays interactive — a selftest can only assert what the CSS *says*.
+`CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set,
+and carries every gate above with the reasoning for each. The browser gates at the bottom of
+that list are the only thing that can prove the report actually paints and stays interactive —
+a selftest can only assert what the CSS *says*.
 
 A check that has only ever been seen passing may be asserting nothing. Break the thing it guards
 and confirm it goes red before trusting it — `tools/redfirst.sh` does that for one check, and

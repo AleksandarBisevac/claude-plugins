@@ -421,8 +421,14 @@ jobs:
           # banner. gen-demo-manifest.py rebuilds the fixture deterministically, so the
           # page is now checked the same way the example is.
           #
-          # Content assertions, not a byte diff: the render stamps a wall-clock time,
-          # so a fresh render always differs by that line. Refresh with
+          # Content assertions, and content is ALL they can see. That used to read
+          # "not a byte diff: the render stamps a wall-clock time", which stopped
+          # being true when the report started honouring SOURCE_DATE_EPOCH - the byte
+          # comparison lives in tools/check-rendered-artifacts.py now, and the
+          # version this page stamps is compared with plugin.json by
+          # _refs.artifact_version_drift(). Content assertions cannot see age (F12):
+          # this page served a stamp several releases behind the plugin while every
+          # probe below stayed green. Refresh with
           #   python plugins/audit/scripts/demo/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
           #   python plugins/audit/scripts/demo/gen-demo-usage.py /tmp/dl/audit-plan.json
           #   CLAUDE_PROJECT_DIR=/tmp/dl python plugins/audit/scripts/report/render-report.py \
@@ -672,9 +678,9 @@ jobs:
         run: pip install ruff==0.16.2 vermin==1.8.0
       - name: ruff (E9+F, py38 target from pyproject.toml)
         run: ruff check plugins/audit tools
-      - name: The local gate set and this workflow name the same gates
+      - name: Every description of the gate set names the same gates
         run: |
-          # Ubuntu only: this compares two FILES in the repo, so running it per-OS
+          # Ubuntu only: this compares FILES in the repo, so running it per-OS
           # would assert the same thing three times. It is here rather than in the
           # selftests job because it is a repo-consistency lint, not a per-platform
           # one - and it is in CI at all because a check that only the local gate

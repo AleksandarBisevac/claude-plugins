@@ -431,7 +431,8 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day\|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--format <fmt>] [--backfill]` | **Token spend, attributed** — per phase, task, model, author, area and time window (down to the calendar month), with cache economics, cost-per-task, a monthly overview and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
-| `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | Convert the manifest to the **sharded layout** (index + one file per phase) — fewer tokens per phase, parallel-safe across worktrees. Opt-in and backed up, but one-directional \u2014 there is no reverse command; single-file manifests keep working without it, indefinitely. See [Sharded layout](#sharded-layout--parallel-phases). |
+| `/audit:layout` | `<sharded\|single-file> [--dry-run] [--renumber] [--force]` | Choose how the manifest is stored, **in either direction**: `sharded` splits it into an index plus one file per phase (fewer tokens per phase run, parallel-safe across worktrees), `single-file` assembles the shards back into one file. A layout **choice**, not a version upgrade — both shapes are current, and staying on single-file never makes a manifest out of date. Either direction holds the index lock, backs up to `<manifestPath>.bak-<UTC>`, and re-validates the result or restores the backup. See [Sharded layout](#sharded-layout--parallel-phases). |
+| `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | **Legacy spelling of `/audit:layout sharded`** — it still works and does exactly that, kept so existing transcripts and runbooks resolve. **It will be removed in a future release**: switch anything written down to `/audit:layout sharded` while both spellings work. |
 | `/audit:doctor` | `[--deep] [--json] [--color auto\|always\|never]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:guide` | `<question about the audit plugin>` | Answer a question about the plugin itself — what a config key does, how the plan gate grades, what the journal can and cannot prove — from the plugin's own README, reference docs, schemas and `SECURITY.md`, with a citation for every claim. Read-only and cheap; it changes nothing. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
@@ -1388,16 +1389,29 @@ recorded, or a lock from another machine. `status` and `report` never lock. Beca
 never shows up in `git status` and needs no `.gitignore` entry. (No git repo → it falls back to
 `<manifestPath>.lock` in the working tree, which coordinates within a single clone only.)
 
-**Sharded layout — parallel phases.** Run **`/audit:migrate`** to split the manifest into an
+**Sharded layout — parallel phases.** Run **`/audit:layout sharded`** to split the manifest into an
 *index* (`meta` · `bugs` · `fileIndex`) plus one file per phase (`phases/<phaseId>.json`). Then a
 phase command loads **only its own phase** (fewer tokens at scale), and because two phase branches
 edit different shard files — and a run never writes the shared index (bug status is **derived** from
 the linked task) — **two phases run in parallel from separate git worktrees and merge back with no
-manifest conflict.** Ids are allocated under the index lock, so they never collide. It's opt-in and
-one-directional \u2014 there is no reverse command, and the `.bak-*` copy discards every manifest write
-made after the migration. Single-file manifests keep working exactly as before, indefinitely (one
-session per clone). To
-run two phases at once:
+manifest conflict.** Ids are allocated under the index lock, so they never collide.
+
+**It is a choice, and it goes both ways.** `/audit:layout single-file` assembles the shards back
+into one file under the same index lock, the same `.bak-<UTC>` and the same re-validate-or-restore.
+Neither shape is legacy: a single-file manifest never goes out of date, and installing a newer
+plugin never makes a layout change due. What decides it is how you work — parallel phases across
+worktrees, or a plan big enough that loading every phase to run one costs real context, versus one
+session and a handful of phases.
+
+Two things the reverse direction costs, said before you run it rather than after. The shard files
+are **still on disk** once they are assembled, no longer read by anything and still looking
+authoritative — `git rm` them in the same commit as the assembled file. And a phase branch created
+for the sharded layout edits `phases/<phaseId>.json`, so merging it into a branch that no longer
+reads shards puts that work in a file nothing assembles: the merge succeeds and the plan does not
+change. `/audit:layout` refuses while any `phase-*` lock is held for exactly that reason, and names
+the open worktrees before it writes.
+
+To run two phases at once:
 
 Use **`/audit:worktree <phaseId>`** — Claude runs `git worktree add`, derives the phase branch, and
 prints the `cd … && claude` line for you:

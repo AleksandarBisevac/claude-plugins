@@ -91,6 +91,55 @@ def is_sharded(data):
     return any(isinstance(p, dict) and "shard" in p for p in phases)
 
 
+# The two values `meta.version` uses, and the layout each one names. The field is a
+# SECOND, independent reading of something `is_sharded()` already answers by looking at
+# the phase stubs, and the two agreed on the forward migration only because
+# `split_manifest` happened to write the sharded number. A manifest whose stubs carry no
+# `shard` while its version still names the sharded layout is single-file to everything
+# here and sharded to `/audit:doctor`, so the number is not a free-floating stamp: it is
+# a claim about the structure, and both writers below take it from this table.
+LAYOUT_VERSION = {"single-file": 2, "sharded": 3}
+
+
+def layout_of(data):
+    """Which layout `data` - a parsed INDEX, before assembly - is stored in.
+
+    `is_sharded()` with a name instead of a boolean, so a writer, a refusal message and
+    a doctor line can all say the same word for the same shape rather than each
+    restating a version number of its own.
+    """
+    return "sharded" if is_sharded(data) else "single-file"
+
+
+def declared_layout(data):
+    """The layout `data`'s `meta.version` CLAIMS, or None when it claims nothing.
+
+    None rather than a default, and that is the whole point of the function: a manifest
+    carrying no readable version has ONE reading of its layout, not two that agree, and
+    a caller comparing this against `layout_of()` has to be able to tell "the two
+    disagree" from "there is nothing here to disagree with". Defaulting to either name
+    would let exactly the confusion this exists to expose come back wearing a missing
+    field.
+
+    A version this table does not list - an older stamp, or one some future layout
+    takes - is None for the same reason: it names no layout THIS code can read or
+    write, and guessing which one was meant is how a manifest gets converted the
+    opposite way from the one that was asked for.
+    """
+    if not isinstance(data, dict):
+        return None
+    meta = data.get("meta")
+    if not isinstance(meta, dict):
+        return None
+    version = meta.get("version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        return None
+    for name in sorted(LAYOUT_VERSION):
+        if LAYOUT_VERSION[name] == version:
+            return name
+    return None
+
+
 # Fields the INDEX owns outright in the sharded layout — a value found in a shard
 # body is ignored, never merged. `claim` is the coordination field that fell back
 # from the stub; `priority` is stricter than that and the difference is the point:
@@ -407,7 +456,8 @@ def _shard_name(pid):
 def split_manifest(manifest, shard_rel_dir="phases"):
     """Split an ASSEMBLED manifest into (index_dict, {phaseId: shard_body}).
 
-    index_dict holds `$schema`, `meta` (version bumped to 3), `fileIndex`, `bugs`,
+    index_dict holds `$schema`, `meta` (version set to the one that names the sharded
+    layout, from `LAYOUT_VERSION`), `fileIndex`, `bugs`,
     `deferred`, `proposals` and a lightweight `{id, title, shard}` stub per phase;
     each phase's full body (tasks + branch/baseRef/mergedAt/review/summary/claim/…)
     is the shard. `load_manifest` reverses this exactly (modulo meta.version)."""
@@ -415,7 +465,7 @@ def split_manifest(manifest, shard_rel_dir="phases"):
     if "$schema" in manifest:
         index["$schema"] = manifest["$schema"]
     meta = dict(manifest.get("meta") or {})
-    meta["version"] = 3
+    meta["version"] = LAYOUT_VERSION["sharded"]
     index["meta"] = meta
     index["phases"] = []
     shards = {}
@@ -494,6 +544,96 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     _atomic_write_json(index_path, index)
     written.append(index_path)
     return written
+
+
+# --- joining shards back into one file -------------------------------------------
+def _without_shard(phase):
+    """A phase with no `shard` pointer, or the phase unchanged when it carries none.
+
+    Not defensive noise. `_merge_phase` starts from the shard BODY, so a body that
+    itself holds a `shard` key - a hand-edit, or a body written out of an index that
+    was already sharded - hands that key straight through into the assembled phase.
+    Written into a single file it would be a pointer to a file the single-file layout
+    does not have, and `is_sharded()` would then read the result as sharded.
+    """
+    if not isinstance(phase, dict) or "shard" not in phase:
+        return phase
+    trimmed = dict(phase)
+    trimmed.pop("shard", None)
+    return trimmed
+
+
+def join_manifest(manifest):
+    """`split_manifest`'s counterpart: an ASSEMBLED manifest as the SINGLE-FILE layout.
+
+    Returns a NEW dict - `meta.version` back down to the value that names the
+    single-file layout, and no `shard` key on any phase. Never mutates the input.
+
+    There is deliberately no merging here, and the shortness is the finding rather than
+    a shortcut: `load_manifest` has already replaced every stub with its full body,
+    `INDEX_ONLY_FIELDS` included, so the reverse of the split is a disciplined WRITE and
+    not a second assembler. What this owns is the one thing assembly does NOT do -
+    putting the version back - because a version still naming the sharded layout is
+    precisely the state in which two readers of one file disagree about its shape.
+    """
+    out = dict(manifest)
+    meta = dict(manifest.get("meta") or {})
+    meta["version"] = LAYOUT_VERSION["single-file"]
+    out["meta"] = meta
+    phases = manifest.get("phases")
+    if isinstance(phases, list):
+        out["phases"] = [_without_shard(p) for p in phases]
+    return out
+
+
+def save_single_file(path, manifest):
+    """Write an assembled `manifest` as ONE file in the single-file layout, atomically.
+
+    Returns the list of written paths - one entry, the same shape `save_sharded`
+    returns, so a caller can report either direction the same way.
+
+    It writes, and nothing else. The shard files the index used to point at are still
+    on disk afterwards and this does not touch them: what becomes of a user's files is
+    the calling command's decision, and a writer that removed them here would make its
+    own failure path unrecoverable - restoring the index is what undoes this write, and
+    an index whose shards have been deleted restores to nothing.
+    """
+    _atomic_write_json(path, join_manifest(manifest))
+    return [path]
+
+
+def shard_dir_to_retire(index_data, index_path):
+    """`(directory, reason)` - the ONE directory that goes dead once this index's shards
+    are inlined, or `""` and the reason there is no such directory.
+
+    Asked of the INDEX and never assumed to be `save_sharded`'s default: a `shard` value
+    is whatever relative path the index happens to carry, and a caller about to move a
+    directory aside must not move one it guessed at. `index_data` is the RAW index - the
+    stubs, before assembly - because an assembled manifest has no pointers left to read.
+
+    `""` always comes with a reason and never on its own. Three shapes reach it, all of
+    them legitimate manifests and none with a directory of its own to retire: an index
+    with no shard pointers, pointers spread over more than one directory, and pointers
+    sitting in the index's own directory, which holds the manifest too.
+    """
+    base = os.path.dirname(os.path.abspath(index_path))
+    phases = index_data.get("phases") if isinstance(index_data, dict) else None
+    dirs = []
+    for stub in (phases or []):
+        if not isinstance(stub, dict) or not isinstance(stub.get("shard"), str):
+            continue
+        d = os.path.dirname(os.path.abspath(os.path.join(base, stub["shard"])))
+        if d not in dirs:
+            dirs.append(d)
+    if not dirs:
+        return "", "the index carries no shard pointer"
+    if len(dirs) > 1:
+        return "", ("the shards are spread over more than one directory (%s)"
+                    % ", ".join(sorted(dirs)))
+    if os.path.normcase(dirs[0]) == os.path.normcase(base):
+        return "", ("the shards sit beside the index in %s, which holds the manifest too"
+                    % (dirs[0],))
+    return dirs[0], ""
 
 
 # --- cli ------------------------------------------------------------------------

@@ -4,8 +4,11 @@ The cases for `_panel_page.py`, moved out of it - an importable helper.
 
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list. This is the biggest single move in the migration: 1,636 of
-that file's 1,759 lines were this suite (it is 134 lines now), and 663 of the reads
-in these cases are of one string, `M.UI_HTML` - the panel's assembled page.
+that file's 1,759 lines were this suite, and what stayed behind is the module rather
+than its cases. Nearly every read in these cases is of one string, `M.UI_HTML` - the
+panel's assembled page - and `grep -c "M.UI_HTML" plugins/audit/tests/test__panel_page.py`
+counts them rather than this docstring claiming a figure that moves with every case
+added.
 
 ONE CASE COULD NOT MOVE LITERALLY, AND IT IS `pg2`. It reads the SUBJECT's source and
 fails if `_panel_page.py` ever imports panel-server or the panel's read/write sides -

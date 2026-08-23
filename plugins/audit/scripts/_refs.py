@@ -72,6 +72,7 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 (`scripts/` to `tests/`, both ANCHORED) and the rule did not.
 """
 
+import hashlib
 import json
 import os
 import posixpath
@@ -484,6 +485,11 @@ _TOOL_BASENAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.py(?![A-Za-z0-9_])
 # drift()` exactly as a missing reference is. Every basename not named here is still
 # a violation when it names nothing, which is what keeps the table from becoming a
 # blanket.
+#
+# BEFORE ADDING A ROW: a name a case only TALKS ABOUT does not belong here, however
+# much it looks like the entries below - it is spelled around instead, and
+# `tool_basename_drift()`'s docstring lists the spellings and says which file uses
+# each. A row is for a name that has to be on disk with the Python extension.
 TOOL_FIXTURE_BASENAMES = (
     ("test_fx.py",
      "count-ui-pins: a fixture suite written into a temp dir so `collect()` has one "
@@ -553,6 +559,28 @@ def tool_basename_drift(repo_root=None):
     reports any entry nothing writes any more, so the table cannot quietly outlive
     what it describes; see the comment above it for why the distinction is declared
     rather than derived.
+
+    AND IF YOU MET THIS RULE WITH A FIXTURE, THE TABLE IS PROBABLY NOT WHERE THE
+    NAME GOES (F68). That exception is for a name that has to exist ON DISK carrying
+    the Python extension, because the scanner under test opens nothing else. A name a
+    case only TALKS ABOUT is spelled around instead, and the tree already holds a
+    spelling for each reason there is to want one:
+
+      * drop the extension, where nothing reads it - `sweep-selftests.py` starts its
+        fixture child by path and the interpreter does not care what it is called;
+      * borrow the JavaScript module extension, where the rule under test cannot tell
+        the extensions apart - `gate-parity.py`'s gate pattern accepts every one it
+        may see, so its invented gates are faithful fixtures rather than evasions;
+      * ASSEMBLE the literal from pieces, where the Python shape itself is the
+        fixture - `prove-gates.py` and this lint's own suite both do. The pattern
+        above wants a word character immediately in front of the extension, and the
+        tail of an assembled name starts with a quote instead.
+
+    It is a spelling and not an exemption class because a fixture nothing creates is
+    indistinguishable, to this rule or to any reader of it, from a reference that has
+    gone stale - so an exemption for it would be a place to declare away the one
+    defect the rule exists to find. What was wrong was never the rule; it was that
+    two authors in a row inferred all of the above from a red build.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     known = _tool_known_basenames(root)
@@ -936,97 +964,19 @@ SWEEP_DOC_EXT = _MD_EXT + _YAML_EXT + _JSON_EXT
 # can fail it at all. One tuple, one loop - as two `if`s they would drift apart.
 SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
 
-# DIRECTORIES THIS REPO DOES NOT KEEP, read off `.gitignore` rather than listed here.
-# A hand list is the thing that rots, and this one would have rotted already:
-# `.claude/worktrees/` was ignored long after the walk below it was written, and it
-# holds WHOLE CHECKOUTS of this repo - as many as there were recent agents. A scan that
-# did not know about it would report every sweep document once per worktree, so the
-# finding count would depend on nothing that is in the commit.
+# DIRECTORIES THIS REPO DOES NOT KEEP, and the walk over what is left. Both moved to
+# `_output` when the prose-number scan needed the same answer: that scan is in the
+# anchor at layer 0, this module is at layer 1, and a copy at layer 0 would be the
+# two-prune-lists defect one layer down. The reasoning - why `.gitignore` and not a
+# hand list, why only the unambiguous half of its format, why not `git ls-files` -
+# went with the code and is not restated here.
 #
-# Only the unambiguous half of the format is honoured: a line ending in `/` with no glob
-# metacharacter names a directory. `docs/audit/*.lock` and
-# `**/.claude/audit-panel.json` are patterns and files, and reading them would be
-# implementing gitignore. The consequence is stated rather than hidden - an ignored FILE
-# of a scanned extension stays a candidate. For the sweep that is a per-developer
-# settings file which cannot carry a command; for the published-fetch rule that shares
-# this walk it is the RENDERED report, which is generated and CAN carry a fence, so
-# that rule's set still moves with whether anyone has rendered one here. Closing that
-# needs the file half of the format, which is a second derivation and owes its own
-# red-first rather than riding in on this one.
-#
-# `git ls-files` would answer "tracked" outright and may not be used: these suites are
-# verified over a `git archive HEAD` export, which has no `.git` at all.
-_IGNORE_GLOB_CHARS = "*?[]!"
-
-
-def _ignored_dirs(root):
-    """`(patterns, problem)` — the directory patterns `.gitignore` declares.
-
-    Exactly one of the two is None, the same contract `_runnable_text` uses, and for
-    the same reason: falling back to "nothing is ignored" would walk the agent
-    worktrees and report every sweep document once per copy, which is a wrong answer
-    wearing the shape of a right one. `.gitignore` is tracked, so a tree without a
-    readable one is broken rather than minimal.
-    """
-    try:
-        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        return None, ("unreadable, so the directories this repo does not keep "
-                      "cannot be derived: %s" % exc)
-    # `.git` is never IN `.gitignore` - git does not ignore its own directory - so it
-    # is the one name here, and the only one this function spells.
-    out = [".git"]
-    for raw in lines:
-        line = raw.strip()
-        if not line or line.startswith("#") or not line.endswith("/"):
-            continue
-        rel = line.strip("/")
-        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
-            continue
-        out.append(rel)
-    return tuple(sorted(set(out))), None
-
-
-def _is_ignored(rel_dir, patterns):
-    """Whether the directory at `rel_dir` is one the patterns name.
-
-    Gitignore's anchoring rule, and the only part of it needed here: a pattern with no
-    slash inside it matches a directory of that NAME at any depth (`__pycache__/`), one
-    with a slash is anchored to the repo root (`.claude/usage/`). Collapsing the two
-    would either prune every directory called `usage` or fail to prune the one that
-    matters, and both readings look right in a review.
-    """
-    name = rel_dir.rsplit("/", 1)[-1]
-    for pattern in patterns:
-        if "/" in pattern:
-            if rel_dir == pattern or rel_dir.startswith(pattern + "/"):
-                return True
-        elif name == pattern:
-            return True
-    return False
-
-
-def _iter_docs(root, patterns, exts):
-    """Relative paths of every document of `exts` this repo KEEPS, sorted.
-
-    ONE walk for both rules that ask the question, because the second one had its own
-    and it was a hand list of four directory names. That list was wrong in both
-    directions at once: it reached whatever the browser tool had last left in the tree,
-    so the candidate set moved with what had recently run on this machine rather than
-    with anything in the commit, and it pruned `.claude/` wholesale, which held the
-    tracked skills out of a rule that is precisely about a document publishing a fetch.
-    Two prune lists is how one of them comes to be wrong without the other noticing.
-    """
-    out = []
-    for base, dirs, files in os.walk(root):
-        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
-        prefix = "" if rel_base == "." else rel_base + "/"
-        dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
-        for name in sorted(files):
-            if name.endswith(exts):
-                out.append(prefix + name)
-    return sorted(out)
+# THE NAMES STAY, as three aliases rather than three wrappers: this module's cases
+# call them, and a wrapper would be a second place for the argument order to be
+# wrong.
+_ignored_dirs = _output._ignored_dirs
+_is_ignored = _output._is_ignored
+_iter_docs = _output.kept_files
 
 
 def sweep_doc_drift(repo_root=None):
@@ -1356,6 +1306,231 @@ def raw_url_pin_drift(repo_root=None):
             elif rel == _PIN_CURRENT_REL and version is not None and ref != "v" + version:
                 out.append((rel, line,
                             "pinned to %s but plugin.json says %s" % (ref, version)))
+    return out
+
+
+# --- the version a committed artifact stamps ----------------------------------
+# A rendered report stamps the plugin version that produced it, so a COMMITTED report
+# is a published claim about which release the reader is looking at. The scale demo
+# under `docs/` served a stamp several releases behind the plugin, and every check over
+# it stayed green, because they asserted CONTENT - no invalid-manifest banner, a usage
+# section present - and content is exactly what does not change with a release. Content
+# assertions cannot see age.
+#
+# NOT A SECOND LIST OF ARTIFACTS, and that is the design. The byte comparison in
+# `tools/check-rendered-artifacts.py` would also notice a stale stamp, among the bytes,
+# for the artifacts ITS table names - and its own docstring calls the artifact nobody
+# listed the direction it cannot cover. This rule DISCOVERS the claim instead: every
+# page this repo keeps is read, every stamp found is compared, and the finding names
+# BOTH versions rather than a byte count. A page committed tomorrow is covered without
+# anybody adding a row.
+# Public because `tools/affected.py` derives its selection from it: a
+# narrowed local run that skipped this rule for the very file it judges
+# would be the under-selection that file exists to prevent.
+STAMP_EXT = (".html",)
+
+# The stamp as the report writes it. The class is the marker and the version follows
+# the label inside the same element, with the title attribute in between - which is why
+# this is a pattern rather than an offset.
+#
+# The markup literal lives here and in the renderer, and the agreement is pinned by a
+# CASE over the real committed pages rather than by a comment claiming they match: the
+# module that owns paths and process I/O is the wrong home for report markup, and a
+# renamed class does not go quiet here - a tree where nothing is stamped is itself a
+# finding below.
+_STAMP_RE = re.compile(r'class="stampv"[^>]*>audit ([^<]*)<')
+
+
+def _stamp_pages(root):
+    """`(rels, problem)` - the pages whose version stamp this rule reads.
+
+    Every page this repo KEEPS, not a table of the published reports: a table is the
+    thing that goes stale, and an artifact nobody listed is the direction the byte
+    comparison names as the one it cannot cover. The panel's TEMPLATE is in this set
+    and stamps nothing, which is correct and is what a case reads it for.
+
+    Exactly one of the two is None, the contract `_fetch_docs()` uses. A named
+    accessor for the reason that one gives: a walk's defect is invisible in the rule's
+    OUTPUT, because a tree it never reached reports nothing and goes on reporting
+    nothing.
+    """
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return None, problem
+    return _iter_docs(root, patterns, STAMP_EXT), None
+
+
+def _artifact_stamps(text):
+    """[(version, line_no), ...] - every version stamp in one page.
+
+    EVERY one, not the first. Generated output is where a base template and an
+    override each emit one and disagree, and a presence test cannot tell that from a
+    page carrying a single correct stamp.
+    """
+    return [(m.group(1), text.count("\n", 0, m.start()) + 1)
+            for m in _STAMP_RE.finditer(text)]
+
+
+def artifact_version_drift(repo_root=None):
+    """[(rel, line, problem), ...] - a committed page stamped with a stale release.
+
+    THE CLAIM A PAGE MAKES ABOUT ITSELF, checked against the only thing that can
+    settle it: the page says which plugin rendered it, `plugin.json` says which plugin
+    this is, and until this rule nothing compared the two.
+
+    Four answers, and three of them are the loud ones:
+
+    - a `.gitignore` it cannot read: reported, and the scan stops, for the reason
+      `sweep_doc_drift()` gives - scratch renders would be read as published pages;
+    - a `plugin.json` with no readable version: reported. The comparison has no basis,
+      and a guessed version would fail every page for the wrong reason;
+    - not one stamped page anywhere: reported. A rule whose candidate set narrowed to
+      nothing must not be spelled the same way as a tree that is current, and that is
+      the shape a renamed stamp or a walk that stopped reaching the reports takes;
+    - otherwise one finding per stamp that is not the current version, naming BOTH -
+      "stale" without the pair is not something a reader can act on.
+
+    A page it cannot decode is reported rather than counted as unstamped, which is the
+    same distinction: "I could not read this claim" is not "this page makes none".
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    pages, problem = _stamp_pages(root)
+    if problem is not None:
+        return [(".gitignore", 0, problem)]
+    version = plugin_version(root)
+    if version is None:
+        return [(_PLUGIN_JSON_REL, 0,
+                 "carries no readable version, so no stamp has anything to be "
+                 "compared against")]
+    out = []
+    stamped = 0
+    for rel in pages:
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)),
+                      "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "unreadable, so the version it publishes cannot be "
+                                "cleared: %s" % exc))
+            continue
+        for stamp, line in _artifact_stamps(text):
+            stamped += 1
+            if stamp != version:
+                out.append((rel, line,
+                            "stamps audit %s but plugin.json says %s - re-render it "
+                            "and commit the result" % (stamp, version)))
+    if not stamped:
+        out.append(("*" + STAMP_EXT[0], 0,
+                    "no page this repo keeps carries a version stamp, so this rule "
+                    "cleared nothing rather than clearing the tree - either the "
+                    "renderer stopped stamping or the markup moved"))
+    return out
+
+
+SHOT_DIR_REL = "docs/screenshots"
+_CAPTURED_AT = SHOT_DIR_REL + "/captured-at.json"
+
+
+def screenshot_capture_drift(repo_root=None):
+    """[(rel, line, problem), ...] - a committed screenshot that no longer shows this build.
+
+    THE SAME QUESTION AS `artifact_version_drift()` ASKED OF A PICTURE, which is why
+    it cannot be answered the same way. The panel paints its own version in the
+    topbar and every shot starts at the top of the page, so each panel PNG makes a
+    claim about which build it shows - and reading that claim back means reading text
+    out of an image. `tools/capture-screenshots.mjs` refuses to compare these pixels
+    at all, for reasons its own header sets out at length: font rasterisation differs
+    between hosts and no environment variable pins it. F18 settled that, and three
+    repairs that would fake a wider claim are declined there by name.
+
+    So the basis is recorded beside the pictures instead, by the run that took them,
+    and this compares it. The record is not a guess: the panel leg asserts the LIVE
+    topbar names `plugin.json`'s version before any shutter opens, so what the
+    sidecar writes down is what was already checked.
+
+    Four answers, and the first three are the loud ones:
+
+    - no sidecar, or one that will not parse: reported. The pictures make a claim
+      and nothing can settle it, which is the state this rule exists to end - and
+      staying quiet here would be indistinguishable from a tree that is current;
+    - a `plugin.json` with no readable version: reported, for the reason the sibling
+      rule gives - a guessed version would fail every image for the wrong reason;
+    - not one image in the directory: reported. A candidate set that narrowed to
+      nothing must not be spelled the same way as a set that all agrees, and that is
+      the shape a moved output directory takes;
+    - otherwise one finding per image whose recorded version is not the current one,
+      naming BOTH, plus one per image the sidecar does not mention and one per entry
+      whose file is gone or whose bytes have changed since it was written.
+
+    WHAT THE HASH IS FOR. Without it the sidecar could be edited into agreement
+    while the pictures stayed stale, and this rule would pass on a file someone
+    typed. With it, agreeing with `plugin.json` requires the bytes to be the ones a
+    capture wrote. It does not make the claim unforgeable - a hash can be recomputed
+    - but forging it stops being something you do by accident, which is the failure
+    this is about.
+
+    `demo-gate.gif` is deliberately NOT in scope: `tools/capture-demo-gif.py` writes
+    it, so demanding an entry here would report a missing basis against a producer
+    that was never asked to record one. It owes its own answer, not this one's.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    shot_dir = os.path.join(root, SHOT_DIR_REL.replace("/", os.sep))
+    version = plugin_version(root)
+    if version is None:
+        return [(_PLUGIN_JSON_REL, 0,
+                 "carries no readable version, so no screenshot has anything to be "
+                 "compared against")]
+    try:
+        names = sorted(n for n in os.listdir(shot_dir) if n.endswith(".png"))
+    except OSError as exc:
+        return [(SHOT_DIR_REL, 0,
+                 "cannot be listed, so whether its images name this build is "
+                 "unknown rather than fine: %s" % exc)]
+    if not names:
+        return [(SHOT_DIR_REL, 0,
+                 "holds no .png at all - the rule has nothing to check, which is "
+                 "not the same as every image agreeing")]
+    try:
+        recorded = _read_json(os.path.join(root, _CAPTURED_AT.replace("/", os.sep)))
+    except (OSError, ValueError):
+        # `_read_json` propagates both, deliberately - its callers decide what a
+        # missing file means, and here it means the basis is absent, which is the
+        # finding below rather than a reason to fall back to anything.
+        recorded = None
+    images = recorded.get("images") if isinstance(recorded, dict) else None
+    if not isinstance(images, dict):
+        return [(_CAPTURED_AT, 0,
+                 "is missing or unreadable, so %d committed image(s) claim a build "
+                 "with nothing to settle the claim - re-run "
+                 "`node tools/capture-screenshots.mjs`" % (len(names),))]
+    out = []
+    for name in names:
+        rel = SHOT_DIR_REL + "/" + name
+        entry = images.get(name)
+        if not isinstance(entry, dict):
+            out.append((rel, 0, "is not in %s, so the build it shows is unrecorded"
+                                % (_CAPTURED_AT,)))
+            continue
+        try:
+            with open(os.path.join(shot_dir, name), "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+        except OSError as exc:
+            out.append((rel, 0, "unreadable, so its recorded build cannot be "
+                                "cleared: %s" % exc))
+            continue
+        if entry.get("sha256") != digest:
+            out.append((rel, 0, "has changed since its build was recorded, so the "
+                                "recorded version is about different bytes - re-run "
+                                "the capture"))
+        elif entry.get("version") != version:
+            out.append((rel, 0, "was captured at %s but plugin.json says %s - "
+                                "re-run the capture and commit the result"
+                                % (entry.get("version"), version)))
+    for name in sorted(images):
+        if name not in names:
+            out.append((_CAPTURED_AT, 0,
+                        "records %s, which is not in %s - a record with no picture "
+                        "is a claim about nothing" % (name, SHOT_DIR_REL)))
     return out
 
 

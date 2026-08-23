@@ -30,7 +30,7 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 | Plugin | What it does |
 |---|---|
-| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:migrate` shards it into one file per phase for **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges), a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:layout` switches the manifest between one file and one file per phase — the sharded shape gives **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges) and the command goes back the other way too, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
 
 ## What is enforced and what is followed
 
@@ -116,7 +116,6 @@ Then, in a git repo you want to audit, **[QUICKSTART.md](QUICKSTART.md) is the w
 path** — install to a rendered report, one page, in order, and it stops there. It is
 deliberately not repeated here: this page is the pitch, and a command list in two
 places is one list and one lie.
-
 Want to try the two UIs before installing anything? The example ships a script
 for each — `examples/panel.sh` opens the control panel on it, `examples/report.sh
 --open` re-renders and opens the report. No install, no session, no dependencies.

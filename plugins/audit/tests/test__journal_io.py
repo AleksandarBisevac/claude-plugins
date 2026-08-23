@@ -2,7 +2,7 @@
 """
 The cases for `_journal_io.py` — the audit trail library, and the boundary that made it one.
 
-`audit-journal.py`'s 112 cases live in `test_audit_journal.py` and run over these
+`audit-journal.py`'s own cases live in `test_audit_journal.py` and run over these
 same functions through that command's aliases; they are not repeated here. What
 this file asserts is what that suite structurally cannot: that there is ONE
 implementation of the row shape and the chain, that `audit-journal.py` re-exports

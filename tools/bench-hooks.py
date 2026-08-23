@@ -292,12 +292,7 @@ def render_violations(violations):
 
 
 # --- selftest -----------------------------------------------------------------
-def _selftest():
-    cases = []
-
-    def check(name, ok, detail=""):
-        cases.append((name, bool(ok), detail))
-
+def _cases(check):
     hooks = hook_files()
     check("h1 the hook list is the entry points, and excludes the shared helper",
           len(hooks) >= 8 and "_config.py" not in hooks
@@ -390,13 +385,10 @@ def _selftest():
           and "subprocess" in render_violations(
               [(_FIX_GREEDY, ["subprocess"], ("subprocess",))]))
 
-    failed = [(n, d) for n, ok, d in cases if not ok]
-    for name, ok, detail in cases:
-        print("%s %s%s" % ("PASS" if ok else "FAIL", name,
-                           ("  (%s)" % detail) if detail and not ok else ""))
-    print("")
-    print("%d/%d cases passed" % (len(cases) - len(failed), len(cases)))
-    return 1 if failed else 0
+
+def _selftest():
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 # --- main ---------------------------------------------------------------------

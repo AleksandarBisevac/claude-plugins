@@ -26,11 +26,13 @@ the layer its own consumers leave free.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
 from _output import safe_stdio                     # noqa: E402
+import _deps                                       # noqa: E402  (the one import graph, for the hook-path premise)
 import _manifest_vocab as M                        # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import _manifest_rules as _rules                   # noqa: E402
@@ -39,6 +41,7 @@ import _manifest_typos as _typos                   # noqa: E402
 import _manifest_crossrefs as _cross               # noqa: E402
 import _manifest_phases as _phases                 # noqa: E402
 import _help                                       # noqa: E402  (owns the schema walk these sets are checked against)
+import _loader                                     # noqa: E402  (loads gen-demo-manifest.py, the OTHER schema walk)
 
 
 # --- cases --------------------------------------------------------------------
@@ -204,8 +207,11 @@ def _cases(check):
     # The sets restate vocabulary `schema/audit-plan.schema.json` owns, and until
     # v0.40 nothing compared them: the schema could gain a property and the set
     # beside it stayed behind in silence, so the typo-catcher warned about a real
-    # key. `_help.schema_vocab_drift()` is that comparison (it lives there because
-    # the tree's one schema walk does - see this module's SCHEMA_ANCHORS comment).
+    # key. `_help.schema_vocab_drift()` is that comparison, and it lives there
+    # because the walk that can SEE these keys does. It is not the tree's only
+    # schema walk - mv34 to mv36 below are why the other one cannot answer this
+    # question, and why that is counted rather than stated. See this module's
+    # SCHEMA_ANCHORS comment.
     _levels = _help.schema_level_keys()
     _compared = sum(len(v) for v in _levels.values())
     check("mv18 every KNOWN_* set still agrees with audit-plan.schema.json - a "
@@ -425,6 +431,150 @@ def _cases(check):
           "the consequence mv29 protects and cannot see, the same blind spot mv28 "
           "covers for CLAIM_KEYS: %r" % (_unreached,),
           _unreached == [] and (_a0, _w1) == ([], []))
+
+    # --- the OTHER schema walk, and why it cannot answer this ---------------------
+    # "Reuse gen-demo-manifest's walk" is the obvious suggestion, it has been made
+    # here, and acting on it drops the whole `meta.ado` level in silence - so the
+    # reason is a case rather than a sentence. `schema_fields()` keys
+    # `<owner>.<field>` with the owner a $def NAME, and `meta.ado` is an INLINE
+    # object, so that walk has no owner to hang a sub-key on. The day it gains a
+    # $def the other walk COULD answer this question, and these go red instead of
+    # the SCHEMA_ANCHORS comment going quietly stale - which is the fault they were
+    # written for: that comment claimed there was only one walk in this tree, three
+    # times, while the conclusion it supported was still right.
+    _gdm = _loader.load_script("gen-demo-manifest.py", modname="gdm_vocab_walk")
+    _schema = _gdm.load_schema()
+    _defined = _gdm.schema_fields(_schema)
+    _owners = set(f.split(".", 1)[0] for f in _defined)
+    # Two-component by construction, so a DOCUMENT PATH is not expressible at all.
+    # Computed as a list rather than a `max()`: an empty walk would raise there, and
+    # an escape takes mv35 and mv36 out of the run instead of failing this one.
+    _deep = sorted(f for f in _defined if f.count(".") != 1)
+    _ado_lvl = set(_levels.get("KNOWN_ADO") or ())
+    _ado_node = ((((_schema.get("$defs") or {}).get("meta") or {})
+                  .get("properties") or {}).get("ado") or {})
+    # Asked through the other walk's OWN deref, so this is its answer about the node
+    # and not a second opinion about it: None means "no name to own a field".
+    _ado_def = _gdm._deref(_schema, _ado_node)[0]
+    check("mv34 the OTHER schema walk cannot answer this question: "
+          "`gen-demo-manifest.schema_fields()` reports %d fields over %d owners, "
+          "not one of them `ado` and not one of them owning an `ado.*` field, and "
+          "its keys are two-component - so every one of the %d keys KNOWN_ADO "
+          "guards is outside its reach and it sees `meta.ado` as one leaf of `meta` "
+          "and stops. Reusing it here would drop that level silently; this goes red "
+          "the day it COULD answer the question, which is the day `meta.ado` stops "
+          "being inline: %r"
+          % (len(_defined), len(_owners), len(_ado_lvl), _ado_def),
+          _defined and _deep == [] and _ado_lvl
+          and "ado" not in _owners
+          and [f for f in _defined if f.startswith("ado.")] == []
+          and "meta" in _owners and "meta.ado" in _defined
+          and _ado_def is None,
+          repr((sorted(_owners), _deep)))
+    _link = set(f.split(".", 1)[1] for f in _defined if f.startswith("adoLink."))
+    _uncovered = sorted(_ado_lvl - _link)
+    _shared = sorted(_ado_lvl & _link)
+    _suffixes = set(f.split(".", 1)[1] for f in _defined if "." in f)
+    _defs = _schema.get("$defs") or {}
+    check("mv35 ...and `adoLink` is a DIFFERENT $def - the link /audit:sync writes "
+          "ONTO a work item, not the connector config - so its %d fields are not "
+          "that level's coverage wearing another name: %d of the %d keys KNOWN_ADO "
+          "guards are absent from it, the names the two share are %r, and "
+          "`conventions` and `parentWorkItem` - the pair that reached KNOWN_ADO by "
+          "hand and prompted this - are owned by NOTHING in that walk, under any "
+          "owner at all"
+          % (len(_link), len(_uncovered), len(_ado_lvl), _shared),
+          "adoLink" in _defs and "ado" not in _defs
+          and _link and _uncovered
+          and not ({"conventions", "parentWorkItem"} & _suffixes),
+          repr((sorted(_link), _uncovered, sorted(_defs))))
+    # The claim mv34 and mv35 rest on is "this is not the tree's only schema walk",
+    # and its opposite is what three comments said while nothing counted. So count.
+    # A `$defs` read under `scripts/` is one of the two walks or a comment naming
+    # them; a file this table does not know is a third walk or a fourth account of
+    # these two, and either way the SCHEMA_ANCHORS comment has to be re-read rather
+    # than trusted. `_isrc` is the scan mv29 already built - a second walk of the
+    # tree here would be a second answer to what is in it.
+    _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
+                   "demo/gen-demo-manifest.py": "the other walk, by $def name",
+                   "manifest/_manifest_vocab.py": "no walk - prose that names the "
+                                                  "keyword: the SCHEMA_ANCHORS "
+                                                  "comment, and the pointer at "
+                                                  "STATUS"}
+    _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
+    check("mv36 ...and the claim both of those rest on - that this is NOT the "
+          "tree's only schema walk - is COUNTED rather than written down: every one "
+          "of the %d files under scripts/ that reads `$defs` is one this comment "
+          "accounts for. F50 was the opposite claim in three comments with nothing "
+          "counting, so the symmetric difference is the case: %r"
+          % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),
+          set(_defs_readers) == set(_walk_files) and len(_walk_files) > 1,
+          repr(_defs_readers))
+
+    # --- the premise point 3 of that comment rests on ----------------------------
+    # Point 3 declines to derive the vocabulary partly because the cost cannot land
+    # on the per-tool-call hook path. `hooks/` may not import `scripts/` at all and
+    # `_deps.layer_violations()` already says so, so the live half of the premise is
+    # what the hooks RUNTIME-load by basename through `_config.find_script()` and
+    # what THOSE import in turn. All but one of those roots is at layer 1 beside
+    # `_manifest_vocab`, where the layer rule refuses the edge as not strictly
+    # downward; `usage_ledger` is at layer 3 and `meter-usage.py` loads it on every
+    # tool call, so the one edge that would falsify the premise is legal, downward,
+    # and invisible to every other gate here. Hence a case rather than a sentence.
+    #
+    # THE WHOLE GRAPH, not a grep and not a walk written here: `import_graph()`
+    # unions static imports with `_loader` runtime loads, and a second reachability
+    # walk over `scripts/` would be a second answer to what this tree imports.
+    _hook_roots = set()
+    _hook_unparsed = []
+    _script_names = set(_deps._module_files(_output.SCRIPTS_DIR)[0])
+    for _hrel, _hpath in _output.py_files(_output.HOOKS_DIR):
+        with open(_hpath, "r", encoding="utf-8") as _hfh:
+            _htext = _hfh.read()
+        try:
+            _htree = ast.parse(_htext)
+        except SyntaxError:
+            # A hook that will not parse is not a hook that loads nothing.
+            _hook_unparsed.append(_hrel)
+            continue
+        for _hname in _deps._py_literal_basenames(_htree):
+            if _hname in _script_names:
+                _hook_roots.add(_hname)
+    _hedges, _hbroken = _deps.import_graph()
+    _hout = {}
+    for _a, _b in _hedges:
+        _hout.setdefault(_a, []).append(_b)
+
+    def _hclosure(start):
+        """Every module reachable from `start` over that graph, `start` included."""
+        seen, todo = set(), [start]
+        while todo:
+            node = todo.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            todo.extend(_hout.get(node, ()))
+        return seen
+
+    _hreach = set()
+    for _hroot in sorted(_hook_roots):
+        _hreach |= _hclosure(_hroot)
+    # Per root as well as unioned, so a failure names the hook-path module that
+    # grew the edge rather than only saying that one did.
+    _hculprits = sorted(r for r in _hook_roots if "_manifest_vocab" in _hclosure(r))
+    check("mv37 ...and the premise point 3 of that comment rests on - that nothing "
+          "on the per-tool-call hook path reaches this module, so deriving the "
+          "vocabulary would cost the validator and the panel rather than every edit "
+          "- is WALKED rather than believed: the %d scripts/ modules hooks/ "
+          "runtime-load by basename reach %d modules between them, `_output` among "
+          "them so the walk is known to have followed an edge, and %s reaches this "
+          "one. `usage_ledger` sits at layer 3, so an import from there would be "
+          "legal and strictly downward - no layer rule can close that hole, which "
+          "is why this case exists"
+          % (len(_hook_roots), len(_hreach), _hculprits or "none of them"),
+          bool(_hook_roots) and not _hook_unparsed and not _hbroken
+          and "_output" in _hreach and not _hculprits,
+          repr((sorted(_hook_roots), _hook_unparsed, _hbroken, sorted(_hreach))))
 
 
 def _selftest():

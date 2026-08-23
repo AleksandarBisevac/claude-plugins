@@ -7,7 +7,7 @@ TWO JOBS, AND THE SECOND ONE IS WHY THIS FILE NEVER MOVES. `safe_stdio()` is the
 first and the older one. The second is the path bootstrap: `SCRIPTS_DIR` and its
 four companions below are the one written-down statement of where the tree's
 directories are, `install_path()` puts `scripts/` AND every subdirectory of it
-holding a `.py` on `sys.path`, and `PATH_PREAMBLE` is the eleven lines every other
+holding a `.py` on `sys.path`, and `PATH_PREAMBLE` is the block every other
 `.py` here carries to reach this module without knowing how deep it sits.
 `path_preamble_violations()` counts them. The consequence is worth stating where the
 mechanism lives: the folders under `scripts/` are LABELS, NOT NAMESPACES — every
@@ -141,6 +141,101 @@ def py_files(directory):
             found.append((rel, path))
     found.sort()
     return found
+
+
+# --- the files this repo KEEPS -------------------------------------------------
+# ONE walk for every rule that asks which files this repo holds. `_refs` wrote it,
+# for the sweep-document rule and the published-fetch rule, and its own note says
+# why there is only one: the second rule had a walk of its own and it was a hand
+# list of four directory names, wrong in both directions at once. It reached
+# whatever the browser tool had last left in the tree, so the candidate set moved
+# with what had recently run on this machine rather than with anything in the
+# commit, and it pruned `.claude/` wholesale, which held the tracked skills out of
+# a rule that is precisely about a document publishing a fetch.
+#
+# IT LIVES HERE, AT THE ANCHOR, and that is the only thing about it that is new.
+# `_refs` is at layer 1; the prose-number scan below is in this module at layer 0
+# and needs the same answer, so a copy at layer 0 would be exactly the
+# two-prune-lists defect one layer down. `_refs` keeps the names and delegates.
+#
+# `.claude/worktrees/` is the entry that makes the pruning necessary rather than
+# tidy: it holds WHOLE CHECKOUTS of this repo - as many as there were recent
+# agents. A scan that did not know about it would report every finding once per
+# worktree, so the finding count would depend on nothing that is in the commit.
+#
+# Only the unambiguous half of the format is honoured: a line ending in `/` with no
+# glob metacharacter names a directory. A pattern and a bare file path are the rest
+# of gitignore, and reading them would be implementing it. The consequence is
+# stated rather than hidden - an ignored FILE of a scanned extension stays a
+# candidate, which is why the generated report has a row of its own in
+# `PROSE_SCAN_EXEMPT`, and why an untracked scratch file of a scanned extension is
+# scanned like any other. Being scanned by default is the property; the way to opt
+# out is a row somebody wrote.
+#
+# `git ls-files` would answer "tracked" outright and may not be used: these suites
+# are verified over a `git archive HEAD` export, which has no `.git` at all.
+_IGNORE_GLOB_CHARS = "*?[]!"
+
+
+def _ignored_dirs(root):
+    """`(patterns, problem)` - the directory patterns `.gitignore` declares.
+
+    Exactly one of the two is None. Falling back to "nothing is ignored" would walk
+    the agent worktrees and report every finding once per copy, which is a wrong
+    answer wearing the shape of a right one. `.gitignore` is tracked, so a tree
+    without a readable one is broken rather than minimal.
+    """
+    try:
+        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, ("unreadable, so the directories this repo does not keep "
+                      "cannot be derived: %s" % exc)
+    # `.git` is never IN `.gitignore` - git does not ignore its own directory - so it
+    # is the one name here, and the only one this function spells.
+    out = [".git"]
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or not line.endswith("/"):
+            continue
+        rel = line.strip("/")
+        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
+            continue
+        out.append(rel)
+    return tuple(sorted(set(out))), None
+
+
+def _is_ignored(rel_dir, patterns):
+    """Whether the directory at `rel_dir` is one the patterns name.
+
+    Gitignore's anchoring rule, and the only part of it needed here: a pattern with
+    no slash inside it matches a directory of that NAME at any depth
+    (`__pycache__/`), one with a slash is anchored to the repo root
+    (`.claude/usage/`). Collapsing the two would either prune every directory
+    called `usage` or fail to prune the one that matters, and both readings look
+    right in a review.
+    """
+    name = rel_dir.rsplit("/", 1)[-1]
+    for pattern in patterns:
+        if "/" in pattern:
+            if rel_dir == pattern or rel_dir.startswith(pattern + "/"):
+                return True
+        elif name == pattern:
+            return True
+    return False
+
+
+def kept_files(root, patterns, exts):
+    """Relative paths of every file of `exts` this repo KEEPS, sorted."""
+    out = []
+    for base, dirs, files in os.walk(root):
+        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
+        prefix = "" if rel_base == "." else rel_base + "/"
+        dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
+        for name in sorted(files):
+            if name.endswith(exts):
+                out.append(prefix + name)
+    return sorted(out)
 
 
 # --- the path bootstrap -------------------------------------------------------
@@ -533,7 +628,7 @@ def entries_missing_guard(dirs=None):
 
     "First" is judged on what EXECUTES, via `ast`, not on where text appears. Every one of
     these scripts defines printing functions hundreds of lines above its `__main__` block,
-    so a textual "the call must precede the first `print(`" would name all fifteen of them
+    so a textual "the call must precede the first `print(`" would name every one of them
     for code that cannot possibly run before the guard. The rule is: among the statements
     that actually run — module level, then the entry block — no `print` may precede the
     `safe_stdio()` call. A file that cannot be parsed is reported rather than skipped,
@@ -948,6 +1043,11 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 #                collection's whole is N. 2 sites beyond the first shape, BOTH
 #                wrong (48 against a real 83).
 #
+# TWO MORE WERE SURVEYED AND REFUSED - a measurement family and a before/after
+# family - and what the survey found is in `prose_number_claims()`'s list of what
+# this cannot see, beside the other gaps, because a refusal is only useful to the
+# next author if it is filed where they will look for the shape.
+#
 # WHY EVERY ONE OF THEM TAKES "REMOVE THE NUMBER" AND NOT "REQUIRE THE BASIS".
 # Both remedies satisfy the house rule on paper. What separated them was a
 # measurement taken the day this was written: `CONTRIBUTING.md`'s files-over-500
@@ -959,6 +1059,71 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 # behalf. So the basis stays the escape hatch for a number a reader genuinely
 # acts on, and is not the remedy of choice for one that restates a live source.
 _CASE_WORDS = ("cases", "case")
+
+
+# --- a numeral, in either spelling ------------------------------------------------
+# A count SPELLED OUT is the same claim as a count in digits, so it is read by the
+# shapes above rather than by a grammar of its own. THE TABLE'S OMISSIONS ARE THE
+# DESIGN. A bare number-word is not a claim, it is English, and the shapes are all
+# that separates the two.
+#
+# WHERE THE BOUNDARY CAME FROM, and it is a measurement rather than taste. With the
+# small words admitted as well, this lint and `_deps.doc_prose_numbers()` between
+# them reported nineteen sites across `hooks/`, `scripts/` and the three prose
+# documents on the day this landed - every one of them below `ten`, and only two were
+# the defect. Of the rest: thirteen were an ANAPHOR pointing at an enumeration the
+# reader can see in the same breath ("all three are honest about what they are:",
+# and the three are the next lines), which is a number carrying its own basis; one
+# was a RATE, one a UNIQUENESS claim whose sentence dies if the word goes, one a
+# COUNTERFACTUAL about cases that do not exist, and one a noun compound the shape
+# misread. Sixteen good sentences would have had to be rewritten to catch two
+# marginal ones, and the pressure after that is to loosen a shape.
+#
+# At `ten` and above the same run reported four sites, and three had already rotted -
+# two spellings of a check count that had grown by three, and a file count that had
+# doubled. That is the hit rate the earlier families were adopted on.
+#
+# So the band under `ten` is an UNDER-count, and it is documented as one rather than
+# closed. Widening it is the repair to refuse: a pattern loosened to admit prose
+# stops catching the thing it exists for, and the case that would have noticed is
+# the one being changed.
+_NUMERAL_TENS = ("twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+                 "eighty", "ninety")
+
+# Read ONLY as the tail of a tens word, never on its own. A hyphenated compound is
+# punctuation `_words()` has already dropped, so a tens word and its tail arrive as
+# two tokens; without this the compounds this tree really writes would read as a
+# number followed by an unrelated word and slip every shape.
+_NUMERAL_TAILS = ("one", "two", "three", "four", "five", "six", "seven",
+                  "eight", "nine")
+
+_NUMERAL_WORDS = ("ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+                  "sixteen", "seventeen", "eighteen", "nineteen",
+                  "hundred", "thousand") + _NUMERAL_TENS
+
+# NOT the same table as `config/_help._COUNT_WORDS`, and merging them would break
+# both. That one RESOLVES a word to a number by its index, against a phrase a regex
+# has already pinned, so it needs exactly the small words this one leaves out. This
+# one RECOGNISES a numeral in arbitrary prose, where those same words are ambiguous.
+# A single table serving both would have to be ordered and complete, which is the
+# widening the second-direction case exists to stop.
+
+
+def _numeral_span(w, i):
+    """`(text, index past it)` if a numeral starts at `w[i]`, else None.
+
+    ONE entry point for both spellings, so no shape can end up reading a digit and
+    a word by different rules. Returns the text rather than the value: the finding
+    quotes the claim back, and nothing here compares magnitudes.
+    """
+    tok = w[i]
+    if tok.isdigit():
+        return (tok, i + 1)
+    if tok not in _NUMERAL_WORDS:
+        return None
+    if tok in _NUMERAL_TENS and w[i + 1:i + 2] and w[i + 1] in _NUMERAL_TAILS:
+        return ("%s-%s" % (tok, w[i + 1]), i + 2)
+    return (tok, i + 1)
 
 # Token sequences that assert a number has not changed AS OF WRITING. The past
 # tense of `stayed`/`remained` is not what makes them history: "it stayed at N"
@@ -996,18 +1161,124 @@ _PRESENT_AUX = ("is", "are", "has", "have")
 _BASIS_MARKERS = ("python3", "grep", "for f in")
 
 
+# A separator that stays INSIDE a token when digits flank it. Nothing else survives
+# tokenizing, and the two characters are chosen rather than guessed: one makes a
+# ratio, the other a decimal.
+_NUMBER_SEPARATORS = "./"
+
+
+def _is_digit_char(ch):
+    """One CHARACTER, is it a digit - the tokenizer's question, not the shapes'.
+
+    Named so that the two questions cannot be confused for one. `_numeral_span()`
+    asks whether a TOKEN is a numeral and is the single entry point every shape
+    reads its number through; this asks whether a character may hold a separator
+    inside a token, which happens before any shape sees anything. A case counts
+    both occurrences and would go red on a third, so a family added later cannot
+    quietly grow a numeral reader of its own out of a character test.
+    """
+    return ch.isdigit()
+
+
 def _words(line):
-    """`line` as lowercase alphanumeric tokens, punctuation dropped."""
-    out, cur = [], []
-    for ch in line.lower():
+    """`line` as lowercase alphanumeric tokens - except a separator INSIDE a number.
+
+    `7/7` and `0.01` come back as ONE token each rather than as two numerals, and a
+    token carrying a separator is not a numeral to `_numeral_span()`. That is the
+    whole rule, and it is a NARROWING adopted when the scan below stopped being
+    scoped to `scripts/`: a ratio is a tally and a decimal is a measurement, and
+    neither is a count of things.
+
+    THE MEASUREMENT THAT BOUGHT IT. The tally this whole tree prints - the
+    `<passed>/<total>` line every suite ends with - appears outside `scripts/` as a
+    fixture, as a regex and as an asserted literal, in the sweep runner, the test
+    harness and half a dozen suites. Not one of those is a claim about how many
+    cases exist, and none of them can be reworded away: the bytes ARE the contract
+    CI greps for. Without this rule the widened scan reported every one of them.
+
+    WHAT IT GIVES UP, said rather than left to be found: a cardinality genuinely
+    written as a fraction stops being read. Nobody writes one that way, and the
+    direction is an under-count - the direction `prose_number_claims()` already
+    documents as the only one these shapes can be wrong in.
+
+    AN UNDERSCORE INSIDE A WORD IS THE SAME NARROWING, one character further. An
+    identifier is one word, which is a fact about TEXT and not about Python - so
+    this does not teach the scanner to read code, it stops it splitting a name into
+    pieces that were never written. Without it a numeric index in front of
+    `case_id(` yielded a numeral and the noun `case`, and the line reported itself
+    as a cardinality claim with no prose on it at all. Measured across the derived
+    set and three tree states before adopting: it removes exactly that hit and
+    loses nothing.
+
+    A THOUSANDS COMMA IS DELIBERATELY NOT HERE. A grouped number is still a count,
+    so the comma keeps being dropped, which leaves two numerals and lets the second
+    one keep whatever noun follows it. That is how a line pairing a line count with
+    a case count still reports its live half.
+
+    THE WALK ITSELF IS `_tokenize()`, which answers this question and the sentence
+    question in one pass. This name stays the contract every shape reads and the
+    cases pin.
+    """
+    return _tokenize(line)["words"]
+
+
+# A sentence terminator, and it is read as one only where the character after it is
+# not alphanumeric - which is what keeps `x.py has` one sentence while `x.py. Next`
+# is two, with no table of abbreviations and no lookahead past one character.
+_SENTENCE_ENDS = ".!?"
+
+
+def _in_dot_run(text, i):
+    """True if `text[i]` is one stop of an ellipsis rather than a sentence end.
+
+    A run of stops is a MARKUP elision here, not a full stop - the panel's own
+    docstring writes a tag pair with the body elided, and reading each stop as a
+    boundary cut that one sentence into four, which threw away the past tense the
+    sentence opened with and reported its history as a claim.
+    """
+    before = text[i - 1:i] if i else ""
+    return text[i] == "." and "." in (before, text[i + 1:i + 2])
+
+
+def _tokenize(line):
+    """`{"words", "sentence"}` - `line`'s tokens, and which sentence each sits in.
+
+    ONE walk for both answers, because they read the same characters and the
+    hardest rule is shared: a separator kept INSIDE a number is not a sentence
+    end. A second walk asking only about boundaries would be a second home for
+    that rule, and the two would disagree about a decimal the first time either
+    was edited.
+
+    `sentence` is an ordinal PER TOKEN, parallel to `words`, rather than a list
+    of sentences. Every shape below indexes the line's tokens positionally, so
+    the tokens have to arrive as one flat list; which sentence a token sits in is
+    an extra fact about it, not a different shape of the same data.
+    """
+    low = line.lower()
+    words, sentence = [], []
+    cur, index = [], 0
+    for i, ch in enumerate(low):
         if ch.isalnum():
             cur.append(ch)
-        elif cur:
-            out.append("".join(cur))
+            continue
+        if (ch in _NUMBER_SEPARATORS and cur and _is_digit_char(cur[-1])
+                and _is_digit_char(low[i + 1:i + 2])):
+            cur.append(ch)
+            continue
+        if ch == "_" and cur and low[i + 1:i + 2].isalnum():
+            cur.append(ch)
+            continue
+        if cur:
+            words.append("".join(cur))
+            sentence.append(index)
             cur = []
+        if (ch in _SENTENCE_ENDS and not low[i + 1:i + 2].isalnum()
+                and not _in_dot_run(low, i)):
+            index += 1
     if cur:
-        out.append("".join(cur))
-    return out
+        words.append("".join(cur))
+        sentence.append(index)
+    return {"words": words, "sentence": sentence}
 
 
 def _backtick_chunks(line):
@@ -1058,37 +1329,112 @@ def _names_code(line):
 # Past-tense markers. The broadest family below ("N cases", with no "its" and no
 # "live in" in front of it) is the only one wide enough to catch ordinary
 # recollection, and recollection is exactly what a decision record is made of.
-# Anything on this list means the line is talking about THEN, so the number is
-# not a claim about now and must stay writable.
+# Anything on this list means the SENTENCE is talking about THEN, so the number is
+# not a claim about now and must stay writable. The sentence and not the line -
+# `_historical_sentences()` below carries the two directions the line got wrong.
 _PAST = ("was", "were", "had", "used", "stood", "down", "up", "once",
          "previously", "then", "before", "originally", "until", "old")
 
 
 def _looks_historical(w):
-    """True if this line is recollection rather than a present-tense claim."""
+    """True if these tokens are recollection rather than a present-tense claim."""
     for tok in w:
         if tok in _PAST:
             return True
     return False
 
 
-def _cardinality_claim(w):
-    """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them"."""
-    for i, tok in enumerate(w):
-        if not tok.isdigit():
+# What a hard-wrapped sentence may trail after its stop: quotes, brackets and
+# markdown emphasis. Without them a bolded sentence ending in a stop reads as
+# unfinished, and the next line would inherit a tense that is not its own.
+_SENTENCE_TAIL = " \t\"'`)]}*_"
+
+
+def _ends_sentence(text):
+    """True if `text` finishes a sentence, so a following line starts a new one."""
+    tail = text.rstrip(_SENTENCE_TAIL)
+    return bool(tail) and tail[-1] in _SENTENCE_ENDS
+
+
+def _edge_sentences(text):
+    """`{"first", "last"}` - the tokens of `text`'s opening and closing sentences.
+
+    The two halves a wrap can join to: a line continues whatever sentence its
+    predecessor left open, and leaves one open for its successor to finish. Both
+    come from one tokenize because both are that walk's answer, and a text with no
+    tokens yields two empty lists rather than None - there is nothing to join,
+    which is an answer and not a failure.
+    """
+    tok = _tokenize(text or "")
+    words, sent = tok["words"], tok["sentence"]
+    if not words:
+        return {"first": [], "last": []}
+    return {"first": [w for w, k in zip(words, sent) if k == sent[0]],
+            "last": [w for w, k in zip(words, sent) if k == sent[-1]]}
+
+
+def _historical_sentences(line, preceding, following):
+    """The ordinals of `line`'s sentences that read as recollection, not a claim.
+
+    A SENTENCE, NEVER THE PHYSICAL LINE, and F76 is both directions of that
+    difference, met on one day. A past marker in the sentence BEFORE the number -
+    two clauses earlier on the same line, about something else entirely - was
+    excusing a live count: the escape reading too widely. And a marker in the SAME
+    sentence one line up was not reaching the number at all, because prose wraps:
+    the escape reading too narrowly. One scope fixes both, and the first half is
+    why this is not a loosening - a marker that used to excuse a whole line now
+    excuses one sentence of it.
+
+    The join reaches ONE line each way, the window `_carries_basis()` already
+    reads and for the same reason. A sentence running further keeps its marker out
+    of reach and its number reported, which is the direction a reader meets by
+    disagreeing with a finding; the other direction is met by silence.
+    """
+    tok = _tokenize(line)
+    words, sent = tok["words"], tok["sentence"]
+    if not words:
+        return set()
+    before = ([] if _ends_sentence(preceding or "")
+              else _edge_sentences(preceding)["last"])
+    after = [] if _ends_sentence(line) else _edge_sentences(following)["first"]
+    out = set()
+    for s in set(sent):
+        scope = [w for w, k in zip(words, sent) if k == s]
+        if s == sent[0]:
+            scope = before + scope
+        if s == sent[-1]:
+            scope = scope + after
+        if _looks_historical(scope):
+            out.add(s)
+    return out
+
+
+def _cardinality_claim(tok, historical):
+    """"its N cases" / "N cases live in" / "--selftest (N cases)" / "all N of them".
+
+    `historical` is the set of sentence ordinals `_historical_sentences()` read as
+    recollection. It arrives as an argument rather than being derived here because
+    that reading needs the neighbouring LINES, which a shape holding one line's
+    tokens cannot see.
+    """
+    w, sent = tok["words"], tok["sentence"]
+    for i in range(len(w)):
+        span = _numeral_span(w, i)
+        if span is None:
             continue
-        nxt = w[i + 1] if i + 1 < len(w) else ""
+        num, end = span
+        nxt = w[end] if end < len(w) else ""
         prv = w[i - 1] if i else ""
         if nxt in _CASE_WORDS:
             if prv == "its":
-                return "its %s %s" % (tok, nxt)
-            if w[i + 2:i + 4] == ["live", "in"]:
-                return "%s %s live in" % (tok, nxt)
+                return "its %s %s" % (num, nxt)
+            if w[end + 1:end + 3] == ["live", "in"]:
+                return "%s %s live in" % (num, nxt)
             if "selftest" in w[max(0, i - 4):i]:
-                return "--selftest (%s %s)" % (tok, nxt)
+                return "--selftest (%s %s)" % (num, nxt)
         # "all N of them", the shape selftest_coverage's own docstring used
-        if prv == "all" and w[i + 1:i + 3] == ["of", "them"]:
-            return "all %s of them" % tok
+        if prv == "all" and w[end:end + 2] == ["of", "them"]:
+            return "all %s of them" % num
         # The BARE shape: a number sitting in front of "cases", however it is
         # introduced -- "the N cases in tests/", "across N cases", "the ~N cases
         # below". Every example here spells N on purpose: written with real
@@ -1102,13 +1448,15 @@ def _cardinality_claim(w):
         # argument: it is one added case away from joining the other seven.
         #
         # This family is wide enough to catch ordinary recollection, so it is the
-        # one that has to ask whether the line is talking about THEN. Skipping
-        # that check turns "it stood at 70 cases that day" into a violation and
-        # makes the decision record unwritable.
-        if nxt in _CASE_WORDS or (nxt == "selftest" and w[i + 2:i + 3] and
-                                  w[i + 2] in _CASE_WORDS):
-            if not _looks_historical(w):
-                return "%s cases" % tok
+        # one that has to ask whether the SENTENCE is talking about THEN. Skipping
+        # that check turns "it stood at N cases that day" into a violation and
+        # makes the decision record unwritable. The sentence the NUMERAL sits in,
+        # not the line: a marker two clauses back, about something else, used to
+        # excuse a live count on the same line.
+        if nxt in _CASE_WORDS or (nxt == "selftest" and w[end + 1:end + 2] and
+                                  w[end + 1] in _CASE_WORDS):
+            if sent[i] not in historical:
+                return "%s cases" % num
     return None
 
 
@@ -1116,13 +1464,14 @@ def _persistence_claim(line, w):
     """"`NAME` stayed at N" / "`NAME` is still N" - F43's shape, and F39's."""
     if not _names_code(line):
         return None
-    for i, tok in enumerate(w):
-        if not tok.isdigit():
+    for i in range(len(w)):
+        span = _numeral_span(w, i)
+        if span is None:
             continue
         for phrase in _PERSISTS:
             n = len(phrase)
             if i >= n and tuple(w[i - n:i]) == phrase:
-                return "%s %s" % (" ".join(phrase), tok)
+                return "%s %s" % (" ".join(phrase), span[0])
     return None
 
 
@@ -1136,21 +1485,31 @@ def _completeness_claim(w):
     with it). Both spellings are in this tree, and a window of three is what
     tells them apart.
     """
-    for i, tok in enumerate(w):
-        if not tok.isdigit() or not i or w[i - 1] != "all":
+    for i in range(len(w)):
+        if not i or w[i - 1] != "all":
             continue
-        for aux in w[i + 1:i + 4]:
+        span = _numeral_span(w, i)
+        if span is None:
+            continue
+        num, end = span
+        for aux in w[end:end + 3]:
             if aux in _PRESENT_AUX:
-                return "all %s ... %s" % (tok, aux)
+                return "all %s ... %s" % (num, aux)
     return None
 
 
-def _prose_number_claim(line, following=None):
+def _prose_number_claim(line, following=None, preceding=None):
     """The claim's text if this line writes a present-tense number, else None.
 
     A line that names the command recomputing the number is NOT a finding: the
     house rule is that a claim carries the basis that makes it true, and such a
     line has done exactly that.
+
+    `following` and `preceding` are the neighbouring PHYSICAL lines, and neither
+    is decoration: every document here is hard-wrapped, so a claim's basis and
+    the tense of the sentence carrying it both routinely land one line away from
+    its number. Called with neither - which is what a caller handing over a
+    single string means - this reads the line as one whole sentence.
 
     THIS IS THE ONLY DEFINITION OF THE SHAPES. `_deps` scans the documents and
     delegates here rather than restating them; a second copy of the pattern
@@ -1159,13 +1518,141 @@ def _prose_number_claim(line, following=None):
     """
     if _carries_basis(line, following):
         return None
-    w = _words(line)
-    return (_cardinality_claim(w)
+    tok = _tokenize(line)
+    w = tok["words"]
+    return (_cardinality_claim(tok, _historical_sentences(line, preceding, following))
             or _persistence_claim(line, w)
             or _completeness_claim(w))
 
 
-def prose_number_claims(script_dir=None, hooks_dir=None):
+# --- what the prose scan reads ------------------------------------------------
+# DERIVED, NOT LISTED, and that is the whole of this section. The scanned set used
+# to be a hand-written pair - `.py` under `hooks/` and `scripts/`, plus three named
+# documents - so everything else in the repo was unguarded, and that is where the
+# claims had gone: a part count in `scripts/ui/*/README.md` (three sites, two of
+# them already wrong), a suite size in a `tests/` docstring (most of them wrong),
+# and a file count in the prover under `tools/` - the directory holding the sweep
+# runner, the gate parity check and the mutation table, every one of which exists
+# to talk about counts. The tree's own counting tools were the unaudited part.
+#
+# So the set is now every `.py` and every `.md` the walk reaches, and a file added
+# to this repo is scanned by default. Excluding one is a row below carrying a
+# reason a reader can disagree with - the shape `tools/gate-parity.py` uses for a
+# gate a side may legitimately not name, and `_refs.EXCLUDED` for the documents
+# where a stale path is correct rather than broken.
+#
+# A row is a repo-relative path or, ending in `/`, a directory prefix.
+PROSE_SCAN_EXEMPT = (
+    ("CHANGELOG.md",
+     "released history: a count in a shipped entry was true of that release, and "
+     "rewriting released history to keep a lint quiet is worse than the lint"),
+    ("docs/design/",
+     "dated design records: they describe the tree as it was at the decision, so "
+     "the numbers in them are history in the same way a past tense is"),
+    ("docs/audit/audit-report.md",
+     "generated from the manifest on every render, so a count in it is derived "
+     "rather than written. It is also gitignored as a FILE, which this walk does "
+     "not read, so without this row the finding set would move with whether "
+     "anybody had rendered a report in this checkout"),
+    ("plugins/audit/tests/test__output.py",
+     "holds THIS scanner's own fixtures: every shape it recognises appears there "
+     "as an argument spelled on purpose, because a text scanner can only be shown "
+     "to fire by handing it the literal it must recognise. The house rule is to "
+     "build a forbidden literal rather than write one, and here the literal IS "
+     "the argument under test - building it would move the needle out of the "
+     "fixture and into the assertion. The cost is the thing to disagree with: a "
+     "genuinely stale count in this one suite is unguarded"),
+    ("plugins/audit/tests/test__deps.py",
+     "the same, for the document half - its cases hand the shapes to "
+     "`_deps.doc_prose_numbers()` as fixture documents"),
+)
+
+
+def prose_scan_exemption(rel):
+    """The declared reason `rel` is out of the prose scan, or None."""
+    for path, why in PROSE_SCAN_EXEMPT:
+        if path.endswith("/"):
+            if rel.startswith(path):
+                return why
+        elif rel == path:
+            return why
+    return None
+
+
+def prose_scan_set(exts, repo_root=None):
+    """`{"paths", "candidates", "exempted", "problem"}` - what the prose scan reads.
+
+    `problem` is a string or None, and it is the loud half. A tree whose
+    `.gitignore` cannot be read yields no paths, and "read no files" must not print
+    the way "found no claims" prints - which is the whole reason this returns the
+    candidate count alongside the paths rather than just the paths.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return {"paths": [], "candidates": 0, "exempted": [],
+                "problem": ".gitignore is %s" % problem}
+    candidates = kept_files(root, patterns, tuple(exts))
+    exempted = [rel for rel in candidates
+                if prose_scan_exemption(rel) is not None]
+    skip = set(exempted)
+    return {"paths": [rel for rel in candidates if rel not in skip],
+            "candidates": len(candidates), "exempted": exempted,
+            "problem": None}
+
+
+# Two terms, F69's shape, and adopted for F69's reason: an absolute floor answers
+# "did this read return anything at all" and nothing more, so a set that had lost
+# most of the tree would still clear it. The derived term measures the SCANNED set
+# against the CANDIDATE set the same walk produced, which is the best available
+# evidence of how big the real set is - and it is the term that fires when a row
+# in the table above grows to swallow a directory.
+#
+# WHAT IT COUPLES, said rather than implied: if the walk itself collapses, both
+# terms fall together and this stays green. That direction is not covered here and
+# must not be, because a floor derived from the thing it measures cannot cover it -
+# the cases hold the scanned set against a PLAIN recursive walk of the directories
+# that have to exist, which needs no `.gitignore` and so cannot fail the same way.
+SCAN_FLOOR_MINIMUM = 8
+SCAN_FLOOR_DIVISOR = 2
+
+
+def scan_floor(candidates):
+    """The fewest files a prose scan may read before its result stops being evidence."""
+    return max(SCAN_FLOOR_MINIMUM,
+               (candidates + SCAN_FLOOR_DIVISOR - 1) // SCAN_FLOOR_DIVISOR)
+
+
+def prose_claims_in(root, rels):
+    """[(rel, lineno, claim), ...] - every claim in `rels`, read relative to `root`.
+
+    ONE read loop for both halves of the scan. `_deps` keeps its own only for the
+    caller that hands it absolute fixture paths; the tree is read here.
+
+    An unreadable file is NAMED, never skipped - F21's rule. A skip would return
+    the same empty list a clean file returns, and "nothing to report" would then
+    mean either "clean" or "could not look".
+    """
+    out = []
+    for rel in rels:
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "<unreadable: %s>" % exc))
+            continue
+        lines = text.split("\n")
+        for lineno, line in enumerate(lines, 1):
+            nxt = lines[lineno] if lineno < len(lines) else ""
+            prv = lines[lineno - 2] if lineno >= 2 else ""
+            claim = _prose_number_claim(line, nxt, prv)
+            if claim is not None:
+                out.append((rel, lineno, claim))
+    return out
+
+
+def prose_number_claims(repo_root=None):
     """[(relpath, lineno, text), ...] -- present-tense numbers written into prose.
 
     THE RULE: do not write the number. Every suite prints `N/M cases passed` on
@@ -1185,41 +1672,63 @@ def prose_number_claims(script_dir=None, hooks_dir=None):
     families added after it were measured the same way and were **4 sites, 4 of
     them already wrong** -- a hit rate that is itself the argument.
 
+    MEASURED AGAIN WHEN THE LOCATION WIDENED, because a scan that fires on
+    honest prose is a scan that gets routed around. Every hit the widened walk
+    produced over this tree was read. The real claims were suite sizes in
+    `tests/` docstrings and part counts in `scripts/ui/*/README.md`, most of them
+    already wrong; the false positives were all ONE thing, the
+    `<passed>/<total>` tally, appearing as a fixture, as a regex and as an
+    asserted literal in the files whose job is that contract. Removing them is
+    `_words()`'s interior-separator rule, which is a NARROWING - nothing that
+    was already a finding stopped being one - and the rest were reworded or
+    built rather than written, never admitted by loosening a shape.
+
     WHAT IT CANNOT SEE, stated rather than implied, and the direction matters
     more than the list:
 
-      * a count spelled in words ("its forty cases");
+      * a count spelled as one of the small number-words `_NUMERAL_WORDS`
+        leaves out -- under `ten` the word is ordinary English machinery and
+        the shapes cannot tell it from a count;
       * a claim whose NUMBER and whose SHAPE-WORD land on different lines --
-        only the basis is read across the wrap, never the claim;
+        the basis and the SENTENCE the number sits in are both read across the
+        wrap, but never the claim itself;
+      * a MEASUREMENT -- a duration, a byte count, a line count. A units family
+        was surveyed over this whole tree before being refused, and the refusal
+        IS the measurement: on the widest vocabulary honest prose outran real
+        claims by better than two to one, and on the narrowest defensible cut
+        (size units, on a line naming code, the gate the persistence family
+        uses) it still outran them. A size or a duration here is usually a
+        threshold, a budget, a hypothetical, or a fact about somebody else's
+        system, and in every one of those the number is what the sentence is
+        for. `pn27` holds the lines that decided it, so adopting one without
+        measuring again goes red;
+      * a BEFORE/AFTER sentence -- "it was N lines and is M". The first number
+        is history and legal for ever, the second is a live claim, and the tense
+        that makes the first legal sits in the same sentence as the second,
+        which is exactly why a reader trusts both. The `is N` shape that would
+        reach it was surveyed too: real claims were about a quarter of its hits
+        and the rest were arithmetic, format shapes and external facts. `pn28`;
       * a completeness claim with no auxiliary ("(all 64)", "all 8 viz slots"),
         because recognising an arbitrary present-tense verb needs a lexicon;
       * a persistence claim that names no code in backticks on its own line;
-      * any document outside `hooks/`, `scripts/` and the three `_deps` scans.
+      * a number written with an interior separator -- `_words()` keeps a ratio
+        and a decimal whole on purpose, and neither is then a numeral;
+      * a file of an extension this does not read. `.py` is here and `.md` is
+        `_deps.doc_prose_numbers()`; `.mjs`, `.js`, `.sh`, `.yml` and `.json`
+        carry prose too and are read by nothing;
+      * a file with a row in `PROSE_SCAN_EXEMPT`, which is the only remaining
+        LOCATION gap and is the only one somebody had to write down.
 
     Every one of those is an UNDER-count. Over-counting is impossible with
     shapes this narrow, and under-counting is the quiet direction -- so a clean
     result means "none of the known shapes", not "no claims".
     """
-    sd = script_dir if script_dir is not None else SCRIPTS_DIR
-    hd = hooks_dir if hooks_dir is not None else HOOKS_DIR
-    out = []
-    for base in (sd, hd):
-        for _rel, path in py_files(base):
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    text = fh.read()
-            except (OSError, UnicodeDecodeError):
-                # Naming it beats skipping it: a file that cannot be read is not
-                # a file with nothing in it.
-                out.append((os.path.relpath(path, REPO_ROOT), 0, "<unreadable>"))
-                continue
-            lines = text.split("\n")
-            for lineno, line in enumerate(lines, 1):
-                nxt = lines[lineno] if lineno < len(lines) else ""
-                claim = _prose_number_claim(line, nxt)
-                if claim is not None:
-                    out.append((os.path.relpath(path, REPO_ROOT), lineno, claim))
-    return sorted(out)
+    root = repo_root if repo_root is not None else REPO_ROOT
+    scan = prose_scan_set((".py",), root)
+    if scan["problem"] is not None:
+        # A read that could not happen is a finding, not an empty result.
+        return [(".gitignore", 0, scan["problem"])]
+    return sorted(prose_claims_in(root, scan["paths"]))
 
 
 def covered_repo_paths(repo_root=None):

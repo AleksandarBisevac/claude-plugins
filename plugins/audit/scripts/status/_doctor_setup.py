@@ -409,7 +409,7 @@ def check_manifest(rep, project, cfg):
                     "check the index's shard refs and that every shard file exists")
         # A missing shard is exactly what makes assembly fail, so the layout check
         # is most useful here rather than skipped. It reads the index directly.
-        _check_shards(rep, path, None)
+        _check_shards(rep, path, None, mio)
         return manifest_rel, None
 
     # `_manifest_rules`, imported at the top rather than `_load(...)`-ed here:
@@ -451,20 +451,50 @@ def check_manifest(rep, project, cfg):
     for w in warnings[:5]:
         rep.warn("manifest", w)
 
-    _check_shards(rep, path, manifest)
+    _check_shards(rep, path, manifest, mio)
     return manifest_rel, manifest
 
 
-def _check_shards(rep, index_path, manifest):
-    """Sharded layout integrity. Moved here from ci.yml so both call one copy."""
+def _check_shards(rep, index_path, manifest, mio=None):
+    """Sharded layout integrity. Moved here from ci.yml so both call one copy.
+
+    THE LAYOUT IS READ FROM `_mio.is_sharded()`, ONCE. This used to test
+    `meta.version != 3` instead, which made the doctor the only place in the tree
+    with a second reading of the same fact - `audit-task`, `_proposals`,
+    `repair-commits`, the panel and `_invariants` all ask the predicate. Two
+    readings of one fact can disagree, and the disagreement had nowhere to
+    surface: the doctor would have reported a layout no writer was in (F13).
+
+    So the two are now separable, and the case where they disagree is named
+    rather than absorbed - see the finding below. `mio` is passed in by
+    `check_manifest`, which has already loaded it; the default is for callers
+    that have not.
+    """
     try:
         with open(index_path, "r", encoding="utf-8") as fh:
             index = json.load(fh)
     except Exception:
         return
-    if (index.get("meta") or {}).get("version") != 3:
-        rep.ok("layout", "single-file layout (meta.version < 3); /audit:migrate "
-                         "splits it into per-phase shards for parallel runs")
+    mio = _load("_manifest_io", "_manifest_io.py") if mio is None else mio
+    if not mio.is_sharded(index):
+        # A version stamp of 3 with no shard ref ANYWHERE is not a layout choice,
+        # it is an index whose stubs lost their refs - and reporting it as
+        # single-file would be the silent pass, because everything that reads the
+        # manifest is already assembling it as one file while the stamp says
+        # otherwise. Named separately because the repair is different: restore the
+        # refs, not pick a layout.
+        if (index.get("meta") or {}).get("version") == 3:
+            rep.finding("layout",
+                        "meta.version says 3 (sharded) but no phase carries a "
+                        "shard ref - the stamp and the phase stubs disagree, and "
+                        "the stubs are what every reader goes by",
+                        "restore the shard refs from the .bak-<UTC> beside the "
+                        "manifest, or re-split with /audit:layout sharded")
+            return
+        rep.ok("layout", "single-file layout - one file, one diff, no index to "
+                         "keep in step; the cost is that running one phase loads "
+                         "them all, and two worktrees running phases in parallel "
+                         "write the same file")
         return
     base = os.path.dirname(os.path.abspath(index_path))
     missing, mismatched = [], []
@@ -489,7 +519,7 @@ def _check_shards(rep, index_path, manifest):
                     "sharded layout broken - missing: %s; mismatched: %s"
                     % (", ".join(missing[:3]) or "none",
                        ", ".join(mismatched[:3]) or "none"),
-                    "restore the shard files, or re-run /audit:migrate")
+                    "restore the shard files, or re-split with /audit:layout sharded")
     else:
         rep.ok("layout", "sharded layout intact (%d shards assemble)"
                % len(index.get("phases") or []))

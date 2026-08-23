@@ -9,7 +9,7 @@
     {
       "name": "audit",
       "source": "./plugins/audit",
-      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline: /audit:* execution (status, next, run, phase, review, resume, report), /audit:init multi-agent manifest generation, /audit:task + /audit:bug tracking (red-first TDD bug fixes), /audit:sync Azure DevOps work-item sync, /audit:usage token spend attributed by phase/task/model/author (cache economics, cost-per-task, trend), /audit:panel browser control panel for config + composition + usage, /audit:migrate sharded manifest layout (fewer tokens + parallel-safe phases across worktrees), /audit:worktree per-phase git worktree for parallel sessions, /audit:doctor setup diagnostics, plan-first + secret-safety + TDD-reminder hooks. Configure per-repo via .claude/audit.config.json.",
+      "description": "Manifest-driven, model-aware, test-driven audit/fix pipeline: /audit:* execution (status, next, run, phase, review, resume, report), /audit:init multi-agent manifest generation, /audit:task + /audit:bug tracking (red-first TDD bug fixes), /audit:sync Azure DevOps work-item sync, /audit:usage token spend attributed by phase/task/model/author (cache economics, cost-per-task, trend), /audit:panel browser control panel for config + composition + usage, /audit:layout manifest layout either way (sharded = fewer tokens + parallel-safe phases across worktrees, single-file = one file and one diff), /audit:worktree per-phase git worktree for parallel sessions, /audit:doctor setup diagnostics, plan-first + secret-safety + TDD-reminder hooks. Configure per-repo via .claude/audit.config.json.",
       "category": "quality",
       "tags": [
         "audit",

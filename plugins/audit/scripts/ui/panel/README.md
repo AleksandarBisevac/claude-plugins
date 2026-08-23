@@ -1,6 +1,6 @@
 # The panel's inline script, by feature
 
-Twenty-one parts, concatenated in the order `_panel_ui._JS_PARTS` lists and spliced
+The parts are concatenated in the order `_panel_ui._JS_PARTS` lists and spliced
 into `panel.html`'s `/*@JS@*/` marker as a single inline `<script>`. The panel is
 served by `panel-server.py` over `http://127.0.0.1`, and the page it returns is
 built once at import and re-substituted per request for the session token.

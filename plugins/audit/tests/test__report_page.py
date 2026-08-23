@@ -46,9 +46,9 @@ import _report_md                                  # noqa: E402  (as _report_pag
 # --- cases --------------------------------------------------------------------
 def _cases(check):
 
-    # WHAT IS NOT HERE, AND WHY. The ~230 cases that pin the rendered document —
-    # its markup, its emission ORDER, the stylesheet and the embedded script —
-    # live with render-report.py, because they read a report written by `main()`
+    # WHAT IS NOT HERE, AND WHY. The cases that pin the rendered document — its
+    # markup, its emission ORDER, the stylesheet and the embedded script — live
+    # with render-report.py, because they read a report written by `main()`
     # into a temp directory and a fragment module cannot write one. Splitting
     # them across two files by which function happens to emit each string would
     # have made both suites unreadable and neither complete. What is asserted
@@ -211,7 +211,7 @@ def _cases(check):
     # render-report; what is asserted here is the DIFFERENCE the flag makes,
     # counted in both directions so a flag that did nothing fails.
     _frag = M.render_html(_m, _s, "b", None, fragment=True)
-    check("pg6 the fragment drops the document wrapper and the theme toggle "
+    check("pg6b the fragment drops the document wrapper and the theme toggle "
           "(the host supplies both) and keeps everything else",
           not any(t in _frag.lower() for t in
                   ("<!doctype", "<html", "</html>", "<meta charset"))

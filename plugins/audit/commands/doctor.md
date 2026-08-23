@@ -61,9 +61,16 @@ differently:
   because it holds the gate below what the evidence would enforce.
 
 The **layout** line is the other one worth reading rather than skimming: it names which of
-the two manifest layouts is in use. Single-file is a supported shape, not a pending
-upgrade — `/audit:migrate` is how someone *changes* the layout, not how they fix it — so an
-OK line naming it is a statement of fact and not a to-do to relay as one.
+the two manifest layouts is in use, **and what that layout costs**. Single-file is a supported
+shape, not a pending upgrade — `/audit:layout` is how someone *changes* the layout, in either
+direction, not how they fix it — so an OK line naming it is a statement of fact and must not be
+relayed as a to-do. The line deliberately names no command for that reason; if the user reads
+the cost and wants the other shape, that is when `/audit:layout` comes up.
+
+The layout is read from the phase stubs (`_manifest_io.is_sharded()`), which is the one reading
+the whole plugin shares. A `meta.version` of 3 with no stub carrying a `shard` is therefore a
+FINDING about the two disagreeing, not a layout — relay it as a broken index, because that is
+what every reader is already treating it as.
 
 If the run reports **no hook state**, the most likely cause is not a broken hook but a
 plugin that is installed yet not enabled for this project — check `/plugin` → Installed.
@@ -73,4 +80,4 @@ This command is **read-only**: it takes no lock, writes nothing, and never execu
 program exists). It is safe to run mid-phase, and safe to run in CI.
 
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
-`/audit:usage`, `/audit:migrate`.
+`/audit:usage`, `/audit:layout`.

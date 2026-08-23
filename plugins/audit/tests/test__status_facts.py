@@ -2,7 +2,7 @@
 """
 The cases for `_status_facts.py` — the manifest's machine-readable answer, and its boundary.
 
-`audit-status.py`'s 182 cases live in `test_audit_status.py` and run over these
+`audit-status.py`'s cases live in `test_audit_status.py` and run over these
 same functions through that command's aliases; they are not repeated here. What
 this file asserts is what that suite structurally cannot: that there is ONE
 implementation of each fact, that `audit-status.py` re-exports rather than

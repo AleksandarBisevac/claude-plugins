@@ -1060,16 +1060,32 @@ def _cases(check):
 
     # --- pn: numbers written into prose (the rot this repo keeps meeting) -----
     _pn_live = M.prose_number_claims()
-    check("pn0 no module under hooks/ or scripts/ writes a present-tense number "
-          "into its prose - every one of these has a live source one command "
-          "away, so a copy in a docstring has no reader and nothing comparing "
-          "it: %r" % (_pn_live[:6],),
+    check("pn0 no `.py` this repo keeps writes a present-tense number into its "
+          "prose - every one of these has a live source one command away, so a "
+          "copy in a docstring has no reader and nothing comparing it: %r"
+          % (_pn_live[:6],),
           _pn_live == [])
     # Vacuity FIRST, because "no claims" and "read no files" print identically.
-    _pn_seen = len(M.py_files(M.SCRIPTS_DIR)) + len(M.py_files(M.HOOKS_DIR))
-    check("pn1 the walk that produced pn0 actually read the tree - %d file(s), "
-          "and a clean result over an empty walk would mean nothing" % _pn_seen,
-          _pn_seen >= 40)
+    #
+    # TWO TERMS, F69's shape, and the second one is not derived from the thing it
+    # measures. `scan_floor()` holds the scanned set against the CANDIDATE count
+    # the same walk produced, which catches an exemption row that grew to swallow
+    # a directory but cannot catch the walk itself collapsing - both fall
+    # together. So the other half of this case is a PLAIN recursive walk of the
+    # three directories that have to exist, which needs no `.gitignore` and so
+    # cannot fail the way the derivation can: if the pruning ever starts eating
+    # the plugin, the derived set drops below a walk that knows nothing about it.
+    _pn_scan = M.prose_scan_set((".py",))
+    _pn_plain = (len(M.py_files(M.SCRIPTS_DIR)) + len(M.py_files(M.HOOKS_DIR))
+                 + len(M.py_files(M.TESTS_DIR)))
+    check("pn1 the walk that produced pn0 read the tree, by two measures that "
+          "fail differently - %d file(s) scanned of %d candidate(s), floor %d, "
+          "against %d found by a plain walk that reads no `.gitignore`"
+          % (len(_pn_scan["paths"]), _pn_scan["candidates"],
+             M.scan_floor(_pn_scan["candidates"]), _pn_plain),
+          _pn_scan["problem"] is None
+          and len(_pn_scan["paths"]) >= M.scan_floor(_pn_scan["candidates"])
+          and _pn_scan["candidates"] >= _pn_plain)
     check("pn2 CARDINALITY is caught, in each of the four shapes",
           M._prose_number_claim("its 124 cases live in `tests/test_x.py`")
               == "its 124 cases"
@@ -1152,7 +1168,7 @@ def _cases(check):
               is None)
 
 
-    check("pn10 the BARE count is caught however it is introduced - the three "
+    check("pn10b the BARE count is caught however it is introduced - the three "
           "narrow shapes above all needed an introducer ('its', 'live in', "
           "'--selftest'), and eight sites said it plainly instead: 'the N cases "
           "in tests/', 'across N cases', 'the ~N cases below'. SEVEN of the "
@@ -1183,6 +1199,339 @@ def _cases(check):
               is None
           and M._prose_number_claim("holds the selftest cases that assert")
               is None)
+    check("pn13 a count spelled as a WORD is the same claim in a different "
+          "spelling - F59, which sat in a comment block every gate reads because "
+          "no lint was looking at that spelling. One numeral reader serves every "
+          "shape, so the word form cannot reach one family and miss another",
+          M._prose_number_claim("its thirteen cases live in `tests/test_x.py`")
+              == "its thirteen cases"
+          and M._prose_number_claim("eleven cases live in the suite")
+              == "eleven cases live in"
+          and M._prose_number_claim("Config `x`. `--selftest` (nineteen cases).")
+              == "--selftest (nineteen cases)"
+          and M._prose_number_claim("the migration finished, all fifteen of them")
+              == "all fifteen of them"
+          and M._prose_number_claim("All fifteen files have moved, so the OR is "
+                                    "empty") == "all fifteen ... have"
+          and M._prose_number_claim("`KNOWN_LAYER_DEBT` stayed at seventeen and "
+                                    "the map did not move")
+              == "stayed at seventeen"
+          and M._prose_number_claim("and the ten cases in `tests/` that read it")
+              == "ten cases")
+    # SECOND DIRECTION, and the only case in this family that fails if the numeral
+    # table GROWS. It looks vacuous - none of these lines is a finding before the
+    # word spelling was read either - and it is the whole reason the table stops
+    # where it does. Every line is real prose from this tree, and not one of them
+    # is a count: a rate, a uniqueness claim whose sentence dies if the word goes,
+    # an anaphor pointing at an enumeration the reader can see in the same breath,
+    # and an auxiliary that belongs to the NEXT sentence. Admitting the small words
+    # - the obvious "make it see more" mutation - turns every one of them into a
+    # finding, and the repair reached for next would be loosening a shape, which is
+    # how a pattern stops catching the thing it exists for.
+    check("pn14 ...and a number-word in ordinary prose is NOT a claim, which is "
+          "what the table's omissions buy. These are measured lines from this "
+          "tree, not invented ones, and admitting the words below `ten` makes "
+          "every one of them a violation",
+          M._prose_number_claim("a caller can still report one case per asset")
+              is None
+          and M._prose_number_claim("It is the ONE case that brings the section")
+              is None
+          and M._prose_number_claim("and all three are honest about what a "
+                                    "violation does") is None
+          and M._prose_number_claim("belongs below all four of them, not beside "
+                                    "one") is None
+          and M._prose_number_claim("read 'fixed'. Pinned below by two cases.")
+              is None
+          and M._prose_number_claim("because `diagnose()` calls all six. They "
+                                    "are modules now, cut where the") is None)
+    check("pn15 a tens word and its tail are ONE numeral, because the hyphen is "
+          "punctuation the tokenizer has already dropped - without that a "
+          "written-out compound reads as a number followed by an unrelated word "
+          "and slips every shape. The tail words are not numerals on their own, "
+          "which is what keeps pn14 true, and a tens word with no tail keeps its "
+          "own shape, which is what fails if the span over-consumes",
+          M._prose_number_claim("forty-four cases assert the join") == "forty-four cases"
+          and M._prose_number_claim("its twenty-one cases live in `tests/x.py`")
+              == "its twenty-one cases"
+          and M._prose_number_claim("twenty cases live in the suite")
+              == "twenty cases live in"
+          and M._prose_number_claim("four cases assert the join") is None
+          and M._prose_number_claim("carrying twenty-one upward runtime edges")
+              is None)
+    check("pn16 the word spelling inherits BOTH escape hatches, or the extension "
+          "would make the decision record unwritable and forbid its own remedy - "
+          "the two things every family here is pinned against",
+          M._prose_number_claim("the suite was eleven cases before the split")
+              is None
+          and M._prose_number_claim("it stood at seventy cases that day") is None
+          and M._prose_number_claim("its thirteen cases live in x - re-derive "
+                                    "with `python3 tests/test_x.py --selftest`")
+              is None
+          and M._prose_number_claim("its cases live in `tests/test_x.py`") is None)
+    _pn_isdigit = [ln for ln in open(M.__file__, encoding="utf-8").read().split("\n")
+                   if "isdigit" in ln]
+    check("pn17 every shape reads its number through the ONE span reader - a "
+          "family added later that asked a token whether it is a digit itself "
+          "would see digits and miss words, which is F59 wearing a new shape. "
+          "COUNTED over the source rather than asserted present, because the "
+          "defect is a second reader existing at all. TWO occurrences, not one, "
+          "and the pair is spelled out rather than tallied: one asks whether a "
+          "TOKEN is a numeral, the other whether a CHARACTER is a digit, which "
+          "is the tokenizer's separator rule and runs before any shape sees "
+          "anything. A third would be the defect this counts: %r" % (_pn_isdigit,),
+          sorted(ln.strip() for ln in _pn_isdigit)
+              == ["if tok.isdigit():", "return ch.isdigit()"]
+          and M._numeral_span(["ten"], 0) == ("ten", 1)
+          and M._numeral_span(["17"], 0) == ("17", 1)
+          and M._numeral_span(["four"], 0) is None)
+
+    # --- pn18-pn23: WHERE the scan looks, which is C4's location axis ---------
+    # The set used to be a hand-written pair and the claims had moved to what it
+    # left out. Each directory below held a real one: a suite size in a `tests/`
+    # docstring, a file count in the prover, a part count per assembled surface.
+    _pn_reach = dict(
+        (_d, len([r for r in _pn_scan["paths"] if r.startswith(_d)]))
+        for _d in ("tools/", "plugins/audit/tests/", "plugins/audit/hooks/",
+                   "plugins/audit/scripts/"))
+    check("pn18 the scanned set is DERIVED from the tree, so it reaches the "
+          "directories no hand-written list held - `tools/`, which holds the "
+          "sweep runner and the mutation table, and `tests/`, which is where the "
+          "suite sizes are written down: %r" % (_pn_reach,),
+          _pn_scan["problem"] is None and all(_pn_reach.values()))
+    # THE PREMISE OF EACH ROW, CHECKED, not just its presence. A row for a path
+    # nothing holds any more is a sentence about a state that has passed, and it
+    # stays green forever under a presence check alone - gate-parity's
+    # stale-exemption half is the same reading. The generated report is the one
+    # row whose file is legitimately absent from a fresh checkout, and it is
+    # absent for a reason this can verify: `.gitignore` names it.
+    _pn_ign = [_l.strip() for _l in
+               io.open(os.path.join(M.REPO_ROOT, ".gitignore"),
+                       encoding="utf-8").read().splitlines()]
+    _pn_rows = M.PROSE_SCAN_EXEMPT
+    _pn_bad = [_p for _p, _w in _pn_rows if not _w.strip()]
+    _pn_dead = [_p for _p, _w in _pn_rows
+                if not os.path.exists(
+                    os.path.join(M.REPO_ROOT, _p.replace("/", os.sep)))
+                and _p not in _pn_ign]
+    check("pn19 every exemption carries a reason and describes a file that is "
+          "really there - or one `.gitignore` names, which is how a generated "
+          "document earns a row. The matcher is asked about that row's path "
+          "directly, because it is the one row whose effect this tree never "
+          "shows: the file is absent until somebody renders a report, and a row "
+          "that matched nothing would look identical from here: %r"
+          % (_pn_bad + _pn_dead,),
+          not _pn_bad and not _pn_dead
+          and len(_pn_rows) == len(set(_p for _p, _w in _pn_rows))
+          and M.prose_scan_exemption("docs/audit/audit-report.md") is not None
+          and M.prose_scan_exemption("docs/design/anything.md") is not None
+          and M.prose_scan_exemption("plugins/audit/README.md") is None)
+    _pn_tmp = tempfile.mkdtemp(prefix="pn-scan-")
+    try:
+        def _pn_write(rel, text):
+            _full = os.path.join(_pn_tmp, rel.replace("/", os.sep))
+            _dir = os.path.dirname(_full)
+            if _dir and not os.path.isdir(_dir):
+                os.makedirs(_dir)
+            with io.open(_full, "w", encoding="utf-8") as _fh:
+                _fh.write(text)
+        _pn_write(".gitignore", "# fixture\nnotkept/\n")
+        # Every line here is honest prose of a kind this tree really writes: a
+        # recollection, a claim carrying its own basis, a noun with no count, and
+        # a tally. None of them is a finding.
+        _pn_write("clean.py",
+                  '"""It stood at 70 cases that day, and the cases live in\n'
+                  "`tests/`. Re-derive with `python3 x.py --selftest`.\n"
+                  'ALL PASS: 7/7 cases passed."""\n')
+        _pn_write("notes.md", "# Notes\n\nThe parts are joined in the order the\n"
+                              "module lists them.\n")
+        # The pruned half: a REAL claim, in a directory `.gitignore` names. If it
+        # were reported, the finding count would depend on which agent worktrees
+        # happened to be lying around rather than on anything in the commit.
+        _pn_write("notkept/rot.py", '"""its 12 cases live in `tests/x.py`."""\n')
+        _pn_honest = M.prose_number_claims(_pn_tmp)
+        _pn_honest_set = M.prose_scan_set((".py",), _pn_tmp)
+        # SECOND DIRECTION, and the only case here that fails if the widened scan
+        # fires unconditionally: a tree whose prose is all correct reports
+        # nothing WHILE HAVING READ IT. It looks vacuous, which is why the count
+        # is in the message - "clean" and "read nothing" print the same otherwise.
+        check("pn20 a tree whose claims are all honest reports nothing, over %d "
+              "file(s) really read - this is the case that goes red if the scan "
+              "ever fires unconditionally, and the one that goes red if the "
+              "`.gitignore` pruning stops working: %r"
+              % (len(_pn_honest_set["paths"]), _pn_honest),
+              _pn_honest == [] and _pn_honest_set["paths"] == ["clean.py"])
+        # ...and the same fixture WITH a claim, so pn20 is not a scan that cannot
+        # fire. One line changed, one finding, naming the file and the line.
+        _pn_write("clean.py", '"""its 12 cases live in `tests/x.py`."""\n')
+        _pn_dirty = M.prose_number_claims(_pn_tmp)
+        check("pn21 ...and the same tree with ONE claim added reports exactly it, "
+              "by path and line - which is what tells pn20 apart from a walk "
+              "that reads nothing: %r" % (_pn_dirty,),
+              _pn_dirty == [("clean.py", 1, "its 12 cases")])
+        os.remove(os.path.join(_pn_tmp, ".gitignore"))
+        _pn_blind = M.prose_number_claims(_pn_tmp)
+        check("pn22 a tree whose `.gitignore` cannot be read reports THAT and "
+              "stops - the derivation is what prunes the agent worktrees, so "
+              "falling back to 'nothing is ignored' would be a wrong answer "
+              "wearing the shape of a right one, and returning [] would be "
+              "'could not look' printed as 'clean': %r" % (_pn_blind,),
+              len(_pn_blind) == 1 and _pn_blind[0][0] == ".gitignore"
+              and "unreadable" in _pn_blind[0][2])
+    finally:
+        shutil.rmtree(_pn_tmp, ignore_errors=True)
+    check("pn23 a numeral with an interior separator is a TALLY or a "
+          "MEASUREMENT, not a count of things - the narrowing the widened scan "
+          "needed, because the contract every suite prints appears outside "
+          "`scripts/` as a fixture, a regex and an asserted literal. The bare "
+          "count on the same noun still fires, which is what fails if the rule "
+          "is ever widened from 'inside a number' to 'anywhere on the line'",
+          M._prose_number_claim("ALL PASS: 7/7 cases passed") is None
+          and M._prose_number_claim("suppresses even the <$0.01 case") is None
+          and M._prose_number_claim("so the 4/1000 case goes red") is None
+          and M._prose_number_claim("7 cases live in the suite")
+              == "7 cases live in"
+          and M._prose_number_claim("its 124 cases live in `tests/x.py`")
+              == "its 124 cases"
+          # THE TWO DIRECTIONS A NARROWING CAN BE WRONG IN, and neither is the
+          # one above. Widened to the LINE, a real claim on a line that also
+          # carries a tally would stop being read - and lines like that are
+          # ordinary here. Widened to the TOKEN, a separator next to a letter
+          # would be kept and every path in the tree would become one word.
+          and M._prose_number_claim("7 cases live in it, in 1/2 the time")
+              == "7 cases live in"
+          and M._words("tests/x.py has 7 cases") == ["tests", "x", "py",
+                                                     "has", "7", "cases"]
+          # A thousands comma is NOT one of the separators: a grouped number is
+          # still a count, so it stays dropped and the second numeral keeps its
+          # noun. Asserted on the tokens, because the claim above it is reported
+          # either way and so cannot tell the two versions apart.
+          and M._prose_number_claim("1,254 lines, 148 cases, and 53 of them")
+              == "148 cases"
+          and M._words("1,254 lines") == ["1", "254", "lines"]
+          and M._words("7/7 and 0.01") == ["7/7", "and", "0.01"])
+
+    # --- pn24-pn28: the SENTENCE a number sits in, and two families refused ---
+    # F76. The tense escape read the physical line, and a line is neither the unit
+    # a tense belongs to nor the unit prose arrives in. The first line below is the
+    # real one it was found on: a stale count sat unread behind a past marker two
+    # clauses earlier, about something else entirely.
+    check("pn24 the tense escape reads the SENTENCE the numeral sits in, not the "
+          "physical line - a marker in an earlier sentence on the same line used "
+          "to excuse a live count (F76's false negative, on the line it was found "
+          "on). The second half is what fails if the scope narrows past a "
+          "sentence to a clause: a marker inside the number's OWN sentence still "
+          "excuses it, which is what keeps the decision record writable",
+          M._prose_number_claim("THIS SUITE ALREADY HAD ITS OWN `check`. 102 of "
+                                "the 131 cases go") == "131 cases"
+          and M._prose_number_claim("the split was measured. 131 cases go "
+                                    "through the wrapper") == "131 cases"
+          and M._prose_number_claim("it had 131 cases then") is None)
+    check("pn25 ...and the sentence is JOINED across the wrap, one line each way "
+          "- the window `_carries_basis()` already reads, for the same reason: "
+          "prose wraps, so a marker and its number land on different lines. Both "
+          "directions of the join are here, and so is the half that fails if the "
+          "join stops asking where a sentence ENDS - a marker in a sentence that "
+          "finished before the wrap must not reach across it",
+          M._prose_number_claim("146 cases stayed green afterwards", "",
+                                "nothing pinned it, so the count was replaced by "
+                                "a constant and all") is None
+          and M._prose_number_claim("146 cases stayed green afterwards", "",
+                                    "nothing pinned it, so the count was "
+                                    "replaced by a constant.") == "146 cases"
+          and M._prose_number_claim("the suite keeps all 146 cases",
+                                    "before the split") is None
+          and M._prose_number_claim("the suite keeps all 146 cases.",
+                                    "It was different before.") == "146 cases"
+          # A markdown sentence ends after its emphasis, not before it. Without
+          # that the bolded line below would read as unfinished and hand its past
+          # tense down to the next line, which is a document-shaped hole: `.md` is
+          # half of what these shapes now read.
+          and M._prose_number_claim("146 cases go through the wrapper", "",
+                                    "**it was measured then.**") == "146 cases"
+          # Called with no neighbours at all - one string, read as one whole
+          # sentence. Every case above this section hands over exactly that.
+          and M._prose_number_claim("the suite keeps all 146 cases") == "146 cases")
+    # SECOND DIRECTION, and it is the only case here that fails when the boundary
+    # rule gets GREEDY. It looks vacuous - both lines are ordinary recollection
+    # and neither was a finding before F76 either - and it is the whole reason the
+    # rule asks what follows a stop. Each half names its own mutation: read every
+    # stop as a boundary and a dotted filename cuts the sentence in two, leaving
+    # the tense behind in the first half; read a run of stops as boundaries and an
+    # elided tag pair cuts one sentence into four, which is how a docstring's own
+    # history was reported as a claim while this was being written.
+    check("pn26 a stop INSIDE a name, and a run of stops standing for elided "
+          "markup, are not sentence ends - a fragmenting boundary rule throws "
+          "away the tense the sentence opened with and reports recollection as a "
+          "claim. The third line is the same shape with the marker removed, so "
+          "this fails if the joining stops firing at all rather than reading as "
+          "two silent lines",
+          M._prose_number_claim("it was rewritten in `x.py` and has 7 cases")
+              is None
+          and M._prose_number_claim("used to hold `<style>...</style>` and 7 "
+                                    "cases") is None
+          and M._prose_number_claim("it holds `x.py` and 7 cases") == "7 cases")
+    # F70 AND F65: two families MEASURED AND REFUSED, recorded as cases because a
+    # docstring saying "cannot see" is not checkable and the next author will
+    # reach for exactly these shapes.
+    #
+    # A MEASUREMENT - a duration, a byte count, a line count - is invisible here,
+    # and the units family that would read it was surveyed over this whole tree
+    # before being declined. Every hit was read: on the widest unit vocabulary
+    # honest prose outran real claims by better than two to one, and on the
+    # narrowest defensible cut (size units, on a line naming code, the gate the
+    # persistence family uses) it still outran them. The lines below are the
+    # reason and they are real ones from this tree: a THRESHOLD, a configured
+    # constant and a hypothetical are numbers that must stay, and they are the
+    # shape a units family cannot tell from a claim.
+    # F77. The bound matters as much as the rule: an underscore glues a token
+    # only where WORD CHARACTERS flank it, so a trailing one still ends the token
+    # and the numeral after it keeps whatever noun follows. The second half is the
+    # direction that fails if this is ever applied to any underscore at all.
+    _f77_line = '    x = y[1] == case_id(z)'
+    check("pn29 an identifier is ONE word, so a numeric index in front of a name "
+          "whose first piece is a case noun is not a claim - and the rule stops "
+          "at a word boundary, so a trailing separator still leaves the numeral "
+          "its noun: %r / %r"
+          % (M._words(_f77_line), M._words("count_ 5 cases")),
+          M._prose_number_claim(_f77_line) is None
+          and "case_id" in M._words(_f77_line)
+          and M._words("count_ 5 cases") == ["count", "5", "cases"]
+          and M._prose_number_claim("count_ 5 cases") is not None
+          # ...and a LEADING separator is dropped too, so an underscore-prefixed
+          # noun still keeps the numeral in front of it. This is the direction
+          # that fails if the rule stops asking for left context.
+          and M._words("its 1 _cases") == ["its", "1", "cases"]
+          and M._prose_number_claim("its 1 _cases") is not None)
+    check("pn27 a MEASUREMENT is not read - the units family was surveyed over "
+          "this tree and refused, because a size or a duration here is usually a "
+          "threshold, a budget or a hypothetical, and those numbers are the point "
+          "of their sentences. This is the case that goes red if one is adopted "
+          "without measuring again",
+          M._prose_number_claim("Files of 400+ lines need at least two markers")
+              is None
+          and M._prose_number_claim("Events are the newest ~20 lines of")
+              is None
+          and M._prose_number_claim("a banner would let a 2,000-line module pass")
+              is None
+          # WHAT THE REFUSAL GIVES UP, in the same case so it cannot be read as
+          # an accident: a real measurement of this tree is not read either.
+          and M._prose_number_claim("front-matter reads, 159 ms cold and 31 ms "
+                                    "warm - and it runs on a POLL") is None
+          and M._prose_number_claim("the 46,220-byte `audit-plan.schema.json`")
+              is None)
+    check("pn28 ...and a BEFORE/AFTER sentence is not read either, for a "
+          "different reason: its first number is history and legal for ever, its "
+          "second is a live claim, and the tense that makes the first one legal "
+          "sits in the same sentence as the second. The `is N` shape that would "
+          "reach it was surveyed too and refused - real claims were a quarter of "
+          "its hits, the rest arithmetic, format shapes and external facts. The "
+          "repair is the prose, and the repaired form reads clean",
+          M._prose_number_claim("It was 1,456 lines and is 242, because the "
+                                "checks shared one file") is None
+          and M._prose_number_claim("`E_USAGE` is 2 and the reason is arithmetic")
+              is None
+          and M._prose_number_claim("It was one file and is six, because the "
+                                    "checks shared it for one reason") is None)
 
 
 

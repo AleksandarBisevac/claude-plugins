@@ -27,6 +27,7 @@ and the rule did not.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -97,6 +98,18 @@ def _write(root, rel, text):
         fh.write(text)
 
 
+def _sc_sidecar(root, entries):
+    """The sidecar `screenshot_capture_drift()` reads, written as the tool writes it."""
+    _write(root, M._CAPTURED_AT,
+           json.dumps({"note": "fixture", "images": entries}) + "\n")
+
+
+def _sc_digest(root, rel):
+    """The hash the tool would have recorded for the bytes now on disk."""
+    with open(os.path.join(root, rel.replace("/", os.sep)), "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
 def _sweep_doc(rel, command, prose=""):
     """`command` written into `rel`'s RUNNABLE region, with `prose` outside it.
 
@@ -115,6 +128,62 @@ def _sweep_doc(rel, command, prose=""):
                 % (prose.replace("\n", " "), command))
     return json.dumps({"prose": prose,
                        "meta": {"buildCommands": {"sweep": command}}}, indent=2) + "\n"
+
+
+# --- the floor `tb2` reads ----------------------------------------------------
+# `tb1` answers "did any reference go stale", and that answer is worth nothing from a
+# walk nobody watched: a walk that reached one file names no stale reference either.
+# So `tb2` carries a floor - and the floor is what F72 was about. It was two ABSOLUTE
+# terms, and on the day it was written both sat far below what the run printed beside
+# them, so the walk could have shed almost the whole tree and still cleared them. Same
+# defect as F69's `p1`, one file over.
+#
+# TWO TERMS EACH NOW. The absolute ones are unchanged - they answer "did this walk
+# return anything at all", and nothing about them was wrong. The derived ones measure
+# the walk against the tree it is supposed to be reading, counted by `_tools_tree_
+# size()` rather than by the walk itself.
+#
+# WHAT THE DERIVED TERMS GIVE UP, SAID RATHER THAN IMPLIED. They COUPLE the walk to
+# the tree: delete most of `tools/` and the floor falls with it, so a tree that really
+# did shrink stays green - as it should, because the same deletion is a legitimate
+# change and no floor derived from the thing it measures can tell the two apart. The
+# case that direction leaves uncovered is a `tools/` that emptied, and it is covered
+# by the ABSOLUTE terms, which is the whole reason they stay.
+#
+# THE DIVISORS DIFFER, AND NOT DECORATIVELY. `files` is judged at a fraction because
+# the walk filters by extension: a picture or a `.txt` dropped into `tools/` is a file
+# the tree holds and the walk is right to skip, and a floor at the full count would
+# report that as a lost tree. `checked` counts OCCURRENCES across those files and owes
+# no such allowance, so its derived term is one basename literal per file the tree
+# holds. The case prints both figures beside both floors, which is where the margin is
+# read rather than claimed here.
+TB2_CHECKED_MINIMUM = 20
+TB2_FILES_MINIMUM = 3
+TB2_FILES_DIVISOR = 2
+
+
+def _tools_tree_size(repo_root):
+    """How many files sit under `tools/`, counted WITHOUT the walk under test.
+
+    `os.walk` here and not `M._surface_files()`: a floor derived from the call it is
+    judging cannot fail, because the walk that lost the tree shrinks the floor by
+    exactly as much. Cruder than that call on purpose - no extension filter - and
+    crude in the safe direction for a number a fraction is then taken of.
+    """
+    total = 0
+    top = os.path.join(repo_root, M.TOOLS_REL.replace("/", os.sep))
+    for _dir, dirnames, filenames in os.walk(top):
+        if "__pycache__" in dirnames:
+            dirnames.remove("__pycache__")
+        total += len(filenames)
+    return total
+
+
+def _tb2_floors(tree_size):
+    """`(checked, files)` - the fewest of each that still evidences a read tree."""
+    return (max(TB2_CHECKED_MINIMUM, tree_size),
+            max(TB2_FILES_MINIMUM,
+                (tree_size + TB2_FILES_DIVISOR - 1) // TB2_FILES_DIVISOR))
 
 
 def _fixture_tree(tmp, command_line, hook_line=None):
@@ -203,7 +272,7 @@ def _cases(check):
     try:
         _fixture_tree(tmp, "scripts/<name>.py and scripts/*.py")
         res = M.missing_references(tmp, tmp)
-        check("p1 a placeholder and a glob are both SEEN (total 2) and both held out of "
+        check("ph1 a placeholder and a glob are both SEEN (total 2) and both held out of "
               "the stat (checked 0), so neither vanishes and neither is a false miss",
               (res["total"], len(res["placeholders"]), res["checked"],
                res["missing"]) == (2, 2, 0, []), repr(res))
@@ -213,7 +282,7 @@ def _cases(check):
         # under test) and the third is a real file, so all three are references this
         # module is happy to have - and keeping them literal is what makes `c1`'s
         # count identical on both sides of the move.
-        check("p2 is_placeholder is the one rule, and it answers for both shapes",
+        check("ph2 is_placeholder is the one rule, and it answers for both shapes",
               M.is_placeholder("plugins/audit/scripts/<n>.py")
               and M.is_placeholder("plugins/audit/scripts/*.py")
               and not M.is_placeholder("plugins/audit/scripts/_refs.py"))
@@ -407,16 +476,55 @@ def _cases(check):
 
     # --- the basenames tools/ names --------------------------------------------------
     tb = M.tool_basename_drift()
+    # The detail prints only on FAILURE, which is the one moment an author needs it:
+    # meeting this rule with a fixture used to end in a guess, and it was guessed
+    # twice (F68).
     check("tb1 no `.py` basename written anywhere in tools/ names a file that is gone: "
-          "%r" % (tb["unknown"],), tb["unknown"] == [])
+          "%r" % (tb["unknown"],), tb["unknown"] == [],
+          "if a name above is a FIXTURE rather than a reference, it is spelled around "
+          "rather than exempted - `tool_basename_drift()`'s docstring lists the "
+          "spellings; TOOL_FIXTURE_BASENAMES is only for a name that must be on disk")
     check("tb1b ...and no declared tool fixture has outlived what writes it: %r"
           % (tb["staleFixtures"],), tb["staleFixtures"] == [])
+    _tb_size = _tools_tree_size(M.REPO_ROOT)
+    _tb_cfloor, _tb_ffloor = _tb2_floors(_tb_size)
     check("tb2 ...and the run says how much it looked at - %d basename literals across "
-          "%d files. `unknown == []` means one thing at the count printed here and "
-          "something else entirely at 0, and a regex that quietly stopped matching "
-          "would report the calm version of both" % (tb["checked"], tb["files"]),
-          tb["checked"] >= 20 and tb["files"] >= 3,
-          repr((tb["checked"], tb["files"])))
+          "%d files, against floors of %d and %d derived from the %d files tools/ holds. "
+          "`unknown == []` means one thing at the counts printed here and something "
+          "else entirely at 0, and a walk that lost most of the tree, or a regex that "
+          "quietly stopped matching, would report the calm version of both"
+          % (tb["checked"], tb["files"], _tb_cfloor, _tb_ffloor, _tb_size),
+          tb["checked"] >= _tb_cfloor and tb["files"] >= _tb_ffloor,
+          repr((tb["checked"], _tb_cfloor, tb["files"], _tb_ffloor, _tb_size)))
+
+    # THE FIXTURE SIZE IS THE OLD FLOOR'S BLIND SPOT (F72), which is the only reason
+    # this case is worth anything: a walk down to a handful of files CLEARS two
+    # absolute terms of this size, and both versions of the floor score this fixture
+    # while disagreeing about it.
+    check("tb2a a tree this size lifts both floors above their absolute terms, which "
+          "is what makes a walk that dropped to a handful of files red rather than "
+          "green: %r" % (_tb2_floors(40),),
+          _tb2_floors(40) == (40, 20))
+    check("tb2b ...and a tools/ that holds NOTHING falls back to the absolute terms. "
+          "This is the direction the derived ones cannot cover on their own - a "
+          "fraction of nothing is nothing, and a floor of 0 would accept the emptiest "
+          "walk there is: %r" % (_tb2_floors(0),),
+          _tb2_floors(0) == (TB2_CHECKED_MINIMUM, TB2_FILES_MINIMUM))
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, M.TOOLS_REL + "/probe.mjs", "// a tool\n")
+        _write(tmp, M.TOOLS_REL + "/shot.png", "not really a picture\n")
+        check("tb2c the size the floor is derived from is a SECOND walk, not the one "
+              "it judges - it counts a file the lint's own walk filters out by "
+              "extension, so a walk that lost the tree cannot shrink the floor with "
+              "it: %r vs %r"
+              % (_tools_tree_size(tmp), M._surface_files(tmp, M.TOOLS_REL, M.BARE)),
+              _tools_tree_size(tmp) == 2
+              and M._surface_files(tmp, M.TOOLS_REL, M.BARE)
+              == [M.TOOLS_REL + "/probe.mjs"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     tmp = tempfile.mkdtemp()
     try:
@@ -496,6 +604,32 @@ def _cases(check):
               "at the regex, which is why nothing filters them afterwards. Its own tmp "
               "root, because `checked` is a whole-tree count and a fixture carried over "
               "from tb5 would have made this read 3",
+              res["unknown"] == [] and res["files"] == 1 and res["checked"] == 0,
+              repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        # THE DOCUMENTED CONVENTION, AS A CASE (F68). The docstring tells an author
+        # holding a fixture nothing creates to spell it around instead of adding a
+        # table row, and names the shapes: no extension, the JavaScript module
+        # extension, or a literal assembled from pieces. That is advice about THIS
+        # REGEX, so it stops being true the moment the regex widens - and without
+        # this case it would stop being true silently, in some later author's
+        # unrelated edit. Every name below is invented, so any of the shapes
+        # becoming a token raises `checked` AND puts a name that exists nowhere
+        # into `unknown`.
+        _write(tmp, "tools/t.mjs",
+               "child = join(work, 'fixture_child')\n"
+               "gates = ['tools/ghost.mjs', 'tools/alpha.mjs']\n"
+               "probe = 'probe-' + 'no-such-tool' + '.py'\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb7b the spellings the docstring offers for a fixture nothing creates "
+              "are not tokens at all - an extensionless name, the JavaScript module "
+              "extension, and an assembled literal - over a file that WAS read, "
+              "which is what tells a convention that holds from a walk that found "
+              "nothing",
               res["unknown"] == [] and res["files"] == 1 and res["checked"] == 0,
               repr(res))
     finally:
@@ -1331,6 +1465,256 @@ def _cases(check):
           repr([r for r in _fdocs
                 if r == "CHANGELOG.md" or r.startswith("docs/design/")]))
 
+    # --- F12: the version a committed artifact stamps -------------------------
+    # The defect: the scale demo under `docs/` is published and linked from the
+    # README, and it served a stamp several releases behind the plugin while every
+    # check over it stayed green - they asserted CONTENT (no invalid-manifest
+    # banner, a usage section present), which is true of a report rendered by any
+    # version, for ever.
+    _av = M.artifact_version_drift()
+    check("av1 every committed page stamps the release plugin.json names - the live "
+          "claim, and the one that goes red on the day a bump is not followed by a "
+          "re-render: %r" % (_av,), _av == [])
+
+    _pages, _pprob = M._stamp_pages(M.REPO_ROOT)
+    _seen = []
+    for _rel in (_pages or []):
+        with open(os.path.join(M.REPO_ROOT, _rel.replace("/", os.sep)),
+                  "r", encoding="utf-8") as fh:
+            _seen += [(_rel, _v) for _v, _ln in M._artifact_stamps(fh.read())]
+    check("av2 ...and it cleared real pages rather than an empty set - av1 returns "
+          "[] over a walk that reaches nothing too, and this is what tells the two "
+          "apart: the published reports are all in the candidate set, each carries "
+          "exactly ONE stamp, and every stamp is the version read straight out of "
+          "plugin.json: %r" % (_seen,),
+          _pprob is None and len(_seen) >= 3
+          and len(set(_r for _r, _v in _seen)) == len(_seen)
+          and set(_v for _r, _v in _seen) == set([_pv]))
+
+    _tmpl = _FX_SCRIPTS + "ui/panel.html"
+    check("av3 the panel TEMPLATE is READ and stamps nothing, and that is not a "
+          "finding: this rule is about a claim that is wrong, not about a page that "
+          "makes none. Looks vacuous and is the only case that fails the other "
+          "mutation - a rule demanding a stamp per page would report the template "
+          "for ever",
+          _tmpl in (_pages or []) and [_r for _r, _v in _seen if _r == _tmpl] == [])
+
+    _two = M._artifact_stamps(
+        '<span class="stampv" title="t">audit 1.2.3</span>\n'
+        '<span class="stampv" title="t">audit 4.5.6</span>\n')
+    check("av4 a page carrying two stamps contributes BOTH, with the line each sits "
+          "on - a base template and an override each emitting one is the generated-"
+          "output failure a presence test cannot see: %r" % (_two,),
+          _two == [("1.2.3", 1), ("4.5.6", 2)])
+
+    tmp = tempfile.mkdtemp()
+    # Built from the module's own extension set, so a rule that stops reading this
+    # format cannot leave a fixture behind that silently tests nothing.
+    _av_page = "docs/demo" + M.STAMP_EXT[0]
+    _av_ignored = "scratch"
+    _av_scratch = _av_ignored + "/old" + M.STAMP_EXT[0]
+    _av_html = ('<p class="meta">generated · <span class="stampv" '
+                'title="The plugin version that rendered this file">audit '
+                '%s</span></p>\n')
+    try:
+        _write(tmp, ".gitignore", "# fixture\n%s/\n" % _av_ignored)
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+        _write(tmp, _av_page, _av_html % _pv)
+        check("av5 a fixture whose page stamps the version plugin.json names is "
+              "green, so every case below fails for the reason it names: %r"
+              % (M.artifact_version_drift(tmp),),
+              M.artifact_version_drift(tmp) == [])
+
+        # A version the fixture's plugin.json cannot be mistaken for, so the buggy
+        # and fixed comparisons disagree about it: a rule that compared a page with
+        # itself, or that read the version off the page, is green here.
+        _stale = "0.0.1"
+        _write(tmp, _av_page, _av_html % _stale)
+        _d = M.artifact_version_drift(tmp)
+        check("av6 a page a release left behind IS reported - by path, by line, and "
+              "with BOTH versions in the message, because 'stale' without the pair "
+              "is not something a reader can act on: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == _av_page and _d[0][1] > 0
+              and _stale in _d[0][2] and _pv in _d[0][2])
+
+        # The shape F12 actually took: plugin.json moves first.
+        _next = "99.0.0"
+        _write(tmp, _av_page, _av_html % _pv)
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _next}) + "\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av7 bumping plugin.json without re-rendering the published page turns "
+              "it red at the moment the gate is needed, which is the release rather "
+              "than whenever somebody next looks: %r" % (_d,),
+              len(_d) == 1 and _pv in _d[0][2] and _next in _d[0][2])
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+
+        _write(tmp, _av_page, "<p>a page that claims nothing about its version</p>\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av8 a tree where NOTHING is stamped is reported as exactly that: a "
+              "candidate set that narrowed to nothing must not be spelled the same "
+              "way as a tree that is current, and that is the shape a renamed stamp "
+              "or a walk that stopped reaching the reports takes: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == "*" + M.STAMP_EXT[0]
+              and "cleared nothing" in _d[0][2])
+
+        _write(tmp, _av_page, _av_html % _pv)
+        _write(tmp, _av_scratch, _av_html % _stale)
+        check("av9 a page inside a directory `.gitignore` names is not something "
+              "this repo published - a walk that reached one would read whatever a "
+              "scratch render left behind as a live claim: %r"
+              % (M.artifact_version_drift(tmp),),
+              M.artifact_version_drift(tmp) == [])
+
+        _write(tmp, ".gitignore", "# fixture\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av10 ...and the direction that proves av9 tests the derivation rather "
+              "than the path: drop that one line and the same file IS reported: %r"
+              % (_d,), [_r[0] for _r in _d] == [_av_scratch])
+
+        os.remove(os.path.join(tmp, ".gitignore"))
+        _d = M.artifact_version_drift(tmp)
+        check("av11 with no readable `.gitignore` the rule reports THAT and stops - "
+              "answering 'nothing is ignored' would publish a scratch render's "
+              "claim on this repo's behalf: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == ".gitignore"
+              and "cannot be derived" in _d[0][2])
+
+        # Undecodable rather than unreadable: a permission bit does not mean the same
+        # thing on both platforms CI runs, and bytes that are not UTF-8 do.
+        _write(tmp, ".gitignore", "# fixture\n")
+        os.remove(os.path.join(tmp, _av_scratch.replace("/", os.sep)))
+        _bad = "docs/bad" + M.STAMP_EXT[0]
+        with open(os.path.join(tmp, _bad.replace("/", os.sep)), "wb") as fh:
+            fh.write(b"\xff\xfe not utf-8 at all \xff")
+        _d = M.artifact_version_drift(tmp)
+        check("av12 a page that cannot be decoded is REPORTED, never counted as one "
+              "that stamps nothing: 'I could not read this claim' and 'this page "
+              "makes none' are different answers, and the second spares the file: %r"
+              % (_d,),
+              [(_r[0], "unreadable" in _r[2]) for _r in _d] == [(_bad, True)])
+        os.remove(os.path.join(tmp, _bad.replace("/", os.sep)))
+
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"name": "audit"}) + "\n")
+        _d = M.artifact_version_drift(tmp)
+        check("av13 a plugin.json with no readable version is reported, never "
+              "defaulted - the comparison has no basis, and a guessed version would "
+              "fail every page for the wrong reason: %r" % (_d,),
+              len(_d) == 1 and _d[0][0] == M._PLUGIN_JSON_REL
+              and "no readable version" in _d[0][2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+    # --- screenshot_capture_drift: the same question, asked of a PICTURE -------
+    # The claim cannot be read back out of the pixels - `capture-screenshots.mjs`
+    # refuses to compare them, and F18 records why - so it is recorded beside them
+    # and this is what compares it.
+    _sc = M.screenshot_capture_drift()
+    check("sc1 every committed screenshot records the build plugin.json names - the "
+          "live claim, and the one that goes red the day a bump is not followed by "
+          "a re-capture: %r" % (_sc,), _sc == [])
+
+    _sc_dir = os.path.join(M.REPO_ROOT, M.SHOT_DIR_REL.replace("/", os.sep))
+    _sc_pngs = sorted(n for n in os.listdir(_sc_dir) if n.endswith(".png"))
+    with open(os.path.join(M.REPO_ROOT, M._CAPTURED_AT.replace("/", os.sep)),
+              "r", encoding="utf-8") as fh:
+        _sc_rec = json.load(fh)["images"]
+    check("sc2 ...and it cleared a real set rather than an empty one - sc1 returns "
+          "[] over a directory it never reached too, and telling those two apart is "
+          "the whole point of the rule: every committed .png has an entry, every "
+          "entry names a committed .png, and every recorded version is the one "
+          "plugin.json carries: %r" % (len(_sc_pngs),),
+          len(_sc_pngs) > 5 and sorted(_sc_rec) == _sc_pngs
+          and set(v.get("version") for v in _sc_rec.values()) == set([_pv]))
+
+    tmp = tempfile.mkdtemp()
+    _sc_a = M.SHOT_DIR_REL + "/one.png"
+    _sc_b = M.SHOT_DIR_REL + "/two.png"
+    try:
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _write(tmp, _sc_b, "PIXELS-TWO\n")
+        _sc_ok = {"one.png": {"sha256": _sc_digest(tmp, _sc_a), "version": _pv},
+                  "two.png": {"sha256": _sc_digest(tmp, _sc_b), "version": _pv}}
+        _sc_sidecar(tmp, _sc_ok)
+        check("sc3 a fixture whose sidecar agrees with the BYTES and the VERSION is "
+              "green, so every case below fails for the reason it names: %r"
+              % (M.screenshot_capture_drift(tmp),),
+              M.screenshot_capture_drift(tmp) == [])
+
+        os.remove(os.path.join(tmp, M._CAPTURED_AT.replace("/", os.sep)))
+        _sc_none = M.screenshot_capture_drift(tmp)
+        check("sc4 no sidecar is a FINDING, not silence - the pictures still make a "
+              "claim and nothing can settle it, which is the state this rule exists "
+              "to end: %r" % (_sc_none,),
+              len(_sc_none) == 1 and _sc_none[0][0] == M._CAPTURED_AT
+              and "missing or unreadable" in _sc_none[0][2])
+
+        # A version this fixture's plugin.json cannot be mistaken for, so a rule
+        # that compared the sidecar with itself is green here.
+        _sc_stale = dict(_sc_ok)
+        _sc_stale["one.png"] = {"sha256": _sc_ok["one.png"]["sha256"],
+                                "version": "0.0.1"}
+        _sc_sidecar(tmp, _sc_stale)
+        _sc_old = M.screenshot_capture_drift(tmp)
+        check("sc5 a recorded version that is not the current one is named WITH the "
+              "pair - 'stale' without both halves is not something a reader can act "
+              "on: %r" % (_sc_old,),
+              len(_sc_old) == 1 and _sc_old[0][0] == M.SHOT_DIR_REL + "/one.png"
+              and "0.0.1" in _sc_old[0][2] and _pv in _sc_old[0][2])
+
+        # The two branches must not be spelled the same way: here the VERSION is
+        # right and the bytes are not, which is a re-capture that never finished.
+        _sc_sidecar(tmp, _sc_ok)
+        _write(tmp, _sc_a, "PIXELS-ONE-BUT-DIFFERENT\n")
+        _sc_moved = M.screenshot_capture_drift(tmp)
+        check("sc6 bytes that changed since the record was written are reported as "
+              "CHANGED, not as a version mismatch - the recorded version is then "
+              "about different pixels, and saying 'stale build' would send the "
+              "reader to the wrong repair: %r" % (_sc_moved,),
+              len(_sc_moved) == 1 and "has changed since" in _sc_moved[0][2]
+              and "plugin.json says" not in _sc_moved[0][2])
+
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _sc_sidecar(tmp, {"one.png": _sc_ok["one.png"]})
+        _sc_extra = M.screenshot_capture_drift(tmp)
+        check("sc7 an image the sidecar does not mention is named - adding a "
+              "screenshot without re-capturing leaves it claiming a build nothing "
+              "wrote down: %r" % (_sc_extra,),
+              len(_sc_extra) == 1 and _sc_extra[0][0] == M.SHOT_DIR_REL + "/two.png"
+              and "unrecorded" in _sc_extra[0][2])
+
+        _sc_ghost = dict(_sc_ok)
+        _sc_ghost["gone.png"] = {"sha256": "0" * 64, "version": _pv}
+        _sc_sidecar(tmp, _sc_ghost)
+        _sc_orphan = M.screenshot_capture_drift(tmp)
+        check("sc8 an entry whose picture is gone is named too - a record about "
+              "nothing is how a deleted shot keeps being vouched for: %r"
+              % (_sc_orphan,),
+              len(_sc_orphan) == 1 and _sc_orphan[0][0] == M._CAPTURED_AT
+              and "gone.png" in _sc_orphan[0][2])
+
+        _sc_sidecar(tmp, _sc_ok)
+        os.remove(os.path.join(tmp, _sc_a.replace("/", os.sep)))
+        os.remove(os.path.join(tmp, _sc_b.replace("/", os.sep)))
+        _sc_empty = M.screenshot_capture_drift(tmp)
+        check("sc9 a directory with no .png at all is a FINDING - a candidate set "
+              "that narrowed to nothing must not be spelled the same way as a set "
+              "that all agrees, which is the shape a moved output directory takes: "
+              "%r" % (_sc_empty,),
+              len(_sc_empty) == 1 and _sc_empty[0][0] == M.SHOT_DIR_REL
+              and "holds no .png" in _sc_empty[0][2])
+
+        _write(tmp, _sc_a, "PIXELS-ONE\n")
+        _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"name": "x"}) + "\n")
+        _sc_nover = M.screenshot_capture_drift(tmp)
+        check("sc10 a plugin.json with no readable version is reported instead of "
+              "failing every image for the wrong reason - the comparison has no "
+              "basis, and a guessed one would be worse than none: %r" % (_sc_nover,),
+              len(_sc_nover) == 1 and _sc_nover[0][0] == M._PLUGIN_JSON_REL
+              and "no readable version" in _sc_nover[0][2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     # --- F36: a command's flags vs the README row that catalogues them ---------
     # The defect this exists for was live when it was written: /audit:status had

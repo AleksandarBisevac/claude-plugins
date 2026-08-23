@@ -54,7 +54,8 @@ claude-plugins/                           # this repo (personal, public)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
         status.md doctor.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         panel.md                          # /audit:panel — open/stop/status the control-panel UI
-        migrate.md                        # /audit:migrate — single-file -> sharded manifest layout
+        layout.md                         # /audit:layout — pick the manifest layout, either direction
+        migrate.md                        # /audit:migrate — legacy spelling of `/audit:layout sharded`
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
@@ -109,7 +110,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
-          migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
+          migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
@@ -779,7 +780,7 @@ the list it installed** — never None, never empty — so a caller can assert w
 instead of trusting that an import worked. `scripts/ui/` drops out on its own because it
 holds no `.py`, which turns an editorial rule into a mechanical one.
 
-**`PATH_PREAMBLE` is the eleven lines every other `.py` under `scripts/` carries**, byte
+**`PATH_PREAMBLE` is the block every other `.py` under `scripts/` carries**, byte
 for byte, after the stdlib imports and above the first sibling import. It walks UP until it
 finds the directory containing `_output.py`, so it encodes no depth and terminates at the
 filesystem root with a named `ImportError` rather than looping; then it imports `_output`
@@ -802,15 +803,34 @@ wrong. Re-derive any of them by breaking the check, never by reading this. All t
 remedy — **delete the number** — and the evidence for choosing that over "make it carry its
 basis" is `CONTRIBUTING.md`, whose files-over-500 figure *does* name a command that prints it
 and rotted in both halves anyway. A basis makes a claim checkable; only deleting the number
-makes it un-rottable. Four things are designed in and each is pinned by its own case: no
+makes it un-rottable. Every property below is designed in and pinned by its own case: no
 regex (this module carries `ast`, `os` and `sys` only, and hooks import it on every tool
 call); history stays writable, so `stood at N` and `was still N` are legal and `stayed at N`
 is not; a number carrying its own re-derivation is allowed, and the basis is read across a
 line wrap because every document here is hard-wrapped; and the repair must itself read clean,
-or the lint forbids its own remedy. What it cannot see is written down with its direction —
-counts spelled in words, claims split across a wrap, completeness with no auxiliary,
-persistence naming no code in backticks — and every one of those is an **under**-count, which
-is the quiet direction, so a clean result means "none of the known shapes", not "no claims".
+or the lint forbids its own remedy. F59 added one more: the number may be written as
+a **word**, and `_numeral_span()` reads both spellings for every shape so there is no second
+grammar to drift. Its table stops below `ten` on a measurement, not on taste — under `ten` a
+written-out number in this tree is a determiner, a pronoun or an anaphor pointing at an
+enumeration in the same breath, and the shapes cannot tell that from a count. What it cannot
+see is written down with its direction — a count spelled as one of the small words that table
+leaves out, claims split across a wrap, completeness with no auxiliary, persistence naming no
+code in backticks, and a numeral written with an interior separator, which is a ratio or a
+measurement and not a count of things — and every one of those is an **under**-count, which is
+the quiet direction, so a clean result means "none of the known shapes", not "no claims".
+
+**WHERE it looks is derived, and that was the other half of the same defect** (F64, F71). The
+scanned set was a hand-written pair — `.py` under `hooks/` and `scripts/`, plus three named
+documents — so a claim in `tools/`, in `tests/`, in `scripts/ui/*/README.md` or in the plugin's
+own product documents was written where nothing read it, and that is where the claims had gone:
+a part count per assembled surface, a suite size per boundary docstring, a file count in the
+prover. It is now every `.py` and every `.md` this repo keeps, walked off `.gitignore` because
+these suites are verified over a `git archive HEAD` export with no `.git` in it, and a file
+added to the repo is scanned by default. Excluding one is a row in
+`_output.PROSE_SCAN_EXEMPT` carrying a reason a reader can disagree with — released history,
+a dated design record, a generated document, and the two suites that hold this scanner's own
+fixtures. A case checks each row's premise rather than its presence: the path exists, or
+`.gitignore` names it.
 
 The consequence worth stating out loud: **the folders under `scripts/` are labels, not
 namespaces.** Everything stays in one flat name-space, `import` and `_loader.load_script()`
@@ -899,11 +919,14 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-`doc_prose_numbers()` runs `_output`'s prose-number rule over the three documents this repo keeps
-its numbers in — this guide, `CLAUDE.md` and `CONTRIBUTING.md` — and it **delegates** to
-`_output._prose_number_claim` rather than restating the shapes, because a second copy of the
+`doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
+derived set described under `_output.py` above, product documents included — and it **delegates**
+to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the
 pattern would be precisely the defect both scanners exist to catch; a case asserts there is no
-second definition. `navigability_violations()` and `ui_navigability_violations()` both **name** an
+second definition. `_PROSE_DOCS` survives as the three documents that were once the whole list,
+and it is now a BLINDNESS check: each claims to be a definition of how this repo works, so a
+derivation that stopped reaching one has gone quiet rather than clean — which is the direction a
+floor derived from the walk itself cannot see. `navigability_violations()` and `ui_navigability_violations()` both **name** an
 asset they could not read and a directory they could not list, rather than skipping it (F44): the
 `.py` side had reported a file it could not *tokenize* since F21 while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
@@ -986,6 +1009,51 @@ are cased, including the one asserting the move stays green. The four trees it a
 from include `tests/` and `tools/` themselves, because a tool's usage line names itself and a
 docstring names where its behaviour is pinned; excluding them would make every usage string a
 violation, and a lint that cries about correct code is one somebody switches off.
+
+Its one exception table, `TOOL_FIXTURE_BASENAMES`, is for a name a case must WRITE with the
+Python extension because the scanner under test opens nothing else. **A name a case only talks
+about is spelled around rather than exempted** — drop the extension where nothing reads it,
+borrow the JavaScript module one where the rule under test cannot tell the extensions apart, or
+assemble the literal from pieces where that shape *is* the fixture — and the function's
+docstring names the file in `tools/` that does each. A fixture nothing creates is
+indistinguishable from a reference that has gone stale, so an exemption class for it would be a
+place to declare away the defect the rule exists to find. Until F68 the convention existed only
+as a lint failure: an hour every new author pays once, and it had been paid before it was
+written down.
+
+`artifact_version_drift()` (F12) asks the same question of a COMMITTED PAGE rather than of
+prose. A rendered report stamps the plugin version that produced it, so a report in the tree is
+a published claim about which release the reader is looking at — and the scale demo under
+`docs/` served a stamp several releases behind the plugin while every check over it stayed
+green, because they asserted **content**: no invalid-manifest banner, a usage section
+present. Content is what does not change with a release, so content assertions cannot see
+age. The rule compares each stamp with `.claude-plugin/plugin.json` and names **both** versions,
+which is what a byte comparison cannot do. It also **discovers** the pages rather than listing
+them: `tools/check-rendered-artifacts.py` re-renders and compares bytes, and its own docstring
+names the artifact nobody listed as the direction it cannot cover, so a table here would be a
+second copy of that same blind spot. A tree where nothing is stamped is itself a finding —
+without that, a renamed class would take the rule quiet instead of red, and the panel's
+template is in the candidate set carrying no stamp precisely so a case can tell the two
+apart.
+
+`screenshot_capture_drift()` (F62) asks it of a PICTURE, which is why it cannot be answered the
+same way. The panel paints its own version in the topbar and every shot starts at the top of the
+page, so each committed PNG under `docs/screenshots/` claims a build — and reading that claim
+back means reading text out of an image. `tools/capture-screenshots.mjs` refuses to compare
+these pixels at all: F18 settled that, and its header declines three repairs by name, including
+masking the topbar box ("a promise never to see drift in the most-looked-at part of the page")
+and writing a fake version into the picture. So the basis is recorded beside the pictures
+instead, by the run that took them — `docs/screenshots/captured-at.json`, one entry per image
+carrying the version and the hash of the bytes it was written as — and this rule compares it.
+The record is not a guess: the panel leg asserts the LIVE topbar names `plugin.json`'s version
+before any shutter opens, so the sidecar writes down what was already checked. Per file rather
+than per run, because `--only report` rewrites some images and leaves others, and a run-level
+version would then claim the new build for pictures nobody re-shot. The hash is what stops the
+sidecar being edited into agreement without the pictures being the ones captured; it does not
+make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
+scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
+missing basis against a producer never asked to record one.
+
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`
@@ -1123,15 +1191,16 @@ modules need it and only one is a command — `_panel_state`, `audit-doctor`, `a
 and `migrate-manifest` all used to load `validate-manifest.py` through `_loader`, four of
 the seventeen `KNOWN_LAYER_DEBT` edges.
 
-The file itself is now 254 lines rather than 1,406, and holds **two** things: `_check_meta`
-(the document's header — the root key vocabulary and `meta`, which need nothing the walk
-builds) and `validate()`, which decides the **order** the pieces run in. The order is the
-one thing that could not move into a piece: `_walk_phases` builds the index the five checks
-after it read, so it runs once and first. Everything else is one of the five modules below,
-each re-exported here as a thin alias so no consumer had to learn a new import; a case pins
-every alias with `is`, so a pasted-back copy fails by name. It moved **layer 2 → layer 3**,
-which is the whole structural cost: the four pieces sit at layer 2 above `_manifest_vocab`
-at layer 1, and a consumer AT layer 2 is still not strictly downward.
+The file itself is now a fraction of the 1,406 it was cut from, and holds **two** things:
+`_check_meta` (the document's header — the root key vocabulary and `meta`, which need
+nothing the walk builds) and `validate()`, which decides the **order** the pieces run in.
+The order is the one thing that could not move into a piece: `_walk_phases` builds the index
+the five checks after it read, so it runs once and first. Everything else is one of the five
+modules below, each re-exported here as a thin alias so no consumer had to learn a new
+import; a case pins every alias with `is`, so a pasted-back copy fails by name. It moved
+**layer 2 → layer 3**, which is the whole structural cost: the four pieces sit at layer 2
+above `_manifest_vocab` at layer 1, and a consumer AT layer 2 is still not strictly
+downward.
 
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
 The manifest's **words** (layer 1), and the four shape checks every level of it shares.
@@ -1147,7 +1216,7 @@ at layer 2 and its consumers at layer 3.
 The `KNOWN_*` sets restate vocabulary `schema/audit-plan.schema.json` already owns, and they
 are now **checked against it rather than trusted**. `SCHEMA_ANCHORS` records where each set
 lives in that document, spelled as the dotted path `_help.fields()` produces
-(`phases[].tasks[]`), and `OFF_SCHEMA` records the thirteen keys that deliberately have no
+(`phases[].tasks[]`), and `OFF_SCHEMA` records the keys that deliberately have no
 schema counterpart — legacy names v0.3.0 removed, plus `meta.workspaceRoot`, which
 `reference/orchestrator.md` still names as the pre-0.6 fallback for `gitRoot` — **one written
 reason each**, because an exemption list without reasons is where a lint goes to die.
@@ -1368,13 +1437,14 @@ read-only by construction: it never writes, never takes a lock, and for `buildCo
 resolves whether the named executable exists rather than running it. Output classes match the
 rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
 
-It was 1,456 lines and is 242, because fifteen checks shared one file for the single reason
-that `diagnose()` calls all fifteen. What is left here is the thing that could not go into a
-piece: the ORDER (`check_config` produces the `cfg`/`cfg_mod` pair, `check_git` the git root,
-`check_manifest` the manifest — ten of the checks after them take those as arguments), plus
-`render()` and `main()`, because a report's order and its rendering are one subject. Every
-name the six modules hold is re-exported here as a module-level alias, so the suite and the
-command both keep spelling one import.
+It was 1,456 lines and is a fraction of that - `wc -l` on it says how much - because the
+checks shared one file for the single reason that `diagnose()` calls every one of them. What
+is left here is the thing that could not go into a piece: the ORDER (`check_config` produces
+the `cfg`/`cfg_mod` pair, `check_git` the git root, `check_manifest` the manifest — ten of
+the checks after them take those as arguments), plus `render()` and `main()`, because a
+report's order and its rendering are one subject. Every name the six modules hold is
+re-exported here as a module-level alias, so the suite and the command both keep spelling
+one import.
 
 ### `plugins/audit/scripts/status/_doctor_report.py`
 The piece all six check modules sit on, and the only one with no check in it: the `Report`
@@ -1547,17 +1617,27 @@ attr` it prints one focused table; without it, the full dashboard. `--backfill` 
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
 path that rewrites (and therefore locks) rather than only appending.
 
-### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
+### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/layout.md` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
 `load_manifest` reads BOTH the single-file form and the v3 index+shards form into the same assembled
 dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
 `hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
 `{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime
 mirror, so a phase run writes only its shard → parallel phase branches merge with no manifest conflict.
-`migrate-manifest.py` (driven by `/audit:migrate`) converts single-file → sharded: validate source →
-refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-validate → restore on failure;
-`--renumber` repairs duplicate `BUG-` ids, `--dry-run` previews. Locks moved to the shared git dir
-(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
+`join_manifest`/`save_single_file` are the counterparts that write the assembled dict back out as one
+file, and the one thing they own beyond the write is putting `meta.version` back down — `LAYOUT_VERSION`
+is where both writers take that number from, because the layout has TWO independent readings
+(`is_sharded()` over the phase stubs, and the version) and a file they disagree about has no layout at
+all. `migrate-manifest.py` — driven by `/audit:layout`, of which `/audit:migrate` is the kept
+legacy spelling — converts in EITHER direction — `--to=sharded|single-file`, defaulting to
+sharded so every invocation predating the reverse still means what it meant — under one discipline:
+validate source → refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-read and check
+the result both validates AND reads as the layout asked for → restore on failure. `--renumber` repairs
+duplicate `BUG-` ids in either direction, `--dry-run` previews. Going to single-file then moves the
+emptied shard directory aside under a `.bak-<UTC>` name — one `os.rename`, so it cannot half-apply and
+nothing is deleted — as the last step, after the result has validated, because it is the only mutation
+restoring the index does not undo. No lock is taken in the script: the index lock belongs to the
+command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
 
@@ -1831,10 +1911,14 @@ already shipped once. Topics are derived from the executable rule where one exis
 gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
 policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
-so the panel cannot advertise a tool that agent does not hold. Because it owns the tree's only
-schema walk it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s `KNOWN_*` sets
-to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up for the walk,
-and a second walk written down there would have moved the duplication rather than removed it.
+so the panel cannot advertise a tool that agent does not hold. Because it owns the schema walk
+that keys by DOCUMENT PATH it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s
+`KNOWN_*` sets to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up
+for the walk, and another walk written down there would have moved the duplication rather than
+removed it. This is not the tree's only schema walk: `gen-demo-manifest.schema_fields()` keys a
+field by `$def` NAME instead, so an INLINE level such as `meta.ado` has no owner to attribute a
+sub-key to and is outside its reach — which is why the two are not interchangeable and why
+`test__manifest_vocab.py` asserts it rather than saying so.
 `vocab_drift()` is the comparison on plain arguments, so its own failure modes are tested from
 fixtures instead of by mutating the shipped vocabulary.
 
@@ -1945,6 +2029,17 @@ route, and `_panel_state`'s `--name-only` **security** slice widened from 3,747 
 still "found" the flag. `between()` raises on either marker, and `run()` reports the escape as a
 named failing case.
 
+**Every suite also inherits one rule it did not write.** `run()` is the only place that has
+seen every label a suite produced, so it is where they are checked for being two cases wearing
+one name: an id claimed from more than one `check()` call site, and a whole label printed twice.
+Both arrive as named FAILING cases, because `tools/prove-gates.py` credits a mutation to the
+case whose id went red — an ambiguous id defeats its `RED, WRONG CASE` verdict silently, which
+is why F63 is the one defect that weakens every other proof in the tree. The rule reads the CALL
+SITE rather than the occurrence count on purpose: a family driven from one loop (`t3 0 is not a
+tier`, `t3 -3 is not a tier`) is one authored assertion and keeps one name, while two
+hand-written cases claiming `pn10` are two. `prove-gates.py` holds the other end, refusing to
+credit a row whose label names no case, or more than one.
+
 **Naming.** a production `x.py` becomes `tests/test_x.py`, with **hyphens becoming underscores**:
 `migrate-manifest.py` → `test_migrate_manifest.py`, because a hyphenated name is not
 importable and the entry points are hyphenated by convention. The rule lives in
@@ -2006,7 +2101,9 @@ rather than loudly if carried:
   `_harness.between()`, which raises on either. `_panel_state`'s `--name-only` case is the one
   that makes this a security rule rather than a tidiness one: a plain `git config --list` hands
   back credential helpers and tokens, and the vacuous form was measured passing over a
-  71,084-character slice of a module whose real slice is 3,747.
+  71,084-character slice where the real one was 3,747 - both figures as they stood that
+  day, which is the only tense either can be stated in: the slice has since moved to
+  `_panel_viewer` and shrunk, and `_harness.between()` will print its length on request.
 
 **A moved case may have to become a better case.** Not licence to rewrite: labels move
 byte-identical and the multiset is proven. But where the inline spelling depended on the suite's

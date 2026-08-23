@@ -90,8 +90,10 @@ ARTIFACTS = "python3 tools/check-rendered-artifacts.py"
 # is never the expensive decision.
 VITEST = "npx vitest run"
 
-# The meta-gate: `tools/verify.sh` and `.github/workflows/ci.yml` are two copies of
-# one gate set, and editing either is what makes them disagree.
+# The meta-gate. Several files describe one gate set - the runner, the workflow and
+# the two root documents - and editing any of them is what makes them disagree. Which
+# files those are is `gate-parity.py`'s own table and is deliberately not copied here;
+# see the sweep-document branch for what this selects on instead.
 PARITY = "python3 tools/gate-parity.py"
 
 # The documents `_refs.sweep_glob_drift()` pins, READ OFF `_refs` rather than listed
@@ -107,11 +109,20 @@ SWEEP_DOCS = frozenset(d.replace(os.sep, "/") for d in _refs.SWEEP_DOCS)
 # extension set from, so the two cannot disagree about what a document is.
 SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
 
+# ...and the pages `_refs.artifact_version_drift()` reads, derived the same way. A
+# committed report carries the plugin version that rendered it, and that rule is the
+# only thing comparing the stamp with `plugin.json` - so a narrowed run that edited a
+# published page and skipped this suite would be the under-selection this whole file
+# exists to prevent. The other direction is already covered: a `plugin.json` change
+# selects the full set.
+STAMP_EXT = tuple(_refs.STAMP_EXT)
+
 
 def refs_reads(posix):
     """True when `_refs` scans this path, so `test__refs.py` can go red for it.
 
-    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS` and `_refs.SWEEP_DOC_EXT` for the
+    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS`, `_refs.SWEEP_DOC_EXT` and
+    `_refs.STAMP_EXT` for the
     same reason `_reverse_imports()` is derived from the real import graph: a hand-kept
     copy of somebody else's list is a copy that stops agreeing. Editing
     `CONTRIBUTING.md` selected `test__deps.py` and not this - and `CONTRIBUTING.md` is a
@@ -121,7 +132,7 @@ def refs_reads(posix):
     file judges come from git, and git never hands over a file the repo ignores. The
     scan's own prune list exists for a WALK, which sees files git does not.
     """
-    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT):
+    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT + STAMP_EXT):
         return True
     for surface, _mode in _refs.SURFACES:
         rel = surface.replace(os.sep, "/")
@@ -216,10 +227,29 @@ def select(paths):
             # Applied to EVERY path rather than added inside four branches by hand,
             # which is how three of them came to disagree about it.
             suites.add("test__refs.py")
+        # THE PROSE SCANS, and they are applied to every path for the same reason.
+        # Their sets are derived now - every `.py` this repo keeps for
+        # `prose_number_claims()`, every `.md` for `doc_prose_numbers()` - so the
+        # extension decides which suite reads the file, and NOTHING about which
+        # directory it sits in does. Written as a branch on the directory (the
+        # root-prose rule below used to be the whole of it), this file would
+        # under-select for exactly the files the widening was for: a count added to
+        # a `commands/*.md` or to a `tests/` docstring selected neither suite.
+        if posix.endswith(".py"):
+            suites.add("test__output.py")
+        if posix.endswith(".md"):
+            suites.add("test__deps.py")
         if posix in SWEEP_DOCS:
             suites.add("test__deps.py")
-            if posix.endswith((".yml", ".yaml")):
-                gates.append(PARITY)
+            # EVERY sweep document, not only the workflow. Some of them are parity
+            # SIDES and the workflow was the only one selecting the check, so editing
+            # `CONTRIBUTING.md` - a side long before this - narrowed to a run that
+            # skipped the comparison while the reason line below said the gate set had
+            # been re-checked. The parity sides are a subset of these documents plus
+            # `verify.sh`, which the tools/ branch already covers, so selecting on the
+            # whole set is a WIDENING - the direction this file is allowed to be wrong
+            # in - and it buys not keeping a copy of which documents are sides.
+            gates.append(PARITY)
             reasons.append("%s - a sweep document, so the sweep-shape rule and the "
                            "gate set are re-checked" % (posix,))
             continue
@@ -228,7 +258,9 @@ def select(paths):
                            "gate" % (posix,))
             continue
         if posix.endswith((".md", ".txt")) and "/" not in posix:
-            # Root prose: CLAUDE.md and friends are read by `_deps.doc_prose_numbers`.
+            # Root prose. The `.md` half is already selected above, along with
+            # every other `.md` in the tree; what this branch still owns is `.txt`
+            # and the `continue` that says a root document needs nothing else.
             suites.add("test__deps.py")
             reasons.append("%s - root prose, linted by _deps" % (posix,))
             continue
@@ -408,8 +440,17 @@ def main(argv):
 # UNDER-selects is invisible to the full set, because nobody runs the full set to
 # check the selector - they run the narrowed set and believe it. The docstring above
 # says under-selection is worse than no selector at all; these are what hold it.
-def _cases():
-    out = []
+#
+# LABELS READ DOWN IN ORDER, and a case added beside its topic takes a LETTER
+# suffix rather than the next free number - `a3b` next to `a3`, not `a14` at the
+# bottom of the file's numbering. The label set was `a0 a1 a2 a3 a14 a4 a5 a12 a6
+# ... a10 a13 a11` and the next free label was therefore not discoverable by
+# reading, which is how F61's first attempt collided with `a5`. `_harness.run()`
+# now catches a collision by name, so this is about a reader's next label rather
+# than about a proof - and it is a convention on purpose, not a lint: a suite
+# that groups its cases by topic is right to, and a rule demanding one global
+# ascending sequence would forbid exactly that.
+def _cases(check):
 
     def sel(*paths):
         suites, gates, _why, full = select(list(paths))
@@ -418,98 +459,136 @@ def _cases():
     yml = ".github/workflows/ci.yml"
     dotted = sel(yml)
     undotted = sel("github/workflows/ci.yml")
-    out.append(("a0", (not dotted["full"])
-                and "test__refs.py" in dotted["suites"]
-                and PARITY in dotted["gates"],
-                "the workflow is a sweep document and half the gate set, so it "
-                "narrows to the refs pins and the parity check instead of demanding "
-                "everything: %r" % (dotted,)))
+    check("a0 the workflow is a sweep document and half the gate set, so it "
+          "narrows to the refs pins and the parity check instead of demanding "
+          "everything: %r" % (dotted,),
+          (not dotted["full"])
+          and "test__refs.py" in dotted["suites"]
+          and PARITY in dotted["gates"])
 
-    out.append(("a1", dotted["full"] is False and undotted["full"] is True,
-                "THE PAIR: the same path with and without its leading dot give "
-                "OPPOSITE answers. `lstrip(\"./\")` strips CHARACTERS, so it ate the "
-                "dot and BOTH were the full set - asserting the dotted one alone "
-                "would pass on the broken version too (%r vs %r)"
-                % (dotted["full"], undotted["full"])))
+    check("a1 THE PAIR: the same path with and without its leading dot give "
+          "OPPOSITE answers. `lstrip(\"./\")` strips CHARACTERS, so it ate the "
+          "dot and BOTH were the full set - asserting the dotted one alone "
+          "would pass on the broken version too (%r vs %r)"
+          % (dotted["full"], undotted["full"]),
+          dotted["full"] is False and undotted["full"] is True)
 
-    out.append(("a2", sel("./tools/verify.sh") == sel("tools/verify.sh"),
-                "...while a leading `./` IS a prefix and is stripped, so the two "
-                "spellings of one path select the same thing"))
+    check("a2 ...while a leading `./` IS a prefix and is stripped, so the two "
+          "spellings of one path select the same thing",
+          sel("./tools/verify.sh") == sel("tools/verify.sh"))
 
     contributing = sel("CONTRIBUTING.md")
-    out.append(("a3", "test__refs.py" in contributing["suites"],
-                "a root document that is a `_refs` SURFACE selects the refs pins. "
-                "It selected only test__deps.py before, so a path rotting inside it "
-                "went unchecked by every narrowed run: %r" % (contributing,)))
+    check("a3 a root document that is a `_refs` SURFACE selects the refs pins. "
+          "It selected only test__deps.py before, so a path rotting inside it "
+          "went unchecked by every narrowed run: %r" % (contributing,),
+          "test__refs.py" in contributing["suites"])
+
+    claude = sel("CLAUDE.md")
+    png = sel("docs/screenshots/panel.png")
+    check("a3b THE PAIR: a root document that describes the gate set selects the "
+          "parity check, and a path that does not describe it does not. Only "
+          "the workflow selected it, so editing either document narrowed to a "
+          "run that skipped the comparison - while the reason line claimed the "
+          "gate set had been re-checked: %r / %r / %r"
+          % (claude["gates"], contributing["gates"], png["gates"]),
+          PARITY in claude["gates"]
+          and PARITY in contributing["gates"]
+          and PARITY not in png["gates"])
 
     surfaces = [sfc for sfc, _m in _refs.SURFACES]
     reached = [sfc for sfc in surfaces if refs_reads(sfc.replace(os.sep, "/"))]
-    out.append(("a4", len(reached) == len(surfaces) and len(surfaces) > 8,
-                "the surface rule is DERIVED from _refs, not copied: every one of "
-                "its %d entries answers True. A hand-kept copy is what let three "
-                "branches disagree about this" % (len(surfaces),)))
+    check("a4 the surface rule is DERIVED from _refs, not copied: every one of "
+          "its %d entries answers True. A hand-kept copy is what let three "
+          "branches disagree about this" % (len(surfaces),),
+          len(reached) == len(surfaces) and len(surfaces) > 8)
 
-    out.append(("a5", refs_reads("node_modules/vitest/index.js") is False,
-                "...and it says False for a path _refs does not read, so a4 is a "
-                "rule rather than a function that returns True"))
+    check("a5 ...and it says False for a path _refs does not read, so a4 is a "
+          "rule rather than a function that returns True",
+          refs_reads("node_modules/vitest/index.js") is False)
 
     # Both paths are under `docs/`, which is NOT a `_refs` surface - so before the
     # completeness rule they answered False alike, and the extension is the whole
     # difference between them. A pair inside a surface would prove nothing: everything
-    # there already answered True.
-    out.append(("a12", refs_reads("docs/design/audit-concurrency-report.md") is True
-                and refs_reads("docs/index.html") is False,
-                "a document nowhere near the pinned list selects the refs pins now, "
-                "because the completeness rule reads every document the repo keeps - "
-                "and a non-document beside it still does not, so this is an extension "
-                "rule and not a widening to everything"))
+    # there already answered True. The False half was `docs/index.html` until the
+    # version-stamp rule started reading that page, which is exactly the way a pair
+    # like this is supposed to go stale: loudly, in the case, and not in the selector.
+    check("a5b a document nowhere near the pinned list selects the refs pins now, "
+          "because the completeness rule reads every document the repo keeps - "
+          "and a non-document beside it still does not, so this is an extension "
+          "rule and not a widening to everything",
+          refs_reads("docs/design/audit-concurrency-report.md") is True
+          and refs_reads("docs/screenshots/panel-blocks.png") is False)
 
-    out.append(("a6", sel("some/unknown/place.xyz")["full"] is True,
-                "AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
-                "whole file rests on; if it ever narrowed, every other case here "
-                "would still pass and the selector would quietly be wrong"))
+    check("a6 AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
+          "whole file rests on; if it ever narrowed, every other case here "
+          "would still pass and the selector would quietly be wrong",
+          sel("some/unknown/place.xyz")["full"] is True)
 
     ui = sel("plugins/audit/scripts/ui/panel/core.js")
-    out.append(("a7", VITEST in ui["gates"] and PANEL_GATE in ui["gates"]
-                and not ui["full"],
-                "a panel part selects the JavaScript unit tests AND the panel "
-                "browser gate - vitest ran only in CI before, so a ui change could "
-                "reach a push with none of its suites having run: %r" % (ui["gates"],)))
+    check("a7 a panel part selects the JavaScript unit tests AND the panel "
+          "browser gate - vitest ran only in CI before, so a ui change could "
+          "reach a push with none of its suites having run: %r" % (ui["gates"],),
+          VITEST in ui["gates"] and PANEL_GATE in ui["gates"]
+          and not ui["full"])
 
     tests = sel("tools/ui-tests/parse.test.mjs")
-    out.append(("a8", tests["gates"] == [VITEST],
-                "a vitest suite selects vitest and nothing else: %r" % (tests,)))
+    check("a8 a vitest suite selects vitest and nothing else: %r" % (tests,),
+          tests["gates"] == [VITEST])
 
     runner = sel("tools/sweep-selftests.py")
-    out.append(("a9", any("sweep-selftests.py --selftest" in g
-                          for g in runner["gates"]),
-                "the runner every other suite is run BY selects its own cases - "
-                "nothing else can vouch for it: %r" % (runner["gates"],)))
+    check("a9 the runner every other suite is run BY selects its own cases - "
+          "nothing else can vouch for it: %r" % (runner["gates"],),
+          any("sweep-selftests.py --selftest" in g
+              for g in runner["gates"]))
 
     py = sel("plugins/audit/scripts/_output.py")
-    out.append(("a10", "test__output.py" in py["suites"]
-                and "test__deps.py" in py["suites"] and not py["full"],
-                "a .py selects its own suite plus every suite that lints the whole "
-                "tree, because editing one file turns those red without touching "
-                "them (%d suites)" % (len(py["suites"]),)))
+    check("a10 a .py selects its own suite plus every suite that lints the whole "
+          "tree, because editing one file turns those red without touching "
+          "them (%d suites)" % (len(py["suites"]),),
+          "test__output.py" in py["suites"]
+          and "test__deps.py" in py["suites"] and not py["full"])
+
+    page = sel("docs/demo-large.html")
+    check("a10b a published report selects the version-stamp rule as well as the "
+          "byte comparison. The stamp is the claim the page makes about which "
+          "release it came from, and until it was read by a suite the only "
+          "thing that could notice a stale one was a re-render: %r" % (page,),
+          "test__refs.py" in page["suites"]
+          and ARTIFACTS in page["gates"] and not page["full"])
 
     shot = sel("docs/screenshots/panel-blocks.png")
-    out.append(("a11", shot["gates"] == [] and not shot["full"],
-                "a committed PNG selects no gate and does NOT widen - 'nothing "
-                "covers this' is a real answer here, and it is not spelled the same "
-                "way as 'I could not tell': %r" % (shot,)))
+    check("a11 a committed PNG selects no gate and does NOT widen - 'nothing "
+          "covers this' is a real answer here, and it is not spelled the same "
+          "way as 'I could not tell': %r" % (shot,),
+          shot["gates"] == [] and not shot["full"])
 
-    return out
+    # THE PROSE SCANS ARE DERIVED, so what selects them is the EXTENSION and never
+    # the directory. Both paths below are ones whose OWN branch answered
+    # completely and correctly for everything except this, which is why the rule
+    # had to be applied to every path rather than added inside those branches -
+    # the same reasoning the `refs_reads()` line at the top of `select()` carries.
+    #
+    # Measured, not guessed: these are the two files F64 and F71 were found in, and
+    # they were also the two that selected the wrong side of this. Anything under
+    # `plugins/audit/commands/` or `tests/` was already covered by another branch.
+    doc = sel("plugins/audit/scripts/ui/report-css/README.md")
+    check("a14 a `.md` whose branch answers about a RENDERED surface still "
+          "selects the document scan - this one carries a part count per "
+          "assembled surface, and reassembling the report says nothing about "
+          "whether the count is still true: %r" % (doc,),
+          "test__deps.py" in doc["suites"] and not doc["full"])
+
+    tool = sel("tools/prove-gates.py")
+    check("a15 ...and a `.py` under tools/ selects the `.py` scan, whatever its "
+          "own branch decided. `tools/` holds the sweep runner, the parity check "
+          "and the mutation table, every one of which talks about counts, and "
+          "its branch used to end in 'a tool no suite covers': %r" % (tool,),
+          "test__output.py" in tool["suites"] and not tool["full"])
 
 
 def _selftest():
-    rows = _cases()
-    bad = [r for r in rows if not r[1]]
-    for name, ok, why in rows:
-        print("%s %s %s" % ("PASS" if ok else "FAIL", name, why))
-    print("%s: %d/%d cases passed" % ("ALL PASS" if not bad else "FAILURES",
-                                      len(rows) - len(bad), len(rows)))
-    return 1 if bad else 0
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 if __name__ == "__main__":

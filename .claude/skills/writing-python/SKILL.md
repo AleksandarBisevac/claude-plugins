@@ -22,8 +22,15 @@ banned imports, which is why the AST lint exists alongside it.
 
 ## Free functions, structured returns
 
-The measured shape of this codebase: **734 top-level functions against 6 classes**, 227
-comprehensions, and **6 `global` statements in ~42,000 lines**. That is the pattern to keep.
+The measured shape of this codebase is **top-level functions by the hundred against a
+handful of classes**, comprehensions everywhere, and **`global` statements you can count on one
+hand**. The ratio is the pattern to keep; the figures are not, so re-derive them rather than
+trusting a sentence:
+
+```bash
+grep -rhc '^def ' plugins/audit/scripts plugins/audit/hooks --include='*.py' | paste -sd+ | bc
+grep -rn '^class \|^ *global ' plugins/audit/scripts plugins/audit/hooks --include='*.py' | wc -l
+```
 
 - **Write a function, not a class.** A class here needs a reason you can say out loud — the six
   that exist are all genuine (a lock, a launcher). Grouping related functions is what a module

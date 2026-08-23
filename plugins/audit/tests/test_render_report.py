@@ -258,14 +258,17 @@ def _cases(check):
     # The progress fill is a <span>. Inline boxes ignore width and height, so without
     # an explicit display the bar paints as an empty track at every percentage —
     # which is what shipped from the redesign until it was caught by a capture.
-    check("u14i the progress fill declares a non-inline display "
+    check("u14l the progress fill declares a non-inline display "
           "(a <span> would otherwise ignore its width)",
           re.search(r"\.fill\{[^}]*display:\s*block", M._CSS) is not None)
     # A reveal animation with only a `from` keyframe leaves its end state to be
     # synthesised, and `fill-mode:both` can then hold the element at the from-state.
+    # The keyframe name goes in the LABEL'S FIRST TOKEN and not after it (F75): the
+    # id is what `prove-gates.py` credits a mutation to, and it refuses one that two
+    # cases printed - so `u14k` said which animation only to a human reader.
     for _kf in ("fillIn", "fadeUp"):
         _body = re.search(r"@keyframes %s\{([^}]*\}[^}]*)\}" % _kf, M._CSS)
-        check("u14k %s declares both endpoints (from AND to)" % _kf,
+        check("u14k-%s declares both endpoints (from AND to)" % _kf,
               _body is not None and "to{" in _body.group(1), _kf)
 
     # --- accessibility of the interactive layer --------------------------------
@@ -935,13 +938,16 @@ def _cases(check):
             {"id": "B1.2", "title": "t", "status": "cancelled"},
             {"id": "B1.3", "title": "t", "status": "done"}]}]}
     _blh = M.render_html(_blm, _lib.rollup(_blm, [], []), "r", None)
-    check("bl a phase in progress says how many of its tasks are STUCK - the "
+    # NUMBERED, PREFIX KEPT (F75). Three hand-written cases printing one `bl` are
+    # three authored assertions with one id between them, so no mutation table row
+    # can name any of them; the family still reads down as a family.
+    check("bl1 a phase in progress says how many of its tasks are STUCK - the "
           "chip answers for the phase, and nothing answered for its contents",
           '<span class="pblocked"' in _blh and ">1 blocked<" in _blh)
-    check("bl ...and how many were dropped, because a 1/3 bar on a phase whose "
+    check("bl2 ...and how many were dropped, because a 1/3 bar on a phase whose "
           "other tasks were cancelled cannot say that by itself",
           '<span class="pcancelled"' in _blh and ">1 cancelled<" in _blh)
-    check("bl a blocked PHASE does not repeat the word - its own chip carries it",
+    check("bl3 a blocked PHASE does not repeat the word - its own chip carries it",
           '<span class="pblocked"' not in M.render_html(
               {"meta": {"title": "b"}, "bugs": [], "phases": [
                   {"id": "B2", "title": "stuck", "status": "blocked", "tasks": [

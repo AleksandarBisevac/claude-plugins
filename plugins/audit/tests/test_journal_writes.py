@@ -705,14 +705,14 @@ def _cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(tmp, ignore_errors=True)
 
-    # (i) the sidecar's state dir is self-ignoring
+    # (p) the sidecar's state dir is self-ignoring
     tmp_i = tempfile.mkdtemp(prefix="jw-ignore-")
     try:
         _cfg_i = dict(_config.DEFAULTS)
         M.record_plugin_write(tmp_i, _cfg_i, {"session_id": "s-i"},
                               os.path.join(tmp_i, "docs", "audit", "journal",
                                            "j.jsonl"))
-        check("i1 record_plugin_write's state dir carries a `*` .gitignore",
+        check("p1 record_plugin_write's state dir carries a `*` .gitignore",
               os.path.exists(os.path.join(
                   tmp_i, str(_cfg_i["stateDir"]), ".gitignore")))
     finally:
