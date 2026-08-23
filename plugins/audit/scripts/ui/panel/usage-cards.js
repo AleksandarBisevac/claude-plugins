@@ -117,7 +117,9 @@ function uMonthly(facts){
  return out;}
 
 // --- tokens heatmap -----------------------------------------------------------
-// Day-of-week x hour, derived at render time from the HOURLY fact timestamps
+// Rows x hour, the rows being whatever the chosen granularity partitions the
+// period into (shared/calendar.js decides), derived at render time from the
+// HOURLY fact timestamps
 // (ts is "YYYY-MM-DDTHH" until the server rolls a huge ledger up to daily —
 // then there is no hour left to draw and the section stays away, the same
 // silence the report keeps for a ledger with no hourly grid). Semantics
@@ -138,14 +140,14 @@ function uMonthly(facts){
  * @type {{g: string, a: string}}
  */
 let UHM={g:'all',a:''};
-/** @type {string[]} Row labels, Monday first, matching weekdayIndex()'s own ordering. */
-const UHM_WD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-/** @type {string[]} Month names for the period label, January at index 0. */
-const UHM_MON=['January','February','March','April','May','June','July',
- 'August','September','October','November','December'];
+// The weekday and month name arrays are WEEKDAY_NAMES and MONTH_NAMES in
+// shared/calendar.js now. Both were spelled here and again in the report, which
+// is the same duplication the calendar itself had.
 /**
- * The day-of-week by hour grid, derived at render time from the hourly fact
- * timestamps.
+ * The rows-by-hour grid, derived at render time from the hourly fact timestamps.
+ * Which rows depends on the granularity: one date for Day, seven for Week, the
+ * month's own dates for Month, twelve months for Year, and seven weekday
+ * aggregates for All.
  * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
  * @returns {Array<HTMLElement>} Nodes for the caller to append, and an EMPTY
  *   array in two cases that are not the same thing: the server has rolled the
@@ -158,8 +160,8 @@ function uHeatmap(facts){
  const perDay=new Map();
  for(const f of facts){
   const d=f[F.ts].slice(0,10),h=+f[F.ts].slice(11,13);
-  if(!(h>=0&&h<24))continue;              // daily row: no hour to file under
-  const v=perDay.get(d)||new Array(24).fill(0);
+  if(!(h>=0&&h<HEAT_HOURS))continue;      // daily row: no hour to file under
+  const v=perDay.get(d)||new Array(HEAT_HOURS).fill(0);
   v[h]+=f[F.tokens];perDay.set(d,v);}
  if(!perDay.size)return[];
  const ds=[...perDay.keys()].sort();
@@ -170,38 +172,25 @@ function uHeatmap(facts){
  // and a plain loop is what keeps seek's bounded walk from allocating per step.
  const hasData=(a,z)=>{for(const d of ds)if(d>=a&&d<=z)return true;return false;};
  const seek=(g,s,dir)=>seekPeriod(g,s,dir,b,hasData);
- // Clamp the anchor into the CURRENT bounds: a filter change can move the
- // universe out from under a period picked against the old one.
- if(UHM.g!=='all'){
-  if(!UHM.a)UHM.a=periodStart(UHM.g,b.hi);
-  if(periodEnd(UHM.g,UHM.a)<b.lo||UHM.a>b.hi)UHM.a=periodStart(UHM.g,b.hi);}
- const s=UHM.g==='all'?b.lo:UHM.a, en=UHM.g==='all'?b.hi:periodEnd(UHM.g,s);
- const lo=s<b.lo?b.lo:s, hi=en>b.hi?b.hi:en;
- // rows: day/week keep the calendar (one row per date); coarser grains
- // aggregate by weekday, like the report's all-data view.
- const rows=[];
- if(UHM.g==='day'){
-  rows.push({label:UHM_WD[weekdayIndex(lo)]+' '+lo,
-    cells:perDay.get(lo)||new Array(24).fill(0)});}
- else if(UHM.g==='week'){
-  for(let n=dnum(s);n<=dnum(en);n++){const d=dayIso(n);
-   rows.push({label:UHM_WD[weekdayIndex(d)]+' '+d.slice(5),head:UHM_WD[weekdayIndex(d)]+' '+d,
-     cells:(d>=lo&&d<=hi)?(perDay.get(d)||new Array(24).fill(0)):null});}}
- else{
-  const agg=[...Array(7)].map(()=>new Array(24).fill(0));
-  for(const[d,v]of perDay){if(d<lo||d>hi)continue;
-   const t=agg[weekdayIndex(d)];for(let h=0;h<24;h++)t[h]+=v[h];}
-  for(let w=0;w<7;w++)rows.push({label:UHM_WD[w],cells:agg[w]});}
- let peak=0;rows.forEach(r=>(r.cells||[]).forEach(v=>{if(v>peak)peak=v;}));
- // WHEN A GRANULARITY CANNOT DIFFER FROM "All", SAY SO.
+ const hoursOf=d=>perDay.get(d)||new Array(HEAT_HOURS).fill(0);
+ // WHEN A GRANULARITY CANNOT NAVIGATE AND SHOWS NO CELL "All" DOES NOT, SAY SO.
  //
- // A ledger that fits inside one calendar year draws the same grid at Year as at
- // All; one that fits inside a month does the same at Month. The arithmetic is
- // right and the screen is a lie by omission: three buttons paint an identical
- // picture, both arrows go dead, and nothing says why — so the control reads as
- // broken. It was reported as exactly that ("ne rade ni filteri, ako stavim
- // godinu umesto meseca, vidim isti grafik"), and the reader was right about what
- // the panel showed them.
+ // The label on this rule used to be "cannot differ from All", and the reason it
+ // gave was that a ledger inside one calendar year drew the SAME GRID at Year as
+ // at All. That was true while month, year and all shared one branch, and it
+ // stopped being true when shared/calendar.js gave each rung its own shape — so
+ // the premise is restated here rather than left to be inherited.
+ //
+ // What the predicate has always COMPUTED is the surviving half:
+ // `periodStart(g,b.lo)===periodStart(g,b.hi)` says the ledger holds exactly ONE
+ // period of this grain. Both arrows are therefore dead, and the window is the
+ // whole ledger, so every cell in it is a cell All already shows. Withholding it
+ // costs the reader nothing, because the FINER grains stay on the ladder: a
+ // ledger inside one month is still read date by date through Week, and one
+ // inside one week through Day.
+ //
+ // It was reported as "ne rade ni filteri, ako stavim godinu umesto meseca,
+ // vidim isti grafik", and the reader was right about what the panel showed them.
  //
  // Measured against the DATA's own span, not the calendar: `b` is [first, last]
  // recorded day, so this is the same question `seekPeriod` answers for the arrows.
@@ -209,10 +198,26 @@ function uHeatmap(facts){
  // A selection the ledger has just made pointless is CLEARED, the same way the
  // report clears a status chip its view can no longer show: the alternative is a
  // pressed button whose own row is gone.
+ //
+ // BEFORE the rows are built, not after. It used to sit below them, which was
+ // invisible while the withheld grains drew All's grid anyway; now that Month
+ // draws its own dates, a clamp that ran afterwards would paint one grain's grid
+ // under another grain's name.
  if(wholeLedgerIn(UHM.g)){UHM.g='all';UHM.a='';}
- const label=UHM.g==='day'?UHM_WD[weekdayIndex(lo)]+' '+lo
+ // Clamp the anchor into the CURRENT bounds: a filter change can move the
+ // universe out from under a period picked against the old one.
+ if(UHM.g!=='all'){
+  if(!UHM.a)UHM.a=periodStart(UHM.g,b.hi);
+  if(periodEnd(UHM.g,UHM.a)<b.lo||UHM.a>b.hi)UHM.a=periodStart(UHM.g,b.hi);}
+ const s=UHM.g==='all'?b.lo:UHM.a, en=UHM.g==='all'?b.hi:periodEnd(UHM.g,s);
+ const lo=s<b.lo?b.lo:s, hi=en>b.hi?b.hi:en;
+ // The row SHAPES are in shared/calendar.js, where the report's three builders
+ // were spelled too - and where month stopped sharing a branch with year and all.
+ const rows=heatRows(UHM.g,{s:s,en:en,lo:lo,hi:hi},ds,hoursOf);
+ let peak=0;rows.forEach(r=>(r.cells||[]).forEach(v=>{if(v>peak)peak=v;}));
+ const label=UHM.g==='day'?WEEKDAY_NAMES[weekdayIndex(lo)]+' '+lo
   :UHM.g==='week'?'Week of '+s+' to '+periodEnd('week',s)
-  :UHM.g==='month'?UHM_MON[+s.slice(5,7)-1]+' '+s.slice(0,4)
+  :UHM.g==='month'?MONTH_NAMES[+s.slice(5,7)-1]+' '+s.slice(0,4)
   :UHM.g==='year'?s.slice(0,4)
   :((UF.day||UF.range!=='all')?'Custom range':'All data')
     +' · '+b.lo+' to '+b.hi;
@@ -226,9 +231,10 @@ function uHeatmap(facts){
  // It used to be offered and merely dimmed, on the argument that its label still
  // said something ("April 2026" carries a fact "All data" does not). That was
  // reported as broken twice by the same reader — "dimmed, but I can still pick
- // them and the grid does not change" — and they are right: a button that
- // repaints the identical grid has done nothing, and a dimmed control that still
- // accepts a click teaches the reader that dimming means nothing here. So this
+ // them and the grid does not change" — and they are right: a button that can
+ // neither step nor reach a cell the current view is missing has done nothing,
+ // and a dimmed control that still accepts a click teaches the reader that
+ // dimming means nothing here. So this
  // now matches what the report already does to a status chip or an area its view
  // cannot show: the impossible choice leaves the set, and a line of plain text
  // carries the reason. Text, not a tooltip, because a control that is absent has
@@ -272,11 +278,11 @@ function uHeatmap(facts){
  const tbl=el('table',{class:'uhm','data-hmpeak':String(peak),'data-tipgroup':'500'});
  // The corner cell, then one per hour with a label every sixth.
  tbl.append(tableHead([{attrs:{class:'uhmc'}}].concat(
-   Array.from({length:24},(_x,h)=>h%6===0?p2(h):''))));
+   Array.from({length:HEAT_HOURS},(_x,h)=>h%6===0?p2(h):''))));
  const tb=el('tbody');
  rows.forEach(r=>{
   const tr=el('tr',{},el('th',{},r.label));
-  for(let h=0;h<24;h++){
+  for(let h=0;h<HEAT_HOURS;h++){
    const v=r.cells?(r.cells[h]||0):0;
    const lv=(!v||!peak)?0:Math.min(6,1+Math.floor(5*v/peak));
    // A native title, the area-owner precedent: 168 cells x a bindTip pair
@@ -287,8 +293,8 @@ function uHeatmap(facts){
    // answered by delegation, which is what the tip layer already does and what
    // the report's heatmap has always done for the same marks.
    tr.append(el('td',{},el('i',{'data-l':String(lv),
-     'data-tip':r.cells?(r.head||r.label)+' '+p2(h)+':00 - '+uTok(v,2)+' tokens'
-       :(r.head||r.label)+' - outside the selected range'})));}
+     'data-tip':r.cells?r.head+' '+p2(h)+':00 - '+uTok(v,2)+' tokens'
+       :r.head+' - outside the selected range'})));}
   tb.append(tr);});
  tbl.append(tb);
  // Its own scroll frame: 24 columns must never push the document sideways

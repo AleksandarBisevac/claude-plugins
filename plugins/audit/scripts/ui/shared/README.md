@@ -81,7 +81,15 @@ report's block is a module, so a duplicate top-level declaration is a
 Written at column 0. The report's own parts sit two spaces in, which is a leftover
 of an IIFE that no longer wraps them; new code does not inherit it.
 
+A row per part, because the wiring's fourth step asks for one — and four parts
+had landed here without theirs, which is how `calendar.js` grew a second
+responsibility with nothing in this table to grow with it.
+
 | part | one responsibility |
 |---|---|
+| `dates.js` | A UTC day as an integer, and back: `DAY_MS`, `dnum`, `dayIso`. Every date helper above it is arithmetic on these, so they sit at least as high as their readers. |
+| `calendar.js` | The heatmap's calendar: which period a day falls in, how to step to the next one that holds data, and **what rows a granularity draws**. The second half is why Month shows the month's own dates rather than the seven weekday rows it once shared with Year and All. |
+| `plural.js` | A count and its noun, agreeing — including the clause where the verb agrees too. A mirror of `_fmt.plural`, held equal to it by a test that asks the live Python. |
+| `clipboard.js` | Copying text, and BOTH of the ways it fails from disk — one browser throws, another rejects. The remedy stays the caller's: the panel toasts, the report selects in place. |
 | `download.js` | Handing the viewer a file: one object-URL revoke policy, and the text wrapper so no caller picks a charset. |
 | `storage.js` | Remembering something across reloads when the page is allowed to. Fourteen sites carried their own `try`/`catch`; the report may be opened from disk, where storage is refused. |

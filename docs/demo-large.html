@@ -2295,6 +2295,193 @@ function seekPeriod(g, s, dir, b, hasData) {
   }
   return null;
 }
+
+// ---------- the rows a granularity draws, for both surfaces ----------
+// THE SHAPE IS THE GRANULARITY, and it was not.
+//
+// Month used to fall into the same branch as year and all — seven weekday rows,
+// each cell summed over the four-or-so occurrences of that weekday — so picking
+// Month repainted Week's picture with the numbers quietly multiplied. Reported
+// as exactly that: "it should show the days of the month, and for each day the
+// accumulated spend; honestly it looks like a copy of the weekly view." Both
+// surfaces did it, under one comment each saying so.
+//
+// The ladder now reduces once per rung and never twice: a day is one date, a
+// week is its seven dates, a month is its own dates, a year is its twelve
+// months, and All is the weekly rhythm over the whole span. No two rungs can
+// draw the same grid, because no two produce the same rows — which is what
+// leaves each surface's own "cannot differ" rule free to be about navigation
+// rather than about the picture.
+//
+// The HOUR AXIS survives every rung on purpose. It is the card's entire subject
+// ("when the tokens are spent"), so a rung that traded it for a daily total — a
+// calendar grid of weeks by weekdays, say — would answer a different question
+// than the four rungs around it.
+//
+// The DATA arrives as an accessor and a day list, for the same reason seekPeriod
+// takes a predicate: the report holds its days as an object keyed by date and
+// the panel as a Map built from the filtered facts, and each has a reason.
+
+/**
+ * Row labels for the weekday grid, Monday first — the order weekdayIndex()
+ * returns. Both surfaces spelled this array themselves.
+ * @type {string[]}
+ */
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Month names, January at index 0. Both surfaces spelled this one too, one of
+ * them under a prefix.
+ * @type {string[]}
+ */
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** @const {number} Columns in every heatmap grid: the hours of a UTC day. */
+const HEAT_HOURS = 24;
+
+/**
+ * One row of a heatmap grid.
+ *
+ * @typedef {Object} HeatRow
+ * @property {string} label Printed in the leftmost column, and kept short
+ *   because that column is narrow on a phone.
+ * @property {string} head Row name used in every cell's tooltip, where there is
+ *   room to say it in full.
+ * @property {?number[]} cells The 24 hourly totals, or null for a row the active
+ *   range excludes entirely — which a cell renders as "outside the selected
+ *   range" rather than as a zero it cannot know.
+ */
+
+/**
+ * A zero-filled hour vector. Built per call rather than shared between rows: a
+ * caller that mutated one would otherwise move every row that took the default.
+ *
+ * @returns {number[]} 24 zeroes
+ */
+const zeroHours = () => new Array(HEAT_HOURS).fill(0);
+
+/**
+ * Add one day's hours into a running total, in place.
+ *
+ * `vec` may be shorter than 24 — the report ships a day's hours as whatever the
+ * ledger recorded — so every read is defaulted rather than the length trusted.
+ *
+ * @param {number[]} into - the running total, always 24 long
+ * @param {number[]} vec - one day's hours
+ * @returns {void}
+ */
+function addHours(into, vec) {
+  for (let h = 0; h < HEAT_HOURS; h++) into[h] += vec[h] || 0;
+}
+
+/**
+ * One row per calendar date from `s` to `en` — the shape a day, a week and a
+ * month all draw, differing only in how many dates that is.
+ *
+ * The row list is the whole PERIOD, not the part of it the range leaves: a week
+ * clipped by a custom range still shows seven rows, so the reader sees which
+ * days are missing instead of a shorter grid that looks complete. A month does
+ * the same, which is why its row count is the length of the month rather than
+ * the number of dates that recorded anything.
+ *
+ * @param {string} s - first ISO day of the period
+ * @param {string} en - last ISO day of the period
+ * @param {string} lo - first ISO day the active range admits
+ * @param {string} hi - last ISO day the active range admits
+ * @param {function(string): number[]} hoursOf - a day's 24 hourly totals
+ * @returns {HeatRow[]}
+ */
+function dateRows(s, en, lo, hi, hoursOf) {
+  const rows = [];
+  for (let n = dnum(s); n <= dnum(en); n++) {
+    const d = dayIso(n);
+    const name = WEEKDAY_NAMES[weekdayIndex(d)];
+    rows.push({ label: name + ' ' + d.slice(5),
+                head: name + ' ' + d,
+                cells: (d >= lo && d <= hi) ? hoursOf(d).slice() : null });
+  }
+  return rows;
+}
+
+/**
+ * Twelve rows, one per calendar month of the year `s` falls in.
+ *
+ * A year is the one rung where per-date rows stop being readable — 365 of them
+ * is not a grid anyone reads — so this is where the ladder aggregates, and it
+ * aggregates by the unit below it rather than jumping to weekdays. A month the
+ * active range excludes outright carries null, the same claim `dateRows` makes
+ * about an excluded date; a month inside the range that simply recorded nothing
+ * carries zeroes, because that is a fact rather than an absence.
+ *
+ * @param {string} s - any ISO day in the year to draw
+ * @param {string} lo - first ISO day the active range admits
+ * @param {string} hi - last ISO day the active range admits
+ * @param {string[]} days - every ISO day the surface holds data for
+ * @param {function(string): number[]} hoursOf - a day's 24 hourly totals
+ * @returns {HeatRow[]}
+ */
+function monthRows(s, lo, hi, days, hoursOf) {
+  const year = s.slice(0, 4);
+  const sums = Array.from({ length: 12 }, zeroHours);
+  for (const d of days) {
+    if (d < lo || d > hi || d.slice(0, 4) !== year) continue;
+    addHours(sums[+d.slice(5, 7) - 1], hoursOf(d));
+  }
+  return sums.map((cells, m) => {
+    const first = year + '-' + ('0' + (m + 1)).slice(-2) + '-01';
+    const inRange = first <= hi && periodEnd('month', first) >= lo;
+    return { label: MONTH_NAMES[m].slice(0, 3),
+             head: MONTH_NAMES[m] + ' ' + year,
+             cells: inRange ? cells : null };
+  });
+}
+
+/**
+ * Seven weekday rows, each the hour-by-hour sum over every matching date in the
+ * range — the weekly rhythm of a whole span.
+ *
+ * This is what "All" draws, and after the reshape it is the ONLY rung that draws
+ * it: the range All covers has no calendar unit of its own, so there is no
+ * per-period row list to build, and the weekday question ("are Thursday evenings
+ * where the tokens go") is one a whole span can answer that a single month
+ * cannot.
+ *
+ * @param {string} lo - first ISO day the active range admits
+ * @param {string} hi - last ISO day the active range admits
+ * @param {string[]} days - every ISO day the surface holds data for
+ * @param {function(string): number[]} hoursOf - a day's 24 hourly totals
+ * @returns {HeatRow[]}
+ */
+function weekdayRows(lo, hi, days, hoursOf) {
+  const sums = Array.from({ length: 7 }, zeroHours);
+  for (const d of days) {
+    if (d < lo || d > hi) continue;
+    addHours(sums[weekdayIndex(d)], hoursOf(d));
+  }
+  return sums.map((cells, wd) => ({ label: WEEKDAY_NAMES[wd],
+                                    head: WEEKDAY_NAMES[wd], cells: cells }));
+}
+
+/**
+ * The rows one granularity draws — the single place that decides the shape.
+ *
+ * @param {'all'|'year'|'month'|'week'|'day'} g - granularity; anything
+ *   unrecognised draws the whole-span weekday grid, which is what 'all' is
+ * @param {{s: string, en: string, lo: string, hi: string}} win - the period
+ *   (`s`..`en`) and the part of it the active range admits (`lo`..`hi`)
+ * @param {string[]} days - every ISO day the surface holds data for
+ * @param {function(string): number[]} hoursOf - a day's 24 hourly totals
+ * @returns {HeatRow[]}
+ */
+function heatRows(g, win, days, hoursOf) {
+  if (g === 'day') return dateRows(win.lo, win.lo, win.lo, win.hi, hoursOf);
+  if (g === 'week' || g === 'month') {
+    return dateRows(win.s, win.en, win.lo, win.hi, hoursOf);
+  }
+  if (g === 'year') return monthRows(win.s, win.lo, win.hi, days, hoursOf);
+  return weekdayRows(win.lo, win.hi, days, hoursOf);
+}
 // ---------- handing the viewer a file ----------
 // One implementation, because there were four and they disagreed about the one
 // thing that is easy to get wrong: WHEN to revoke the object URL.
@@ -4220,6 +4407,9 @@ function storageDrop(key) {
   // --- heatmap calendar navigation -------------------------------------------
   // The server renders the all-data 7x24 grid; this re-renders the tbody from
   // the embedded per-day payload for one day / week / month / year at a time.
+  // The rows each of those draws are shared/calendar.js's business — Month is
+  // the month's own dates and Year its twelve months, which is what stops two
+  // chips painting one picture.
   // prev/next are bounded strictly by the data, so an arrow at the edge is
   // disabled and muted rather than a dead click, and the period on display is
   // NAMED in the label. While a global date range is active the heatmap's whole
@@ -4239,19 +4429,9 @@ function storageDrop(key) {
     const peakEl = document.getElementById('audit-hm-peak');
     if (!U || !body || !granBar || !prevBtn || !nextBtn || !periodEl) return;
 
-    const HOURS = 24;
-    const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
-                 'August', 'September', 'October', 'November', 'December'];
-
-    /**
-     * One row of the grid.
-     * @typedef {Object} HeatRow
-     * @property {string} label Row label printed in the leftmost column.
-     * @property {number[]|null} cells The 24 hourly token totals, or null for a
-     *   date the active range excludes.
-     * @property {string} head Row name used in every cell's tooltip.
-     */
+    // The hour count, the weekday names and the month names are all in
+    // shared/calendar.js now — this file spelled each of them and so did the
+    // panel, for as long as there have been two heatmaps.
 
     /** @type {string} Granularity: 'all', 'day', 'week', 'month' or 'year'. */
     let gran = 'all';
@@ -4273,37 +4453,14 @@ function storageDrop(key) {
     }
 
     /**
-     * First ISO day of the period `day` falls in.
-     * @param {string} g Granularity.
-     * @param {string} day ISO day.
-     * @returns {string} ISO day the period starts on.
-     */
-
-    /**
-     * Last ISO day of the period starting at `s`.
-     * @param {string} g Granularity.
-     * @param {string} s ISO day the period starts on.
-     * @returns {string} ISO day the period ends on.
-     */
-
-    /**
-     * The period one step away, whether or not it holds any data.
-     * @param {string} g Granularity.
-     * @param {string} s ISO day the current period starts on.
-     * @param {number} dir -1 for earlier, 1 for later.
-     * @returns {string} ISO day the neighbouring period starts on.
-     */
-
-    /**
-     * Whether any recorded day falls inside a closed ISO-day range.
-     * @param {string} from First ISO day.
-     * @param {string} to Last ISO day.
-     * @returns {boolean}
-     */
-    /**
      * The calendar is in shared/calendar.js — the panel's heatmap spelled the
      * same five functions under the same names inside its own closure. Only the
      * DATA half stays here, and this is it plus the wrapper that hands it over.
+     *
+     * The four JSDoc blocks that used to sit above this one described those
+     * five, and stayed behind when they left: docs for functions this file no
+     * longer contains, which is a comment that cannot go stale because it was
+     * never true again after the move.
      * @param {'day'|'week'|'month'|'year'} g Granularity.
      * @param {string} s ISO day the current period starts on.
      * @param {number} dir -1 for earlier, 1 for later.
@@ -4312,6 +4469,12 @@ function storageDrop(key) {
      */
     function seek(g, s, dir, b) { return seekPeriod(g, s, dir, b, hasData); }
 
+    /**
+     * Whether any recorded day falls inside a closed ISO-day range.
+     * @param {string} from First ISO day.
+     * @param {string} to Last ISO day.
+     * @returns {boolean}
+     */
     function hasData(from, to) {
       // A plain loop, not `Object.keys(...).some(...)`: this runs inside seek()'s
       // bounded walk, which steps up to four thousand periods looking for the
@@ -4325,19 +4488,6 @@ function storageDrop(key) {
     }
 
     /**
-     * The next period in `dir` that lies inside the bounds AND records
-     * something. "Never navigate into an empty period" is a rule about data
-     * rather than about the calendar, so gap days between two worked weeks are
-     * stepped over instead of shown.
-     * @param {string} g Granularity.
-     * @param {string} s ISO day the current period starts on.
-     * @param {number} dir -1 for earlier, 1 for later.
-     * @param {{lo: string, hi: string}} b Active bounds.
-     * @returns {string|null} Start of the next populated period, or null when
-     *   the walk leaves the bounds first.
-     */
-
-    /**
      * The name of the period on display, so the grid never shows an unlabelled
      * slice of time.
      * @param {string} g Granularity.
@@ -4346,9 +4496,11 @@ function storageDrop(key) {
      * @returns {string} Human-readable period name.
      */
     function labelOf(g, s, b) {
-      if (g === 'day') return WD[weekdayIndex(s)] + ' ' + s;
+      if (g === 'day') return WEEKDAY_NAMES[weekdayIndex(s)] + ' ' + s;
       if (g === 'week') return 'Week of ' + s + ' to ' + periodEnd('week', s);
-      if (g === 'month') return MON[+s.slice(5, 7) - 1] + ' ' + s.slice(0, 4);
+      if (g === 'month') {
+        return MONTH_NAMES[+s.slice(5, 7) - 1] + ' ' + s.slice(0, 4);
+      }
       if (g === 'year') return s.slice(0, 4);
       return ((dFrom || dTo) ? 'Custom range' : 'All data')
         + ' · ' + b.lo + ' to ' + b.hi;
@@ -4361,56 +4513,11 @@ function storageDrop(key) {
      */
     function hoursOf(d) { return (U.days[d] || [0, 0, 0, []])[3] || []; }
 
-    /**
-     * Rows for a single day: one row carrying that day's 24 hours.
-     * @param {string} day ISO day inside the active range.
-     * @returns {HeatRow[]}
-     */
-    function dayRows(day) {
-      return [{ label: WD[weekdayIndex(day)] + ' ' + day.slice(5),
-                cells: hoursOf(day).slice(),
-                head: WD[weekdayIndex(day)] + ' ' + day }];
-    }
-
-    /**
-     * Rows for one week: one row per calendar date, so the week keeps its shape
-     * even where the active range clips it.
-     * @param {string} s ISO day the week starts on.
-     * @param {string} en ISO day the week ends on.
-     * @param {string} lo First ISO day inside the active range.
-     * @param {string} hi Last ISO day inside the active range.
-     * @returns {HeatRow[]}
-     */
-    function weekRows(s, en, lo, hi) {
-      const rows = [];
-      for (let n = dnum(s); n <= dnum(en); n++) {
-        const d = dayIso(n);
-        const inRange = d >= lo && d <= hi;
-        rows.push({ label: WD[weekdayIndex(d)] + ' ' + d.slice(5),
-                    cells: inRange ? hoursOf(d).slice() : null,
-                    head: WD[weekdayIndex(d)] + ' ' + d });
-      }
-      return rows;
-    }
-
-    /**
-     * Rows for a month, a year or the whole range: seven weekday rows, each the
-     * hour-by-hour sum over every matching date, the way the server's all-data
-     * view aggregates.
-     * @param {string} lo First ISO day to include.
-     * @param {string} hi Last ISO day to include.
-     * @returns {HeatRow[]}
-     */
-    function weekdayRows(lo, hi) {
-      const agg = Array.from({ length: 7 }, () => []);
-      for (const d of Object.keys(U.days)) {
-        if (d < lo || d > hi) continue;
-        const vec = hoursOf(d);
-        const tgt = agg[weekdayIndex(d)];
-        for (let h = 0; h < HOURS; h++) tgt[h] = (tgt[h] || 0) + (vec[h] || 0);
-      }
-      return agg.map((cells, wd) => ({ label: WD[wd], cells: cells, head: WD[wd] }));
-    }
+    // The row SHAPES are in shared/calendar.js — dayRows, weekRows and
+    // weekdayRows lived here, the panel spelled the same three inline, and both
+    // sent month and year down the weekday branch. `heatRows` is the one place
+    // that decides now; only the two data halves stay here, because the report
+    // keys its days by date and the panel keeps a Map of the filtered facts.
 
     /**
      * The current view as DATA — rows, peak, period start, bounds and label —
@@ -4434,9 +4541,8 @@ function storageDrop(key) {
       const en = gran === 'all' ? b.hi : periodEnd(gran, s);
       const lo = s < b.lo ? b.lo : s;
       const hi = en > b.hi ? b.hi : en;
-      const rows = gran === 'day' ? dayRows(lo)
-        : gran === 'week' ? weekRows(s, en, lo, hi)
-        : weekdayRows(lo, hi);
+      const rows = heatRows(gran, { s: s, en: en, lo: lo, hi: hi },
+                            Object.keys(U.days), hoursOf);
       const peak = rows.reduce((outer, r) =>
         (r.cells || []).reduce((m, v) => (v > m ? v : m), outer), 0);
       return { rows: rows, peak: peak, s: s, b: b, label: labelOf(gran, s, b) };
@@ -4503,7 +4609,7 @@ function storageDrop(key) {
       // a number this module computed or a label built from WD and an ISO day,
       // so nothing derived from the manifest can reach this string.
       for (const r of v.rows) {
-        const cells = Array.from({ length: HOURS },
+        const cells = Array.from({ length: HEAT_HOURS },
           (unused, h) => (r.cells ? (r.cells[h] || 0) : 0));
         htmlRows.push('<tr><th>' + r.label + '</th>'
           + cells.map((val) => '<td><i data-l="' + level(val, v.peak)

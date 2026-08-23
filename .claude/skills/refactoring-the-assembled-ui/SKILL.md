@@ -228,12 +228,30 @@ The panel is served over `http://localhost` and is not subject to gate 2 — but
 
 ## One dialect, one shared layer
 
-The two surfaces are currently written in different dialects — `panel.js` in modern ES with an
-`el()` DOM builder used at hundreds of sites, `report.js` in ES5 with `var`, `function ()` and
-hand-rolled `createElement`. Nothing was ever recorded about why. The consequence is that the same
-feature exists twice and cannot be shared: two `isDark()`, two tooltip placers, two CSV quoters,
-two blob downloaders, two heatmap calendars — and the two token formatters **already disagree**
-(one rounds, one truncates) while both claim in comments to mirror the same Python function.
+The two surfaces were written in different dialects for a long time — `panel.js` in modern ES with
+an `el()` DOM builder used at hundreds of sites, `report.js` in ES5 with `var`, `function ()` and
+hand-rolled `createElement` — and nothing was ever recorded about why. The consequence was that
+the same feature existed twice and could not be shared.
+
+**Do not read a list of those pairs here.** One stood in this paragraph naming the heatmap
+calendars long after they had become one `shared/calendar.js`, and naming the blob downloaders
+after the same thing had happened to them — a list of duplications is exactly the prose that goes
+stale the moment somebody acts on it. `_deps.SHARED_CONCERNS` is the live register, one row per
+concern with its home, a needle and a cap, and `shared_concern_violations()` fails the build when
+a row spreads past that cap:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps
+print('\n'.join('%-28s %s' % (c, h or '(not extracted)') for c,h,_n,_a,_w in _deps.SHARED_CONCERNS))"
+```
+
+What is worth carrying here is the SHAPE the register cannot: a duplication is dangerous when the
+two copies are free to disagree and nothing compares them. Both of the heatmap's pairs were that.
+The calendar's two copies happened to agree — the danger was that nothing said they had to. The
+**row builders** were worse: the branch choosing between them was wrong in both surfaces at once,
+month falling in with year and all, so Month drew Week's picture with every cell multiplied, and
+two identical implementations of a defect read exactly like a settled decision. `isDark()` is
+still a pair (`panel/core.js` and `report/page-state.js`) and has no row yet.
 
 Rules going forward:
 

@@ -1587,9 +1587,35 @@ async function assertUsageWorks(page) {
         }
       }
 
-      // Month names the month; the grid aggregates back to weekday rows.
+      // Month names the month and draws THE DAYS OF THAT MONTH.
+      //
+      // It used to aggregate back to seven weekday rows, sharing one branch with
+      // year and all, so Month repainted Week's picture with each cell summed
+      // over the four-or-so occurrences of that weekday. Reported as "it should
+      // show the days of the month, and for each day the accumulated spend;
+      // honestly it looks like a copy of the weekly view."
+      //
+      // THE WHOLE GRID is compared, not the row count: a count alone cannot say
+      // that two controls draw two pictures, and that was the defect. The print
+      // is every row label plus every cell's intensity band.
+      const gridPrint = () => page.evaluate(() =>
+        [...document.querySelectorAll('#usage table.uhm tbody tr')].map((tr) =>
+          tr.querySelector('th').textContent + '|'
+          + [...tr.querySelectorAll('i')]
+            .map((i) => i.getAttribute('data-l')).join('')).join('\n'));
+      const rowsIn = (print) => (print ? print.split('\n').length : 0);
+      await page.click('#usage [data-uhg=week]');
+      await page.waitForTimeout(300);
+      const weekPrint = await gridPrint();
+      if (rowsIn(weekPrint) !== 7) {
+        fail(`usage: Week granularity drew ${rowsIn(weekPrint)} rows — a week is `
+           + 'its seven dates, clipped ones included');
+      } else {
+        note('usage: Week draws the seven dates of one week');
+      }
       await page.click('#usage [data-uhg=month]');
       await page.waitForTimeout(300);
+      const monPrint = await gridPrint();
       const mon = await page.evaluate(() => {
         const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
         const last = days[days.length - 1];
@@ -1599,14 +1625,19 @@ async function assertUsageWorks(page) {
         return {
           want: name + ' ' + last.slice(0, 4),
           period: document.querySelector('#usage [data-uhmperiod]').textContent,
-          rows: document.querySelectorAll('#usage table.uhm tbody tr').length,
+          len: new Date(Date.UTC(+last.slice(0, 4), +last.slice(5, 7), 0)).getUTCDate(),
         };
       });
-      if (!mon.period.includes(mon.want) || mon.rows !== 7) {
-        fail(`usage: Month granularity reads "${mon.period}" with ${mon.rows} `
-           + `rows — want "${mon.want}" over 7 weekday rows`);
+      if (!mon.period.includes(mon.want) || rowsIn(monPrint) !== mon.len) {
+        fail(`usage: Month granularity reads "${mon.period}" with `
+           + `${rowsIn(monPrint)} rows — want "${mon.want}" over one row per date `
+           + `of that month (${mon.len})`);
+      } else if (monPrint === weekPrint) {
+        fail('usage: Month and Week drew the IDENTICAL grid — two controls, one '
+           + 'picture, which is the defect this pair of clicks exists for');
       } else {
-        note(`usage: Month names "${mon.want}" over weekday rows`);
+        note(`usage: Month names "${mon.want}" over its ${mon.len} dates, and it `
+           + 'is not the grid Week drew');
       }
 
       // None of that navigation may grow a page scroll box (assertHintsFit's
@@ -1624,14 +1655,19 @@ async function assertUsageWorks(page) {
 
       // The custom range IS the panel's day filter: scope to a mid..end
       // window and the heatmap's whole universe becomes that window.
-      // F-P-13: a granularity that CANNOT differ from All says so, and a dead
+      // F-P-13: a granularity the ledger holds exactly ONE of says so, and a dead
       // arrow says why it is dead.
       //
       // Reported as "the filters do not work — Year instead of Month shows the
-      // same chart". It did, and correctly: a ledger inside one calendar year
-      // draws the same grid at Year as at All, and there is no neighbouring year
-      // holding tokens, so both arrows park. Every part of that was true and none
-      // of it was on the screen, which is the whole defect.
+      // same chart". Two things were true at once: month, year and all shared one
+      // row builder (fixed in shared/calendar.js, and the Month clicks above are
+      // where that is checked), AND a ledger inside one calendar year has no
+      // neighbouring year holding tokens, so both arrows park. This block is the
+      // second half. Its predicate did not change with the reshape — what changed
+      // is the reason it gives: a grain the ledger holds one period of cannot
+      // step, and its window is the whole ledger, so every cell in it is a cell
+      // All already shows. Nothing is lost by withholding it, because the finer
+      // grains stay on the ladder.
       {
         const g = await page.evaluate(async () => {
           const out = {};
@@ -1652,14 +1688,14 @@ async function assertUsageWorks(page) {
           }),
         }));
         const nav = await readNav();
-        // A granularity that cannot differ from All is NOT OFFERED. It used to be
-        // offered-and-dimmed; the same reader reported that twice as broken ("I can
-        // still pick them and the grid does not change"), which is what a dimmed
-        // control that still accepts a click earns.
+        // A granularity the ledger holds one period of is NOT OFFERED. It used to
+        // be offered-and-dimmed; the same reader reported that twice as broken ("I
+        // can still pick them and the grid does not change"), which is what a
+        // dimmed control that still accepts a click earns.
         if (g.oneYear && nav.offered.includes('year')) {
           fail(`usage: the ledger (${g.span[0]}..${g.span[1]}) is inside one year, so Year `
-             + `can only draw the grid All already draws — it must not be offered: `
-             + JSON.stringify(nav.offered));
+             + `can neither step nor reach a cell All is missing — it must not be `
+             + `offered: ` + JSON.stringify(nav.offered));
         } else if (g.oneYear && !/Year/.test(nav.why || '')) {
           fail('usage: Year is missing from the ladder with nothing saying why — a gap '
              + `is not an explanation: why=${JSON.stringify(nav.why)}`);
@@ -1694,6 +1730,21 @@ async function assertUsageWorks(page) {
 
       await page.click('#usage [data-uhg=all]');
       await page.waitForTimeout(200);
+      // All is the seven weekday aggregates, and after the reshape it is the ONLY
+      // rung that draws them. Week is also seven rows, so a count cannot separate
+      // the two and the fingerprint has to — this is the closest pair the ladder
+      // still has.
+      const allPrint = await gridPrint();
+      if (rowsIn(allPrint) !== 7) {
+        fail(`usage: All drew ${rowsIn(allPrint)} rows — it is the weekly rhythm of `
+           + 'the whole span, which is seven');
+      } else if (allPrint === weekPrint || allPrint === monPrint) {
+        fail('usage: All drew the same grid as another granularity — every rung '
+           + 'must partition the period its own way');
+      } else {
+        note('usage: All draws the seven weekday aggregates, and no other rung '
+           + 'draws that grid');
+      }
       const win = await page.evaluate(() => {
         const days = [...new Set(USAGE.facts.map((f) => f[F.ts].slice(0, 10)))].sort();
         const mid = days[Math.floor(days.length / 2)];

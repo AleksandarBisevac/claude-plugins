@@ -1414,26 +1414,47 @@ if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
     failures.push(`FAIL hovering a re-rendered heatmap cell still shows the tooltip: shown=${tip.shown}, text="${tip.text}"`);
   } else notes.push(`ok   the tooltip layer survives a heatmap re-render: "${tip.text}"`);
 
+  // THE WHOLE GRID, not a row count. Month and Week used to draw the identical
+  // 7x24 picture — month, year and all shared one branch — so a row count alone
+  // could not tell the two controls apart, and neither could a reader. The
+  // fingerprint is every row label plus every cell's intensity band, which is
+  // exactly what is on the screen.
+  const gridPrint = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#audit-hm-body tr')).map((tr) =>
+      tr.querySelector('th').textContent + '|'
+      + Array.from(tr.querySelectorAll('i'))
+        .map((i) => i.getAttribute('data-l')).join('')).join('\n'));
+  const rowsIn = (print) => (print ? print.split('\n').length : 0);
+
   await page.click('#audit-hm-gran [data-g="week"]');
   await page.waitForTimeout(250);
-  expect('Week granularity draws the seven days of one week',
-    await page.evaluate(() => document.querySelectorAll('#audit-hm-body tr').length), 7);
+  const weekGrid = await gridPrint();
+  expect('Week granularity draws the seven days of one week', rowsIn(weekGrid), 7);
   await page.click('#audit-hm-gran [data-g="month"]');
   await page.waitForTimeout(250);
+  const monGrid = await gridPrint();
   const mon = await page.evaluate(() => ({
     period: document.getElementById('audit-hm-period').textContent,
-    rows: document.querySelectorAll('#audit-hm-body tr').length,
   }));
   const monName = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'][+lastDay.slice(5, 7) - 1];
+  const monLen = new Date(Date.UTC(+lastDay.slice(0, 4), +lastDay.slice(5, 7), 0))
+    .getUTCDate();
   expect(`Month granularity names the month (${monName} ${lastDay.slice(0, 4)})`,
     mon.period.includes(monName) && mon.period.includes(lastDay.slice(0, 4)), true);
-  expect('...aggregated back to weekday rows', mon.rows, 7);
+  expect(`...over one row per DATE of that month, not seven weekday rows`,
+    rowsIn(monGrid), monLen);
+  expect('...and it is NOT the grid Week just drew — two controls, two pictures',
+    monGrid !== weekGrid, true);
   await page.click('#audit-hm-gran [data-g="year"]');
   await page.waitForTimeout(250);
+  const yearGrid = await gridPrint();
   expect('Year granularity names the year',
     await page.evaluate(() => document.getElementById('audit-hm-period').textContent),
     lastDay.slice(0, 4));
+  expect('...over its twelve months, which is where the ladder stops going '
+    + 'per-date because 365 rows is not a grid anyone reads', rowsIn(yearGrid), 12);
+  expect('...and it is not the month grid either', yearGrid !== monGrid, true);
 
   // None of that navigation may widen the page (its wrap owns any overflow).
   const hmGrow = await page.evaluate(() => ({
@@ -1447,6 +1468,14 @@ if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
   expect('back at All the period names all data again',
     await page.evaluate(() => /All data/.test(
       document.getElementById('audit-hm-period').textContent)), true);
+  const allGrid = await gridPrint();
+  expect('...over the seven weekday rows, the one shape only All draws now',
+    rowsIn(allGrid), 7);
+  // Both are seven rows, so a count cannot separate them and the fingerprint has
+  // to: All's rows are weekday AGGREGATES over the whole span, Week's are seven
+  // dates. This is the pair the reshape leaves closest together.
+  expect('...and All is not Week, though both are seven rows',
+    allGrid !== weekGrid, true);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
   // @end-needs-usage-payload
