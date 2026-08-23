@@ -3689,11 +3689,33 @@ async function assertModelCombo(page, project) {
     // menu was merely slow this passes; if it never opens the dump says whether the
     // input was reached, focused, disabled, or reached at all.
     const items = page.locator('.combo-menu:not(.hidden) .combo-it');
-    let nItems = 0;
-    try {
-      await page.waitForSelector('.combo-menu:not(.hidden) .combo-it', { timeout: 5000 });
-      nItems = await items.count();
-    } catch (noMenu) {
+    let nItems = 0, opened = 'first';
+    const tryOpen = async () => {
+      try {
+        await page.waitForSelector('.combo-menu:not(.hidden) .combo-it', { timeout: 5000 });
+        return await items.count();
+      } catch (no) { return 0; }
+    };
+    nItems = await tryOpen();
+    if (!nItems) {
+      // THE EVIDENCE SAYS RACE, SO TEST THAT RATHER THAN ASSERT IT. The dump from
+      // the previous run had the input focused and enabled, the menu present but
+      // hidden, and `modelItems()` returning seventeen - so the menu was not empty,
+      // it was CLOSED. `comboWrap` closes on exactly one condition that fits:
+      // `if(!inp.isConnected){close();return;}` - the 5s poll re-renders #comp,
+      // replaces the input the menu belongs to, and takes the menu with it. CI is
+      // slower with 50 phases and 1000 tasks, so the poll lands inside the
+      // interaction more often there.
+      //
+      // A second attempt after the view settles distinguishes the two answers
+      // instead of assuming one: if this opens, it was the re-render; if it does
+      // not, the menu genuinely will not open and the dump below says so.
+      await page.waitForTimeout(1200);
+      await rev.click();
+      nItems = await tryOpen();
+      opened = nItems ? 'second (the first was closed by a re-render)' : 'neither';
+    }
+    if (!nItems) {
       const st = await page.evaluate(() => {
         const inp = document.querySelector('#comp tr.phase:not([data-frozen]) input[data-revmodel]');
         const menus = [...document.querySelectorAll('.combo-menu')];
@@ -3725,8 +3747,10 @@ async function assertModelCombo(page, project) {
             ? USAGE.facts.length : 'USAGE absent',
         };
       });
-      fail('composition: the review-model combo opened no menu within 5s. Panel state: '
-         + JSON.stringify(st));
+      fail('composition: the review-model combo opened no menu on either attempt. '
+         + 'Panel state: ' + JSON.stringify(st));
+    } else if (opened !== 'first') {
+      note('composition: the review-model combo opened on the ' + opened);
     }
     // The menu is FILTERED by whatever the input already holds, so its first
     // entry is routinely the current value verbatim - `opus` filtering to
