@@ -269,8 +269,9 @@ def _conventions_contradictions(ado):
         out.append("meta.ado: the provenance tag this connector writes would be "
                    "refused by its own board standard - %s. Every CREATE would "
                    "be gated out and a push would create nothing. Either prefix "
-                   "meta.ado.tag to something tagVocabulary admits, add \"*\" to "
-                   "tagVocabulary, or set meta.ado.tag to null." % (line,))
+                   "meta.ado.tag to something tagVocabulary admits, admit the "
+                   "bare tag under \"*\" - present with an empty list, or "
+                   "listing the tag - or set meta.ado.tag to null." % (line,))
 
     # NARROWED AT U-PARENT, and the narrowing is the point. This used to fire
     # whenever `requireParent` was true and `parentWorkItem` was unset, which
