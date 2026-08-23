@@ -181,7 +181,17 @@ LAYERS = (
      # `_manifest_vocab` is: `_manifest_ado` at L2 grades the config through it,
      # and the writing side will grade the ITEM through it, so a copy in either
      # place would be a second answer to "does this belong here".
-     "_ado_conventions"),
+     "_ado_conventions",
+     # `_ado_fields` is the OTHER half of that: what this project supplies to
+     # those fields, per work item type. Same floor and the same argument -
+     # `_manifest_ado` at L2 grades the block and `check-ado-item` (an entry
+     # point) merges the template into the payload it then grades, so the two
+     # sides must share one opinion about which field names are legal. It sits
+     # beside `_ado_conventions` rather than inside it because the two answer
+     # different questions: one is a property of the BOARD, the other of this
+     # project, and a file holding both would be where they start borrowing
+     # each other's tables.
+     "_ado_fields"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads

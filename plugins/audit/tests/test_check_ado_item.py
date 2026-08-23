@@ -13,6 +13,12 @@ Exit 1 rather than a warning is deliberate and pinned: `SECURITY.md` splits
 advisory paths (fail open) from guards (fail loud), and a work item that lands
 on someone's board looking foreign cannot be un-landed.
 
+The other half arrived with `meta.ado.fields`: this command MERGES before it
+grades, so it is also where the payload to send comes from. `ci15` asserts both
+directions of that on one board — the payload the connector can build refused,
+and the same payload passing once the template supplies what the board asks for
+— because a pass alone could equally mean the conformance check broke.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
@@ -158,6 +164,89 @@ def _cases(check):
                   M.main([m_std, "--item", "-"]) == 1)
         finally:
             sys.stdin = real
+
+        # --- meta.ado.fields: the gate SUPPLIES before it grades ------------
+        # The board fixture asks for a field the connector cannot write, which
+        # is the situation this whole key exists for: without a template the
+        # gate refuses every CREATE and the push creates nothing.
+        _needs = {"requiredFields": {"Task": ["Microsoft.VSTS.Common.Activity"]}}
+        _tpl = {"Task": {"Microsoft.VSTS.Common.Activity": "Development"}}
+        m_nofields = _write(tmp, "nofields.json",
+                            {"meta": {"ado": {"conventions": _needs}}})
+        m_fields = _write(tmp, "fields.json",
+                          {"meta": {"ado": {"conventions": _needs,
+                                            "fields": _tpl}}})
+        item_plain = _write(tmp, "plain.json",
+                            {"type": "Task", "fields": {"System.Title": "x"},
+                             "parent": 1})
+
+        # BOTH halves asserted. Without the refusal the pass below could come
+        # from a broken conformance check rather than from the merge.
+        code_no, out_no = _run([m_nofields, "--item", item_plain])
+        code_yes, out_yes = _run([m_fields, "--item", item_plain])
+        check("ci15 the payload the connector can build is REFUSED by this "
+              "board, and the same payload passes once meta.ado.fields supplies "
+              "the field - the gate can now be honest about the board: %r"
+              % (out_no.strip()[:60],),
+              code_no == 1 and code_yes == 0)
+        check("ci16 ...and the merge is PRINTED, because a payload the caller "
+              "does not know it has to send is a green gate and a "
+              "non-conforming item: %r" % (out_yes.strip()[:70],),
+              out_yes.count("MERGED:") == 1
+              and out_yes.count("Microsoft.VSTS.Common.Activity=") == 1)
+
+        # --json is where a script gets the payload to send.
+        _, out = _run([m_fields, "--item", item_plain, "--json"])
+        payload = json.loads(out)
+        # Read with .get rather than indexing: a mutation that drops the merge
+        # must make this case REPORT, not raise and take the rest of the suite's
+        # unprinted output with it.
+        _sent = (payload.get("payload") or {}).get("fields") or {}
+        check("ci17 --json hands back the merged payload under `payload`, which "
+              "is what the create must send: %r" % (_sent,),
+              _sent.get("Microsoft.VSTS.Common.Activity") == "Development"
+              and payload.get("fieldsAdded") == _tpl["Task"]
+              and payload.get("fieldsSkipped") == {})
+        _, out = _run([m_std, "--item", item_good, "--json"])
+        payload = json.loads(out)
+        check("ci18 ...and with no meta.ado.fields it is the payload that came "
+              "in, unchanged - 'this key is absent' as an equality rather than "
+              "as a promise",
+              payload.get("payload") == GOOD and payload.get("fieldsAdded") == {})
+
+        # Absent and explicit null are one answer, and neither adds a byte.
+        m_null = _write(tmp, "null.json",
+                        {"meta": {"ado": {"conventions": BOARD,
+                                          "fields": None}}})
+        _, out_null = _run([m_null, "--item", item_good])
+        _, out_absent = _run([m_std, "--item", item_good])
+        # The manifest path is IN the message, so the two are compared with it
+        # normalised away - the claim is about the merge lines, not about which
+        # file was named.
+        check("ci19 an absent block and an explicit null print the SAME thing, "
+              "and neither prints a merge line - which is what 'today's "
+              "behaviour exactly' means where a reader can see it: %r"
+              % (out_null.strip()[:50],),
+              out_null.replace(m_null, "<m>") == out_absent.replace(m_std, "<m>")
+              and out_absent.count("MERGED") == 0
+              and out_null.count("MERGED") == 0)
+
+        # A malformed template is the config's fault, not the item's.
+        m_ro = _write(tmp, "ro.json",
+                      {"meta": {"ado": {"conventions": BOARD,
+                                        "fields": {"Task": {
+                                            "System.Parent": 7}}}}})
+        check("ci20 a meta.ado.fields naming a readOnly field is exit 2 and "
+              "specifically NOT 1: a 1 says the ITEM does not belong on the "
+              "board, and a config we refused to apply is not the item's fault",
+              M.main([m_ro, "--item", item_good]) == 2)
+        m_reserved = _write(tmp, "reserved.json",
+                            {"meta": {"ado": {"fields": {"Task": {
+                                "System.Title": "hijack"}}}}})
+        check("ci21 ...and a template naming a field the connector maps is the "
+              "same refusal, rather than a silent 0 on a board with no "
+              "conventions at all - the two blocks are graded independently",
+              M.main([m_reserved, "--item", item_good]) == 2)
 
         # The rule is READ from the manifest, not baked in.
         m_other = _write(tmp, "other.json", {"meta": {"ado": {"conventions": {

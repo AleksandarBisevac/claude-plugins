@@ -556,6 +556,33 @@ def _cases(check):
         check("ado: null is a legal PUT - the connector reads off; item links "
               "are sync's records, not this config's, and stay",
               _res3["ok"] and M._read_json(_om)["meta"]["ado"] is None)
+        # `meta.ado.fields` has no CONTROL on the connector card yet, and this is
+        # the pair of cases that says the SERVER half is nonetheless finished:
+        # the endpoint writes the key and refuses a bad one through the same
+        # front door the CLI uses. Without them "the panel supports it" would
+        # rest on `write_ado` replacing the object wholesale, which is a reading
+        # of the code rather than a fact about the endpoint.
+        _tpl = {"Task": {"Microsoft.VSTS.Common.Activity": "Development"}}
+        _resf = M.write_ado(_oproj, {"ado": {"organization": "o", "project": "p",
+                                             "fields": _tpl}})
+        # .get, not indexing: the mutation this case is for DROPS the key, and
+        # a KeyError would take the suite's unprinted output with it instead of
+        # naming the one thing that broke.
+        _stored = (M._read_json(_om)["meta"].get("ado") or {}).get("fields")
+        check("ado PUT writes meta.ado.fields, which no control on the card "
+              "edits - the endpoint is the whole server side of that key: %r"
+              % (_stored,),
+              _resf["ok"] and _stored == _tpl)
+        _badf = M.write_ado(_oproj, {"ado": {"organization": "o", "project": "p",
+                                             "fields": {"Task": {
+                                                 "System.Parent": 7}}}})
+        check("...and a template naming a readOnly field is refused there too, "
+              "through check_ado_meta rather than a second opinion: %r"
+              % (_badf.get("findings"),),
+              not _badf["ok"]
+              and len([f for f in _badf.get("findings") or [] if "readOnly" in f]) == 1
+              and (M._read_json(_om)["meta"].get("ado") or {}).get("fields")
+              == _tpl)
     finally:
         _shutil.rmtree(_oproj, ignore_errors=True)
 

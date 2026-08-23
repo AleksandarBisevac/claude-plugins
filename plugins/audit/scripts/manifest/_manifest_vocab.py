@@ -149,7 +149,13 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
              "conventions",
              # U4: the EXISTING work item audit phases hang under, so the work
              # lands inside a team's backlog rather than beside it.
-             "parentWorkItem"}
+             "parentWorkItem",
+             # U-FIELDS: the other half of `conventions`. That block can only
+             # REFUSE, and the connector's create payload had no way to supply a
+             # governed board's required fields - so the honest standard gated
+             # out every CREATE. This one is what the manifest SUPPLIES, per
+             # work item type. Absent = today's behaviour exactly.
+             "fields"}
 # Keys inside meta.branch (the naming convention). Enumerated for the same reason
 # meta.ado is: a typo like `slugMaxLen` or `defaulttype` would otherwise be a
 # convention that silently never applies.

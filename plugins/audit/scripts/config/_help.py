@@ -131,6 +131,7 @@ COMPOSITION_PATHS = {
     "adoSprint": "meta.ado.sprint",
     "adoPull": "meta.ado.pull",
     "adoIdentityMap": "meta.ado.identityMap",
+    "adoFields": "meta.ado.fields",
 }
 
 # Which concept page a field belongs to, by path prefix. Longest prefix wins, so a

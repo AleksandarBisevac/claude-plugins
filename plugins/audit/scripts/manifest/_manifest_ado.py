@@ -15,6 +15,10 @@ unknown KEYS are did-you-mean warnings. `statemap` configuring nothing is
 exactly the silence worth naming, and a typo'd `stateMap` status key silently
 never fires - the area-tag argument again.
 
+`conventions` and `fields` are the board's requirement and this project's
+answer to it, and both are graded through their own modules rather than here:
+one front door, one opinion about what a field name may be.
+
 `identityMap` is advisory in USE (nothing gates or assigns on it) and
 structural in SHAPE, which is not a contradiction: a malformed map is a defect
 like any other wrong type here, while a duplicate target is only a warning
@@ -51,6 +55,7 @@ _output.install_path()
 
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
 import _ado_conventions as _conv  # noqa: E402  (what an item must look like to belong)
+import _ado_fields as _fields  # noqa: E402  (what this project supplies to those fields)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -358,6 +363,15 @@ def check_ado_meta(ado):
     f.extend(cf)
     w.extend(cw)
     w.extend(_conventions_contradictions(ado))
+
+    # `fields` is `conventions`' other half and is graded by `_ado_fields` for
+    # the same reason: the writing side merges the template through that module,
+    # so a second opinion about which field names are legal would be a second
+    # answer the first time either learned a name.
+    ff, fw = _fields.check_fields_config(ado.get("fields"))
+    f.extend(ff)
+    w.extend(fw)
+    w.extend(_fields.template_contradictions(ado))
     return f, w
 
 # --- cli ------------------------------------------------------------------------
