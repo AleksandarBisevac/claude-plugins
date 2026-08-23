@@ -61,6 +61,26 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
       ready: (rollup.ready || []).length,
       outcomes: (rollup.phases || []).filter((p) => p.desiredOutcome).length,
       firstPhase: (rollup.phases || [])[0] ? (rollup.phases || [])[0].id : null,
+      // Two search terms, derived rather than written down: one word that only an
+      // OUTCOME carries, and one that only the fields a row DRAWS carry. The row
+      // owes the reader a visible basis for the first and must spend no second
+      // line on the second, and a term hard-coded here would be testing the demo
+      // manifest's prose instead of the rule.
+      ...(() => {
+        const ph = rollup.phases || [];
+        const words = (v) => String(v || '').toLowerCase().match(/[a-z]{4,}/g) || [];
+        const drawn = ph.map((p) => (p.id + ' ' + (p.title || '') + ' '
+          + (p.area || []).join(' ')).toLowerCase()).join(' ');
+        const outcomes = ph.map((p) => String(p.desiredOutcome || '').toLowerCase())
+          .join(' ');
+        const uniq = (xs) => [...new Set(xs)];
+        return {
+          outcomeOnly: uniq(ph.flatMap((p) => words(p.desiredOutcome)))
+            .find((w) => !drawn.includes(w)) || null,
+          drawnOnly: uniq(ph.flatMap((p) => words(p.id + ' ' + (p.title || '') + ' '
+            + (p.area || []).join(' ')))).find((w) => !outcomes.includes(w)) || null,
+        };
+      })(),
     };
   });
   // ov (F-P-5): Overview follows the report's table, so it opens on a VIEW —
@@ -77,8 +97,88 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
   if (await rows() !== facts.phases) {
     fail(`overview: ${await rows()} phase rows for ${facts.phases} phases in the rollup`);
   }
-  if (facts.outcomes && !(await page.locator('#over .ovout').count())) {
-    fail(`overview: ${facts.outcomes} phases carry a desiredOutcome and none is shown`);
+  // ov (P2/4): the outcome used to be a second line on EVERY row — prose that is
+  // near-identical from row to row, so it doubled every row's height and separated
+  // none of them. It is on the row's tooltip and at the head of the opened detail
+  // now, and a row spends a line on it in exactly one case: the search matched
+  // there and nowhere the row draws. That case is the one no substring pin can
+  // check, because the claim is that the words the reader typed are ON SCREEN.
+  if (facts.outcomes) {
+    const spent = await page.locator('#over .ovout').count();
+    const tip = await page.evaluate(() => {
+      const of = (r) => (STATE.rollup.phases || []).find(
+        (p) => p.id === r.getAttribute('data-phase'));
+      const rows = [...document.querySelectorAll('#over .ovrow')]
+        .filter((r) => (of(r) || {}).desiredOutcome);
+      return {
+        rows: rows.length,
+        carried: rows.filter((r) => (r.getAttribute('title') || '')
+          .includes(of(r).desiredOutcome)).length,
+      };
+    });
+    if (spent) {
+      fail(`overview: ${spent} rows spend a second line on their outcome with no `
+         + `search on — that is the doubled row height this removed`);
+    } else if (!tip.rows || tip.carried !== tip.rows) {
+      fail(`overview: ${tip.carried} of ${tip.rows} rows with an outcome carry it `
+         + `on the tooltip, so hovering answers nothing`);
+    } else {
+      note(`overview: ${tip.rows} rows carry their outcome on hover and none spends `
+         + `a line on it`);
+    }
+    // Matched THERE and nowhere visible: the row must show the outcome, and the
+    // term must be inside what it shows — the line is clipped to one line, so the
+    // head of a long outcome is no proof the match is on screen.
+    if (facts.outcomeOnly) {
+      await page.fill('#ovq', facts.outcomeOnly);
+      await page.waitForTimeout(250);
+      const basis = await page.evaluate((t) => {
+        const lines = [...document.querySelectorAll('#over .ovrow')]
+          .map((r) => r.querySelector('[data-ovhit="outcome"]'))
+          .map((n) => (n ? n.textContent : null));
+        return {
+          rows: lines.length,
+          shown: lines.filter((s) => s !== null).length,
+          carrying: lines.filter((s) => s && s.toLowerCase().includes(t)).length,
+        };
+      }, facts.outcomeOnly);
+      if (!basis.rows) {
+        fail(`overview: "${facts.outcomeOnly}" is a word only an outcome carries and `
+           + `searching it matched no row — the search no longer reaches the field`);
+      } else if (basis.shown !== basis.rows || basis.carrying !== basis.rows) {
+        fail(`overview: ${basis.rows} rows matched on their outcome alone, `
+           + `${basis.shown} show it and ${basis.carrying} show the matching words `
+           + `— the rest are in the list with no basis on them`);
+      } else {
+        note(`overview: ${basis.rows} rows matched on "${facts.outcomeOnly}" and each `
+           + `shows the matching words`);
+      }
+      await page.fill('#ovq', '');
+      await page.waitForTimeout(200);
+    } else {
+      note('overview: no word occurs in an outcome and nowhere a row draws, so the '
+         + 'match-basis line could not be exercised on this manifest');
+    }
+    // ...and the other direction, which is the whole point of the change: a match
+    // the row already explains costs nothing.
+    if (facts.drawnOnly) {
+      await page.fill('#ovq', facts.drawnOnly);
+      await page.waitForTimeout(250);
+      const extra = await page.locator('#over .ovout').count();
+      const got = await rows();
+      if (!got) {
+        fail(`overview: "${facts.drawnOnly}" is a word the rows themselves carry and `
+           + `searching it matched nothing`);
+      } else if (extra) {
+        fail(`overview: ${extra} of ${got} rows explain a match the row already `
+           + `shows — the second line is back, for nothing`);
+      } else {
+        note(`overview: a match on a field the row draws costs no second line `
+           + `(${got} rows)`);
+      }
+      await page.fill('#ovq', '');
+      await page.waitForTimeout(200);
+    }
   }
 
   // A task-status pill scopes the phase list to the phases carrying that status.
@@ -173,6 +273,14 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
         want: tasks,
         cols: det ? [...det.querySelectorAll('th')].map((h) => h.textContent) : [],
         edit: !!(det && det.querySelector('[data-ovedit]')),
+        // The outcome's real home now that no row carries it: in full (the row's
+        // line is a window), and ABOVE the table rather than a footnote to it.
+        wantPurpose: !!((STATE.rollup.phases || []).find((p) => p.id === pid) || {})
+          .desiredOutcome,
+        purpose: det && det.querySelector('[data-ovpurpose]')
+          ? det.querySelector('[data-ovpurpose]').textContent : null,
+        purposeLeads: !!(det && det.firstElementChild
+          && det.firstElementChild.hasAttribute('data-ovpurpose')),
       };
     }, firstId);
     if (!inPlace.stayed || inPlace.expanded !== 'true' || !inPlace.detail) {
@@ -187,6 +295,10 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
     } else if (!inPlace.edit) {
       fail('overview: the detail offers no way to Composition — the click used to '
          + 'go there, so removing it without a named replacement strands the reader');
+    } else if (inPlace.wantPurpose && !inPlace.purposeLeads) {
+      fail(`overview: the phase has a desiredOutcome and the opened detail does not `
+         + `lead with it (${JSON.stringify(inPlace.purpose)}) — no row carries it `
+         + `any more, so this is where it is read`);
     } else {
       note(`overview: a phase opens in place with its ${inPlace.rows} tasks in the `
          + `report's columns, and Composition is a named press`);

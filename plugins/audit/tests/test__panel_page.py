@@ -844,10 +844,55 @@ def _cases(check):
           "const cur=()=>{const v=getPath(cfg,'guardEdits.customRules');" in M.UI_HTML
           and "setPath(cfg,'guardEdits.customRules',[])" not in M.UI_HTML)
 
-    check("overview: the phase row says what the phase is FOR, not only what it "
-          "is called",
-          "p.desiredOutcome?el('span',{class:'ovout'" in M.UI_HTML
+    # ov (P2/4): the outcome was on EVERY row, and across rows it is near-identical
+    # prose - it doubled the row height and separated nothing. It moved to the row's
+    # tooltip and to the head of the opened detail. The risk the removal carries is
+    # that the SEARCH still reaches the outcome, so a row can be in a filtered list
+    # because of a field the row no longer draws: a claim with its basis off screen.
+    # The behaviour of the two helpers below is executed in
+    # tools/ui-tests/overview-outcome.test.mjs; these are the source properties
+    # that suite and the browser gate depend on.
+    check("ovo1 no row carries an UNCONDITIONAL outcome line - that is the defect, "
+          "and one call site left behind reintroduces it on every row",
+          "p.desiredOutcome?el('span',{class:'ovout'" not in M.UI_HTML
           and ".ovout{" in M.UI_HTML)
+    check("ovo2 the row's tooltip carries it, so hovering still answers what the "
+          "phase is for without opening anything",
+          "title:(open?'collapse ':'expand ')+p.id\n"
+          "      +(p.desiredOutcome?' \u2014 '+p.desiredOutcome:'')," in M.UI_HTML)
+    check("ovo3 a row that matched on the outcome ALONE shows it, windowed on the "
+          "hit - the line is clipped to one line, so the head of an outcome is no "
+          "proof the term the reader typed is on screen",
+          "ovOutcomeIsBasis(p,term)?el('span',{class:'ovout','data-ovhit':'outcome',"
+          in M.UI_HTML
+          and "+ovExcerpt(p.desiredOutcome,term,64)):null);" in M.UI_HTML)
+    # The two spellings of "which fields does the row draw" must be ONE, or the
+    # filter can match on a field the basis test believes is visible - and then the
+    # row is in the list with nothing on it carrying the term. There is no second
+    # list: the filter reads ovShownText too.
+    _ovfields = M.UI_HTML.count("(p.id+' '+(p.title||'')+' '+(p.area||[]).join(' ')")
+    check("ovo4 the visible-field list exists ONCE and the search filter reads it, "
+          "rather than spelling it out a second time",
+          _ovfields == 1
+          and "const ovShownText=p=>(p.id+' '+(p.title||'')+' '" in M.UI_HTML
+          and "const hitP=p=>(!term||(ovShownText(p)+' '" in M.UI_HTML,
+          repr(_ovfields))
+    _ovdet = M.UI_HTML[M.UI_HTML.index("function ovDetail(p){"):
+                       M.UI_HTML.index("function applyCardOrder(view){")]
+    # find(), not index(): a detail that lost the line entirely must FAIL this case
+    # rather than raise and take every case below it with it. And counted, because
+    # index() reads the first hit - a second copy appended after the table is two
+    # answers to one question and passed an ordering assertion.
+    _ovpos = _ovdet.find("'Desired: '+p.desiredOutcome")
+    _ovtab = _ovdet.find("tableHead([")
+    check("ovo5 ...and the opened detail LEADS with the outcome, ONCE, above the "
+          "task table: read after its tasks it is a footnote to them",
+          _ovdet.count("'Desired: '+p.desiredOutcome") == 1
+          and 0 <= _ovpos < _ovtab,
+          repr((_ovpos, _ovtab)))
+    check("ovo6 the search box still says it reaches the outcome, which is what "
+          "makes the basis line owed rather than decorative",
+          "id, title, area, outcome" in M.UI_HTML)
     check("overview: sort and group-by-area consume the rollup's own areas registry",
           # Through fillOptions since the five plain option loops became one; the
           # pair list is what identifies THIS select.
