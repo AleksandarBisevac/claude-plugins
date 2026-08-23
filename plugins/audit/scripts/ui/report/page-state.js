@@ -465,6 +465,17 @@
    */
   const inView = (seg) => (VIEWS[viewMode] || VIEWS.all).includes(seg);
 
+  // Which order the phase rows are listed in, the same shape as the view above:
+  // the element, the vocabulary, the default. `plan` is the written plan, which
+  // is how the table always ARRIVES; `priority` is the overlay, spelled the way
+  // the panel's Overview spells it. The renderer emits this select only where a
+  // phase is actually pinned, so a null here means the plan has no priority to
+  // sort by — which is why every path that changes the order asks for the
+  // element rather than for the option name alone.
+  const sortSel = document.getElementById('audit-sort');
+  const defaultOrder = 'plan';
+  let phaseOrder = defaultOrder;
+
   /**
    * Which segment each phase STATUS files under, read off the rows themselves.
    *

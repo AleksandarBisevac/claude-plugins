@@ -13,7 +13,7 @@ against state that already exists. Reordering them is not a formatting change.
 |---|---|
 | `page-state.js` | Element lookups, theme preference, sticky header measurement, scroll spy, expand/collapse persistence, number formatting, and the task index the filters read. |
 | `filters.js` | Which phase and task rows are on screen: the filter state, the single pass that applies it, and the URL hash that survives a reload. |
-| `sorting.js` | Natural-order column sorting, inside a phase and across the table. |
+| `sorting.js` | Natural-order column sorting, inside a phase and across the table; and which order the phase rows themselves are listed in — the written plan, or the priority ranks the server stamped on the rows. |
 | `chips.js` | The toggle-chip behaviour shared by every filter bar, including which chip reads as pressed. |
 | `areas.js` | Filtering by area tag, and the counts each tag shows. |
 | `authors.js` | Selecting one author and narrowing the usage tables and rank rows to them. |

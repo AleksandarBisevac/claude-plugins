@@ -455,6 +455,55 @@ def _cases(check):
               {"branch": "audit/p1", "priority": None}),
           M._phase_meta_div({"branch": "audit/p1"}))
 
+    # --- any_phase_pinned() / phase_ranks(): the sort option's basis ------------
+    # The rank the page hands its sort control, and the one predicate that
+    # decides whether the control is offered at all. Both halves have to come
+    # from ONE answer: a select with no ranks on the rows is a dropdown that
+    # reorders nothing, and ranks with no select is dead weight.
+    _pinned = {"phases": [{"id": "A"}, {"id": "B", "priority": 3},
+                          {"id": "C"}, {"id": "D", "priority": 1}]}
+    check("pr-h1 phase_ranks puts the pinned phases first by tier and leaves the "
+          "rest in manifest order - D (tier 1), then B (tier 3), then A and C "
+          "where they were written",
+          M.phase_ranks(_pinned) == [2, 1, 3, 0],
+          repr(M.phase_ranks(_pinned)))
+    # ABSENT MEANS ZERO, COMPUTED rather than described. dd60a11 shipped two case
+    # labels that named the ordering a mutation produces and named it wrongly, so
+    # the naive comparator is built here and the two are compared - a computed
+    # disagreement cannot rot into agreement the way a sentence can.
+    _items = _pinned["phases"]
+    _as_zero = [0] * len(_items)
+    for _r, _i in enumerate(sorted(range(len(_items)),
+                                   key=lambda i: (_items[i].get("priority") or 0, i))):
+        _as_zero[_i] = _r
+    check("pr-h1b ...and an absent tier is a CLASS, not tier 0: under a "
+          "comparator that read a missing priority as zero this same plan ranks "
+          "differently, which is what makes the fixture able to tell the two "
+          "implementations apart at all",
+          M.phase_ranks(_pinned) != _as_zero,
+          "honoured=%r  absent-as-zero=%r" % (M.phase_ranks(_pinned), _as_zero))
+    check("pr-h2 ...and the ranks are positional against the SAME filtered list "
+          "the rollup and the table rows are zipped from, so a non-dict entry "
+          "cannot slide the alignment by one",
+          M.phase_ranks({"phases": ["junk", {"id": "B", "priority": 1},
+                                    {"id": "A"}]}) == [0, 1],
+          repr(M.phase_ranks({"phases": ["junk", {"id": "B", "priority": 1},
+                                         {"id": "A"}]})))
+    check("pr-h3 a tier the run does not honour is not a pin: read through "
+          "_priority.tier_of, so `priority: \"1\"` and `priority: 0` leave the "
+          "plan with nothing to sort by and the control unoffered",
+          M.any_phase_pinned({"phases": [{"id": "A", "priority": "1"},
+                                         {"id": "B", "priority": 0}]}) is False
+          and M.phase_ranks({"phases": [{"id": "A", "priority": "1"}]}) == [])
+    check("pr-h4 SECOND-DIRECTION CASE: a plan with no priority at all gets NO "
+          "ranks, so no row grows the attribute and no control is drawn. Reads "
+          "vacuous, passes by construction on the code before the sort option, "
+          "and is the one case that fails if an absent tier ever becomes tier 0 "
+          "- which would pin every phase in every plan ever rendered",
+          M.phase_ranks({"phases": [{"id": "A"}, {"id": "B"}]}) == []
+          and M.any_phase_pinned({"phases": [{"id": "A"}, {"id": "B"}]}) is False
+          and M.any_phase_pinned({}) is False)
+
 
 def _selftest():
     return _harness.run(_cases)

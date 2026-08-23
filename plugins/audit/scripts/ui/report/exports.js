@@ -435,6 +435,17 @@
     viewMode = HASH.v;
     if (viewSel) viewSel.value = viewMode;
   }
+  // Same shape as the view above, and deliberately NOT through setPhaseOrder:
+  // that one ends in refresh(), and the single pass at the bottom of this file
+  // is the first pass. Going through it would paint the table in plan order and
+  // then rearrange it in front of the reader. `sortSel` gates it because a plan
+  // with nothing pinned has no ranks on its rows, and a fragment can name an
+  // order the page cannot honour.
+  if (HASH.so && ORDERS[HASH.so] && sortSel) {
+    phaseOrder = HASH.so;
+    sortSel.value = phaseOrder;
+    orderPhaseBlocks(ORDERS[phaseOrder]);
+  }
   if (q && HASH.q) q.value = HASH.q;
   if (HASH.ps) {
     phaseStatus = HASH.ps;
