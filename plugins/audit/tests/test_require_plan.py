@@ -841,11 +841,11 @@ def _cases(check):
     else:
         os.environ["CLAUDE_PROJECT_DIR"] = _prev_project_dir
 
-    # (i) _ensure_dir yields self-ignoring local dirs
+    # (p) _ensure_dir yields self-ignoring local dirs
     tmp_ig = Path(tempfile.mkdtemp(prefix="rp-ignore-"))
     try:
         M._ensure_dir(tmp_ig / "state")
-        check("i1 _ensure_dir drops a `*` .gitignore - state and logs "
+        check("p1 _ensure_dir drops a `*` .gitignore - state and logs "
               "never belong in git",
               (tmp_ig / "state" / ".gitignore").exists())
     finally:

@@ -426,6 +426,16 @@ def main(argv):
 # UNDER-selects is invisible to the full set, because nobody runs the full set to
 # check the selector - they run the narrowed set and believe it. The docstring above
 # says under-selection is worse than no selector at all; these are what hold it.
+#
+# LABELS READ DOWN IN ORDER, and a case added beside its topic takes a LETTER
+# suffix rather than the next free number - `a3b` next to `a3`, not `a14` at the
+# bottom of the file's numbering. The label set was `a0 a1 a2 a3 a14 a4 a5 a12 a6
+# ... a10 a13 a11` and the next free label was therefore not discoverable by
+# reading, which is how F61's first attempt collided with `a5`. `_harness.run()`
+# now catches a collision by name, so this is about a reader's next label rather
+# than about a proof - and it is a convention on purpose, not a lint: a suite
+# that groups its cases by topic is right to, and a rule demanding one global
+# ascending sequence would forbid exactly that.
 def _cases():
     out = []
 
@@ -462,7 +472,7 @@ def _cases():
 
     claude = sel("CLAUDE.md")
     png = sel("docs/screenshots/panel.png")
-    out.append(("a14", PARITY in claude["gates"]
+    out.append(("a3b", PARITY in claude["gates"]
                 and PARITY in contributing["gates"]
                 and PARITY not in png["gates"],
                 "THE PAIR: a root document that describes the gate set selects the "
@@ -489,7 +499,7 @@ def _cases():
     # there already answered True. The False half was `docs/index.html` until the
     # version-stamp rule started reading that page, which is exactly the way a pair
     # like this is supposed to go stale: loudly, in the case, and not in the selector.
-    out.append(("a12", refs_reads("docs/design/audit-concurrency-report.md") is True
+    out.append(("a5b", refs_reads("docs/design/audit-concurrency-report.md") is True
                 and refs_reads("docs/screenshots/panel-blocks.png") is False,
                 "a document nowhere near the pinned list selects the refs pins now, "
                 "because the completeness rule reads every document the repo keeps - "
@@ -526,7 +536,7 @@ def _cases():
                 "them (%d suites)" % (len(py["suites"]),)))
 
     page = sel("docs/demo-large.html")
-    out.append(("a13", "test__refs.py" in page["suites"]
+    out.append(("a10b", "test__refs.py" in page["suites"]
                 and ARTIFACTS in page["gates"] and not page["full"],
                 "a published report selects the version-stamp rule as well as the "
                 "byte comparison. The stamp is the claim the page makes about which "

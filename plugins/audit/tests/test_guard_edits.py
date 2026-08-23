@@ -157,7 +157,7 @@ def _cases(check):
     # deny payload is canonical PreToolUse JSON
     blob = json.loads(json.dumps(M._deny_payload("why")))
     hso = blob.get("hookSpecificOutput") or {}
-    check("j1 deny payload is canonical PreToolUse JSON",
+    check("d1 deny payload is canonical PreToolUse JSON",
           hso.get("hookEventName") == "PreToolUse"
           and hso.get("permissionDecision") == "deny"
           and str(hso.get("permissionDecisionReason", "")).startswith("[guard-edits]"))

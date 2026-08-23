@@ -216,7 +216,7 @@ def _cases(check):
     try:
         _fixture_tree(tmp, "scripts/<name>.py and scripts/*.py")
         res = M.missing_references(tmp, tmp)
-        check("p1 a placeholder and a glob are both SEEN (total 2) and both held out of "
+        check("ph1 a placeholder and a glob are both SEEN (total 2) and both held out of "
               "the stat (checked 0), so neither vanishes and neither is a false miss",
               (res["total"], len(res["placeholders"]), res["checked"],
                res["missing"]) == (2, 2, 0, []), repr(res))
@@ -226,7 +226,7 @@ def _cases(check):
         # under test) and the third is a real file, so all three are references this
         # module is happy to have - and keeping them literal is what makes `c1`'s
         # count identical on both sides of the move.
-        check("p2 is_placeholder is the one rule, and it answers for both shapes",
+        check("ph2 is_placeholder is the one rule, and it answers for both shapes",
               M.is_placeholder("plugins/audit/scripts/<n>.py")
               and M.is_placeholder("plugins/audit/scripts/*.py")
               and not M.is_placeholder("plugins/audit/scripts/_refs.py"))

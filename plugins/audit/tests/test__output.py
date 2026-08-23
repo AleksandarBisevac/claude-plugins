@@ -1152,7 +1152,7 @@ def _cases(check):
               is None)
 
 
-    check("pn10 the BARE count is caught however it is introduced - the three "
+    check("pn10b the BARE count is caught however it is introduced - the three "
           "narrow shapes above all needed an introducer ('its', 'live in', "
           "'--selftest'), and eight sites said it plainly instead: 'the N cases "
           "in tests/', 'across N cases', 'the ~N cases below'. SEVEN of the "

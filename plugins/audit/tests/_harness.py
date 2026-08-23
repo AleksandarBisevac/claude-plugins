@@ -71,6 +71,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import ast
 import os
+import re
 import sys
 import traceback
 
@@ -236,6 +237,77 @@ def between(text, start, end):
     return body[i + len(start):j]
 
 
+# --- two cases wearing one name -----------------------------------------------
+# A leading token is an IDENTIFIER when it carries a digit: `pn10`, `sc9`, `h2b`,
+# `bw1-a`. A leading `the`, `every` or `viewer:` is an English word or a group
+# tag, and a suite spelled that way cannot be named from a `prove-gates.py` row
+# at all - so it is not held to a convention it never adopted.
+_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+
+
+def case_id(label):
+    """The label's leading token when it is an identifier, else None.
+
+    NOT A FORMATTING DETAIL. `tools/prove-gates.py` credits a mutation to the
+    case that went red by taking exactly this token off a `FAIL <label>` line -
+    it is the key the whole proof harness attributes by. F63 is what happens
+    when two cases claim one key: the "RED, WRONG CASE" verdict that stops an
+    unrelated breakage being called a proof is defeated for that key, silently,
+    and a rule proven through the other case reads as proven.
+    """
+    head = label.split(None, 1)
+    if not head or not _CASE_ID.match(head[0]):
+        return None
+    return head[0]
+
+
+def label_faults(labels, sites):
+    """Extra FAILING cases for two cases wearing one name; empty when clean.
+
+    Two spellings of one defect, reported apart because they fail apart: an
+    identifier claimed from more than one `check()` CALL SITE, and a whole label
+    printed more than once.
+
+    WHY THE CALL SITE AND NOT THE OCCURRENCE COUNT. A suite may legitimately
+    print one identifier many times - `t3 0 is not a tier`, `t3 -3 is not a
+    tier`, seven fixtures driven from one loop over one rule - and crediting a
+    mutation to that family is exactly right, because the family IS one authored
+    assertion. Measured over the tree rather than argued from the shape, and
+    written in the past tense because the count is evidence for a decision and
+    not a fact to keep true: 31 identifiers across 19 suites repeated that way
+    the day this shipped, so a rule that counted occurrences would have called
+    every one of them a duplicate and renumbered the family idiom out of about a
+    hundred cases. One call site is one authored assertion; two hand-written
+    cases claiming `pn10` are two.
+
+    `sites` maps an identifier to the set of caller line numbers that produced
+    it. `run()` collects it because a line number is the one thing a rendered
+    report has already thrown away, and it is what turns "this id is ambiguous"
+    into two places to go and look.
+    """
+    faults = []
+    for cid in sorted(sites):
+        lines = sorted(sites[cid])
+        if len(lines) > 1:
+            faults.append(
+                ("DUPLICATE CASE ID `%s` - claimed by %d separate check() call "
+                 "sites, at lines %s. prove-gates.py credits a mutation to the "
+                 "case whose id went red, so an id naming two cases defeats that "
+                 "verdict silently (F63)"
+                 % (cid, len(lines), ", ".join(str(n) for n in lines)),
+                 False, ""))
+    seen = {}
+    for label in labels:
+        seen[label] = seen.get(label, 0) + 1
+    for label in sorted(seen):
+        if seen[label] > 1:
+            faults.append(
+                ("DUPLICATE CASE LABEL printed %d times, so no reader and no "
+                 "tool can tell the two apart: %r" % (seen[label], label),
+                 False, ""))
+    return faults
+
+
 def _render(cases):
     """`(text, passed, total)` - the report, not printed yet.
 
@@ -274,11 +346,22 @@ def run(body):
     whole reason this wrapper exists. It is a FAILING case rather than a silent
     truncation, so a suite that dies half way cannot exit 0 with a plausible-looking
     `ALL PASS` over the cases that did run.
+
+    EVERY SUITE ALSO GETS THE UNIQUENESS CHECK FOR FREE, because this is the one
+    place that has already seen every label the suite produced - `label_faults()`
+    carries what it rules and why. The caller's line number comes from
+    `sys._getframe`, not from `inspect` or `traceback`: both of those read the
+    source file to build a frame record, and this runs once per case across
+    thousands of cases in one sweep.
     """
     cases = []
+    sites = {}
 
     def check(label, cond, detail=""):
         cases.append((label, bool(cond), str(detail)))
+        cid = case_id("%s" % (label,))
+        if cid is not None:
+            sites.setdefault(cid, set()).add(sys._getframe(1).f_lineno)
 
     try:
         body(check)
@@ -288,6 +371,7 @@ def run(body):
                       "every case after this point did NOT run", False,
                       "%s: %s" % (type(exc).__name__, exc)))
 
+    cases.extend(label_faults([c[0] for c in cases], sites))
     text, passed, total = _render(cases)
     print(text)
     return 0 if passed == total and total else 1
@@ -437,6 +521,73 @@ def _cases(check):
     check("l1 _labels() recovers the labels a report printed, and nothing else - "
           "the tally line is not a case",
           _labels(text) == ["one", "two (why)"])
+
+    # -- two cases wearing one name (F63) --------------------------------------
+    # THE TWO CALLS BELOW MUST SIT ON DIFFERENT LINES. Written as a one-line
+    # lambda they would share one call site, the rule would correctly stay
+    # silent, and the case would pass against a `run()` that never learned any
+    # of this - the fixture, not the assertion, is what tells the two versions
+    # apart.
+    def _claims_one_id_twice(c):
+        c("dup7 first case claiming the id", True)
+        c("dup7 second case claiming the SAME id", True)
+
+    out_dup, code_dup = _capture(run, _claims_one_id_twice)
+    check("u1 an id claimed from two check() call sites is reported by NAME, "
+          "with the count and both line numbers. F63: prove-gates.py credits a "
+          "mutation to the case whose id went red, so an ambiguous id defeats "
+          "its 'RED, WRONG CASE' verdict silently",
+          "FAIL DUPLICATE CASE ID `dup7`" in out_dup
+          and "2 separate check() call sites" in out_dup, out_dup)
+    check("u2 ...and the report says so as a FAILING case, so a suite nothing "
+          "can attribute cannot exit 0. The mutation this catches is reporting "
+          "the duplicate as a detail hung off a passing line",
+          code_dup == 1
+          and "SELFTEST FAILED: 2/3 cases passed" in out_dup, out_dup)
+    # u3 AND u4 LOOK VACUOUS AND ARE THE SECOND-DIRECTION CASES. Both pass on
+    # the pre-F63 code by construction, and they are the only ones here that
+    # fail if the rule starts firing where it should not: u3 if it fires
+    # unconditionally, u4 if it counts OCCURRENCES instead of call sites.
+    check("u3 a suite whose ids are all distinct is told nothing at all",
+          label_faults(["a1 one", "a2 two"],
+                       {"a1": set([10]), "a2": set([11])}) == [])
+    # THROUGH `run()`, NOT THROUGH `label_faults()` DIRECTLY. A hand-built
+    # `sites` dict would assert nothing about the half that keys on the call
+    # site, so the mutation this case exists for - collecting one key per case
+    # instead of one per call site - would leave it green.
+    def _one_site_many_fixtures(c):
+        for _bad in (0, -3, None, 1.5):
+            c("t3 %r is not a tier, so the phase sorts as unprioritised"
+              % (_bad,), True)
+
+    out_fam, code_fam = _capture(run, _one_site_many_fixtures)
+    check("u4 ...and one id printed many times from ONE call site is not a "
+          "duplicate: `t3 0 is not a tier`, `t3 -3 is not a tier`, fixtures "
+          "driven from one loop over one rule, which is one authored assertion. "
+          "Counting occurrences instead would have called 31 ids across 19 "
+          "suites duplicates the day this was written - measured, which is why "
+          "the rule reads the call site and not the count",
+          code_fam == 0 and "DUPLICATE" not in out_fam, out_fam)
+    _same = label_faults(["...and a refused PUT wrote nothing"] * 2, {})
+    check("u5 a whole label printed twice is the other spelling of the defect "
+          "and fails apart from the first: there is no id to name, and no "
+          "reader and no tool can tell the two lines apart",
+          len(_same) == 1 and _same[0][1] is False
+          and "printed 2 times" in _same[0][0], repr(_same))
+    check("u6 an id has to carry a digit, so a suite whose labels open with "
+          "`the`, `every` or `viewer:` is not held to a convention it never "
+          "adopted - while `bw1-a`, `h2b` and `pn10` are ids",
+          [case_id(_lbl) for _lbl in
+           ("the page renders", "viewer: a GET and nothing else",
+            "bw1-a a borrowed wrapper", "h2b every SUBDIRECTORY",
+            "pn10 COMPLETENESS is caught")]
+          == [None, None, "bw1-a", "h2b", "pn10"])
+    check("u7 the id is read here the way prove-gates.py reads it back off a "
+          "rendered line - two spellings of one key, pinned rather than "
+          "commented, because that tool is the only consumer and a comment "
+          "claiming they agree is not a test that they do",
+          _render([("pn10b the BARE count", False, "")])[0]
+          .splitlines()[0].split(None, 2)[1] == case_id("pn10b the BARE count"))
 
     # -- module_source(): the subject's file, never the test's -----------------
     import _output as _ms_probe

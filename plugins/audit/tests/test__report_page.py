@@ -211,7 +211,7 @@ def _cases(check):
     # render-report; what is asserted here is the DIFFERENCE the flag makes,
     # counted in both directions so a flag that did nothing fails.
     _frag = M.render_html(_m, _s, "b", None, fragment=True)
-    check("pg6 the fragment drops the document wrapper and the theme toggle "
+    check("pg6b the fragment drops the document wrapper and the theme toggle "
           "(the host supplies both) and keeps everything else",
           not any(t in _frag.lower() for t in
                   ("<!doctype", "<html", "</html>", "<meta charset"))

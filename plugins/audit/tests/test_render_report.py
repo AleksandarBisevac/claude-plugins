@@ -258,7 +258,7 @@ def _cases(check):
     # The progress fill is a <span>. Inline boxes ignore width and height, so without
     # an explicit display the bar paints as an empty track at every percentage —
     # which is what shipped from the redesign until it was caught by a capture.
-    check("u14i the progress fill declares a non-inline display "
+    check("u14l the progress fill declares a non-inline display "
           "(a <span> would otherwise ignore its width)",
           re.search(r"\.fill\{[^}]*display:\s*block", M._CSS) is not None)
     # A reveal animation with only a `from` keyframe leaves its end state to be

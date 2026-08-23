@@ -260,6 +260,29 @@ def coverage(script_dir=None):
 
 
 # --- running ------------------------------------------------------------------
+def label_hits(text, label):
+    """How many of a suite's cases - passing or failing - are named `label`.
+
+    THE OTHER END OF F63. Every verdict below keys on the row's label, so the
+    whole `RED, WRONG CASE` guarantee rests on that label naming exactly one
+    case, and until this counted them nothing here could tell the difference
+    between the case going red and its NAMESAKE going red. `pn10` named two
+    cases in `test__output.py` while this file was already reading labels off
+    `test__output.py`'s report.
+
+    Counted over PASS lines as well as FAIL ones, because ambiguity is a
+    property of the suite and not of what this mutation happened to break: a
+    label whose twin passed is exactly as unattributable.
+    """
+    hits = 0
+    for line in text.splitlines():
+        if not (line.startswith("PASS ") or line.startswith("FAIL ")):
+            continue
+        if line.split(None, 2)[1:2] == [label]:
+            hits += 1
+    return hits
+
+
 def prove(row, repo=None):
     """Mutate, run the suite, restore. Returns a dict; never raises on a red gate."""
     lint, rel, _kind, _anchor, _payload, suite, label = row
@@ -285,6 +308,21 @@ def prove(row, repo=None):
         last = [ln for ln in text.splitlines() if ln.strip()]
         return {"lint": lint, "verdict": "ERROR",
                 "detail": (last[-1][:70] if last else "no output"), "cases": cases}
+    if label is not None:
+        # BEFORE the wrong-case verdict, because that verdict is the thing being
+        # checked: with the label naming no case it is a rot report dressed as a
+        # gate finding, and with it naming two it is worthless for this row.
+        hits = label_hits(gate, label)
+        if hits == 0:
+            return {"lint": lint, "verdict": "LABEL GONE",
+                    "detail": "no case in %s is named %s any more"
+                              % (os.path.basename(suite), label),
+                    "cases": cases}
+        if hits > 1:
+            return {"lint": lint, "verdict": "AMBIGUOUS LABEL",
+                    "detail": "%d cases in %s are named %s, so a red one credits "
+                              "nothing" % (hits, os.path.basename(suite), label),
+                    "cases": cases}
     if label is not None and label not in cases:
         return {"lint": lint, "verdict": "RED, WRONG CASE",
                 "detail": "expected %s, got %s" % (label, ", ".join(cases[:4])),
@@ -378,6 +416,23 @@ def _cases():
     out.append(("c5", all(os.path.isfile(os.path.join(REPO, s)) for s in suites),
                 "every suite the table drives exists: %s"
                 % (", ".join(sorted(os.path.basename(s) for s in suites)),)))
+
+    # Three answers from one fixture, and each one is a different mutation: `2`
+    # fails if occurrences are found rather than counted, `1` fails if the
+    # PASS/FAIL filter is dropped and the prose line below is read as a case,
+    # and `0` fails if a label naming nothing is quietly treated as naming one.
+    _report = ("PASS pn10 the first\n"
+               "FAIL pn10 the second, wearing the same name\n"
+               "PASS pn11 a name of its own\n"
+               "note: pn11 is the case the row names, said in prose\n"
+               "\n"
+               "SELFTEST FAILED: 2/3 cases passed\n")
+    out.append(("c7", (label_hits(_report, "pn10"), label_hits(_report, "pn11"),
+                       label_hits(_report, "pn12")) == (2, 1, 0),
+                "a row's label is COUNTED in the suite's report, not merely "
+                "found in it - two cases wearing one name make every verdict "
+                "below meaningless for that row. F63; `_harness.run()` enforces "
+                "the other half, for every suite"))
 
     out.append(("c6", "--selftest" in sys.argv[1:] or True,
                 "THIS SUITE MUTATES NOTHING. It is run by the parallel sweep with "

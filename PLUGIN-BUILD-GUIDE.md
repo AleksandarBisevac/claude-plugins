@@ -1962,6 +1962,17 @@ route, and `_panel_state`'s `--name-only` **security** slice widened from 3,747 
 still "found" the flag. `between()` raises on either marker, and `run()` reports the escape as a
 named failing case.
 
+**Every suite also inherits one rule it did not write.** `run()` is the only place that has
+seen every label a suite produced, so it is where they are checked for being two cases wearing
+one name: an id claimed from more than one `check()` call site, and a whole label printed twice.
+Both arrive as named FAILING cases, because `tools/prove-gates.py` credits a mutation to the
+case whose id went red — an ambiguous id defeats its `RED, WRONG CASE` verdict silently, which
+is why F63 is the one defect that weakens every other proof in the tree. The rule reads the CALL
+SITE rather than the occurrence count on purpose: a family driven from one loop (`t3 0 is not a
+tier`, `t3 -3 is not a tier`) is one authored assertion and keeps one name, while two
+hand-written cases claiming `pn10` are two. `prove-gates.py` holds the other end, refusing to
+credit a row whose label names no case, or more than one.
+
 **Naming.** a production `x.py` becomes `tests/test_x.py`, with **hyphens becoming underscores**:
 `migrate-manifest.py` → `test_migrate_manifest.py`, because a hyphenated name is not
 importable and the entry points are hyphenated by convention. The rule lives in

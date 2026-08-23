@@ -439,7 +439,7 @@ def _cases(check):
         check("areas PUT refuses a malformed registry, naming the entry",
               not _bad["ok"] and any("must be an object" in f
                                      for f in _bad["findings"]))
-        check("...and a refused PUT wrote nothing",
+        check("...and a refused areas PUT wrote nothing",
               M._read_json(_am)["meta"]["areas"].get("api") == {
                   "root": "services/api", "description": "d",
                   "reviewSkill": "backend-review"})
@@ -611,7 +611,7 @@ def _cases(check):
         check("policy PUT refuses a misspelled default in the policy's own words",
               not _bad["ok"] and any("policy.skills.default" in f
                                      for f in _bad["findings"]))
-        check("...and a refused PUT wrote nothing",
+        check("...and a refused policy PUT wrote nothing",
               M.read_config(_pproj).get("policy") is None)
         # The policy is checked BEFORE the config is assembled, and this is the case
         # that proves it rather than restating the validator: with an unrelated
