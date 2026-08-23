@@ -144,10 +144,58 @@ def _cases(check):
           len(_v) == 1 and '"*"' in _v[0])
     _free = dict(BOARD)
     _free["tagVocabulary"] = dict(BOARD["tagVocabulary"], **{"*": []})
-    check("ac12 ...and with `*` present the same bare tag passes, so the escape "
-          "hatch is spelled rather than implied",
+    check("ac12 ...and with `*` present carrying an EMPTY list the same bare tag "
+          "passes, so the escape hatch is spelled rather than implied",
           M.conformance_violations(
               _task(fields={"System.Tags": "type:refactor; FE"}), _free) == [])
+    # `*` IS A KEY LIKE ANY OTHER, and its list restricts. It was read for its
+    # PRESENCE alone, so `{"*": ["FE", "BE"]}` and `{"*": []}` behaved
+    # identically and a board that wrote the first got no restriction and no
+    # warning. The cases below are paired over ONE fixture on purpose: a rule
+    # that always refused bare tags passes ac43 and fails ac45, one that always
+    # admitted them does the reverse, so neither mutation survives both.
+    _listed = dict(BOARD)
+    _listed["tagVocabulary"] = dict(BOARD["tagVocabulary"], **{"*": ["FE", "BE"]})
+    _v = M.conformance_violations(
+        _task(fields={"System.Tags": "type:refactor; QQQ"}), _listed)
+    check("ac43 a bare tag outside a NON-EMPTY `*` list is refused, and the "
+          "message lists what a bare tag may be: %r" % (_v,),
+          len(_v) == 1 and "QQQ" in _v[0] and "FE" in _v[0])
+    check("ac44 ...and it is NOT the opt-in sentence, because `*` is already "
+          "there and adding it again fixes nothing: %r" % (_v,),
+          len(_v) == 1 and 'add "*"' not in _v[0])
+    check("ac45 ...while a bare tag IN that list is admitted, over the same "
+          "board - so neither 'always refuse' nor 'always admit' survives",
+          M.conformance_violations(
+              _task(fields={"System.Tags": "type:refactor; FE"}), _listed) == [])
+    # COMPATIBILITY. `{"*": []}` is the spelling the schema and the connector's
+    # own documentation already give for a free-form board, and it has to keep
+    # meaning that: the SAME tag ac43 refuses is admitted here, which is the
+    # only comparison that separates "the list restricts" from "the list
+    # forbids" - the reading that would have been a major release.
+    check("ac46 an EMPTY `*` list still admits any bare tag, including the one a "
+          "non-empty list refuses",
+          M.conformance_violations(
+              _task(fields={"System.Tags": "type:refactor; QQQ"}), _free) == [])
+    _v = M.conformance_violations(
+        _task(fields={"System.Tags": "type:refactor; QQQ"}), BOARD)
+    check("ac47 ...and `*` ABSENT still refuses that tag, with the opt-in advice "
+          "that is a DIFFERENT sentence from ac43's: %r" % (_v,),
+          len(_v) == 1 and 'add "*"' in _v[0])
+    # The prefixed branch is reached by none of this, in either direction.
+    _both = [M.conformance_violations(
+                 _task(fields={"System.Tags": "type:chore; supplier:databridge"}),
+                 board) for board in (_listed, _free)]
+    check("ac48 a prefixed tag is graded by its own prefix whatever `*` says - "
+          "refused for a bad value under both spellings: %r" % (_both,),
+          [len(x) for x in _both] == [1, 1]
+          and all("chore" in x[0] for x in _both))
+    _both = [M.conformance_violations(
+                 _task(fields={"System.Tags": "type:refactor; supplier:databridge"}),
+                 board) for board in (_listed, _free)]
+    check("ac49 ...and admitted for a good one under both, so a bare-tag list "
+          "did not narrow the prefixed rule either: %r" % (_both,),
+          _both == [[], []])
     # `;` is the field's own separator and the round-trip leaves spaces behind.
     check("ac13 tags split on ';' with surrounding space ignored, which is what "
           "System.Tags round-trips to",
@@ -189,6 +237,19 @@ def _cases(check):
     check("ac22 an EMPTY vocabulary forbids every tag, which is almost never "
           "meant - warned rather than silently enforced: %r" % (_w,),
           any("forbids every tag" in x for x in _w))
+    _f, _w = M.check_conventions_config(
+        {"tagVocabulary": {"*": ["type:refactor", "FE"]}})
+    check("ac50 an entry under `*` carrying a colon can never match - a tag with "
+          "a prefix is graded against that prefix's list and never reaches `*` - "
+          "so it configures nothing, and that silence is the thing to name: %r"
+          % (_w,),
+          _f == [] and len([x for x in _w if "type:refactor" in x]) == 1)
+    # The second direction. This looks vacuous and is the only case that fails
+    # if the line above becomes unconditional, which would put a warning on
+    # every board that lists what a bare tag may be.
+    _f, _w = M.check_conventions_config({"tagVocabulary": {"*": ["FE", "BE"]}})
+    check("ac51 ...while a well-formed bare-tag list draws neither a finding nor "
+          "a warning: %r" % (_w,), _f == [] and _w == [])
 
     # --- one front door -------------------------------------------------------
     # `_manifest_ado.check_ado_meta` must reach this module's objects rather than
@@ -267,6 +328,13 @@ def _cases(check):
     check("ac38 ...as a WARNING and never a finding, so an already-linked plan "
           "that only ever updates is not called invalid: %r" % (_f,),
           _f == [])
+    # The same contradiction, spelled the other way. It was SILENT while `*` was
+    # read for its presence alone: a board could list what a bare tag may be,
+    # leave the connector's own bare tag out of it, and validate clean.
+    _f, _w = _meta(conventions={"tagVocabulary": {"*": ["FE"]}})
+    check("ac52 a `*` list that does not admit the connector's own bare tag is "
+          "the same F-P-18 contradiction and is warned about too: %r" % (_w[:1],),
+          any("provenance tag" in x for x in _w) and _f == [])
     # REWRITTEN AT U-PARENT, on purpose. This pair used to pin the opposite: a
     # `requireParent` with no `parentWorkItem` drew a warning, which was right
     # while ONE integer parented the whole manifest. A phase may declare its own
@@ -303,6 +371,9 @@ def _cases(check):
                          {"tag": "audit:plugin", "conventions": _prefix_only}),
                         ("tag explicitly null (no tag written)",
                          {"tag": None, "conventions": _prefix_only}),
+                        ("a `*` list that admits the connector's own tag",
+                         {"conventions":
+                          {"tagVocabulary": {"*": ["audit-plugin"]}}}),
                         ("no conventions block at all", {})):
         _f, _w = _meta(**_kw)
         check("ac41 no contradiction warning for %s" % (_label,),

@@ -283,11 +283,12 @@ not check":
 ```
 
 Every CREATE is graded against it before the confirm gate, and a refused item is never
-offered for creation. `"*"` is the explicit opt-in for bare, unprefixed tags, and it is
-the key's **presence** that admits them — spelled rather than implied, because the
-connector's own provenance tag (`audit-plugin`) has no prefix, and a vocabulary that
-admits only prefixed tags would otherwise refuse every item a push creates while each
-block validated clean on its own.
+offered for creation. `"*"` is the explicit opt-in for bare, unprefixed tags — spelled
+rather than implied, because the connector's own provenance tag (`audit-plugin`) has no
+prefix, and a vocabulary that admits only prefixed tags would otherwise refuse every item
+a push creates while each block validated clean on its own. **Its list restricts like every
+other key's**: `"*": []` admits any bare tag, `"*": ["FE", "BE"]` admits only those. The
+empty list is the free-form spelling and keeps meaning that.
 
 `requireParent` is what makes recipe 3 compulsory rather than tidy: with it on, the
 validator names every item that resolves to no parent at all, and the gate refuses

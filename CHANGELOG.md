@@ -68,6 +68,21 @@ push **reads `System.Parent` back off the child** and asserts it equals the inte
 That read is one field on an item the push already touched, it is the only thing that would
 have caught this, and a mismatch is reported per item rather than assumed away.
 
+**A tag vocabulary said which bare tags a board allows and nothing read the list.**
+`meta.ado.conventions.tagVocabulary` is `{prefix: [allowed value, ...]}`, and for every real
+prefix the list restricts the value. For `"*"` — the key that admits bare, unprefixed tags —
+only the key's PRESENCE was read, so `{"*": ["FE", "BE"]}` and `{"*": []}` graded identically:
+a board that wrote out its bare-tag list got no restriction and no warning, and the entries
+were validated as strings nothing ever consulted. The code did not do what its own schema
+said, and a vocabulary author had no way to find out. `"*"` is now a key like any other — its
+list restricts, and a bare tag outside it is refused with **its own sentence** rather than the
+opt-in advice, which would have told the reader to add a key that is already there. The
+contradiction `meta.ado.tag` draws at authoring time fires for this spelling too, where it
+used to be silent: a board can no longer list what a bare tag may be, leave the connector's
+own provenance tag out of it, and validate clean. An entry under `"*"` carrying a colon can
+never match — a tag with a prefix is graded against that prefix and never reaches `"*"` — so
+it is warned about as a setting that configures nothing.
+
 ### Compatibility
 
 **Nothing here breaks either contract, and the parent check is split by SOURCE so that stays
@@ -77,6 +92,15 @@ they answer different questions. `validate-manifest.py` grades a FILE you keep i
 repository, under the promise that a manifest which validates keeps validating for the whole
 major line; `resolve-ado-parent.py` grades a PAYLOAD the connector is about to send, under no
 such promise.
+
+**`{"*": []}` keeps meaning "any bare tag", and that is why the empty list reads differently
+under `"*"` than under every other key.** An empty list under a real prefix admits no value;
+under `"*"` it admits any, because that is the spelling the schema, `docs/ado-connector.md`
+and this plugin's own example already publish for a free-form board — reading it as "forbids
+every bare tag" would change the meaning of a manifest somebody already wrote, and that is a
+major rather than a fix. `"*"` absent still refuses bare tags, and a prefixed tag is graded
+exactly as before. What changes is the one spelling that never did what it said, a non-empty
+`"*"` list, so a board whose bare tags are all listed sees no difference at all.
 
 So: a loop an **authored `adoParent`** puts there is a finding, and it can never fire on an
 existing file, because no manifest written before this release carries that key — fully

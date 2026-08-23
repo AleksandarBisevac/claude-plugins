@@ -68,6 +68,10 @@ KNOWN_CONVENTIONS = {"requiredFields", "descriptionMustContain", "tagVocabulary"
 # value may contain one.
 _TAG_SEP = ":"
 
+# The vocabulary key that covers bare, unprefixed tags. Spelled once because two
+# functions read it: the config half grades its list, the item half applies it.
+_TAG_ANY = "*"
+
 
 # --- the config: is this block writable at all -----------------------------------
 
@@ -115,6 +119,14 @@ def _check_tag_vocabulary(block, findings, warnings):
     `*` is the escape hatch and it is spelled rather than implied: a board that
     allows free-form tags says so, and a board that does not gets a finding on
     the first bare tag instead of silently accepting anything without a colon.
+
+    Its list is graded like any other key's because it is APPLIED like any other
+    key's - see `_tag_violations`. The one thing only this key can get wrong is
+    an entry carrying a colon: a tag with a prefix is graded against that
+    prefix, so such an entry is unreachable, and an unreachable entry
+    configures nothing. That is the module's standing split - a wrong type is a
+    finding because it would be misread, a setting that does nothing is a
+    warning because the silence is what needs naming.
     """
     if not isinstance(block, dict):
         findings.append("meta.ado.conventions.tagVocabulary must be an object "
@@ -134,6 +146,15 @@ def _check_tag_vocabulary(block, findings, warnings):
         if bad:
             findings.append("%s: every allowed value must be a non-empty string "
                             "(%d bad: %r)" % (where, len(bad), bad[:3]))
+        if prefix == _TAG_ANY:
+            unreachable = [x for x in values
+                           if isinstance(x, str) and _TAG_SEP in x]
+            if unreachable:
+                warnings.append("%s: %r can never match - an entry carrying a "
+                                "colon is a PREFIXED tag, and a prefixed tag is "
+                                "graded against its own prefix and never "
+                                "reaches \"*\", which lists what a BARE tag may "
+                                "be" % (where, unreachable))
 
 
 def check_conventions_config(conventions):
@@ -187,9 +208,32 @@ def split_tags(raw):
 
 
 def _tag_violations(tags, vocabulary):
-    """Which tags this board's vocabulary does not admit."""
+    """Which tags this board's vocabulary does not admit.
+
+    `*` IS A KEY LIKE ANY OTHER AND ITS LIST RESTRICTS. `{"*": ["FE", "BE"]}`
+    admits those bare tags and refuses the rest, exactly as `{"supplier": [...]}`
+    does for `supplier:...`. Only the key's PRESENCE used to be read, so that
+    board got no restriction and no warning while its entries were validated as
+    strings nothing ever consulted - the code did not do what its own schema
+    said, and a vocabulary author had no way to find out.
+
+    THE EMPTY LIST IS THE ONE ASYMMETRY, and it is deliberate rather than an
+    oversight. `{"*": []}` admits any bare tag, while `{"supplier": []}` admits
+    no `supplier:` value. Two reasons, and the second is the load-bearing one.
+    It reads correctly: a wildcard with nothing narrowing it is still a
+    wildcard, and a restriction is something you opt into by LISTING. And it is
+    the spelling already published - the schema, `docs/ado-connector.md` and
+    this repo's own example all write `{"*": []}` for a free-form board, so
+    reading it as "forbids every bare tag" would change the meaning of a
+    manifest somebody already wrote, which is a major release rather than a fix.
+
+    Neither branch second-guesses a malformed list. `{"supplier": "databridge"}`
+    is already a config FINDING, and inventing a grading rule for it here would
+    be a second answer to a question `check_conventions_config` has answered.
+    """
     out = []
-    free_form = "*" in vocabulary
+    admits_bare = _TAG_ANY in vocabulary
+    bare_allowed = vocabulary.get(_TAG_ANY)
     for tag in tags:
         if _TAG_SEP in tag:
             prefix, value = tag.split(_TAG_SEP, 1)
@@ -200,10 +244,17 @@ def _tag_violations(tags, vocabulary):
             elif value not in vocabulary[prefix]:
                 out.append("tag %r is not an allowed value for %r - allowed: %r"
                            % (tag, prefix, sorted(vocabulary[prefix])))
-        elif not free_form:
+        elif not admits_bare:
             out.append("tag %r has no vocabulary prefix, and this board does not "
                        "allow free-form tags (add \"*\" to tagVocabulary if it "
                        "should)" % (tag,))
+        elif bare_allowed and tag not in bare_allowed:
+            # A DIFFERENT sentence from the one above, for the same reason a bad
+            # value under a known prefix is: `*` is already there, so repeating
+            # the opt-in advice would send the reader in a circle.
+            out.append("tag %r is not an allowed bare tag - \"*\" lists what an "
+                       "unprefixed tag may be, and allows: %r"
+                       % (tag, sorted(bare_allowed)))
     return out
 
 

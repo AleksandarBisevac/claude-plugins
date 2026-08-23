@@ -1435,6 +1435,15 @@ them would put the shape and its use in two places that could disagree. An absen
 means the board has no standard and every item conforms — not "could not check", but "there
 is nothing to check".
 
+**`tagVocabulary`'s `"*"` is a key like any other and its list restricts.** It was read for
+its PRESENCE alone, so a board that wrote out which bare tags it allows got no restriction
+and no warning, while the config half validated those entries as strings nothing ever
+consulted — the code did not do what its own schema said. The one asymmetry is deliberate:
+an empty list under a real prefix admits no value, while `{"*": []}` admits any bare tag.
+That is the spelling the schema and `docs/ado-connector.md` already publish for a free-form
+board, so reading it the other way would change the meaning of a manifest somebody already
+wrote, which is a major release rather than a fix.
+
 ### `plugins/audit/scripts/manifest/_ado_fields.py`
 `meta.ado.fields` — what this project **supplies** to a governed board's fields (layer 1), and
 the half `_ado_conventions` could not be. That module grades a payload and can only *refuse*;
