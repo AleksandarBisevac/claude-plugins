@@ -1201,6 +1201,15 @@ def _words(line):
     direction is an under-count - the direction `prose_number_claims()` already
     documents as the only one these shapes can be wrong in.
 
+    AN UNDERSCORE INSIDE A WORD IS THE SAME NARROWING, one character further. An
+    identifier is one word, which is a fact about TEXT and not about Python - so
+    this does not teach the scanner to read code, it stops it splitting a name into
+    pieces that were never written. Without it a numeric index in front of
+    `case_id(` yielded a numeral and the noun `case`, and the line reported itself
+    as a cardinality claim with no prose on it at all. Measured across the derived
+    set and three tree states before adopting: it removes exactly that hit and
+    loses nothing.
+
     A THOUSANDS COMMA IS DELIBERATELY NOT HERE. A grouped number is still a count,
     so the comma keeps being dropped, which leaves two numerals and lets the second
     one keep whatever noun follows it. That is how a line pairing a line count with
@@ -1254,6 +1263,9 @@ def _tokenize(line):
             continue
         if (ch in _NUMBER_SEPARATORS and cur and _is_digit_char(cur[-1])
                 and _is_digit_char(low[i + 1:i + 2])):
+            cur.append(ch)
+            continue
+        if ch == "_" and cur and low[i + 1:i + 2].isalnum():
             cur.append(ch)
             continue
         if cur:

@@ -582,11 +582,13 @@ def _cases(check):
             "bw1-a a borrowed wrapper", "h2b every SUBDIRECTORY",
             "pn10 COMPLETENESS is caught")]
           == [None, None, "bw1-a", "h2b", "pn10"])
-    # A NAMED LOCAL BELOW, not an inline call, and the reason is the scanner: a
-    # numeric index immediately followed by an identifier whose first word is a
-    # case noun reads as a cardinality claim, because the tokenizer splits on the
-    # underscore. Reworded rather than the pattern widened, which is the rule this
-    # repo states for meeting a lint that reads text.
+    # A NAMED LOCAL BELOW rather than the same call twice, which is the whole
+    # reason now. It arrived for a different one: the prose scanner used to split
+    # an identifier on the underscore, so a numeric index in front of `case_id(`
+    # read as a cardinality claim, and naming the local was the rewording. The
+    # scanner keeps an identifier whole since F77, so the workaround is no longer
+    # load-bearing - kept because computing one id twice in one assertion is
+    # worse, not because anything forces it.
     _pn10b_id = case_id("pn10b the BARE count")
     check("u7 the id is read here the way prove-gates.py reads it back off a "
           "rendered line - two spellings of one key, pinned rather than "

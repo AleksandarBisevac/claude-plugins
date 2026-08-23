@@ -1483,6 +1483,25 @@ def _cases(check):
     # reason and they are real ones from this tree: a THRESHOLD, a configured
     # constant and a hypothetical are numbers that must stay, and they are the
     # shape a units family cannot tell from a claim.
+    # F77. The bound matters as much as the rule: an underscore glues a token
+    # only where WORD CHARACTERS flank it, so a trailing one still ends the token
+    # and the numeral after it keeps whatever noun follows. The second half is the
+    # direction that fails if this is ever applied to any underscore at all.
+    _f77_line = '    x = y[1] == case_id(z)'
+    check("pn29 an identifier is ONE word, so a numeric index in front of a name "
+          "whose first piece is a case noun is not a claim - and the rule stops "
+          "at a word boundary, so a trailing separator still leaves the numeral "
+          "its noun: %r / %r"
+          % (M._words(_f77_line), M._words("count_ 5 cases")),
+          M._prose_number_claim(_f77_line) is None
+          and "case_id" in M._words(_f77_line)
+          and M._words("count_ 5 cases") == ["count", "5", "cases"]
+          and M._prose_number_claim("count_ 5 cases") is not None
+          # ...and a LEADING separator is dropped too, so an underscore-prefixed
+          # noun still keeps the numeral in front of it. This is the direction
+          # that fails if the rule stops asking for left context.
+          and M._words("its 1 _cases") == ["its", "1", "cases"]
+          and M._prose_number_claim("its 1 _cases") is not None)
     check("pn27 a MEASUREMENT is not read - the units family was surveyed over "
           "this tree and refused, because a size or a duration here is usually a "
           "threshold, a budget or a hypothetical, and those numbers are the point "
