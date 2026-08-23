@@ -130,6 +130,62 @@ def _sweep_doc(rel, command, prose=""):
                        "meta": {"buildCommands": {"sweep": command}}}, indent=2) + "\n"
 
 
+# --- the floor `tb2` reads ----------------------------------------------------
+# `tb1` answers "did any reference go stale", and that answer is worth nothing from a
+# walk nobody watched: a walk that reached one file names no stale reference either.
+# So `tb2` carries a floor - and the floor is what F72 was about. It was two ABSOLUTE
+# terms, and on the day it was written both sat far below what the run printed beside
+# them, so the walk could have shed almost the whole tree and still cleared them. Same
+# defect as F69's `p1`, one file over.
+#
+# TWO TERMS EACH NOW. The absolute ones are unchanged - they answer "did this walk
+# return anything at all", and nothing about them was wrong. The derived ones measure
+# the walk against the tree it is supposed to be reading, counted by `_tools_tree_
+# size()` rather than by the walk itself.
+#
+# WHAT THE DERIVED TERMS GIVE UP, SAID RATHER THAN IMPLIED. They COUPLE the walk to
+# the tree: delete most of `tools/` and the floor falls with it, so a tree that really
+# did shrink stays green - as it should, because the same deletion is a legitimate
+# change and no floor derived from the thing it measures can tell the two apart. The
+# case that direction leaves uncovered is a `tools/` that emptied, and it is covered
+# by the ABSOLUTE terms, which is the whole reason they stay.
+#
+# THE DIVISORS DIFFER, AND NOT DECORATIVELY. `files` is judged at a fraction because
+# the walk filters by extension: a picture or a `.txt` dropped into `tools/` is a file
+# the tree holds and the walk is right to skip, and a floor at the full count would
+# report that as a lost tree. `checked` counts OCCURRENCES across those files and owes
+# no such allowance, so its derived term is one basename literal per file the tree
+# holds. The case prints both figures beside both floors, which is where the margin is
+# read rather than claimed here.
+TB2_CHECKED_MINIMUM = 20
+TB2_FILES_MINIMUM = 3
+TB2_FILES_DIVISOR = 2
+
+
+def _tools_tree_size(repo_root):
+    """How many files sit under `tools/`, counted WITHOUT the walk under test.
+
+    `os.walk` here and not `M._surface_files()`: a floor derived from the call it is
+    judging cannot fail, because the walk that lost the tree shrinks the floor by
+    exactly as much. Cruder than that call on purpose - no extension filter - and
+    crude in the safe direction for a number a fraction is then taken of.
+    """
+    total = 0
+    top = os.path.join(repo_root, M.TOOLS_REL.replace("/", os.sep))
+    for _dir, dirnames, filenames in os.walk(top):
+        if "__pycache__" in dirnames:
+            dirnames.remove("__pycache__")
+        total += len(filenames)
+    return total
+
+
+def _tb2_floors(tree_size):
+    """`(checked, files)` - the fewest of each that still evidences a read tree."""
+    return (max(TB2_CHECKED_MINIMUM, tree_size),
+            max(TB2_FILES_MINIMUM,
+                (tree_size + TB2_FILES_DIVISOR - 1) // TB2_FILES_DIVISOR))
+
+
 def _fixture_tree(tmp, command_line, hook_line=None):
     """A minimal repo: one real script, one commands/ document, one hooks/ file."""
     _write(tmp, _FX_SCRIPTS + "real.py", "# a real file\n")
@@ -430,12 +486,45 @@ def _cases(check):
           "spellings; TOOL_FIXTURE_BASENAMES is only for a name that must be on disk")
     check("tb1b ...and no declared tool fixture has outlived what writes it: %r"
           % (tb["staleFixtures"],), tb["staleFixtures"] == [])
+    _tb_size = _tools_tree_size(M.REPO_ROOT)
+    _tb_cfloor, _tb_ffloor = _tb2_floors(_tb_size)
     check("tb2 ...and the run says how much it looked at - %d basename literals across "
-          "%d files. `unknown == []` means one thing at the count printed here and "
-          "something else entirely at 0, and a regex that quietly stopped matching "
-          "would report the calm version of both" % (tb["checked"], tb["files"]),
-          tb["checked"] >= 20 and tb["files"] >= 3,
-          repr((tb["checked"], tb["files"])))
+          "%d files, against floors of %d and %d derived from the %d files tools/ holds. "
+          "`unknown == []` means one thing at the counts printed here and something "
+          "else entirely at 0, and a walk that lost most of the tree, or a regex that "
+          "quietly stopped matching, would report the calm version of both"
+          % (tb["checked"], tb["files"], _tb_cfloor, _tb_ffloor, _tb_size),
+          tb["checked"] >= _tb_cfloor and tb["files"] >= _tb_ffloor,
+          repr((tb["checked"], _tb_cfloor, tb["files"], _tb_ffloor, _tb_size)))
+
+    # THE FIXTURE SIZE IS THE OLD FLOOR'S BLIND SPOT (F72), which is the only reason
+    # this case is worth anything: a walk down to a handful of files CLEARS two
+    # absolute terms of this size, and both versions of the floor score this fixture
+    # while disagreeing about it.
+    check("tb2a a tree this size lifts both floors above their absolute terms, which "
+          "is what makes a walk that dropped to a handful of files red rather than "
+          "green: %r" % (_tb2_floors(40),),
+          _tb2_floors(40) == (40, 20))
+    check("tb2b ...and a tools/ that holds NOTHING falls back to the absolute terms. "
+          "This is the direction the derived ones cannot cover on their own - a "
+          "fraction of nothing is nothing, and a floor of 0 would accept the emptiest "
+          "walk there is: %r" % (_tb2_floors(0),),
+          _tb2_floors(0) == (TB2_CHECKED_MINIMUM, TB2_FILES_MINIMUM))
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, M.TOOLS_REL + "/probe.mjs", "// a tool\n")
+        _write(tmp, M.TOOLS_REL + "/shot.png", "not really a picture\n")
+        check("tb2c the size the floor is derived from is a SECOND walk, not the one "
+              "it judges - it counts a file the lint's own walk filters out by "
+              "extension, so a walk that lost the tree cannot shrink the floor with "
+              "it: %r vs %r"
+              % (_tools_tree_size(tmp), M._surface_files(tmp, M.TOOLS_REL, M.BARE)),
+              _tools_tree_size(tmp) == 2
+              and M._surface_files(tmp, M.TOOLS_REL, M.BARE)
+              == [M.TOOLS_REL + "/probe.mjs"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     tmp = tempfile.mkdtemp()
     try:

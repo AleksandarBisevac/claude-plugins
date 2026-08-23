@@ -394,12 +394,16 @@ def _cases(check):
                                      layers=bw_layers)
         bw_by = lambda name: [v for v in bw_hits if v[0] == name]  # noqa: E731
 
+        # THE TAG IS THE WHOLE FIXTURE STEM, NOT ITS FIRST LETTER (F75). `aliaser`
+        # and `attrer` share one, so two of these three cases printed `bw1-a` and a
+        # `prove-gates.py` row naming it could credit either - which is the verdict
+        # that table exists to make impossible.
         for spelling, name in (("`_load = basemod._load`", "aliaser.py"),
                                ("`from basemod import _load`", "fromer.py"),
                                ("`basemod._load(...)`", "attrer.py")):
             check("bw1-%s a wrapper borrowed as %s is followed to the call site in "
                   "the BORROWING file, where the `.py` literal is: %r"
-                  % (name[0], spelling, bw_hits),
+                  % (os.path.splitext(name)[0], spelling, bw_hits),
                   len([v for v in bw_by(name)
                        if "runtime-loads high (layer 2) from layer 1" in v[1]]) == 1)
 
@@ -1097,21 +1101,32 @@ def _cases(check):
     # tree, reduced: a `//` comment containing `/*`, a string containing `//`, and
     # a regex literal containing a quote. The direction of every failure here is
     # UNDER-counting, which reads as "no duplication".
+    #
+    # EACH FIXTURE CARRIES ITS OWN LABEL TAG (F75). One `check()` call site is one
+    # authored assertion, so `_harness.label_faults()` is right to stay quiet about
+    # a family sharing an id - but `prove-gates.py` credits a mutation to the case
+    # whose id went red, and it refuses a row naming an id that more than one case
+    # printed. A tag per fixture is what makes one construct here nameable from that
+    # table. It is a tag rather than the loop INDEX because an index renames every
+    # fixture below the one inserted, which is the silent half of the same defect:
+    # the row still resolves, to a different construct than it was written for.
     _co = [
-        ("// a note about .claude/themes/*.json\nreal();\n", "real();",
+        ("linecomment", "// a note about .claude/themes/*.json\nreal();\n",
+         "real();",
          "a /* inside a LINE comment must not open a block comment - it did, and "
          "swallowed 150 lines of appearance-view.js including a real occurrence"),
-        ("const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
+        ("string", "const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
          "a // inside a STRING must not start a comment - which is why stripping "
          "line comments first is not the fix either"),
-        ("const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
+        ("regex", "const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
          "a quote inside a REGEX literal must not open a string; three of these "
          "ship in ui/ as CSV quoters"),
-        ("/* block\n * spanning\n */ after();\n", "after();",
+        ("block", "/* block\n * spanning\n */ after();\n", "after();",
          "and a real block comment is still removed"),
     ]
-    for _src, _want, _why in _co:
-        check("sc9 comment scanner: %s" % (_why,), _want in M._code_only(_src))
+    for _tag, _src, _want, _why in _co:
+        check("sc9-%s comment scanner: %s" % (_tag, _why),
+              _want in M._code_only(_src))
     check("sc10 ...and the scanner keeps line numbers, so a scout reporting a hit "
           "sends a reader to the right line: a three-line block comment leaves "
           "three newlines behind",
