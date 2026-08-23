@@ -330,9 +330,9 @@ def _cases(check):
     check("ap31 ...and it reaches every consumer through `validate()`, not "
           "only a direct caller: %r"
           % ([x for x in _rules.validate(_loop)[0]
-              if "declare the other" in x],),
+              if "the other's work item" in x],),
           len([x for x in _rules.validate(_loop)[0]
-               if "declare the other" in x]) == 2)
+               if "the other's work item" in x]) == 2)
 
     _inverted = _plan({"phaseWorkItems": False,
                        "types": {"pbi": "Product Backlog Item"},
@@ -382,6 +382,46 @@ def _cases(check):
     check("ap36 a manifest with no meta.ado at all is not asked the question, "
           "because there is no board for anything to hang on",
           M._check_ado_parents({"meta": {}}, _fine["phases"]) == ([], []))
+
+    # --- the compatibility split, both directions -----------------------------
+    # THE SAME BROKEN BOARD, written two ways. A manifest that predates
+    # `adoParent` can describe a loop through `meta.ado.parentWorkItem` alone,
+    # and COMPATIBILITY.md promises a file that validates keeps validating - so
+    # this one WARNS and stays valid, while the authored spelling is a finding.
+    _inherited = _plan({"parentWorkItem": 31},
+                       [{"id": "P1", "title": "P1", "status": "pending",
+                         "ado": {"id": 30},
+                         "tasks": [{"id": "P1.1", "title": "t",
+                                    "status": "pending",
+                                    "ado": {"id": 31}}]}])
+    _f, _w = M._check_ado_parents(_inherited, _inherited["phases"])
+    check("ap39 a loop inherited from meta.ado.parentWorkItem alone is WARNED "
+          "about, once per member, and is NOT a finding - no adoParent is "
+          "involved, so this file could have been written before the key "
+          "existed: %r" % ((_f, _w),),
+          _f == [] and len([x for x in _w if "loop" in x]) == 2)
+    check("ap40 ...so `validate()` still calls that manifest VALID, which is "
+          "the promise: a file that validates against a release keeps "
+          "validating against every later one in the major line: %r"
+          % (_rules.validate(_inherited)[0],),
+          _rules.validate(_inherited)[0] == [])
+    # The other direction, on the SAME shape: only the spelling of the parent
+    # changes. A rule that always warned would pass ap39 and fail here.
+    _authored = _plan({},
+                      [{"id": "P1", "title": "P1", "status": "pending",
+                        "ado": {"id": 30}, "adoParent": {"id": 31},
+                        "tasks": [{"id": "P1.1", "title": "t",
+                                   "status": "pending",
+                                   "ado": {"id": 31}}]}])
+    _f, _w = M._check_ado_parents(_authored, _authored["phases"])
+    check("ap41 ...and the same loop written as an adoParent IS a finding, "
+          "once per member - refusing a key no older manifest can carry is "
+          "fully additive: %r" % (_f,),
+          len(_f) == 2 and [x for x in _w if "loop" in x] == [])
+    check("ap42 ...so `validate()` calls THAT manifest invalid, which is the "
+          "case that fails if the split ever collapses to 'always warn': %r"
+          % (len(_rules.validate(_authored)[0]),),
+          len([x for x in _rules.validate(_authored)[0] if "loop" in x]) == 2)
 
     # --- requireParent, graded against the plan rather than a hunch -----------
     _homeless = _plan({"phaseWorkItems": False,

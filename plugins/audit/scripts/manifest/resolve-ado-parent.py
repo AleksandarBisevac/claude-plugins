@@ -147,6 +147,7 @@ def scope_result(result, scoped, scoped_ids):
     existed, so `--phase P1` could exit 1 while printing a clean plan.
     """
     return {"refusals": [e for e in result["refusals"] if e["id"] in scoped_ids],
+            "findings": [e for e in result["findings"] if e["id"] in scoped_ids],
             "warnings": [e for e in result["warnings"] if e["id"] in scoped_ids],
             "unverified": [e for e in result["unverified"]
                            if e["id"] in scoped_ids],
@@ -213,6 +214,7 @@ def main(argv):
                           "refusalsOutsideScope":
                               [e for e in result["refusals"]
                                if e["id"] not in scoped_ids],
+                          "findings": scoped_result["findings"],
                           "warnings": scoped_result["warnings"],
                           "unverified": scoped_result["unverified"],
                           "checked": scoped_result["checked"],

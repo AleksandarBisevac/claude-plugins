@@ -110,9 +110,17 @@ def _parents(rows):
 
 
 def _codes(result):
-    """Every code the check produced, refusals first — a LIST, so a rule that
-    fires twice reads differently from one that fires once."""
+    """`(refusals, findings, warnings, unverified)` — every code, as LISTS, so a
+    rule that fires twice reads differently from one that fires once.
+
+    All four, never a subset: `refusals` is what the PUSH must not create and
+    `findings`/`warnings` is how a MANIFEST is graded, and the whole
+    compatibility decision lives in the gap between them. A case that read only
+    `refusals` would be equally happy with a build that fails somebody's CI over
+    a file they never edited.
+    """
     return ([e["code"] for e in result["refusals"]],
+            [e["code"] for e in result["findings"]],
             [e["code"] for e in result["warnings"]],
             [e["code"] for e in result["unverified"]])
 
@@ -285,7 +293,7 @@ def _cases(check):
     _res = M.hierarchy_violations(M.inventory(_self, {})["rows"], None)
     check("hp1 A1: a phase declaring its OWN work item is refused exactly once, "
           "with no ranks anywhere: %r" % (_codes(_res),),
-          _codes(_res) == (["A1"], [], []))
+          _codes(_res) == (["A1"], ["A1"], [], []))
     # The live bug, in the shape it was measured in: a phase whose declared
     # parent is the very task this manifest hangs under it.
     _loop = [_phase("P1", parent=31, link=30, tasks=[_task("P1.1", link=31)])]
@@ -296,7 +304,7 @@ def _cases(check):
           "refused, because either link alone is fine and it is the pair that "
           "closes it - naming a culprit would mean guessing which edge was "
           "meant: %r" % (_codes(_res),),
-          _codes(_res) == (["A2", "A2"], [], []))
+          _codes(_res) == (["A2", "A2"], ["A2", "A2"], [], []))
     _first = (_res["refusals"] or [{}])[0]
     check("hp3 ...and the refusal names the loop and the item, so the operator "
           "has somewhere to go: %r" % (_first.get("message"),),
@@ -307,13 +315,62 @@ def _cases(check):
     check("hp4 A3: two phases declaring each other are refused ONCE EACH - both "
           "items are unbuildable, and one refusal would leave the other looking "
           "creatable: %r" % (_codes(_res),),
-          _codes(_res) == (["A3", "A3"], [], []))
+          _codes(_res) == (["A3", "A3"], ["A3", "A3"], [], []))
     _unlinked = [_phase("P1", parent=31, tasks=[_task("P1.1", link=31)])]
     _res = M.hierarchy_violations(M.inventory(_unlinked, {})["rows"], None)
     check("hp5 a phase that is not linked yet draws NO structural refusal - "
           "there is no id to close a loop through, and inventing one would be "
           "the confident wrong answer: %r" % (_codes(_res),),
-          _codes(_res) == ([], [], ["B0"]))
+          _codes(_res) == ([], [], [], ["B0"]))
+
+    # --- the source split, which is where the compatibility promise lives -----
+    # TWO FIXTURES DESCRIBING THE SAME BROKEN BOARD, differing only in WHICH KEY
+    # put the parent there. Neither can be satisfied by a rule that always warns
+    # or always refuses, because they demand opposite verdicts from the same
+    # function on the same shape - and both demand the SAME push refusal.
+    _inherited = M.inventory(
+        [{"id": "P1", "title": "P1", "status": "pending", "ado": {"id": 30},
+          "tasks": [{"id": "P1.1", "title": "t", "status": "pending",
+                     "ado": {"id": 31}}]}],
+        {"parentWorkItem": 31})["rows"]
+    _res = M.hierarchy_violations(_inherited, None)
+    check("hp20 a loop reachable with NO adoParent anywhere - the old single "
+          "meta.ado.parentWorkItem pointing at one of the audit's own tasks - "
+          "is refused by the PUSH and only WARNED about by the manifest. "
+          "COMPATIBILITY.md promises a file that validates keeps validating, "
+          "and that file could be written before this feature existed: %r"
+          % (_codes(_res),),
+          _codes(_res) == (["A2", "A2"], [], ["A2", "A2"], []))
+    check("hp21 ...and the TASK in that loop is warned about too, not just the "
+          "phase. Its own source is `phase`, so a per-row source test would "
+          "call it a finding and fail a file nobody edited - the loop is what "
+          "decides, not the row: %r"
+          % ([(e["id"], e["severity"]) for e in _res["refusals"]],),
+          [e["severity"] for e in _res["refusals"]] == ["warning", "warning"])
+    _declared = M.inventory(
+        [{"id": "P1", "title": "P1", "status": "pending", "ado": {"id": 30},
+          "adoParent": {"id": 31},
+          "tasks": [{"id": "P1.1", "title": "t", "status": "pending",
+                     "ado": {"id": 31}}]}], {})["rows"]
+    _res = M.hierarchy_violations(_declared, None)
+    check("hp22 ...and the SAME loop written as an adoParent is a FINDING: no "
+          "manifest predating the key can carry one, so refusing it is fully "
+          "additive and the promise is intact without an exception: %r"
+          % (_codes(_res),),
+          _codes(_res) == (["A2", "A2"], ["A2", "A2"], [], []))
+    check("hp23 ...and BOTH spellings are refused by the push identically - the "
+          "two surfaces disagree on the manifest verdict and agree completely "
+          "on whether the link may be created, which is the whole point of "
+          "grading them in one function",
+          [e["code"] for e in M.hierarchy_violations(_inherited, None)["refusals"]]
+          == [e["code"] for e in _res["refusals"]])
+    check("hp24 findings and warnings PARTITION the graded entries, so a caller "
+          "reads one key and never subtracts one bucket from another",
+          all(len(r["findings"]) + len(r["warnings"])
+              == len([e for e in r["refusals"]])
+              + len([e for e in r["warnings"] if e["code"] == "B2"])
+              for r in (M.hierarchy_violations(_inherited, None),
+                        M.hierarchy_violations(_declared, None))))
 
     # --- tier B: the ranks, and only where a rank exists ----------------------
     # THE PARENT IS NOT IN THIS MANIFEST, so no loop can be drawn through it and
@@ -326,11 +383,11 @@ def _cases(check):
     check("hp10 B1: a Product Backlog Item hung under a Task is refused once, "
           "and 41 is NOT an id this manifest carries - so tier A has nothing to "
           "walk and only the ranks can explain this: %r" % (_codes(_res),),
-          _codes(_res) == (["B1"], [], []))
+          _codes(_res) == (["B1"], [], ["B1"], []))
     check("hp11 ...and the same pair with levels=None is NOT verified rather "
           "than refused: a missing basis is not evidence of a defect: %r"
           % (_codes(M.hierarchy_violations(_rows, None)),),
-          _codes(M.hierarchy_violations(_rows, None)) == ([], [], ["B0"]))
+          _codes(M.hierarchy_violations(_rows, None)) == ([], [], [], ["B0"]))
     _equal = [_phase("P1", link=800)]
     _equal[0][M.FIELD] = {"id": 41, "type": "Product Backlog Item"}
     _res = M.hierarchy_violations(
@@ -340,7 +397,7 @@ def _cases(check):
           "under a PBI is rank 2 under rank 2 wherever bugsBehavior is "
           "asRequirements, and a checker that refuses a deliberate arrangement "
           "gets switched off: %r" % (_codes(_res),),
-          len(_res["refusals"]) == 0 and _codes(_res) == ([], ["B2"], []))
+          len(_res["refusals"]) == 0 and _codes(_res) == ([], [], ["B2"], []))
     _unranked = [_phase("P1", link=800)]
     _unranked[0][M.FIELD] = {"id": 41, "type": "Deliverable"}
     _res = M.hierarchy_violations(
@@ -348,7 +405,7 @@ def _cases(check):
         LEVELS)
     check("hp13 a type this project does not rank is NOT VERIFIED and named, "
           "never assumed into a refusal: %r" % (_codes(_res),),
-          _codes(_res) == ([], [], ["B0"])
+          _codes(_res) == ([], [], [], ["B0"])
           and "Deliverable" in (_res["unverified"] or [{}])[0].get("message", ""))
     # THE NEGATIVE. A check that became unconditional would fire here, and every
     # case above would still pass.
@@ -359,7 +416,7 @@ def _cases(check):
                                       "task": "Task"}})["rows"], LEVELS)
     check("hp14 a legitimate ladder - Task under PBI under Feature - produces "
           "no refusal, no note and nothing unverified: %r" % (_codes(_res),),
-          _codes(_res) == ([], [], []) and _res["checked"] == 2)
+          _codes(_res) == ([], [], [], []) and _res["checked"] == 2)
     check("hp15 an uncategorised item is not a hierarchy question at all, so it "
           "is neither checked nor refused: %r"
           % (M.hierarchy_violations(M.inventory([_phase("P1")], {})["rows"],
@@ -370,7 +427,8 @@ def _cases(check):
           "'nothing was wrong' and 'nothing was looked at' must not print the "
           "same way",
           M.hierarchy_violations([], LEVELS)
-          == {"refusals": [], "warnings": [], "unverified": [], "checked": 0})
+          == {"refusals": [], "findings": [], "warnings": [], "unverified": [],
+              "checked": 0})
 
     # --- the sentences the confirm gate prints --------------------------------
     _clean = M.inventory([_phase("P1", parent=41, link=800)],

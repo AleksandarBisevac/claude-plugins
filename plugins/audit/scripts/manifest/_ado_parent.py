@@ -52,6 +52,17 @@ that was meant to be its child - the two ends the wrong way round, accepted on
 write, and still sitting there. Nothing on the ADO side will ever report it, so
 this module holds the rule or nobody does.
 
+TWO SURFACES ASK ABOUT ONE LOOP AND GET DIFFERENT ANSWERS, ON PURPOSE.
+`validate-manifest.py` grades a FILE somebody keeps in their repository, under
+`COMPATIBILITY.md`'s promise that a manifest which validates keeps validating for
+the whole major line; `resolve-ado-parent.py` grades a PAYLOAD about to be sent,
+under no such promise. So `hierarchy_violations` returns both views rather than
+letting each caller invent one: a loop an authored `adoParent` put there is a
+FINDING (no file predating that key can carry one, so refusing it is additive),
+a loop reachable through `meta.ado.parentWorkItem` alone is a WARNING, and the
+push refuses both identically. A board that cannot be built still cannot be
+built; what changes is that nobody's CI reds over a file they never edited.
+
 THE HIERARCHY IS ASKED, NEVER SHIPPED. Which type may parent which is a property
 of the PROJECT: the payload that ranks Task under Product Backlog Item under
 Feature under Epic also carries `bugsBehavior`, and a Bug is a requirement on one
@@ -111,6 +122,16 @@ KNOWN_PARENT = ("id", "type", "title", "url", "source", "observedAt")
 # already follows for the same reason: putting a provenance on somebody else's
 # record is the one wrong answer available.
 DECLARED_SOURCE = ("declared", "imported")
+
+# How a violation is graded when a MANIFEST is being validated, as opposed to
+# when a CREATE is being decided. The two are different questions on different
+# surfaces and they are allowed to disagree - see `hierarchy_violations`.
+#   finding  the manifest is INVALID. Only ever reachable through an authored
+#            `adoParent`, so no file written before that key existed can be
+#            graded this way, and `COMPATIBILITY.md`'s "validation stays
+#            additive" holds without an exception.
+#   warning  said loudly, and the manifest still validates.
+SEVERITY = ("finding", "warning")
 
 # `bugsBehavior` -> which backlog a Bug is ranked with. MEASURED, not assumed: the
 # same organization runs one project at `asRequirements` (Bug beside the Product
@@ -513,9 +534,34 @@ def _loop_from(start, own, edges):
     return None
 
 
-def _entry(code, tier, row, message):
+def _entry(code, tier, row, message, severity="warning"):
     return {"code": code, "tier": tier, "kind": row.get("kind"),
-            "id": row.get("id"), "parent": row.get("parent"), "message": message}
+            "id": row.get("id"), "parent": row.get("parent"),
+            "severity": severity, "message": message}
+
+
+def _authored(loop, by_item):
+    """Did an AUTHORED `adoParent` put any edge of this loop there?
+
+    THE PROMISE TURNS ON THIS FUNCTION, so it reads the whole loop rather than
+    the one row being graded. A member's `source` names where ITS parent came
+    from, which is the edge leaving it, so the loop's sources are its edges.
+
+    Judging by the graded row's own source alone is the obvious spelling and it
+    is WRONG, measurably: a manifest carrying no `adoParent` at all, with
+    `parentWorkItem` pointing at one of the audit's own tasks - exactly what a
+    swapped parent link leaves behind - produces a two-member loop whose phase
+    is `meta`-sourced and whose TASK is `phase`-sourced. Per-row, that task
+    would be a finding, and a file nobody edited would fail its next validation.
+    Neither edge exists because somebody wrote `adoParent`, so neither is one.
+    """
+    return any((by_item.get(node) or {}).get("source") == "item"
+               for node in loop)
+
+
+def _severity(loop, by_item):
+    """`finding` when an authored declaration is in the loop, else `warning`."""
+    return "finding" if _authored(loop, by_item) else "warning"
 
 
 def _structural_entry(row, edges, by_item):
@@ -525,9 +571,10 @@ def _structural_entry(row, edges, by_item):
         return None
     if own is not None and parent == own:
         return _entry("A1", "A", row,
-                      "%s %s declares its own work item #%d as its parent — an "
-                      "item cannot hang under itself"
-                      % (row.get("kind"), row.get("id") or "?", own))
+                      "%s %s hangs under its own work item #%d — an item "
+                      "cannot hang under itself"
+                      % (row.get("kind"), row.get("id") or "?", own),
+                      _severity([own], by_item))
     if own is None:
         # Not linked yet, so this manifest gives it no node in the graph and no
         # loop through it can be drawn. SAID here rather than left implied: the
@@ -538,14 +585,16 @@ def _structural_entry(row, edges, by_item):
         return None
     others = [by_item.get(node) for node in loop if node != own]
     kinds = [r.get("kind") for r in others if r]
+    severity = _severity(loop, by_item)
     if len(loop) == 2 and row.get("kind") == "phase" and kinds == ["phase"]:
         other = others[0] if others else None
         return _entry("A3", "A", row,
-                      "phase %s and phase %s each declare the other's work item "
-                      "as their parent (#%d and #%d) — neither can be created "
-                      "inside the other"
+                      "phase %s and phase %s each hang under the other's work "
+                      "item (#%d and #%d) — neither can be created inside the "
+                      "other"
                       % (row.get("id") or "?",
-                         (other or {}).get("id") or "?", own, parent))
+                         (other or {}).get("id") or "?", own, parent),
+                      severity)
     named = ", ".join("#%d" % (node,) for node in loop)
     return _entry("A2", "A", row,
                   "%s %s would hang under #%d, and this manifest already hangs "
@@ -553,7 +602,7 @@ def _structural_entry(row, edges, by_item):
                   "close a loop, and ADO will accept it: an API-created parent "
                   "link is not checked against the process hierarchy"
                   % (row.get("kind"), row.get("id") or "?", parent, parent,
-                     row.get("id") or "?", own, named))
+                     row.get("id") or "?", own, named), severity)
 
 
 def _level_entry(row, levels):
@@ -606,12 +655,39 @@ def _level_entry(row, levels):
 
 
 def hierarchy_violations(rows, levels=None):
-    """Every way a resolved parent cannot be true.
+    """Every way a resolved parent cannot be true, graded for BOTH surfaces.
 
-    Returns {"refusals", "warnings", "unverified", "checked"} — four keys
-    because there are four outcomes and collapsing any two of them loses the
-    distinction the whole feature turns on. `checked` is there so "nothing was
-    wrong" and "nothing was looked at" cannot print the same way.
+    TWO QUESTIONS ARE BEING ASKED HERE, AND THEY ARE ALLOWED TO DISAGREE. "May
+    the connector create this link?" is asked of a PAYLOAD about to be sent.
+    "Is this manifest valid?" is asked of a FILE somebody keeps in their
+    repository, and `COMPATIBILITY.md` promises that a file which validates
+    keeps validating for the whole major line. So the answer carries both
+    views, computed once here rather than at each call site — one answer, and
+    neither surface can drift from it:
+
+      refusals    every link the CONNECTOR must not create. `resolve-ado-parent`
+                  exits 1 on these and the push plan refuses them, whatever
+                  produced the parent. A board that cannot be built is still a
+                  board that cannot be built.
+      findings    the subset that makes a MANIFEST invalid — reachable only
+                  through an authored `adoParent`, so no file written before
+                  that key existed can be graded this way.
+      warnings    everything else worth saying. `findings` and `warnings`
+                  PARTITION every entry, so a caller reads one key and never
+                  subtracts one bucket from another.
+      unverified  a link the type check had no basis for.
+      checked     how many links were looked at, so "nothing was wrong" and
+                  "nothing was looked at" cannot print the same way.
+
+    An entry therefore appears in `refusals` AND in exactly one of
+    `findings`/`warnings`. That overlap is the design and not an accident: an
+    inverted backlog rank has always been a push refusal and a manifest
+    warning, because the ranks are a CACHE with a `fetchedAt` and invalidating
+    somebody's file on month-old evidence would red a build over a stale
+    read. The same reasoning is what keeps a `meta.ado.parentWorkItem`-sourced
+    loop out of `findings`: the push still refuses to build it, and the file
+    that has said the same thing since before this feature existed still
+    validates.
 
     TIER A IS STRUCTURAL, OFFLINE AND ALWAYS HAS A BASIS: it reads only ids this
     manifest already carries, so it needs no network, no cache and no
@@ -627,7 +703,7 @@ def hierarchy_violations(rows, levels=None):
     edges = _edges(rows)
     by_item = dict((r["workItemId"], r) for r in rows
                    if r.get("workItemId") is not None)
-    refusals, warnings, unverified = [], [], []
+    refusals, graded, unverified = [], [], []
     checked = 0
     for row in rows:
         if row.get("parent") is None:
@@ -636,15 +712,19 @@ def hierarchy_violations(rows, levels=None):
         structural = _structural_entry(row, edges, by_item)
         if structural is not None:
             refusals.append(structural)
+            graded.append(structural)
             continue
         kind, entry = _level_entry(row, levels)
         if kind == "refusal":
             refusals.append(entry)
+            graded.append(entry)
         elif kind == "warning":
-            warnings.append(entry)
+            graded.append(entry)
         elif kind == "unverified":
             unverified.append(entry)
-    return {"refusals": refusals, "warnings": warnings,
+    return {"refusals": refusals,
+            "findings": [e for e in graded if e["severity"] == "finding"],
+            "warnings": [e for e in graded if e["severity"] != "finding"],
             "unverified": unverified, "checked": checked}
 
 
@@ -683,7 +763,15 @@ def plan_lines(rows, violations=None):
                   len(result.get("unverified") or [])))
     for entry in (result.get("unverified") or []):
         out.append("    NOT VERIFIED %s" % (entry["message"],))
+    # A NOTE is an entry the push does NOT refuse. `findings` and `warnings`
+    # partition every graded entry, so a refusal the manifest only warns about
+    # (an inverted rank, a loop inherited from meta.ado.parentWorkItem) sits in
+    # BOTH buckets - and printing it here as well as against its own row would
+    # report one problem twice, which is the same defect as reporting none.
+    refused_ids = set(id(e) for e in (result.get("refusals") or []))
     for entry in (result.get("warnings") or []):
+        if id(entry) in refused_ids:
+            continue
         out.append("    NOTE [%s] %s" % (entry["code"], entry["message"]))
     return out
 

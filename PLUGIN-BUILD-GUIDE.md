@@ -1375,9 +1375,21 @@ parent" would *be* a second parent. It is also why the module owns its own unkno
 `_manifest_vocab` is a layer-mate, and `ap9` pins the two loops to one answer rather than a comment
 claiming they agree.
 
+**Two surfaces, and they are allowed to disagree.** `hierarchy_violations()` returns `refusals`
+(every link the connector must not create) alongside `findings`/`warnings` (how a *manifest* is
+graded), and the two are computed in one place so no call site re-derives a severity. A loop an
+authored `adoParent` puts there is a finding; a loop reachable through `meta.ado.parentWorkItem`
+alone is a warning and the manifest still validates — that key predates the feature, and
+`COMPATIBILITY.md` promises a file which validates keeps validating for the whole major line.
+The push refuses both, identically, because a `validate-manifest.py` question and a
+`resolve-ado-parent.py` question are not the same question. The split reads the whole **loop**
+rather than the row being graded, and that is not fussiness: with `phaseWorkItems` on a task
+inherits its parent from its phase, so a loop created entirely by the old single `parentWorkItem`
+contains a `phase`-sourced task, and a per-row test would fail a manifest its author never touched.
+
 **Three tiers, and only the first is free.** Tier A is structural and offline — an item under
 itself, or under something this manifest already hangs under it — so it always has a basis and it
-*refuses*. It is also the tier that earns its keep: ADO does **not** check an API-created parent
+*refuses the create*. It is also the tier that earns its keep: ADO does **not** check an API-created parent
 link against the process hierarchy, and a Product Backlog Item whose `System.Parent` is its own
 Task exists on a live board right now. Tier B reads `meta.ado.hierarchy`, this project's own
 backlog ranks: an inverted pair is refused, an **equal** pair is a note and never a refusal (a Bug

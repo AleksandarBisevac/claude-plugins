@@ -32,7 +32,7 @@ Measured on a live board: work item 30 there is a Product Backlog Item whose `Sy
 is 31, a Task that was meant to be its child — accepted on write, never reported, still
 sitting there. The new check has three tiers and they fail differently on purpose. The
 **structural** tier is offline and always has a basis (an item under itself, or under
-something the manifest already hangs under it) and it refuses. The **type-level** tier reads
+something the manifest already hangs under it) and it refuses the create. The **type-level** tier reads
 this project's own backlog ranks and warns: an inverted pair is named, an **equal** pair is a
 note and never a refusal — a Bug under a Product Backlog Item is rank 2 under rank 2 wherever
 `bugsBehavior` is `asRequirements`, and a checker that refuses a deliberate arrangement gets
@@ -70,16 +70,25 @@ have caught this, and a mismatch is reported per item rather than assumed away.
 
 ### Compatibility
 
-**A manifest that describes a work item hierarchy nothing can build can now be invalid**, and
-that is the one carve-out from *Validation stays additive* — written into
-`COMPATIBILITY.md`'s *Not promised* list rather than left to be discovered. It applies
-whichever key produced the parent, `meta.ado.parentWorkItem` included: the promise that key
-carries is that it keeps being **read**, not that every value of it keeps being accepted, and
-a manifest that validated while describing a loop was validating a push that would quietly
-build one. The carve-out is bounded by structure — decided offline from ids the manifest
-already carries, so it cannot change under a file that has not changed — and the type-level
-half can never do it, because a cache with a `fetchedAt` must not be able to invalidate a
-manifest.
+**Nothing here breaks either contract, and the parent check is split by SOURCE so that stays
+true.** A loop is refused at CREATE whichever key produced the parent — a board that cannot be
+built still cannot be built — but the two surfaces grade it differently on purpose, because
+they answer different questions. `validate-manifest.py` grades a FILE you keep in your
+repository, under the promise that a manifest which validates keeps validating for the whole
+major line; `resolve-ado-parent.py` grades a PAYLOAD the connector is about to send, under no
+such promise.
+
+So: a loop an **authored `adoParent`** puts there is a finding, and it can never fire on an
+existing file, because no manifest written before this release carries that key — fully
+additive. A loop reachable through **`meta.ado.parentWorkItem` alone** is a loud warning and
+the manifest still validates, because that key predates the feature and a file nobody edited
+must not fail its next CI run. The push refuses both, identically. The decision is made once,
+inside `hierarchy_violations()`, so the two surfaces cannot drift into agreeing.
+
+The split reads the whole **loop** rather than the row being graded, and that detail is
+load-bearing: with `phaseWorkItems` on, a task inherits its parent from its phase, so a loop
+created entirely by the old single `parentWorkItem` contains a `phase`-sourced task — which a
+per-row test would call a finding and fail a manifest its author never touched.
 
 **A warning that became a false alarm was removed rather than reworded.**
 `meta.ado.conventions.requireParent` with no `meta.ado.parentWorkItem` used to draw one, and

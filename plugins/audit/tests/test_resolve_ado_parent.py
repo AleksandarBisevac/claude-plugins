@@ -32,6 +32,8 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
+import _manifest_rules as _rules                  # noqa: E402
+
 M = _loader.load_script("resolve-ado-parent.py", modname="resolve_ado_parent")
 
 LEVELS = {"Task": 1, "Product Backlog Item": 2, "Feature": 3, "Epic": 4}
@@ -192,6 +194,57 @@ def _cases(check):
         check("rp26 ...and it carries `checked` so a consumer can tell 'nothing "
               "was wrong' from 'nothing was looked at': %r" % (_doc["checked"],),
               _code == 0 and _doc["checked"] == 0 and _doc["rows"])
+
+        # --- the two surfaces, pinned as disagreeing ON PURPOSE ---------------
+        # A MANIFEST is not a PAYLOAD. `validate-manifest.py` grades a file
+        # somebody keeps in their repository, under a promise that a file which
+        # validates keeps validating; this command grades a link the connector
+        # is about to create, under no such promise. A loop reachable through
+        # `meta.ado.parentWorkItem` ALONE - no adoParent anywhere, so the file
+        # could predate the key - is the one shape where the two must answer
+        # differently, and a board that cannot be built still cannot be built.
+        _legacy = {"meta": {"version": 2, "ado": {"parentWorkItem": 31}},
+                   "phases": [{"id": "P1", "title": "P1", "status": "pending",
+                               "ado": {"id": 30},
+                               "tasks": [{"id": "P1.1", "title": "t",
+                                          "status": "pending",
+                                          "ado": {"id": 31}}]}],
+                   "bugs": []}
+        _legacy_path = _write(tmp, "legacy.json", _legacy)
+        _code, _out = _run([_legacy_path])
+        check("rp30 push REFUSES a loop inherited from meta.ado.parentWorkItem "
+              "- exit 1, both members named - because the link is one ADO would "
+              "accept and nothing could then unbuild: rc=%d %r"
+              % (_code, [x for x in _out.splitlines() if "REFUSED [" in x]),
+              _code == 1
+              and len([x for x in _out.splitlines() if "REFUSED [" in x]) == 2)
+        check("rp31 ...while `validate()` calls that SAME manifest valid, "
+              "because a file that validates must keep validating and this one "
+              "carries no adoParent at all. The two surfaces disagreeing here "
+              "is the design, and this is the case that fails if either side "
+              "is 'simplified' into the other: %r"
+              % (_rules.validate(_legacy)[0],),
+              _rules.validate(_legacy)[0] == []
+              and len([x for x in _rules.validate(_legacy)[1]
+                       if "loop" in x]) == 2)
+        # The control: the same board written with an adoParent. Both surfaces
+        # refuse, so rp30/rp31 cannot be satisfied by a door that always exits 1
+        # and a validator that never finds anything.
+        _authored = {"meta": {"version": 2, "ado": {}},
+                     "phases": [{"id": "P1", "title": "P1",
+                                 "status": "pending", "ado": {"id": 30},
+                                 "adoParent": {"id": 31},
+                                 "tasks": [{"id": "P1.1", "title": "t",
+                                            "status": "pending",
+                                            "ado": {"id": 31}}]}],
+                     "bugs": []}
+        _authored_path = _write(tmp, "authored.json", _authored)
+        check("rp32 ...and with the parent AUTHORED instead, both surfaces "
+              "refuse: the door exits 1 and the manifest is invalid, which is "
+              "the direction that is fully additive because no older file can "
+              "carry the key: rc=%d" % (M.main([_authored_path]),),
+              M.main([_authored_path]) == 1
+              and len(_rules.validate(_authored)[0]) == 2)
 
         # --- the inert declaration reaches the operator -----------------------
         _inert = _write(tmp, "inert.json", _manifest(

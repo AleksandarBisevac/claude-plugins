@@ -341,18 +341,28 @@ def _check_ado_parents(manifest, phases):
 
     Returns (findings, warnings), and the split is the whole decision:
 
-      TIER A -> FINDINGS. Structural, offline, and it always has a basis: an
-      item under itself, or under something this manifest already hangs under
-      it. Nothing outside this file is needed to know that is impossible, so
-      calling the manifest invalid is honest. It is also the tier that catches
-      the live bug - ADO does NOT check an API-created parent link against the
-      process hierarchy, so a Product Backlog Item whose parent is its own Task
-      exists on a real board right now.
+      A LOOP AN AUTHORED `adoParent` PUT THERE -> FINDING. Structural, offline,
+      and it always has a basis: an item under itself, or under something this
+      manifest already hangs under it. Nothing outside this file is needed to
+      know that is impossible. It is the tier that catches the live bug - ADO
+      does NOT check an API-created parent link against the process hierarchy,
+      so a Product Backlog Item whose parent is its own Task exists on a real
+      board right now.
+
+      A LOOP INHERITED FROM `meta.ado.parentWorkItem` -> WARNING, and this is a
+      COMPATIBILITY decision rather than a judgement about severity. That key
+      predates this feature, so a manifest nobody has edited can describe such a
+      loop - and `COMPATIBILITY.md` promises that a file which validates keeps
+      validating for the whole major line. Failing it here would break that
+      promise for a file its author never touched. NOTHING IS LOST: the push
+      still refuses to create the link, with the same message, because
+      `resolve-ado-parent.py` reads `refusals` and a MANIFEST is not a PAYLOAD.
+      A board that cannot be built still cannot be built.
 
       TIER B -> WARNINGS. It reads `meta.ado.hierarchy`, which is a CACHE with a
-      `fetchedAt`: refusing a whole manifest on evidence that may be a month old
-      would fail a CI run over a stale file, and the loud stop already exists at
-      push time. Equal rank is a note there and a note here.
+      `fetchedAt`: invalidating a whole manifest on evidence that may be a month
+      old would fail a CI run over a stale file, and the loud stop already exists
+      at push time. Equal rank is a note there and a note here.
 
     NOT VERIFIED IS SILENT HERE, and only here. `validate()` is run on every
     manifest write; a line per link saying the type ranks were never fetched
@@ -368,9 +378,13 @@ def _check_ado_parents(manifest, phases):
     levels = hierarchy.get("levels") if isinstance(hierarchy, dict) else None
     result = _parent.hierarchy_violations(
         inv["rows"], levels if isinstance(levels, dict) else None)
-    findings = [e["message"] for e in result["refusals"] if e["tier"] == "A"]
+    # ONE KEY EACH, and no subtraction. `_ado_parent` grades both surfaces in
+    # one place precisely so this call site does not re-derive a severity: the
+    # split by tier that used to live on these two lines could not see the
+    # thing that actually decides it, which is whether an AUTHORED `adoParent`
+    # is in the loop at all.
+    findings = [e["message"] for e in result["findings"]]
     warnings = list(inv["warnings"])
-    warnings.extend(e["message"] for e in result["refusals"] if e["tier"] != "A")
     warnings.extend(e["message"] for e in result["warnings"])
     warnings.extend(_require_parent_warnings(ado, inv["rows"]))
     return (findings, warnings)

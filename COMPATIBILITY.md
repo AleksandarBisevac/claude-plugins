@@ -76,23 +76,6 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **That an enum gains no members.** A new task status, a new gate name or a new
   branch type is additive, and code that switches exhaustively over one of them
   should have a default arm.
-- **That a manifest describing a work item hierarchy nothing can build keeps
-  validating.** This is the ONE carve-out from *Validation stays additive* above, and
-  it is written here rather than left to be discovered. A parent link that closes a
-  loop — an item under itself, or under something the same manifest already hangs
-  under it — became a finding when per-item `adoParent` shipped, and it is a finding
-  whichever key produced the parent, `meta.ado.parentWorkItem` included. The promise
-  that key carries is that it keeps being **read**, not that every value of it keeps
-  being accepted: Azure DevOps does not check an API-created parent link against its
-  own process hierarchy, so a manifest that "validated" while describing a loop was
-  validating a push that would quietly build one.
-
-  The carve-out is bounded, deliberately and by structure. It is decided **offline**,
-  from ids the manifest already carries — no cache, no network, no configuration — so
-  it cannot change under a file that has not changed. The **type-level** half of the
-  same check (a Task parenting a Product Backlog Item) can never do this: it reads a
-  cached `meta.ado.hierarchy`, so it is a warning and only a warning, because
-  invalidating a manifest on month-old evidence would red a build over a stale file.
 
 ## 2. The config keys — `.claude/audit.config.json`
 
