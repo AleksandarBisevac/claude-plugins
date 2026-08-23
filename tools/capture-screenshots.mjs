@@ -3777,8 +3777,13 @@ async function assertModelCombo(page, project) {
       fail('composition: the review-model combo opened no menu on either attempt. '
          + 'Panel state: ' + JSON.stringify(st));
     } else if (opened !== 'first') {
-      note('composition: the review-model combo opened on the ' + opened
-         + ' attempt; at the first failure ' + JSON.stringify(firstFail));
+      // A SECOND ATTEMPT IS NO LONGER A PASS. While the cause was unknown this
+      // reported which attempt won and let the run go green, which is measuring
+      // around the defect; the cause is known now (the focus guard closed a menu
+      // it could not tell from a stale one), so anything less than opening on
+      // the first click is a regression of F90 and says so with the counters.
+      fail('composition: the review-model combo opened only on the ' + opened
+         + ' attempt - F90 regressed. At the first failure ' + JSON.stringify(firstFail));
     }
     // The menu is FILTERED by whatever the input already holds, so its first
     // entry is routinely the current value verbatim - `opus` filtering to

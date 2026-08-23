@@ -3749,11 +3749,21 @@ def _cases(check):
           "const atTop=(c.top+c.bottom)/2<innerHeight/2;" in M.UI_HTML
           and "const by=atTop?-(c.bottom-r.top+GAP):(r.bottom-c.top+GAP);"
               in M.UI_HTML)
-    check("fo4 an open dropdown is closed rather than scrolled out from under - "
+    # F90/C6. This case's LABEL was already right - "a menu whose input lost
+    # focus" - and its clauses checked only how the close was spelled, so it
+    # stayed green while the guard closed menus whose input had just GAINED
+    # focus. The handler runs on the very focus that opens one. The owner test
+    # is the difference between the label and what the code did, so it is now
+    # asserted rather than described.
+    check("fo4 a STALE dropdown is closed rather than scrolled out from under - "
           "a fixed menu travels with the viewport, so scrolling cannot free "
-          "anything, and a menu whose input lost focus has nothing to choose for",
-          "over.classList.contains('combo-menu')&&!over.contains(n)" in M.UI_HTML
-          and "closeCombo();continue;" in M.UI_HTML)
+          "anything - while the menu owned by the control that just took focus "
+          "is exempt, because this handler runs on the focus that opened it",
+          "over.classList.contains('combo-menu')" in M.UI_HTML
+          and "if(CMOWNER&&CMOWNER.inp===n)return;" in M.UI_HTML
+          and "if(!over.contains(n)){closeCombo();continue;}" in M.UI_HTML
+          # ...and the owner is recorded at the only place that knows it.
+          and "me.inp=inp;" in M.UI_HTML)
     check("fo5 the repair cannot be the reason the panel fails to come up",
           "catch(cause){console.error('keepFocusClear failed',cause);}"
           in M.UI_HTML)

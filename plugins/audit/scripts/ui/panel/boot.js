@@ -89,8 +89,18 @@ function keepFocusClear(){
     // takes focus next; scrolling cannot help, because a fixed menu travels with
     // the viewport. Closing it is the right answer independently of 2.4.11: a
     // menu whose input no longer has focus has nothing to choose for.
-    if(over.classList&&over.classList.contains('combo-menu')&&!over.contains(n)){
-     closeCombo();continue;}
+    if(over.classList&&over.classList.contains('combo-menu')){
+     // ...unless the menu BELONGS to the control that just took focus. This
+     // handler runs on the very focus that OPENS it: two frames after the click
+     // `render()` has already placed the menu against the input, so sampling the
+     // input's own edges finds it, and `!over.contains(n)` is true because an
+     // input is not inside its own menu. Without this test the guard closed the
+     // menu the reader had just asked for - F90, which read as "the combo does
+     // not open on the first click" and cost five wrong diagnoses. There is
+     // nothing to correct in that case either: `place()` owns where a menu sits
+     // relative to its own input, and scrolling to escape it would fight it.
+     if(CMOWNER&&CMOWNER.inp===n)return;
+     if(!over.contains(n)){closeCombo();continue;}}
     const c=over.getBoundingClientRect();
     // Which HALF of the viewport the chrome sits in, not how its edges compare
     // to the control's. Comparing edges gets a bottom bar backwards the moment

@@ -469,6 +469,11 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
  const close=()=>{active=-1;
   if(CMOWNER===me){const menu=comboMenu();menu.classList.add('hidden');menu.textContent='';CMOWNER=null;}};
  me.close=close;
+ // WHICH input this menu belongs to. The focus guard in boot.js samples the
+ // focused control's own edges and finds the menu sitting next to it; without
+ // an owner it cannot tell a STALE menu from the one this very focus opened,
+ // and closes both. F90.
+ me.inp=inp;
  // Fixed-position, like the hint tip: placed at the input's own x where that
  // fits, clamped into the viewport where it does not, and flipped above the input
  // when the space below cannot hold it (390px is the width that decides all
