@@ -130,6 +130,79 @@ def _cases(check):
         check("t9 ...and an empty repair says so rather than producing an "
               "authoritative-looking empty sentence",
               "no recorded commit" in M.summary([]), M.summary([]))
+
+        # --- F88: a shallow clone cannot accuse ---------------------------------
+        # Driven against a REAL truncated clone rather than a stubbed predicate.
+        # `--depth 1` is what `actions/checkout` does by default, and the SHA the
+        # manifest records is deliberately one the graft cut away - so the fixture
+        # reproduces the CI failure rather than describing it.
+        # ITS OWN REPO, not the shared one. By this point an earlier case has
+        # `reset --hard`ed the shared fixture onto its first commit, so a
+        # `--depth 1` clone of it fetches exactly the SHA this case needs to be
+        # missing - `--depth` is per REF, and that ref now points there. Reusing
+        # it made t10 report `cut_resolves=True` and t11 pass for the wrong
+        # reason. A fresh repo also leaves nothing behind for the cases after.
+        f88_repo, f88_shas = _repo(tmp, "f88")
+        shallow = os.path.join(tmp, "shallow")
+        # `file://` is required: git says "--depth is ignored in local clones"
+        # and silently hands back a FULL clone, which would make every case
+        # below assert the opposite of what it says.
+        _git(tmp, "clone", "-q", "--depth", "1", "file://" + f88_repo, shallow)
+        cut = f88_shas[0]
+        deep_ok = _git(shallow, "rev-parse", "-q", "--verify",
+                       cut + "^{commit}").returncode == 0
+        check("t10 the fixture really is truncated - a clone git calls shallow, "
+              "whose HEAD is present and whose oldest recorded commit is past the "
+              "cut. A fixture where every SHA resolves would pass under any "
+              "grading, which is how this case would assert nothing",
+              M.is_shallow(shallow) is True and M.is_shallow(f88_repo) is False
+              and not deep_ok,
+              "shallow=%r full=%r cut_resolves=%r"
+              % (M.is_shallow(shallow), M.is_shallow(f88_repo), deep_ok))
+        _cut_shallow = M.dangling(_manifest(cut), shallow)
+        check("t11 a commit past the graft is UNCHECKED, never missing - in a "
+              "shallow clone `rev-parse` failing says the object is past where "
+              "the clone was cut, and `missing` is graded as fabricated-or-"
+              "collected, whose own remedy (`repair-commits.py --apply`) NULLS "
+              "the SHA. The old grading made the doctor advise destroying an "
+              "intact trail",
+              _cut_shallow["missing"] == [] and _cut_shallow["unreachable"] == []
+              and len(_cut_shallow["unchecked"]) == 1, _cut_shallow)
+        _cut_full = M.dangling(_manifest(cut), f88_repo)
+        check("t12 ...and the SECOND DIRECTION, which is the one that fails if "
+              "the fix becomes unconditional: the same manifest against the FULL "
+              "clone still resolves clean, so a version that routed every "
+              "negative to unchecked would report a healthy trail as unasked",
+              _cut_full == {"missing": [], "unreachable": [], "unchecked": []},
+              _cut_full)
+        _bogus_full = M.dangling(_manifest("0" * 40), f88_repo)
+        check("t13 ...and a genuinely fabricated SHA in a full clone is STILL "
+              "missing. This is the accusation the fix must not soften, and it "
+              "is what separates 'shallow' from 'silent'",
+              len(_bogus_full["missing"]) == 1
+              and _bogus_full["unchecked"] == [], _bogus_full)
+        _bogus_shallow = M.dangling(_manifest("0" * 40), shallow)
+        check("t14 a fabricated SHA in a SHALLOW clone is unchecked, and that is "
+              "the cost stated rather than hidden: the fix cannot tell a lie from "
+              "a truncation, so it declines to tell either. Named here so nobody "
+              "later reads t13 as covering both clones",
+              _bogus_shallow["missing"] == []
+              and len(_bogus_shallow["unchecked"]) == 1, _bogus_shallow)
+        _notrepo = os.path.join(tmp, "plain-dir")
+        os.makedirs(_notrepo)
+        _nr = M.dangling(_manifest("0" * 40), _notrepo)
+        check("t16 the fail-safe direction, pinned where it has a CONSEQUENCE: a "
+              "git_root that is a directory but not a repository makes "
+              "is_shallow() answer None, and every recorded SHA is then "
+              "unchecked. Without that, a place with no repository at all would "
+              "report a fabricated commit - an accusation from a question that "
+              "was never answerable: %r" % (_nr,),
+              _nr["missing"] == [] and _nr["unreachable"] == []
+              and len(_nr["unchecked"]) == 1)
+        check("t15 git refusing to say is treated as shallow, not as full - "
+              "guessing 'not truncated' would restore the false accusation on "
+              "the machine least able to argue with it",
+              M.is_shallow(os.path.join(tmp, "nope-not-a-repo")) is None)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

@@ -81,6 +81,30 @@ def _git(git_root, args, timeout=15):
         return None, ""
 
 
+def is_shallow(git_root):
+    """Is this a truncated clone? `True`, `False`, or `None` when git would not say.
+
+    IN A SHALLOW CLONE A NEGATIVE ANSWER IS NOT AN ANSWER, which is the whole
+    reason this exists. `git clone --depth` and `actions/checkout`'s default both
+    leave a repository whose object store and whose history stop at a graft
+    boundary, so "rev-parse cannot resolve it" stops meaning "the object is not in
+    the world" and starts meaning "the object is past where this clone was cut".
+    POSITIVE answers survive: a SHA that resolves is present, and one that is an
+    ancestor of HEAD is reachable. Only the accusations become unsupportable.
+
+    `None` rather than `False` when git will not answer: guessing "not shallow"
+    here would restore exactly the false accusation this removes, on the machine
+    least able to argue with it.
+    """
+    code, out = _git(git_root, ["rev-parse", "--is-shallow-repository"])
+    if code != 0:
+        return None
+    val = out.strip()
+    # Older git answers neither word; a repository it will not describe is one
+    # this function must not describe either.
+    return True if val == "true" else (False if val == "false" else None)
+
+
 def dangling(manifest, git_root):
     """`{"missing": [...], "unreachable": [...], "unchecked": [...]}`.
 
@@ -93,9 +117,22 @@ def dangling(manifest, git_root):
       rewritten history looks like the moment after it happens, and it is
       recoverable: the commit is still in the object store until gc runs, so
       restoring a branch onto it puts the trail back.
-    * **unchecked** — git could not be asked. Not a clean trail; an unasked
-      question, and a caller that folds it into "fine" reports a machine with no
-      git as a healthy one.
+    * **unchecked** — git could not be asked, OR it was asked in a clone that
+      cannot answer. Not a clean trail; an unasked question, and a caller that
+      folds it into "fine" reports a machine with no git as a healthy one.
+
+    **A SHALLOW CLONE TURNS EVERY ACCUSATION INTO AN UNASKED QUESTION** (F88).
+    `git clone --depth` and `actions/checkout`'s default cut the object store and
+    the history at a graft boundary, so a `rev-parse` that fails there says the
+    object is past the cut and not that it never existed — and a ref walk that
+    finds no container says the same about reachability. Both negatives move to
+    `unchecked`; both POSITIVES are kept, because a SHA that resolves really is
+    present and one that is an ancestor of HEAD really is reached.
+
+    That distinction is not cosmetic here: the doctor's remedy for `missing` is
+    `repair-commits.py --apply`, which NULLS the recorded SHAs. Graded the old
+    way, a shallow checkout produced a finding whose own advice destroyed a trail
+    that was intact.
 
     **Existence is not reachability, and the difference is the whole bug this
     function was written to fix.** `/audit:doctor` asked `rev-parse --verify`
@@ -114,6 +151,11 @@ def dangling(manifest, git_root):
         return {"missing": [], "unreachable": [], "unchecked": []}
     if not (git_root and shutil.which("git")):
         return {"missing": [], "unreachable": [], "unchecked": list(rows)}
+    # Asked ONCE per call rather than per row: it is a property of the clone, and
+    # a per-row question would pay a git call for every recorded commit to learn
+    # the same thing. `None` (git would not say) is treated as shallow, which is
+    # the direction that refuses to accuse on evidence it does not have.
+    cut = is_shallow(git_root) is not False
     for phase_id, task_id, sha in rows:
         row = (phase_id, task_id, sha)
         code, _ = _git(git_root, ["rev-parse", "-q", "--verify",
@@ -122,7 +164,7 @@ def dangling(manifest, git_root):
             unchecked.append(row)
             continue
         if code != 0:
-            missing.append(row)
+            (unchecked if cut else missing).append(row)
             continue
         # Fast path: almost every recorded commit is an ancestor of HEAD.
         code, _ = _git(git_root, ["merge-base", "--is-ancestor", sha, "HEAD"])
@@ -132,7 +174,7 @@ def dangling(manifest, git_root):
         if code is None or code != 0:
             unchecked.append(row)
         elif not out.strip():
-            unreachable.append(row)
+            (unchecked if cut else unreachable).append(row)
     return {"missing": missing, "unreachable": unreachable,
             "unchecked": unchecked}
 

@@ -19,6 +19,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
+import inspect
 import shutil
 import subprocess
 import sys
@@ -356,6 +357,22 @@ def _cases(check):
                   and "chained records" in _detail(rep, "completions"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    # F88: the spoken basis for an unchecked trail. Inside `_cases` on purpose -
+    # written first as its own `_f88_cases(check)` beside the runner, which calls
+    # `_cases` and nothing else, so both checks were dead and the tally never
+    # moved. A suite that grows by a function nobody calls reads exactly like a
+    # suite that grew by two cases.
+    _src = inspect.getsource(M._check_commit_trail)
+    check("dc21 the unchecked warning names the SHALLOW clone and the way out of "
+          "it - the class gained a third cause, and a warning still saying only "
+          "'no git on PATH, or git would not answer' sends a reader hunting for a "
+          "git that is present and answering",
+          "SHALLOW" in _src and "fetch --unshallow" in _src)
+    check("dc22 ...and the accusation keeps naming its own remedy, so softening "
+          "the shallow case did not take the destructive advice out of the case "
+          "where it is right",
+          "repair-commits.py" in _src)
+
 
 
 def _selftest():

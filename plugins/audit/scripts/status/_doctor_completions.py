@@ -109,8 +109,9 @@ def _check_commit_trail(rep, manifest, git_root):
         rep.warn("commit trail",
                  "%d recorded commit(s) could not be verified"
                  % (len(trail["unchecked"]),),
-                 "no git on PATH, or git would not answer -- this is an unasked "
-                 "question, not a clean trail")
+                 "no git on PATH, git would not answer, or this clone is SHALLOW "
+                 "and the commit is past where it was cut -- an unasked question, "
+                 "not a clean trail. `git fetch --unshallow` turns it into one")
     if not (trail["missing"] or trail["unreachable"] or trail["unchecked"]):
         n = len(_commit_trail.recorded(manifest))
         rep.ok("commit trail",
