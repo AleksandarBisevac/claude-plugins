@@ -10,10 +10,19 @@ so a panel reaching up to a command is an edge pointing the wrong way. Both door
 import this, downward.
 
 WHAT LIVES HERE. The refusals, the id allocation, the collision remap, the
-dependency closure, the plan, and `run()` - which takes the index lock, applies,
-revalidates and writes. Orchestration is part of the rule: a caller that had to
-remember to lock, or to refuse a write whose result would be invalid, is a second
-chance to get it wrong.
+dependency closure, the plan, `run()` - which takes the index lock, applies,
+revalidates and writes - and `proposal_rows`, which is the READ side both surfaces
+render. Orchestration is part of the rule: a caller that had to remember to lock,
+or to refuse a write whose result would be invalid, is a second chance to get it
+wrong.
+
+THE READ SIDE IS PART OF THE RULE TOO, and it took F91 to notice. `list` was the
+one verb no script produced: `commands/propose.md` specified a table and a model
+rendered it from that prose, so what a user got was whatever the model recalled -
+an accurate summary, and no table. Meanwhile the panel derived its own rows in
+`_panel_composition`, including a second walk that answered the same question
+`unresolved_refs` already answered. One derivation now, two renderings: cards in
+the panel, a table on the command line.
 
 WHAT DOES NOT. Argument parsing, printing, and asking a human anything. `plan_for`
 reports what a materialization would pull in and `run()` refuses while the answer
@@ -233,6 +242,93 @@ def closure(manifest, pid, _seen=None):
                 order += closure(manifest, owner, seen)
     order.append(pid)
     return order
+
+
+# --- reading them as a list -----------------------------------------------------
+# The statuses that are HISTORY rather than a decision still waiting to be taken.
+# Named rather than spelled inline because the default list filter is defined
+# against it: what `list` hides is history, not "everything that is not the word
+# proposed". A hand-written entry carrying something outside the vocabulary (an
+# older /audit:init wrote what it liked) is neither, and hiding it by default
+# would make the one surface that reads proposals in full the surface that cannot
+# see it.
+HISTORY_STATUS = ("materialized", "dropped")
+
+
+def proposal_rows(manifest):
+    """`proposals[]` as a reader sees it, whichever surface is asking.
+
+    The panel's Proposals tab paints these as cards and `/audit:propose list`
+    prints them as a table. It lived in `_panel_composition` while the panel was
+    the only surface that HAD a list - the command was specified in prose and
+    rendered by a model - and it computed `waitsOn` with a walk of its own beside
+    `unresolved_refs`, which is the same question asked twice.
+
+    The payload travels WHOLE (phase title, task ids, titles, risk) so the tab can
+    show what materializing would add without a second request, and `dropped`
+    carries its reason - an archive nobody can read is a tombstone.
+
+    These rows are the panel's OWN state key rather than a corner of its
+    composition view: that view is the plan EDITOR, and a parked phase is not part
+    of the plan yet. Mixing the two is exactly the confusion F-P-32 was reported
+    about, and it is the same reason the rows live here rather than beside the
+    phase and task rows.
+    """
+    out = []
+    for prop in (manifest.get("proposals") or []):
+        if not isinstance(prop, dict):
+            continue
+        payload = prop.get("payload")
+        phase = payload.get("phase") if isinstance(payload, dict) else None
+        tasks = [t for t in ((phase or {}).get("tasks") or [])
+                 if isinstance(t, dict)]
+        out.append({
+            "id": prop.get("id"),
+            "name": prop.get("name"),
+            "status": prop.get("status") or "proposed",
+            "scope": prop.get("scope"),
+            "benefit": prop.get("benefit"),
+            "technicalNote": prop.get("technicalNote"),
+            "openQuestions": [q for q in (prop.get("openQuestions") or [])
+                              if isinstance(q, str)],
+            "notes": prop.get("notes"),
+            "droppedAt": prop.get("droppedAt"),
+            "materializedAs": prop.get("materializedAs"),
+            "materializedAt": prop.get("materializedAt"),
+            "createdISO": prop.get("createdISO"),
+            "hasPayload": isinstance(phase, dict) and bool(phase.get("id")),
+            "phaseId": (phase or {}).get("id"),
+            "phaseTitle": (phase or {}).get("title"),
+            "taskCount": len(tasks),
+            "tasks": [{"id": t.get("id"), "title": t.get("title"),
+                       "risk": t.get("risk")} for t in tasks],
+            # Which ids this payload waits on that nothing live owns. Computed
+            # here so the tab can warn before the confirm and the table can print
+            # it, rather than the reader discovering it from a refusal after the
+            # click. `unresolved_refs` is the one implementation of that question.
+            "waitsOn": ([ref for ref, _owner in
+                         unresolved_refs(phase, manifest,
+                                         skip=(prop.get("id"),))]
+                        if isinstance(phase, dict) else []),
+        })
+    return out
+
+
+def list_view(manifest, include_all=False):
+    """The rows `/audit:propose list` shows, and the basis an empty one needs.
+
+    `hidden` and `phaseCount` are carried rather than left to the caller because
+    an empty list is a result whose MEANING depends on both: nothing parked in a
+    plan that has phases is a finished decision, nothing parked in a plan that has
+    none is a project that never started. A renderer that had to go back to the
+    manifest for that would be the second reader of it.
+    """
+    rows = proposal_rows(manifest)
+    shown = (rows if include_all
+             else [r for r in rows if r["status"] not in HISTORY_STATUS])
+    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
+    return {"rows": shown, "all": bool(include_all), "total": len(rows),
+            "hidden": len(rows) - len(shown), "phaseCount": len(phases)}
 
 
 # --- the plan -------------------------------------------------------------------

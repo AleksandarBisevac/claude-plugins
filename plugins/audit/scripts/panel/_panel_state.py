@@ -118,6 +118,7 @@ import _panel_composition as _composition  # noqa: E402  (the plan as shown, at 
 import _panel_policy as _policy_mod    # noqa: E402  (the capability policy, at layer 4)
 import _panel_runstate as _runstate    # noqa: E402  (locks, stamp, gate, at layer 4)
 import _panel_usage as _usage          # noqa: E402  (the Usage tab's facts, at layer 4)
+import _proposals                      # noqa: E402  (proposals, rule AND read side, at layer 4)
 import _report_html                    # noqa: E402  (the report's naming rule, at layer 2)
 
 discover = _panel_discovery.discover
@@ -148,11 +149,18 @@ _viewer = _viewer_mod._viewer
 
 _areas_of = _composition._areas_of
 _bugs_view = _composition._bugs_view
-_proposals_view = _composition._proposals_view
 _skills_of = _composition._skills_of
 _ado_status = _composition._ado_status
 _composition_view = _composition._composition_view
 areas_state = _composition.areas_state
+
+# NOT `_composition._proposals_view` any more. The Proposals tab and
+# `/audit:propose list` render the same array, so the derivation belongs to the
+# module that owns proposals rather than to the panel - `_proposals` sits at layer
+# 4 like `_panel_composition`, so this module at 5 is the first place both are
+# reachable. The name stays bound here, so every caller and case that spells
+# `_panel_state._proposals_view` still resolves.
+_proposals_view = _proposals.proposal_rows
 
 _policy_rules = _policy_mod._policy_rules
 _policy_enforcement = _policy_mod._policy_enforcement

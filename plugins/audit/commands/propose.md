@@ -26,23 +26,34 @@ on findings, fix and re-run until clean.
 around their writes — they mutate the phase directory and `fileIndex`; `list` is
 read-only and never locks.
 
-## Subcommand: `list`
-
-Read-only. Print a table `id | status | reserved phase (task count) | name | openQuestions`.
-Legacy free-form entries (no `payload`) render `-` for the payload columns.
-Default filter: `proposed` only; `list all` shows materialized/dropped history too.
-Empty result → say so; if the plan also has zero phases, point to `/audit:init`.
-
 ## The rule is a script, not this file
 
-`materialize`, `drop` and `revive` are one implementation, in
-`${CLAUDE_PLUGIN_ROOT}/scripts/manifest/materialize-proposal.py`. It holds the index
-lock, revalidates before it writes, and refuses rather than guesses. **Do not
-re-derive any of it here** — the panel calls the same script, and two readings of one
-rule are two answers the first time either is edited.
+`list`, `materialize`, `drop` and `revive` are one implementation, in
+`${CLAUDE_PLUGIN_ROOT}/scripts/manifest/materialize-proposal.py`. The three writers
+hold the index lock, revalidate before they write, and refuse rather than guess;
+`list` is read-only and prints its own table. **Do not re-derive any of it here** —
+the panel calls the same script and its Proposals tab reads the same rows, and two
+readings of one rule are two answers the first time either is edited.
 
-What stays YOURS is the conversation: printing the plan, asking the one question the
-script deliberately will not ask itself, and reporting the handoff.
+What stays YOURS is the conversation: printing what the script returns, asking the
+one question it deliberately will not ask itself, and reporting the handoff.
+
+## Subcommand: `list`
+
+Read-only; no lock. Run it and **print the output verbatim** — the table is what the
+script prints, not a shape to reproduce from this file:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/materialize-proposal.py" \
+  <manifestPath> list [all]
+```
+
+`list all` adds the materialized/dropped history to the default view; `--json` hands
+back the rows instead of the render. An empty result answers itself, including the
+case where there is no plan to park anything in.
+
+Yours is what follows it: reading an `openQuestions` cell back when it is what blocks
+a decision, and pointing at `materialize` or `drop` for the row the user picks.
 
 ## Subcommand: `materialize <PROP-id> | --all`
 

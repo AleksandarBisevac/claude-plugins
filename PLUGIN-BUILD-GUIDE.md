@@ -95,8 +95,8 @@ claude-plugins/                           # this repo (personal, public)
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
-          _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate
-          materialize-proposal.py         # the command door onto it: arguments, printing, exit codes
+          _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate, and the rows both surfaces list
+          materialize-proposal.py         # the command door onto it: arguments, the list table, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
           _branch.py                      # where a phase's branch forks from, and what it is called
           _priority.py                    # which READY task runs first: the one expression of execution order
@@ -296,7 +296,7 @@ L4:
   _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
-  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _report_html
+  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
@@ -315,7 +315,7 @@ L7:
   explain-ado-drift -> _ado_drift, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  materialize-proposal -> _manifest_io, _output, _proposals
+  materialize-proposal -> _fmt, _manifest_io, _output, _proposals
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
@@ -1282,7 +1282,18 @@ over tasks that are not **finished** (done *or* cancelled).
 ### `plugins/audit/scripts/manifest/_proposals.py`
 The proposal lifecycle itself (layer 4): the refusals in `commands/propose.md`'s own order,
 the id allocation that counts live AND still-parked ids, the collision remap, the dependency
-closure, `plan_for`, and `run()` — which takes the index lock, applies, revalidates and writes.
+closure, `plan_for`, `run()` — which takes the index lock, applies, revalidates and writes —
+and `proposal_rows`/`list_view`, the READ side.
+
+**The read side is part of the rule, and it took F91 to notice.** `list` was the one verb no
+script produced: `commands/propose.md` specified a table and a model rendered it from that
+prose, so what a user got was whatever the model recalled — an accurate summary, and no table.
+Meanwhile the panel derived its own rows in `_panel_composition`, with a `_parked_blockers`
+walk answering the question `unresolved_refs` already answered. One derivation now, two
+renderings: cards in the panel (`_panel_state` binds `_proposals_view` to it), a table on the
+command line. `list_view` also carries `hidden` and `phaseCount`, because an empty list means
+different things in a plan that has phases and one that has none, and a renderer that had to
+go back to the manifest for that would be its second reader.
 
 **Why a module and not just the script.** It was one file until the panel became a second
 caller. The panel's write path sits BELOW the entry points, so a panel reaching up to a command
@@ -1322,6 +1333,15 @@ validator reports the cycle, and a diagnostic must not hang on one.
 normally its phase id is free; when it is not, the next free `P<n>` is allocated counting live
 AND still-parked ids, and the payload's task ids and intra-payload refs move with it. An edge
 pointing at a live phase is left alone: rewriting it would silently repoint real work.
+
+**`list` prints its table here** (F91), for the same reason the other three verbs live behind a
+script: it was described in prose and rendered from prose, so nothing checked it and a user
+asking for the list got a summary instead. `LIST_COLUMNS` is `propose.md`'s own column order,
+measured across the header and every row at once so the columns stay columns; a proposal with no
+payload renders `-` in the payload column off `hasPayload` rather than off a falsy `phaseId`;
+and the empty render says which empty it is — history hidden by the default filter, and whether
+there is a plan at all — because the two need different advice. `list` never takes the index
+lock, which is why it does not go through `run()`.
 
 **Drop needs a reason, revive keeps it.** `notes` is required once a proposal is dropped —
 the validator enforces it rather than trusting this command's prose to have asked — and

@@ -181,6 +181,70 @@ def _cases(check):
     check("mz23 ...and only a DROPPED proposal can be revived",
           bad is None and "not dropped" in msg)
 
+    # ---- the list view: ONE derivation, two surfaces ----
+    # `proposal_rows` is what the panel's Proposals tab paints as cards AND what
+    # `/audit:propose list` prints as a table. It lived in `_panel_composition`
+    # while the panel was the only surface that HAD a list - the command was
+    # specified in prose and rendered by a model, so there was nothing to share
+    # with. There is now, and a second walk is where two surfaces start answering
+    # differently about one manifest.
+    m10 = _manifest([_prop("PROP-1", payload=_payload("P5", tasks=("a", "b")),
+                           openQuestions=["ship it?"]),
+                     _prop("PROP-2", payload=None),
+                     _prop("PROP-3", "materialized", _payload("P1"),
+                           materializedAs="P1"),
+                     _prop("PROP-4", "dropped", _payload("P8"), notes="dupe"),
+                     _prop("PROP-5", "open", payload=None)],
+                    phases=[{"id": "P1", "tasks": []}])
+    rows = dict((r["id"], r) for r in M.proposal_rows(m10))
+    check("mz28 a payload-bearing row carries the phase it RESERVES and the task "
+          "count that comes with it - the list table's third column is made of "
+          "exactly those two fields: %r" % (rows.get("PROP-1"),),
+          rows["PROP-1"]["phaseId"] == "P5"
+          and rows["PROP-1"]["taskCount"] == 2
+          and rows["PROP-1"]["hasPayload"] is True)
+    check("mz29 ...while a legacy free-form entry reports no payload rather than "
+          "a phase of its own, which is what makes the `-` columns a fact and not "
+          "a rendering accident: %r" % (rows.get("PROP-2"),),
+          rows["PROP-2"]["hasPayload"] is False
+          and rows["PROP-2"]["phaseId"] is None
+          and rows["PROP-2"]["taskCount"] == 0)
+
+    m11 = _manifest([_prop("PROP-1", payload=_payload("P5")),
+                     _prop("PROP-2",
+                           payload=_payload("P6", refs=["P5", "P0", "P404"]))],
+                    phases=[{"id": "P0", "tasks": []}])
+    row2 = [r for r in M.proposal_rows(m11) if r["id"] == "PROP-2"][0]
+    direct = [ref for ref, _owner in M.unresolved_refs(
+        m11["proposals"][1]["payload"]["phase"], m11, skip=("PROP-2",))]
+    check("mz30 `waitsOn` is `unresolved_refs`' own answer rather than a second "
+          "walk beside it, and the edge to the LIVE P0 is dropped - a fixture "
+          "whose refs were all unresolved could not tell a filter from a "
+          "passthrough: %r vs %r" % (row2["waitsOn"], direct),
+          row2["waitsOn"] == direct and direct == ["P5", "P404"])
+
+    view = M.list_view(m10)
+    shown = [r["id"] for r in view["rows"]]
+    check("mz31 the default list is everything still OPEN - the parked ones AND "
+          "the hand-written status the vocabulary does not know, which is the "
+          "entry a `status == proposed` filter would make invisible on the one "
+          "surface that reads proposals in full: %r" % (shown,),
+          shown == ["PROP-1", "PROP-2", "PROP-5"])
+    every = [r["id"] for r in M.list_view(m10, include_all=True)["rows"]]
+    check("mz32 ...and `all` ADDS the materialized/dropped history rather than "
+          "replacing the list: %r" % (every,),
+          every == ["PROP-1", "PROP-2", "PROP-3", "PROP-4", "PROP-5"])
+    check("mz33 ...and the view carries the basis an empty render needs: how many "
+          "records the default filter hid, and whether there is a plan at all: %r"
+          % (dict((k, v) for k, v in view.items() if k != "rows"),),
+          view["hidden"] == 2 and view["total"] == 5 and view["phaseCount"] == 1)
+    empty = M.list_view(_manifest([]))
+    check("mz34 an empty manifest reports its phases as none, so a caller can "
+          "tell 'nothing parked' from 'no plan to park anything in' - the two "
+          "read alike and need different advice",
+          empty["rows"] == [] and empty["phaseCount"] == 0
+          and empty["hidden"] == 0 and empty["total"] == 0)
+
 
 
 def _selftest():
