@@ -284,6 +284,30 @@ def _cases(check):
           and "word-break" not in _sub and "text-overflow:ellipsis" in _sub)
     check("and the full path survives in the tooltip, so nothing is lost",
           "$('#proj').title=PROJECT" in M.UI_HTML)
+    # --- and the version stamp is not on that line ------------------------------
+    # CONSTRUCTS, not the behaviour. Whether the stamp is READABLE is settled in a
+    # browser — capture-screenshots.mjs reads the topbar and compares it against
+    # plugin.json — and no substring here can see a clip. What these hold is where
+    # the stamp is BUILT and what it is drawn with, which is what the clip fed on:
+    # appended to `#proj` it began after a path that had already spent the whole
+    # line, so on any path long enough to elide the version was off the end of it.
+    check("the version stamp is built beside the title rather than appended to "
+          "the project path, and is still omitted when there is no version",
+          "if(VERSION)$('#brand').append(" in M.UI_HTML
+          and "$('#proj').append(" not in M.UI_HTML
+          and "<div class=brand id=brand><h1>" in M.UI_HTML)
+    check("the stamp is seated on the title's baseline, in the muted token at the "
+          "smallest type step - the declarations, not the paint",
+          ".brand{display:flex;align-items:baseline" in M.UI_HTML
+          and ".stampv{font-family:var(--mono);font-size:var(--t-label);"
+              "color:var(--muted)" in M.UI_HTML)
+    check("whether there is room for it is MEASURED, and re-measured when the "
+          "topbar's own contents change - the pill lands after this file runs and "
+          "fires no resize, so a listener alone would decide once and be wrong",
+          "function stampRoom(" in M.UI_HTML
+          and "new ResizeObserver(stampRoom).observe(" in M.UI_HTML
+          and "addEventListener('resize',stampRoom" in M.UI_HTML
+          and ".brand:not(.roomy) .stampv{display:none}" in M.UI_HTML)
 
     # --- app shell -------------------------------------------------------------
     check("shell: navigation at the side, actions on top",
@@ -935,6 +959,80 @@ def _cases(check):
     check("pri7 the confirm dialog computes a priority row, so the client's list "
           "and the server's echo stay two readings of one pair of values",
           "if(('priority' in pv)&&!cfSame(p.priority,pv.priority))" in M.UI_HTML)
+    # PROPERTIES OF THE SOURCE, not of the painted box: only the browser gates can
+    # say the two controls line up. What source text CAN say is that one rule
+    # decides their shape and ONE declaration their width - which is the thing
+    # that was missing, since the priority wrapper shipped with no rule at all and
+    # its <select> took the base control's size while the input beside it had been
+    # sized by hand. The width is a per-wrapper parameter because the two hold
+    # different things (a model id against a single digit); what must not come
+    # back is a second `width:` on either control, which is how the pair drifts.
+    check("pri9 ALL FOUR editable fields of this table get their box shape from "
+          "one rule, and the phase pair its width from one declaration - three "
+          "were sized by hand and the fourth not at all, which is how a 41px "
+          "skills box and a 37px priority menu ended up beside a 30px model box",
+          "td.tmodel input,td.tskills input,.comp-review input,.comp-priority select{"
+          in M.UI_HTML
+          and ".comp-review,.comp-priority{" in M.UI_HTML
+          and ".comp-review input,.comp-priority select{" in M.UI_HTML
+          # Counted, not merely present. A `not in` on `.comp-priority select{width:`
+          # reads like the negative to write here and is worthless: the shared
+          # rule's own selector list ENDS with `.comp-priority select` and is
+          # followed by `{width:`, so the clause matches the very thing it was
+          # meant to forbid and can never fail. These two count the structure
+          # instead - one width declaration, and exactly two values feeding it.
+          and M.UI_HTML.count("width:var(--comp-ctl-w)") == 1
+          and M.UI_HTML.count("--comp-ctl-w:") == 2)
+    # The collision this repo's own plan produced: P8's title left the review
+    # group 9px short of its content and it painted over the control beside it. A
+    # default flex item shrinks, and a fixed-size form field must not - so this
+    # asserts the clause, in the wrapper rule, that says so. It is a construct
+    # pin standing in for a layout fact no Python case can see; the browser gates
+    # own whether anything actually overlaps.
+    check("pri10 neither phase-row control is allowed to shrink - a long title "
+          "takes its space from the title, never out of a form field",
+          "flex:0 0 auto" in M.UI_HTML[
+              M.UI_HTML.index(".comp-review,.comp-priority{"):
+              M.UI_HTML.index(".comp-review{margin-left:auto}")])
+    # The reading order and the freeze both hang off ONE classifier. Pinning the
+    # reuse is the point: a second done/cancelled list inside the composition tab
+    # would be free to disagree with the Overview and the report about a status,
+    # and the disagreement would show as a phase that is editable on one screen
+    # and frozen on another.
+    check("pri11 Plan & models reads in the report's order - active work, then "
+          "what has not started, then what is closed - through the SAME segment "
+          "classifier the Overview and the report use, not a second copy of it",
+          "const SEG_ORDER={active:0,pending:1,archived:2};" in M.UI_HTML
+          and "SEG_ORDER[segOf(a[0].status)]-SEG_ORDER[segOf(b[0].status)]"
+          in M.UI_HTML
+          # decorated with the index, so plan order survives inside a segment
+          and "comp.phases.map((p,i)=>[p,i])" in M.UI_HTML
+          and "||(a[1]-b[1])" in M.UI_HTML)
+    check("pri12 finished work is a RECORD, and EITHER status closes a task row: "
+          "the phase's, because a task in a cancelled phase will never run, and "
+          "the task's own, because a done task has already run - so its model and "
+          "skills say what ran rather than what to run",
+          "const frozen=segOf(ph.status)==='archived';" in M.UI_HTML
+          and "const tFrozen=frozen||segOf(t.status)==='archived';" in M.UI_HTML
+          # WIRED, both halves. Defining freezeControls and calling it on only one
+          # of the two rows would leave a whole class of controls live.
+          and "freezeControls(pr,frozenWhy)" in M.UI_HTML
+          and "freezeControls(tr,tWhy)" in M.UI_HTML
+          and "function freezeControls(root,why){" in M.UI_HTML)
+    # A SOURCE property, and the negative is the whole point: `text-overflow` is
+    # what a narrow column invites somebody to add back, and adding it would
+    # restore exactly the defect this replaced - a title readable only on hover.
+    # The tooltip that propped that up is asserted gone in the same case, because
+    # leaving it behind is how the two halves drift apart.
+    check("pri13 a task title WRAPS rather than being cut off, and nothing "
+          "re-adds the ellipsis or the hover tooltip that used to stand in for "
+          "the words it hid",
+          "td.ttitle{max-width:18rem;white-space:normal;overflow-wrap:break-word}"
+          in M.UI_HTML
+          and "text-overflow" not in M.UI_HTML[
+              M.UI_HTML.index("td.ttitle{"):M.UI_HTML.index("td.tskills{")]
+          and "el('td',{class:'ttitle'},t.title||'')" in M.UI_HTML
+          and "class:'ttitle',title:" not in M.UI_HTML)
     check("overview: an empty result says so and offers the way back",
           "No phase matches this filter." in M.UI_HTML
           and "'data-ovclear':'1'" in M.UI_HTML)

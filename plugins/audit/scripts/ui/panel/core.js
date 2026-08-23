@@ -116,14 +116,45 @@ function midElide(s,max){if(!s||s.length<=max)return s||'';
  const keep=max-1,head=Math.ceil(keep*0.38);return s.slice(0,head)+'…'+s.slice(s.length-(keep-head));}
 $('#proj').textContent=midElide(PROJECT,56);
 $('#proj').title=PROJECT;
-// Which installed plugin is serving this panel — same words and same place as the
-// report's stamp, because it answers the same question. The panel is where the
-// question actually gets asked: the plugin cache is keyed BY VERSION, so
-// `marketplace update` followed by a reload can leave you driving a build you did
-// not intend, with nothing on screen to say so. Omitted entirely when the version
-// cannot be read: a stamp with no basis is worse than no stamp.
-if(VERSION)$('#proj').append(el('span',{class:'mut',
-  title:'The plugin version serving this panel'},' · audit '+VERSION));
+// Which installed plugin is serving this panel — the same component as the report's
+// stamp (`.stampv`), because it answers the same question, but beside the product
+// name rather than trailing the project path. It used to be appended to `#proj`,
+// where it lost every contest for that line's width: the path is elided to fill it,
+// so the stamp was pushed past the clip and was invisible on any project whose path
+// is long enough to elide. Here nothing competes with it. The h1 already reads
+// "audit", so the stamp carries the number alone rather than repeating the name.
+// The panel is where the question actually gets asked: the plugin cache is keyed BY
+// VERSION, so `marketplace update` followed by a reload can leave you driving a
+// build you did not intend, with nothing on screen to say so. Omitted entirely when
+// the version cannot be read: a stamp with no basis is worse than no stamp.
+if(VERSION)$('#brand').append(el('span',{class:'stampv',
+  title:'The plugin version serving this panel'},'v'+VERSION));
+/**
+ * Mark the header when it has room for the version stamp beside the title, so the
+ * CSS can show it there — and leave it hidden when it has not.
+ *
+ * Measured, not assumed, for the same reason tabsOverflow() is: this column is
+ * shrunk by whatever the topbar's buttons and the identity pill leave it, and a
+ * stamp that does not fit takes its width out of the title instead, wrapping it
+ * onto another line and making a sticky bar taller that everything below is
+ * offset against. `.roomy` is added FIRST and kept only if the row still fits
+ * inside the column, because the question is whether it fits when it is shown;
+ * asking it while the stamp is hidden always answers yes.
+ *
+ * The observer is not belt and braces over the resize listener. The identity pill
+ * is rendered from /api/state after this file has run and takes its width out of
+ * this column when it lands, and no resize event is fired for that — the same
+ * reason the report observes its own topbar rather than only listening to the
+ * window.
+ *
+ * @returns {void}
+ */
+function stampRoom(){const b=$('#brand');if(!b||!$('.stampv'))return;
+ b.classList.add('roomy');
+ if(b.scrollWidth>b.clientWidth+1)b.classList.remove('roomy');}
+stampRoom();
+if(window.ResizeObserver&&$('#brand'))new ResizeObserver(stampRoom).observe($('#brand'));
+addEventListener('resize',stampRoom,{passive:true});
 // ---------- the light/dark choice, and the two topbar buttons ----------
 /**
  * The element the chosen mode is written on, and the key it is remembered under.

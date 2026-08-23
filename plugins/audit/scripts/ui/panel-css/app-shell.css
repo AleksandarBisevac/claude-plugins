@@ -15,6 +15,34 @@
  background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);
  border-bottom:1px solid var(--border)}
 .top>div:first-child{min-width:0;margin-right:auto;max-width:min(52%,34rem)}
+/* The product name and the build serving it, on one baseline. The stamp used to be
+   appended to `#proj` — one nowrap line, elided from the middle — so it sat at the
+   END of a project path that had already spent its whole width budget, and the clip
+   took the stamp rather than the path. That is not a truncation the reader can
+   recover from: the path keeps its two informative ends, while the version simply
+   vanishes on any path long enough to elide, which is every real project.
+   `align-items:baseline` seats the stamp on the name's baseline rather than centring
+   it inside a line box twice its height. */
+.brand{display:flex;align-items:baseline;gap:var(--sp-1);min-width:0}
+.stampv{font-family:var(--mono);font-size:var(--t-label);color:var(--muted);
+ white-space:nowrap}
+/* Hidden until the header is MEASURED to have room for it — see stampRoom(), which
+   is the same argument .tabs.scrolls makes below. Squeeze this column and the stamp
+   takes its width out of the title, which wraps to another line and makes the
+   sticky bar taller — and the tab strip is offset against that height.
+
+   A viewport breakpoint cannot say when that happens, and here it cannot even come
+   close, because the room in this column is NOT MONOTONIC in the viewport: the
+   identity pill appears at 34rem and takes its width out of this column, so the
+   header has LESS room just above that breakpoint than just below it. Sweeping the
+   widths on one project bore that out — the stamp fitted at the last width before
+   the pill appeared, stopped fitting for the next ~150px, and fitted again after
+   that. Re-derive it rather than trusting this sentence; the boundary moves with
+   the button labels, which is the other half of why it is not written down as a
+   number. Hidden is also the safe default: if the script dies before it ever runs,
+   the header is exactly what it was before there was a stamp. */
+.brand:not(.roomy) .stampv{display:none}
+.brand.roomy h1{white-space:nowrap}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
  max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
 .view{min-width:0}

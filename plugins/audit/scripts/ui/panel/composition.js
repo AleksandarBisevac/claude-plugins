@@ -352,6 +352,42 @@ function openInComp(pid){COMPF.q=pid;COMPF.status='';COMPF.needs=false;COMPF.ope
  * @returns {void} written into the #comp view. The manifest is untouched until
  *   Save is pressed and its confirm dialog is answered
  */
+/**
+ * Where a phase sits in the reading order, and whether its plan is still open.
+ *
+ * `segOf` is the Overview's classifier and the report's, and it is REUSED rather
+ * than restated: done and cancelled are the archive, in_progress and blocked are
+ * active, everything else is pending. A second copy of that mapping here is
+ * exactly the defect the report spent a release removing, and it would be free to
+ * disagree about a status one of the two had never heard of.
+ *
+ * @type {Object<string, number>} the report's segment order — active work first,
+ *   then what has not started, then what is closed
+ */
+const SEG_ORDER={active:0,pending:1,archived:2};
+/**
+ * Take every control in a closed phase out of service.
+ *
+ * A done or cancelled phase is a RECORD, not a form: its models, skills and tier
+ * decided what already ran, and editing them now would describe work that never
+ * happened that way. The values stay legible — this disables the controls rather
+ * than dropping them, so a reader can still see what the phase was run with.
+ *
+ * `disabled` and not the `.btn` convention of `aria-disabled`: that one exists to
+ * keep a tab stop on a button whose refusal a reader has to be able to reach and
+ * hear (F16). Nothing here is refusable — the phase is closed — so the standard
+ * control is right, and a disabled control also fires no events, which is what
+ * makes the patch object unreachable rather than merely discouraged.
+ *
+ * @param {HTMLElement} root - a row whose controls are to be frozen
+ * @param {string} why - the reason, put on each control as its title
+ * @returns {number} how many controls were frozen, so a caller can assert it
+ */
+function freezeControls(root,why){
+ const cs=root.querySelectorAll('input,select,textarea,button');
+ cs.forEach(c=>{c.disabled=true;c.title=why;});
+ return cs.length;}
+
 function renderComp(){closeCombo();
  // Rebuilt from FOUR places, which is one more than any other view: its own Save,
  // its Discard, the ADO card's Save and Discard, and the 5s disk poll. MEASURED:
@@ -429,6 +465,20 @@ function renderComp(){closeCombo();
    'skill "'+n+'" is spelled only in this manifest; discovery knows no such '
    +'skill — a hint, not a gate: a name that never resolves simply loads nothing.')));
  const tbody=el('tbody');
+ // The reference for the two PHASE-row controls, once, at the right-hand end
+ // where they sit. It is here rather than in tableHead() because those <th> name
+ // the task columns and a phase row spans all five of them - the review box and
+ // the priority menu land under "model" and "skills" by arithmetic, not by
+ // belonging to them, so borrowing those headings would have labelled them
+ // wrongly. Same rule as the head, though: the ⓘ explains the lever ONCE for
+ // every row that has one. There is no second list of these names - the drawer
+ // still opens on `comp` refs, so the help wiring is unchanged.
+ tcard.append(el('div',{class:'phlegend'},
+   el('span',{class:'phlegend-t'},'per phase:'),
+   flabel('review model',MDESC.phaseReviewModel,
+     {comp:'phaseReviewModel',label:'Phase review model'}),
+   flabel('priority',MDESC.phasePriority,
+     {comp:'phasePriority',label:'Phase priority'})));
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
    // row would be a thousand of them saying one thing.
@@ -439,8 +489,21 @@ function renderComp(){closeCombo();
 
  const open=COMPF.open;
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
- comp.phases.forEach(ph=>{
+ // Work you can still act on comes first, which is the order the report already
+ // reads in and the Overview already filters by. Decorated rather than sorted in
+ // place: `comp.phases` is the payload the poll hands over and the status filter
+ // below still reads it, and the index tie-break keeps PLAN order inside each
+ // segment - so this promotes the active phases without shuffling anything
+ // within them, and two phases of the same segment never swap between renders.
+ const ordered=comp.phases.map((p,i)=>[p,i])
+   .sort((a,b)=>(SEG_ORDER[segOf(a[0].status)]-SEG_ORDER[segOf(b[0].status)])||(a[1]-b[1]))
+   .map(x=>x[0]);
+ ordered.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
+  // A closed phase is a record: everything below is rendered, then frozen.
+  const frozen=segOf(ph.status)==='archived';
+  const frozenWhy='this phase is '+label(ph.status)
+    +' — its plan is closed, so what it ran with is no longer editable';
   // The visible word beside this box is "review", and it is the same word beside
   // all fifty of them — a <label> here would name fifty controls identically,
   // which conforms and helps nobody. The name folds in the phase id and still
@@ -459,15 +522,28 @@ function renderComp(){closeCombo();
   // the server hands over), never from a literal here: a second copy of maxTier
   // in the browser is a second setting.
   const maxTier=prioMax();
-  const prio=el('select',{'data-priority':ph.id||'',
-    'aria-label':'priority for phase '+(ph.id||'')});
-  prio.append(el('option',{value:''},'no priority'));
-  for(let i=1;i<=maxTier;i++)prio.append(el('option',{value:String(i)},String(i)));
+  const tiers=Array.from({length:maxTier},(_x,i)=>String(i+1));
   // A tier ABOVE the maximum is still a real pin — nothing is clamped — so the
-  // control offers it rather than silently resetting the phase to "no priority".
-  if(ph.priority!=null&&ph.priority>maxTier)
-   prio.append(el('option',{value:String(ph.priority)},String(ph.priority)));
-  prio.value=ph.priority==null?'':String(ph.priority);
+  // control offers it rather than silently resetting the phase to unprioritised.
+  // Appended after the range, as the loop that built this by hand did.
+  if(ph.priority!=null&&ph.priority>maxTier)tiers.push(String(ph.priority));
+  // The same option builder the policy, overview and usage selects go through.
+  // It chooses while it appends and compares STRICTLY, which is why the tier is
+  // handed over as a string: an option's value is text, and `prio.value` below
+  // reads it back as text. The hand-rolled version wrote `.value` after the
+  // append instead, and the two agree everywhere except on a tier no option
+  // carries — an impossible value now leaves the unprioritised option showing
+  // rather than a blank box, which is the reading the change handler already had.
+  // The em dash is this table's existing spelling of "unset": the task model box
+  // one row down already shows `placeholder:'—'` for the same idea. It reads as
+  // a value rather than as the sentence "no priority", which is what let the
+  // menu stop being the widest thing in the row. The word this control goes by
+  // is not lost with it - `aria-label` carries "priority for phase <id>", so the
+  // announcement is unchanged and only the painted text got shorter.
+  const prio=fillOptions(
+    el('select',{'data-priority':ph.id||'','aria-label':'priority for phase '+(ph.id||'')}),
+    [['','—'],...tiers.map(t=>[t,t])],
+    ph.priority==null?'':String(ph.priority));
   prio.onchange=()=>{pp.priority=prio.value?Number(prio.value):null;
     patch.phases[ph.id]=pp;};
   // Same STOP as the review combo: the phase row toggles on click, and choosing
@@ -492,11 +568,18 @@ function renderComp(){closeCombo();
       ?el('span',{class:'count whynote'},
           'all tasks done — awaiting sign-off (/audit:review)')
       :null,
-    el('span',{class:'comp-review'},flabel('review',MDESC.phaseReviewModel,
-      {comp:'phaseReviewModel',label:'Phase review model'}),revCombo),
-    el('span',{class:'comp-priority'},flabel('priority',MDESC.phasePriority,
-      {comp:'phasePriority',label:'Phase priority'}),prio))));
+    // The words and the ⓘ that used to sit beside each of these are in the
+    // legend above the table now — one reference for the column instead of one
+    // per phase, which is the rule the two editable task columns already follow.
+    // What names them here is not the visible text: the review box says what it
+    // is through its own placeholder, and both carry an aria-label that folds in
+    // the phase id, so the accessible name never depended on the words removed.
+    el('span',{class:'comp-review'},revCombo),
+    el('span',{class:'comp-priority'},prio))));
+  // The row still TOGGLES when it is frozen — a closed phase is the one you most
+  // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
+  if(frozen){pr.setAttribute('data-frozen','1');freezeControls(pr,frozenWhy);}
   tbody.append(pr);
   const taskEls=[];
   tasks.forEach(t=>{
@@ -516,9 +599,24 @@ function renderComp(){closeCombo();
    const chips=skillChips(getSkills,a=>{tp.skills=a;patch.tasks[t.id]=tp;if(COMPF.needs)refresh();},
      'add a skill to task '+(t.id||''));
    const tr=el('tr',{class:'task','data-status':t.status||''});
-   tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle',title:t.title||''},t.title||''),
+   // No `title` on the title cell any more: it existed to recover text the
+   // ellipsis had cut off, and the cell wraps now, so the words are all on
+   // screen. Kept, it would be a hover tooltip repeating what is already
+   // readable underneath it.
+   tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle'},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
      el('td',{class:'tmodel'},modelCombo),el('td',{class:'tskills'},chips));
+   // EITHER closes a task row. The phase, because an unfinished task inside a
+   // cancelled phase is never going to run; and the task's own status, because a
+   // done task has already run and the model and skills on it are the record of
+   // what ran, not a setting for next time. Same classifier for both — `segOf`
+   // reads a status, and done/cancelled is the archive whichever of the two
+   // carries it.
+   const tFrozen=frozen||segOf(t.status)==='archived';
+   const tWhy=frozen?frozenWhy
+     :'this task is '+label(t.status)+' — it has already run, so what it ran '
+      +'with is the record rather than a setting';
+   if(tFrozen){tr.setAttribute('data-frozen','1');freezeControls(tr,tWhy);}
    tbody.append(tr);
    taskEls.push({id:t.id||'',title:t.title||'',tr,getSkills});
   });

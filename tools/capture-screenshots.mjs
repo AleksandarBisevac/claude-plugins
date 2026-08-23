@@ -2442,7 +2442,12 @@ async function assertViewerIdentity(page) {
  * can only be wrong in a file nobody diffs.
  */
 async function captureConfirmDialog(page) {
-  const inputs = page.locator('#comp tr.task .tmodel input');
+  // NOT `.first()` over every task row: a row whose task (or whose phase) has
+  // finished is frozen, and its model box is disabled, so a fill() against it
+  // waits for an element that will never become editable and fails as a timeout
+  // rather than as the layout claim this function makes. The subject was always
+  // "a model box a reader can change" — `:not([data-frozen])` says so outright.
+  const inputs = page.locator('#comp tr.task:not([data-frozen]) .tmodel input');
   const n = Math.min(3, await inputs.count());
   if (n < 2) { fail('composition: fewer than two task rows to edit for the confirm shot'); return; }
   for (let i = 0; i < n; i++) {
@@ -2608,6 +2613,31 @@ async function awaitConfirmDialog(page) {
   }
 }
 
+/**
+ * The first task a reader could actually change, as the page itself decides it.
+ *
+ * A finished task, or any task inside a finished phase, is frozen by design, and
+ * `fill()` against a disabled box does not fail as the claim its caller is making
+ * - it fails sixty retries later as a TimeoutError, which reads like a hang. So
+ * the choice is made up front, and made with `segOf`: the panel's own segment
+ * classifier, reached through the page rather than restated here, so this cannot
+ * drift from the rule the UI applies.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<{id: string, phaseId: string, was: (string|null)}|null>}
+ *   the task, or null when the fixture has no editable one at all
+ */
+async function firstEditableTask(page) {
+  return page.evaluate(() => {
+    const c = STATE.composition || {};
+    const st = {};
+    (c.phases || []).forEach((p) => { st[p.id] = p.status; });
+    const t = (c.tasks || []).find((x) => segOf(x.status) !== 'archived'
+      && segOf(st[x.phaseId]) !== 'archived');
+    return t ? { id: t.id, phaseId: t.phaseId, was: t.model == null ? null : t.model } : null;
+  });
+}
+
 async function assertConfirmFlowWorks(page) {
   assertNoHandAssignedPolledState();
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2615,11 +2645,8 @@ async function assertConfirmFlowWorks(page) {
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(300);
 
-  const target = await page.evaluate(() => {
-    const t = ((STATE.composition || {}).tasks || [])[0];
-    return t ? { id: t.id, phaseId: t.phaseId, was: t.model == null ? null : t.model } : null;
-  });
-  if (!target) { fail('composition: the fixture has no task to edit'); return; }
+  const target = await firstEditableTask(page);
+  if (!target) { fail('composition: the fixture has no EDITABLE task to edit'); return; }
   const NEW = target.was === 'opus' ? 'haiku' : 'opus';
 
   // The same hand-off Overview uses: filter to the phase and open it.
@@ -2957,15 +2984,33 @@ async function assertConfirmFlowWorks(page) {
       // NOT path.join: this function declares its own `path` const further down,
       // which shadows the module import and puts it in TDZ up here.
       readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
+    // PAINTED, not merely present. This used to read the text of `#proj` and
+    // pass on a substring, which is how the stamp spent releases being invisible
+    // while this stayed green: it was appended to the END of the project-path
+    // line, and that line is nowrap + ellipsis, so the version sat past the clip
+    // edge — in the DOM, on no screen. A gate that cannot tell those two apart is
+    // not guarding the thing its label names. So this asks the geometry instead:
+    // a real box, inside the bar it belongs to.
     const shown = await page.evaluate(() => {
-      const p = document.getElementById('proj');
-      return p ? p.textContent : '';
+      const s = document.querySelector('.top .stampv');
+      if (!s) return null;
+      const r = s.getBoundingClientRect();
+      const bar = document.querySelector('.top').getBoundingClientRect();
+      const brand = document.querySelector('.top .brand');
+      return {
+        text: s.textContent,
+        // the stamp yields to a cramped header by design, so report that state:
+        // a failure here is either "wrong text" or "no room", and they differ.
+        roomy: !!brand && brand.classList.contains('roomy'),
+        painted: r.width > 0 && r.left >= bar.left - 1 && r.right <= bar.right + 1,
+      };
     });
-    if (!shown.includes('audit ' + want)) {
+    if (!shown || shown.text !== 'v' + want || !shown.painted) {
       fail(`panel: the topbar does not name the build serving it — wanted `
-         + `"audit ${want}", topbar reads ${JSON.stringify(shown)}`);
+         + `"v${want}" painted inside the bar, got ${JSON.stringify(shown)}`);
     } else {
-      note(`panel: the topbar names the build serving it (audit ${want})`);
+      note(`panel: the topbar names the build serving it (v${want}), painted `
+         + `inside the bar rather than merely present in the DOM`);
     }
   }
 
@@ -3105,9 +3150,18 @@ async function assertSkillTriState(page) {
   await page.waitForTimeout(200);
   // A phase holding TWO tasks with empty skills: one becomes the opt-out, the
   // other stays [] so the filter check has both sides in one viewport.
+  // ...and an EDITABLE one. A finished phase, or a finished task inside a live
+  // one, has its chips frozen, so a click on the opt-out chip waits for a button
+  // that will never enable and reports a timeout instead of the tri-state claim.
+  // `segOf` is the page's own classifier rather than a done/cancelled list kept
+  // here, which is the same reason the UI itself calls it.
   const pick = await page.evaluate(() => {
+    const c = STATE.composition || {};
+    const st = {};
+    (c.phases || []).forEach((x) => { st[x.id] = x.status; });
     const byP = {};
-    ((STATE.composition || {}).tasks || []).forEach((t) => {
+    (c.tasks || []).forEach((t) => {
+      if (segOf(st[t.phaseId]) === 'archived' || segOf(t.status) === 'archived') return;
       (byP[t.phaseId] = byP[t.phaseId] || []).push(t);
     });
     for (const pid of Object.keys(byP)) {
@@ -3117,7 +3171,7 @@ async function assertSkillTriState(page) {
     return null;
   });
   if (!pick) {
-    fail('skills: the fixture has no phase with two empty-skills tasks to drive');
+    fail('skills: the fixture has no OPEN phase with two empty-skills tasks to drive');
     return;
   }
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -3552,11 +3606,15 @@ async function assertModelCombo(page, project) {
        + '(F-C-1); the runstatus freeze is not holding');
   }
   // Open a real task-model combo and find the probe on screen, un-clipped.
-  const pid = await page.evaluate(() =>
-    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  // The phase of an EDITABLE task, not simply the first task's: opening a
+  // finished phase leaves only frozen rows, and the `:not([data-frozen])` model
+  // box below would then match nothing at all.
+  const picked = await firstEditableTask(page);
+  if (!picked) { fail('composition: the fixture has no editable task to type into'); return; }
+  const pid = picked.phaseId;
   await page.evaluate((p) => openInComp(p), pid);
   await page.waitForTimeout(300);
-  const box = page.locator('#comp tr.task .tmodel input').first();
+  const box = page.locator('#comp tr.task:not([data-frozen]) .tmodel input').first();
   await box.click();
   await box.fill('ledger-only');
   await page.waitForTimeout(250);
@@ -3935,8 +3993,12 @@ async function assertFilterPersistence(page, browser, panelUrl) {
  * UF/COMPF state they always had; a dirty form is left alone and says why.
  */
 async function assertLiveData(page, project) {
-  const pid = await page.evaluate(() =>
-    ((STATE.composition || {}).tasks[0] || {}).phaseId);
+  // The phase of an EDITABLE task, not simply the first task's: opening a
+  // finished phase leaves only frozen rows, and the `:not([data-frozen])` model
+  // box below would then match nothing at all.
+  const picked = await firstEditableTask(page);
+  if (!picked) { fail('composition: the fixture has no editable task to type into'); return; }
+  const pid = picked.phaseId;
   const who = await page.evaluate(() => {
     const t = {};
     for (const f of USAGE.facts) t[f[F.author]] = (t[f[F.author]] || 0) + f[F.tokens];
@@ -3989,7 +4051,7 @@ async function assertLiveData(page, project) {
   }
 
   // The dirty leg: typed work survives the next refresh, with the notice up.
-  const box = page.locator('#comp tr.task .tmodel input').first();
+  const box = page.locator('#comp tr.task:not([data-frozen]) .tmodel input').first();
   await box.click();
   await box.fill('dirty-probe');
   await page.waitForTimeout(200);
@@ -4000,7 +4062,7 @@ async function assertLiveData(page, project) {
     [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m),
   mark2, { timeout: 6500 }).then(() => true, () => false);
   const dirty = await page.evaluate(() => ({
-    value: (document.querySelector('#comp tr.task .tmodel input') || {}).value,
+    value: (document.querySelector('#comp tr.task:not([data-frozen]) .tmodel input') || {}).value,
     stale: !!document.querySelector('#comp [data-stale=comp]'),
     compTitle: [...document.querySelectorAll('#comp tr.phase strong')]
       .some((n) => n.textContent === 'LIVE-PROBE-TITLE-TWO'),
@@ -4214,11 +4276,23 @@ async function assertComboOverlay(page, project) {
        + `table frame does not grow`);
   }
   // d. a mousedown on the menu's padding (not an item) must not close it.
+  // The probe is taken at the TOP EDGE'S HORIZONTAL CENTRE, not at the corner.
+  // It used to read `left + 2, top + 2`, which is outside the menu: the sheet
+  // rounds this box by var(--radius), and a point 2px along each axis from a
+  // 9px corner sits beyond the curve — ((9-2)^2)*2 > 9^2 — so hit-testing sent
+  // the click straight through the cut-out to whatever was painted behind. That
+  // made the case a question about the BACKDROP rather than about the menu, and
+  // it answered "pass" only while the thing behind the corner was harmless;
+  // shifting the menu a few px sideways put a phase-row <td> there, whose click
+  // toggles the row, and the case failed for a reason it was never testing.
+  // Centred, the point is clear of both corners at any radius, and it is still
+  // the padding band and not an item: the border is 1px and the padding 4px, so
+  // the first .combo-it begins 5px down.
   const pad = await page.evaluate(() => {
     const m = [...document.querySelectorAll('.combo-menu')]
       .find((x) => !x.classList.contains('hidden'));
     const r = m.getBoundingClientRect();
-    return { x: r.left + 2, y: r.top + 2 };
+    return { x: r.left + r.width / 2, y: r.top + 2 };
   });
   await page.mouse.move(pad.x, pad.y);
   await page.mouse.down(); await page.mouse.up();
