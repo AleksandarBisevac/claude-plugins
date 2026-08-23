@@ -385,6 +385,21 @@
         }
       }
     },
+    "ui": {
+      "type": "object",
+      "description": "The look of the panel and the report (scripts/_ui_theme.py). No hook reads this - it is published here because this file is where the config's shape is stated, and a key the validator knows and the schema does not is how the two drifted before.",
+      "additionalProperties": true,
+      "properties": {
+        "theme": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A shipped preset NAME ('slate-teal') or a path to a theme file, absolute or relative to the project dir. null (the default) means SEARCH: .claude/audit.theme.json in the project, then ~/.claude/audit.theme.json, then the built-in preset - and every surface says which of the four it is wearing. A path that is not a file is reported rather than silently ignored, because a theme that quietly did nothing sends its author looking for the bug in the wrong place.",
+          "minLength": 1
+        }
+      }
+    },
     "priority": {
       "type": "object",
       "description": "Phase prioritisation (scripts/manifest/_priority.py): which phase the orchestrator reaches for first among the work that is ALREADY ready. Nothing here changes readiness - a dependency always wins.",

@@ -692,20 +692,32 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
 | `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
 | `journal.strictManifestState` | Opt-in confirmation prompt when an edit changes manifest **state** (a task/phase `status`, `completedAt`, `commit`, `attempts`): `off` \| `ask` — deliberately no `deny`, the orchestrator writes through the same tools | `off` |
+| `ui.theme` | The look of the panel and the report: a shipped preset name (`slate-teal`) or a path to a theme file, absolute or relative to the project dir. Unset -> search `.claude/audit.theme.json` in the project, then `~/.claude/audit.theme.json`, then the built-in preset; every surface says which of the four it is wearing, and a path that is not a file is reported rather than silently ignored. Edited in the panel's **Appearance** tab | unset |
+| `priority.maxTier` | Highest phase-priority tier the panel's control offers and `set-priority.py` suggests. **Advisory, and nothing is clamped to it**: a phase pinned above it keeps the tier it was given and sorts after every tier at or under the maximum. Priority re-sorts work that is *already* ready - it never makes an unready task ready and never skips a dependency | `9` |
 | `policy.enabled` | Enforce the capability policy below | `true` (and inert — the shipped rules allow everything) |
 | `policy.onViolation` | What a violation does: `deny` \| `ask` \| `warn` | `deny` |
 | `policy.{skills,agents,mcp}` | Per kind: `{default: "allow"\|"deny", allow: [pattern], deny: [pattern], areas: {tag: {allow, deny}}}` | `default: "allow"`, no rules |
 
-Every key above has a control in the panel's **Settings** tab, grouped into *Paths & gate*,
-*Write guards*, *TDD reminder*, *Usage & pricing* and *Audit trail* — the coverage is asserted by
-`panel-server.py --selftest` against `validate-config.py`'s own key sets, so a key documented
-here and unreachable there is a build failure rather than a discovery. Two deliberate
-exceptions, both pinned by that same selftest: `policy` is not a value with a box but a rule set
-whose meaning is the verdict it produces for each installed capability, so it has its own
-endpoint (`/api/policy`, which serves those verdicts) rather than a generic text field; and
-legacy `enforce` has no checkbox because the `planGate` select **is** its control — the select's
+Every key above has a control in the panel, and for most of them it is a box in the **Settings**
+tab — grouped into *Paths & gate*, *Write guards*, *TDD reminder*, *Usage & pricing*,
+*Audit trail* and *Execution order*. Both directions are build failures rather than discoveries:
+the panel's own suite derives the form's controls from `_config_rules.py`'s key sets, so a key
+documented here and unreachable there fails, and `_config_rules.config_vocab_drift()` compares
+those same key sets against the schema and against the table above, so a key the plugin
+*reads* and this page does not publish fails too. That second direction is new; `ui.theme` and
+`priority.maxTier` were both live and unpublished before it existed.
+
+Some keys deliberately have no Settings box — the exemption list is in the suite that would
+otherwise fail each one, which is what keeps it from outliving its reason. `policy` is not a
+value with a box but a rule set whose meaning is the verdict it produces for each installed
+capability, so it has its own
+endpoint (`/api/policy`, which serves those verdicts) rather than a generic text field. Legacy
+`enforce` has no checkbox because the `planGate` select **is** its control — the select's
 preset reads the legacy flag, and choosing a tier writes `planGate` while deleting `enforce`,
-one statement of the gate's tier instead of two contradicting ones.
+one statement of the gate's tier instead of two contradicting ones. And `ui.theme` belongs to
+the **Appearance** tab, a token editor with a live preview and a contrast check; a text field
+here holding a theme name beside it would be a second control writing one key, free to disagree
+with the tab about which theme is on.
 
 ### Capability policy — `policy`
 
