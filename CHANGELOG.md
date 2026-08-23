@@ -122,6 +122,46 @@ really have nowhere to go. What a bare `meta.ado` block can still prove stayed b
 **explicit** `parentWorkItem: null` beside `requireParent` says the fallback is deliberately
 off, so every item owes its own declaration.
 
+**The conformance gate could only refuse, so on a governed board nothing was creatable.**
+`meta.ado.conventions.requiredFields` grades a payload before every create; a real board's
+requirements are field-level — a Task owing `Microsoft.VSTS.Common.Activity` and an original
+estimate, a story owing acceptance criteria and points — and the connector wrote none of
+them. So the honest `conventions` block refused every create and the block that let a push
+through was a deliberately weakened description of the board. `meta.ado.fields` is the other
+half: what this project **supplies**, per work item type, merged into the payload before the
+gate grades it. The board says what it requires, the manifest says what it provides, and the
+gate grades the result.
+
+**A template may not name a field the connector already maps**, and that is refused when the
+config is written rather than when a push runs — there is no later state in which such a
+setting quietly starts working. `Microsoft.VSTS.Scheduling.RemainingWork` is deliberately not
+reserved: the connector writes it at DONE through `onComplete` and never at create, so a
+board that requires it at create is exactly the case this key exists for. There is no
+substitution language, because the fields that would carry manifest data are precisely the
+ones a template may not name.
+
+**A read-only field is refused rather than attempted, because attempting it can look like it
+worked.** Measured on a live board: `System.BoardColumn` refuses out loud, while
+`System.Parent`, `System.Id` and `System.CreatedBy` each created the item, reported success
+and left the field unset. For the field people most want to set, "try it and report what the
+server said" would report a create that worked.
+
+**`/audit:propose list` promised a table and printed prose.** Its own command file names five
+columns and then rendered them from memory, because `list` was the one proposal verb no
+script produced — the same file's doctrine, *the rule is a script not this file*, already
+covered `materialize`, `drop` and `revive`. The table now comes out of
+`materialize-proposal.py`, the panel reads the same rows, and what stays with the model is
+the conversation around the output rather than the output itself.
+
+**A gate that had quietly stopped proving anything.** `tools/prove-gates.py` mutates the tree
+to confirm each lint can actually fail, and its `navigability_violations` row targeted a file
+that a refactor shrank below the 400-line threshold the rule applies at. Dropping a section
+marker there stopped being a violation, so the gate reported that it asserts nothing — one
+change making an unrelated gate go silent, with no test red anywhere. The row now names a
+file that satisfies both of its constraints, 400+ lines **and** exactly the two markers it
+needs, since the mutation removes one line and a file with fourteen markers still has
+thirteen.
+
 ## [1.0.0] - 2026-08-23
 
 **The version number starts promising something.** `COMPATIBILITY.md` was written before
