@@ -233,7 +233,7 @@ def _bug_view(b, task_by_id):
     Adopting the shared rule also picks up its falsy-`taskId` guard, which this file
     did not have: given an index built WITHOUT the truthy-id filter (audit-status's
     ready-list index is one), a bug carrying no `taskId` used to look up the `None`
-    key, find a task, and read 'fixed'. Pinned below by two cases.
+    key, find a task, and read 'fixed'. Pinned by the cases below.
     """
     status = _manifest_io.effective_bug_status(b, task_by_id)
     # DECIDED, and it is the `x or default` shape the house rules single out, so it

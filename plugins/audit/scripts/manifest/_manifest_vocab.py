@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-The manifest's vocabulary, and the four shape checks every level of it shares.
+The manifest's vocabulary, and the shape checks every level of it shares.
 
 Split out of `_manifest_rules.py`, which was 1,406 lines, and cut here because
 this is the one piece with no rule in it: an enumeration of the words the
 orchestrator understands, plus the small checks that are asked of a phase, a
-task and a bug alike. Four modules need them (`_manifest_phases`,
-`_manifest_ado`, `_manifest_crossrefs` and `_manifest_rules` itself), and a
-vocabulary copied into four files is four vocabularies that will disagree the
-first time one of them learns a word.
+task and a bug alike. Several modules need them, and a vocabulary copied into
+each is as many vocabularies as there are copies - all of which agree until the
+first time one of them learns a word. Who imports it is derived, not listed here,
+because the list was wrong in both halves when somebody finally ran the graph:
+
+    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
+    e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_vocab'))"
 
 LAYER 1, AND THAT IS WHY `TERMINAL` IS NOT HERE. Every other name below is a
 literal or a `re` pattern, so this module reaches nothing but `_output` and can
-sit at the floor where all four consumers can import it. `TERMINAL` is
+sit at the floor where every consumer can import it. `TERMINAL` is
 `_manifest_io`'s (layer 1 as well), so holding it here would put this module at
 layer 2 and push `_manifest_rules` past the layer its own consumers leave free.
 It stays re-exported from `_manifest_rules`, where the phase walk reads it.
@@ -251,7 +254,9 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #
 #    LAYER, WHICH SETTLES WHERE THE COMPARISON GOES. `_help` is at layer 2 and
 #    `gen-demo-manifest` is an entry point above it. This module is at layer 1
-#    because four layer-2 modules import it, so reaching either is an upward edge
+#    because its importers ALL sit above it - the graph command in the docstring
+#    prints them, and `_deps._layer_of` their layers - so reaching either is an
+#    upward edge
 #    `_deps.layer_violations()` fails — and the alternative, another walk written
 #    here, is the duplication being removed rather than deleted. So the COMPARISON
 #    lives with the walk it uses, in `_help.schema_vocab_drift()`, and this module

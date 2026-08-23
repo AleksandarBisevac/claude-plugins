@@ -136,7 +136,7 @@ UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
 # --- stylesheet lints -----------------------------------------------------------
 # The stylesheet lints live in _ui_theme, beside the tokens they police, so the
 # report and the panel are held to exactly the same rules by the same code. They
-# came here with the four cases that read them: they judge the assembled page, and
+# came here with the cases that read them: they judge the assembled page, and
 # panel-server.py no longer has one.
 _undeclared_css_vars = _theme.undeclared_css_vars
 _theme_asymmetric_vars = _theme.theme_asymmetric_vars
