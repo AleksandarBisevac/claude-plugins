@@ -4,7 +4,19 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [1.0.0] - 2026-08-23
+
+**The version number starts promising something.** `COMPATIBILITY.md` was written before
+this release and deliberately did not claim it had happened; from this tag it is the
+contract. Two surfaces are under it and only two -- the manifest you keep in your
+repository and the config in `.claude/audit.config.json` -- because both are files *you*
+own and the plugin reads, and an upgrade must never invalidate a file you wrote. A change
+that would break either now waits for a major instead of riding a minor. That is the
+trade, and the cost is release velocity.
+
+Nothing in this release breaks either contract. `1.0.0` marks what the number means from
+here, not a change in what the plugin does.
+
 
 **The manifest layout is a choice with a name, and it goes both ways.** `/audit:layout
 sharded|single-file` replaces `/audit:migrate` as the command that decides how the manifest is
