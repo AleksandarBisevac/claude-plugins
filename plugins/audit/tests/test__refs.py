@@ -977,6 +977,147 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- the document graph ---------------------------------------------------------
+    check("dl1 every root-level document is reachable by a link and every link in the "
+          "tree names a file that is there: %r" % (M.doc_link_drift(),),
+          M.doc_link_drift() == [])
+    check("dl2 the entry point reachability is measured FROM is a real root-level "
+          "document, and nothing is both the entry point and exempt from needing a "
+          "link - two tables disagreeing about one file is how an exemption outlives "
+          "its reason",
+          os.path.isfile(os.path.join(M.REPO_ROOT, M.DOC_ENTRY))
+          and "/" not in M.DOC_ENTRY
+          and M.DOC_ENTRY not in [r for r, _w in M.UNLINKED_BY_DESIGN],
+          repr(M.DOC_ENTRY))
+    check("dl3 every exemption carries a REASON - an entry with an empty one is a "
+          "silent exclusion wearing a declaration's shape: %r"
+          % ([r for r, _w in M.UNLINKED_BY_DESIGN],),
+          all(isinstance(w, str) and w.strip() for _r, w in M.UNLINKED_BY_DESIGN))
+
+    # The fixture MIRRORS the constants rather than spelling them, the same discipline
+    # the sweep fixture above follows: a document added to `UNLINKED_BY_DESIGN` cannot
+    # leave these cases asserting about a tree the rule no longer describes. The names
+    # that are NOT in either table are deliberately not this repo's, because a real
+    # filename would make a passing case ambiguous about which tree it read.
+    tmp = tempfile.mkdtemp(prefix="qg-dlg-")
+    _dl_other = "HANDBOOK.md"
+    _dl_nested = "docs/notes/deep.md"
+
+    def _dl_write(links):
+        """The mirror tree: the exempt documents, and an entry point with `links`."""
+        for _rel, _why in M.UNLINKED_BY_DESIGN:
+            _write(tmp, _rel, "reached some other way\n")
+        _write(tmp, ".gitignore", "# fixture\nscratch/\n")
+        _write(tmp, M.DOC_ENTRY, "".join("[x](%s)\n" % t for t in links))
+
+    try:
+        _dl_write([])
+        check("dl4 the mirror fixture is clean, so every case below fails for the "
+              "reason it names rather than because the fixture was already red",
+              M.doc_link_drift(tmp) == [], repr(M.doc_link_drift(tmp)))
+
+        _write(tmp, _dl_other, "a new page\n")
+        _d = M.doc_link_drift(tmp)
+        check("dl5 a root document nothing links to is reported - the SILENT half, "
+              "and the one a documentation split creates: adding a page adds a page "
+              "whose discoverability rested on somebody remembering a link",
+              len(_d) == 1 and _d[0][0] == _dl_other
+              and "nothing links to" in _d[0][1]
+              and M.DOC_ENTRY in _d[0][1], repr(_d))
+
+        _dl_write([_dl_other])
+        check("dl6 ...and linking it clears it. The other direction, which is what "
+              "proves dl5 tested the LINK rather than whether the file exists",
+              M.doc_link_drift(tmp) == [], repr(M.doc_link_drift(tmp)))
+
+        _dl_write([_dl_other, "MOVED.md"])
+        _d = M.doc_link_drift(tmp)
+        check("dl7 a link naming a file that is not there is reported, quoting the "
+              "target AS WRITTEN so the finding says what to grep for",
+              len(_d) == 1 and _d[0][0] == M.DOC_ENTRY
+              and "MOVED.md" in _d[0][1] and "not in the tree" in _d[0][1], repr(_d))
+
+        # Resolution is relative to the document that WROTE the link. The plugin README
+        # climbs out of its own directory to reach the root documents, so reading every
+        # target as root-relative would report those as broken while missing a genuinely
+        # broken sibling link - wrong in both directions at once.
+        _dl_write([_dl_other, _dl_nested])
+        _write(tmp, _dl_nested, "[home](../../%s)\n" % (M.DOC_ENTRY,))
+        check("dl8 a target resolves against the directory of the document that wrote "
+              "it, so a nested page climbing back to the entry point is not a broken "
+              "link", M.doc_link_drift(tmp) == [], repr(M.doc_link_drift(tmp)))
+
+        _write(tmp, "docs/notes/lonely.md", "nobody links me\n")
+        check("dl9 a NESTED document nothing links to is NOT a finding, and the "
+              "asymmetry is recorded rather than passed over: reachability is a "
+              "property of the published root, and demanding an inbound link for "
+              "every skill document would need a blanket exemption - which is noise "
+              "wearing a rule's clothes", M.doc_link_drift(tmp) == [],
+              repr(M.doc_link_drift(tmp)))
+
+        _write(tmp, _dl_nested, "[out](../../../escape.md)\n")
+        _d = M.doc_link_drift(tmp)
+        check("dl10 a link resolving OUTSIDE the repository is reported as that rather "
+              "than stat'd - stat'ing it would look on whatever machine ran the check, "
+              "which is a finding about a laptop",
+              len(_d) == 1 and _d[0][0] == _dl_nested
+              and "outside the repository" in _d[0][1], repr(_d))
+
+        _write(tmp, _dl_nested,
+               "[a](https://example.invalid/x.md) [b](mailto:nobody@example.invalid) "
+               "[c](#a-section)\n")
+        check("dl11 another host, a `mailto:` and an in-page anchor are not claims "
+              "about a file in this tree and produce nothing - a rule that reported "
+              "them is one somebody switches off", M.doc_link_drift(tmp) == [],
+              repr(M.doc_link_drift(tmp)))
+
+        _dl_write([_dl_other] + [r for r, _w in M.UNLINKED_BY_DESIGN])
+        _d = M.doc_link_drift(tmp)
+        check("dl12 an exemption something links to after all is reported, naming who "
+              "links it: a dead row here is exactly where the next real orphan hides",
+              len(_d) == len(M.UNLINKED_BY_DESIGN)
+              and all("outlived its reason" in p for _r, p in _d), repr(_d))
+
+        _dl_write([_dl_other])
+        for _rel, _why in M.UNLINKED_BY_DESIGN:
+            os.remove(os.path.join(tmp, _rel.replace("/", os.sep)))
+        _d = M.doc_link_drift(tmp)
+        check("dl13 ...and an exemption that has stopped being a root document is "
+              "reported too, so the table cannot excuse nothing while looking full",
+              len(_d) == len(M.UNLINKED_BY_DESIGN)
+              and all("excuses nothing" in p for _r, p in _d), repr(_d))
+
+        _dl_write([_dl_other, _dl_nested])
+        with open(os.path.join(tmp, _dl_nested.replace("/", os.sep)), "wb") as _fh:
+            _fh.write(b"[x](\xff\xfe.md)\n")
+        _d = M.doc_link_drift(tmp)
+        check("dl14 a document that cannot be decoded is a NAMED finding, never a "
+              "skip: 'I could not resolve this file's links' and 'this file's links "
+              "are fine' are different answers, and skipping tells the second as the "
+              "first", len(_d) == 1 and _d[0][0] == _dl_nested
+              and "cannot be read" in _d[0][1], repr(_d))
+
+        _write(tmp, _dl_nested, "readable again\n")
+        _dl_write([_dl_other])
+        os.remove(os.path.join(tmp, M.DOC_ENTRY))
+        _d = M.doc_link_drift(tmp)
+        check("dl15 with no entry point the rule says THAT: every other document would "
+              "otherwise read as unreachable at once, which is a wrong answer wearing "
+              "the shape of a right one",
+              [p for r, p in _d if r == M.DOC_ENTRY and "entry point" in p] != [],
+              repr(_d))
+
+        _dl_write([_dl_other])
+        os.remove(os.path.join(tmp, ".gitignore"))
+        _d = M.doc_link_drift(tmp)
+        check("dl16 with no readable `.gitignore` the rule reports that and stops - it "
+              "cannot know which directories the repo does not keep, and walking the "
+              "agent worktrees would report this repo's own documents once per "
+              "checkout", len(_d) == 1 and _d[0][0] == ".gitignore"
+              and "cannot be derived" in _d[0][1], repr(_d))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     # --- published fetch instructions -----------------------------------------
     check("p1 the tree publishes no runnable fetch from a moving ref, and no stale "
           "pin in the plugin README", M.raw_url_pin_drift() == [],

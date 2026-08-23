@@ -98,9 +98,9 @@ a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass 
 > Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
 > (on Windows: run inside Git Bash).
 
-## Quickstart
+## Try it with no setup
 
-**Start here — it costs nothing and needs no setup:**
+**Start here — it costs nothing and writes nothing:**
 
 ```
 /audit:usage --backfill    # reads transcripts already on disk → your own past spend
@@ -112,24 +112,10 @@ model, author and agent. Everything will read as **Uncategorized** — that is t
 point. Attributing spend to *phases and tasks* is what the rest of this does, and it
 is the comparison a plan-driven pipeline can make that a date-range dashboard cannot.
 
-Then, in any git repo you want to audit:
-
-```
-/audit:doctor          # is the setup healthy? interpreter, git root, config, gates
-/audit:init            # interview → generates a schema-valid audit manifest
-/audit:status          # see phases, tasks, bugs, and what's ready now
-/audit:migrate         # (optional) shard the manifest → parallel-safe phases across worktrees
-/audit:panel           # open the browser control panel to tune config + composition (open/stop/status)
-/audit:phase P0        # run the first phase: branch → tasks (red-first TDD) → gated sign-off
-/audit:report          # render the HTML + Markdown report (--share publishes it to a link)
-/audit:usage           # the same spend view — now attributed to phases and tasks
-```
-
-`/audit:init` interviews you (scope, dimensions, size) and writes the manifest;
-everything else reads and updates it. The report is one self-contained file
-(open it in a browser, or **Save as PDF**). See the [worked example](examples/)
-for what a manifest and its report look like, or the [plugin README](plugins/audit/README.md)
-for the full command reference.
+Then, in a git repo you want to audit, **[QUICKSTART.md](QUICKSTART.md) is the whole
+path** — install to a rendered report, one page, in order, and it stops there. It is
+deliberately not repeated here: this page is the pitch, and a command list in two
+places is one list and one lie.
 
 Want to try the two UIs before installing anything? The example ships a script
 for each — `examples/panel.sh` opens the control panel on it, `examples/report.sh
@@ -144,11 +130,29 @@ and a fileIndex.
 
 ## Docs
 
+Ordered by what you are here to do, because the reference documents are long and
+none of them is the place to start.
+
+**Getting it running**
+
+- [QUICKSTART](QUICKSTART.md) — install → first audited task → first report. One page.
+- [Plugin README](plugins/audit/README.md) — the deep reference, once it is running:
+  every command, every config key, the control panel, token usage, the audit trail
+
+**Deciding whether to depend on it**
+
+- [COMPATIBILITY](COMPATIBILITY.md) — what a version number promises about the
+  manifest and the config file *you* own, and where the promise stops
+- [SECURITY](SECURITY.md) — threat model, fail modes, and what the guards do NOT guarantee
 - [**Enforcement over persuasion**](docs/essays/enforcement-over-persuasion.md) — why the
   guards are hooks and pinned tool lists rather than firmer wording, the two ways this repo
   got that wrong, and what enforcement cannot do
-- [Plugin README](plugins/audit/README.md) — install, quick start, configuration, extending
-- [CHANGELOG](CHANGELOG.md) · [SECURITY](SECURITY.md) — threat model & what the guards do NOT guarantee · [CONTRIBUTING](CONTRIBUTING.md)
+- [CHANGELOG](CHANGELOG.md) — what changed, release by release
+
+**Working on it**
+
+- [CONTRIBUTING](CONTRIBUTING.md) — start here: the gates to run and the rules that
+  are enforced rather than requested
 - [PLUGIN-BUILD-GUIDE](PLUGIN-BUILD-GUIDE.md) — how this plugin is put together, file by file
 
 License: [MIT](LICENSE)

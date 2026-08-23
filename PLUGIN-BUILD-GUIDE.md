@@ -124,7 +124,7 @@ claude-plugins/                           # this repo (personal, public)
         _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
         _deps.py                          # the module layer table, checked against the real import graph every run
-        _refs.py                          # every script path a document names, stat'd against the files on disk
+        _refs.py                          # what one file claims about another: script paths stat'd, and the document link graph
         usage/                            # the usage domain: the ledger, the arithmetic over it, the CLI
           _usage_core.py                  # usage arithmetic: the price table, the hour bucket, the roll-ups, the row readers
           _usage_spend.py                 # spend through time: series, window compare, cache profile
@@ -955,6 +955,24 @@ quoting a dead URL as history, and a case now pins that it is the scope and not 
 The remaining edge is stated rather than papered over — `.gitignore` is read for DIRECTORIES,
 so a file it ignores of a scanned format stays a candidate, and for this rule that is the
 rendered report, which is generated and can carry a fence.
+
+`doc_link_drift()` rides the same walk and asks the question nothing here asked at all:
+**is a document reachable?** No rule enumerated the root-level documents, none counted them,
+and none checked that one is linked from anywhere — there was no Markdown link checker in the
+tree. A document nobody links to is a document nobody reads, and it fails with every gate
+green. That became load-bearing when the documentation was split by audience, because the
+split's whole value is that a new reader's path to first success is short, and a path is a
+property of the link GRAPH rather than of any one file. Two directions, asymmetric on purpose:
+every inline link the walk can reach is resolved against the directory of the document that
+wrote it — a claim about a file is checkable wherever it is written — while only *root-level*
+documents are required to have an inbound link, because reachability is a property of the
+published root and demanding one for every `SKILL.md` would need a blanket exemption. The
+entry point is a constant rather than an exemption, and `UNLINKED_BY_DESIGN` is checked in
+both directions like every other declared exclusion here: an entry that has stopped being a
+root document, or that something links to after all, is a finding rather than a row that
+quietly excuses nothing. Reference-style links and autolinks are not resolved, so it
+under-reports rather than over-reports — the same limit this module's header states about a
+path split across two literals.
 
 `tool_basename_drift()` covers the shape none of the above can see. `tools/` never spells a
 route: it says `resolveScript('panel-server.py')`, so there is no `scripts/…py` on the line for

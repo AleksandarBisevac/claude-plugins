@@ -1,5 +1,25 @@
 # Contributing
 
+**Read in this order.** The reference documents here are long, and a second
+contributor who opens the wrong one first spends an hour learning the architecture
+before learning how to run the tests.
+
+1. **This file** — the rulebook. The gates you must run before a PR, the hard rules
+   that are enforced by lints rather than by review, and the Decision record at the
+   end: settled questions, each with the trigger that would reopen it.
+2. **`CLAUDE.md`** — the short version of what you must know *before* an edit. It
+   restates no procedure from here on purpose.
+3. **`PLUGIN-BUILD-GUIDE.md`** — the architecture, file by file. Reach for it when you
+   need to know what a specific module does, not to get oriented.
+4. **The skill for the language you are about to write** — the table is in
+   `CLAUDE.md`. Each states the house dialect and the anti-patterns that have actually
+   bitten here.
+
+Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
+contract over the manifest and the config file they own, and
+[QUICKSTART.md](QUICKSTART.md) is the one page a new user reads — a change that adds
+a step to first-run belongs there and nowhere else.
+
 ## Dev setup
 
 ```bash
@@ -125,7 +145,10 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   that is off on most machines. `py-launch.sh` stays POSIX-sh builtins-only.
 - **Schema changes are additive** (or remove never-read optional fields). An
   existing manifest must keep validating across versions; prove it with a
-  legacy-fields fixture when in doubt.
+  legacy-fields fixture when in doubt. This rule predates
+  [COMPATIBILITY.md](COMPATIBILITY.md) and is now half of what that document
+  promises — so a change that would break it is not a judgement call any more, it is
+  a major release.
 - **New behavior ⇒ new selftest cases.** Selftests are the plugin's test suite;
   every decision-core change lands with cases that pin it. **Every `.py` under
   `hooks/` and `scripts/` must carry a `--selftest`** — CI globs the directories
@@ -717,3 +740,74 @@ instance the panel already serving its per-request values from an endpoint the p
 one-scope collision hazard actually bites again (the `findingsBox` near-miss is the recorded one).
 The `type="module"` half needs no trigger at all: it is available now, costs a route nothing, and
 is held back only by wanting the cut reviewed on its own.
+
+### Documentation split by audience (decided 2026-08-23): a landing page that hands off, one page per audience, and a lint that holds the hand-off
+
+The reference documents in this repository had become a wall for two different readers
+at once — a new user and a second contributor — and the symptom was not their length.
+It was that **the first-run path existed twice**: once in the root `README.md` as a
+command list, and once in `plugins/audit/README.md` under its own `## Quick start`,
+which a reader reaches only after the TL;DR, the enforcement tables, the command
+reference, the requirements and the install notes. Two copies of a first-run path is
+one copy and one lie, and the second copy was behind the wall it was supposed to spare
+you.
+
+**The cut is by audience, and each document now has one job:**
+
+- `README.md` — the pitch. What is enforced versus what is merely followed, the demo,
+  install, and one link per audience. No procedure.
+- `QUICKSTART.md` — a new user's first session: install, one audited task, one report.
+  Nothing else, ever.
+- `COMPATIBILITY.md` — what a version number promises about the manifest and the
+  config file the user owns, and where the promise stops.
+- `plugins/audit/README.md` — the deep product reference, for a reader who is already
+  running it. It now says so in its first screen.
+- This file — the contributor's first stop, with the reading order at the top.
+- `PLUGIN-BUILD-GUIDE.md` — the architecture, reached from that reading order.
+
+**A lead section inside `README.md` was rejected, and not on effort.** A landing page's
+job is to make someone want the thing; a first-run path's job is to get them working.
+Kept in one page those two compete, and the path is what loses — every new command
+appends a line and nothing says it should not, which is exactly how the list there grew
+past first success into a tour. A separate page can be held to *install, one task, one
+report* because that is its entire scope, and the failure mode is legible on the page
+itself rather than buried in a section of a longer one.
+
+**A reading order alone was rejected for the user and adopted for the contributor**,
+because the two readers want different things from the wall. A reading order tells you
+which wall to climb; it does not shorten the climb. A new user does not want to climb
+any of it — they want their first success — so they get a page instead. A contributor
+*is* going to read the reference documents; the walls are the product for them, and
+what they were missing was the order.
+
+**`PLUGIN-BUILD-GUIDE.md` was not cut, and the reason is mechanical.** Its own lints
+locate sections with a bare text search on literal headings, with no line anchor, and
+the guide's path is hardcoded. A reading-order pointer at the top that quoted one of
+those headings verbatim would silently retarget the extractor and make every module
+under `hooks/` and `scripts/` a finding — the pointer would look like documentation and
+behave like a rename. So the guide is reached by name from the reading order above and
+is otherwise untouched.
+
+**The split owed a check, and here is the argument.** Nothing in this tree enumerated
+the root-level documents, nothing counted them, and nothing asserted that one is linked
+from anywhere; there was no Markdown link checker at all. So a split that adds pages
+adds pages whose discoverability is held by a human habit — and the whole point of the
+split is that a reader's path to first success is short, which is a property of the
+link graph. `_refs.doc_link_drift()` was therefore written *with* the split rather than
+after it, while the graph was still clean, which is the only cheap moment to start
+holding one. It reports both directions: a root document nothing links to, and a link
+that points at a path which is not there. Each exemption is declared with its reason,
+and a reason that has stopped describing the tree is itself reported — the same shape
+`EXCLUDED` and `ABSENT_BY_DESIGN` already use here.
+
+**Revisit trigger, on the user side:** when `QUICKSTART.md` stops being a path and
+starts being a reference — when it explains a config key, offers a second way to do a
+step, or when a step a first run actually needs is missing from it. Both are read off
+the page. Deliberately **not** a length: a document can double in lines and still be
+one path, or stay short and carry two, and a line budget is exactly the kind of proxy
+the reversals above are about.
+
+**Revisit trigger, on the contributor side:** when a question a contributor hits in
+their first hour is answered in none of the reading order's stops, or is answered in
+two of them differently. Both are observable the next time someone new lands here,
+which is what makes this able to fire at all.

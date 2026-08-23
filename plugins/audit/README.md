@@ -9,6 +9,12 @@ task + bug tracking, multi-agent manifest generation, and guard hooks (plan-firs
 secret-safety, token-logging, capability policy, TDD nudge). The pipeline logic is generic; everything
 project-specific is supplied by a small per-repo config file.
 
+> **This is the reference, not the introduction.** If you have not run it yet, read
+> [QUICKSTART.md](../../QUICKSTART.md) instead — install to a rendered report, one
+> page. Come back here for a specific command, a config key or a guarantee;
+> [COMPATIBILITY.md](../../COMPATIBILITY.md) is what an upgrade promises about the
+> files you own.
+
 ## TL;DR
 
 ```

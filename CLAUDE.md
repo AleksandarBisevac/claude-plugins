@@ -44,6 +44,11 @@ two copies of a procedure is one copy and one lie.
   to delete the number and keep the pointer. When a number really is informative, carry the
   basis; a basis makes a claim checkable, but only deleting the number stops it rotting.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
+- **`COMPATIBILITY.md` is a contract, not a description.** It promises that a `meta.version`
+  the plugin accepts keeps being accepted and that a config key it reads keeps being read. So
+  removing either, or changing which of two keys wins, is no longer a judgement call — it is a
+  major release. Adding is always free. The document also names what is deliberately *not*
+  promised; extend that list rather than quietly widening the promise.
 
 ## Adding a `.py` under `hooks/` or `scripts/`
 
@@ -228,7 +233,9 @@ does not apply to them.
 `CONTRIBUTING.md` ends with a **Decision record** — settled questions, each with an observable
 revisit trigger: `commands/` alongside thin skills, **domain directories under `scripts/`**, the
 `typing` ban, in-product help as an endpoint plus an invoked agent rather than an auto-triggering
-skill. Read it before re-opening one of them, and if a trigger has genuinely fired, say which.
+skill, **documentation split by audience** (which is why `QUICKSTART.md` is a page and not a
+section, and why a first-run step goes there and nowhere else). Read it before re-opening one of
+them, and if a trigger has genuinely fired, say which.
 
 **Two of those entries were reversed with their trigger still green**, and for the same reason
 both times: the trigger was a threshold on something incidental — a deprecation that might never
