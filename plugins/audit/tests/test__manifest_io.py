@@ -474,6 +474,127 @@ def _cases(check):
               "way and would make this assert nothing",
               os.path.isfile(_flat) and M.index_only_in_bodies(_flat) == [],
               repr(M.index_only_in_bodies(_flat)))
+
+        # --- the layout, read two ways ----------------------------------------
+        # `meta.version` is a SECOND reading of what `is_sharded()` answers from the
+        # phase stubs, and the two agreed on the forward migration only because
+        # `split_manifest` happens to write the sharded number. These cases hold the
+        # writers to both readings at once, in both directions - the pair that would
+        # have caught a reverse write that inlined the shards and left the version
+        # naming the layout the file no longer has.
+        _lsrc = {
+            "$schema": "../../plugins/audit/schema/audit-plan.schema.json",
+            "meta": {"version": 2, "repo": "demo"},
+            "phases": [
+                {"id": "P1", "title": "a", "status": "done", "priority": 1,
+                 "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                            "files": ["src/a.ts"]}]},
+                {"id": "P2", "title": "b", "status": "pending",
+                 "claim": {"sessionId": "s1", "host": "h", "branch": "audit/p2"},
+                 "tasks": [{"id": "P2.1", "title": "u", "status": "pending",
+                            "dependsOn": ["P1.1"], "files": ["src/b.ts"],
+                            "bugId": "BUG-1"}]}],
+            "fileIndex": {"src/a.ts": ["P1.1"], "src/b.ts": ["P2.1"]},
+            "bugs": [{"id": "BUG-1", "title": "bug", "status": "in_progress",
+                      "taskId": "P2.1", "severity": "high"}],
+            "deferred": [{"id": "D1", "title": "later"}],
+            "proposals": [{"id": "PR1", "title": "parked"}],
+        }
+        _ldir = os.path.join(tmp, "layout-readings")
+        os.makedirs(_ldir)
+        _lsharded = os.path.join(_ldir, "sharded.json")
+        M.save_sharded(_lsharded, _lsrc)
+        _lraw = M.read_json(_lsharded)
+        check("lay1 save_sharded: the phase stubs read as the sharded layout",
+              M.layout_of(_lraw) == "sharded", repr(_lraw.get("phases")))
+        check("lay2 save_sharded: and meta.version NAMES that same layout - the two "
+              "readings must not be able to disagree about a file this code wrote",
+              M.declared_layout(_lraw) == M.layout_of(_lraw),
+              repr(_lraw.get("meta")))
+        _lsingle = os.path.join(_ldir, "single.json")
+        M.save_single_file(_lsingle, M.load_manifest(_lsharded))
+        _lraw2 = M.read_json(_lsingle)
+        check("lay3 save_single_file: the phases read as the single-file layout",
+              M.layout_of(_lraw2) == "single-file", repr(_lraw2.get("phases")))
+        check("lay4 save_single_file: and meta.version comes back DOWN to name it - "
+              "the version left at the sharded value is the trap this pins",
+              M.declared_layout(_lraw2) == M.layout_of(_lraw2),
+              repr(_lraw2.get("meta")))
+        check("lay5 the two writers really disagree about the layout, so lay2 and "
+              "lay4 are comparing something that moves rather than a constant",
+              M.layout_of(_lraw) != M.layout_of(_lraw2))
+        check("lay6 declared_layout returns None for a manifest whose version names "
+              "no layout: absence is NOT agreement, and a caller has to be able to "
+              "tell 'the two disagree' from 'there is nothing to disagree with'",
+              M.declared_layout({"meta": {}, "phases": []}) is None
+              and M.declared_layout({"meta": {"version": 99}, "phases": []}) is None
+              and M.declared_layout({"phases": []}) is None
+              and M.declared_layout(["not-a-dict"]) is None)
+        check("lay7 ...and a bool is not the integer it equals - True == 1 in Python, "
+              "so a version of True must not resolve through the table",
+              M.declared_layout({"meta": {"version": True}}) is None)
+
+        # --- joining shards back into one file --------------------------------
+        _jsrc = M.load_manifest(_lsharded)
+        _joined = M.join_manifest(_jsrc)
+        check("join1 the round trip is lossless as DATA: single-file -> sharded -> "
+              "single-file returns the source, meta.version included",
+              _joined == _lsrc, repr(_joined))
+        for _field in ("bugs", "fileIndex", "deferred", "proposals", "$schema"):
+            # No escape hatch for an absent field on purpose: the fixture carries
+            # every one of these, so `_lsrc[_field]` raising is itself the report
+            # that the fixture stopped being able to tell the two writers apart.
+            check("join2 ...%s survives the round trip (it lives in the INDEX, so a "
+                  "reverse write that only walked the shards would drop it)" % _field,
+                  _joined[_field] == _lsrc[_field], repr(_joined.get(_field)))
+        check("join2b ...and a phase `claim` survives too - it lives in the shard "
+              "BODY, the half a reverse write that only re-read the index would lose",
+              _joined["phases"][1].get("claim") == _lsrc["phases"][1]["claim"])
+        check("join3 ...and `priority` does too - it MOVES onto the stub going out "
+              "and has to come back off it, which a phase-body walk would miss",
+              _joined["phases"][0].get("priority") == 1)
+        check("join4 join_manifest does not mutate its argument - the assembled "
+              "manifest it was handed still carries the sharded version",
+              _jsrc["meta"]["version"] == M.LAYOUT_VERSION["sharded"])
+        check("join5 a `shard` key surviving into an assembled phase (a shard body "
+              "that carries one - `_merge_phase` starts from the BODY) is stripped, "
+              "or the single file would read as sharded again",
+              M.layout_of(M.join_manifest(
+                  {"meta": {"version": 3},
+                   "phases": [{"id": "P1", "shard": "phases/P1.json"}]}))
+              == "single-file")
+        check("join6 SECOND-DIRECTION CASE: a phase with no `shard` key is passed "
+                  "through unchanged and not rebuilt - this reads vacuous and is "
+                  "what fails if the strip ever starts copying every phase",
+              M._without_shard(_lsrc["phases"][1]) is _lsrc["phases"][1])
+        check("join7 save_single_file writes exactly one file and returns it",
+              M.save_single_file(os.path.join(_ldir, "one.json"), _lsrc)
+              == [os.path.join(_ldir, "one.json")])
+
+        # --- which directory goes dead when the shards are inlined ------------
+        check("dir1 the shard directory is derived from the index's own pointers",
+              M.shard_dir_to_retire(_lraw, _lsharded)
+              == (os.path.join(_ldir, "phases"), ""))
+        _nodir, _nowhy = M.shard_dir_to_retire(_lraw2, _lsingle)
+        check("dir2 a single-file index has no directory to retire, and the reason "
+              "is REPORTED - an empty answer with nothing said about it is how a "
+              "caller silently skips the step",
+              _nodir == "" and "no shard pointer" in _nowhy, repr(_nowhy))
+        _spread = {"phases": [{"id": "P1", "shard": "a/P1.json"},
+                              {"id": "P2", "shard": "b/P2.json"}]}
+        _sdir, _swhy = M.shard_dir_to_retire(_spread, _lsharded)
+        check("dir3 pointers in more than one directory retire NOTHING - moving "
+              "either one aside would strand the other",
+              _sdir == "" and "more than one directory" in _swhy, repr(_swhy))
+        _beside = {"phases": [{"id": "P1", "shard": "P1.json"}]}
+        _bdir2, _bwhy = M.shard_dir_to_retire(_beside, _lsharded)
+        check("dir4 shards sitting BESIDE the index retire nothing either - that "
+              "directory holds the manifest itself",
+              _bdir2 == "" and "beside the index" in _bwhy, repr(_bwhy))
+        check("dir5 a stub whose `shard` is not a string is not a pointer, so it "
+              "cannot contribute a directory",
+              M.shard_dir_to_retire({"phases": [{"id": "P1", "shard": 7}]},
+                                    _lsharded)[0] == "")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
