@@ -3669,8 +3669,14 @@ async function assertModelCombo(page, project) {
   // `.comp-review` was a styling wrapper and it is gone now that the control is
   // a table cell — a selector bound to a class is a selector bound to a layout
   // decision, which is the rule the panel's other hooks already follow.
-  const rev = await page.locator('#comp tr.phase input[data-revmodel]').first()
-    .elementHandle();
+  // `:not([data-frozen])` for the same reason the task selector two blocks up
+  // carries it: a done or cancelled row's controls are disabled, so clicking one
+  // opens no menu and the failure reads as "the combo is broken" rather than as
+  // "this row was never editable". Whether the FIRST phase happens to be frozen is
+  // a property of the fixture, which is why this passed on one machine and failed
+  // on CI. Freezing was a class and this was the site nobody converted with it.
+  const rev = await page.locator('#comp tr.phase:not([data-frozen]) input[data-revmodel]')
+    .first().elementHandle();
   if (!rev) {
     fail('composition: no review-model input to drive the combo on');
   } else {

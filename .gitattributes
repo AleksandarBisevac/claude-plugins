@@ -7,3 +7,11 @@
 # spans a line boundary. Pin these assets to LF so every checkout, on every
 # platform, hands the readers the same bytes.
 plugins/audit/scripts/ui/** text eol=lf
+# ...and the token layer WITH them, though it sits one directory up. It is not a
+# `ui/` asset by path, but it is one by use: `ui_surface_digests()` hashes it as a
+# member of BOTH surfaces, reading raw bytes. Unpinned, a CRLF checkout gave it
+# different bytes and therefore a different digest for every surface at once, so
+# `screenshot_capture_drift()` reddened every committed image on windows-latest and
+# no re-capture from any other platform could clear it. The rule above already
+# stated the reason; the file it applies to was one directory short.
+plugins/audit/scripts/_ui_theme.py text eol=lf
