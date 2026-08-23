@@ -1322,27 +1322,42 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     return out
 
 
-# The three prose documents this repo keeps its numbers in. All three are
-# hard-wrapped markdown, which is why the scan below hands `_prose_number_claim`
-# the FOLLOWING line as well: "print it with" ends a line and the command that
-# is the claim's basis begins the next one, and judging a claim by its own line
-# alone would report a line that has already satisfied the house rule.
+# WHICH DOCUMENTS ARE SCANNED IS DERIVED, and this constant is the record of what
+# it replaced: three named files, of which this one was the last added. The list
+# was wrong the way every hand list here has been wrong - not in what it held but
+# in what it left out. `plugins/audit/README.md`, `commands/*.md`, `reference/*.md`
+# and the skills are the PRODUCT, `scripts/ui/*/README.md` carries a part count per
+# assembled surface, and none of them was read by anything.
 #
-# Adding `CLAUDE.md` and `CONTRIBUTING.md` to the scan cost nothing when it was
-# done -- both were already clean under every shape -- and that is the point of
-# doing it while they are clean rather than after the next one is written.
+# Kept as the SEED of a case rather than as the scan's input: these three claim to
+# be definitions of how this repo works, so a derivation that stopped reaching one
+# of them has gone blind rather than clean, and that is a different failure from
+# finding nothing. `_refs.sweep_doc_drift()` holds its list for the same reason and
+# says so in the same words.
 _PROSE_DOCS = (_GUIDE_REL_PATH, "CLAUDE.md", "CONTRIBUTING.md")
+
+# Every document here is hard-wrapped markdown, which is why the scan hands
+# `_prose_number_claim` the FOLLOWING line as well: "print it with" ends a line and
+# the command that is the claim's basis begins the next one, and judging a claim by
+# its own line alone would report a line that has already satisfied the house rule.
 
 
 def doc_prose_numbers(doc_paths=None):
     """[(docname, lineno, text), ...] -- present-tense numbers in the prose docs.
 
-    The same rule `_output.prose_number_claims()` enforces over `hooks/` and
-    `scripts/`, applied to the documents that carry a line per module and so
-    accumulate one stale number per module. It REUSES
-    `_output._prose_number_claim` rather than restating the shapes: a second
-    copy of the pattern would be precisely the defect both functions exist to
-    catch, and a case asserts there is no second `def` in this file.
+    The same rule `_output.prose_number_claims()` enforces over the tree's `.py`,
+    applied to its `.md`. Both halves read one DERIVED set - every file of their
+    extension the repo keeps, minus a row in `_output.PROSE_SCAN_EXEMPT` - so a
+    document added to this repo is scanned without anybody remembering to add it.
+
+    It REUSES `_output._prose_number_claim` rather than restating the shapes: a
+    second copy of the pattern would be precisely the defect both functions exist
+    to catch, and a case asserts there is no second `def` in this file.
+
+    `doc_paths` stays for the callers that hand it ONE fixture document by
+    absolute path. Those are labelled by basename, because a temp directory is not
+    a thing to print; the derived set is labelled by repo-relative path, because
+    half a dozen of its documents are called `README.md`.
 
     Measured when the case-count family was written: of the five
     `--selftest (N cases)` claims in the guide, TWO were already wrong --
@@ -1360,11 +1375,17 @@ def doc_prose_numbers(doc_paths=None):
     would then mean either "clean" or "could not look", which is the quiet
     direction.
     """
-    names = _PROSE_DOCS if doc_paths is None else tuple(doc_paths)
+    if doc_paths is None:
+        scan = _output.prose_scan_set((".md",))
+        if scan["problem"] is not None:
+            return [(".gitignore", 0, scan["problem"])]
+        names = tuple(scan["paths"])
+    else:
+        names = tuple(doc_paths)
     out = []
     for name in names:
         path = name if os.path.isabs(name) else os.path.join(_output.REPO_ROOT, name)
-        label = os.path.basename(path)
+        label = os.path.basename(path) if os.path.isabs(name) else name
         try:
             with io.open(path, "r", encoding="utf-8") as fh:
                 text = fh.read()

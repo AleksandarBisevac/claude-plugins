@@ -113,11 +113,27 @@ cardinality in prose, `_ui_theme` looks for an undeclared `var(--…)`, and the 
 naming a scheme it must not depend on. **None of them can tell your code from your comment about
 your code**, and the usual way to meet one is to explain it — the explanation contains the shape.
 
-It has happened six times: `path.join(SCRIPTS, …)` written in a comment, a `var(--viz-N)` inside a
-JSDoc, the four letters of a scheme in a sentence saying the panel is served over one, a lint whose
-own comment and own fixture failed the lint, and — twice in one edit — a test field abbreviated to
-the two letters of the Python extension, first in the code and then in the comment added to explain
-why the code had been renamed.
+**The two prose scanners read EVERY `.py` and EVERY `.md` this repo keeps**, this file included, so
+`tools/`, `plugins/audit/tests/` and the plugin's own product documents are all inside them now.
+There is no directory left where a shape can be spelled out safely; the way out is a row in
+`_output.PROSE_SCAN_EXEMPT` with a reason, and there are very few of those.
+
+It has happened repeatedly, and the list is the argument rather than the count of it:
+`path.join(SCRIPTS, …)` written in a comment, a `var(--viz-N)` inside a JSDoc, the four letters of
+a scheme in a sentence saying the panel is served over one, a lint whose own comment and own
+fixture failed the lint, and — twice in one edit — a test field abbreviated to the two letters of
+the Python extension, first in the code and then in the comment added to explain why the code had
+been renamed.
+
+**The one that could not be reworded, and what to do instead.** When the prose scan widened past
+`scripts/`, every false positive it produced was the same thing: the `<passed>/<total>` tally each
+suite prints, appearing as a fixture, as a regex and as an ASSERTED literal in the sweep runner,
+the harness and half a dozen suites. Those bytes are the contract CI greps for, so rewording them
+was not available and neither was loosening the shape. What fixed it was **narrowing on a real
+distinction** — a numeral written with an interior separator is a ratio or a measurement, and
+neither is a count of things — plus building the literal wherever the fixture merely needed to
+contain one. A narrowing you can name and pin is legitimate; a widening that admits your prose is
+not, and the two are easy to confuse when you are the one being flagged.
 
 Every one of those firings was **correct**. The pattern to learn is not "the pattern is too broad";
 it is:

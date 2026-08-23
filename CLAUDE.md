@@ -35,8 +35,10 @@ two copies of a procedure is one copy and one lie.
   render it).
 - **Do not write a number into prose when something already prints it.** This is the repo's
   most frequent defect (F29, F39, F43 are one bug three times), and it is now a lint:
-  `_output.prose_number_claims()` over `hooks/` + `scripts/` and `_deps.doc_prose_numbers()`
-  over this file, `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` fail the build on a
+  `_output.prose_number_claims()` over every `.py` this repo keeps and
+  `_deps.doc_prose_numbers()` over every `.md` — both sets **derived** off `.gitignore`, so a
+  file added here is scanned by default and excluding one means a row in
+  `_output.PROSE_SCAN_EXEMPT` with a reason. They fail the build on a
   present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``) or
   completeness (`all N of them`, `all N … have`) claim — and the number may be spelled as a
   word, which is F59: `_numeral_span()` reads both spellings, for every shape, from one fixed

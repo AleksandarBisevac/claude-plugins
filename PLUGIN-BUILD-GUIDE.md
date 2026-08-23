@@ -814,8 +814,22 @@ written-out number in this tree is a determiner, a pronoun or an anaphor pointin
 enumeration in the same breath, and the shapes cannot tell that from a count. What it cannot
 see is written down with its direction — a count spelled as one of the small words that table
 leaves out, claims split across a wrap, completeness with no auxiliary, persistence naming no
-code in backticks — and every one of those is an **under**-count, which is the quiet
-direction, so a clean result means "none of the known shapes", not "no claims".
+code in backticks, and a numeral written with an interior separator, which is a ratio or a
+measurement and not a count of things — and every one of those is an **under**-count, which is
+the quiet direction, so a clean result means "none of the known shapes", not "no claims".
+
+**WHERE it looks is derived, and that was the other half of the same defect** (F64, F71). The
+scanned set was a hand-written pair — `.py` under `hooks/` and `scripts/`, plus three named
+documents — so a claim in `tools/`, in `tests/`, in `scripts/ui/*/README.md` or in the plugin's
+own product documents was written where nothing read it, and that is where the claims had gone:
+a part count per assembled surface, a suite size per boundary docstring, a file count in the
+prover. It is now every `.py` and every `.md` this repo keeps, walked off `.gitignore` because
+these suites are verified over a `git archive HEAD` export with no `.git` in it, and a file
+added to the repo is scanned by default. Excluding one is a row in
+`_output.PROSE_SCAN_EXEMPT` carrying a reason a reader can disagree with — released history,
+a dated design record, a generated document, and the two suites that hold this scanner's own
+fixtures. A case checks each row's premise rather than its presence: the path exists, or
+`.gitignore` names it.
 
 The consequence worth stating out loud: **the folders under `scripts/` are labels, not
 namespaces.** Everything stays in one flat name-space, `import` and `_loader.load_script()`
@@ -904,11 +918,14 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-`doc_prose_numbers()` runs `_output`'s prose-number rule over the three documents this repo keeps
-its numbers in — this guide, `CLAUDE.md` and `CONTRIBUTING.md` — and it **delegates** to
-`_output._prose_number_claim` rather than restating the shapes, because a second copy of the
+`doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
+derived set described under `_output.py` above, product documents included — and it **delegates**
+to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the
 pattern would be precisely the defect both scanners exist to catch; a case asserts there is no
-second definition. `navigability_violations()` and `ui_navigability_violations()` both **name** an
+second definition. `_PROSE_DOCS` survives as the three documents that were once the whole list,
+and it is now a BLINDNESS check: each claims to be a definition of how this repo works, so a
+derivation that stopped reaching one has gone quiet rather than clean — which is the direction a
+floor derived from the walk itself cannot see. `navigability_violations()` and `ui_navigability_violations()` both **name** an
 asset they could not read and a directory they could not list, rather than skipping it (F44): the
 `.py` side had reported a file it could not *tokenize* since F21 while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole

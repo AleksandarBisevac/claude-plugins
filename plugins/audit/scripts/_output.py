@@ -143,6 +143,101 @@ def py_files(directory):
     return found
 
 
+# --- the files this repo KEEPS -------------------------------------------------
+# ONE walk for every rule that asks which files this repo holds. `_refs` wrote it,
+# for the sweep-document rule and the published-fetch rule, and its own note says
+# why there is only one: the second rule had a walk of its own and it was a hand
+# list of four directory names, wrong in both directions at once. It reached
+# whatever the browser tool had last left in the tree, so the candidate set moved
+# with what had recently run on this machine rather than with anything in the
+# commit, and it pruned `.claude/` wholesale, which held the tracked skills out of
+# a rule that is precisely about a document publishing a fetch.
+#
+# IT LIVES HERE, AT THE ANCHOR, and that is the only thing about it that is new.
+# `_refs` is at layer 1; the prose-number scan below is in this module at layer 0
+# and needs the same answer, so a copy at layer 0 would be exactly the
+# two-prune-lists defect one layer down. `_refs` keeps the names and delegates.
+#
+# `.claude/worktrees/` is the entry that makes the pruning necessary rather than
+# tidy: it holds WHOLE CHECKOUTS of this repo - as many as there were recent
+# agents. A scan that did not know about it would report every finding once per
+# worktree, so the finding count would depend on nothing that is in the commit.
+#
+# Only the unambiguous half of the format is honoured: a line ending in `/` with no
+# glob metacharacter names a directory. A pattern and a bare file path are the rest
+# of gitignore, and reading them would be implementing it. The consequence is
+# stated rather than hidden - an ignored FILE of a scanned extension stays a
+# candidate, which is why the generated report has a row of its own in
+# `PROSE_SCAN_EXEMPT`, and why an untracked scratch file of a scanned extension is
+# scanned like any other. Being scanned by default is the property; the way to opt
+# out is a row somebody wrote.
+#
+# `git ls-files` would answer "tracked" outright and may not be used: these suites
+# are verified over a `git archive HEAD` export, which has no `.git` at all.
+_IGNORE_GLOB_CHARS = "*?[]!"
+
+
+def _ignored_dirs(root):
+    """`(patterns, problem)` - the directory patterns `.gitignore` declares.
+
+    Exactly one of the two is None. Falling back to "nothing is ignored" would walk
+    the agent worktrees and report every finding once per copy, which is a wrong
+    answer wearing the shape of a right one. `.gitignore` is tracked, so a tree
+    without a readable one is broken rather than minimal.
+    """
+    try:
+        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, ("unreadable, so the directories this repo does not keep "
+                      "cannot be derived: %s" % exc)
+    # `.git` is never IN `.gitignore` - git does not ignore its own directory - so it
+    # is the one name here, and the only one this function spells.
+    out = [".git"]
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or not line.endswith("/"):
+            continue
+        rel = line.strip("/")
+        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
+            continue
+        out.append(rel)
+    return tuple(sorted(set(out))), None
+
+
+def _is_ignored(rel_dir, patterns):
+    """Whether the directory at `rel_dir` is one the patterns name.
+
+    Gitignore's anchoring rule, and the only part of it needed here: a pattern with
+    no slash inside it matches a directory of that NAME at any depth
+    (`__pycache__/`), one with a slash is anchored to the repo root
+    (`.claude/usage/`). Collapsing the two would either prune every directory
+    called `usage` or fail to prune the one that matters, and both readings look
+    right in a review.
+    """
+    name = rel_dir.rsplit("/", 1)[-1]
+    for pattern in patterns:
+        if "/" in pattern:
+            if rel_dir == pattern or rel_dir.startswith(pattern + "/"):
+                return True
+        elif name == pattern:
+            return True
+    return False
+
+
+def kept_files(root, patterns, exts):
+    """Relative paths of every file of `exts` this repo KEEPS, sorted."""
+    out = []
+    for base, dirs, files in os.walk(root):
+        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
+        prefix = "" if rel_base == "." else rel_base + "/"
+        dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
+        for name in sorted(files):
+            if name.endswith(exts):
+                out.append(prefix + name)
+    return sorted(out)
+
+
 # --- the path bootstrap -------------------------------------------------------
 # Two memos, keyed by a fixed string rather than by the root, because ONLY the
 # default root is ever cached: a caller handing in a fixture directory must not be
@@ -1061,13 +1156,62 @@ _PRESENT_AUX = ("is", "are", "has", "have")
 _BASIS_MARKERS = ("python3", "grep", "for f in")
 
 
+# A separator that stays INSIDE a token when digits flank it. Nothing else survives
+# tokenizing, and the two characters are chosen rather than guessed: one makes a
+# ratio, the other a decimal.
+_NUMBER_SEPARATORS = "./"
+
+
+def _is_digit_char(ch):
+    """One CHARACTER, is it a digit - the tokenizer's question, not the shapes'.
+
+    Named so that the two questions cannot be confused for one. `_numeral_span()`
+    asks whether a TOKEN is a numeral and is the single entry point every shape
+    reads its number through; this asks whether a character may hold a separator
+    inside a token, which happens before any shape sees anything. A case counts
+    both occurrences and would go red on a third, so a family added later cannot
+    quietly grow a numeral reader of its own out of a character test.
+    """
+    return ch.isdigit()
+
+
 def _words(line):
-    """`line` as lowercase alphanumeric tokens, punctuation dropped."""
+    """`line` as lowercase alphanumeric tokens - except a separator INSIDE a number.
+
+    `7/7` and `0.01` come back as ONE token each rather than as two numerals, and a
+    token carrying a separator is not a numeral to `_numeral_span()`. That is the
+    whole rule, and it is a NARROWING adopted when the scan below stopped being
+    scoped to `scripts/`: a ratio is a tally and a decimal is a measurement, and
+    neither is a count of things.
+
+    THE MEASUREMENT THAT BOUGHT IT. The tally this whole tree prints - the
+    `<passed>/<total>` line every suite ends with - appears outside `scripts/` as a
+    fixture, as a regex and as an asserted literal, in the sweep runner, the test
+    harness and half a dozen suites. Not one of those is a claim about how many
+    cases exist, and none of them can be reworded away: the bytes ARE the contract
+    CI greps for. Without this rule the widened scan reported every one of them.
+
+    WHAT IT GIVES UP, said rather than left to be found: a cardinality genuinely
+    written as a fraction stops being read. Nobody writes one that way, and the
+    direction is an under-count - the direction `prose_number_claims()` already
+    documents as the only one these shapes can be wrong in.
+
+    A THOUSANDS COMMA IS DELIBERATELY NOT HERE. A grouped number is still a count,
+    so the comma keeps being dropped, which leaves two numerals and lets the second
+    one keep whatever noun follows it. That is how a line pairing a line count with
+    a case count still reports its live half.
+    """
+    low = line.lower()
     out, cur = [], []
-    for ch in line.lower():
+    for i, ch in enumerate(low):
         if ch.isalnum():
             cur.append(ch)
-        elif cur:
+            continue
+        if (ch in _NUMBER_SEPARATORS and cur and _is_digit_char(cur[-1])
+                and _is_digit_char(low[i + 1:i + 2])):
+            cur.append(ch)
+            continue
+        if cur:
             out.append("".join(cur))
             cur = []
     if cur:
@@ -1237,7 +1381,133 @@ def _prose_number_claim(line, following=None):
             or _completeness_claim(w))
 
 
-def prose_number_claims(script_dir=None, hooks_dir=None):
+# --- what the prose scan reads ------------------------------------------------
+# DERIVED, NOT LISTED, and that is the whole of this section. The scanned set used
+# to be a hand-written pair - `.py` under `hooks/` and `scripts/`, plus three named
+# documents - so everything else in the repo was unguarded, and that is where the
+# claims had gone: a part count in `scripts/ui/*/README.md` (three sites, two of
+# them already wrong), a suite size in a `tests/` docstring (most of them wrong),
+# and a file count in the prover under `tools/` - the directory holding the sweep
+# runner, the gate parity check and the mutation table, every one of which exists
+# to talk about counts. The tree's own counting tools were the unaudited part.
+#
+# So the set is now every `.py` and every `.md` the walk reaches, and a file added
+# to this repo is scanned by default. Excluding one is a row below carrying a
+# reason a reader can disagree with - the shape `tools/gate-parity.py` uses for a
+# gate a side may legitimately not name, and `_refs.EXCLUDED` for the documents
+# where a stale path is correct rather than broken.
+#
+# A row is a repo-relative path or, ending in `/`, a directory prefix.
+PROSE_SCAN_EXEMPT = (
+    ("CHANGELOG.md",
+     "released history: a count in a shipped entry was true of that release, and "
+     "rewriting released history to keep a lint quiet is worse than the lint"),
+    ("docs/design/",
+     "dated design records: they describe the tree as it was at the decision, so "
+     "the numbers in them are history in the same way a past tense is"),
+    ("docs/audit/audit-report.md",
+     "generated from the manifest on every render, so a count in it is derived "
+     "rather than written. It is also gitignored as a FILE, which this walk does "
+     "not read, so without this row the finding set would move with whether "
+     "anybody had rendered a report in this checkout"),
+    ("plugins/audit/tests/test__output.py",
+     "holds THIS scanner's own fixtures: every shape it recognises appears there "
+     "as an argument spelled on purpose, because a text scanner can only be shown "
+     "to fire by handing it the literal it must recognise. The house rule is to "
+     "build a forbidden literal rather than write one, and here the literal IS "
+     "the argument under test - building it would move the needle out of the "
+     "fixture and into the assertion. The cost is the thing to disagree with: a "
+     "genuinely stale count in this one suite is unguarded"),
+    ("plugins/audit/tests/test__deps.py",
+     "the same, for the document half - its cases hand the shapes to "
+     "`_deps.doc_prose_numbers()` as fixture documents"),
+)
+
+
+def prose_scan_exemption(rel):
+    """The declared reason `rel` is out of the prose scan, or None."""
+    for path, why in PROSE_SCAN_EXEMPT:
+        if path.endswith("/"):
+            if rel.startswith(path):
+                return why
+        elif rel == path:
+            return why
+    return None
+
+
+def prose_scan_set(exts, repo_root=None):
+    """`{"paths", "candidates", "exempted", "problem"}` - what the prose scan reads.
+
+    `problem` is a string or None, and it is the loud half. A tree whose
+    `.gitignore` cannot be read yields no paths, and "read no files" must not print
+    the way "found no claims" prints - which is the whole reason this returns the
+    candidate count alongside the paths rather than just the paths.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    patterns, problem = _ignored_dirs(root)
+    if problem is not None:
+        return {"paths": [], "candidates": 0, "exempted": [],
+                "problem": ".gitignore is %s" % problem}
+    candidates = kept_files(root, patterns, tuple(exts))
+    exempted = [rel for rel in candidates
+                if prose_scan_exemption(rel) is not None]
+    skip = set(exempted)
+    return {"paths": [rel for rel in candidates if rel not in skip],
+            "candidates": len(candidates), "exempted": exempted,
+            "problem": None}
+
+
+# Two terms, F69's shape, and adopted for F69's reason: an absolute floor answers
+# "did this read return anything at all" and nothing more, so a set that had lost
+# most of the tree would still clear it. The derived term measures the SCANNED set
+# against the CANDIDATE set the same walk produced, which is the best available
+# evidence of how big the real set is - and it is the term that fires when a row
+# in the table above grows to swallow a directory.
+#
+# WHAT IT COUPLES, said rather than implied: if the walk itself collapses, both
+# terms fall together and this stays green. That direction is not covered here and
+# must not be, because a floor derived from the thing it measures cannot cover it -
+# the cases hold the scanned set against a PLAIN recursive walk of the directories
+# that have to exist, which needs no `.gitignore` and so cannot fail the same way.
+SCAN_FLOOR_MINIMUM = 8
+SCAN_FLOOR_DIVISOR = 2
+
+
+def scan_floor(candidates):
+    """The fewest files a prose scan may read before its result stops being evidence."""
+    return max(SCAN_FLOOR_MINIMUM,
+               (candidates + SCAN_FLOOR_DIVISOR - 1) // SCAN_FLOOR_DIVISOR)
+
+
+def prose_claims_in(root, rels):
+    """[(rel, lineno, claim), ...] - every claim in `rels`, read relative to `root`.
+
+    ONE read loop for both halves of the scan. `_deps` keeps its own only for the
+    caller that hands it absolute fixture paths; the tree is read here.
+
+    An unreadable file is NAMED, never skipped - F21's rule. A skip would return
+    the same empty list a clean file returns, and "nothing to report" would then
+    mean either "clean" or "could not look".
+    """
+    out = []
+    for rel in rels:
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "<unreadable: %s>" % exc))
+            continue
+        lines = text.split("\n")
+        for lineno, line in enumerate(lines, 1):
+            nxt = lines[lineno] if lineno < len(lines) else ""
+            claim = _prose_number_claim(line, nxt)
+            if claim is not None:
+                out.append((rel, lineno, claim))
+    return out
+
+
+def prose_number_claims(repo_root=None):
     """[(relpath, lineno, text), ...] -- present-tense numbers written into prose.
 
     THE RULE: do not write the number. Every suite prints `N/M cases passed` on
@@ -1257,6 +1527,17 @@ def prose_number_claims(script_dir=None, hooks_dir=None):
     families added after it were measured the same way and were **4 sites, 4 of
     them already wrong** -- a hit rate that is itself the argument.
 
+    MEASURED AGAIN WHEN THE LOCATION WIDENED, because a scan that fires on
+    honest prose is a scan that gets routed around. Every hit the widened walk
+    produced over this tree was read. The real claims were suite sizes in
+    `tests/` docstrings and part counts in `scripts/ui/*/README.md`, most of them
+    already wrong; the false positives were all ONE thing, the
+    `<passed>/<total>` tally, appearing as a fixture, as a regex and as an
+    asserted literal in the files whose job is that contract. Removing them is
+    `_words()`'s interior-separator rule, which is a NARROWING - nothing that
+    was already a finding stopped being one - and the rest were reworded or
+    built rather than written, never admitted by loosening a shape.
+
     WHAT IT CANNOT SEE, stated rather than implied, and the direction matters
     more than the list:
 
@@ -1268,32 +1549,24 @@ def prose_number_claims(script_dir=None, hooks_dir=None):
       * a completeness claim with no auxiliary ("(all 64)", "all 8 viz slots"),
         because recognising an arbitrary present-tense verb needs a lexicon;
       * a persistence claim that names no code in backticks on its own line;
-      * any document outside `hooks/`, `scripts/` and the three `_deps` scans.
+      * a number written with an interior separator -- `_words()` keeps a ratio
+        and a decimal whole on purpose, and neither is then a numeral;
+      * a file of an extension this does not read. `.py` is here and `.md` is
+        `_deps.doc_prose_numbers()`; `.mjs`, `.js`, `.sh`, `.yml` and `.json`
+        carry prose too and are read by nothing;
+      * a file with a row in `PROSE_SCAN_EXEMPT`, which is the only remaining
+        LOCATION gap and is the only one somebody had to write down.
 
     Every one of those is an UNDER-count. Over-counting is impossible with
     shapes this narrow, and under-counting is the quiet direction -- so a clean
     result means "none of the known shapes", not "no claims".
     """
-    sd = script_dir if script_dir is not None else SCRIPTS_DIR
-    hd = hooks_dir if hooks_dir is not None else HOOKS_DIR
-    out = []
-    for base in (sd, hd):
-        for _rel, path in py_files(base):
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    text = fh.read()
-            except (OSError, UnicodeDecodeError):
-                # Naming it beats skipping it: a file that cannot be read is not
-                # a file with nothing in it.
-                out.append((os.path.relpath(path, REPO_ROOT), 0, "<unreadable>"))
-                continue
-            lines = text.split("\n")
-            for lineno, line in enumerate(lines, 1):
-                nxt = lines[lineno] if lineno < len(lines) else ""
-                claim = _prose_number_claim(line, nxt)
-                if claim is not None:
-                    out.append((os.path.relpath(path, REPO_ROOT), lineno, claim))
-    return sorted(out)
+    root = repo_root if repo_root is not None else REPO_ROOT
+    scan = prose_scan_set((".py",), root)
+    if scan["problem"] is not None:
+        # A read that could not happen is a finding, not an empty result.
+        return [(".gitignore", 0, scan["problem"])]
+    return sorted(prose_claims_in(root, scan["paths"]))
 
 
 def covered_repo_paths(repo_root=None):

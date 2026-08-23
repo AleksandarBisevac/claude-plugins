@@ -1,6 +1,6 @@
 # The report's stylesheet, by feature
 
-Thirteen parts, joined in the order `_ui_theme.REPORT_CSS_PARTS` lists, behind the
+The parts are joined in the order `_ui_theme.REPORT_CSS_PARTS` lists, behind the
 token layer, and served as a single inline `<style>` in a self-contained HTML file.
 
 **Order is the cascade.** Two rules of equal specificity are decided by which one is

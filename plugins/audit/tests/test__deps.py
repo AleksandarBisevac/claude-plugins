@@ -1412,22 +1412,52 @@ def _cases(check):
           "and completeness claims were wrong when these two did (F43): %r"
           % (_dpn[:6],),
           _dpn == [])
-    # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise,
-    # and this scan now spans three files, so a per-file count is what says the
-    # walk reached all of them rather than stopping after the first.
-    _dpn_lines = []
-    for _dname in M._PROSE_DOCS:
-        try:
-            with open(os.path.join(M._output.REPO_ROOT, _dname),
-                      "r", encoding="utf-8") as _dfh:
-                _dpn_lines.append((_dname, len(_dfh.read().split("\n"))))
-        except (OSError, UnicodeDecodeError):
-            _dpn_lines.append((_dname, 0))
-    check("dpn1 dpn0 read all %d documents rather than an empty string - %r"
-          % (len(M._PROSE_DOCS), _dpn_lines),
-          len(_dpn_lines) == 3
-          and all(n > 100 for _d, n in _dpn_lines)
-          and max(n for _d, n in _dpn_lines) > 500)
+    # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise.
+    #
+    # TWO TERMS, F69's shape. `scan_floor()` holds the scanned set against the
+    # candidate count the walk produced, which catches an exemption row that grew;
+    # the second term is a PLAIN recursive walk for `.md` under the plugin, which
+    # needs no `.gitignore` and so cannot fail the way the derivation can. A
+    # derivation collapsing is the failure a floor derived from it cannot see.
+    _dpn_scan = M._output.prose_scan_set((".md",))
+    _dpn_plain = 0
+    for _droot, _ddirs, _dfiles in os.walk(M._output.PLUGIN_ROOT):
+        _ddirs[:] = [_d for _d in _ddirs if _d != "__pycache__"]
+        _dpn_plain += len([_f for _f in _dfiles if _f.endswith(".md")])
+    check("dpn1 dpn0 read the tree, by two measures that fail differently - %d "
+          "document(s) scanned of %d candidate(s), floor %d, against %d `.md` "
+          "found under the plugin by a walk that reads no `.gitignore`"
+          % (len(_dpn_scan["paths"]), _dpn_scan["candidates"],
+             M._output.scan_floor(_dpn_scan["candidates"]), _dpn_plain),
+          _dpn_scan["problem"] is None
+          and len(_dpn_scan["paths"])
+              >= M._output.scan_floor(_dpn_scan["candidates"])
+          and _dpn_scan["candidates"] > _dpn_plain)
+    # THE THREE DOCUMENTS THAT USED TO BE THE WHOLE LIST, now the seed of a
+    # BLINDNESS check rather than the input. Each claims to be a definition of how
+    # this repo works, so a derivation that stopped reaching one of them has gone
+    # quiet rather than clean - `_refs.sweep_doc_drift()` keeps its list for the
+    # same reason. This is the direction dpn1's floor cannot cover: the walk can
+    # lose a specific document while staying far above any count.
+    _dpn_seed = [_d for _d in M._PROSE_DOCS if _d not in _dpn_scan["paths"]]
+    check("dpn2b the derived set still reaches every document that was named by "
+          "hand before it - a walk that dropped one of these would report the "
+          "same clean list it reports now: %r" % (_dpn_seed,),
+          _dpn_seed == [])
+    # AND THE POINT OF DERIVING IT: the PRODUCT is in the set now. A stale count
+    # in the plugin's README or in a `commands/*.md` is a defect a USER meets, and
+    # not one of these was read by anything while the list was three files long.
+    _dpn_product = dict(
+        (_label, len([_r for _r in _dpn_scan["paths"] if _r.startswith(_label)]))
+        for _label in ("plugins/audit/commands/", "plugins/audit/reference/",
+                       "plugins/audit/skills/", "plugins/audit/agents/",
+                       "plugins/audit/scripts/ui/", ".claude/skills/"))
+    check("dpn2c ...and the set reaches the PRODUCT - the plugin's README, its "
+          "commands, its reference docs, its skills and agents - plus the "
+          "per-surface part counts under `scripts/ui/`, which is where F64 was "
+          "found: %r" % (_dpn_product,),
+          "plugins/audit/README.md" in _dpn_scan["paths"]
+          and all(_dpn_product.values()))
     check("dpn2 an unreadable document returns a NAMED finding, not the same "
           "empty list a clean one returns - F21's rule, and the reason a clean "
           "dpn0 means 'looked and found nothing' rather than 'could not look'",

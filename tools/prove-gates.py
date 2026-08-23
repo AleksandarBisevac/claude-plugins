@@ -63,6 +63,29 @@ _GATE_SHAPES = ("_violations", "_drift", "_claims")
 _GATE_NAMED = ("selftest_coverage", "entries_missing_guard",
                "depth_sensitive_paths", "doc_prose_numbers")
 
+
+# THE TWO PROSE-NUMBER PAYLOADS ARE BUILT, NOT WRITTEN, and that is not tidiness.
+# `prose_number_claims()` now reads every `.py` this repo keeps, `tools/` included,
+# so a payload spelling its own claim out would be a finding IN THE PROVER - the
+# lint's needle planted in the tree the lint walks. The house repair is to build
+# the literal rather than write it, so the count arrives through `%` and the line
+# carries no numeral in front of the noun. `doc_prose_numbers()` reads every `.md`,
+# which is why the CLAUDE.md payload gets the same treatment.
+#
+# `count` is a number OR the word for it: the second row of each pair exists to
+# prove the numeral table still reads the word spelling (F59), and one builder
+# serving both is what stops the two payloads drifting into different sentences.
+def _claim_payload(count):
+    """A probe function whose docstring makes a cardinality claim."""
+    return ('\n\ndef _probe_claim():\n    """The table and its %s cases."""\n'
+            '    return None\n' % (count,))
+
+
+def _doc_claim_payload(count):
+    """A prose line making a completeness claim, for the document scan."""
+    return "\nThe tree carries all %s of them.\n" % (count,)
+
+
 # (lint, file, kind, anchor, payload, suite, expected case label)
 #
 # kinds: "after" appends payload after anchor; "replace" swaps anchor for payload;
@@ -82,16 +105,13 @@ TABLE = (
  ("selftest_coverage", S + "_fmt.py", "after", INSTALL,
   '\n_PROBE = "1/1 cases passed"\n', OUT, "sc10"),
  ("prose_number_claims", S + "_fmt.py", "after", INSTALL,
-  '\n\ndef _probe_claim():\n    """The table and its 12 cases."""\n    return None\n',
-  OUT, "pn0"),
+  _claim_payload(12), OUT, "pn0"),
  # F59: the SAME lint, mutated in the word spelling. The digit row above cannot
  # notice a numeral table that has stopped reading words - which is the state this
  # repo shipped in until a count spelled out sat unnoticed in a comment block every
  # gate reads. Two rows for one lint, the way the house-style lint carries two.
  ("prose_number_claims", S + "_fmt.py", "after", INSTALL,
-  '\n\ndef _probe_word_claim():\n    """The table and its thirteen cases."""\n'
-  '    return None\n',
-  OUT, "pn0"),
+  _claim_payload("thirteen"), OUT, "pn0"),
  ("entries_missing_guard", S + "status/audit-status.py", "drop",
   r"^    safe_stdio\(\)$", None, OUT, "f1"),
  ("layer_violations", S + "_fmt.py", "after", INSTALL,
@@ -114,9 +134,9 @@ TABLE = (
   "suffix", r"^ {0,2}//\s+-{2,}",
   "\nconst probeStore=localStorage.getItem('probe');", DEP, "sc1"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
-  "\nThe tree carries all 12 of them.\n", DEP, "dpn0"),
+  _doc_claim_payload(12), DEP, "dpn0"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
-  "\nThe tree carries all thirteen of them.\n", DEP, "dpn0"),
+  _doc_claim_payload("thirteen"), DEP, "dpn0"),
  ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
@@ -435,10 +455,12 @@ def _cases():
                 "the other half, for every suite"))
 
     out.append(("c6", "--selftest" in sys.argv[1:] or True,
-                "THIS SUITE MUTATES NOTHING. It is run by the parallel sweep with "
-                "191 other files, and a mutation there would change what every "
-                "other file sees mid-run - so the expensive half lives in main() "
-                "and nothing above this line writes to the tree"))
+                "THIS SUITE MUTATES NOTHING. It is run by the parallel sweep "
+                "alongside every other file in the tree - `python3 "
+                "tools/sweep-selftests.py` prints how many - and a mutation "
+                "there would change what every other file sees mid-run, so the "
+                "expensive half lives in main() and nothing above this line "
+                "writes to the tree"))
     return out
 
 

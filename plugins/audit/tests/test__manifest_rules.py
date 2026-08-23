@@ -19,14 +19,15 @@ cases that are genuinely about the COMMAND: the exit codes.
 line. Nothing else about these cases changed: same labels, same order, same
 fixture.
 
-TWO NAMES, BECAUSE THIS SUITE ALREADY HAD ITS OWN `check`. 102 of the 131 cases go
+TWO NAMES, BECAUSE THIS SUITE ALREADY HAD ITS OWN `check`. Most of the cases here go
 through a DOMAIN wrapper - `check(name, expect_finding, mutate=None, *,
 expect_warning=None)` deep-copies the valid fixture, mutates it, runs `validate()`
 and decides the verdict - and the harness docstring says such a wrapper stays with
 the cases that need it rather than moving into the shared runner. It cannot ALSO be
-called `check`, because the other 29 cases are direct verdicts, so the harness's
-own callback is `record(label, cond, detail)` here and the wrapper calls it. Those
-29 used to spell `results.append(ok)` followed by a hand-rolled `print`; they are
+called `check`, because the rest are direct verdicts, so the harness's own callback
+is `record(label, cond, detail)` here and the wrapper calls it. Re-derive the split
+with `grep -c '^    check(' plugins/audit/tests/test__manifest_rules.py`. The direct
+ones used to spell `results.append(ok)` followed by a hand-rolled `print`; they are
 `record(...)` calls now, with the label and the detail split exactly where the
 format string split them.
 
@@ -785,7 +786,7 @@ def _cases(record):
     # `validate()` was 354 lines threading seven accumulating locals through six
     # unrelated questions. It is orchestration now, and every question lives in a
     # piece that takes a NAMED index and returns its own (findings, warnings).
-    # The 131 cases above prove the BEHAVIOUR is unchanged; these prove the seams
+    # Every case above proves the BEHAVIOUR is unchanged; these prove the seams
     # are the ones claimed, and each is reachable only because the piece became
     # callable — which is the other half of what the cut bought.
     _ds_phases = [

@@ -227,6 +227,18 @@ def select(paths):
             # Applied to EVERY path rather than added inside four branches by hand,
             # which is how three of them came to disagree about it.
             suites.add("test__refs.py")
+        # THE PROSE SCANS, and they are applied to every path for the same reason.
+        # Their sets are derived now - every `.py` this repo keeps for
+        # `prose_number_claims()`, every `.md` for `doc_prose_numbers()` - so the
+        # extension decides which suite reads the file, and NOTHING about which
+        # directory it sits in does. Written as a branch on the directory (the
+        # root-prose rule below used to be the whole of it), this file would
+        # under-select for exactly the files the widening was for: a count added to
+        # a `commands/*.md` or to a `tests/` docstring selected neither suite.
+        if posix.endswith(".py"):
+            suites.add("test__output.py")
+        if posix.endswith(".md"):
+            suites.add("test__deps.py")
         if posix in SWEEP_DOCS:
             suites.add("test__deps.py")
             # EVERY sweep document, not only the workflow. Some of them are parity
@@ -246,7 +258,9 @@ def select(paths):
                            "gate" % (posix,))
             continue
         if posix.endswith((".md", ".txt")) and "/" not in posix:
-            # Root prose: CLAUDE.md and friends are read by `_deps.doc_prose_numbers`.
+            # Root prose. The `.md` half is already selected above, along with
+            # every other `.md` in the tree; what this branch still owns is `.txt`
+            # and the `continue` that says a root document needs nothing else.
             suites.add("test__deps.py")
             reasons.append("%s - root prose, linted by _deps" % (posix,))
             continue
@@ -548,6 +562,30 @@ def _cases():
                 "a committed PNG selects no gate and does NOT widen - 'nothing "
                 "covers this' is a real answer here, and it is not spelled the same "
                 "way as 'I could not tell': %r" % (shot,)))
+
+    # THE PROSE SCANS ARE DERIVED, so what selects them is the EXTENSION and never
+    # the directory. Both paths below are ones whose OWN branch answered
+    # completely and correctly for everything except this, which is why the rule
+    # had to be applied to every path rather than added inside those branches -
+    # the same reasoning the `refs_reads()` line at the top of `select()` carries.
+    #
+    # Measured, not guessed: these are the two files F64 and F71 were found in, and
+    # they were also the two that selected the wrong side of this. Anything under
+    # `plugins/audit/commands/` or `tests/` was already covered by another branch.
+    doc = sel("plugins/audit/scripts/ui/report-css/README.md")
+    out.append(("a14", "test__deps.py" in doc["suites"] and not doc["full"],
+                "a `.md` whose branch answers about a RENDERED surface still "
+                "selects the document scan - this one carries a part count per "
+                "assembled surface, and reassembling the report says nothing "
+                "about whether the count is still true: %r" % (doc,)))
+
+    tool = sel("tools/prove-gates.py")
+    out.append(("a15", "test__output.py" in tool["suites"] and not tool["full"],
+                "...and a `.py` under tools/ selects the `.py` scan, whatever its "
+                "own branch decided. `tools/` holds the sweep runner, the parity "
+                "check and the mutation table, every one of which talks about "
+                "counts, and its branch used to end in 'a tool no suite covers': "
+                "%r" % (tool,)))
 
     return out
 

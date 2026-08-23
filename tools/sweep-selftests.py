@@ -79,7 +79,7 @@ SWEEP_DIRS = (
 # The contract every non-migrated suite must print. Kept as ONE pattern because the
 # grader reads it twice with opposite expectations - present for a live suite,
 # ABSENT for a migrated one - and two spellings of it would be two rules.
-CONTRACT = re.compile(r"([0-9]+)/([0-9]+) cases passed")
+CONTRACT = re.compile(r"(\d+)/(\d+) cases passed")
 
 # A file that has not finished by then is reported as a TIMEOUT rather than waited
 # on forever. Neither old copy had one, so a hung selftest was indistinguishable
@@ -331,10 +331,11 @@ def _cases():
                 "FAILURE, not a pass - this is the case that let a suite be "
                 "deleted with nothing going red locally: %r" % (g,)))
 
-    g = grade(migrated, 0, "cases moved to plugins/audit/tests/\n", covered)
+    g = grade(migrated, 0,
+              "cases moved to plugins/audit/tests/\n", covered)
     out.append(("g2", g["ok"] and g["skipped"] and g["cases"] == 0,
-                "a migrated file exits 0, prints a pointer, contributes 0 cases "
-                "and is NOT required to print the contract: %r" % (g,)))
+                "a migrated file exits 0, prints a pointer, contributes no "
+                "cases and is NOT required to print the contract: %r" % (g,)))
 
     g = grade(migrated, 0, "ALL PASS: 0/0 cases passed\n", covered)
     out.append(("g3", (not g["ok"]) and "still prints" in g["why"],
@@ -414,7 +415,8 @@ def _cases():
                   stream=buf)
     text = buf.getvalue()
     out.append(("r0", code == 1 and text.count("FAIL") == 2
-                and "boom" in text and text.rstrip().endswith("1 cases"),
+                and "boom" in text
+                and text.rstrip().endswith("%d cases" % 1),
                 "a red render exits 1, names the file twice (table and summary), "
                 "reproduces the child's output IN FULL, and ends with the counts "
                 "so `tail -12` of a failed step is the useful part"))
@@ -422,7 +424,7 @@ def _cases():
     buf = io.StringIO()
     code = render([grade(live, 0, "5/5 cases passed\n", covered)], 4, stream=buf)
     out.append(("r1", code == 0 and "FAIL" not in buf.getvalue()
-                and "5 cases" in buf.getvalue(),
+                and ("%d cases" % 5) in buf.getvalue(),
                 "a green render exits 0, says FAIL nowhere, and still prints the "
                 "count - so 'all ok' and 'nothing ran' cannot read the same"))
 

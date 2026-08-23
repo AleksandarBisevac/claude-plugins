@@ -46,9 +46,9 @@ import _report_md                                  # noqa: E402  (as _report_pag
 # --- cases --------------------------------------------------------------------
 def _cases(check):
 
-    # WHAT IS NOT HERE, AND WHY. The ~230 cases that pin the rendered document —
-    # its markup, its emission ORDER, the stylesheet and the embedded script —
-    # live with render-report.py, because they read a report written by `main()`
+    # WHAT IS NOT HERE, AND WHY. The cases that pin the rendered document — its
+    # markup, its emission ORDER, the stylesheet and the embedded script — live
+    # with render-report.py, because they read a report written by `main()`
     # into a temp directory and a fragment module cannot write one. Splitting
     # them across two files by which function happens to emit each string would
     # have made both suites unreadable and neither complete. What is asserted

@@ -949,97 +949,19 @@ SWEEP_DOC_EXT = _MD_EXT + _YAML_EXT + _JSON_EXT
 # can fail it at all. One tuple, one loop - as two `if`s they would drift apart.
 SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
 
-# DIRECTORIES THIS REPO DOES NOT KEEP, read off `.gitignore` rather than listed here.
-# A hand list is the thing that rots, and this one would have rotted already:
-# `.claude/worktrees/` was ignored long after the walk below it was written, and it
-# holds WHOLE CHECKOUTS of this repo - as many as there were recent agents. A scan that
-# did not know about it would report every sweep document once per worktree, so the
-# finding count would depend on nothing that is in the commit.
+# DIRECTORIES THIS REPO DOES NOT KEEP, and the walk over what is left. Both moved to
+# `_output` when the prose-number scan needed the same answer: that scan is in the
+# anchor at layer 0, this module is at layer 1, and a copy at layer 0 would be the
+# two-prune-lists defect one layer down. The reasoning - why `.gitignore` and not a
+# hand list, why only the unambiguous half of its format, why not `git ls-files` -
+# went with the code and is not restated here.
 #
-# Only the unambiguous half of the format is honoured: a line ending in `/` with no glob
-# metacharacter names a directory. `docs/audit/*.lock` and
-# `**/.claude/audit-panel.json` are patterns and files, and reading them would be
-# implementing gitignore. The consequence is stated rather than hidden - an ignored FILE
-# of a scanned extension stays a candidate. For the sweep that is a per-developer
-# settings file which cannot carry a command; for the published-fetch rule that shares
-# this walk it is the RENDERED report, which is generated and CAN carry a fence, so
-# that rule's set still moves with whether anyone has rendered one here. Closing that
-# needs the file half of the format, which is a second derivation and owes its own
-# red-first rather than riding in on this one.
-#
-# `git ls-files` would answer "tracked" outright and may not be used: these suites are
-# verified over a `git archive HEAD` export, which has no `.git` at all.
-_IGNORE_GLOB_CHARS = "*?[]!"
-
-
-def _ignored_dirs(root):
-    """`(patterns, problem)` — the directory patterns `.gitignore` declares.
-
-    Exactly one of the two is None, the same contract `_runnable_text` uses, and for
-    the same reason: falling back to "nothing is ignored" would walk the agent
-    worktrees and report every sweep document once per copy, which is a wrong answer
-    wearing the shape of a right one. `.gitignore` is tracked, so a tree without a
-    readable one is broken rather than minimal.
-    """
-    try:
-        with open(os.path.join(root, ".gitignore"), "r", encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        return None, ("unreadable, so the directories this repo does not keep "
-                      "cannot be derived: %s" % exc)
-    # `.git` is never IN `.gitignore` - git does not ignore its own directory - so it
-    # is the one name here, and the only one this function spells.
-    out = [".git"]
-    for raw in lines:
-        line = raw.strip()
-        if not line or line.startswith("#") or not line.endswith("/"):
-            continue
-        rel = line.strip("/")
-        if not rel or [ch for ch in _IGNORE_GLOB_CHARS if ch in rel]:
-            continue
-        out.append(rel)
-    return tuple(sorted(set(out))), None
-
-
-def _is_ignored(rel_dir, patterns):
-    """Whether the directory at `rel_dir` is one the patterns name.
-
-    Gitignore's anchoring rule, and the only part of it needed here: a pattern with no
-    slash inside it matches a directory of that NAME at any depth (`__pycache__/`), one
-    with a slash is anchored to the repo root (`.claude/usage/`). Collapsing the two
-    would either prune every directory called `usage` or fail to prune the one that
-    matters, and both readings look right in a review.
-    """
-    name = rel_dir.rsplit("/", 1)[-1]
-    for pattern in patterns:
-        if "/" in pattern:
-            if rel_dir == pattern or rel_dir.startswith(pattern + "/"):
-                return True
-        elif name == pattern:
-            return True
-    return False
-
-
-def _iter_docs(root, patterns, exts):
-    """Relative paths of every document of `exts` this repo KEEPS, sorted.
-
-    ONE walk for every rule that asks the question, because the second one had its own
-    and it was a hand list of four directory names. That list was wrong in both
-    directions at once: it reached whatever the browser tool had last left in the tree,
-    so the candidate set moved with what had recently run on this machine rather than
-    with anything in the commit, and it pruned `.claude/` wholesale, which held the
-    tracked skills out of a rule that is precisely about a document publishing a fetch.
-    Two prune lists is how one of them comes to be wrong without the other noticing.
-    """
-    out = []
-    for base, dirs, files in os.walk(root):
-        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
-        prefix = "" if rel_base == "." else rel_base + "/"
-        dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
-        for name in sorted(files):
-            if name.endswith(exts):
-                out.append(prefix + name)
-    return sorted(out)
+# THE NAMES STAY, as three aliases rather than three wrappers: this module's cases
+# call them, and a wrapper would be a second place for the argument order to be
+# wrong.
+_ignored_dirs = _output._ignored_dirs
+_is_ignored = _output._is_ignored
+_iter_docs = _output.kept_files
 
 
 def sweep_doc_drift(repo_root=None):

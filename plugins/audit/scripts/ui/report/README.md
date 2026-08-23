@@ -1,6 +1,6 @@
 # The report's inline script, by feature
 
-Ten parts, concatenated in the order `_report_ui._SCRIPT_PARTS` lists, wrapped once
+The parts are concatenated in the order `_report_ui._SCRIPT_PARTS` lists, wrapped once
 by that module and served as a single inline `<script>` inside a self-contained
 HTML file. There is no bundler and no network: the page is opened from disk, so
 every byte it runs must already be in it.
