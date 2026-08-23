@@ -147,10 +147,18 @@ def ranks(phases):
 
     `order()` answers "what runs next"; this answers "where in the run does THIS
     phase sit", and a renderer that must keep SHOWING the written plan needs the
-    second. The HTML report emits these as `data-porder` so its sort control
-    orders by a number the server computed: the client re-expressing
-    `sort_key` in JavaScript is the one way this feature could grow a second
-    opinion about order, and there is nothing here for it to re-express.
+    second. BOTH FRONT ENDS ARE HANDED THIS NUMBER AND NEITHER HOLDS THE RULE:
+    the HTML report stamps it on each phase row as `data-porder`, and
+    `_status_facts.rollup` ships it to the panel as the row's `porder`. A client
+    re-expressing `sort_key` in JavaScript is the one way this feature could grow
+    a second opinion about order; the panel's Overview did exactly that for a
+    while, under a comment saying its key mirrored this function, and what
+    replaced the comment is a lint — `_deps.SHARED_CONCERNS`' "phase execution
+    order" row fails the build on that shape anywhere under `scripts/ui/`.
+
+    Two callers of this function is not two orders, and it is structural rather
+    than a preference: `_report_html` and `_status_facts` are both layer 2, so
+    neither can import the other and each has to reach down to here.
 
     This is the module's only permutation — `order()` reads it rather than
     sorting again, so a change to the comparator cannot land in one and miss

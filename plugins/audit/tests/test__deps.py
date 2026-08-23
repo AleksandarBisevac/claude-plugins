@@ -1034,6 +1034,14 @@ def _cases(check):
                                "heatRows(g, win, days, hoursOf)"),
         "caret restore": ("n.setSelectionRange(caret,caret)",
                           "restoreCaret(n,caret,back)"),
+        # The miss sample carries BOTH halves this needle had to separate: the
+        # repaired sort, which reads a rank the server computed, AND the innocent
+        # lookalike it must not fire on - a form control whose value for an
+        # absent tier is an empty string, which decides no order at all.
+        "phase execution order": (
+            "ordered.sort((a,b)=>(a.priority==null?1:0)-(b.priority==null?1:0))",
+            "prio.value=ph.priority==null?'':String(ph.priority);"
+            "ordered.sort((a,b)=>a.porder-b.porder)"),
     }
     _missing = [c for c, _h, _n, _a, _w in M.SHARED_CONCERNS if c not in _SAMPLES]
     check("sc12 every row has a sample its needle is checked against - a row "

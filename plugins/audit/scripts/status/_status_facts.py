@@ -284,6 +284,19 @@ def rollup(manifest, findings, warnings, usage=None):
     task_by_id = _mio.tasks_by_id(manifest)
     bug_eff = [effective_bug_status(b, task_by_id) for b in bugs]
     open_bugs = [b for b, s in zip(bugs, bug_eff) if s not in CLOSED_BUG]
+    # Where each phase sits in EXECUTION order, computed over `phases` — the same
+    # filtered list every row below is built from, so `porder[i]` belongs to
+    # `phase_entries[i]`. Over ALL of them and never over a view: a rank taken
+    # across a subset is a different number, and the panel filters its rows in the
+    # browser (search, status, which segment) long after this is stamped.
+    #
+    # UNCONDITIONAL, which is the whole point. `_report_html.phase_ranks` emits
+    # nothing when no phase is pinned because it hides its sort control in the same
+    # breath; the panel offers the control always, so a rank withheld here is a
+    # client left to invent a fallback comparator — the very thing this key exists
+    # to remove. With nothing pinned `ranks()` is the identity, so the option
+    # degrades to plan order rather than to a second opinion about it.
+    porder = _priority.ranks(phases)
     phase_entries = [{
         "id": p.get("id"), "title": p.get("title"),
         "status": p.get("status"), "area": areas_of(p.get("area")),
@@ -292,6 +305,12 @@ def rollup(manifest, findings, warnings, usage=None):
         # orders nothing, so a badge rendered off the raw value would advertise
         # a pin the run does not honour. `None` means unprioritised.
         "priority": _priority.tier_of(p),
+        # The tier is what a READER understands; this is the ordering index, and
+        # the two are not interchangeable. `priority` renders as a badge and is
+        # never sorted on; `porder` sorts and is never rendered. Named after the
+        # report's `data-porder` on purpose, so one grep finds every reader of the
+        # one rank across both surfaces.
+        "porder": porder[i],
         "done": sum(1 for t in (p.get("tasks") or [])
                     if isinstance(t, dict) and t.get("status") == "done"),
         # ca: counted separately, never folded into `done`. A bar that showed
@@ -300,7 +319,7 @@ def rollup(manifest, findings, warnings, usage=None):
         "cancelled": sum(1 for t in (p.get("tasks") or [])
                          if isinstance(t, dict) and t.get("status") == "cancelled"),
         "total": sum(1 for t in (p.get("tasks") or []) if isinstance(t, dict)),
-    } for p in phases]
+    } for i, p in enumerate(phases)]
     # group phases by each of their `area` tags (a phase with several tags counts
     # under each; untagged phases are simply not grouped)
     areas = {}

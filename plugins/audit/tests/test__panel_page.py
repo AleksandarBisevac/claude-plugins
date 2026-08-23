@@ -959,6 +959,21 @@ def _cases(check):
     check("pri7 the confirm dialog computes a priority row, so the client's list "
           "and the server's echo stay two readings of one pair of values",
           "if(('priority' in pv)&&!cfSame(p.priority,pv.priority))" in M.UI_HTML)
+    # A PROPERTY OF THE SOURCE, and source text is the only instrument for it:
+    # that the Overview's priority sort is one subtraction of a server-computed
+    # rank and holds no rule of its own. It is NOT a claim that the sort works -
+    # `tools/ui-tests/phase-order.test.mjs` runs that, and the shape a second
+    # comparator would take is caught by name by `_deps.SHARED_CONCERNS`'s
+    # "phase execution order" row. Counted rather than found: `index()` reads the
+    # first hit, and a second sort appended elsewhere would be two answers to one
+    # question with this assertion still green.
+    check("pri8 the Overview sorts phases by `porder` - the number "
+          "`_priority.ranks` computed, the same one the report stamps as "
+          "`data-porder` - so the client is handed the order and never the rule",
+          "else if(OVF.sort==='priority')ordered.sort((a,b)=>a.porder-b.porder);"
+          in M.UI_HTML
+          and M.UI_HTML.count("a.porder-b.porder") == 1,
+          repr(M.UI_HTML.count("a.porder-b.porder")))
     # PROPERTIES OF THE SOURCE, not of the painted box: only the browser gates can
     # say the two controls line up. What source text CAN say is that one rule
     # decides their shape and ONE declaration their width - which is the thing

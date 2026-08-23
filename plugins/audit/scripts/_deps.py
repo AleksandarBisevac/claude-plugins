@@ -1799,6 +1799,24 @@ SHARED_CONCERNS = (
      "constant of its own under a different name. The panel's day-number helpers "
      "(dnum, dayIso) stayed in panel/core.js, where they have one reader - "
      "dayIso replacing three identical local copies."),
+    ("phase execution order", None,
+     r"re:priority\s*(==\s*null\s*\?\s*[^'\"\s]|\|\|\s*0|\?\?)", 0,
+     "THE HOME IS PYTHON: `_priority.sort_key` is documented as the only "
+     "expression of phase order in this tree, because a second one is how two "
+     "orders come to disagree. Both surfaces are handed a NUMBER instead - the "
+     "report as `data-porder`, the panel as the rollup's `porder` - and neither "
+     "may hold the rule. This is not the blind spot named above: that one is a "
+     "home in ui/ with a copy in Python, which this scan cannot see. This is the "
+     "MIRROR, and a copy in ui/ is exactly what it does see. The needle is the "
+     "one decision a comparator here cannot avoid making - where an ABSENT tier "
+     "sorts - in its three spellings: a class test whose branches are numbers, "
+     "absent-means-zero arithmetic (which `_priority` names as the wrong "
+     "answer), and a nullish default. A bare null test could not be the needle: "
+     "the Composition tab writes an empty form value for an absent tier, which "
+     "is a different job, and a row that fires on innocent code is a row someone "
+     "switches off. The panel carried the comparator for a while with a comment "
+     "saying it mirrored sort_key - correct the whole time, held correct by "
+     "nothing, and a comment claiming two implementations agree is not a check."),
 )
 
 
@@ -1972,7 +1990,12 @@ def shared_concern_violations(ui_dir=None):
         hits = _concern_hits(root, home, needle)
         total = sum(c for _n, c in hits)
         if total > allowed:
-            out.append((concern, home or "(not extracted)", total, allowed,
+            # A `None` home used to render as "(not extracted)", which was dead
+            # text while every row had a home and became WRONG the moment one did
+            # not: "phase execution order" is extracted, into Python, and nothing
+            # in `ui/` may hold it. This wording is true of both readings - a
+            # concern still awaiting extraction has no home here yet either.
+            out.append((concern, home or "(no home in ui/)", total, allowed,
                         ", ".join("%s x%d" % (n, c) for n, c in hits)))
     return out
 

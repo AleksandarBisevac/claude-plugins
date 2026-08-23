@@ -452,13 +452,17 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  if(OVF.sort==='progress')ordered.sort((a,b)=>pct(b)-pct(a));
  else if(OVF.sort==='status')ordered.sort((a,b)=>ovRank(OVORDER,a.status)-ovRank(OVORDER,b.status));
  // Priority as a SORT OPTION, never as the default: the written plan is the
- // plan, and priority is an overlay on which of its ready tasks runs first. The
- // key mirrors _priority.sort_key — pinned phases by tier, then everything
- // unprioritised, and manifest order inside each group, which is what `ordered`
- // already carries.
- else if(OVF.sort==='priority')ordered.sort((a,b)=>
-   (a.priority==null?1:0)-(b.priority==null?1:0)
-   ||(a.priority||0)-(b.priority||0));
+ // plan, and priority is an overlay on which of its ready tasks runs first.
+ //
+ // ORDERED BY A NUMBER THE SERVER COMPUTED, and the rule is nowhere on this
+ // side. `porder` is `_priority.ranks` — the same function behind the report's
+ // `data-porder` — so the panel, the report and the orchestrator's own walk
+ // cannot hold separate opinions about order. This line used to re-express
+ // sort_key here as an absent-tier class test and a tier compare beside it. It
+ // was correct, nothing held it correct, and nothing would have said so the day
+ // the comparator changed. `p.priority` stays on the badge, where a tier is what
+ // a reader understands; an ordering index is not a thing to show them.
+ else if(OVF.sort==='priority')ordered.sort((a,b)=>a.porder-b.porder);
  /**
   * One phase as a pressable row, with its detail beneath when it is open.
   * @param {{id: string, status: string, title: (string|undefined),
