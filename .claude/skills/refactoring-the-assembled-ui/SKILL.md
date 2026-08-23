@@ -179,6 +179,30 @@ So when a pin goes red, ask which of the two it was really holding:
   function", "this file contains no wall-clock call". Source text is the right instrument for those
   and nothing else can check them. Say so in the label.
 
+**Running in a browser is not the same as observing the behaviour, and this is where the rule
+bites hardest.** The remedy above — "move it to a suite that can execute the behaviour" — is
+necessary and not sufficient: three checks went red on one later day that were ALREADY browser
+gates, driving the real page, and each was watching the wrong thing.
+
+- A menu probe took its sample at `left+2, top+2` of the menu box. The corner radius is 9px, so
+  that point is **outside the painted shape** — `(9-2)² · 2 > 9²`, and the measured diagonal only
+  reaches the menu at `d = 3`. It passed for as long as something harmless sat in the corner
+  cut-out, and failed the day a layout change put a row-toggling `<td>` there. It had never once
+  tested the menu it was named for.
+- A pin labelled "the topbar names the build serving it" asked whether the project-path element's
+  `textContent` contained the version. That is the stamp's **DOM home**, not its visibility — and
+  the bug it was supposed to catch was a version sitting in the DOM and painted 122px past a
+  clipped edge. The replacement reports `{"text":"v0.43.0","roomy":true,"painted":false}`: right
+  text, present, room for it, not on the screen. The old clause passes on that line.
+- A confirm-flow check picked `tasks[0]` to edit, which silently assumed every control on the page
+  is editable. It stopped being true when done and cancelled rows were frozen.
+
+The distinction to carry: **executing the page proves the code ran; only an assertion aimed at
+what a person can see proves the behaviour.** Geometry, visibility and reachability are what
+those three were named for, and DOM membership, a corner coordinate and an index were what they
+measured. When a browser gate goes red after a layout change, suspect the gate before the layout
+— and when one has *never* gone red, that is not evidence it works.
+
 A slice endpoint that stops resolving is the good outcome, not the bad one: it raises. The bad
 outcome is an endpoint that still resolves somewhere else, because the window then silently
 changes size and the assertion goes on passing about a different span.
