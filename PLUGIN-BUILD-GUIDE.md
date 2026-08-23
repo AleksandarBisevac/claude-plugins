@@ -54,7 +54,8 @@ claude-plugins/                           # this repo (personal, public)
       commands/                           # execution verbs (each thin; read reference/orchestrator.md)
         status.md doctor.md next.md run.md phase.md review.md resume.md report.md   # /audit:<verb>
         panel.md                          # /audit:panel — open/stop/status the control-panel UI
-        migrate.md                        # /audit:migrate — single-file -> sharded manifest layout
+        layout.md                         # /audit:layout — pick the manifest layout, either direction
+        migrate.md                        # /audit:migrate — legacy spelling of `/audit:layout sharded`
         init.md                           # /audit:init — multi-agent manifest generation
         task.md                           # /audit:task — interactive task creation
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
@@ -109,7 +110,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
-          migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
+          migrate-manifest.py             # /audit:layout doer: single-file -> sharded (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
@@ -1598,14 +1599,15 @@ attr` it prints one focused table; without it, the full dashboard. `--backfill` 
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
 path that rewrites (and therefore locks) rather than only appending.
 
-### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/migrate.md` (v0.15.0)
+### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/layout.md` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
 `load_manifest` reads BOTH the single-file form and the v3 index+shards form into the same assembled
 dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
 `hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
 `{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime
 mirror, so a phase run writes only its shard → parallel phase branches merge with no manifest conflict.
-`migrate-manifest.py` (driven by `/audit:migrate`) converts single-file → sharded: validate source →
+`migrate-manifest.py` (driven by `/audit:layout`, of which `/audit:migrate` is the kept legacy
+spelling) converts single-file → sharded: validate source →
 refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-validate → restore on failure;
 `--renumber` repairs duplicate `BUG-` ids, `--dry-run` previews. Locks moved to the shared git dir
 (two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the

@@ -486,11 +486,34 @@ def _cases(check):
             return r
 
         rep = shards({"meta": {"version": 2}, "phases": []}, {})
-        check("ds23 a single-file layout is an ok line pointing at /audit:migrate "
-              "- not a warning about a layout nobody asked for: %r"
+        check("ds23 a single-file layout is an ok line stating the layout AND "
+              "its cost - not a warning about a layout nobody asked for: %r"
               % (_detail(rep, "layout"),),
               _levels(rep, "layout") == ["OK"]
-              and "single-file layout" in _detail(rep, "layout"))
+              and "single-file layout" in _detail(rep, "layout")
+              and "one phase loads them all" in _detail(rep, "layout"))
+        # F13's fault in one line: the line used to name /audit:migrate, which
+        # turned a supported layout into a to-do. Absence is the assertion, and it
+        # is checked for the PREFIX rather than one command name - renaming the
+        # command must not be a way for the nudge to come back under a new spelling.
+        check("ds23a ...and it names NO command: single-file is a choice, so a "
+              "slash command in an OK line reads as a repair to relay: %r"
+              % (_detail(rep, "layout"),),
+              "/audit:" not in _detail(rep, "layout"))
+
+        # THE CASE THAT FAILS ON THE OLD CODE. The layout is read from the phase
+        # stubs (`_mio.is_sharded`), not from `meta.version`: a `meta.version != 3`
+        # test called this index single-file while every writer in the tree was
+        # already treating it as sharded. Fixture chosen so the two readings
+        # disagree - a stamp of 2 with a real shard beside it.
+        rep = shards({"meta": {"version": 2},
+                      "phases": [{"id": "P1", "shard": "p1.json"}]},
+                     {"p1.json": {"id": "P1", "tasks": []}})
+        check("ds23b a shard ref decides the layout even when meta.version says "
+              "2 - the stamp is not the layout, the stubs are: %r"
+              % (_detail(rep, "layout"),),
+              _levels(rep, "layout") == ["OK"]
+              and "sharded layout intact" in _detail(rep, "layout"))
 
         rep = shards({"meta": {"version": 3},
                       "phases": [{"id": "P1", "shard": "p1.json"}]},
@@ -518,10 +541,33 @@ def _cases(check):
               "missing: none" in _detail(rep, "layout")
               and "mismatched: p1.json" in _detail(rep, "layout"))
 
-        rep = shards({"meta": {"version": 3}, "phases": [{"id": "P1"}]}, {})
+        # MIXED on purpose. `is_sharded` is satisfied by ONE stub with a ref, so
+        # this is the index where a ref-less stub is still reachable - and the case
+        # that keeps the per-stub report alive after the layout stopped being read
+        # off `meta.version`.
+        rep = shards({"meta": {"version": 3},
+                      "phases": [{"id": "P1", "shard": "p1.json"},
+                                 {"id": "P2"}]},
+                     {"p1.json": {"id": "P1", "tasks": []}})
         check("ds27 ...and a stub carrying NO shard ref is reported by phase id, "
               "which is the only name it has: %r" % (_detail(rep, "layout"),),
-              "P1 has no shard ref" in _detail(rep, "layout"))
+              _levels(rep, "layout") == ["FINDING"]
+              and "P2 has no shard ref" in _detail(rep, "layout"))
+
+        # The other direction of the same conditional: a stamp of 3 with NO ref
+        # anywhere is not the single-file choice ds23 reports, it is an index whose
+        # stubs lost their refs. Reporting it as a layout choice is the silent pass
+        # - every reader is already assembling it as one file - so it is a FINDING
+        # naming the disagreement, and the fix line says which side to trust.
+        rep = shards({"meta": {"version": 3}, "phases": [{"id": "P1"}]}, {})
+        _lrow = [r for r in rep.rows if r["check"] == "layout"]
+        check("ds27a a version stamp of 3 with no shard ref ANYWHERE is a FINDING "
+              "about the stamp disagreeing with the stubs, never the single-file "
+              "OK line: %r" % (_detail(rep, "layout"),),
+              _levels(rep, "layout") == ["FINDING"]
+              and "meta.version says 3" in _detail(rep, "layout")
+              and "single-file layout" not in _detail(rep, "layout")
+              and len(_lrow) == 1 and "restore the shard refs" in (_lrow[0]["fix"] or ""))
 
         # -------------------------------------------------- check_submodules
         if have_git:

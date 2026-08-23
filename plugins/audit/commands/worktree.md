@@ -10,7 +10,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first.
 
 Sets up an isolated **git worktree** so a phase can run in its own Claude session, in parallel with
-other phases (best on a **sharded** manifest — run `/audit:migrate` first — where phase runs write
+other phases (best on a **sharded** manifest — run `/audit:layout sharded` first — where phase runs write
 only their own shard and merge back without conflict). This only touches git worktrees/branches — it
 **never edits the manifest**.
 

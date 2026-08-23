@@ -26,20 +26,26 @@ readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume 
 **Manifest layout (single-file vs sharded) — where writes go.** The manifest reads the same in
 either layout (the scripts and hooks assemble transparently), but WRITES must target the right file:
 
-- **Sharded layout** (`meta.version: 3` — `manifestPath` is an *index* whose phases are
-  `{id, title, shard}` stubs pointing at `phases/<phaseId>.json`): every per-phase / per-task
+- **Sharded layout** (`manifestPath` is an *index* whose phases are `{id, title, shard}` stubs
+  pointing at `phases/<phaseId>.json` — the **stubs** are what decides the layout, and
+  `meta.version: 3` is a stamp that follows them, which is why every reader asks
+  `_manifest_io.is_sharded()` and not the stamp): every per-phase / per-task
   **runtime** field — phase `status`/`branch`/`baseRef`/`mergedAt`/`review`/`summary`/`claim` and
   task `status`/`attempts`/`startedAt`/`completedAt`/`outcome`/`commit` — lives in that phase's
   **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
   `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
-- **Single-file layout** (`meta.version: 2` or absent): it's all one file, as before.
-- **Neither layout is legacy, and a mutating command should not nudge.** `meta.version` 2 and 3
-  encode a layout CHOICE, not an age: a single-file manifest never goes out of date, and
-  installing a newer plugin never makes migrating due. Sharding earns its keep when phases run in
-  parallel from separate worktrees, or when the index is large enough that per-phase context cost
-  matters — one session with few phases is better off single-file. If asked, say that; do not
-  volunteer it on every write. And say the direction plainly: `/audit:migrate` has no reverse.
+- **Single-file layout** (no phase carries a `shard`; `meta.version: 2` or absent): it's all
+  one file, as before.
+- **Neither layout is legacy, and a mutating command should not nudge.** The two shapes are a
+  CHOICE, not an age: a single-file manifest never goes out of date, and installing a newer plugin
+  never makes a layout change due. Sharding earns its keep when phases run in parallel from
+  separate worktrees, or when the index is large enough that per-phase context cost matters — one
+  session with few phases is better off single-file. If asked, say that; do not volunteer it on
+  every write. The command is **`/audit:layout <sharded|single-file>`** and it moves in **either**
+  direction, so there is no direction to apologise for — but the reverse has a cost the forward one
+  does not, and `layout.md` is where it is stated rather than here. (`/audit:migrate` is the legacy
+  spelling of `/audit:layout sharded`, kept for existing transcripts and slated for removal.)
 
 Below, "**Edit the phase's manifest file**" means the shard in the sharded layout, the one file otherwise.
 
