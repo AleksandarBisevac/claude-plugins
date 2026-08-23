@@ -14,6 +14,14 @@ later - it is a work item that would land on someone's board looking foreign,
 and once created it stays. So a violation is exit 1 and the caller stops.
 
   FINDING  - the item does not belong on this board (exit 1).
+
+WHAT COMES BACK IS THE PAYLOAD TO SEND. `meta.ado.fields` is merged into the
+item BEFORE it is graded, because a gate that can only refuse is useless on a
+board whose Task owes fields the connector never learned to write. So this
+command prints what it added and `--json` carries the merged `payload`: send
+THAT, not the item you wrote, or the fields the gate just counted as present
+will not be on the created item.
+
 Usage:
   check-ado-item.py <manifest> --item <file.json>
   check-ado-item.py <manifest> --item -            # payload on stdin
@@ -59,6 +67,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _ado_conventions as _conv  # noqa: E402  (the rule this command enforces)
+import _ado_fields as _fields  # noqa: E402  (the template merged in before it)
 
 USAGE = ("usage: check-ado-item.py <manifest> --item <file.json|-> [--json]\n")
 
@@ -73,6 +82,44 @@ def conventions_of(manifest):
     meta = manifest.get("meta") if isinstance(manifest, dict) else None
     ado = meta.get("ado") if isinstance(meta, dict) else None
     return ado.get("conventions") if isinstance(ado, dict) else None
+
+
+def field_template_of(manifest):
+    """`meta.ado.fields`, or None when this project supplies nothing extra.
+
+    Same tolerance as `conventions_of` and for the same reason: a manifest whose
+    `meta` or `ado` is the wrong type is `check_ado_meta`'s finding to report.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    ado = meta.get("ado") if isinstance(meta, dict) else None
+    return ado.get("fields") if isinstance(ado, dict) else None
+
+
+def _report_merge(result, has_block):
+    """The lines that make the merge visible. `[]` when there was no block.
+
+    A merge nobody printed is a payload the caller does not know it has to send,
+    and a skip nobody printed is a template the caller believes was applied. An
+    ABSENT block prints nothing at all, which is what keeps "this key is not
+    set" byte-identical to the behaviour before the key existed.
+    """
+    if not has_block:
+        return []
+    wit = result["type"] or "item"
+    out = []
+    if result["added"]:
+        out.append("MERGED: %d field(s) from meta.ado.fields.%s - send these "
+                   "with the create:" % (len(result["added"]), wit))
+        for name in sorted(result["added"]):
+            out.append("  %s=%r" % (name, result["added"][name]))
+    elif not result["skipped"]:
+        out.append("MERGED: meta.ado.fields declares no template for %s, so "
+                   "the payload is unchanged." % (wit,))
+    for name in sorted(result["skipped"]):
+        out.append("WARNING: meta.ado.fields.%s.%s was NOT merged - the "
+                   "payload already carries that field, and the connector's "
+                   "own value wins." % (wit, name))
+    return out
 
 
 def main(argv):
@@ -111,14 +158,41 @@ def main(argv):
         sys.stderr.write("ERROR: %s\n" % (reason,))
         return 2
 
+    # The template is merged BEFORE grading, and a malformed one is exit 2
+    # rather than 1: a 1 says "this item does not belong on the board", and a
+    # config we refused to read is not the item's fault. Without this the
+    # refusals `_ado_fields` exists for - a connector-mapped field, a readOnly
+    # one - would be validation findings nobody on this path ever ran.
+    template = field_template_of(manifest)
+    tf, _ = _fields.check_fields_config(template)
+    if tf:
+        for line in tf:
+            sys.stderr.write("ERROR: %s\n" % (line,))
+        sys.stderr.write("ERROR: meta.ado.fields in %s cannot be applied; fix "
+                         "it (validate-manifest.py reports the same findings) "
+                         "and re-run.\n" % (manifest_path,))
+        return 2
+    merge = _fields.merge_template(item, template)
+    has_block = template is not None
+
     conventions = conventions_of(manifest)
-    violations = _conv.conformance_violations(item, conventions)
+    violations = _conv.conformance_violations(merge["item"], conventions)
 
     if as_json:
         print(json.dumps({"conforms": not violations,
                           "hasStandard": bool(conventions),
-                          "violations": violations}, indent=2, sort_keys=True))
+                          "violations": violations,
+                          # The payload to SEND. With no template it is the item
+                          # that came in, unchanged - which is the claim the key
+                          # being absent makes, in a form a script can check.
+                          "payload": merge["item"],
+                          "fieldsAdded": merge["added"],
+                          "fieldsSkipped": merge["skipped"]},
+                         indent=2, sort_keys=True))
         return 1 if violations else 0
+
+    for line in _report_merge(merge, has_block):
+        print(line)
 
     if conventions is None or not conventions:
         # Named rather than silent: "nothing to check" and "checked, clean" are

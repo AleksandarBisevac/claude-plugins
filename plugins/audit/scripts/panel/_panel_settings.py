@@ -292,6 +292,15 @@ COMPOSITION_HELP = {
                "tags. With neither, sprint pull refuses to import blind.",
     "adoIdentityMap": "Ledger identity (git email/name) → ADO identity (email/UPN). "
                       "Advisory: push proposes assignees, pull labels reporters.",
+    # No control on the card yet - the help text ships ahead of it so the drawer
+    # can answer the key the CLI already reads. `meta.ado` is saved wholesale
+    # from a deep copy of the file, so a template written by hand survives every
+    # save this card makes.
+    "adoFields": "Extra fields this project supplies per work item type, merged into "
+                 "the create payload before the conformance gate grades it - what "
+                 "gets an item past a board that requires an Activity or an estimate. "
+                 "Values are literals; a field the connector already maps, or one ADO "
+                 "reports as read-only, is refused when the manifest is validated.",
 }
 
 SETTINGS_GROUPS = (

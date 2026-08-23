@@ -64,6 +64,7 @@ heals whatever the echo missed.
 | task `done` + `meta.ado.onComplete.remainingWork` (default 0 when `onComplete` present) | `Microsoft.VSTS.Scheduling.RemainingWork`, same update call — stock processes REFUSE it (they force-clear the field at done) → retry state-only, report the skip (tracker-sync.md) |
 | `meta.ado.areaPath` (when set) | Area |
 | resolved sprint (`meta.ado.sprint`) else `meta.ado.iterationPath` (when set) | Iteration |
+| `meta.ado.fields.<work item type>` (when set) | those fields verbatim on CREATE — merged by `check-ado-item.py` **before** the conformance gate, so a board that requires e.g. `Microsoft.VSTS.Common.Activity` can be satisfied; a field this table already maps, or one ADO reports read-only, is refused at validation |
 | always | provenance tag from `meta.ado.tag` (absent = `audit-plugin`; null = none) — tag writes READ-MERGE-WRITE the item's tag list, never wholesale; comment with `fixedIn` SHA when a bug closes |
 
 A `stateMap` value of `null` = **never move state for that transition** — skip the
@@ -157,6 +158,13 @@ failed echo.
    the item is on the board. Exit 2 is unreadable input — stop, do not treat it as a
    pass. A board with no `conventions` block exits 0 and says nothing was checked;
    that is an answer ("this board has no standard"), not a silent success.
+
+   **The command MERGES `meta.ado.fields` into the payload before it grades it, so
+   send back what it hands you** — the fields it printed (`MERGED: …`), or `payload`
+   under `--json`. Sending the payload you wrote instead creates an item without the
+   fields the gate just counted as present, which is how a green gate still lands a
+   non-conforming item. A malformed `meta.ado.fields` is exit 2, not 1: the config
+   could not be applied, which is not the item's fault.
 
    **Do not reimplement the rule here.** It is Python with cases precisely because
    prose cannot be tested — a second copy in this file is a second answer, and the

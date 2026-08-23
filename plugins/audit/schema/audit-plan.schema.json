@@ -294,6 +294,24 @@
               "minimum": 1,
               "description": "The EXISTING Azure DevOps work item that audit work hangs under — typically a Feature or Epic already on the team's backlog. Absent/null = the connector builds its own branch (phaseWorkItems creates a phase item with nothing above it), which is correct and puts audit work BESIDE the team's planning instead of inside it: nobody planning from that board sees it. Set it and created phase items become children of that id (and, with phaseWorkItems false, tasks do). An id and therefore an integer — a config carrying \"103205\" as a string is a typo worth naming rather than coercing, because coercing hides it."
             },
+            "fields": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "What THIS project supplies to the board's fields, per work item type: {work item type name: {ADO field name: literal value}}, merged into the create payload BEFORE the conformance gate grades it. `conventions` can only REFUSE, and the connector's create payload is title, description, state, area, iteration, tags and a parent link \u2014 so on a governed board whose Task really owes Microsoft.VSTS.Common.Activity and Microsoft.VSTS.Scheduling.OriginalEstimate, an honest `conventions` block gated out every CREATE and the block that let a push through was a deliberately weakened description of the board. Keyed by TYPE NAME, the same vocabulary `types.{bug,task,pbi}` resolve to, so a board that renames its types is configured in one vocabulary. Absent/null supplies nothing, which is exactly today's behaviour. Values are LITERALS \u2014 there is no substitution language, because the fields carrying manifest data are the ones the connector already maps, and those are refused here (see scripts/manifest/_ado_fields.py: naming a connector-mapped field, or one ADO reports as readOnly, is a validation finding). A readOnly field is refused rather than attempted because attempting it can look like it worked: measured 2026-08-24, `--fields System.Parent=<id>` created the item, reported success and left no parent and no relation.",
+              "additionalProperties": {
+                "type": "object",
+                "description": "One work item type's template: ADO field reference name (or display name \u2014 ADO resolves both) -> the literal value to send. Numbers stay numbers; Microsoft.VSTS.Scheduling.OriginalEstimate is not a string.",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              }
+            },
             "conventions": {
               "type": [
                 "object",

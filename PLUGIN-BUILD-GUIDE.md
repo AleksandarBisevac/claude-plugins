@@ -90,6 +90,7 @@ claude-plugins/                           # this repo (personal, public)
         manifest/                         # the manifest domain: the layout, the registry, the validator, the writers
           _manifest_io.py                 # dual-format loader/writer (single-file OR index+shards)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
+          _ado_fields.py                  # meta.ado.fields: what this project supplies to those fields
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
           _ado_drift.py                   # who wrote a linked work item last, and whether pushing overwrites them
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
@@ -230,6 +231,7 @@ L0:
 
 L1:
   _ado_conventions -> _output
+  _ado_fields -> _output
   _areas -> _output
   _branch -> _output
   _cli_fmt -> _output
@@ -253,7 +255,7 @@ L2:
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
-  _manifest_ado -> _ado_conventions, _manifest_vocab, _output
+  _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
@@ -311,7 +313,7 @@ L7:
   audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
   audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
-  check-ado-item -> _ado_conventions, _output
+  check-ado-item -> _ado_conventions, _ado_fields, _output
   explain-ado-drift -> _ado_drift, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
@@ -1408,6 +1410,43 @@ Both halves live here on purpose: `check_conventions_config` grades the block so
 them would put the shape and its use in two places that could disagree. An absent block
 means the board has no standard and every item conforms — not "could not check", but "there
 is nothing to check".
+
+### `plugins/audit/scripts/manifest/_ado_fields.py`
+`meta.ado.fields` — what this project **supplies** to a governed board's fields (layer 1), and
+the half `_ado_conventions` could not be. That module grades a payload and can only *refuse*;
+the connector's create payload is title, description, state, area, iteration, tags and a parent
+link, so on a board whose Task really owes an Activity and an Original Estimate the honest
+`conventions` block gated out every CREATE and the block that let a push through was a
+deliberately weakened description of the board. The gate could only refuse and the connector
+could not supply, so on exactly the boards the feature was designed for nothing could be
+created. A template keyed by work item type NAME — the same vocabulary `types.{bug,task,pbi}`
+resolve to — is merged into the payload **before** the conformance check, so the board states
+what it requires, the manifest states what this project supplies, and the gate grades the
+result.
+
+**A collision is refused at validation, not warned about at push.** A template may not name a
+field the connector itself maps: winning over one would make `commands/sync.md`'s mapping table
+a lie, and losing to one would make the config a lie. A config that cannot do what it says is
+better caught when it is written than when it is pushed, and there is no case in which the
+setting could quietly start working later. `Microsoft.VSTS.Scheduling.RemainingWork` is the one
+deliberate carve-out: the connector writes it at DONE via `onComplete`, never at create, and a
+board that requires it at create is the case this module exists for — so it is a warning about
+a *second moment*, not a refusal.
+
+**A read-only field is refused rather than attempted, because attempting it can look like it
+worked.** Measured 2026-08-24 against the lab board: `--fields System.BoardColumn=…` refuses
+out loud (`TF401326`), while `--fields System.Parent=<id>` creates the item, reports success,
+and leaves no parent and no relation. "Attempt it and report what ADO said" would report a
+create that worked. The same session established that ADO resolves a field's DISPLAY name as
+readily as its reference name, which is why both tables here carry both spellings and compare
+whole strings — a last-segment rule would refuse a legitimate `Custom.Severity`.
+
+**Values are literals and there is no substitution language.** The fields carrying manifest
+data are exactly the ones a template may not name, so a placeholder could only write manifest
+data into a field the connector does not map — a change to the mapping table, not something a
+config key invents. It would also force every literal to grow a brace escape and every value to
+become a string, when an estimate has to stay a number. A value that *looks* like a placeholder
+is warned about, because writing those characters onto a board is visible garbage.
 
 ### `plugins/audit/scripts/manifest/_manifest_ado.py`
 `meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front
