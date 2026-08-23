@@ -276,9 +276,9 @@ def label_faults(labels, sites):
     written in the past tense because the count is evidence for a decision and
     not a fact to keep true: 31 identifiers across 19 suites repeated that way
     the day this shipped, so a rule that counted occurrences would have called
-    every one of them a duplicate and renumbered the family idiom out of about a
-    hundred cases. One call site is one authored assertion; two hand-written
-    cases claiming `pn10` are two.
+    every one of them a duplicate and renumbered the family idiom wherever it
+    appears. One call site is one authored assertion; two hand-written cases
+    claiming `pn10` are two.
 
     `sites` maps an identifier to the set of caller line numbers that produced
     it. `run()` collects it because a line number is the one thing a rendered
@@ -582,12 +582,18 @@ def _cases(check):
             "bw1-a a borrowed wrapper", "h2b every SUBDIRECTORY",
             "pn10 COMPLETENESS is caught")]
           == [None, None, "bw1-a", "h2b", "pn10"])
+    # A NAMED LOCAL BELOW, not an inline call, and the reason is the scanner: a
+    # numeric index immediately followed by an identifier whose first word is a
+    # case noun reads as a cardinality claim, because the tokenizer splits on the
+    # underscore. Reworded rather than the pattern widened, which is the rule this
+    # repo states for meeting a lint that reads text.
+    _pn10b_id = case_id("pn10b the BARE count")
     check("u7 the id is read here the way prove-gates.py reads it back off a "
           "rendered line - two spellings of one key, pinned rather than "
           "commented, because that tool is the only consumer and a comment "
           "claiming they agree is not a test that they do",
           _render([("pn10b the BARE count", False, "")])[0]
-          .splitlines()[0].split(None, 2)[1] == case_id("pn10b the BARE count"))
+          .splitlines()[0].split(None, 2)[1] == _pn10b_id)
 
     # -- module_source(): the subject's file, never the test's -----------------
     import _output as _ms_probe
