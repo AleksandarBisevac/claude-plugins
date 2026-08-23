@@ -409,6 +409,71 @@ async function tabTo(page, t) {
   return false;
 }
 
+/**
+ * Open the Usage tab's Filters fold — and say what it looked like on arrival.
+ *
+ * TWO JOBS, and the first is mechanical. The usage filters live behind a
+ * `<details>` now, and Playwright refuses to type into or select from a control
+ * inside a shut one: `element is not visible`, after a 30-second wait that reads
+ * as a dead panel rather than as a fold nobody opened. Every measurement in this
+ * file that drives a usage filter needs it open, and `tabTo` is the only place
+ * that the next leg to be written cannot forget.
+ *
+ * The second is the half no `'…' in UI_HTML` pin can reach, which is why it is
+ * here and not in test__panel_page.py. Whether the tab LEADS with its numbers is
+ * a fact about a rendered document: the fold must be shut when the tab is first
+ * opened, the chip row must sit above it, and the summary must carry a count
+ * whenever something is filtering — a shut fold that says nothing while a filter
+ * is on is how a reader concludes the numbers are missing rows. All three are
+ * checked once per page, before this function changes the state it is reading.
+ *
+ * CALLED FROM THE LEGS THAT DRIVE A FILTER, deliberately not from `tabTo`. Every
+ * `tabTo(page, 'usage')` would then leave the fold open, including the one the
+ * committed `panel-usage` screenshot is taken through — and that shot's whole job
+ * is to show the default the tab actually opens in. What a leg needs open, a leg
+ * opens.
+ */
+async function openUsageFilters(page) {
+  if (!(await page.$('#usage details[data-uffold]'))) {
+    fail('usage: no Filters fold in the tab — the filter controls are not behind '
+       + 'a disclosure, so the measurements below are against a layout nobody '
+       + 'designed');
+    return;
+  }
+  const st = await page.evaluate(() => {
+    const d = document.querySelector('#usage details[data-uffold]');
+    const c = document.querySelector('#usage .uchips');
+    return {
+      open: d.open,
+      summary: (d.querySelector('summary') || {}).textContent,
+      counted: !!d.querySelector('.fcount'),
+      chips: document.querySelectorAll('#usage [data-uchip]').length,
+      // DOCUMENT_POSITION_FOLLOWING: the fold comes after the chip row.
+      chipsFirst: c ? c.compareDocumentPosition(d) === 4 : null,
+    };
+  });
+  if (!page.__usageFoldSeen) {
+    page.__usageFoldSeen = true;
+    if (st.open) {
+      fail('usage: the Filters fold was already open when the tab was first '
+         + 'reached. The tab is meant to open on its numbers; a fold that opens '
+         + 'itself puts the wall of controls back above them.');
+    } else {
+      note('usage: the Filters fold arrives shut');
+    }
+    if (st.chips && !st.counted) {
+      fail(`usage: ${st.chips} filter(s) are on and the shut fold's summary reads `
+         + `"${st.summary}" with no count on it — a fold that hides an active `
+         + 'filter is how a reader concludes rows are missing');
+    }
+    if (st.chips && st.chipsFirst === false) {
+      fail('usage: the chip row is not above the fold, so a shut fold leaves '
+         + 'nothing on screen naming what is scoping every number below it');
+    }
+  }
+  if (!st.open) await page.click('#usage summary[data-ufilters]');
+}
+
 /** The defect this whole script exists to prevent. */
 async function assertBarsPainted(page, label) {
   const bars = await page.evaluate(() => {
@@ -641,6 +706,10 @@ async function assertUsageWorks(page) {
   if (!(await page.locator('#usage .utile').count())) {
     fail('usage: no KPI tiles — the tab did not render'); return;
   }
+  // Everything below types into or selects from a filter, and the filters live
+  // behind a shut <details>. This also records what the fold looked like on
+  // arrival, which is the claim no substring pin can make.
+  await openUsageFilters(page);
   await compare('unfiltered', 'true');
 
   // --- sparklines -----------------------------------------------------------
@@ -2141,6 +2210,8 @@ async function assertViewerIdentity(page) {
   }, pick.name);
   await page.waitForTimeout(250);
   try {
+    // The my-spend control sits in the filter rows, so it is behind the fold.
+    await openUsageFilters(page);
     const chip = page.locator('#usage [data-umine]');
     if (!(await chip.count())) {
       fail('usage: the viewer has a name and there is no "my spend" chip'); return;
@@ -3080,6 +3151,8 @@ async function assertComboSearchCount(page) {
        + `the combo's overflow footer cannot exist here and this check is blind`);
     return;
   }
+  // The task combo is one of the filter rows, so it is behind the fold.
+  await openUsageFilters(page);
   const inp = page.locator('#usage input[aria-label="filter by task"]');
   if (!(await inp.count())) { fail('usage: no task filter combo'); return; }
   await inp.click();

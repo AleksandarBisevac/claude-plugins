@@ -430,6 +430,22 @@ function setF(dim,val){
  if(dim!=='day')SHOWN[dim]=TOP;      // a new scope starts from the top again
  renderUsage();}
 /**
+ * Lift ONE filter, whichever kind it is - the single way out that every chip,
+ * the empty view's fix and Escape all take.
+ *
+ * `range` needs the special case and cannot be given a `UF` slot's treatment:
+ * `uFiltered` reads any value other than 'all' as a preset in days, and
+ * `parseInt('',10)` is NaN, so blanking it would build a Date from NaN and throw
+ * on `.toISOString()` - an empty tab with a console trace instead of a lifted
+ * filter. It goes back to its own default instead, and it is not in `UORDER`.
+ *
+ * @param {string} d - a `DIMS` slot name, or 'range'
+ * @returns {void} it renders, so there is nothing to hand back
+ */
+function uLiftF(d){
+ if(d!=='range'){setF(d,'');return;}
+ UF.range='all';renderUsage();}
+/**
  * Put every filter back to its default and redraw: the slots, the order, the
  * range and bin knobs, the stored twin and the fragment.
  *

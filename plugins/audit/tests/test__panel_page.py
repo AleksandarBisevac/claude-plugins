@@ -1968,11 +1968,17 @@ def _cases(check):
           "*DAY_MS)" in M.UI_HTML)
     # An explanation computed by a second copy of "what matches" is an explanation
     # that can contradict the view it is explaining.
+    #
+    # The last clause used to read `for(const d of UORDER.concat(` - the loop's
+    # own spelling of "and the range too", which the chip row spelled a second
+    # time and `uAnyFilter` a third. It is `uOnFilters()` in all three now, so
+    # this clause names the shared list instead of one copy of it: the diagnosis
+    # cannot blame a filter the chips do not show, or miss one they do.
     check("the diagnosis re-runs uFiltered with one slot blanked instead of "
-          "re-implementing the match",
+          "re-implementing the match, and walks the same list the chips do",
           "const keep=UF[d];UF[d]=d==='range'?'all':'';" in _emp
           and "const n=uFiltered().length;UF[d]=keep;" in _emp
-          and "for(const d of UORDER.concat(" in _emp)
+          and "for(const d of uOnFilters()){" in _emp)
     check("one filter doing the emptying is named, counted and liftable on its "
           "own — clear-all throws away the ones that were fine",
           "plural(n,'row matches','rows match')+' everything else.'" in _emp
@@ -2046,6 +2052,103 @@ def _cases(check):
           "because a scale is a drawing decision and not a measurement",
           "const peak=Math.max(...head.map(x=>x[1][0]))||1;" in M.UI_HTML
           and "const rng=(hi-lo)||1;" in M.UI_HTML)
+
+    # --- uf: the filters fold, and the active ones stay above it ----------------
+    # The tab used to open on a wall of controls with no number in sight. They are
+    # behind one <details> now, and the chips that were BELOW them are above it.
+    #
+    # ALL OF THESE ARE CLAIMS ABOUT SOURCE TEXT and they are labelled as such:
+    # whether the fold actually paints, opens, and keeps its state under the
+    # reader's hand is a browser claim and belongs to capture-screenshots.mjs.
+    # What source text CAN say - and nothing else can - is that there is one list
+    # of what is filtering, that the count on the summary is read off that same
+    # list, and that nothing derives the fold's open state from the filters.
+    _ru = M.UI_HTML[M.UI_HTML.index("function renderUsage()"):
+                    M.UI_HTML.index("// --- Esc pops the last filter")]
+    # `find`, not `index`: a missing literal has to report a FAILED case, not
+    # raise out of the middle of the suite and take every case after it with it.
+    _i_chips, _i_bar = (_ru.find("card.append(chips);"),
+                        _ru.find("card.append(filt);"))
+    check("uf1: the chip row is appended to the card BEFORE the sticky bar the "
+          "fold sits in, so a tab whose fold is shut still leads with what is "
+          "scoping it (chips at %d, bar at %d) - SOURCE order; that the shut "
+          "fold really paints under them is capture-screenshots.mjs's"
+          % (_i_chips, _i_bar),
+          "const fold=el('details',{class:'fdetails','data-uffold':'1'," in _ru
+          and "el('summary',{'data-ufilters':'1'},'Filters'," in _ru
+          and 0 <= _i_chips < _i_bar)
+    check("uf2: the chips and the count on the summary are ONE read of ONE list "
+          "- a second read is how a chip row and a badge come to describe the "
+          "same screen differently (reads of uOnFilters() in renderUsage: %d)"
+          % (_ru.count("uOnFilters()"),),
+          "const on=uOnFilters();" in _ru
+          and "on.forEach(d=>chips.append(el('button',{class:'uchip'," in _ru
+          and "on.length?el('span',{class:'fcount'},' · '+on.length+' on')"
+              ":null" in _ru
+          and _ru.count("uOnFilters()") == 1)
+    # Counted over the whole of renderUsage rather than over a slice around the
+    # <details>. The slice that used to sit here ended at `filt.append(fold,`,
+    # which is the literal uf6 below is there to mutate - so proving uf6 red
+    # RAISED out of this line and took every case after it with it. An endpoint
+    # that another case exists to remove is not an endpoint.
+    #
+    # NO MODULE STATE FOR IT, and that is the measured shape rather than a
+    # preference. The first version kept a `UFOPEN` flag written from the fold's
+    # own `toggle` handler, and a browser driver reopened the fold, changed a
+    # filter in the same turn and got it back SHUT every time: `toggle` is queued
+    # as a task, so the repaint rebuilt the fold before the handler had run. A
+    # hand at human speed never sees it. The state is read off the OUTGOING
+    # element now - one place the fact lives, and the same thing proposals-view
+    # does with its own <details>.
+    check("uf3: the fold's open state is the READER's - read back off the "
+          "outgoing element at the top of the pass, never held in a variable "
+          "beside the DOM and never derived from the filters (reads of "
+          "foldOpen: %d, `open:` in renderUsage: %d)"
+          % (_ru.count("foldOpen"), _ru.count("open:")),
+          "const foldOpen=!!c.querySelector('details[data-uffold][open]');" in _ru
+          and "open:foldOpen?'':null" in _ru
+          # Two: the read and the one use. A third would be something deciding
+          # the fold for the reader - the "it opens itself whenever a filter is
+          # on" mutation, which no other case here can see. And no `UFOPEN`
+          # anywhere: a second home for this fact is the race described above.
+          and _ru.count("foldOpen") == 2
+          and "UFOPEN" not in M.UI_HTML
+          and _ru.count("open:") == 1)
+    check("uf4: the range preset wears a chip like every other filter - it is "
+          "not a DIMS slot, so it was the one filter that could be on with "
+          "nothing on screen naming it",
+          "const uOnFilters=()=>UORDER.concat(UF.range==='all'?[]:['range']);"
+          in M.UI_HTML
+          and "const uAnyFilter=()=>uOnFilters().length>0;" in M.UI_HTML
+          and "title:d==='range'?'back to all time':'remove this filter'," in _ru)
+    check("uf5: and every way out of a filter goes through uLiftF, which is "
+          "what keeps the range's own default out of every call site - blanking "
+          "it instead reaches parseInt('') and throws on the Date (hand-written "
+          "`UF.range='all';renderUsage();`: %d, hand-written `setF(d,'')`: %d)"
+          % (M.UI_HTML.count("UF.range='all';renderUsage();"),
+             M.UI_HTML.count("setF(d,'')")),
+          "function uLiftF(d){" in M.UI_HTML
+          and "if(d!=='range'){setF(d,'');return;}" in M.UI_HTML
+          and "onclick:()=>uLiftF(d)}" in _ru
+          and "const toAll=()=>uLiftF('range');" in M.UI_HTML
+          and M.UI_HTML.count("UF.range='all';renderUsage();") == 1
+          and M.UI_HTML.count("setF(d,'')") == 1)
+    check("uf6: Export stayed OUTSIDE the fold - it is not a filter, and behind "
+          "a summary saying 'Filters' nobody would find it again",
+          "filt.append(fold,el('button',{class:'btn small push',type:'button',"
+          in _ru
+          and "r2.append(el('button',{class:'btn small push'" not in M.UI_HTML)
+    check("uf7: the summary is a pill and a disclosure the platform draws, "
+          "under the report's own component name, and the count badge sits on "
+          "the SHUT control where it is the last thing left saying so",
+          ".fdetails>summary{cursor:pointer;font:inherit;font-size:.78rem;"
+          in M.UI_HTML
+          and '.fdetails[open]>summary::after{content:"\\25B4"}' in M.UI_HTML
+          and ".fdetails .fcount{font-weight:700;color:var(--accent);"
+              "font-variant-numeric:tabular-nums}" in M.UI_HTML
+          # The bar holds a fold and a button now, so a centred cross axis would
+          # float Export halfway down an open fold.
+          and "align-items:flex-start;margin:0 0 var(--sp-1)" in M.UI_HTML)
 
     # --- v0.34 C1 (cs): combo search over name+description+source -------------
     # String pins over one inline script, as ever: the behaviour (the footer

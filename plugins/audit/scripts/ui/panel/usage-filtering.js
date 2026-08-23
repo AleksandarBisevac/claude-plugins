@@ -222,12 +222,27 @@ function uFiltered(){if(!USAGE)return[];let out=USAGE.facts.filter(uMatch);
    .toISOString().slice(0,10);out=out.filter(f=>f[F.ts].slice(0,10)>=d);}
  return out;}
 /**
- * Is anything narrowing the view at all? Reads `UORDER` rather than the slots,
- * so it agrees with the chips by construction, and adds the range, which has no
- * chip of its own.
+ * Every filter narrowing the view right now, oldest first, with the range
+ * preset last.
+ *
+ * `range` is appended here rather than living in `UORDER` because it is not a
+ * `DIMS` slot - and only `DIMS` wore chips, which made the range the one filter
+ * that could be on with nothing on screen naming it. Four readers share this
+ * list: the chip row, the count on the shut Filters fold, `uAnyFilter` and the
+ * empty view's diagnosis. A second copy of "what is on" is how a chip row and an
+ * explanation come to describe the same screen differently.
+ *
+ * @returns {string[]} `UORDER` plus 'range' when a preset is set; [] when
+ *   nothing is narrowing the view
+ */
+const uOnFilters=()=>UORDER.concat(UF.range==='all'?[]:['range']);
+
+/**
+ * Is anything narrowing the view at all? Reads the list above rather than the
+ * slots, so it agrees with the chips by construction.
  * @returns {boolean}
  */
-const uAnyFilter=()=>UORDER.length>0||UF.range!=='all';
+const uAnyFilter=()=>uOnFilters().length>0;
 
 // Why the view is empty. "No rows match these filters" spread over eight controls
 // is a puzzle, and one of the ways to empty this tab cannot be worked out from the
@@ -266,7 +281,7 @@ const uAnyFilter=()=>UORDER.length>0||UF.range!=='all';
  */
 function uEmptyWhy(){
  const C=USAGE.counts||{};
- const toAll=()=>{UF.range='all';renderUsage();};
+ const toAll=()=>uLiftF('range');
  if(UF.range!=='all'){
   const cut=new Date(Date.now()-parseInt(UF.range,10)*DAY_MS)
     .toISOString().slice(0,10);
@@ -278,7 +293,7 @@ function uEmptyWhy(){
  // Which single filter is doing it. Naming one and lifting one is the answer to a
  // question "clear filters" cannot answer: it throws away every filter that was
  // fine, so the reader learns nothing and has to rebuild the view to find out.
- for(const d of UORDER.concat(UF.range==='all'?[]:['range'])){
+ for(const d of uOnFilters()){
   const keep=UF[d];UF[d]=d==='range'?'all':'';
   const n=uFiltered().length;UF[d]=keep;
   if(!n)continue;
@@ -286,7 +301,7 @@ function uEmptyWhy(){
    text:'No rows match. It is the '+fName(d)+' filter ('+fVal(d)+') doing it: '+
      plural(n,'row matches','rows match')+' everything else.',
    fix:{key:d,label:d==='range'?'Show all time':'Remove the '+fName(d)+' filter',
-     run:d==='range'?toAll:()=>setF(d,'')}};}
+     run:()=>uLiftF(d)}};}
  return{why:'combination',
   text:'No rows match these filters, and no single one of them explains it — it '+
     'is the combination that selects nothing.'};}
