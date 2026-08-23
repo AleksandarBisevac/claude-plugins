@@ -109,7 +109,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
-          migrate-manifest.py             # /audit:migrate doer: single-file -> sharded (backup+restore)
+          migrate-manifest.py             # layout doer: --to=sharded|single-file (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
@@ -1605,9 +1605,19 @@ dict (so every script + hook stays format-agnostic — it's wired into all five 
 `hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
 `{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime
 mirror, so a phase run writes only its shard → parallel phase branches merge with no manifest conflict.
-`migrate-manifest.py` (driven by `/audit:migrate`) converts single-file → sharded: validate source →
-refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-validate → restore on failure;
-`--renumber` repairs duplicate `BUG-` ids, `--dry-run` previews. Locks moved to the shared git dir
+`join_manifest`/`save_single_file` are the counterparts that write the assembled dict back out as one
+file, and the one thing they own beyond the write is putting `meta.version` back down — `LAYOUT_VERSION`
+is where both writers take that number from, because the layout has TWO independent readings
+(`is_sharded()` over the phase stubs, and the version) and a file they disagree about has no layout at
+all. `migrate-manifest.py` converts in EITHER direction — `--to=sharded|single-file`, defaulting to
+sharded so every invocation predating the reverse still means what it meant — under one discipline:
+validate source → refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-read and check
+the result both validates AND reads as the layout asked for → restore on failure. `--renumber` repairs
+duplicate `BUG-` ids in either direction, `--dry-run` previews. Going to single-file then moves the
+emptied shard directory aside under a `.bak-<UTC>` name — one `os.rename`, so it cannot half-apply and
+nothing is deleted — as the last step, after the result has validated, because it is the only mutation
+restoring the index does not undo. No lock is taken in the script: the index lock belongs to the
+command driving it. Locks moved to the shared git dir
 (two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.

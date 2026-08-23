@@ -1,33 +1,54 @@
 #!/usr/bin/env python3
 """
-Migrate an audit manifest from the single-file layout to the SHARDED layout
-(index + per-phase shards) — dependency-free (stdlib only).
+Switch an audit manifest between its two layouts - one file, or an index plus one shard
+per phase - dependency-free (stdlib only).
 
 The sharded layout keeps the shared, rarely-churned data (meta, bugs, fileIndex) in the
 index and each phase's body in `phases/<phaseId>.json`, so a phase command loads only its
 own phase (fewer tokens) and two parallel phase branches edit different files (no manifest
-merge conflict). Reading is transparent — every script + hook already loads both layouts
-via _manifest_io — so migration is opt-in and the single-file layout stays supported.
+merge conflict). The single-file layout is one document, one diff, no index. Reading is
+transparent either way - every script + hook already loads both via _manifest_io - so
+neither shape is ever out of date and changing layout stays opt-in.
 
-It is NOT reversible. Nothing here writes an assembled single file back out — `split_manifest`
-has no counterpart — so the only way back is restoring the `.bak-<UTC>` copy, which discards
-every manifest write made after the migration. Say that wherever the backup is mentioned: a
-backup is a restore point, not an undo.
+BOTH DIRECTIONS, UNDER ONE DISCIPLINE. `--to=sharded` is the default, so every existing
+invocation still means what it always meant; `--to=single-file` inlines the shards back
+into one document. Each direction runs the same steps in the same order: validate the
+SOURCE, refuse a mid-run change unless forced, back the original up, write atomically,
+re-read the result and check it both validates and reads as the layout that was asked
+for - and RESTORE the backup on any failure.
+
+A backup is still a restore point and not an undo: copying `<manifest>.bak-<UTC>` back by
+hand discards every manifest write made after the layout change. Say that wherever the
+backup is mentioned. What the reverse direction changes is that going back is no longer
+something a user has to do by hand at all.
+
+NO LOCK IS TAKEN HERE, deliberately. The index lock belongs to the command driving this -
+`commands/migrate.md` runs `audit-lock.py acquire index` around the call - so acquiring it
+in this file would be a second, uncoordinated acquisition by the process already holding
+it.
 
 Usage:
-  migrate-manifest.py <manifest> [--dry-run] [--force] [--renumber]
+  migrate-manifest.py <manifest> [--to=sharded|single-file]
+                                 [--dry-run] [--force] [--renumber] [--out=<path>]
   migrate-manifest.py --selftest
 
 Safe by default:
-  - ALREADY sharded  -> nothing to do (exit 0)
-  - validates the SOURCE first; refuses to migrate a manifest with findings (exit 1)
-    (--renumber first repairs duplicate BUG- ids — the common cross-machine collision)
-  - refuses if any phase is `in_progress` (a mid-run migration corrupts the run);
+  - ALREADY in the requested layout -> nothing to do (exit 0)
+  - validates the SOURCE first; refuses to convert a manifest with findings (exit 1)
+    (--renumber first repairs duplicate BUG- ids - the common cross-machine collision -
+     and is meaningful in BOTH directions: the source is assembled and validated either
+     way, and the repair is written out with the rest of the manifest)
+  - refuses if any phase is `in_progress` (a mid-run layout change corrupts the run);
     override with --force
   - backs up the original to <manifest>.bak-<UTC> before writing
-  - validates the RESULT; on any failure it RESTORES the backup and exits non-zero
+  - re-reads the RESULT: it must validate AND read as the requested layout by BOTH
+    readings of the layout - the phase stubs and `meta.version`. On any failure it
+    RESTORES the backup and exits non-zero
+  - `--to=single-file` then moves the emptied shard directory aside under a
+    `.bak-<UTC>` name. A rename, so it cannot half-apply, and it deletes nothing
 
-Exit codes: 0 ok / already-sharded · 1 refused or validation failure · 2 usage/unreadable.
+Exit codes: 0 ok / already in that layout - 1 refused or validation failure -
+2 usage/unreadable.
 
 This script carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_migrate_manifest.py` (hyphens become underscores - a
@@ -116,15 +137,149 @@ def renumber_duplicate_bugs(manifest):
     return changed
 
 
-def migrate(path, *, dry_run=False, force=False, renumber=False, out=None):
-    """Do the migration. Returns (exit_code, message)."""
-    # detect already-sharded from the RAW index (before assembly)
+def layout_names():
+    """The layout names `--to` accepts, in one fixed order.
+
+    Read off `_manifest_io.LAYOUT_VERSION` rather than restated here: the names and the
+    `meta.version` value each one stands for are one fact, and a second copy of the list
+    is how a layout gets added to the writer and not to the flag that selects it.
+    """
+    return sorted(_mio.LAYOUT_VERSION)
+
+
+def shardable_phases(manifest):
+    """The phases a split would actually move into a shard: every phase dict with an id.
+
+    `split_manifest` passes anything else through into the index untouched, so a
+    manifest with none of these splits into an index carrying no `shard` pointer at all
+    — a file stamped with the sharded version that `is_sharded()`, and therefore every
+    consumer in the plugin, reads as single-file. That is the one state the two readings
+    of the layout must never be left in, so the sharded direction refuses it by name
+    instead of writing it.
+    """
+    return [p for p in (manifest.get("phases") or [])
+            if isinstance(p, dict) and p.get("id")]
+
+
+def check_written_layout(target, want):
+    """Raise unless the manifest just written at `target` reads as `want` BOTH ways.
+
+    THE LAYOUT HAS TWO INDEPENDENT READINGS and this is where they are held together:
+    `_mio.layout_of()` reads the phase stubs, `_mio.declared_layout()` reads
+    `meta.version`, and they agreed on the forward migration only because
+    `split_manifest` happens to write the sharded number. A write that satisfies one and
+    not the other produces a manifest whose layout depends on who is asking — and the
+    check runs here, before the backup is let go, so the answer to a disagreement is a
+    restore rather than a corrupted plan.
+
+    A `meta.version` naming no layout at all is a failure and not a pass: silence is
+    what a caller reading only `is_sharded()` would never notice.
+    """
+    raw = _mio.read_json(target)
+    structural = _mio.layout_of(raw)
+    if structural != want:
+        raise RuntimeError("wrote the %s layout but the phase stubs read as %s"
+                           % (want, structural))
+    declared = _mio.declared_layout(raw)
+    if declared != want:
+        raise RuntimeError("wrote the %s layout but meta.version names %s"
+                           % (want, declared or "no layout at all"))
+
+
+def _revalidate(target, want, vm):
+    """Re-read what was just written and refuse it unless it is a valid manifest IN THE
+    LAYOUT THAT WAS ASKED FOR. Raises; the caller restores the backup.
+
+    Two questions, and the second is why the layout check cannot be left to the
+    validator: `validate()` is a pure function of the ASSEMBLED dict and is layout-blind
+    by design, so it passes a document written in the wrong shape entirely.
+    """
+    check_written_layout(target, want)
+    result = _mio.load_manifest(target)
+    findings, _ = vm.validate(result)
+    if findings:
+        raise RuntimeError("post-write validation failed: %s" % "; ".join(findings[:4]))
+
+
+def _retire_shard_dir(raw_index, index_path, stamp):
+    """Move the now-dead shard directory aside. Returns a line saying what happened.
+
+    MOVED, NOT DELETED, AND IN ONE `os.rename`. The three options were all real costs.
+    Leaving live-looking shard files behind invites an edit to a file nothing reads any
+    more. Deleting a user's plan data cannot be undone. And a delete that fails halfway
+    leaves a shard set with holes, which is worse than either. A rename is a single
+    atomic operation within one filesystem: it cannot half-apply, it removes nothing,
+    and it leaves the working tree with no file that looks live and is not. What it
+    costs is a directory the user has to clean up, named the way the backup file beside
+    it is named so the two read as one pair.
+
+    The directory comes from `_mio.shard_dir_to_retire()`, which reads the index's own
+    pointers instead of assuming the default — and when there is no single directory of
+    its own to retire, its reason is reported rather than swallowed: shards left in
+    place with nothing said about them is the outcome this whole function exists to
+    avoid.
+    """
+    sdir, why = _mio.shard_dir_to_retire(raw_index, index_path)
+    if not sdir:
+        return "shards left in place (%s)" % why
+    parked = "%s.bak-%s" % (sdir, stamp)
+    if os.path.exists(parked):
+        raise RuntimeError("cannot move %s aside: %s already exists" % (sdir, parked))
+    os.rename(sdir, parked)
+    return "shards moved aside: %s" % parked
+
+
+def _restore(path, backup, target):
+    """Put the original manifest back, and say what was done. Returns the phrase for
+    the failure message.
+
+    Two shapes, because "restored" over a `--out` run would be a claim about a file the
+    run never wrote to. When there is no backup the source is intact by construction and
+    what needs saying instead is that `target` may be a PARTIAL write: it is a new file
+    nothing has validated, and reporting only the exception would leave the reader to
+    discover that themselves.
+    """
+    if backup and os.path.exists(backup):
+        shutil.copy2(backup, path)
+        return "restored %s" % backup
+    return ("%s was not written to, but %s may be an incomplete write"
+            % (path, target))
+
+
+def _preview(raw_index, index_path, manifest, to, target):
+    """The `--dry-run` line for either direction. Names the files that would appear and,
+    for the reverse, the directory that would be moved aside — a preview that showed
+    only the write would leave the one irreversible-looking step unmentioned."""
+    if to == "sharded":
+        shards = _mio.split_manifest(manifest)[1]
+        return ("DRY RUN: would write index %s + %d shard(s): %s"
+                % (target, len(shards),
+                   ", ".join("phases/%s.json" % _mio._shard_name(p) for p in shards)))
+    sdir, why = _mio.shard_dir_to_retire(raw_index, index_path)
+    return ("DRY RUN: would write one file %s (%d phase(s) inlined) and %s"
+            % (target, len(manifest.get("phases") or []),
+               ("move %s aside under a .bak-<UTC> name" % sdir) if sdir
+               else ("leave the shards in place: %s" % why)))
+
+
+def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, out=None):
+    """Change the manifest's LAYOUT. Returns (exit_code, message).
+
+    `to` names a layout rather than a direction, and defaults to "sharded" so every
+    invocation written before the reverse existed keeps its meaning. Both directions run
+    the same steps in the same order — see the module docstring — and the module keeps
+    the name it had because that is what the command, the docs and the transcripts call.
+    """
+    if to not in _mio.LAYOUT_VERSION:
+        return 2, "unknown layout %r (expected %s)" % (to, " or ".join(layout_names()))
+    # detect the CURRENT layout from the RAW index, before assembly
     try:
         raw = _mio._read_json(path)
     except Exception as exc:
         return 2, "cannot read/parse %s: %s" % (path, exc)
-    if _mio.is_sharded(raw):
-        return 0, "already sharded: %s (nothing to do)" % path
+    current = _mio.layout_of(raw)
+    if current == to:
+        return 0, "already %s: %s (nothing to do)" % (to, path)
     try:
         manifest = _mio.load_manifest(path)
     except Exception as exc:
@@ -140,7 +295,7 @@ def migrate(path, *, dry_run=False, force=False, renumber=False, out=None):
                              % ", ".join("%s->%s" % c for c in changed))
     findings, _ = vm.validate(manifest)
     if findings:
-        return 1, ("source manifest has %d finding(s); fix them before migrating"
+        return 1, ("source manifest has %d finding(s); fix them before changing layout"
                    "%s:\n  - %s" % (len(findings),
                    " (or pass --renumber for duplicate BUG- ids)"
                    if any("duplicate" in f.lower() and "BUG-" in f for f in findings) else "",
@@ -148,40 +303,109 @@ def migrate(path, *, dry_run=False, force=False, renumber=False, out=None):
 
     blocked = _in_progress_phases(manifest)
     if blocked and not force:
-        return 1, ("refusing: phase(s) %s are in_progress — migrating mid-run corrupts the "
-                   "run. Finish/pause them, or pass --force." % ", ".join(str(b) for b in blocked))
-
-    index, shards = _mio.split_manifest(manifest)
-    if dry_run:
-        return 0, ("DRY RUN: would write index %s + %d shard(s): %s"
-                   % (out or path, len(shards),
-                      ", ".join("phases/%s.json" % _mio._shard_name(p) for p in shards)))
+        return 1, ("refusing: phase(s) %s are in_progress — changing layout mid-run "
+                   "corrupts the run. Finish/pause them, or pass --force."
+                   % ", ".join(str(b) for b in blocked))
+    if to == "sharded" and not shardable_phases(manifest):
+        return 1, ("refusing: no phase in %s carries an id, so a split has nothing to "
+                   "put in a shard — the result would be stamped as sharded and still "
+                   "read as single-file everywhere. Add a phase first." % path)
 
     target = out or path
+    if dry_run:
+        return 0, _preview(raw, path, manifest, to, target)
+
+    stamp = _utc_stamp()
     backup = None
     if out is None:                     # in-place: back up the original first
-        backup = "%s.bak-%s" % (path, _utc_stamp())
+        backup = "%s.bak-%s" % (path, stamp)
         shutil.copy2(path, backup)
+    retired = ""
     try:
-        written = _mio.save_sharded(target, manifest)
-        # validate the RESULT by reloading through the loader
-        result = _mio.load_manifest(target)
-        rfindings, _ = vm.validate(result)
-        if rfindings:
-            raise RuntimeError("post-migration validation failed: %s" % "; ".join(rfindings[:4]))
+        if to == "sharded":
+            written = _mio.save_sharded(target, manifest)
+        else:
+            written = _mio.save_single_file(target, manifest)
+        _revalidate(target, to, vm)
+        # LAST, and only in place: every step above is undone by putting the index
+        # back, and this one is the only one that touches a file the restore does not
+        # cover. Moving the shards before the result had validated would mean a
+        # restored index pointing at a directory that had been renamed out from under
+        # it. Under `--out` the source is untouched and its shards stay live.
+        if to == "single-file" and out is None:
+            retired = _retire_shard_dir(raw, path, stamp)
     except Exception as exc:
-        if backup and os.path.exists(backup):
-            shutil.copy2(backup, path)   # restore
-        return 1, "migration failed (restored backup): %s" % exc
+        return 1, "layout change failed (%s): %s" % (_restore(path, backup, target), exc)
 
-    msg = "migrated %s -> index + %d shard(s)" % (target, len(shards))
+    msg = "%s -> %s: %s" % (current, to, target)
     if backup:
-        msg += "\n  backup: %s" % backup
+        msg += "\n  backup (the manifest file only): %s" % backup
+    if retired:
+        msg += "\n  " + retired
+    if to == "single-file" and out is not None:
+        msg += "\n  source left sharded, its shards still live: %s" % path
     msg += "\n  " + "\n  ".join(written)
     return 0, msg
 
 
 # --- cli ------------------------------------------------------------------------
+_BARE_FLAGS = ("--dry-run", "--force", "--renumber")
+_VALUE_FLAGS = ("--to", "--out")
+# ONE SPELLING FOR A VALUE, and it is the `=` form. `--out=` was already the only
+# spelling this script took, the command docs invoke `--to=` the same way, and a parser
+# that accepts both has to consume the NEXT argv entry - which is how `--to <manifest>`
+# swallows the path and leaves the run arguing about a missing positional instead of
+# about the flag. The space form is refused BY NAME rather than absorbed.
+_ACCEPTED = ", ".join(_BARE_FLAGS + tuple("%s=<value>" % f for f in _VALUE_FLAGS))
+_USAGE = ("usage: migrate-manifest.py <manifest> [--to=sharded|single-file] "
+          "[--dry-run] [--force] [--renumber] [--out=<path>]")
+
+
+def parse_args(argv):
+    """`(opts, error)` — the parsed command line, or None and a message to print.
+
+    A function rather than a few lines inside `main()` because the flag surface is now
+    the part most easily got wrong, and this way it has cases that need no manifest on
+    disk.
+
+    IT FAILS CLOSED. This used to build a `set` of everything starting with `--` and
+    look only for the three it knew, so anything else was silently dropped and the run
+    PROCEEDED: `--dryrun`, a plausible typo for `--dry-run`, migrated the manifest for
+    real and reported success. With a `--to` in the surface that is no longer merely a
+    lost flag — `--to=singlefile` or `--single-file` quietly ignored leaves the default
+    in place and converts the user's plan the opposite way from the one they asked for.
+    So an argument this function does not understand can never mean "proceed": every
+    flag, and the layout `--to` names, is checked against a known set, and anything else
+    is refused with the offending spelling and the accepted ones both named.
+    """
+    values, bare, rest = {}, [], []
+    for arg in argv:
+        if not arg.startswith("--"):
+            rest.append(arg)
+            continue
+        name, eq, inline = arg.partition("=")
+        if name in _BARE_FLAGS:
+            if eq:
+                return None, ("%s takes no value; accepted: %s" % (name, _ACCEPTED))
+            bare.append(name)
+        elif name in _VALUE_FLAGS:
+            if not eq:
+                return None, ("%s takes its value with an = sign (%s=...), not a "
+                              "space; accepted: %s" % (name, name, _ACCEPTED))
+            values[name] = inline
+        else:
+            return None, ("unknown flag %s; accepted: %s" % (name, _ACCEPTED))
+    if len(rest) != 1:
+        return None, ("expected exactly one manifest path, got %d" % len(rest))
+    to = values.get("--to", "sharded")
+    if to not in _mio.LAYOUT_VERSION:
+        return None, ("unknown layout %r; accepted: %s"
+                      % (to, ", ".join(layout_names())))
+    return {"path": rest[0], "to": to, "dry_run": "--dry-run" in bare,
+            "force": "--force" in bare, "renumber": "--renumber" in bare,
+            "out": values.get("--out")}, ""
+
+
 def main(argv):
     if "--selftest" in argv:
         # Kept, rather than left to fall through to the usage error below: every
@@ -192,18 +416,12 @@ def main(argv):
         print("migrate-manifest.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_migrate_manifest.py - run that file instead.")
         return 0
-    args = [a for a in argv if not a.startswith("--")]
-    flags = set(a for a in argv if a.startswith("--"))
-    out = None
-    for a in argv:
-        if a.startswith("--out="):
-            out = a.split("=", 1)[1]
-    if len(args) != 1:
-        sys.stderr.write("usage: migrate-manifest.py <manifest> "
-                         "[--dry-run] [--force] [--renumber] [--out=<index>]\n")
+    opts, err = parse_args(argv)
+    if opts is None:
+        sys.stderr.write("%s\n%s\n" % (err, _USAGE))
         return 2
-    code, msg = migrate(args[0], dry_run="--dry-run" in flags,
-                        force="--force" in flags, renumber="--renumber" in flags, out=out)
+    code, msg = migrate(opts["path"], to=opts["to"], dry_run=opts["dry_run"],
+                        force=opts["force"], renumber=opts["renumber"], out=opts["out"])
     (sys.stderr if code else sys.stdout).write(msg + "\n")
     return code
 

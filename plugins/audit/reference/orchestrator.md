@@ -39,7 +39,10 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   installing a newer plugin never makes migrating due. Sharding earns its keep when phases run in
   parallel from separate worktrees, or when the index is large enough that per-phase context cost
   matters — one session with few phases is better off single-file. If asked, say that; do not
-  volunteer it on every write. And say the direction plainly: `/audit:migrate` has no reverse.
+  volunteer it on every write. And say the direction plainly: the layout can be
+  changed either way (`migrate-manifest.py --to=sharded|single-file`), and the
+  `.bak-<UTC>` copy each change leaves behind is a restore point, not an undo -
+  copying it back discards every manifest write made after the change.
 
 Below, "**Edit the phase's manifest file**" means the shard in the sharded layout, the one file otherwise.
 
