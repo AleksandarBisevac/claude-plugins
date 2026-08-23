@@ -1172,15 +1172,16 @@ modules need it and only one is a command — `_panel_state`, `audit-doctor`, `a
 and `migrate-manifest` all used to load `validate-manifest.py` through `_loader`, four of
 the seventeen `KNOWN_LAYER_DEBT` edges.
 
-The file itself is now 254 lines rather than 1,406, and holds **two** things: `_check_meta`
-(the document's header — the root key vocabulary and `meta`, which need nothing the walk
-builds) and `validate()`, which decides the **order** the pieces run in. The order is the
-one thing that could not move into a piece: `_walk_phases` builds the index the five checks
-after it read, so it runs once and first. Everything else is one of the five modules below,
-each re-exported here as a thin alias so no consumer had to learn a new import; a case pins
-every alias with `is`, so a pasted-back copy fails by name. It moved **layer 2 → layer 3**,
-which is the whole structural cost: the four pieces sit at layer 2 above `_manifest_vocab`
-at layer 1, and a consumer AT layer 2 is still not strictly downward.
+The file itself is now a fraction of the 1,406 it was cut from, and holds **two** things:
+`_check_meta` (the document's header — the root key vocabulary and `meta`, which need
+nothing the walk builds) and `validate()`, which decides the **order** the pieces run in.
+The order is the one thing that could not move into a piece: `_walk_phases` builds the index
+the five checks after it read, so it runs once and first. Everything else is one of the five
+modules below, each re-exported here as a thin alias so no consumer had to learn a new
+import; a case pins every alias with `is`, so a pasted-back copy fails by name. It moved
+**layer 2 → layer 3**, which is the whole structural cost: the four pieces sit at layer 2
+above `_manifest_vocab` at layer 1, and a consumer AT layer 2 is still not strictly
+downward.
 
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
 The manifest's **words** (layer 1), and the four shape checks every level of it shares.
@@ -1417,13 +1418,14 @@ read-only by construction: it never writes, never takes a lock, and for `buildCo
 resolves whether the named executable exists rather than running it. Output classes match the
 rest of the plugin (OK/WARNING/FINDING); exit 0 healthy, 1 findings, 2 usage error.
 
-It was 1,456 lines and is 242, because the checks shared one file for the single reason that
-`diagnose()` calls every one of them. What is left here is the thing that could not go into
-a piece: the ORDER (`check_config` produces the `cfg`/`cfg_mod` pair, `check_git` the git root,
-`check_manifest` the manifest — ten of the checks after them take those as arguments), plus
-`render()` and `main()`, because a report's order and its rendering are one subject. Every
-name the six modules hold is re-exported here as a module-level alias, so the suite and the
-command both keep spelling one import.
+It was 1,456 lines and is a fraction of that - `wc -l` on it says how much - because the
+checks shared one file for the single reason that `diagnose()` calls every one of them. What
+is left here is the thing that could not go into a piece: the ORDER (`check_config` produces
+the `cfg`/`cfg_mod` pair, `check_git` the git root, `check_manifest` the manifest — ten of
+the checks after them take those as arguments), plus `render()` and `main()`, because a
+report's order and its rendering are one subject. Every name the six modules hold is
+re-exported here as a module-level alias, so the suite and the command both keep spelling
+one import.
 
 ### `plugins/audit/scripts/status/_doctor_report.py`
 The piece all six check modules sit on, and the only one with no check in it: the `Report`
