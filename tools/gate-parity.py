@@ -436,6 +436,59 @@ def parity(repo=None):
     return result
 
 
+# --- was each side really READ? -----------------------------------------------
+# `compare()` answers "do the sides agree", and agreement is worth nothing from a
+# side nobody read: an empty set agrees with every other side and with every row in
+# the table. So the suite carries a floor, and the floor is what F69 was about - it
+# was one ABSOLUTE term, which catches a reader that returned nothing and cannot
+# catch a document that rotted while the others stood. It sat below the smallest
+# side, so that side could have shed half its gates and still cleared it.
+#
+# TWO TERMS NOW. The absolute one is unchanged - it is the answer to "did this read
+# return anything at all", and nothing about it was wrong. The derived one measures
+# a side against the largest count anyone read, which is the best available evidence
+# of how big the gate set really is.
+#
+# WHAT THE DERIVED TERM GIVES UP, SAID RATHER THAN IMPLIED. It COUPLES the sides: if
+# every side shrinks together the floor shrinks with them and this stays green, and
+# no floor derived from the thing it measures can do otherwise. That case is covered
+# elsewhere and not here - `compare()`'s stale-exemption half reports every row in
+# ABSENT_BY_DESIGN whose gate no side invokes any more, so a gate set that collapsed
+# across all four sides comes back as a table full of dead rows rather than as a
+# quiet pass. It also leaves the LARGEST side judged by the absolute term alone,
+# which is arithmetic rather than a choice: a count is never below its own fraction.
+FLOOR_MINIMUM = 6
+FLOOR_DIVISOR = 2
+
+
+def read_floor(counts):
+    """The fewest gates a side may name before its set stops being evidence of a read.
+
+    Derived from the largest count rather than per-side from the largest OTHER count,
+    which was written first and is the same function: the two can only differ for the
+    largest side itself, and there the fraction is of a number that cannot fall below
+    it. One number is also what a message can print.
+    """
+    largest = max(counts.values(), default=0)
+    return max(FLOOR_MINIMUM, (largest + FLOOR_DIVISOR - 1) // FLOOR_DIVISOR)
+
+
+def underread_sides(counts):
+    """[(label, gates, floor)] for every side that named fewer gates than the floor.
+
+    A list rather than a bool so the finding names the side and both numbers - which
+    side rotted and by how far is the whole content of this check, and `False` is a
+    thing nobody can act on.
+
+    Iterates SIDES rather than `counts`, and reads a missing label as none named: a
+    side absent from the counts is the strongest version of "not read", and
+    `.get(label, 0)` sends it through the same floor as a side that read short.
+    """
+    floor = read_floor(counts)
+    return [(label, counts.get(label, 0), floor)
+            for label, _rel in SIDES if counts.get(label, 0) < floor]
+
+
 def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
@@ -500,9 +553,35 @@ def _cases():
                              for k, v in sorted(real["counts"].items())),
                    real["missing"] + real["stale_exemptions"])))
 
-    out.append(("p1", all(real["counts"].get(label, 0) > 5 for label, _r in SIDES),
+    out.append(("p1", underread_sides(real["counts"]) == [],
                 "...and every side was really READ, so p0 is not a row of empty "
-                "sets agreeing: %r" % (real["counts"],)))
+                "sets agreeing: every side clears a floor of %d, the larger of the "
+                "absolute term and the largest side's share. It is also the case a "
+                "floor set too HIGH fails - the sides legitimately differ in size, "
+                "so a floor AT the largest count would report the smallest side as "
+                "unread: %r / %r"
+                % (read_floor(real["counts"]), real["counts"],
+                   underread_sides(real["counts"]))))
+
+    # THE FIXTURE VALUE IS THE OLD FLOOR'S BLIND SPOT (F69), which is the only
+    # reason this case is worth anything: `p1` compared each count with a fixed
+    # number that the rotted side below CLEARS. Both versions score this fixture,
+    # and they disagree about it.
+    rotted = dict((label, 14) for label, _r in SIDES)
+    rotted["CLAUDE.md"] = 6
+    out.append(("p2", underread_sides(rotted) == [("CLAUDE.md", 6, 7)],
+                "a document that rotted while the other sides stood IS reported, "
+                "by name and with both numbers - the count it named and the floor "
+                "the rest of the tree sets: %r" % (underread_sides(rotted),)))
+
+    empty = dict((label, 0) for label, _r in SIDES)
+    out.append(("p3", underread_sides(empty)
+                == [(label, 0, FLOOR_MINIMUM) for label, _r in SIDES],
+                "...and a run where NOTHING was read reports every side, at the "
+                "ABSOLUTE floor. This is the direction the derived term cannot "
+                "cover on its own - a fraction of nothing is nothing, and a floor "
+                "of 0 would let the emptiest possible read pass: %r"
+                % (underread_sides(empty),)))
 
     live = scratch_isolation()
     out.append(("sc0", live["violations"] == [] and live["examined"] > 0,
@@ -529,6 +608,14 @@ def _cases():
                 "`examined` says 0 instead of letting the empty result read as "
                 "clean, which is the half sc0 pairs with: %r" % (prose,)))
 
+    # THE INVENTED GATE NAMES BELOW CARRY THE JAVASCRIPT MODULE EXTENSION, and it is
+    # not decoration: `_refs.tool_basename_drift()` holds that a `.py` basename
+    # written anywhere under `tools/` must name a file that exists, prose included,
+    # and a fixture nobody creates is exactly what a stale reference looks like. That
+    # rule's docstring is where the spellings live; `_SCRIPT_RE` above accepts every
+    # extension it may see, so these fixtures are faithful and not evasions. Do not
+    # "fix" them to the Python extension - the lint will stop the commit, and the
+    # thing it is protecting is the rule rather than these names.
     body = _shell_command_lines(
         "# node tools/ghost.mjs\n  ruff check x  # ruff check y\n")
     out.append(("c0", body == ["ruff check x"],

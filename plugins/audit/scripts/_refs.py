@@ -470,6 +470,11 @@ _TOOL_BASENAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\.py(?![A-Za-z0-9_])
 # drift()` exactly as a missing reference is. Every basename not named here is still
 # a violation when it names nothing, which is what keeps the table from becoming a
 # blanket.
+#
+# BEFORE ADDING A ROW: a name a case only TALKS ABOUT does not belong here, however
+# much it looks like the entries below - it is spelled around instead, and
+# `tool_basename_drift()`'s docstring lists the spellings and says which file uses
+# each. A row is for a name that has to be on disk with the Python extension.
 TOOL_FIXTURE_BASENAMES = (
     ("test_fx.py",
      "count-ui-pins: a fixture suite written into a temp dir so `collect()` has one "
@@ -539,6 +544,28 @@ def tool_basename_drift(repo_root=None):
     reports any entry nothing writes any more, so the table cannot quietly outlive
     what it describes; see the comment above it for why the distinction is declared
     rather than derived.
+
+    AND IF YOU MET THIS RULE WITH A FIXTURE, THE TABLE IS PROBABLY NOT WHERE THE
+    NAME GOES (F68). That exception is for a name that has to exist ON DISK carrying
+    the Python extension, because the scanner under test opens nothing else. A name a
+    case only TALKS ABOUT is spelled around instead, and the tree already holds a
+    spelling for each reason there is to want one:
+
+      * drop the extension, where nothing reads it - `sweep-selftests.py` starts its
+        fixture child by path and the interpreter does not care what it is called;
+      * borrow the JavaScript module extension, where the rule under test cannot tell
+        the extensions apart - `gate-parity.py`'s gate pattern accepts every one it
+        may see, so its invented gates are faithful fixtures rather than evasions;
+      * ASSEMBLE the literal from pieces, where the Python shape itself is the
+        fixture - `prove-gates.py` and this lint's own suite both do. The pattern
+        above wants a word character immediately in front of the extension, and the
+        tail of an assembled name starts with a quote instead.
+
+    It is a spelling and not an exemption class because a fixture nothing creates is
+    indistinguishable, to this rule or to any reader of it, from a reference that has
+    gone stale - so an exemption for it would be a place to declare away the one
+    defect the rule exists to find. What was wrong was never the rule; it was that
+    two authors in a row inferred all of the above from a red build.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     known = _tool_known_basenames(root)

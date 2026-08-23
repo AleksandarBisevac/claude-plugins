@@ -974,6 +974,17 @@ from include `tests/` and `tools/` themselves, because a tool's usage line names
 docstring names where its behaviour is pinned; excluding them would make every usage string a
 violation, and a lint that cries about correct code is one somebody switches off.
 
+Its one exception table, `TOOL_FIXTURE_BASENAMES`, is for a name a case must WRITE with the
+Python extension because the scanner under test opens nothing else. **A name a case only talks
+about is spelled around rather than exempted** — drop the extension where nothing reads it,
+borrow the JavaScript module one where the rule under test cannot tell the extensions apart, or
+assemble the literal from pieces where that shape *is* the fixture — and the function's
+docstring names the file in `tools/` that does each. A fixture nothing creates is
+indistinguishable from a reference that has gone stale, so an exemption class for it would be a
+place to declare away the defect the rule exists to find. Until F68 the convention existed only
+as a lint failure: an hour every new author pays once, and it had been paid before it was
+written down.
+
 `artifact_version_drift()` (F12) asks the same question of a COMMITTED PAGE rather than of
 prose. A rendered report stamps the plugin version that produced it, so a report in the tree is
 a published claim about which release the reader is looking at — and the scale demo under

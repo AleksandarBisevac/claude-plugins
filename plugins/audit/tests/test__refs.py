@@ -420,8 +420,14 @@ def _cases(check):
 
     # --- the basenames tools/ names --------------------------------------------------
     tb = M.tool_basename_drift()
+    # The detail prints only on FAILURE, which is the one moment an author needs it:
+    # meeting this rule with a fixture used to end in a guess, and it was guessed
+    # twice (F68).
     check("tb1 no `.py` basename written anywhere in tools/ names a file that is gone: "
-          "%r" % (tb["unknown"],), tb["unknown"] == [])
+          "%r" % (tb["unknown"],), tb["unknown"] == [],
+          "if a name above is a FIXTURE rather than a reference, it is spelled around "
+          "rather than exempted - `tool_basename_drift()`'s docstring lists the "
+          "spellings; TOOL_FIXTURE_BASENAMES is only for a name that must be on disk")
     check("tb1b ...and no declared tool fixture has outlived what writes it: %r"
           % (tb["staleFixtures"],), tb["staleFixtures"] == [])
     check("tb2 ...and the run says how much it looked at - %d basename literals across "
@@ -509,6 +515,32 @@ def _cases(check):
               "at the regex, which is why nothing filters them afterwards. Its own tmp "
               "root, because `checked` is a whole-tree count and a fixture carried over "
               "from tb5 would have made this read 3",
+              res["unknown"] == [] and res["files"] == 1 and res["checked"] == 0,
+              repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        # THE DOCUMENTED CONVENTION, AS A CASE (F68). The docstring tells an author
+        # holding a fixture nothing creates to spell it around instead of adding a
+        # table row, and names the shapes: no extension, the JavaScript module
+        # extension, or a literal assembled from pieces. That is advice about THIS
+        # REGEX, so it stops being true the moment the regex widens - and without
+        # this case it would stop being true silently, in some later author's
+        # unrelated edit. Every name below is invented, so any of the shapes
+        # becoming a token raises `checked` AND puts a name that exists nowhere
+        # into `unknown`.
+        _write(tmp, "tools/t.mjs",
+               "child = join(work, 'fixture_child')\n"
+               "gates = ['tools/ghost.mjs', 'tools/alpha.mjs']\n"
+               "probe = 'probe-' + 'no-such-tool' + '.py'\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb7b the spellings the docstring offers for a fixture nothing creates "
+              "are not tokens at all - an extensionless name, the JavaScript module "
+              "extension, and an assembled literal - over a file that WAS read, "
+              "which is what tells a convention that holds from a walk that found "
+              "nothing",
               res["unknown"] == [] and res["files"] == 1 and res["checked"] == 0,
               repr(res))
     finally:
