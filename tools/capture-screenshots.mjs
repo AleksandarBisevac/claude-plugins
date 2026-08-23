@@ -3681,9 +3681,36 @@ async function assertModelCombo(page, project) {
     fail('composition: no review-model input to drive the combo on');
   } else {
     await rev.click();
-    await page.waitForTimeout(250);
+    // WAIT FOR THE MENU, and when it does not come, SAY WHAT THE PANEL LOOKED LIKE.
+    // This is not a fix for the CI-only failure below it - I do not know the cause,
+    // and guessing at it has been wrong four times today. It is the same move that
+    // finally named F-P-17: a fixed 250ms produced "opened no menu", which is true
+    // and says nothing, so the next occurrence carries the state instead. If the
+    // menu was merely slow this passes; if it never opens the dump says whether the
+    // input was reached, focused, disabled, or reached at all.
     const items = page.locator('.combo-menu:not(.hidden) .combo-it');
-    const nItems = await items.count();
+    let nItems = 0;
+    try {
+      await page.waitForSelector('.combo-menu:not(.hidden) .combo-it', { timeout: 5000 });
+      nItems = await items.count();
+    } catch (noMenu) {
+      const st = await page.evaluate(() => {
+        const inp = document.querySelector('#comp tr.phase:not([data-frozen]) input[data-revmodel]');
+        const menus = [...document.querySelectorAll('.combo-menu')];
+        return {
+          input: inp ? { value: inp.value, disabled: inp.disabled,
+                         focused: document.activeElement === inp,
+                         rows: document.querySelectorAll('#comp tr.phase').length,
+                         frozen: document.querySelectorAll('#comp tr.phase[data-frozen]').length }
+                     : null,
+          menus: menus.map((m) => (m.className || '(no class)')
+                                  + ':' + m.querySelectorAll('.combo-it').length),
+          regSkills: (typeof REG === 'object' && REG && REG.skills) ? REG.skills.length : 'REG unreachable',
+        };
+      });
+      fail('composition: the review-model combo opened no menu within 5s. Panel state: '
+         + JSON.stringify(st));
+    }
     // The menu is FILTERED by whatever the input already holds, so its first
     // entry is routinely the current value verbatim - `opus` filtering to
     // ["opus", "claude-opus-4-5", ...]. Choosing that is a no-op, the panel

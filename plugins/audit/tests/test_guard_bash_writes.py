@@ -654,9 +654,18 @@ def _cases(check):
     osd = tmp / "state-os"
     osd.mkdir(parents=True, exist_ok=True)
 
-    def _other(sid, *, tool_edited=(), warned=(), older_than=None):
-        """Write a sibling session's state file, optionally back-dated behind
-        `older_than` so it falls outside the window this pass covers."""
+    def _other(sid, *, tool_edited=(), warned=(), older_than=None, newer_than=None):
+        """Write a sibling session's state file, with its mtime STATED.
+
+        Both directions are set explicitly rather than left to write order, and the
+        `newer_than` half is why: the guard counts a peer as active only when its
+        state file is strictly newer than this session's, and an EQUAL timestamp is
+        deliberately outside the window - a coarse-mtime filesystem then leaves the
+        guard its voice instead of silencing it. Two consecutive writes land on
+        distinguishable mtimes on APFS and ext4 and on the same one under NTFS, so a
+        fixture that relied on write order was testing the filesystem's clock
+        granularity rather than the rule. It passed here and failed on windows-latest.
+        """
         p = osd / ("bash-writes-%s.json" % sid)
         with open(str(p), "w", encoding="utf-8") as fh:
             json.dump({"toolEdited": list(tool_edited), "seenDirty": [],
@@ -666,8 +675,29 @@ def _cases(check):
             os.utime(str(p), (t, t))
         return p
 
+    def _age_session(sid):
+        """Back-date THIS session's state file so a peer written after it is
+        unambiguously newer.
+
+        The guard counts a peer as active only when its file is strictly newer, and
+        an EQUAL timestamp is deliberately outside the window - a coarse-mtime
+        filesystem then leaves the guard its voice rather than silencing it. Two
+        consecutive writes differ on APFS and ext4 and land on the same tick under
+        NTFS, so a fixture that relied on write order was testing the filesystem's
+        clock rather than the rule: it passed here and failed on windows-latest.
+
+        Back-dating the session rather than forward-dating the peer, because these
+        cases share one state directory: a peer pushed into the future stays newer
+        than every LATER session's file too, and the first attempt at this turned
+        `os4` red by leaving two peers permanently active.
+        """
+        f = osd / ("bash-writes-%s.json" % sid)
+        t = os.path.getmtime(str(f)) - 60
+        os.utime(str(f), (t, t))
+
     s = "bw-os"
     seed(s, state_dir=osd)
+    _age_session(s)
     _other("sess-other", tool_edited=["src/theirs.ts"])
     _os_ok, _os_got = _harness.attempt(
         M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
@@ -679,6 +709,7 @@ def _cases(check):
 
     s = "bw-os2"
     seed(s, state_dir=osd)
+    _age_session(s)
     _other("sess-other2", tool_edited=["src/unrelated.ts"])
     _ok2, _got2 = _harness.attempt(
         M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
@@ -690,6 +721,33 @@ def _cases(check):
           and "CANNOT say the command wrote them" in _d2
           and "sess-other2" in _d2,
           repr((_v2, _d2)))
+
+    # os2b: the rule the two cases above were exercising by accident, asserted on
+    # purpose. A peer whose state file carries the SAME mtime as this session's is
+    # outside the window - equal is not newer - so its claim is not subtracted and
+    # the plain warning stands. That is deliberate: it is the direction that leaves
+    # the guard its voice on a filesystem whose clock cannot separate two writes.
+    #
+    # Until this existed the property was only ever reached through write ORDER, so
+    # it read as tested on APFS and ext4 and silently reversed under NTFS, where the
+    # two writes share a tick. That is what turned `os2` red on windows-latest while
+    # every local run was green.
+    s = "bw-os2b"
+    seed(s, state_dir=osd)
+    _same = _other("sess-tied", tool_edited=["src/tied.ts"])
+    _t = os.path.getmtime(str(osd / ("bash-writes-%s.json" % s)))
+    os.utime(str(_same), (_t, _t))
+    _ok2b, _got2b = _harness.attempt(
+        M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
+        cfg=cfg, state_dir=osd, dirty=["src/tied.ts"])
+    _v2b, _d2b = _got2b if _ok2b else ("EXC", str(_got2b))
+    check("os2b a peer whose state file ties this session's mtime is OUTSIDE the "
+          "window - equal is not newer - so its claim is not subtracted and the "
+          "plain claim stands. The guard keeps its voice where the clock cannot "
+          "separate two writes",
+          _v2b == "warn" and "src/tied.ts" in _d2b
+          and "CANNOT say the command wrote them" not in _d2b,
+          repr((_v2b, _d2b)))
 
     s = "bw-os3"
     seed(s, state_dir=osd)
