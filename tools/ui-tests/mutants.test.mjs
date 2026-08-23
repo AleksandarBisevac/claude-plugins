@@ -12,6 +12,7 @@
 // run unless the text it replaces occurs exactly once, which turns "the source
 // was reformatted" into a named failure rather than a vacuous green.
 
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { loadPanel, loadReport, reach } from './sandbox.mjs';
 import { pyFmt } from './python-fmt.mjs';
@@ -228,6 +229,58 @@ describe('the theme matrix would catch a looser explicit-choice test', () => {
     });
     sandbox.document.documentElement.setAttribute('data-theme', 'auto');
     expect(reach(ctx, ['isDark']).isDark()).toBe(true);   // the matrix says false
+  });
+});
+
+// The Policy tab's area columns. A column is drawn for an area that CARRIES A
+// RULE, and that predicate has THREE wrong implementations rather than one: it
+// never excludes anything (every area gets a column, which is the sideways scroll
+// this was written to remove), it excludes everything (no column at all, so a
+// written rule is invisible), or it reads the WRONG PREDICATE and asks whether the
+// area is live. The third is the one the code comments argue against at length, so
+// it is the one most worth being able to fail: a dormant area's rule decides
+// nothing today and everything the moment its phase starts, and hiding it hides a
+// rule that is one status change from being enforced.
+//
+// The fixture is what makes all three visible: `web` is LIVE with no rule and
+// `infra` is DORMANT with one, so the two predicates disagree on both of them.
+describe('the area-column cases would catch any of the three wrong predicates', () => {
+  const DRAWN = ' const drawn=a=>ruled.has(a.tag)||PF.cols.indexOf(a.tag)>=0;';
+  const AREA_INFO = [
+    { tag: 'web', active: true }, { tag: 'infra', active: false },
+  ];
+  const STORED = { skills: { areas: { infra: { deny: ['db-*'] } } } };
+
+  /** @param {(src: string) => string} [mutate] */
+  function cols(mutate) {
+    const { ctx } = loadPanel(mutate ? { mutate } : undefined);
+    vm.runInContext('POLICY = ' + JSON.stringify({ stored: STORED, areaInfo: AREA_INFO })
+      + '; PDRAFT = ' + JSON.stringify(STORED) + '; PF.kind = "skills"; PF.cols = [];',
+      ctx);
+    const got = reach(ctx, ['pCols']).pCols('skills');
+    return { shown: got.shown.map((a) => a.tag), hidden: got.hidden.map((a) => a.tag) };
+  }
+
+  it('draws every column when nothing is excluded', () => {
+    expect(cols(mutateOnce(DRAWN, ' const drawn=a=>!!a;')))
+      .toEqual({ shown: ['web', 'infra'], hidden: [] });
+  });
+
+  it('draws none when everything is excluded', () => {
+    // The direction that looks like a success: a table with no area columns at all
+    // is narrow, tidy, and has stopped showing the rules it exists to show.
+    expect(cols(mutateOnce(DRAWN, ' const drawn=a=>!a;')))
+      .toEqual({ shown: [], hidden: ['web', 'infra'] });
+  });
+
+  it('gets both areas wrong when it asks `active` instead of "has a rule"', () => {
+    expect(cols(mutateOnce(DRAWN,
+      ' const drawn=a=>a.active||PF.cols.indexOf(a.tag)>=0;')))
+      .toEqual({ shown: ['web'], hidden: ['infra'] });
+  });
+
+  it('...and unmutated it draws the one with a rule, dormant and all', () => {
+    expect(cols()).toEqual({ shown: ['infra'], hidden: ['web'] });
   });
 });
 

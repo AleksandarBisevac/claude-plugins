@@ -787,26 +787,99 @@ export async function assertPolicyWorks(page, statePath,
     note(`policy: ${wantReq} required capabilit(ies) shown locked`);
   }
 
-  // --- area columns say which of them decides anything today ------------------
-  const cols = await page.evaluate(() => ({
-    oracle: (POLICY.areaInfo || []).map((a) => [a.tag, a.active]),
-    rendered: [...document.querySelectorAll('#policy th.ar')].map((th) =>
-      [th.firstChild.textContent, !th.classList.contains('dormant'),
-       (th.querySelector('.mut') || {}).textContent]),
-  }));
+  // --- area columns: the areas that carry a rule, and the rest offered by name -
+  // One column per area does not scale — the tags come from the plan — so a column
+  // is drawn for an area that CARRIES A RULE and the others are offered in a strip.
+  // The oracle is re-derived from POLICY.stored HERE rather than read off `pCols`,
+  // so this compares two independent answers instead of a value with itself.
+  const cols = await page.evaluate(() => {
+    const states = (tag) => {
+      const a = ((((POLICY.stored || {})[PF.kind] || {}).areas || {})[tag]) || {};
+      return ['deny', 'allow'].some((l) => (Array.isArray(a[l]) ? a[l].length > 0
+        : a[l] != null));
+    };
+    const info = POLICY.areaInfo || [];
+    return {
+      all: info.map((a) => [a.tag, a.active]),
+      oracle: info.filter((a) => states(a.tag)).map((a) => [a.tag, a.active]),
+      offered: info.filter((a) => !states(a.tag)).map((a) => a.tag),
+      rendered: [...document.querySelectorAll('#policy th.ar')].map((th) =>
+        [th.firstChild.textContent, !th.classList.contains('dormant'),
+         (th.querySelector('.mut') || {}).textContent]),
+      strip: [...document.querySelectorAll('#policy [data-pcols] [data-pcol]')]
+        .map((b) => [b.getAttribute('data-pcol'), b.getAttribute('aria-pressed')]),
+    };
+  });
   const colsOk = cols.oracle.length === cols.rendered.length
     && cols.oracle.every(([tag, live], i) => cols.rendered[i][0] === tag
       && cols.rendered[i][1] === live
       && cols.rendered[i][2] === (live ? 'live' : 'dormant'));
-  if (!cols.oracle.length || !cols.oracle.some(([, live]) => live)
-      || !cols.oracle.some(([, live]) => !live)) {
-    fail(`policy: the fixture's areas are ${JSON.stringify(cols.oracle)} — it needs `
-       + `both a live and a dormant one or the column check proves nothing`);
+  if (!cols.oracle.length || !cols.offered.length
+      || !cols.all.some(([, live]) => live) || !cols.all.some(([, live]) => !live)) {
+    fail(`policy: the fixture's areas are ${JSON.stringify(cols.all)} with rules on `
+       + `${JSON.stringify(cols.oracle.map(([t]) => t))} — it needs one area with a `
+       + `rule and one without, and a live and a dormant one, or neither the hiding `
+       + `nor the labelling could be checked`);
   } else if (!colsOk) {
     fail(`policy: area columns ${JSON.stringify(cols.rendered)} do not match the `
-       + `server's ${JSON.stringify(cols.oracle)}`);
+       + `areas the block states a rule for, ${JSON.stringify(cols.oracle)}`);
+  } else if (JSON.stringify(cols.strip.map(([t]) => t)) !== JSON.stringify(cols.offered)
+             || cols.strip.some(([, on]) => on !== 'false')) {
+    // A HIDDEN COLUMN MUST NEVER READ AS "no rule here". Every area without one is
+    // named on screen and pressable, and none of them starts pressed.
+    fail(`policy: the areas with no column are ${JSON.stringify(cols.offered)} and `
+       + `the strip offers ${JSON.stringify(cols.strip)} — an area that is neither a `
+       + `column nor named is an area a reader would read as having no rule`);
   } else {
-    note(`policy: ${cols.oracle.length} area columns, each naming whether it is live`);
+    note(`policy: ${cols.oracle.length} of ${cols.all.length} areas carry a rule and `
+       + `get a column, each naming whether it is live; the rest are named in the `
+       + `strip (${cols.offered.join(', ')})`);
+  }
+
+  // The reveal, driven. Done IN-PAGE rather than through Playwright's click so
+  // there is no selector race: `renderPolicy` is synchronous, so the DOM is already
+  // rebuilt when evaluate returns, and the button the second press needs is a NEW
+  // node — hence the re-query. This is also the only place the `dormant` label on a
+  // column is still exercised, since the fixture's rule sits on its live area.
+  const reveal = await page.evaluate(() => {
+    const first = document.querySelector('#policy [data-pcols] [data-pcol]');
+    if (!first) return null;
+    const tag = first.getAttribute('data-pcol');
+    const heads = () => [...document.querySelectorAll('#policy th.ar')].map((th) =>
+      [th.firstChild.textContent, th.classList.contains('dormant'),
+       (th.querySelector('.mut') || {}).textContent]);
+    const before = heads();
+    const stored = JSON.stringify(POLICY.stored);
+    first.click();
+    const on = heads();
+    const again = document.querySelector(`#policy [data-pcol="${CSS.escape(tag)}"]`);
+    if (again) again.click();
+    return { tag, before, on, off: heads(), stored,
+             storedAfter: JSON.stringify(POLICY.stored),
+             dirty: editRows('policy').length };
+  });
+  const wantDormant = reveal
+    && !(cols.all.find(([t]) => t === reveal.tag) || [null, false])[1];
+  const added = reveal
+    ? reveal.on.filter((r) => !reveal.before.some((p) => p[0] === r[0])) : [];
+  if (!reveal) {
+    fail('policy: no [data-pcol] control for the areas without a rule — a hidden '
+       + 'column would be both unreachable and unexplained');
+  } else if (added.length !== 1 || added[0][0] !== reveal.tag
+             || added[0][1] !== wantDormant
+             || added[0][2] !== (wantDormant ? 'dormant' : 'live')) {
+    fail(`policy: pressing the ${reveal.tag} pill added ${JSON.stringify(added)} `
+       + `rather than one column labelled ${wantDormant ? 'dormant' : 'live'}`);
+  } else if (JSON.stringify(reveal.off) !== JSON.stringify(reveal.before)) {
+    fail(`policy: pressing it again left ${JSON.stringify(reveal.off)} rather than `
+       + `the ${reveal.before.length} column(s) it started with`);
+  } else if (reveal.stored !== reveal.storedAfter || reveal.dirty) {
+    fail(`policy: revealing a column changed the policy (${reveal.dirty} unsaved `
+       + `change(s)) — the pill decides what is on screen and nothing else`);
+  } else {
+    note(`policy: ${reveal.tag} has no rule, so no column; its pill adds one `
+       + `labelled ${wantDormant ? 'dormant' : 'live'}, takes it away again, and `
+       + `writes nothing`);
   }
 
   // --- the block as written, including the patterns no switch can express -----

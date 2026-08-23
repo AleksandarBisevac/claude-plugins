@@ -1197,6 +1197,64 @@ def _cases(check):
     check("area columns come from the server's own view of them and say which are "
           "deciding anything today",
           "POLICY.areaInfo" in M.UI_HTML and "a.active?'live':'dormant'" in M.UI_HTML)
+    # --- pc: one column per area does not scale ------------------------------
+    # The tags come from the PLAN, so the width of this table was a function of how
+    # many areas a project happens to tag: eight of them is eight selects on every
+    # row and a sideways scroll of em-dashes. A column is drawn for an area that
+    # CARRIES A RULE.
+    #
+    # These are SOURCE-PROPERTY pins and say so in their labels, because the
+    # behaviour cannot be checked from here: `... in UI_HTML` cannot tell "only the
+    # areas with a rule" from "all of them", from "none of them", or from the wrong
+    # predicate entirely. Those are asserted where they can be executed, in
+    # tools/ui-tests/policy-columns.test.mjs, and each wrong one is mutated in
+    # tools/ui-tests/mutants.test.mjs. The strip's paint is driven in
+    # capture-screenshots --check (assertPolicyWorks).
+    check("pc1 there is ONE predicate for the column set and one reader of it - a "
+          "second would be a second opinion about which rules are on screen "
+          "(the answers themselves are in tools/ui-tests/policy-columns.test.mjs)",
+          "function pCols(kind){" in M.UI_HTML
+          and M.UI_HTML.count("pCols(") == 2
+          and "const cset=pCols(kind),cols=cset.shown;" in M.UI_HTML)
+    check("pc2 ...and liveness is not that predicate: `active` decides the LABEL "
+          "on a column and never whether it exists, because a dormant area's rule "
+          "is one status change away from being enforced",
+          "ruled.has(a.tag)||PF.cols.indexOf(a.tag)>=0" in M.UI_HTML
+          and "a.active?'live':'dormant'" in M.UI_HTML
+          and "pStatesRule(areas[tag])" in M.UI_HTML)
+    check("pc3 an area with no column is NAMED rather than dropped, in the panel's "
+          "own strip grammar - the kind switch and the default switch above it are "
+          "the same component, so this needed no rule of its own",
+          "'data-pcols':'1'" in M.UI_HTML
+          and "class:'ovpill',type:'button','data-pcol'" in M.UI_HTML
+          and "'data-pcol':a.tag" in M.UI_HTML)
+    check("pc4 ...the strip names the set it is listing, and BOTH branches of its "
+          "sentence are written. The second looks vacuous - it says nothing is "
+          "hidden when nothing is - and it is the only thing that fails if the "
+          "claim becomes unconditional",
+          "'Areas with no rule'" in M.UI_HTML
+          and "'no column of their own — press one to add it'" in M.UI_HTML
+          and "'every area has a column'" in M.UI_HTML
+          and "cset.hidden.length" in M.UI_HTML)
+    # THE WHOLE BODY, as bytes, and not a slice around it. A window bounded by
+    # `.index("\n\n")` would shrink silently if a blank line were ever added inside
+    # the function, and the negative clauses ("no pSetRule in here") would then keep
+    # passing about three characters. Three lines are cheap to pin outright: any
+    # edit to them is a review checkpoint, which is exactly what a control that
+    # must not write anything deserves.
+    check("pc5 revealing a column is NOT a second way to write a rule: the control "
+          "moves PF.cols and nothing else, so pSetRule and pAddPattern stay the "
+          "only writers",
+          "function pToggleCol(tag){\n const i=PF.cols.indexOf(tag);\n"
+          " if(i>=0)PF.cols.splice(i,1);else PF.cols.push(tag);}" in M.UI_HTML
+          and "onclick:()=>{pToggleCol(a.tag);renderPolicy();}}" in M.UI_HTML)
+    check("pc6 a reveal is scoped to the kind it was made in, and the strip is an "
+          "OPTIONAL child of both copies of the table - append() stringifies a "
+          "null where el() drops it, which is the browse dialog's lesson",
+          "const PF={kind:'skills',q:'',bad:false,cols:[]};" in M.UI_HTML
+          and "PF.kind=k;PF.q='';PF.cols=[];PNOTE=null;renderPolicy();" in M.UI_HTML
+          and M.UI_HTML.count("cap.tools,cap.colstrip,cap.body].filter(Boolean));")
+              == 2)
     check("emptying a list removes it, and the container with it - the same "
           "convention Settings writes the config with",
           "function pPrune(" in M.UI_HTML
