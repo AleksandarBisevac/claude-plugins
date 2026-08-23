@@ -25,9 +25,33 @@ table.comp thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);
  font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}
 table.comp tbody tr:last-child td{border-bottom:none}
 tr.phase{cursor:pointer}
-tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong);
- border-left:3px solid var(--st,var(--muted))}
-.phtd{display:flex;align-items:center;gap:var(--sp-1)}
+tr.phase>td{background:var(--surface-2);border-top:1px solid var(--border-strong)}
+/* The status stripe is the ROW'S left edge, so it belongs to the row's first
+   cell. On the colspan band there was only ever one cell to put it on; with five
+   it has to say which, or the stripe repeats down the middle of the row four
+   times. Same shape as `tr.task>td.tid`, which has always scoped it this way. */
+tr.phase>td:first-child{border-left:3px solid var(--st,var(--muted))}
+/* An id is one token and never wraps. It keeps the table's own size and colour
+   rather than the task column's smaller muted ones: a phase row is the heading
+   its tasks sit under, and it reads as one in every other cell too. The mono
+   face comes from the <span class=mono> inside, which is also the hook the
+   browser gates read a phase id through. */
+tr.phase>td.phid{white-space:nowrap}
+/* Everything in the title cell that describes the PHASE rather than naming a
+   column: the triangle, the title, the area badges, the task count, the sign-off
+   note. It WRAPS - the cell is capped at the same 18rem a task title is, so an
+   unwrapped line here would be the one thing able to widen the table. The two
+   gaps differ on purpose: the row gap is the tighter one, because a wrapped
+   badge sits under its own title rather than under a new line of text. */
+.phsum{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-0) var(--sp-1)}
+/* A flex line breaks on an item's UNSHRUNK size, so the title - one item wider
+   than a phone's title column - moved to the next line and left the triangle
+   behind on its own. Paired into one item they stay together and the title
+   wraps INSIDE it, which is what `min-width:0` allows: a flex item's automatic
+   minimum is its min-content width, and that floor is what stops a long word
+   from shrinking. */
+.phname{display:flex;align-items:baseline;gap:var(--sp-0);min-width:0}
+.phname strong{min-width:0;overflow-wrap:break-word}
 tr.phase:hover>td{filter:brightness(1.05)}
 .tri{display:inline-block;width:.9em;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .tri::before{content:"\25B6";font-size:.68em}
@@ -44,8 +68,9 @@ tr.task>td.tid{font-family:var(--mono);color:var(--muted);font-size:.8em;padding
    gap that gets reported as "unexplained".
    18rem is not a taste: the widest title measures 555px, and two lines of 18rem
    hold 576, so this is the narrowest round cap at which nothing needs a third
-   line. Phase titles (widest 403px) clear it as well, which matters because they
-   join this column when phase rows stop being one colspan band.
+   line. Phase titles (widest 403px) clear it as well, which is what let them
+   join this column when phase rows stopped being one colspan band — and the cap
+   is now the thing that keeps a phase's badges and counts from widening it.
    `break-word` and not `anywhere`: these titles break at spaces, and `anywhere`
    would hyphenate mid-identifier in a column full of them. */
 td.ttitle{max-width:18rem;white-space:normal;overflow-wrap:break-word}
@@ -58,22 +83,19 @@ td.tskills{min-width:15rem}
    the same row. Height is stated rather than left to the line box because a
    <select> cannot be reached by `line-height` - the UA sheet pins it to `normal`
    with !important - so a shape shared with an <input> has to be given the number
-   outright. Widths are NOT shared and follow below: what these hold differs (a
-   model id, a skill query, a single digit) even though the box does not. */
-td.tmodel input,td.tskills input,.comp-review input,.comp-priority select{
+   outright.
+   Three selectors for four fields, because two of them are now the same one: a
+   task's model box and a phase's review-model box are in the SAME COLUMN, so
+   they take the same rule and the same width by construction rather than by two
+   declarations agreeing. The priority menu is the only one that still needs its
+   own width - it holds a single digit. */
+td.tmodel input,td.tskills input,td.phprio select{
  height:1.875rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
 td.tmodel input{width:6.5rem}
-/* The pair at the right end of a phase header row, each a field behind the same
-   kind of muted label, so the wrapper is written once. Only .comp-review takes
-   the auto margin: it is the first of the two, so one margin carries both to the
-   right end. Giving the second one as well would split the free space between
-   them and open a gap down the middle instead.
-   `flex:0 0 auto` is the no-collision clause and it is load-bearing. A flex item
-   shrinks by default, so a phase with a long title ate into these two rather than
-   into itself: P8 in this repo's own plan squeezed the review group to 175px for
-   184px of content, and the 9px difference painted straight over the control
-   beside it. A form field is not the slack in a row — the space a long title
-   needs comes out of the title, which is what the scrolling wrap is for. */
+/* The menu's widest option is an em dash, which needs about 58px of box. It used
+   to be a wrapper-level parameter shared with the review box; the column decides
+   it now, and the review box is not a special case any more. */
+td.phprio select{width:4rem}
 /* A closed phase reads as a record rather than a form. The cue is on the CONTROLS
    only — the row's own text keeps full contrast, because the point is to go on
    reading a done phase easily, not to grey out its title. `cursor:not-allowed`
@@ -82,25 +104,14 @@ td.tmodel input{width:6.5rem}
 tr[data-frozen] :where(input,select,textarea,button):disabled{
  opacity:.5;cursor:not-allowed;background:var(--surface-2)}
 /* The phase-row legend: the two words and their ⓘ, once, above the end of the
-   table they label. Right-aligned for the same reason .comp-review takes an auto
-   margin — both sit at the row's right-hand end, so the reference reads over the
-   controls rather than over the phase titles. */
+   table they label. Right-aligned because the two columns those levers sit in
+   are at the right-hand end, so the reference reads over the controls rather
+   than over the phase titles. */
 .phlegend{display:flex;justify-content:flex-end;align-items:center;gap:var(--sp-2);
  margin:0 0 var(--sp-0);font-size:.72rem;color:var(--muted)}
 .phlegend-t{font-style:italic}
-.comp-review,.comp-priority{--comp-ctl-w:8rem;flex:0 0 auto;display:flex;align-items:center;gap:var(--sp-0);font-weight:400;color:var(--muted);font-size:.72rem}
-.comp-review{margin-left:auto}
-/* Width is the one thing the pair does NOT take from the shared shape above,
-   because a model id is a long string and a tier is one character. The menu's
-   widest option is an em dash, which needs about 58px of box, so 8rem was two
-   thirds empty. A PARAMETER rather than a second rule: the width is declared
-   once, below, and each wrapper only says what to put in it — so the two values
-   sit next to each other here instead of drifting apart in two distant blocks. */
-.comp-priority{--comp-ctl-w:4rem}
-.comp-review input,.comp-priority select{width:var(--comp-ctl-w)}
 /* The model combos (mc) size to their hosts, not to the .combo default of
-   18rem — a phase header row and a 6.5rem table cell both hold one. */
-.comp-review .combo{flex:0 1 auto;min-width:0}
+   18rem. One rule for both row types now that both are in the same cell. */
 td.tmodel .combo{min-width:6.5rem}
 .comp .chipwrap{flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--sp-0)}
 .comp .chips{gap:var(--sp-0)}

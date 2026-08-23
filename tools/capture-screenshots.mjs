@@ -83,11 +83,12 @@ import { livenessAt, assertStillLive, newLivenessTally,
 import { RESPONSIVE_LADDER, measureResponsiveFrame, walkResponsiveLadder,
          assertLadderMeasuredSomething, newLadderTally } from './ui-checks/responsive.mjs';
 import { unwiredStages, stageSources } from './ui-checks/wiring.mjs';
-// The four panel-tab stages. They are NOT re-exported: nothing outside this file
+// The panel-tab stages. They are NOT re-exported: nothing outside this file
 // has ever called them, and a facade for a name with one caller is a second home
 // for no reason. What they need is handed over as `stageCtx`, built once in main().
 import { assertOverviewWorks, assertHelpDrawerWorks, assertPolicyWorks,
-         assertAppearanceWorks } from './ui-checks/stage-tabs.mjs';
+         assertAppearanceWorks,
+         assertCompositionColumns } from './ui-checks/stage-tabs.mjs';
 
 export { csvFields, firstNonRawNumberLine, scriptIndex, resolveScript,
          livenessAt, assertStillLive, newLivenessTally, assertLivenessWasChecked,
@@ -3663,7 +3664,11 @@ async function assertModelCombo(page, project) {
       if (ev.target.closest && ev.target.closest('tr.phase')) window.__phaseClicks++;
     });
   });
-  const rev = await page.locator('#comp tr.phase .comp-review input').first()
+  // Reached by its own data- hook, not by the wrapper class it used to sit in.
+  // `.comp-review` was a styling wrapper and it is gone now that the control is
+  // a table cell — a selector bound to a class is a selector bound to a layout
+  // decision, which is the rule the panel's other hooks already follow.
+  const rev = await page.locator('#comp tr.phase input[data-revmodel]').first()
     .elementHandle();
   if (!rev) {
     fail('composition: no review-model input to drive the combo on');
@@ -4187,7 +4192,8 @@ const COMBO_GUT = 8;
  * where a menu of that width fits, and pulled flush against the viewport gutter
  * where it does not. So "aligned with the input, always" is not the product's
  * rule, and asserting it fails a CORRECTLY clamped menu. It did: the phase
- * header's review-model input is right-aligned (`.comp-review{margin-left:auto}`)
+ * header's review-model input sits near the right-hand end of the table (an auto
+ * margin then, the "model" column now)
  * and lands within ~15px of the clamp threshold, and 15px is exactly what
  * `html{scrollbar-gutter:stable}` reserves under classic scrollbar metrics and
  * does not reserve under overlay ones. Input at 1011 → no clamp, green by one
@@ -4217,7 +4223,7 @@ async function assertComboOverlay(page, project) {
   await page.evaluate(() => { COMPF.q = ''; COMPF.status = ''; COMPF.needs = false;
     if (COMPF.apply) COMPF.apply(); showTab('comp'); });
   await page.waitForTimeout(250);
-  const REV = '#comp tr.phase .comp-review .combo>input';
+  const REV = '#comp tr.phase input[data-revmodel]';
   const geo = () => page.evaluate((sel) => {
     const inp = document.querySelector(sel);
     const menu = [...document.querySelectorAll('.combo-menu')]
@@ -6552,6 +6558,11 @@ async function main() {
       await mob.evaluate(() => {
         const w = document.querySelector('.comptblwrap'); if (w) w.scrollLeft = 0;
       });
+      // The same grid claim at phone width. It is not the desktop run repeated:
+      // below the shell breakpoint every column is at its minimum and the table
+      // is wider than its frame, which is where a cell that quietly grew the
+      // minimum shows up as sideways scroll rather than as a narrower column.
+      await assertCompositionColumns(mob, stageCtx);
       // One width narrower, on the one tab that needed the fix. 390px is the phone
       // this shot is taken on, and at 390px letting the ROW shrink is on its own
       // enough — the label's words rewrap inside their own box and the page is
@@ -6859,6 +6870,11 @@ async function main() {
       // measures the fixture as generated, and live-data runs dead last.
       await assertModelCombo(page, big);
       await assertPhaseWhyNote(page);
+      // Injects a long title into the fixture's IN-PAGE composition and puts it
+      // back inside the same synchronous evaluate, so it writes nothing to disk
+      // and leaves no state behind — but it re-renders #comp, so it keeps to the
+      // same block as the why-note leg rather than running before a shutter.
+      await assertCompositionColumns(page, stageCtx);
       await assertComboSearchCount(page);
       await assertFilterPersistence(page, browser, panel.url);
       await assertSaveNoteLifecycle(page);

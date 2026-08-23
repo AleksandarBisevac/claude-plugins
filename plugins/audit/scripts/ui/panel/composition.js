@@ -465,14 +465,14 @@ function renderComp(){closeCombo();
    'skill "'+n+'" is spelled only in this manifest; discovery knows no such '
    +'skill — a hint, not a gate: a name that never resolves simply loads nothing.')));
  const tbody=el('tbody');
- // The reference for the two PHASE-row controls, once, at the right-hand end
- // where they sit. It is here rather than in tableHead() because those <th> name
- // the task columns and a phase row spans all five of them - the review box and
- // the priority menu land under "model" and "skills" by arithmetic, not by
- // belonging to them, so borrowing those headings would have labelled them
- // wrongly. Same rule as the head, though: the ⓘ explains the lever ONCE for
- // every row that has one. There is no second list of these names - the drawer
- // still opens on `comp` refs, so the help wiring is unchanged.
+ // The reference for the two PHASE-row levers, once, above the columns they sit
+ // in. Both of the last two columns hold TWO different things - column 4 a task's
+ // model and a phase's review model, column 5 a task's skills and a phase's
+ // priority - and a <th> carries one ⓘ, so the head explains the task lever and
+ // this explains the phase one. It is right-aligned because those two columns are
+ // at the row's right-hand end. Same rule as the head: the ⓘ explains the lever
+ // ONCE for every row that has one. There is no second list of these names - the
+ // drawer still opens on `comp` refs, so the help wiring is unchanged.
  tcard.append(el('div',{class:'phlegend'},
    el('span',{class:'phlegend-t'},'per phase:'),
    flabel('review model',MDESC.phaseReviewModel,
@@ -482,9 +482,14 @@ function renderComp(){closeCombo();
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
    // row would be a thousand of them saying one thing.
+   //
+   // "model" covers both row types honestly - a task model and a phase's review
+   // model are both models. The fifth heading names BOTH of the things its column
+   // holds, because they are different levers that can never appear in the same
+   // row, and "skills" alone described half the table.
    tableHead(['id','title','status',
      {label:flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})},
-     {label:flabel('skills',MDESC.taskSkills,{comp:'taskSkills',
+     {label:flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',
        label:'Task skills'})}]),tbody)));
 
  const open=COMPF.open;
@@ -556,26 +561,47 @@ function renderComp(){closeCombo();
   // chooses a model must not also collapse the phase under the menu.
   revCombo.onclick=e=>e.stopPropagation();
   const pr=el('tr',{class:'phase','data-status':ph.status||''});
-  pr.append(el('td',{colspan:'5'},el('div',{class:'phtd'},
-    el('span',{class:'tri'}),el('span',{class:'mono'},ph.id||''),el('strong',{},ph.title||''),
-    (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
-    el('span',{class:'st','data-status':ph.status||''},label(ph.status)),
-    el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
-    // Every row below reads done while the badge says in progress — a real
-    // state (sign-off is part of the phase) that reads like a contradiction,
-    // and on a live repo it did. Name the reason where the eye trips on it.
-    (ph.status==='in_progress'&&tasks.length>0&&tasks.every(t=>t.status==='done'))
-      ?el('span',{class:'count whynote'},
-          'all tasks done — awaiting sign-off (/audit:review)')
-      :null,
+  // ONE CELL PER HEADING, the same five a task row emits. This used to be one
+  // cell spanning the whole width with a flex line inside it, which meant the
+  // head described the task rows and nothing else: the review box and the
+  // priority menu were pushed to the right-hand end by an auto margin and landed
+  // under "model" and "skills" by ARITHMETIC, not by belonging to them - and
+  // with every phase collapsed the head described nothing on screen at all. The
+  // id, title and status a phase shares with a task now sit in the same three
+  // columns, and its two levers in the two the head names for them.
+  //
+  // What the title cell absorbed is everything that describes the PHASE rather
+  // than naming a column: the disclosure triangle, the area badges, the task
+  // count and the sign-off note. They wrap inside that cell (`.phsum`), which is
+  // capped at the same width as a task title, so none of them can widen the
+  // table.
+  pr.append(el('td',{class:'phid'},el('span',{class:'mono'},ph.id||'')),
+    el('td',{class:'ttitle'},el('div',{class:'phsum'},
+      // The triangle and the title are ONE item of the wrapping line, because a
+      // disclosure control belongs to the thing it discloses. As two items the
+      // triangle kept its place and the title moved to the next line whenever
+      // the pair did not fit - at 390px that left the control alone on line one
+      // with nothing beside it to open.
+      el('span',{class:'phname'},el('span',{class:'tri'}),
+        el('strong',{},ph.title||'')),
+      (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
+      el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
+      // Every row below reads done while the badge says in progress — a real
+      // state (sign-off is part of the phase) that reads like a contradiction,
+      // and on a live repo it did. Name the reason where the eye trips on it.
+      (ph.status==='in_progress'&&tasks.length>0&&tasks.every(t=>t.status==='done'))
+        ?el('span',{class:'count whynote'},
+            'all tasks done — awaiting sign-off (/audit:review)')
+        :null)),
+    el('td',{},el('span',{class:'st','data-status':ph.status||''},label(ph.status))),
     // The words and the ⓘ that used to sit beside each of these are in the
-    // legend above the table now — one reference for the column instead of one
-    // per phase, which is the rule the two editable task columns already follow.
-    // What names them here is not the visible text: the review box says what it
-    // is through its own placeholder, and both carry an aria-label that folds in
-    // the phase id, so the accessible name never depended on the words removed.
-    el('span',{class:'comp-review'},revCombo),
-    el('span',{class:'comp-priority'},prio))));
+    // legend above the table — one reference per lever instead of one per phase,
+    // which is the rule the task columns already follow. What names them here is
+    // not the visible text: the review box says what it is through its own
+    // placeholder, and both carry an aria-label that folds in the phase id, so
+    // the accessible name never depended on the words removed.
+    el('td',{class:'tmodel'},revCombo),
+    el('td',{class:'phprio'},prio));
   // The row still TOGGLES when it is frozen — a closed phase is the one you most
   // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};

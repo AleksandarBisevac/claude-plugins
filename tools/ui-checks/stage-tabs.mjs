@@ -1243,3 +1243,268 @@ export async function assertAppearanceWorks(page, { note, fail, tabTo, shot }) {
  * nothing to throw away" describes a known state rather than whatever the
  * preceding checks left behind.
  */
+
+// --- the Plan & models table ---------------------------------------------------
+
+/**
+ * The composition table is a GRID, and a phase row is a row of it.
+ *
+ * Phase rows used to be one `<td colspan="5">` with a flex line inside, so the
+ * five headings described the task rows and nothing else. A phase's review-model
+ * box and its priority menu sat near "model" and "skills" by ARITHMETIC — the
+ * flex line's auto margin pushed them to the right-hand end and those columns
+ * happened to be there — never by belonging to them. With every phase collapsed
+ * the header described nothing that was on screen at all.
+ *
+ * WHY IN A BROWSER AND NOT AS A SOURCE PIN. `colspan:'5'` and a `tableHead` of
+ * five names were both present, and agreed with each other, for the whole life of
+ * the defect: source text could see the number five twice and could not see that
+ * one of them was a span and the other a set of columns. What was wrong is a CELL
+ * INDEX, and only a rendered row has one.
+ *
+ * Every index below is compared against the position of the HEADING that names
+ * it, read off the same `<thead>` in the same pass — not against a hand-written 3
+ * and 4. A literal would go on passing if the columns were reordered together
+ * with the cells, which is the one rearrangement that is not a defect.
+ *
+ * The task-row case looks vacuous and is the second-direction case: it passes on
+ * the pre-change code by construction, and it is the only thing here that fails
+ * if phase rows are made to fit the grid by moving task cells to meet them.
+ */
+export async function assertCompositionColumns(page, { note, fail, tabTo }) {
+  await tabTo(page, 'comp');
+  await page.waitForSelector('#comp table.comp', { timeout: 15000 });
+  // ONE synchronous evaluate, for the reason measureResponsiveFrame gives: this
+  // view is rebuilt by a 5s disk poll, so a measurement split across two awaits
+  // can read a rect from before a re-render and an index from after it. It also
+  // means the injected title below cannot be photographed by a shutter, or left
+  // behind by a failure between two awaits.
+  const got = await page.evaluate(() => {
+    // Long, and made of ORDINARY WORDS on purpose. `overflow-wrap:break-word`
+    // permits a mid-word break without lowering the column's min-content width,
+    // so a single 90-character token would push the column straight to its cap
+    // and the clauses below would be measuring the fixture rather than the rule.
+    const LONG = 'A deliberately long title that has to wrap onto a second line '
+               + 'instead of widening its own column or being cut off with an '
+               + 'ellipsis nobody can read';
+    const cellsOf = (tr) => [...tr.children];
+    const shown = (tr) => tr.offsetParent !== null;
+    const colOfClass = (tr, cls) =>
+      cellsOf(tr).findIndex((c) => c.classList.contains(cls));
+    const colOf = (tr, sel) => {
+      const n = tr.querySelector(sel);
+      if (!n) return -1;                          // no such control in this row
+      const td = n.closest('td');
+      return td ? cellsOf(tr).indexOf(td) : -2;   // -2: present, but in no cell
+    };
+    const uniq = (rows, f) => [...new Set(rows.map(f))].sort((a, b) => a - b);
+    const titleCell = (tr) => cellsOf(tr).find((c) => c.classList.contains('ttitle'));
+    // How many line boxes the TITLE TEXT occupies. A Range over the text gives
+    // one rect per line fragment, which is the thing being claimed. Dividing the
+    // CELL's height by its line-height was the first spelling and it is a
+    // different measurement: a phase's title cell also holds area badges and a
+    // task count, each taller than a line of text, so an unwrapped title in a
+    // two-badge phase would have measured "two lines" and passed.
+    const titleLines = (tr) => {
+      const cell = titleCell(tr);
+      if (!cell) return -1;
+      // A task title is text straight in the cell; a phase's is inside <strong>.
+      const range = document.createRange();
+      range.selectNodeContents(cell.querySelector('strong') || cell);
+      return range.getClientRects().length;
+    };
+    const geom = () => {
+      const tbl = document.querySelector('#comp table.comp');
+      const wrap = document.querySelector('#comp .comptblwrap');
+      const head = [...tbl.querySelectorAll('thead th')];
+      const phases = [...tbl.querySelectorAll('tbody tr.phase')].filter(shown);
+      const tasks = [...tbl.querySelectorAll('tbody tr.task')].filter(shown);
+      const widest = (rows) => rows.reduce((w, r) => {
+        const c = titleCell(r);
+        return c ? Math.max(w, Math.round(c.getBoundingClientRect().width)) : w;
+      }, -1);
+      const deepest = (rows) => rows.reduce((n, r) => Math.max(n, titleLines(r)), -1);
+      // The cap the SHEET declares, read off a rendered cell rather than written
+      // here. `max-width:none` parses to NaN, which is reported as -1 and read
+      // below as "this column has no cap", because that is the defect and not a
+      // measurement error.
+      const capCell = titleCell(phases[0] || tasks[0] || document.createElement('tr'));
+      const capPx = capCell ? parseFloat(getComputedStyle(capCell).maxWidth) : NaN;
+      return {
+        titleCap: Number.isFinite(capPx) ? Math.round(capPx) : -1,
+        vw: document.documentElement.clientWidth,
+        headings: head.map((h) => (h.textContent || '').trim().toLowerCase()),
+        cols: head.length,
+        phaseRows: phases.length,
+        taskRows: tasks.length,
+        // A SET, not a count: one row with a different shape is the defect, and
+        // an average or a first-row read would hide it.
+        phaseCells: uniq(phases, (r) => cellsOf(r).length),
+        taskCells: uniq(tasks, (r) => cellsOf(r).length),
+        spanned: tbl.querySelectorAll('tbody td[colspan]').length,
+        phaseTitleCol: uniq(phases, (r) => colOfClass(r, 'ttitle')),
+        phaseStatusCol: uniq(phases, (r) => colOf(r, 'span.st')),
+        revCol: uniq(phases, (r) => colOf(r, '[data-revmodel]')),
+        prioCol: uniq(phases, (r) => colOf(r, '[data-priority]')),
+        taskIdCol: uniq(tasks, (r) => colOfClass(r, 'tid')),
+        taskTitleCol: uniq(tasks, (r) => colOfClass(r, 'ttitle')),
+        taskStatusCol: uniq(tasks, (r) => colOf(r, 'span.st')),
+        modelCol: uniq(tasks, (r) => colOf(r, '[data-tmodel]')),
+        skillsCol: uniq(tasks, (r) => colOf(r, '.chipwrap')),
+        tableW: Math.round(tbl.getBoundingClientRect().width),
+        frameClient: wrap ? wrap.clientWidth : -1,
+        frameScroll: wrap ? wrap.scrollWidth : -1,
+        widestPhaseTitle: widest(phases),
+        widestTaskTitle: widest(tasks),
+        phaseTitleLines: deepest(phases),
+        taskTitleLines: deepest(tasks),
+      };
+    };
+    // The filter state is HOISTED (COMPF survives a re-render on purpose), so it
+    // is put back with the manifest rather than left as this stage found it
+    // convenient — a later leg reads COMPF.q as evidence that a refresh kept the
+    // reader's filters, and would then be reading this one's leftovers.
+    const filters = { q: COMPF.q, status: COMPF.status, needs: COMPF.needs,
+                      open: Object.assign({}, COMPF.open) };
+    COMPF.q = ''; COMPF.status = ''; COMPF.needs = false;
+    const comp = STATE.composition || { phases: [], tasks: [] };
+    (comp.phases || []).forEach((p) => { COMPF.open[p.id] = true; });
+    renderComp();
+    const before = geom();
+    const saved = JSON.stringify(comp);
+    const ph = (comp.phases || [])[0];
+    const task = ph ? (comp.tasks || []).find((t) => t.phaseId === ph.id) : null;
+    if (ph) ph.title = LONG;
+    if (task) task.title = LONG;
+    renderComp();
+    const after = geom();
+    STATE.composition = JSON.parse(saved);
+    COMPF.q = filters.q; COMPF.status = filters.status; COMPF.needs = filters.needs;
+    Object.keys(COMPF.open).forEach((k) => { delete COMPF.open[k]; });
+    Object.assign(COMPF.open, filters.open);
+    renderComp();
+    return { before, after, injected: { phase: !!ph, task: !!task },
+             longTitle: LONG.length };
+  });
+
+  const b = got.before, a = got.after;
+  const one = (list) => (list.length === 1 ? list[0] : null);
+  // The vacuity guard first: every clause below narrows this set, and a table
+  // with no rows satisfies "every phase row has five cells" trivially.
+  if (b.cols !== 5 || !b.phaseRows || !b.taskRows
+      || !got.injected.phase || !got.injected.task) {
+    fail(`comp columns: the fixture renders ${b.cols} heading(s), ${b.phaseRows} `
+       + `phase row(s) and ${b.taskRows} task row(s) (injected `
+       + `${JSON.stringify(got.injected)}) — too little to be checking anything`);
+    return;
+  }
+  const wantModel = b.headings.findIndex((h) => h.startsWith('model'));
+  const wantShared = b.headings.findIndex((h) => h.startsWith('skills'));
+  if (wantModel < 0 || wantShared < 0) {
+    fail(`comp columns: no heading starts with "model"/"skills" among `
+       + `${JSON.stringify(b.headings)} — every index below is derived from those, `
+       + `so nothing can be compared against them`);
+    return;
+  }
+  // The shared column carries two things that can never appear in the same row,
+  // so a heading naming only one of them is wrong for half the table — which is
+  // what "skills" alone was.
+  if (!b.headings[wantShared].includes('priority')) {
+    fail(`comp columns: column ${wantShared + 1} holds a task's skills AND a phase's `
+       + `priority, and its heading is ${JSON.stringify(b.headings[wantShared])} — `
+       + `it names one of the two`);
+  } else {
+    note(`comp columns: the shared column is headed `
+       + `${JSON.stringify(b.headings[wantShared])}, naming both things it holds`);
+  }
+  // (1) every phase row emits one cell per heading, and no band spans them.
+  if (b.spanned || one(b.phaseCells) !== b.cols) {
+    fail(`comp columns: the head declares ${b.cols} columns and phase rows emit `
+       + `${JSON.stringify(b.phaseCells)} cell(s), with ${b.spanned} colspan'd cell(s) `
+       + `in the body — a phase row that SPANS the grid does not sit in it, so its `
+       + `controls land under a heading by arithmetic`);
+  } else {
+    note(`comp columns: all ${b.phaseRows} phase row(s) emit ${b.cols} cells, and `
+       + `nothing in the body spans`);
+  }
+  // (2) the two phase controls are IN the columns their headings name.
+  const revCol = one(b.revCol), prioCol = one(b.prioCol);
+  if (revCol !== wantModel || prioCol !== wantShared) {
+    fail(`comp columns: a phase's review model sits in cell `
+       + `${JSON.stringify(b.revCol)} and its priority in ${JSON.stringify(b.prioCol)}, `
+       + `against "model" at ${wantModel} and `
+       + `${JSON.stringify(b.headings[wantShared])} at ${wantShared} `
+       + `(-1 = no such control in the row, -2 = present but in no cell)`);
+  } else {
+    note(`comp columns: a phase's review model is in the "model" column (${revCol}) `
+       + `and its priority in the shared one (${prioCol})`);
+  }
+  // ...and the three columns it shares with a task row are the SAME three, or the
+  // header still describes only half the table.
+  if (one(b.phaseTitleCol) !== one(b.taskTitleCol)
+      || one(b.phaseStatusCol) !== one(b.taskStatusCol)) {
+    fail(`comp columns: a phase's title/status sit at `
+       + `${JSON.stringify([b.phaseTitleCol, b.phaseStatusCol])} and a task's at `
+       + `${JSON.stringify([b.taskTitleCol, b.taskStatusCol])} — the two row types `
+       + `read the same headings differently`);
+  } else {
+    note(`comp columns: both row types put their title at ${one(b.taskTitleCol)} and `
+       + `their status at ${one(b.taskStatusCol)}`);
+  }
+  // (3) a task row is UNCHANGED. This passes on the pre-change code by
+  // construction and is kept for the one mutation it is the only case for:
+  // making phase rows fit the grid by moving task cells to meet them.
+  const taskShape = [one(b.taskIdCol), one(b.taskTitleCol), one(b.taskStatusCol),
+                     one(b.modelCol), one(b.skillsCol)];
+  if (one(b.taskCells) !== b.cols || String(taskShape) !== String([0, 1, 2, 3, 4])) {
+    fail(`comp columns: a task row is id,title,status,model,skills at 0..4 and it now `
+       + `reads ${JSON.stringify(taskShape)} across ${JSON.stringify(b.taskCells)} cell(s)`);
+  } else {
+    note('comp columns: a task row is unchanged — id, title, status, model, skills at 0..4');
+  }
+  // (4) a long title WRAPS in both row types, and stays inside the cap.
+  //
+  // NOT "the column does not get wider", which is what stood here and which the
+  // gate's own fixture proved wrong within the hour: this column is auto-sized,
+  // so a longer title legitimately widens it — up to the cap, which is the whole
+  // mechanism. The claim is the cap, and it is READ OFF THE CELL rather than
+  // written here, so it cannot disagree with the sheet.
+  const capped = Math.max(a.widestPhaseTitle, a.widestTaskTitle);
+  if (a.phaseTitleLines < 2 || a.taskTitleLines < 2) {
+    fail(`comp columns: a ${got.longTitle}-character title renders on `
+       + `${a.phaseTitleLines} line(s) in a phase row and ${a.taskTitleLines} in a task `
+       + `row — it is meant to wrap rather than be cut off`);
+  } else if (a.titleCap < 0) {
+    fail('comp columns: the title column declares no max-width, so a long title '
+       + 'has nothing to stop it — the wrapping alone does not bound the column');
+  // The slack is not a fudge factor tuned until this stopped complaining: a
+  // cell's `max-width` is an INPUT to the table's column algorithm rather than a
+  // clamp on the box, so a column sitting exactly at the cap measures a pixel
+  // over, and font metrics differ between the hosts this runs on. Every way of
+  // really losing the cap is tens of pixels — a `min-width:25rem` on this column
+  // measured 112px over — so the slack cannot swallow one.
+  } else if (capped > a.titleCap + 8) {
+    fail(`comp columns: a long title took the column to ${capped}px past its own `
+       + `${a.titleCap}px cap (phase ${a.widestPhaseTitle}px, task `
+       + `${a.widestTaskTitle}px)`);
+  } else {
+    note(`comp columns: a long title wraps to ${a.phaseTitleLines}/${a.taskTitleLines} `
+       + `lines (phase/task) and takes the column from `
+       + `${Math.max(b.widestPhaseTitle, b.widestTaskTitle)} to ${capped}px against `
+       + `a ${a.titleCap}px cap; the table goes ${b.tableW}→${a.tableW}px`);
+  }
+  // (5) ...and at desktop width the table fits its frame — BEFORE and AFTER that
+  // title, because the budget a sixth column would have spent is the same budget
+  // a growing column spends. Below the shell breakpoint it scrolls inside that
+  // frame by design, which the ⓘ-placement leg at 390px asserts separately.
+  const scrolls = (g) => g.frameScroll > g.frameClient + 1;
+  if (b.vw >= 1000 && (scrolls(b) || scrolls(a))) {
+    fail(`comp columns: at ${b.vw}px the table scrolls sideways inside its frame — `
+       + `${b.tableW}px in ${b.frameClient}px before the long title and `
+       + `${a.tableW}px in ${a.frameClient}px after it`);
+  } else {
+    note(`comp columns: at ${b.vw}px the table is ${b.tableW}px, frame `
+       + `${b.frameClient}px, content ${b.frameScroll}px (${a.frameScroll}px with a `
+       + `long title in it)`);
+  }
+}

@@ -975,40 +975,83 @@ def _cases(check):
           and M.UI_HTML.count("a.porder-b.porder") == 1,
           repr(M.UI_HTML.count("a.porder-b.porder")))
     # PROPERTIES OF THE SOURCE, not of the painted box: only the browser gates can
-    # say the two controls line up. What source text CAN say is that one rule
-    # decides their shape and ONE declaration their width - which is the thing
-    # that was missing, since the priority wrapper shipped with no rule at all and
+    # say the four controls line up. What source text CAN say is that one rule
+    # decides their shape and that no width is declared twice - which is the thing
+    # that was missing, since the priority menu shipped with no rule at all and
     # its <select> took the base control's size while the input beside it had been
-    # sized by hand. The width is a per-wrapper parameter because the two hold
-    # different things (a model id against a single digit); what must not come
-    # back is a second `width:` on either control, which is how the pair drifts.
+    # sized by hand.
+    #
+    # It is THREE selectors for four fields now, and that is the change rather
+    # than a loosening: a task's model box and a phase's review box are in the
+    # same COLUMN, so `td.tmodel input` is both of them and the pair cannot drift
+    # by construction instead of by two declarations agreeing. The width that used
+    # to be a per-wrapper `--comp-ctl-w` parameter is a column property, so the
+    # count clauses move with it - one declaration per column, and the parameter
+    # gone rather than left behind unread.
+    # The composition table's own block, so a count below is a count of THIS
+    # table's rules rather than of the whole assembled sheet - where `input{width:`
+    # appears in several components that have nothing to do with this one.
+    _comp_css = M.UI_HTML[M.UI_HTML.index("/* composition: filter toolbar"):
+                          M.UI_HTML.index(".comp .combo{flex:")]
     check("pri9 ALL FOUR editable fields of this table get their box shape from "
-          "one rule, and the phase pair its width from one declaration - three "
-          "were sized by hand and the fourth not at all, which is how a 41px "
-          "skills box and a 37px priority menu ended up beside a 30px model box",
-          "td.tmodel input,td.tskills input,.comp-review input,.comp-priority select{"
+          "one rule, and each column its width from ONE declaration - three were "
+          "sized by hand and the fourth not at all, which is how a 41px skills "
+          "box and a 37px priority menu ended up beside a 30px model box",
+          "td.tmodel input,td.tskills input,td.phprio select{"
           in M.UI_HTML
-          and ".comp-review,.comp-priority{" in M.UI_HTML
-          and ".comp-review input,.comp-priority select{" in M.UI_HTML
-          # Counted, not merely present. A `not in` on `.comp-priority select{width:`
+          # Counted, not merely present. A `not in` on `td.phprio select{width:`
           # reads like the negative to write here and is worthless: the shared
-          # rule's own selector list ENDS with `.comp-priority select` and is
-          # followed by `{width:`, so the clause matches the very thing it was
-          # meant to forbid and can never fail. These two count the structure
-          # instead - one width declaration, and exactly two values feeding it.
-          and M.UI_HTML.count("width:var(--comp-ctl-w)") == 1
-          and M.UI_HTML.count("--comp-ctl-w:") == 2)
-    # The collision this repo's own plan produced: P8's title left the review
-    # group 9px short of its content and it painted over the control beside it. A
-    # default flex item shrinks, and a fixed-size form field must not - so this
-    # asserts the clause, in the wrapper rule, that says so. It is a construct
-    # pin standing in for a layout fact no Python case can see; the browser gates
-    # own whether anything actually overlaps.
-    check("pri10 neither phase-row control is allowed to shrink - a long title "
-          "takes its space from the title, never out of a form field",
-          "flex:0 0 auto" in M.UI_HTML[
-              M.UI_HTML.index(".comp-review,.comp-priority{"):
-              M.UI_HTML.index(".comp-review{margin-left:auto}")])
+          # rule's own selector list ENDS with `td.phprio select` and is followed
+          # by `{`, so the clause would match the very thing it was meant to
+          # forbid and could never fail. These count the structure instead.
+          and M.UI_HTML.count("td.tmodel input{width:") == 1
+          and M.UI_HTML.count("td.phprio select{width:") == 1
+          # ...and counted over the TABLE'S OWN BLOCK as well, because the two
+          # clauses above only forbid a second rule with the same selector. A
+          # second width under a different selector is how the pair drifted
+          # before, and it would be written here, next to the first.
+          and _comp_css.count("input{width:") == 1
+          and _comp_css.count("select{width:") == 1
+          # The parameter is GONE, not merely unused: a stranded custom property
+          # is a second opinion about a width nothing reads.
+          and "--comp-ctl-w" not in M.UI_HTML)
+    # WHAT THIS PIN USED TO HOLD, and why the clause changed with the mechanism.
+    # It read `flex:0 0 auto` inside the two wrappers, because both controls were
+    # flex items in the phase row's own line and a flex item shrinks by default:
+    # P8's title in this repo's own plan squeezed the review group to 175px for
+    # 184px of content and the difference painted over the control beside it. The
+    # wrappers are gone - the controls are table cells now, and a column cannot be
+    # eaten by the content of another column - so the clause it asserted no longer
+    # exists to assert.
+    #
+    # The BEHAVIOUR it was named for (a long title takes its room out of itself)
+    # is measured where it can be: `assertCompositionColumns` in
+    # tools/ui-checks/stage-tabs.mjs injects one and reads the column and table
+    # widths. What is left here is the source property that browser check cannot
+    # state - that there is ONE builder per row type and each emits one cell per
+    # heading, so a sixth cell cannot appear in one row type alone.
+    _comp_prow = M.UI_HTML[M.UI_HTML.index("const pr=el('tr',{class:'phase'"):
+                           M.UI_HTML.index("pr.onclick=")]
+    _comp_trow = M.UI_HTML[M.UI_HTML.index("const tr=el('tr',{class:'task'"):
+                           M.UI_HTML.index("const tFrozen=")]
+    check("pri10 both row builders emit one cell per heading, and nothing in "
+          "this table spans - a phase row that SPANS the grid does not sit in "
+          "it, which is how its two controls came to be under 'model' and "
+          "'skills' by arithmetic rather than by belonging to them",
+          _comp_prow.count("el('td',") == 5
+          and _comp_trow.count("el('td',") == 5
+          and "colspan" not in _comp_prow
+          and "colspan" not in _comp_trow
+          and "el('td',{class:'tmodel'},revCombo)" in _comp_prow
+          and "el('td',{class:'phprio'},prio)" in _comp_prow,
+          repr((_comp_prow.count("el('td',"), _comp_trow.count("el('td',"))))
+    # The head names the column, and column five holds two levers that can never
+    # appear in the same row - so "skills" alone described half the table. The
+    # cell INDEX is a browser claim (assertCompositionColumns); the words are
+    # source, and this is the only place they exist.
+    check("pri10b the fifth heading names BOTH of the things its column holds",
+          "flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',"
+          in M.UI_HTML)
     # The reading order and the freeze both hang off ONE classifier. Pinning the
     # reuse is the point: a second done/cancelled list inside the composition tab
     # would be free to disagree with the Overview and the report about a status,
