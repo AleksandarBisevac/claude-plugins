@@ -217,7 +217,8 @@ page behind it, read against the form rather than instead of it. All of it is
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit:run`.
 - **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
-  assigned ADO bugs (`pull`), or diff link state (`status`). Explicit, idempotent, one
+  assigned ADO bugs (`pull`), cache the board's backlog levels and parent candidates
+  (`parents`), or diff link state (`status`). Explicit, idempotent, one
   direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
   optional fast-path.
 - **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
@@ -438,7 +439,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>" \| priority <phaseId> <tier> \| priority <phaseId> --clear` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. `priority` says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused by name, or forced, in which case the first in manifest order wins); `--clear` unpins. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
-| `/audit:sync` | `push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
+| `/audit:sync` | `push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| parents \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `parents` caches the board's backlog levels and the parent-shaped items on it (read-only against ADO; it writes two `meta.ado` caches and no work item), `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
 **`/audit:panel` sub-commands** — bare `/audit:panel` opens it (prints the
 `http://127.0.0.1:<port>/…` URL and opens your browser), `/audit:panel stop` stops it,
@@ -1248,8 +1249,10 @@ your board:
          "identityMap": { "ana@corp.com": "ana.k@company.com" } }
 ```
 
-That minimal block behaves as it always has. The connector v2 keys (all optional,
-all editable in the panel card; contract in `reference/tracker-sync.md`):
+That minimal block behaves as it always has. The rest of `meta.ado`, all optional
+(contract in `reference/tracker-sync.md`; the panel's ADO card has a control for every
+key below except those marked *not in the panel card*, which it carries through a save
+untouched):
 
 | Key | What it does |
 |---|---|
@@ -1262,6 +1265,24 @@ all editable in the panel card; contract in `reference/tracker-sync.md`):
 | `comments` | opt-in generated comments: `onBlocked` (attempts + outcome + blockers), `onComplete` (sign-off note + commit) |
 | `sprint` | `{ "team": "<team>" }` — resolve the team's CURRENT iteration at push time and stamp items into it; drift is reported and restamped after rollover |
 | `pull` | sprint-pull scoping for shared sprints: `areaPath` and/or `tags` say which items belong to THIS repo; with neither, `pull sprint` refuses to import blind |
+| `parentWorkItem` | the **existing** work item audit work hangs under — a Feature or Epic already on the team's backlog. The manifest-wide **fallback**: a phase declaring its own `adoParent` wins. Absent/null = a free-standing branch nobody planning from that board will see. Not in the panel card |
+| `conventions` | what an item must look like to **belong** on this board — `requiredFields`, `descriptionMustContain`, `tagVocabulary`, `requireParent`. A property of the BOARD: absent means there is no standard to meet, not that the check failed. Graded by `scripts/manifest/_ado_conventions.py`, the same code each CREATE is run through. Not in the panel card |
+| `fields` | `{work item type: {ADO field: literal}}` — what this project **supplies** to a governed board, merged into the create payload *before* `conventions` grades it. A field the connector already maps, or one ADO reports read-only, is refused at validation (`scripts/manifest/_ado_fields.py`). Not in the panel card |
+| `hierarchy` · `parentCandidates` | **caches written by `/audit:sync parents`**, never by hand: this project's backlog type ranks, and the parent-shaped items on the board at the moment of the fetch. Each carries a `fetchedAt` and a `basis`. Absent = never fetched, so every parent link reports `not verified` and the create proceeds |
+
+One more key is not `meta.ado` at all: **`phases[].adoParent`** — where THIS phase
+hangs, overriding `parentWorkItem` for that phase alone. A sibling of the phase's `ado`
+link and never a field inside it, because `ado` is written only by sync and this is
+authored. Three states, and they are three different answers: **absent** falls through
+to `meta.ado.parentWorkItem`; an **object** (`{id, type, title, url, source,
+observedAt}`, only `id` required) names the parent, and its `type` is the basis the
+hierarchy check reads; explicit **null** means it hangs under nothing even when the
+fallback is set — uncategorised on purpose, which is a legitimate outcome and never an
+error. ADO does not enforce its own type hierarchy on an API-created link, so the
+plugin checks it: structurally offline (an item under itself, a declared loop) and, when
+`meta.ado.hierarchy` has been fetched, by backlog rank. A parent is applied at CREATE
+only — a later change is reported by `status` as parent drift and never written behind
+whoever moved the card.
 
 `identityMap` (optional) maps a **ledger identity** — the same form `usage.authorMode`
 records authors and `meta.areas[*].owner` is written in — to that person's ADO email/UPN.
@@ -1277,8 +1298,13 @@ warns on duplicate values.
 - `/audit:sync pull [bugs|sprint]` — import unlinked ADO bugs, or the current sprint's
   PBIs/tasks as **parked proposals** (`/audit:propose materialize` moves them into the
   live plan; a re-pull imports nothing).
+- `/audit:sync parents` — cache the board's backlog levels and its parent-shaped work
+  items into `meta.ado.hierarchy` / `meta.ado.parentCandidates`. Read-only against ADO:
+  it creates nothing, moves nothing and writes no `adoParent`. No hierarchy table ships
+  with the plugin — a Bug is a requirement on one board and a task on the next — so
+  without this the type check reports `not verified` rather than grading against a guess.
 - `/audit:sync status` — read-only drift table (manifest state vs ADO state, sprint
-  drift, enabled/echo line).
+  drift, parent drift, enabled/echo line).
 
 Cards move via `System.State` only — a board column not backed by a state is reported
 as unreachable, never faked. Link creation is journaled (`ado.link`); `lastSyncedAt`
