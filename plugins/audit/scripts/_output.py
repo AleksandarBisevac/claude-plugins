@@ -54,6 +54,7 @@ and is what CI's sweep skips by, so it keeps working with no suite here at all.
 """
 
 import ast
+import hashlib
 import json
 import os
 import sys
@@ -62,8 +63,9 @@ import sys
 # THIS FILE IS THE MARKER, WHICH IS WHY IT IS THE ONE THAT NEVER MOVES. Every other
 # `.py` under `scripts/` finds this directory by walking UP from its own `__file__`
 # until it sees `_output.py` — the preamble `PATH_PREAMBLE` pins and
-# `path_preamble_violations()` counts — so these five names are the ONE place the
-# tree's shape is written down. A `dirname(dirname(...))` anywhere else is that
+# `path_preamble_violations()` counts — so this FILE is the ONE place the tree's
+# shape is written down: the anchors below, and `UI_DIR` further down beside the
+# walk that needs it. A `dirname(dirname(...))` anywhere else is that
 # file's own depth, hard-coded, and it is wrong the moment the file is moved.
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -288,6 +290,192 @@ def kept_files(root, patterns, exts, drop=None):
                 continue
             out.append(rel)
     return sorted(out)
+
+
+# --- which files a surface's pictures are OF ------------------------------------
+# ONE walk for the question "does this committed screenshot still show the current
+# UI", which is NOT the question the version stamp beside it answers. F85: commits
+# landed under `scripts/ui/` after the last re-capture and the recorded version was
+# still current, so `_refs.screenshot_capture_drift()` was green over stale pixels.
+#
+# Pixels cannot close that. F18 settled that a PNG is comparable only on the host
+# that wrote it - font rasterisation has no environment variable - and
+# `tools/capture-screenshots.mjs` declines three repairs by name in its own header.
+# The SOURCES can: they are committed bytes, so a digest over them is
+# host-independent by construction, where the rendered page (which paints the
+# project path) is not.
+#
+# IT LIVES HERE, AT THE ANCHOR, for the same reason the kept-files walk above does:
+# two readers at two layers. `_refs` at layer 1 holds the rule, and the capture asks
+# for the same answer over a pipe. A copy in either would be the second
+# implementation of "which files" that F85's round exists to remove.
+#
+# DERIVED, NEVER DECLARED. Membership comes off a part's own name, so a directory
+# added under `ui/` is covered the day it lands - and a name that answers nobody is
+# REPORTED rather than dropped, because a part no surface's digest covers is a part
+# whose change no picture can ever be red about.
+UI_DIR = os.path.join(SCRIPTS_DIR, "ui")
+
+# The surfaces `ui/` is filed by, and the same names the capture's legs push.
+UI_SURFACES = ("panel", "report")
+
+# Documentation is excluded BY SUFFIX rather than assets admitted by one: a part
+# wearing an unfamiliar extension must be reported, not silently unwatched. Read by
+# `_ui_theme` too, which is the point - a doc suffix the digest honoured and
+# `declared_asset_drift()` did not would be the same drift one directory over.
+UI_DOC_EXT = (".md", ".txt")
+
+# `shared/` ships in EVERY surface: `_report_ui._SCRIPT_PARTS` and
+# `_panel_ui._JS_PARTS` both list its parts, ahead of every surface part.
+_UI_SHARED = "shared"
+
+# The token layer is a `.py` and it ships in BOTH pages - `TOKEN_CSS` heads the
+# report's stylesheet and is substituted into the panel's, and neither sheet is even
+# valid without it. So a colour or a spacing step moving there moves every picture,
+# which is exactly what this must not sleep through.
+#
+# THE WHOLE FILE, not a list of its page-bearing constants. Such a list is a second
+# home: it would need a row the day somebody adds the next constant, and the day it
+# does not get one is the day this goes quiet. The cost is stated rather than
+# hidden - an edit to a CSS lint in that file also asks for a re-capture. Measured
+# before accepting it: of the commits that have touched the file, essentially every
+# one was visual (tokens, palettes, contrast, the CSS part cuts), so the breadth is
+# theoretical here rather than paid.
+#
+# `_panel_ui.py` and `_report_ui.py` are deliberately OUT. They hold part order and
+# the `<style>`/`<script>` wrappers - no visual value - and both are already pinned
+# by name in their assembly suites. Letting them in would oblige `_report_html.py`,
+# then every module that emits markup, then the fixture manifests, and the rule
+# would degenerate into "any commit reddens every picture". So the boundary is the
+# assembled ASSETS, and the renderer is the stated limit rather than an oversight.
+_UI_TOKEN_LAYER = "_ui_theme.py"
+
+
+def ui_surfaces_of(rel):
+    """Which surfaces the `ui/` part at `rel` ships in - `()` when its name answers
+    nobody.
+
+    THE FILING CONVENTION IS THE ANSWER: `panel/`, `panel-css/`, `report/` and
+    `report-css/` name their surface, the root `panel.html` names it in its stem,
+    and `shared/` ships in all of them. Reading it off the name is what keeps this
+    from becoming a second list of parts beside the assemblers' - the thing that
+    drifts. An unknown name returning `()` rather than a guess is what makes the
+    caller able to report it.
+    """
+    part = rel.split("/")[0].split(".")[0]
+    if part == _UI_SHARED:
+        return UI_SURFACES
+    return tuple(s for s in UI_SURFACES if part == s or part.startswith(s + "-"))
+
+
+def ui_surface_sources(scripts_dir=None):
+    """`{"root": dir, "sources": {surface: [rel, ...]}, "unassigned": [...],
+    "error": None|str}`.
+
+    Sorted throughout, so a digest taken over the result is stable across
+    filesystems; `os.walk` order is not. `root` is the directory this answer is
+    about, returned rather than re-joined by the caller: a walk and a digest that
+    each joined their own `ui/` would be a comparison between two trees.
+
+    `error` is set and `sources` left EMPTY for anything that would otherwise be
+    answered by a set that narrowed to nothing - an unwalkable tree, a tree with no
+    part in it, a surface with no part of its own. All three are how a moved or
+    renamed directory presents, and a digest over the remainder would be stable,
+    comparable and about a tree that is not there.
+    """
+    root = UI_DIR if scripts_dir is None else os.path.join(scripts_dir, "ui")
+    walk_errors = []
+    rels = []
+    # `onerror` is the guard, not a courtesy: os.walk swallows an unreadable
+    # directory by default, yielding nothing and raising nothing, so a missing tree
+    # would arrive as "no sources" and the digest over it would read as agreement.
+    for dirpath, dirnames, filenames in os.walk(root, onerror=walk_errors.append):
+        dirnames.sort()
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        prefix = "" if rel_dir == "." else rel_dir + "/"
+        for name in sorted(filenames):
+            if name.startswith(".") or name.endswith(UI_DOC_EXT):
+                continue
+            rels.append(prefix + name)
+    if walk_errors:
+        return {"root": root, "sources": {}, "unassigned": [],
+                "error": "cannot be walked, so which files the pictures are of is "
+                         "unknown rather than unchanged: %s" % (walk_errors[0],)}
+    if not rels:
+        return {"root": root, "sources": {}, "unassigned": [],
+                "error": "holds no assembled part at all - a candidate set that "
+                         "narrowed to nothing must not be spelled the same way as "
+                         "a set that agrees"}
+    sources = dict((surface, []) for surface in UI_SURFACES)
+    unassigned = []
+    for rel in sorted(rels):
+        surfaces = ui_surfaces_of(rel)
+        if not surfaces:
+            unassigned.append(rel)
+            continue
+        for surface in surfaces:
+            sources[surface].append(rel)
+    # A part of its OWN, not a part at all. A surface left holding only `shared/`
+    # is a surface nothing assembles any more, and its digest would still compute,
+    # still be stable and still be comparable - so it would go on clearing every
+    # picture of a page that is gone. That is the shape a renamed surface takes.
+    orphaned = [s for s in UI_SURFACES
+                if not [rel for rel in sources[s] if ui_surfaces_of(rel) == (s,)]]
+    if orphaned:
+        return {"root": root, "sources": {}, "unassigned": unassigned,
+                "error": "holds no part of its own for %s - only parts shared with "
+                         "another surface - so a digest for it would stand for "
+                         "nothing" % (", ".join(orphaned),)}
+    return {"root": root, "sources": sources, "unassigned": unassigned,
+            "error": None}
+
+
+def ui_surface_digests(scripts_dir=None):
+    """`{"digests": {surface: hex}, "unassigned": [...], "error": None|str}`.
+
+    The digest a committed screenshot's sidecar entry is compared against. Every
+    member goes in as `name length\\n` and then its raw bytes - git's own framing,
+    so no pair of names and contents can be reshuffled into the same stream - and
+    the members are sorted, because a digest whose value depended on walk order
+    would move between filesystems without a byte changing.
+
+    BYTES, not decoded text: a digest is not a place to be lenient about encoding,
+    and `read_asset`'s newline argument exists precisely because a CRLF checkout
+    hands back different content than the file holds.
+
+    A member that cannot be read empties `digests` and sets `error`. A digest over
+    a PARTIAL set is a wrong answer wearing the shape of a right one - stable,
+    comparable, and about a different tree than the one on disk.
+    """
+    found = ui_surface_sources(scripts_dir)
+    if found["error"]:
+        return {"digests": {}, "unassigned": found["unassigned"],
+                "error": found["error"]}
+    # The walk's own root and the walk's own token-layer sibling, never re-derived
+    # here: `root` comes back from it for exactly this reason.
+    ui_root = found["root"]
+    token = os.path.join(os.path.dirname(ui_root), _UI_TOKEN_LAYER)
+    members = dict(
+        (surface,
+         sorted([(rel, os.path.join(ui_root, rel.replace("/", os.sep)))
+                 for rel in found["sources"][surface]]
+                + [(_UI_TOKEN_LAYER, token)]))
+        for surface in UI_SURFACES)
+    digests = {}
+    for surface in UI_SURFACES:
+        sha = hashlib.sha256()
+        for name, path in members[surface]:
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read()
+            except OSError as exc:
+                return {"digests": {}, "unassigned": found["unassigned"],
+                        "error": "%s cannot be read, so no digest can stand for "
+                                 "what the pictures are of: %s" % (name, exc)}
+            sha.update(("%s %d\n" % (name, len(data))).encode("utf-8"))
+            sha.update(data)
+        digests[surface] = sha.hexdigest()
+    return {"digests": digests, "unassigned": found["unassigned"], "error": None}
 
 
 # --- the path bootstrap -------------------------------------------------------

@@ -229,14 +229,25 @@ TABLE = (
  ("artifact_version_drift", "docs/demo-large.html", "sub",
   r">audit [0-9]+\.[0-9]+\.[0-9]+</span>",
   (r">audit [0-9]+\.[0-9]+\.[0-9]+</span>", ">audit 0.0.1</span>"), REF, "av1"),
- # RENAMES ONE ENTRY IN THE SIDECAR, which is the narrowest mutation that reaches
- # this rule. Two wider ones were tried and rejected: the recorded VERSION is not a
- # unique anchor (one line per image, so c2 fails), and bumping plugin.json instead
- # reddens the whole version-pin family - measured, it named p1/p3/p4/p7 and not
- # sc1, which is the "red through the wrong case" verdict this table exists to
- # avoid. An image NAME is unique in the sidecar and does not change when the
- # pictures are re-captured, and renaming one leaves the picture unrecorded and the
- # record picture-less at once.
+ # TWO ROWS FOR THE SCREENSHOT RULE, because it now answers two questions through
+ # two code paths and only one of them was ever proved. This one is the SOURCE side
+ # (F85): a picture whose UI has moved under it, which no version stamp can see. A
+ # `ui/` COMMENT is appended rather than a rule changed, because the mutation only
+ # has to move bytes - a behavioural edit would redden the report's own pins too and
+ # make the verdict about the wrong thing. The marker line is unique in its file,
+ # which is what the anchor needs.
+ ("screenshot_capture_drift",
+  "plugins/audit/scripts/ui/report-css/empty-state.css", "suffix",
+  r"^/\* ---- load reveal", "\n/* a byte moved under a committed picture */",
+  REF, "sc1"),
+ # ...and the SIDECAR side. RENAMES ONE ENTRY IN IT, which is the narrowest
+ # mutation that reaches this rule. Two wider ones were tried and rejected: the
+ # recorded VERSION is not a unique anchor (one line per image, so c2 fails), and
+ # bumping plugin.json instead reddens the whole version-pin family - measured, it
+ # named p1/p3/p4/p7 and not sc1, which is the "red through the wrong case" verdict
+ # this table exists to avoid. An image NAME is unique in the sidecar and does not
+ # change when the pictures are re-captured, and renaming one leaves the picture
+ # unrecorded and the record picture-less at once.
  ("screenshot_capture_drift", "docs/screenshots/captured-at.json", "sub",
   r'"areas\.png"', (r'"areas\.png"', '"areas-renamed.png"'), REF, "sc1"), # The config vocabulary. Three rows for the tree-bound half, because it has three
  # failure modes and only the first announces itself. `ui` was read by `_ui_theme`,

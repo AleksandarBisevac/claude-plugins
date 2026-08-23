@@ -863,7 +863,10 @@ def list_themes(project, home=None):
 #
 # Nothing here knows which surface is asking. The asset NAMES stay with the surface
 # that owns them; what lives here is the contract every read of them obeys.
-UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
+# Read from the anchor rather than joined here. The anchor's own walk needs the
+# same directory (`ui_surface_digests()`, at layer 0, for the screenshot rule),
+# and two joins of one path is how a restructure moves one of them.
+UI_DIR = _output.UI_DIR
 
 
 # Every file `scripts/ui/` holds, DECLARED once. Three suites used to carry their
@@ -879,7 +882,10 @@ UI_DIR = os.path.join(_output.SCRIPTS_DIR, "ui")
 # A whitelist makes every new kind of file default to unwatched; this way a part
 # with an unfamiliar extension is reported instead of ignored, which is the loud
 # direction.
-_DOC_SUFFIXES = (".md", ".txt")
+# From the anchor for the same reason `UI_DIR` is: the screenshot rule's walk skips
+# documentation too, and a suffix honoured by one of the two walks and not the other
+# would be a README inside a digest, or an asset outside this comparison.
+_DOC_SUFFIXES = _output.UI_DOC_EXT
 
 # THE CASCADE ORDER of the report's stylesheet parts, declared once. Two rules
 # of equal specificity are decided by which is read last, so this sequence is

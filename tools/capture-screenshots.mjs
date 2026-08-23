@@ -5315,6 +5315,64 @@ async function noDialog(page, name) {
 const CAPTURED_AT = 'captured-at.json';
 
 /**
+ * Which leg is holding the shutter — read from `legsRun`, never from the file name.
+ *
+ * The leg bodies push their own name as they enter and the legs run in sequence, so
+ * the last name pushed is the one taking the picture. Deriving it from the `panel-`
+ * prefix instead would be a second opinion about which surface a picture is OF, held
+ * by a naming habit rather than by the code that opened the shutter — and the whole
+ * job of the sidecar is to write down what was actually true at that moment.
+ */
+const currentLeg = () => legsRun[legsRun.length - 1];
+
+/**
+ * The digest of the SOURCES each surface is assembled from — ASKED FOR, not computed.
+ *
+ * `_output.ui_surface_digests()` is the one home for which files a surface's pictures
+ * are of, and this asks it over a pipe. A walk here would be the second
+ * implementation of "which files", which is the defect F85's round exists to remove:
+ * right on the day it was written, and free to drift from the assembler's afterwards.
+ *
+ * ONCE PER RUN, not per shot. The sources cannot move while a capture is in flight,
+ * and a digest that changed between two shots would leave one sidecar describing two
+ * trees. Read before the first shutter for the other half of that: a run that cannot
+ * get the digest should say so having written nothing.
+ *
+ * Reached through the resolver rather than by joining a directory name, for the reason
+ * the assembled-page read further up gives — `_output.py` IS the anchor, so putting
+ * its own directory on sys.path is all it needs.
+ *
+ * FAILURE IS RETURNED, not thrown, and it is loud twice over: this run fails by name,
+ * and the images it writes carry no digest, which `_refs.screenshot_capture_drift()`
+ * reports as a missing basis rather than passing over.
+ */
+let UI_DIGESTS = null;
+
+function loadUiSourceDigests() {
+  const dir = path.dirname(resolveScript('_output.py'));
+  let parsed;
+  try {
+    parsed = JSON.parse(py(['-c', 'import json, sys; '
+                                + 'sys.path.insert(0, sys.argv[1]); import _output; '
+                                + 'sys.stdout.write(json.dumps('
+                                + '_output.ui_surface_digests()))', dir]));
+  } catch (err) {
+    return `_output.ui_surface_digests() could not be read, so no picture this run `
+         + `writes can say which UI it is of: ${err.message}`;
+  }
+  if (parsed.error) return `the UI sources cannot be digested: ${parsed.error}`;
+  if (parsed.unassigned?.length) {
+    return `scripts/ui/ holds part(s) belonging to no surface `
+         + `(${parsed.unassigned.join(', ')}), so no picture would ever be red `
+         + `about a change to them`;
+  }
+  UI_DIGESTS = parsed.digests;
+  note(`ui sources: ${Object.entries(UI_DIGESTS)
+    .map(([s, d]) => `${s} ${d.slice(0, 12)}`).join(', ')}`);
+  return null;
+}
+
+/**
  * Record the version this image was photographed at, beside the image.
  *
  * WHY A SIDECAR AND NOT THE PIXELS. The panel paints its own version in the
@@ -5340,8 +5398,17 @@ const CAPTURED_AT = 'captured-at.json';
  * has still changed the images on disk, and an entry whose hash no longer
  * matches its file is the loud version of that. The hash is what stops this file
  * being edited into agreement without the pictures being the ones captured.
+ *
+ * AND THE VERSION IS NOT THE WHOLE CLAIM (F85). A stamp says which release a
+ * picture was taken at; it cannot say whether the UI has moved since, and it did —
+ * commits landed under `scripts/ui/` after a re-capture and the rule stayed green
+ * over pictures of a panel that no longer existed. So each entry also carries the
+ * surface it belongs to and the digest of that surface's SOURCES, which are
+ * committed bytes and therefore comparable on any host, unlike the pixels. Per
+ * surface for the same reason the version is per file: a report-only change must
+ * not ask for the panel's pictures back.
  */
-function recordCapture(name, file) {
+function recordCapture(name, file, surface) {
   const sidecar = path.join(OUT, CAPTURED_AT);
   let body = { note: '', images: {} };
   try {
@@ -5351,12 +5418,27 @@ function recordCapture(name, file) {
   const version = JSON.parse(
     readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
   body.note = 'Written by tools/capture-screenshots.mjs. Each entry is the plugin '
-    + 'version that was in the picture when that file was written, with the hash of '
-    + 'the bytes it was written as. _refs.screenshot_capture_drift() compares both.';
-  body.images[`${name}.png`] = {
+    + 'version that was in the picture when that file was written, the hash of the '
+    + 'bytes it was written as, the surface it is a picture of, and the digest of '
+    + 'that surface\'s UI sources at the moment of the shutter '
+    + '(_output.ui_surface_digests). _refs.screenshot_capture_drift() compares all '
+    + 'of them; an entry missing the digest is a finding, not silence.';
+  if (!surface) {
+    fail(`${name}: no capture leg was running when the shutter opened, so which `
+       + `surface this picture is of cannot be recorded`);
+  }
+  const entry = {
     sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
     version: version,
   };
+  if (surface) entry.surface = surface;
+  // Omitted rather than defaulted when the digest is unavailable. A placeholder
+  // would be a basis the rule could compare and clear, which is the one thing a
+  // missing basis must never be able to do.
+  if (surface && UI_DIGESTS && UI_DIGESTS[surface]) {
+    entry.uiDigest = UI_DIGESTS[surface];
+  }
+  body.images[`${name}.png`] = entry;
   const ordered = {};
   Object.keys(body.images).sort().forEach((k) => { ordered[k] = body.images[k]; });
   writeFileSync(sidecar, `${JSON.stringify({ note: body.note, images: ordered }, null, 2)}\n`);
@@ -5370,7 +5452,7 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
   await page.screenshot({ path: file, fullPage: full });
-  recordCapture(name, file);
+  recordCapture(name, file, currentLeg());
   note(`wrote ${path.relative(REPO, file)} (${statSync(file).size} B)`);
 }
 
@@ -5703,6 +5785,13 @@ async function main() {
       + '  npx --yes --package=playwright@1.56.0 node tools/capture-screenshots.mjs');
     process.exit(2);
   }
+
+  // BEFORE the scratch tree and before any shutter: a run that cannot say which UI
+  // its pictures are of should say so having written nothing, and --check reaches
+  // this line too, so the pipe to `_output.py` is exercised by the gate rather than
+  // only by the run that needs it.
+  const uiProblem = loadUiSourceDigests();
+  if (uiProblem) fail(uiProblem);
 
   const work = claimScratch();
   const servers = [];
