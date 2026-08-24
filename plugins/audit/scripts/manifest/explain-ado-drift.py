@@ -40,6 +40,18 @@ The payload is what the command already fetched for its diff:
 would be a second answer. Omit it and each row says the state comparison was not
 supplied rather than implying the item is in sync.
 
+THE MANIFEST IS READ THROUGH `_manifest_io.load_manifest`, NEVER WITH A BARE
+`json.load`. Both storage layouts are current — `layout` is a CHOICE, not a version
+— and on the SHARDED one the file at `<manifest>` is an INDEX whose phases are
+stubs: the tasks, and every `ado` link on them, live in the phase shards beside it.
+A raw read therefore hands `_ado_drift.join()` a manifest with no tasks in it, and
+the join has no way to tell that from a manifest whose tasks are genuinely
+unlinked — so every shard-held link comes back as `NOT IN MANIFEST`, which is a
+confident wrong answer about somebody's board and the exact failure this command
+exists to prevent. It was that, on a real board, until the loader was wired in
+here; the loader is where the two layouts are made to read the same, and going
+around it is how a consumer stops being layout-agnostic without anything saying so.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_explain_ado_drift.py`.
 """
@@ -70,6 +82,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _ado_drift as _drift  # noqa: E402  (the rule this command carries)
+import _manifest_io as _mio  # noqa: E402  (the loader that assembles both layouts)
 
 USAGE = ("usage: explain-ado-drift.py <manifest> --items <file.json|-> "
          "[--json] [--tolerance <seconds>]\n")
@@ -82,7 +95,13 @@ ORIGIN_WORDS = {_drift.ORIGIN_CREATED: "created here",
 
 
 def _read_json(path, what):
-    """(value, error). Reads `-` from stdin, like check-ado-item.py does."""
+    """(value, error). Reads `-` from stdin, like check-ado-item.py does.
+
+    THE `--items` PAYLOAD, AND NOTHING ELSE. That payload is one JSON document the
+    caller just wrote, so a plain parse is the whole job. The manifest is not that
+    shape — it may be an index with its phases on disk beside it — and reading it
+    here is the bug this file was fixed for; `_read_manifest` below is its door.
+    """
     try:
         if path == "-":
             return (json.load(sys.stdin), None)
@@ -90,6 +109,26 @@ def _read_json(path, what):
             return (json.load(fh), None)
     except Exception as exc:
         return (None, "cannot read/parse %s %s: %s" % (what, path, exc))
+
+
+def _read_manifest(path):
+    """(assembled manifest, error). The SHARD WALK, which `_read_json` cannot do.
+
+    Same `(value, error)` shape and same message prefix as `_read_json` above, so
+    the caller's exit-2 branch is unchanged — but the value is the ASSEMBLED
+    manifest, which on the sharded layout means the phase bodies have been read
+    off disk and merged into their index stubs.
+
+    A shard that will not open raises here and reaches the operator as a refusal
+    naming THAT file (the path travels in the exception), not as a drift table
+    missing a phase. The alternative — skipping the unreadable shard and joining
+    what is left — would report every link it held as `NOT IN MANIFEST`, which is
+    the same wrong answer as the raw read, arrived at one layer down.
+    """
+    try:
+        return (_mio.load_manifest(path), None)
+    except Exception as exc:
+        return (None, "cannot read/parse manifest %s: %s" % (path, exc))
 
 
 def _state_cell(row):
@@ -185,7 +224,7 @@ def main(argv):
                              % (tolerance,))
             return 2
 
-    manifest, err = _read_json(manifest_path, "manifest")
+    manifest, err = _read_manifest(manifest_path)
     if err:
         sys.stderr.write("ERROR: %s\n" % (err,))
         return 2

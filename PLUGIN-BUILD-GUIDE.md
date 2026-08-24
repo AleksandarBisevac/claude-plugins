@@ -98,6 +98,8 @@ claude-plugins/                           # this repo (personal, public)
           ado-connect.py                  # the door onto it: the read-only ladder to a first working connector
           _ado_drift.py                   # who wrote a linked work item last, and whether pushing overwrites them
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
+          _ado_fetch.py                   # the linked side of a board in ONE query per chunk, bounded, with the field list that is a contract
+          fetch-ado-items.py              # the door onto it: every linked item in one call per chunk, partial answers named rather than hidden
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate, and the rows both surfaces list
@@ -275,6 +277,7 @@ L2:
   _usage_spend -> _output, _usage_core
 
 L3:
+  _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
@@ -321,7 +324,8 @@ L7:
   audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _output
-  explain-ado-drift -> _ado_drift, _output
+  explain-ado-drift -> _ado_drift, _manifest_io, _output
+  fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   materialize-proposal -> _fmt, _manifest_io, _output, _proposals
@@ -1490,6 +1494,43 @@ off within a day. 0 means the question was answered, 2 means the input could not
 payload that is not a list is exit 2 rather than an empty table, because a table of zero rows
 reads as a clean board. The caller keeps its existing confirm gate; this only makes sure that
 gate is asked with the truth in hand.
+
+### `plugins/audit/scripts/manifest/_ado_fetch.py`
+Reading the linked side of a board in **one query per chunk**, with a bound on each (layer 3).
+`sync.md` step 3 said "batch-fetch the ADO side" and then named `az boards work-item show`,
+which takes a single `--id` and rejects a comma list. An instruction that asks for a batch and
+names a per-item command cannot be obeyed, so the run looped — one CLI start-up per linked
+item. Measured on the lab board, that loop cost roughly half a second an item where one
+`az boards query` answered for all of them in about the time of a single `show`: a per-item
+constant against a per-call one, so the gap only widens.
+
+**Three things a paragraph cannot be held to.** The chunk size, the field list and the time
+bound are values here, with cases against them, because the defect being fixed *was* a prose
+instruction nothing could check. `FIELDS` is a contract and lives here only — `az boards query`
+returns exactly the fields the `SELECT` names, so a field dropped from it comes back absent and
+reads as *the board does not have one*; both documents point at this tuple rather than
+restating it.
+
+**The ceiling is on the WIQL text, not on a count of ids**, which is why `DEFAULT_CHUNK` is an
+operating point and `WIQL_MAX_CHARS` is the invariant: a chunk sized at the boundary starts
+refusing the day the board's ids grow a digit, so `oversized_queries()` measures the text every
+time. `run_chunk` returns a named status and never a bare list, because "the board returned no
+rows" and "the board did not answer" are different answers and only the first is safe to act
+on — a hang says nothing at all, which is worse than a failure.
+
+### `plugins/audit/scripts/manifest/fetch-ado-items.py`
+The door onto `_ado_fetch` (layer 7), same shape as `explain-ado-drift.py` over `_ado_drift`: a
+real command because the caller is orchestrator prose reaching Python through Bash, and a
+`python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses.
+
+**A gate, unlike `explain-ado-drift.py`.** That command exits 0 whatever the answer, because on
+a shared board "somebody else moved this card" is the normal case. Here exit 1 means at least
+one chunk did not answer and **the payload is partial** — it names the ids it has no news about,
+and a diff or a push taken from it would read an absent row as an unchanged one. Exit 2 is a
+manifest that could not be read or a missing `meta.ado`. It reads the manifest through
+`_manifest_io.load_manifest`, so a sharded manifest's phase-held links are planned for like any
+other; `--dry-run` prints the queries without spending a call, and exits 1 when a chunk would be
+refused, because finding that out before the calls is the point of printing the plan.
 
 ### `plugins/audit/scripts/manifest/_ado_conventions.py`
 `meta.ado.conventions` — what a work item must look like to **belong** on a board (layer 1).

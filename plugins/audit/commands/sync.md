@@ -56,6 +56,57 @@ without one.
 7. `push`/`pull` write the manifest — hold the **concurrency lock** (see conventions →
    Concurrency lock) around those writes; `status` is read-only and never locks.
 
+## Every ADO call is bounded, and says so when the bound expires
+
+**A hang is worse than a failure.** A failure names what happened and what was
+written; a hang says nothing at all, and the operator cannot tell a slow board from a
+dead one, an expired credential from a firewall, or a run that is still working from
+a run that will never finish. `status` is the worst case, because it advertises
+itself as safe and read-only — so it is the one people leave running.
+
+Every rule below applies to **every** ADO call this command makes, on both
+transports, in every subcommand.
+
+1. **Give each call an explicit time bound** — the `timeout` on the Bash invocation
+   itself. Not a `timeout <n>` prefix inside the command: that is GNU coreutils and a
+   stock macOS has neither `timeout` nor `gtimeout`, so wrapping it would be an
+   instruction that silently does nothing on the platform this was reported from.
+   Per CALL, not per run:
+
+   | Call | Bound |
+   |---|---|
+   | one work-item read or write (`work-item show` / `create` / `update` / `relation`) | 30s |
+   | one batch query chunk | `fetch-ado-items.py` owns it — `--dry-run` prints the default, `--timeout` overrides |
+   | project metadata (`devops invoke` backlog configuration, iteration resolution) | 30s |
+
+   The basis for those, and the reason they are generous rather than tight: a single
+   round trip against a live board measured well under two seconds each way
+   (tracker-sync.md → live-gate F5, which carries the probe). A call that wants more
+   than an order of magnitude beyond that is not slow, it is stuck.
+
+2. **Name the outcome on expiry.** Print
+   `ADO TIMEOUT: <which call> did not answer within <N>s` followed by **what was and
+   was not written** — for `status`, `nothing was written; this table is incomplete`;
+   for `push`, the items already created or updated by id, because the manifest links
+   for those are already on disk. Then STOP that subcommand. Never retry silently and
+   never carry on with the rows you happen to have: **"the board returned no items"
+   and "the board did not answer" are different answers**, and only the first one is
+   safe to act on. A drift table missing the half that timed out reads as a clean
+   board for that half.
+
+3. **Make a credential prompt an error rather than silence.** Give every `az` call
+   `--only-show-errors` — the CLI's upgrade and extension notices go to stderr on
+   every call, and suppressing them is what leaves a real `ERROR:` line legible there
+   rather than buried; stdout was always the JSON alone — and redirect stdin from
+   `/dev/null` so nothing can sit waiting for a token to be typed. `az boards` with
+   no stored credential already exits non-zero
+   naming `az login` / `az devops login` rather than prompting, which is the behaviour
+   wanted; the redirect is what keeps that true of any call that would prompt.
+
+4. **The MCP transport gets the same bounds and the same named outcome**, applied to
+   the tool call. It has no `--only-show-errors` and no stdin to redirect, so rule 3
+   is `az`-only; rules 1 and 2 are not.
+
 ## Field mapping (both transports)
 
 | Manifest | ADO (defaults; types from `meta.ado.types`) |
@@ -263,15 +314,27 @@ failed echo.
 2. Build the plan: for each in-scope item —
    - `item.ado` **null/absent** → CREATE (`az boards work-item create --type <type>
      --title ... --fields ... --output json`);
-   - `item.ado.id` set → fetch current (`az boards work-item show --id <id> --output json`),
-     **diff the mapped fields**, and only when something differs → UPDATE
-     (`az boards work-item update`). No-op items are skipped.
+   - `item.ado.id` set → **diff the mapped fields**, and only when something differs
+     → UPDATE (`az boards work-item update`). No-op items are skipped.
 
-   The fetch above already returns `System.ChangedBy` and `System.ChangedDate`;
-   keep them, they are what step 2c reads.
+   **Fetch the linked side for that diff with the same door `status` step 3 uses** —
+   `fetch-ado-items.py <manifest> --out fetched.json`, one query per chunk, bounded.
+   Not one `az boards work-item show` per item: a push over a whole manifest reads
+   exactly as many items as `status` does, so a per-item loop here would be the same
+   defect one subcommand over. **Exit 1 means the payload is partial, and a push must
+   not diff from it** — an item whose current state was never read would be diffed
+   against nothing and updated blind. `work-item show` keeps its place further down
+   for what it is actually for: reading ONE item back after writing it
+   (tracker-sync.md → parent read-back).
+
+   The batch already returns `System.ChangedBy` and `System.ChangedDate`; keep them,
+   they are what step 2c reads, and a fetch that dropped them would leave 2c unable to
+   tell your own write from somebody else's.
 2c. **Whose card is this, and who moved it last — every UPDATE, before the confirm.**
-   Write the items you fetched as a JSON list (each `{id, fields, mapped}`, where
-   `mapped` is the `stateMap`-translated status from the table above) and run:
+   Take the payload `fetch-ado-items.py --out` already wrote (each `{id, fields}`),
+   add `mapped` to each entry — the `stateMap`-translated status from the table
+   above, which the fetch deliberately does not invent because that table lives here
+   and a second copy would be a second answer — and run:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/explain-ado-drift.py" \
@@ -549,10 +612,52 @@ Read-only, no ADO writes, no manifest writes.
    DISABLED banner from Preflight 3 when off), `sprint: <resolved path>` or
    `sprint: unresolvable (team '<t>')` when resolution fails.
 2. Count linked vs unlinked bugs/tasks/phases.
-3. For linked items, batch-fetch the ADO side (`az boards work-item show`) and print:
+3. For linked items, fetch the ADO side **in one query per chunk — never one call per
+   item** — and print:
    `manifest id | title | manifest status | ado id | ado state | drift?` — drift = the
    `stateMap`-mapped state differs from the ADO state. Add sprint drift where stamped:
    `ado.iterationPath` ≠ the currently-resolved iteration → `sprint drift (push restamps)`.
+
+   **`az boards work-item show` is not the command for this and never was.** It takes
+   a single `--id` and refuses a comma list, so the instruction that named it while
+   asking for a batch could not be obeyed: the run looped, and every linked item paid
+   a fresh CLI start-up (tracker-sync.md → live-gate F5). **Do not re-derive the batch
+   here** — the chunk size, the field list and the per-call bound are the three things
+   prose cannot be held to, which is exactly why they are code now:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/fetch-ado-items.py" \
+     <manifest> --out fetched.json [--chunk <n>] [--timeout <seconds>]
+   ```
+
+   Exit 0 = every chunk answered and `fetched.json` is complete for the ids asked
+   for. **Exit 1 = at least one chunk did not answer, so the payload is PARTIAL** —
+   it names the ids it has no news about, and you stop rather than build a table from
+   it, because an absent row is not an unchanged one. Exit 2 = the manifest or
+   `meta.ado` could not be read. `--dry-run` prints the queries and the call count
+   without spending a call.
+
+   It reports the shape of what it did rather than implying one call —
+   `N id(s) in M quer(y|ies) (chunk limit L, bound Bs per query)`, then
+   `fetched N of M linked item(s)` — and prints those **even at zero**, because a
+   count that appears only on success cannot be told from a count nobody computed. An
+   id it asked for that no row came back for is named (`NO ROW: #<id>`): a work item
+   deleted or moved out of the project is a thing to say, not a row to drop from a
+   table that then looks complete.
+
+   **The chunk size is a limit and is stated as one.** The service's real ceiling is
+   on the WIQL TEXT (`VS403309`, quoted with its probe in tracker-sync.md →
+   live-gate F5), so the default id count is an operating point far below it — a
+   chunk sized at the ceiling would start refusing the day an id grew a digit. Print
+   the field list, the chunk limit and the bound rather than restating them here:
+   `fetch-ado-items.py <manifest> --dry-run`.
+
+   **When the session carries the MCP tools** you may run the same WIQL through
+   `mcp__azure-devops__wit_query` instead — one call, no subprocess. It is the
+   transport this repo has NOT been able to probe (the MCP server authenticates as a
+   different identity than the lab board grants), so take the `SELECT` list from
+   `--dry-run` above, and give the tool call the same bound and the same named
+   outcome. Where the two could disagree, the `az` shapes are the measured ones.
 
    **A difference has THREE readings, not two**, and the third is the common one on
    a board several teams write to: somebody else moved this card after we last
@@ -573,9 +678,13 @@ Read-only, no ADO writes, no manifest writes.
    applied at CREATE only, so a linked item whose `adoParent` no longer matches the
    board is a difference to REPORT and never one to fix silently: the card may have
    been moved by a person, and re-parenting behind them is the same override this
-   feature exists to undo. From the `System.Parent` you already fetched in step 3
-   (it comes back on a plain `show`, no `--expand relations`) against the resolved
-   parent from `resolve-ado-parent.py --json`:
+   feature exists to undo. From the `System.Parent` you already fetched in step 3 —
+   it is in that `SELECT` list, and it needs no `--expand relations` on either the
+   query or a plain `show` — against the resolved parent from
+   `resolve-ado-parent.py --json`. **An item with no board parent comes back with the
+   key ABSENT, never `null`** (measured, live-gate F5), and that is the distinction
+   the cells below rest on: *the board hangs it nowhere* and *we did not ask* must not
+   collapse into one row.
    - `parent ok` — they agree;
    - `parent drift: manifest #<a>, board #<b> — applied at create only, so push
      will NOT re-parent` — say both ids and say that push leaves it alone, or the
