@@ -245,6 +245,16 @@ LAYERS = (
      #   `_manifest_typos`      the did-you-mean detectors (model ids, skill names)
      #   `_manifest_crossrefs`  ids, references, cycles, fileIndex, bugs, proposals
      "_manifest_phases", "_manifest_ado", "_manifest_typos", "_manifest_crossrefs",
+     # `_warning_groups` is the other half of the same story: not a rule, but the
+     # SHAPE the rules' warnings are printed in - nineteen lines that differ only
+     # in the task they name, rendered as one. It sits beside the pieces rather
+     # than above them because it never reads a rule; it reads the LINES, plus
+     # `_manifest_io.iter_tasks` (L1) for the only sound task -> phase map and
+     # `_fmt.plural` (L1) so a noun agrees with its count in one place. L2 is
+     # therefore its floor, and free: every consumer is L4 or higher (the doctor's
+     # setup check, the panel's write, and the four commands that print a
+     # revalidation), and nothing at L2 reaches it.
+     "_warning_groups",
      # `_ado_drift` answers who wrote a linked work item last, and whether pushing
      # would overwrite them. It is L2 rather than L1 for one concrete reason: it
      # reuses `_usage_core.parse_ts` (L1) instead of writing the tree's FOURTH ISO

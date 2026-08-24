@@ -118,6 +118,7 @@ import _panel_write           # noqa: E402  (one answer to "where is the manifes
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
 #                                            not reimplemented)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -509,8 +510,10 @@ def _locked_add(args, project, config, mpath, title, out):
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
         return E_INVALID
+    written_manifest = {}
     try:
-        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
     except Exception as exc:
         findings, warnings = ["cannot re-read the written manifest: %s"
                               % exc], []
@@ -544,7 +547,11 @@ def _locked_add(args, project, config, mpath, title, out):
         out("  note: not on disk (a new file?): %s" % fpath)
     for row in healed:
         out("  healed: %s" % _panel_write._fmt_change(row))
-    for line in warnings:
+    # Grouped, not one line per item: a plan whose phases carry no area tag put
+    # nineteen identical advisories under every `add`, and what they buried was
+    # the line about THIS task. `--json` keeps every warning - see `result` above,
+    # which is a machine surface and does not read.
+    for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.add row")
@@ -660,8 +667,10 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
         return E_INVALID
+    written_manifest = {}
     try:
-        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
     except Exception as exc:
         findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
     if findings:
@@ -684,7 +693,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
     if cascaded:
         out("  also cancelled inside it: %s" % ", ".join(c for c in cascaded if c))
-    for line in warnings:
+    for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the %s.cancel row" % kind)

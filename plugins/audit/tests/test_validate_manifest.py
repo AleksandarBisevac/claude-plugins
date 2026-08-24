@@ -6,7 +6,7 @@ The cases for `validate-manifest.py` - the command, which is all that file is no
 and this file substitutes underscores; see `test_migrate_manifest.py` for both
 halves of that rule. `M` is the module under test.
 
-WHY THIS SUITE IS FOUR CASES AND NOT 131. It was 131, when the rules lived in the
+WHY THIS SUITE IS SHORT AND NOT 131. It was 131, when the rules lived in the
 same file. They do not: `_panel_state` (L5), `audit-doctor`, `audit-status` and
 `migrate-manifest` all needed `validate()` and all four reached it with
 `_loader.load_script("validate-manifest.py")`, which `_deps.layer_violations()`
@@ -31,6 +31,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import copy
+import io
 import json
 import os
 import sys
@@ -41,6 +42,42 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("validate-manifest.py", modname="validate_manifest")
+
+
+def _run(argv):
+    """`(exit code, stdout)` — the printed lines are half this command's contract.
+
+    Counting them is the point rather than looking for one: the whole subject of
+    c12 is HOW MANY lines a block of identical warnings becomes, and a presence
+    assertion is green either way.
+    """
+    buf, real = io.StringIO(), sys.stdout
+    sys.stdout = buf
+    try:
+        code = M.main(argv)
+    finally:
+        sys.stdout = real
+    return code, buf.getvalue()
+
+
+def _skills_plan(counts):
+    """A plan whose untagged phases hold tasks resolving no skills.
+
+    The leading TAGGED phase is what makes the rule fire at all — `_check_skills`
+    is gated on the manifest using skills somewhere, so without it the block
+    under test is empty and c12 would pass over nothing.
+    """
+    phases = [{"id": "PT", "title": "T", "status": "pending", "area": "core",
+               "tasks": [{"id": "PT.1", "title": "t", "status": "pending"}]}]
+    for pid, n in counts:
+        phases.append({"id": pid, "title": pid, "status": "pending",
+                       "tasks": [{"id": "%s.%d" % (pid, i + 1), "title": "t",
+                                  "status": "pending", "skills": []}
+                                 for i in range(n)]})
+    return {"meta": {"version": 2,
+                     "areas": {"core": {"root": "src",
+                                        "skills": ["writing-python"]}}},
+            "phases": phases}
 
 
 # --- the fixture the exit-code cases start from -------------------------------
@@ -117,6 +154,57 @@ def _cases(record):
            "the exit codes too",
            callable(getattr(M, "main", None))
            and not hasattr(_manifest_rules, "main"))
+
+    fd2, path2 = tempfile.mkstemp(suffix=".json")
+    os.close(fd2)
+    try:
+        _cases_output(record, path2)
+    finally:
+        if os.path.exists(path2):
+            os.unlink(path2)
+
+
+def _cases_output(record, path):
+    """The printed contract: how many lines a repeated warning becomes."""
+    # The plan the defect was measured on — four untagged phases holding
+    # 7 + 5 + 1 + 6 tasks, which is what produced the block this collapses.
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(_skills_plan((("P0", 7), ("P1", 5), ("BF1", 1), ("P8", 6))), fh)
+    code, text = _run([path])
+    warn_lines = [ln for ln in text.splitlines() if ln.startswith("WARNING: ")]
+    vcode, vtext = _run([path, "--verbose"])
+    vwarn = [ln for ln in vtext.splitlines() if ln.startswith("WARNING: ")]
+    record("c12 a rule that fires once per task prints ONE line naming the count "
+           "and the phases, and `--verbose` still prints every one - counted on "
+           "both sides, because a collapse that also emitted the members would "
+           "satisfy either assertion alone: %d line(s), %d with --verbose"
+           % (len(warn_lines), len(vwarn)),
+           code == 0 and vcode == 0
+           and len(warn_lines) == 1 and len(vwarn) == 19
+           and warn_lines[0].startswith("WARNING: 19 tasks in 4 phases "
+                                        "(P0, P1, BF1, P8; --verbose names each): ")
+           and text.rstrip().endswith("19 warning(s))"))
+
+    # The negative that pairs with it, and the reason findings were left alone:
+    # a finding stops the command and is read item by item. Three of them share
+    # one body here, so a collapse applied to the wrong list would print one.
+    bad = _valid_manifest()
+    for task in bad["phases"][0]["tasks"]:
+        task["blockedBy"] = ["ZZ"]
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(bad, fh)
+    fcode, ftext = _run([path])
+    flines = [ln for ln in ftext.splitlines() if ln.startswith("FINDING: ")]
+    record("c13 findings that share one body are NOT collapsed - two identical "
+           "messages naming two tasks stay two lines, and the INVALID tail still "
+           "counts them: %d line(s)" % (len(flines),),
+           fcode == 1 and len(flines) == 2
+           and "INVALID: 2 finding(s)" in ftext)
+
+    record("c14 `--verbose` is a flag and not the path - passing it alone is "
+           "still the usage error it was, so the flag cannot be mistaken for a "
+           "manifest and silently validate nothing",
+           M.main(["--verbose"]) == 2)
 
 
 def _selftest():

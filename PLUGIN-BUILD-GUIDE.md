@@ -115,6 +115,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
           _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
+          _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
@@ -278,6 +279,7 @@ L2:
   _usage_economics -> _output, _usage_core
   _usage_routing -> _output, _usage_core
   _usage_spend -> _output, _usage_core
+  _warning_groups -> _fmt, _manifest_io, _output
 
 L3:
   _ado_fetch -> _ado_drift, _output
@@ -294,7 +296,7 @@ L3:
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _output
-  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
+  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
@@ -315,7 +317,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _areas, _gate_feed, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
+  _panel_write -> _ado_parent, _areas, _gate_feed, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
@@ -325,23 +327,23 @@ L7:
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
-  audit-task -> _manifest_io, _output, _panel_write
+  audit-task -> _manifest_io, _output, _panel_write, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  materialize-proposal -> _fmt, _manifest_io, _output, _proposals
+  materialize-proposal -> _fmt, _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
-  set-priority -> _manifest_io, _output, _panel_write, _priority
+  set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   validate-config -> _config_rules, _output
-  validate-manifest -> _manifest_io, _manifest_rules, _output
+  validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
 ```
 
@@ -1717,11 +1719,38 @@ takes the index `_manifest_phases` produced plus, for three of them, the manifes
 returns its own `(findings, warnings)` — no accumulator shared, no order depended on, so a
 case can call any of them with a hand-built index and no manifest anywhere near it.
 
+### `plugins/audit/scripts/manifest/_warning_groups.py`
+The **shape** a repeated warning prints in (layer 2), and the reason it is not inside the rule
+that produced it. On a real plan the unresolved-skills advisory printed one line per task —
+every mutating command, every run — and what it cost was not the verbosity but the signal
+those lines buried: a priority warning naming a phase that waits on work nobody has done sat
+inside the block, unread. `validate()` has no notion of a repeated finding at all, so every
+per-item rule has this latent; repairing it where the lines are rendered covers the next one.
+
+Two warnings are **one finding** when the text after their locator is equal byte for byte —
+which needed no change to what a warning carries, because a warning is already
+`"<kind> <ident>: <body>"` wherever it names an item and `locator()` round-trips. Equality is
+the conservative reading: a differing parenthetical basis keeps its own line, since the basis
+is half of what the reader acts on. What the string could *not* decide is which phase a task
+belongs to — `P0.1` implies `P0` only by a convention the validator merely warns about — so
+the owner is read from `_manifest_io.iter_tasks`, and a caller with no manifest degrades to
+naming items rather than to guessing.
+
+A group of one renders its original line verbatim. Above `NAMED_MAX` the line names the
+owning phases and the command that names every id; findings are deliberately **not** collapsed
+(they stop the command and are read one at a time, and their count already has a line that
+prints it). Groups render in first-occurrence order, so two runs over one file print the same
+bytes.
+
 ### `plugins/audit/scripts/manifest/validate-manifest.py`
 The command over those rules, and nothing else: read the file, print `WARNING:`/`FINDING:`
 lines, choose the exit code. Exit 0 clean (warnings allowed) / 1 findings / 2
 usage-or-unreadable. It re-exports exactly one name (`validate`), and a case fails if a
-second one creeps back.
+second one creeps back. Warnings go through `_warning_groups` on the way out, so a rule that
+fires once per task prints one line naming the count and the phases; `--verbose` prints them
+one per item and is the flag every elided line names. Findings are printed as they come — see
+that module for why they are not grouped. The `OK:` tail keeps counting WARNINGS and not
+lines, because the two are meant to differ and the collapsed line says its own size aloud.
 
 ### `plugins/audit/scripts/status/_status_facts.py`
 What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that
