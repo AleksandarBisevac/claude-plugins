@@ -4,48 +4,6 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
-
-**A phase's priority is set by the command named for phases.** `/audit:phase priority <phaseId>
-<tier|--clear>` is the spelling. The verb was `/audit:task priority`, and it took a phase id and
-changed a phase: `phase.priority` is the field the schema has and there is no `task.priority` at
-all, so the command list taught the exact opposite of the truth — that tasks have priorities and
-phases do not. `/audit:phase cancel <phaseId> --reason "<why>"` is the same repair to the smaller
-case: closing a whole phase was reachable only through a command called `task`, so a reader
-looking for how to abandon a phase found nothing under the phase's own command.
-
-**`/audit:phase` dispatches on its first token, and the rule is lexical.** `priority` and `cancel`
-are the only reserved words; any other first token is a phase id, so `/audit:phase P2` and
-`/audit:phase P2 --dry-run` are untouched. Deciding the verb by asking the manifest whether the
-first token happens to name a phase would give one command line two meanings on two machines, and
-the argument is read before the manifest is even located. `phase.id` is a free-text string in the
-schema, so a hand-written manifest may carry a phase actually called `priority` — that collision
-is **asked** (AskUserQuestion, both readings named) rather than resolved quietly, and there is no
-arity exception, because a rule with a carve-out is a rule applied wrongly.
-
-**Both spellings reach one writer, and neither command file carries the other's procedure.**
-`scripts/manifest/set-priority.py` is unchanged and is still the only thing that writes a
-priority; `scripts/manifest/audit-task.py cancel` is still the only thing that cancels. The
-legacy sections delegate the way `commands/migrate.md` delegates to `commands/layout.md`, and a
-case counts the invocation in both command documents so a second copy fails the build.
-
-**The legacy spellings do not nag.** `/audit:task priority` and `/audit:task cancel <phaseId>`
-behave exactly as before, warn about nothing and refuse nothing — a warning on a spelling that
-still works teaches people to skip warnings, which is how a real refusal gets missed later. Each
-says the new name once, in its report, and gets on with the job. The case pinning that looks
-vacuous on purpose: it is the only one that fails if an alias ever starts lecturing.
-
-### Deprecated
-
-- **`/audit:task priority <phaseId> <tier|--clear>` is the legacy spelling of
-  `/audit:phase priority`** and still does exactly that, kept so existing transcripts, runbooks
-  and older documents resolve. It is gone from `/audit:task`'s `argument-hint`, which is where a
-  reader is offered a spelling to learn, and documented at the end of `commands/task.md`.
-- **`/audit:task cancel <phaseId>` is the legacy spelling of `/audit:phase cancel`.** Only the
-  phase-id form is legacy: `/audit:task cancel <taskId>` is the current, correct spelling for a
-  task, and `/audit:phase cancel` refuses a task id and names it. No removal is scheduled for
-  either; when one is, it is announced here first.
-
 ## [1.1.0] - 2026-08-24
 
 **A parent per phase, because one integer was the plugin overriding a product owner.**
@@ -203,6 +161,46 @@ change making an unrelated gate go silent, with no test red anywhere. The row no
 file that satisfies both of its constraints, 400+ lines **and** exactly the two markers it
 needs, since the mutation removes one line and a file with fourteen markers still has
 thirteen.
+
+**A phase's priority is set by the command named for phases.** `/audit:phase priority <phaseId>
+<tier|--clear>` is the spelling. The verb was `/audit:task priority`, and it took a phase id and
+changed a phase: `phase.priority` is the field the schema has and there is no `task.priority` at
+all, so the command list taught the exact opposite of the truth — that tasks have priorities and
+phases do not. `/audit:phase cancel <phaseId> --reason "<why>"` is the same repair to the smaller
+case: closing a whole phase was reachable only through a command called `task`, so a reader
+looking for how to abandon a phase found nothing under the phase's own command.
+
+**`/audit:phase` dispatches on its first token, and the rule is lexical.** `priority` and `cancel`
+are the only reserved words; any other first token is a phase id, so `/audit:phase P2` and
+`/audit:phase P2 --dry-run` are untouched. Deciding the verb by asking the manifest whether the
+first token happens to name a phase would give one command line two meanings on two machines, and
+the argument is read before the manifest is even located. `phase.id` is a free-text string in the
+schema, so a hand-written manifest may carry a phase actually called `priority` — that collision
+is **asked** (AskUserQuestion, both readings named) rather than resolved quietly, and there is no
+arity exception, because a rule with a carve-out is a rule applied wrongly.
+
+**Both spellings reach one writer, and neither command file carries the other's procedure.**
+`scripts/manifest/set-priority.py` is unchanged and is still the only thing that writes a
+priority; `scripts/manifest/audit-task.py cancel` is still the only thing that cancels. The
+legacy sections delegate the way `commands/migrate.md` delegates to `commands/layout.md`, and a
+case counts the invocation in both command documents so a second copy fails the build.
+
+**The legacy spellings do not nag.** `/audit:task priority` and `/audit:task cancel <phaseId>`
+behave exactly as before, warn about nothing and refuse nothing — a warning on a spelling that
+still works teaches people to skip warnings, which is how a real refusal gets missed later. Each
+says the new name once, in its report, and gets on with the job. The case pinning that looks
+vacuous on purpose: it is the only one that fails if an alias ever starts lecturing.
+
+### Deprecated
+
+- **`/audit:task priority <phaseId> <tier|--clear>` is the legacy spelling of
+  `/audit:phase priority`** and still does exactly that, kept so existing transcripts, runbooks
+  and older documents resolve. It is gone from `/audit:task`'s `argument-hint`, which is where a
+  reader is offered a spelling to learn, and documented at the end of `commands/task.md`.
+- **`/audit:task cancel <phaseId>` is the legacy spelling of `/audit:phase cancel`.** Only the
+  phase-id form is legacy: `/audit:task cancel <taskId>` is the current, correct spelling for a
+  task, and `/audit:phase cancel` refuses a task id and names it. No removal is scheduled for
+  either; when one is, it is announced here first.
 
 ## [1.0.0] - 2026-08-23
 
