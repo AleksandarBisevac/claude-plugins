@@ -537,7 +537,7 @@ def _module_files(directory):
     has to go hunting for. On today's flat tree it is exactly the basename.
     """
     modules = {}
-    for rel, path in _output.py_files(directory):
+    for rel, path in _output.lint_py_files(directory):
         modules.setdefault(os.path.basename(rel)[:-3], []).append((rel, path))
     return modules, sorted(name for name in modules if len(modules[name]) > 1)
 
@@ -994,7 +994,7 @@ def _hooks_scripts_imports(hooks_dir, script_names):
     quietly exempted any hook somebody moved into a folder.
     """
     hits = []
-    for rel, path in _output.py_files(hooks_dir):
+    for rel, path in _output.lint_py_files(hooks_dir):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=rel)
@@ -1133,7 +1133,7 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     if not os.path.isdir(tests_dir):
         return []
     test_names = set(os.path.basename(rel)[:-3]
-                     for rel, _path in _output.py_files(tests_dir))
+                     for rel, _path in _output.lint_py_files(tests_dir))
     if not test_names:
         return []
 
@@ -1141,7 +1141,7 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
         if not os.path.isdir(directory):
             continue
-        for rel, path in _output.py_files(directory):
+        for rel, path in _output.lint_py_files(directory):
             named = "%s/%s" % (kind, rel)
             try:
                 with open(path, "r", encoding="utf-8") as fh:
@@ -1355,9 +1355,9 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     """
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
-    out = [(rel, "scripts", path) for rel, path in _output.py_files(script_dir)]
+    out = [(rel, "scripts", path) for rel, path in _output.lint_py_files(script_dir)]
     if os.path.isdir(hooks_dir):
-        out.extend((rel, "hooks", path) for rel, path in _output.py_files(hooks_dir))
+        out.extend((rel, "hooks", path) for rel, path in _output.lint_py_files(hooks_dir))
     return out
 
 

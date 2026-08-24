@@ -852,7 +852,16 @@ def _cases(check):
               "It said `exactly one directory` for as long as the tree was flat, and "
               "editing it is what each move COSTS - the mechanism is no longer a "
               "no-op and this is where that is stated: %r" % (_installed,),
-              _installed == [M.SCRIPTS_DIR,
+              # `install_path()` MUST see a probe directory - `test__loader.py`
+              # writes one into the real tree and needs it on sys.path - so the
+              # filtering is in what this case COMPARES and never in the
+              # function. The sweep runs both suites at once, and without it
+              # the domain list gained a neighbour's fixture for the width of
+              # one `finally`. `ip5` keeps the RAW list, because idempotence is
+              # a property of the call and not of the tree.
+              [d for d in _installed
+               if not os.path.basename(d).startswith(M.LOADER_PROBE_DIR)]
+              == [M.SCRIPTS_DIR,
                              os.path.join(M.SCRIPTS_DIR, "config"),
                              os.path.join(M.SCRIPTS_DIR, "demo"),
                              os.path.join(M.SCRIPTS_DIR, "governance"),

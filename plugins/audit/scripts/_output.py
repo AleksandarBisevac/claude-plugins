@@ -113,6 +113,11 @@ def safe_stdio():
 
 
 # --- finding the files to check ------------------------------------------------
+# The directory prefix `test__loader.py` writes its depth probes into. A PREFIX,
+# so `_loader_probe_a` and `_loader_probe_b` are one fact rather than two.
+LOADER_PROBE_DIR = "_loader_probe"
+
+
 def py_files(directory):
     """Sorted `(relname, path)` for every `.py` under `directory`, RECURSIVELY.
 
@@ -143,6 +148,31 @@ def py_files(directory):
             found.append((rel, path))
     found.sort()
     return found
+
+
+
+def lint_py_files(directory):
+    """`py_files` minus another suite's transient fixture.
+
+    THE DIFFERENCE IS WHO IS ASKING. `py_files` answers "what .py files exist",
+    and RESOLUTION depends on that being the whole truth: `_loader.script_index()`
+    walks it, and `test__loader.py` proves depth-independent resolution by writing
+    two files under one basename into the REAL scripts/ tree - filtering them out
+    of `py_files` broke exactly that, which is how this function came to exist.
+
+    A LINT is asking a different question: what does this repository CARRY. A pair
+    of files that exists for the width of one `finally` is not carried by anyone,
+    and every lint walking beside that suite reported it - `_deps`' basename
+    collisions and the guide enumeration both went red on a commit that was green
+    the run before, which is the signature of a race rather than a defect.
+
+    Scoped to the probe DIRECTORIES rather than to a basename: a name-based
+    exemption would also hide a real `loader_depth_probe.py` somebody committed,
+    while a directory named this narrowly cannot exist for another reason.
+    """
+    return [(rel, path) for rel, path in py_files(directory)
+            if not rel.startswith(LOADER_PROBE_DIR)
+            and "/" + LOADER_PROBE_DIR not in rel]
 
 
 # --- the files this repo KEEPS -------------------------------------------------
@@ -708,7 +738,14 @@ def path_preamble_violations(script_dir=None):
     A file that cannot be read or parsed is a violation rather than a skip, the same
     rule `entries_missing_guard` and `house_style_violations` follow.
     """
-    files = py_files(script_dir) if script_dir is not None else script_files()
+    # `script_files()` is the RESOLUTION walk - `_loader` builds its index from it
+    # and must see every real file - so the filtering happens here, where a LINT
+    # is the one asking. Same rule as `lint_py_files`, applied to the memoised
+    # list rather than re-walking for it.
+    files = (lint_py_files(script_dir) if script_dir is not None
+             else [(rel, path) for rel, path in script_files()
+                   if not rel.startswith(LOADER_PROBE_DIR)
+                   and "/" + LOADER_PROBE_DIR not in rel])
     sibling_names = set(os.path.basename(rel)[:-3] for rel, _path in files)
     violations = []
     for rel, path in files:
@@ -791,7 +828,14 @@ def depth_sensitive_paths(script_dir=None):
     `_output.py` is exempt for the two reasons `_PREAMBLE_EXEMPT` records: it holds
     `PATH_PREAMBLE` as a string, and it is the file the anchors are defined in.
     """
-    files = py_files(script_dir) if script_dir is not None else script_files()
+    # `script_files()` is the RESOLUTION walk - `_loader` builds its index from it
+    # and must see every real file - so the filtering happens here, where a LINT
+    # is the one asking. Same rule as `lint_py_files`, applied to the memoised
+    # list rather than re-walking for it.
+    files = (lint_py_files(script_dir) if script_dir is not None
+             else [(rel, path) for rel, path in script_files()
+                   if not rel.startswith(LOADER_PROBE_DIR)
+                   and "/" + LOADER_PROBE_DIR not in rel])
     blanked = "\n" * PATH_PREAMBLE.count("\n")
     violations = []
     for rel, path in files:
@@ -877,7 +921,7 @@ def entries_missing_guard(dirs=None):
     dirs = dirs if dirs is not None else (SCRIPTS_DIR, TESTS_DIR)
     missing = []
     for d in dirs:
-        for name, path in py_files(d):
+        for name, path in lint_py_files(d):
             try:
                 with open(path, "r", encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=name)
@@ -968,7 +1012,7 @@ def house_style_violations(dirs=None):
     dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR)
     violations = []
     for d in dirs:
-        for name, path in py_files(d):
+        for name, path in lint_py_files(d):
             try:
                 with open(path, "r", encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=name)
@@ -1053,7 +1097,7 @@ def redundant_constants(dirs=None):
     for d in dirs:
         declared = {}
         unread = {}
-        for name, path in py_files(d):
+        for name, path in lint_py_files(d):
             try:
                 with open(path, "r", encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=name)
@@ -1215,7 +1259,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
     tests_dir = tests_dir if tests_dir is not None else TESTS_DIR
 
-    test_files = set(rel for rel, _path in py_files(tests_dir)
+    test_files = set(rel for rel, _path in lint_py_files(tests_dir)
                      if os.path.basename(rel).startswith(_TEST_PREFIX))
 
     out = {"inline": [], "covered": [], "both": [], "neither": [],
@@ -1225,7 +1269,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
         if not os.path.isdir(directory):
             continue
-        for rel, path in py_files(directory):
+        for rel, path in lint_py_files(directory):
             named = "%s/%s" % (kind, rel)
             out["total"] += 1
             expected = _test_name_for(rel)
