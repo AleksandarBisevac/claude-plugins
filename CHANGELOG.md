@@ -4,6 +4,66 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.2.0] - 2026-08-24
+
+**Every entry here was found by running 1.1.0 against a real board.** None came from a
+review or a test that was written first; the release exists because the previous one met a
+manifest and a project that a fixture had not.
+
+**`sync status` took eleven minutes on sixty-two linked items, and the instruction that
+caused it could not be followed.** Step 3 said "batch-fetch" and named `az boards work-item
+show`, which takes one `--id` — measured: a comma list answers `invalid literal for int()`.
+So there was no batch to write and the implementation fetched one at a time, paying the
+CLI's start-up per item. Measured on a live board: seventy-three items serially, 38.8
+seconds; the same seventy-three through one query, 0.6. The rule is now a script rather
+than a paragraph, because the chunk size, the field list and the bound are the three things
+prose cannot be held to. The WIQL limit is a **32,000-character cap on the query text**, not
+a count of ids — bisected rather than quoted — so the chunker measures text every time.
+
+**`sync.md` had no timeout anywhere, and a read-only command that advertises itself as safe
+could block forever.** Worse than failing: a failure says what happened. Every ADO call now
+carries a bound and a named outcome, with a non-interactive flag so a credential prompt is
+an error rather than silence. Not through a `timeout` prefix — neither `timeout` nor
+`gtimeout` exists on stock macOS, which is where this was reported.
+
+**`explain-ado-drift` read the manifest raw and saw only the index.** On a sharded plan it
+matched the two bugs the index holds and reported all sixty shard-held links as NOT IN
+MANIFEST. `_STUB_KEYS` is `("id", "title")`, so a phase's own link lives in the shard body
+too — a raw read loses phase links and task links together. It reads through
+`_manifest_io.load_manifest` now, and an unreadable shard is a refusal naming that file
+rather than a table quietly missing a phase.
+
+**The plan gate judged files that were never in the repository.** `os.path.relpath` answers
+a path in another tree with `../../..`, and nothing downstream rejected that string, so a
+scratchpad file under `/private/tmp` was refused for want of plan coverage it could never
+have. Three hooks shared the hole, not one: `require-plan` and the `sed -i` branch of
+`guard-secrets-read` both blocked, and `remind-tdd` warned — and **spent the session's one
+reminder on it**, so the next edit that genuinely deserved a nudge got silence. Out of scope
+is not "unknown": the verdict is an allow that names the scope, decided before anything
+else, so nothing outside the tree can be the manifest, cover a task, or consume the
+session's trivial-file slot.
+
+**A user had to hand-write Python to clean a log this plugin creates and displays.**
+`/audit:logs prune` removes rows that no longer belong — paths outside the repository,
+lines the panel's own reader already drops — and prints what it removed and what it kept,
+at every value including zero. Removed rows are counted by class and **never echoed**:
+printing the out-of-repository path to explain that it was removed writes it back into the
+transcript the prune was clearing. It is its own command rather than a `doctor` flag,
+because a flag that skips the whole body of a command is a different command wearing that
+name — and `doctor`'s read-only contract stays true instead of being quietly amended.
+
+**Nineteen identical warnings hid the one that mattered.** The no-skills-resolve rule fires
+per task; on a real manifest that was nineteen lines differing only in an id, printed by
+every mutating command. In the same session a priority pin arrived with a warning that it
+was inert — and sat at position twenty of twenty. Same-shape warnings now collapse to one
+line naming the count and the phases that own them, with `--verbose` for the ids. The
+collapse lives in the reporter, not in the skills rule: every per-item rule has this latent,
+and that one was simply the first to meet a big enough manifest. Findings do not collapse —
+each one stops the command and has to be fixed. Which phase owns a task comes from the
+manifest, never from splitting the id: `P0.1` implies `P0` only by a convention the
+validator itself merely warns about, so a group it can only partly place never claims a
+phase count.
+
 ## [1.1.0] - 2026-08-24
 
 **A parent per phase, because one integer was the plugin overriding a product owner.**
