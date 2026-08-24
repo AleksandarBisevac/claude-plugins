@@ -722,6 +722,42 @@ def _cases(check):
           and str(hso.get("permissionDecisionReason", "")).startswith(
               "[guard-secrets-read]"))
 
+    # (x) OUT OF SCOPE IS NOT UNPLANNED, on the shell-write half of the same plan
+    # gate. SECURITY.md promises these two agree - "the same file gets the same
+    # verdict whether it is edited through a tool or through `sed -i`" - so the
+    # containment fix require-plan needed is one this branch needed identically,
+    # and leaving it here would have made that promise false in the other
+    # direction. `_source_write_hit` reached the same relpath, so `sed -i` into
+    # a scratch file under the system temp directory came back as
+    # `../../../private/tmp/probe.py`, matched no exempt glob, was covered by no
+    # in_progress task, and denied.
+    import shutil as _sh_x
+    tmp_x = Path(tempfile.mkdtemp(prefix="guard-secrets-outside-"))
+    try:
+        _out_x = str(tmp_x / "probe.py")
+        _expect("x1 a shell write into a file OUTSIDE the repository is "
+                "allowed - the shell-write twin of require-plan's r1",
+                "allow", bash("sed -i 's/a/b/' %s" % _out_x),
+                use_cfg=cfg_enforced)
+        _expect("x2 ...and an in-repo source file is still refused on the same "
+                "tier, so x1 is not this branch quietly switching off",
+                "block", bash("sed -i 's/a/b/' src/app.ts"),
+                use_cfg=cfg_enforced)
+        check("x3 the hit function itself is the thing that changed: it names "
+              "the in-repo path and declines to name the out-of-repo one, "
+              "which is what x1/x2 read downstream",
+              M._source_write_hit("sed -i 's/a/b/' %s" % _out_x, str(tmp),
+                                  cfg_enforced) is None
+              and M._source_write_hit("sed -i 's/a/b/' src/app.ts", str(tmp),
+                                      cfg_enforced) == "src/app.ts")
+        check("x4 a command writing BOTH keeps the in-repo finding - declining "
+              "the out-of-scope target must skip that target, never abandon "
+              "the scan",
+              M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_x,
+                                  str(tmp), cfg_enforced) == "src/app.ts")
+    finally:
+        _sh_x.rmtree(tmp_x, ignore_errors=True)
+
     # (t) A4 (v0.36): deny/ask verdicts leave one line in the gate events feed,
     # require-plan's shape (v0.34 B3) — this guard's denials were invisible in
     # the feed the panel reads. Telemetry only: an allow writes nothing, and

@@ -428,8 +428,14 @@ PRESENT-but-malformed one yields defaults **plus a `_configError` marker** that
 detect-plan-skip surfaces once per session (a broken config must not silently drop custom
 rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
-(`rel_path`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
+(`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
+`within_root` is the containment question `rel_path` cannot answer: relpath hands a path
+in another tree back as a run of `..` segments, an ordinary string that read as repo
+source and got a scratch file in the system temp directory refused by the plan gate. It
+lives here rather than in the one hook that reported it because three hooks ask it and
+`SECURITY.md` promises two of them agree; it never calls `relpath`, which RAISES across
+Windows drives.
 Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest`.
 
 `find_script(filename)` is the hooks-side resolver: `filename` **anywhere** under

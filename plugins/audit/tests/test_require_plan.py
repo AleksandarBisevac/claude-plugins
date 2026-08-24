@@ -109,6 +109,16 @@ def _cases(check):
         return {"tool_name": tool, "tool_input": ti, "session_id": sid,
                 "cwd": str(tmp)}
 
+    def _read_events(path):
+        """Non-blank rows of a gate-events feed, or [] when it was never
+        written. A COUNT, never a presence test: the cases that use it are
+        asserting how many verdicts a decision recorded."""
+        try:
+            return [x for x in path.read_text(encoding="utf-8").splitlines()
+                    if x.strip()]
+        except Exception:
+            return []
+
     def _verdict(data, use_cfg, event="PreToolUse"):
         """`decide`'s verdict, or the exception text - the guard all four of
         this suite's wrappers hand-rolled, now borrowed from `_harness`."""
@@ -835,6 +845,77 @@ def _cases(check):
         finally:
             if _orig_resolve is not None:
                 _ledmod.resolve_author = _orig_resolve
+
+    # (r) OUT OF SCOPE IS NOT UNPLANNED. `rel` is os.path.relpath, so a file
+    # outside the repository reaches every step below as
+    # `../../../private/tmp/probe.py` - an ordinary string nothing downstream
+    # rejects. Reported live: a helper script written to the system temp
+    # directory during a read-only /audit:sync status was refused for want of
+    # plan coverage no plan could ever have given it. The gate declines such a
+    # path and NAMES the scope, because silence is the same verdict with no
+    # reason attached and a denial is the bug. r2 is the compatibility half and
+    # is the case that goes red if the check ever answers "outside" for
+    # everything; r4 and r5 pin that declining costs no session state, which a
+    # bare early `return ("allow", ...)` would get wrong in the other direction.
+    scope_out = Path(tempfile.mkdtemp(prefix="require-plan-outside-"))
+    try:
+        cfg_scope = dict(_config.DEFAULTS)
+        cfg_scope["enforce"] = True
+        ld_scope = scope_out / "logs"
+        ev_scope = ld_scope / "plan-gate-events.jsonl"
+
+        def scope(file_path, *, sid, event="PreToolUse", content=None,
+                  logs=None):
+            ok, got = _harness.attempt(
+                M.decide,
+                payload("Write", str(file_path),
+                        content=big if content is None else content, sid=sid),
+                cfg=cfg_scope, state_dir=sd,
+                logs_dir=ld_scope if logs is None else logs, event=event)
+            return got if ok else (got, got)
+
+        _out_file = scope_out / "probe.py"
+        _root_seen = str(_config.repo_root(payload("Write", "x", content="x",
+                                                   sid="selftest-scope-0")))
+        v_r1, why_r1 = scope(_out_file, sid="selftest-scope-1")
+        check("r1 a file outside the repository is ALLOWED, not refused - the "
+              "reported defect, and the only verdict a gate about a plan can "
+              "honestly reach about a file no plan governs",
+              v_r1 == "allow", repr((v_r1, why_r1)))
+        check("r2 ...and an in-repo file of the same size is still refused, so "
+              "r1 is not a gate that quietly stopped gating",
+              scope(Path(tmp) / "src" / "probe.py",
+                    sid="selftest-scope-2")[0] == "block")
+        check("r3 the allow names WHICH scope it declined on - the repository "
+              "root once, and the path it was asked about once",
+              why_r1.count("outside the repository") == 1
+              and why_r1.count(_root_seen) == 1
+              and why_r1.count(str(_out_file)) == 1, repr(why_r1))
+
+        _small = "x = 1"
+        v_out, _ = scope(scope_out / "small.py", sid="selftest-scope-3",
+                         event="PostToolUse", content=_small)
+        v_in, why_in = scope(Path(tmp) / "src" / "small.py",
+                             sid="selftest-scope-3", content=_small)
+        check("r4 declining costs NO session state - the in-repo file that "
+              "follows an out-of-scope edit is still the session's first "
+              "trivial file, not its second",
+              v_out == "allow" and v_in == "allow", repr((v_out, v_in, why_in)))
+
+        _seen = len(_read_events(ev_scope))
+        scope(scope_out / "probe2.py", sid="selftest-scope-4")
+        _added_out = len(_read_events(ev_scope)) - _seen
+        _seen = len(_read_events(ev_scope))
+        scope(Path(tmp) / "src" / "probe2.py", sid="selftest-scope-5")
+        _added_in = len(_read_events(ev_scope)) - _seen
+        check("r5 ...and no gate event either: a path this gate does not "
+              "govern has no verdict to record. Counted as a DELTA against the "
+              "in-repo denial that follows it, so a feed nobody writes to "
+              "cannot make the zero look right",
+              _added_out == 0 and _added_in == 1,
+              repr((_added_out, _added_in)))
+    finally:
+        shutil.rmtree(scope_out, ignore_errors=True)
 
     if _prev_project_dir is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)

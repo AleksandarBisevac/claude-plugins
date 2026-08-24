@@ -125,6 +125,25 @@ checks deny by default at every tier, with or without a manifest: reading `.env`
 regardless of whether a plan exists, so those guards need no evidence to be correct. If you
 are relying on this plugin for secret containment, that behaviour is unchanged.
 
+**Neither plan gate governs a path OUTSIDE the consuming repository, and it says which
+rather than falling silent.** `_config.rel_path` is `os.path.relpath`, which answers a path
+in another tree with a run of `..` segments — an ordinary-looking string that read as repo
+source, so a helper script written to the system temp directory during a read-only command
+was refused for plan coverage no manifest could ever have given it: a manifest names paths
+in its own tree and nowhere else. `_config.within_root` is the containment test both gates
+now ask first, and the verdict is an **allow that names the scope**. Out of scope is not
+"unknown" — that is what the fail-open paths above are for — and a silent pass would be the
+same verdict with the reason thrown away. Symlinks are resolved on both sides, because a
+repo reached through one is the same repo; an unresolvable path answers *inside*, so an
+error in the test can only leave a gate where it already was, never switch one off.
+`remind-tdd` asks the same question for a reason worth stating separately: its nudge is a
+CLAIM about a file rather than a decision about one, and it was also spending the session's
+throttle on a tree it does not govern, which silenced the next reminder that was deserved.
+This is the same posture `guard-bash-writes` already takes toward a command that ran in
+another tree, and the practical consequence is the same: a session whose project directory
+is one checkout does not gate edits into a *different* one, and opening the session in the
+tree being edited is what restores coverage.
+
 ### The one denial that is not about the plan (0.27.0)
 
 `require-plan` also refuses a write to the **manifest or a phase shard** when the

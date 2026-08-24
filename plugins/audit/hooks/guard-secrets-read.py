@@ -677,7 +677,17 @@ _source_exts = _config.source_exts
 
 def _source_write_hit(cmd, root, cfg):
     """First non-exempt SOURCE file (not covered by an in_progress task) that
-    `cmd` writes to via sed -i / tee / a >(>) redirect — or None."""
+    `cmd` writes to via sed -i / tee / a >(>) redirect — or None.
+
+    A target OUTSIDE the consuming repository is skipped, not reported. This is
+    the shell-write half of the plan gate and SECURITY.md promises the two
+    halves agree — "the same file gets the same verdict whether it is edited
+    through a tool or through `sed -i`" — so require-plan's containment check is
+    one this branch owes identically. Without it `sed -i` into a scratch file
+    under the system temp directory relpath'd to `../../../private/tmp/probe.py`,
+    matched no exempt glob, was covered by no in_progress task, and denied. A
+    `continue` rather than a `return`: a command writing one file out of scope
+    and one in it still has an in-repo finding to report."""
     targets = _shell_write_targets(cmd)
     if not targets:
         return None
@@ -688,6 +698,8 @@ def _source_write_hit(cmd, root, cfg):
     for t in targets:
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
+            continue
+        if not _config.within_root(root, t):
             continue
         rel = _config.rel_path(root, t)
         if _config.matches_exempt(rel, exempt):

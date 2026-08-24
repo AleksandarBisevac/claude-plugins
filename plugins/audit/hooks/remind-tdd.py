@@ -24,6 +24,9 @@ Config: `.claude/audit.config.json` → `tddReminder` (see _config.DEFAULTS):
         "warn-always" — ignore manifest coverage
 
 Decision order (see `decide`):
+  a path OUTSIDE the consuming repository → SILENT, before anything else: the
+  nudge is a claim about a file, and a scratch file in another tree is not one
+  this hook has standing to make (it also used to spend the session's throttle);
   test file → RECORD it (BEFORE any warn logic — this ordering is the whole
   mechanism: the hook watches its own Edit stream to learn that tests exist);
   exempt / non-source / covered-by-task / test-already-touched / throttled →
@@ -111,6 +114,22 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     session_id = str(data.get("session_id", "") or "no-session")
     ts = now if now is not None else time.time()
     rel = _config.rel_path(root, file_path)
+
+    # 0. Outside the consuming repository. This hook decides nothing, so the
+    #    defect here is not a refusal but a CLAIM: `rel` is os.path.relpath, so
+    #    a helper written to the system temp directory arrived as
+    #    `../../../private/tmp/probe.py`, matched `**/*.py` like any other
+    #    source file, and the user was told to write a test for it. Worse in the
+    #    other direction than it looks - the warn also spent the session's
+    #    throttle, so the next in-repo edit that DID deserve a reminder was
+    #    silenced by a scratch file in another tree.
+    #
+    #    Decided before the test-file branch, not after: an out-of-repo file
+    #    named like a test must not record `testTouched` either, or a stray
+    #    `/tmp/x.test.ts` would satisfy the reminder for the whole session.
+    if not _config.within_root(root, file_path):
+        return ("silent",
+                "outside the repository at %s: %s" % (root, file_path))
 
     # 1. Test file → record the touch BEFORE any warn logic.
     if _config.matches_exempt(rel, tr.get("testGlobs")):

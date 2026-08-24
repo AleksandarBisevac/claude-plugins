@@ -15,6 +15,9 @@ Decision order (ALLOW = silent exit 0; BLOCK = permissionDecision "deny" JSON
 on stdout + exit 0 — the canonical PreToolUse protocol — PreToolUse only;
 ASK = permissionDecision "ask" when planGate pins that tier):
   1. No file_path / unknown tool / parse error → ALLOW (never break legit work).
+  1b. Target is OUTSIDE the consuming repository → ALLOW, naming the scope. Out
+     of scope is not "unknown": a manifest names paths in its own tree, so no
+     plan could ever cover this one (_config.within_root).
   2. Target matches an exempt glob (from config) → ALLOW.
   3. Target belongs to a task whose status == "in_progress" in the manifest →
      ALLOW. On the PostToolUse pass a covered edit may additionally carry the
@@ -336,6 +339,26 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     sd = state_dir if state_dir is not None else _config.state_dir(root, cfg)
     ld = logs_dir if logs_dir is not None else _config.logs_dir(root, cfg)
     rel = _rel_path(root, file_path)
+
+    # 1b. OUT OF SCOPE IS NOT UNPLANNED. `rel` is os.path.relpath, so a file
+    #     outside the consuming repository arrives here as
+    #     `../../../private/tmp/probe.py` - an ordinary string every step below
+    #     reads as repo source. Reported live: a helper script written to the
+    #     system temp directory during a read-only /audit:sync status was
+    #     refused for want of plan coverage no plan could ever have given it,
+    #     because a manifest can only name paths in its own tree.
+    #
+    #     ALLOW, and say which scope. A file outside the repo is not "unknown",
+    #     which is what the fail-open paths above are for; it is none of this
+    #     gate's business, and the difference is worth printing - a silent pass
+    #     here would be the same verdict with the reason thrown away. Placed
+    #     before every step that follows because all of them are questions
+    #     about a repo-relative path, the manifest clause included: nothing
+    #     outside the tree can be the manifest, cover a task, or spend the
+    #     session's one trivial-file slot.
+    if not _config.within_root(root, file_path):
+        return ("allow",
+                "outside the repository at %s: %s" % (root, file_path))
 
     # 2a. the manifest itself, its lockfile and its phase shards ARE the plan —
     #     never gated, even when a custom manifestPath falls outside the exempt

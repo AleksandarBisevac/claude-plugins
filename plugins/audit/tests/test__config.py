@@ -989,6 +989,116 @@ def _cases(check):
           "only test-suffix-shaped globs are carved out",
           M.matches_exempt("tsconfig.test.json", ["**/tsconfig.*"]))
 
+    # (r) within_root — the containment question `rel_path` cannot answer.
+    # `rel_path` is os.path.relpath, and for a path outside the tree that hands
+    # back `../../../private/tmp/probe.py`: an ordinary-looking string nothing
+    # downstream rejects, so the plan gate read a helper script written to the
+    # system temp directory as repo source and refused it for plan coverage no
+    # plan could ever have given it. Every case here is PAIRED on purpose — an
+    # implementation that always answers True passes the inside half and fails
+    # the outside half, one that always answers False does the reverse, and
+    # neither survives the group.
+    tmp_r = Path(tempfile.mkdtemp(prefix="config-scope-in-"))
+    tmp_r_out = Path(tempfile.mkdtemp(prefix="config-scope-out-"))
+    try:
+        check("r1 a file under the root is inside",
+              M.within_root(str(tmp_r), str(tmp_r / "src" / "app.ts")))
+        check("r2 the root itself is inside",
+              M.within_root(str(tmp_r), str(tmp_r)))
+        check("r3 a relative path is joined to the ROOT, not to the cwd - the "
+              "same join rel_path performs, or the two would disagree about "
+              "which paths are even relative",
+              M.within_root(str(tmp_r), "src/app.ts"))
+        check("r4 a path in an unrelated tree is OUTSIDE - the reported bug, "
+              "which relpath answers with a run of `..` segments instead",
+              not M.within_root(str(tmp_r), str(tmp_r_out / "probe.py")))
+        check("r5 a relative path that climbs out of the root is outside too",
+              not M.within_root(str(tmp_r), "../probe.py"))
+        check("r6 a sibling directory whose name merely BEGINS with the root's "
+              "is outside - the boundary is a separator, not a prefix",
+              not M.within_root(str(tmp_r),
+                                str(tmp_r) + "-other" + os.sep + "probe.py"))
+
+        # r7/r8: a repo is routinely reached through a symlink (/tmp ->
+        # /private/tmp on macOS, and every checkout someone symlinked into
+        # place). Both spellings name one tree, so both sides are resolved.
+        _link = tmp_r_out / "link-to-repo"
+        try:
+            os.symlink(str(tmp_r), str(_link))
+            _linked = True
+        except (OSError, NotImplementedError, AttributeError):
+            _linked = False
+        if not _linked:
+            print("SKIP r7-r8 (this platform will not create a symlink here)")
+        else:
+            check("r7 a file reached THROUGH a symlink into the root is inside, "
+                  "though its literal prefix is the other tree entirely",
+                  M.within_root(str(tmp_r), str(_link / "src" / "app.ts")))
+            check("r8 ...and the symlinked spelling of the ROOT contains the "
+                  "real one, which is the direction a symlinked checkout takes",
+                  M.within_root(str(_link), str(tmp_r / "src" / "app.ts")))
+
+        check("r9 a case-different spelling of the root reads as INSIDE - on a "
+              "case-insensitive volume it is the same directory, and the tie "
+              "goes to inside everywhere, because inside is what every caller "
+              "assumed before this function existed",
+              M.within_root(str(tmp_r),
+                            str(tmp_r.parent / tmp_r.name.upper() / "app.ts")))
+
+        # r10/r11: the Windows edge, reproduced on every platform. os.path.relpath
+        # RAISES ValueError across drives - the bug tools/check-rendered-artifacts.py
+        # was fixed for - so a containment test built on it fails its caller
+        # instead of answering it. Sabotaging relpath surfaces that here rather
+        # than only on the windows runner: an implementation that reaches for it
+        # swallows the ValueError into the fail-open answer and r10 goes red.
+        # r11 is the second direction - without it r10 would pass under a
+        # sabotage that simply made everything outside.
+        _real_relpath = os.path.relpath
+
+        def _cross_drive(*_args, **_kw):
+            raise ValueError("path is on mount 'C:', start on mount 'D:'")
+
+        os.path.relpath = _cross_drive
+        try:
+            check("r10 an outside path is still outside when relpath cannot "
+                  "answer at all - this function never reaches for it",
+                  not M.within_root(str(tmp_r), str(tmp_r_out / "probe.py")))
+            check("r11 ...and an inside path is still inside under the same "
+                  "sabotage, so r10 is not green because everything went "
+                  "outside", M.within_root(str(tmp_r), str(tmp_r / "src" / "a.ts")))
+        finally:
+            os.path.relpath = _real_relpath
+
+        if os.name != "nt":
+            print("SKIP r12-r13 (no drive letters on this platform - r10/r11 "
+                  "cover the same property portably)")
+        else:
+            check("r12 two Windows drives share no prefix, and asking costs no "
+                  "exception", not M.within_root("C:\\repo", "D:\\other\\probe.py"))
+            check("r13 ...while the same drive still contains its own subtree",
+                  M.within_root("C:\\repo", "C:\\repo\\src\\app.ts"))
+
+        # r14: the fail-open direction, and it is deliberate. A guard that
+        # cannot resolve a path must leave the gate exactly where it was, not
+        # switch it off - so an internal error answers INSIDE even for a path
+        # that plainly is not.
+        _real_realpath = os.path.realpath
+
+        def _unresolvable(*_args, **_kw):
+            raise OSError("realpath is unavailable")
+
+        os.path.realpath = _unresolvable
+        try:
+            check("r14 unresolvable input answers INSIDE - an internal error "
+                  "can only leave a gate where it already was, never switch "
+                  "one off silently",
+                  M.within_root(str(tmp_r), str(tmp_r_out / "probe.py")))
+        finally:
+            os.path.realpath = _real_realpath
+    finally:
+        shutil.rmtree(tmp_r, ignore_errors=True)
+        shutil.rmtree(tmp_r_out, ignore_errors=True)
+
     # (t) utc_stamp: the trailing Z and gmtime() are one fact -----------------
     # Every record a hook writes is stamped through this, and the bug it exists
     # to prevent is invisible to the obvious assertions: the same format built

@@ -74,8 +74,8 @@ Config keys (all optional; defaults in DEFAULTS below):
         all live in _policy.py — see DEFAULTS below for why they are not
         restated here.
 
-This module also hosts the path/manifest helpers shared by require-plan.py and
-remind-tdd.py (rel_path, matches_exempt, strip_line_suffix, in_progress_*).
+This module also hosts the path/manifest helpers the hooks share (rel_path,
+within_root, matches_exempt, strip_line_suffix, in_progress_*).
 
 Hooks never statically `import` anything from scripts/, this module included: they
 run on every tool call, launched by a process that may not have scripts/ on its
@@ -831,7 +831,8 @@ def source_exts(cfg):
 
 
 # --- path / manifest helpers --------------------------------------------------
-# Shared by require-plan.py + remind-tdd.py.
+# Shared across hooks/ - which ones, without a list here to rot:
+#   grep -rn '_config.rel_path\|_config.within_root' plugins/audit/hooks
 def rel_path(root, file_path):
     """Path of file_path RELATIVE to repo root, posix-style. Falls back gracefully."""
     fp = str(file_path).replace("\\", "/")
@@ -843,6 +844,51 @@ def rel_path(root, file_path):
     except Exception:
         rel = fp
     return rel.replace("\\", "/")
+
+
+def within_root(root, file_path):
+    """True when `file_path` lands INSIDE `root` - the question rel_path cannot answer.
+
+    `rel_path` is os.path.relpath, and for a path outside the tree it hands back
+    `../../../private/tmp/probe.py`: an ordinary-looking string nothing
+    downstream rejects. So the plan gate read a helper script written to the
+    system temp directory as repo source and refused it for plan coverage no
+    plan could ever have given it. Out of scope is not the same as unplanned,
+    and only a caller that asks can tell the two apart - which is why this is a
+    separate question rather than a new return value on rel_path, whose other
+    callers compare the result against repo-relative literals and are already
+    correctly negative for anything outside.
+
+    NEVER relpath, deliberately. Across Windows drives it RAISES ValueError -
+    the bug tools/check-rendered-artifacts.py was fixed for - and a containment
+    test that raises fails its caller instead of answering it. A prefix
+    comparison over resolved absolute paths has no such edge: two drives simply
+    do not share one.
+
+    Symlinks are resolved on BOTH sides, because a repo is routinely reached
+    through one (/tmp -> /private/tmp on macOS, a checkout symlinked into
+    place), and the two spellings name one tree. Case is compared both ways and
+    either match counts as inside: on a case-insensitive volume `SRC/app.ts`
+    really is inside `src/`. NOT handled, and the omission is chosen: sibling
+    directories differing only in case on a case-SENSITIVE volume, where that
+    second comparison calls an outside path inside. The tie goes to inside
+    everywhere - inside is what every caller assumed before this function
+    existed, so a wrong guess can only leave a gate where it already was, and
+    unresolvable input answers True for the same reason.
+    """
+    def contains(parent, child):
+        return (child == parent
+                or child.startswith(parent.rstrip(os.sep) + os.sep))
+
+    try:
+        r = os.path.realpath(str(root))
+        p = Path(str(file_path).replace("\\", "/"))
+        if not p.is_absolute():
+            p = Path(r) / p
+        f = os.path.realpath(str(p))
+    except Exception:
+        return True
+    return contains(r, f) or contains(r.lower(), f.lower())
 
 
 # --- the test-file exemption stops at data formats ----------------------------

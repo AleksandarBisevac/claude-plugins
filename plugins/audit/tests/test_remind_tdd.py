@@ -44,6 +44,8 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "remind-tdd.py"),
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
+    import shutil as _sh_r
+
     tmp = Path(tempfile.mkdtemp(prefix="remind-tdd-selftest-"))
     sd = tmp / "state"
     sd.mkdir(parents=True, exist_ok=True)
@@ -157,6 +159,33 @@ def _cases(check):
               and marker_i.is_file()
               and marker_i.read_text(encoding="utf-8") == _config.LOCAL_IGNORE_MARKER
               and M._state_file(sd_i, sess_i).is_file())
+
+        # (r) A NUDGE ABOUT A FILE OUTSIDE THE REPOSITORY. This hook decides
+        # nothing, so the defect here is not a refusal - it is a claim. `rel` is
+        # os.path.relpath, so a helper written to the system temp directory
+        # arrived as `../../../private/tmp/probe.py`, matched `**/*.py` under
+        # sourceGlobs like any other source file, and the user was told to write
+        # a test for it. The same scope question the plan gate now asks, asked
+        # before anything is said out loud.
+        tmp_r = Path(tempfile.mkdtemp(prefix="remind-tdd-outside-"))
+        try:
+            _expect("r1 a source file OUTSIDE the repository says nothing - "
+                    "this hook has no standing to nudge about a tree it does "
+                    "not govern", "silent",
+                    payload(str(tmp_r / "probe.py"), "tdd-session-r"))
+            _expect("r2 ...and an in-repo source file in the SAME session "
+                    "still warns, so r1 is not the reminder switching itself "
+                    "off", "warn",
+                    payload("src/foo/r.ts", "tdd-session-r"))
+            _expect("r3 an out-of-repo TEST file does not satisfy the "
+                    "reminder either - scope is decided before the test-file "
+                    "branch, or a stray file elsewhere would silence a whole "
+                    "session", "silent",
+                    payload(str(tmp_r / "probe.test.ts"), "tdd-session-r2"))
+            _expect("r4 ...while the in-repo test file it mimics still counts",
+                    "record", payload("src/foo/r.test.ts", "tdd-session-r2"))
+        finally:
+            _sh_r.rmtree(tmp_r, ignore_errors=True)
 
         # (f) warn detail is valid additionalContext JSON when serialized
         verdict, detail = M.decide(payload("src/foo/f.ts", "tdd-session-f"),
