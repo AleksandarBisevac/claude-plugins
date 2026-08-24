@@ -103,10 +103,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_rules        # noqa: E402  (the manifest rules, at layer 3 - imported, not loaded)
 import _journal_io            # noqa: E402  (read/verify the audit trail, at layer 1)

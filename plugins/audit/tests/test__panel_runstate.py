@@ -216,6 +216,61 @@ def _cases(check):
           "a raise",
           isinstance(M._run_status(_lvmiss, {}, {}).get("gate"), dict))
 
+    # --- F113 (rd): what the `file` cell is allowed to say on a screen -----------
+    # `audit-logs.py prune` counts an out-of-repository row by CLASS and never
+    # echoes its path; this card rendered the same rows verbatim - the operator's
+    # user name, the temp root and the session slug, in the one card
+    # `docs/screenshots/panel-gate.png` is a committed render of, and
+    # `tools/check-committed-pii.py` cannot read a PNG.
+    #
+    # The fixture's marker is a segment that appears NOWHERE else in the payload,
+    # so these count it instead of looking for the token - a fix that tokenised
+    # only some rows would still produce the token, and a presence check would
+    # call that clean.
+    import _journal_io as _jio                     # the redactor, and its token
+    _rdmark = "zz-operator-9f3c"
+    _rdlogs = os.path.join(proj, ".claude", "logs")
+    _gtcfg.append_gate_event(_rdlogs, {
+        "event": "deny", "file": "../%s/fetched-empty.json" % _rdmark,
+        "reason": "require-plan: no plan", "sessionId": "rd"})
+    _gtcfg.append_gate_event(_rdlogs, {
+        "event": "observe", "file": os.path.join(proj, "src", "inside-abs.ts"),
+        "sessionId": "rd"})
+    _gtcfg.append_gate_event(_rdlogs, {
+        "event": "ask.shown", "file": "src/inside-rel.ts", "sessionId": "rd"})
+    _gtcfg.append_gate_event(_rdlogs, {
+        "event": "deny", "file": "grep -r secret src", "sessionId": "rd"})
+    _gtcfg.append_gate_event(_rdlogs, {"event": "observe", "sessionId": "rd"})
+    _rdgate = M._run_status(proj, M.read_config(proj), {}).get("gate") or {}
+    _rdblob = json.dumps(_rdgate, sort_keys=True)
+    _rdfiles = [e.get("file") for e in _rdgate.get("events") or []]
+    check("rd: an out-of-repo row's file cell leaves as the journal's token, and "
+          "the path it named reaches the payload nowhere at all",
+          _rdblob.count(_rdmark) == 0
+          and _rdblob.count(_jio.OUTSIDE_TOKEN) == 1
+          and _jio.OUTSIDE_TOKEN in _rdfiles)
+    check("rd: an absolute INSIDE path is collapsed to repo-relative, so the "
+          "directories above the repository are not painted either",
+          "src/inside-abs.ts" in _rdfiles
+          and _rdblob.count("inside-abs.ts") == 1
+          and os.path.realpath(proj) not in _rdblob)
+    check("rd: the redaction does not narrow to nothing - a relative in-repo "
+          "path and the command-shaped cell guard-secrets-read writes both "
+          "survive verbatim",
+          "src/inside-rel.ts" in _rdfiles
+          and "grep -r secret src" in _rdfiles)
+    check("rd: a row that named no file is passed through rather than stamped "
+          "with a token it never earned",
+          any("file" not in e for e in _rdgate.get("events") or []))
+    check("rd: the rule IS the journal's own function - a token spelled here "
+          "would be a second redactor free to disagree with the committed rows "
+          "(the last clause is a property of the source, and only source can "
+          "check it)",
+          M._redacted_event(proj, {"file": "../elsewhere/x"})["file"]
+          == _jio.OUTSIDE_TOKEN
+          and M._redacted_event(proj, {"file": "   "}) == {"file": "   "}
+          and "_journal_io.repo_relative_or_token" in _src)
+
     shutil.rmtree(tmp, ignore_errors=True)
 
 

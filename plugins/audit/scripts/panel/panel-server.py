@@ -19,6 +19,37 @@ every /api call; writes are refused if the resolved path escapes the project dir
 manifest writes are refused while <manifestPath>.lock is held; all writes are
 atomic (temp + os.replace).
 
+WHAT THIS API DELIBERATELY DOES NOT SERVE, recorded here because the route table
+below is where somebody would go to add it, and because a gap with no record is
+indistinguishable from an oversight (F109). Both entries are about /audit:sync.
+
+  * `sync pull` is CLI-only BY CONSTRUCTION. It asks two multi-select questions -
+    which assigned bugs, which sprint items - and then ADDS bugs and tasks to the
+    manifest. That is structure, and the one writer this panel has is allow-listed
+    to the composition levers with `apply_composition`'s own "never touches
+    structure" as the reason. A route could ask the questions; nothing here could
+    apply the answer without taking that allow-list apart, which is the panel's
+    whole safety story.
+  * `sync status` is CLI-only BECAUSE OF THE TRANSPORT, not the effort. Its doors
+    are all here and all but one need no network - `read-ado-links.py`,
+    `explain-ado-drift.py`, `resolve-ado-parent.py` and `check-ado-item.py` read
+    files. The one that does not, `fetch-ado-items.py`, reaches the board over a
+    transport this process does not have. `commands/sync.md` Preflight 4 says the session MAY use the
+    `mcp__azure-devops__*` tools and otherwise falls back to `az`: MCP tools
+    belong to the Claude session and not to a detached HTTP server, and `az`
+    answers as whatever identity the shell that launched the panel happens to
+    carry. So a route here would answer a DIFFERENT question about the same board
+    than the command does, which is worse than answering none - this panel's rule
+    is that it reports what the file proves and never what the connector claims
+    (`_panel_composition._ado_status`: "MANIFEST EVIDENCE only, no network").
+
+    THE BOUNDED READ IT COULD HONESTLY ADD IS A DIFFERENT CHANGE. `status` step 2
+    is `read-ado-links.py`, which needs no network at all, and what it knows over
+    the ADO card's own banner is the linked/unlinked split per kind, the mapped
+    target state, and the work items MORE THAN ONE manifest item claims - which
+    nothing else in this plugin ever counts. That belongs on the ADO card, in
+    `ui/panel/ado-connector.js`, and not on a second tab.
+
 Usage:
   python3 panel-server.py --project <dir> [--port N] [--no-open]
   python3 panel-server.py --selftest
@@ -45,6 +76,7 @@ import signal
 import socket
 import sys
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -197,6 +229,28 @@ apply_composition = _panel_write.apply_composition
 UI_HTML = _panel_page.UI_HTML
 UI_TEMPLATE = _panel_page.UI_TEMPLATE
 
+# The build the page above was assembled FROM. Read once, at import, because that
+# is when `_panel_page` baked it: a version read later would name whatever is on
+# disk now, which is exactly the thing this constant exists to be compared against.
+#
+# F100: the panel is ephemeral with a per-project pidfile, so a relaunch after an
+# upgrade FINDS the running instance and points at it - and that instance is still
+# serving the page an older build assembled. Re-assembling the page per request
+# does NOT fix it and was measured before being rejected: `raw_template(cache=False)`
+# re-reads `ui/` in a few milliseconds, but every other input to the substitution
+# chain (SETTINGS_GROUPS, FIELD_HELP, COMPOSITION_HELP, _cfg_enums(),
+# COST_BAND_PARAMS, CONTRAST_PAIRS) is a Python object this process imported at
+# startup, and so are the routes below. A per-request re-assembly would serve a
+# NEW front end off an OLD API and stamp the new version on it - a page that lies
+# rather than one that lags. So the running server states which build it is, and
+# `--status` says when that is behind what is installed. Re-derive the numbers
+# rather than trusting a sentence:
+#   python3 -c "import time,sys;sys.path.insert(0,'plugins/audit/scripts');\
+#   import _output;_output.install_path();import _panel_ui as u;\
+#   t=time.perf_counter();u.raw_template(cache=False);\
+#   print((time.perf_counter()-t)*1000,'ms')"
+ASSEMBLED_VERSION = _output.plugin_version()
+
 
 # --- HTTP server ----------------------------------------------------------------
 def _make_handler(project, token):
@@ -278,6 +332,8 @@ def _make_handler(project, token):
                 except Exception:
                     man = {}
                 self._json(200, _run_status(project, cfg, man)); return
+            if path == "/api/version":
+                self._json(200, version_state()); return
             if path == "/api/registry":
                 self._json(200, discover(project)); return
             if path == "/api/areas":
@@ -382,8 +438,21 @@ def _free_port():
 
 
 # --- lifecycle: a pidfile so a running panel is always discoverable + stoppable -
+#
+# The two per-project filenames, spelled ONCE for the three readers below:
+# `_pidfile()`/`_log_path()` build the paths this server writes, and
+# `_PANEL_PRIVATE_FILES` carries the ignore rule that keeps each out of git.
+# Those two functions used to hold literals of their own, so renaming either
+# moved the file the panel writes and left the rule pointing at the old name --
+# and the pidfile carries a LIVE session token, which makes that divergence one
+# `git add .claude` from history with no case anywhere going red. `i6` in
+# `tests/test_panel_server.py` is what would go red now.
+_PIDFILE_NAME = "audit-panel.json"
+_LAUNCH_LOG_NAME = "audit-panel.log"
+
+
 def _pidfile(project):
-    return os.path.join(project, ".claude", "audit-panel.json")
+    return os.path.join(project, ".claude", _PIDFILE_NAME)
 
 
 def _read_pidfile(project):
@@ -400,9 +469,13 @@ def _redact_token(url):
 
     The token is a live credential for a localhost server, and this plugin
     treats it as one: the pidfile holding it gets its ignore rule written by
-    _ensure_pidfile_ignored (claimed-but-never-written until 0.35 - found on
+    _ensure_panel_files_ignored (claimed-but-never-written until 0.35 - found on
     a real repo by `git check-ignore`). Printing it to a terminal that Claude
     Code transcribes was the same leak by a different route.
+
+    F114: `--status` redacted and `--stop` did not, one line apart in the same
+    transcript. Every surface that reads a URL out of the pidfile comes through
+    here now; the pidfile itself is the one place the token is written down.
 
     Matches `t=` at the start of the string as well as after `?`/`&`. A redactor that
     passes its input through unchanged when the shape is unexpected is worse than no
@@ -415,48 +488,194 @@ def _redact_token(url):
         return "http://127.0.0.1/?t=<hidden>"
 
 
-def _ensure_pidfile_ignored(project):
-    """Write the ignore rule the status line used to merely CLAIM existed.
+# The panel's own per-project files, each with the note that goes above it in
+# `.claude/.gitignore`. A note is its OWN line: git reads `#` as a comment only at
+# the start of a line, so `name  # why` would be a pattern matching that whole
+# string and would ignore nothing.
+_PANEL_PRIVATE_FILES = (
+    (_PIDFILE_NAME,
+     "# audit plugin: the panel pidfile holds a live session token"),
+    (_LAUNCH_LOG_NAME,
+     "# ...and the stderr of its detached launch, so a failure has a reason"),
+)
+
+
+def _ensure_panel_files_ignored(project):
+    """Write the ignore rules the status line used to merely CLAIM existed.
 
     The pidfile carries a live session token, and "it is gitignored; keep it
     that way" shipped for versions while nothing anywhere wrote the rule —
     `git check-ignore` on a real repo came back empty, one `git add .claude`
-    from putting the token in history. The rule is a single targeted line in
-    `.claude/.gitignore`; never a blanket ignore, because audit.config.json
-    and settings.json beside it are exactly what a team SHOULD commit (the
-    file itself is committable and shares the hygiene). Returns True when the
-    rule is in place, False when it could not be ensured — callers must warn
-    then, not claim."""
+    from putting the token in history. The launch log joined it at F99: the
+    detached launch redirects stderr there, so without a rule every panel
+    launch would leave an untracked file in `git status`.
+
+    The rules are targeted lines in `.claude/.gitignore`; never a blanket
+    ignore, because audit.config.json and settings.json beside them are exactly
+    what a team SHOULD commit (those files are committable and share the
+    hygiene). Returns True when every rule is in place, False when any could
+    not be ensured — callers must warn then, not claim."""
     try:
-        path = _pidfile(project)
-        base = os.path.basename(path)
-        gi = os.path.join(os.path.dirname(path), ".gitignore")
+        gi = os.path.join(os.path.dirname(_pidfile(project)), ".gitignore")
         try:
             with open(gi, "r", encoding="utf-8") as fh:
                 content = fh.read()
         except OSError:
             content = None
-        if content is not None \
-                and base in [ln.strip() for ln in content.splitlines()]:
+        have = [ln.strip() for ln in (content or "").splitlines()]
+        missing = [row for row in _PANEL_PRIVATE_FILES if row[0] not in have]
+        if not missing:
             return True
         with open(gi, "a", encoding="utf-8") as fh:
-            if content is None:
-                fh.write("# audit plugin: the panel pidfile holds a live "
-                         "session token\n")
-            elif content and not content.endswith("\n"):
+            if content and not content.endswith("\n"):
                 fh.write("\n")
-            fh.write(base + "\n")
+            for base, note in missing:
+                fh.write("%s\n%s\n" % (note, base))
         return True
     except Exception:
         return False
 
 
+# --- the detached launch's stderr: a panel that died must leave a reason --------
+def _log_path(project):
+    """Where the launch recipes send the detached child's stderr."""
+    return os.path.join(project, ".claude", _LAUNCH_LOG_NAME)
+
+
+def _last_line(text):
+    """The line of a log that names the REASON, or None if none does.
+
+    The last line at the LEFT MARGIN, not simply the last line - measured
+    against both shapes that actually land in this log, one of which the tail
+    rule got wrong. A traceback indents its frames and ends flush on the
+    exception, so the two rules agree there. This server's own port refusal is
+    one flush `ERROR:` line followed by indented advice, and its tail is "or
+    omit --port to let the OS pick a free one" - the one line in the block that
+    says nothing about what happened.
+
+    Falls back to the last line that says anything when every line is indented,
+    so a log with a reason in it never comes back empty. None rather than ""
+    because "nothing was recorded" and "something was" are the two states
+    `--status` has to tell apart, and an empty string reads as neither."""
+    said = [ln.replace("\x00", "").rstrip()
+            for ln in (text or "").splitlines() if ln.strip()]
+    if not said:
+        return None
+    flush = [ln for ln in said if ln[:1] not in (" ", "\t")]
+    return (flush or said)[-1].strip()
+
+
+def _launch_stderr(project, tail=4000):
+    """What the last detached launch left on stderr, or None if it left nothing.
+
+    F99: `/audit:panel` launched with `>/dev/null 2>&1`, so a child that died at
+    startup left EXACTLY the trace a launch that succeeded and was then stopped
+    leaves — no pidfile and no message — and the operator could not tell "it
+    refused" from "it is gone". The recipes redirect stderr here instead (append
+    mode), and `serve()` empties the file once it is actually listening. So
+    content in this file means the last launch never got up, and the last line of
+    it is the reason.
+
+    Returns a dict carrying the basis for the claim (which file, how long ago) or
+    None. Only the tail is read: a crash loop can make this file long, and the
+    newest line is the one being reported."""
+    path = _log_path(project)
+    try:
+        size = os.path.getsize(path)
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            if size > tail:
+                fh.seek(size - tail)
+            text = fh.read()
+        age = int(max(0, time.time() - os.path.getmtime(path)))
+    except OSError:
+        return None
+    line = _last_line(text)
+    if line is None:
+        return None
+    return {"line": line, "age": age, "path": path}
+
+
+def _clear_launch_stderr(project):
+    """Empty the launch log now that this process is actually listening.
+
+    The success sentinel is the file being EMPTY, which is why it is emptied
+    here rather than a "came up fine" line being appended: `nohup` itself writes
+    to that stderr (a sandbox refusing `nice` is the observed case) and a healthy
+    launch would otherwise leave a line `--status` would report as a cause of
+    death. The recipes redirect in APPEND mode so the child's fd re-seeks after
+    this truncation instead of writing into a hole.
+
+    True when there is nothing left in it — including when no launch redirected
+    anything here, which is the foreground case."""
+    path = _log_path(project)
+    if not os.path.exists(path):
+        return True
+    try:
+        with open(path, "w", encoding="utf-8"):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+# --- which build is serving the page (F100) ------------------------------------
+def _staleness(assembled, installed):
+    """Whether a running panel is serving a page an OLDER build assembled.
+
+    `stale` is None, never False, when either half is missing: a comparison with
+    no basis is not a clean bill of health, and a pidfile written before the
+    plugin stamped its build is exactly that case. Callers say so rather than
+    filling the gap with a default."""
+    if not assembled or not installed:
+        return {"assembled": assembled or None,
+                "installed": installed or None, "stale": None}
+    return {"assembled": assembled, "installed": installed,
+            "stale": assembled != installed}
+
+
+def _build_line(state):
+    """The one line `--status` prints about which build is serving the page."""
+    if state["stale"] is None:
+        return ("cannot tell which build assembled the page it is serving "
+                "(the pidfile carries no build stamp) — relaunch it if you "
+                "have just upgraded")
+    if state["stale"]:
+        return ("serving a page assembled from plugin %s, but plugin.json now "
+                "says %s — stop and relaunch to pick it up"
+                % (state["assembled"], state["installed"]))
+    return "serving a page assembled from plugin %s" % (state["assembled"],)
+
+
+def version_state():
+    """`GET /api/version` — which build assembled this page, and which is installed.
+
+    The page already carries the build it was assembled from (`__AUDIT_VERSION__`,
+    baked by `_panel_page` at import). What it cannot know is what is on disk NOW,
+    which is the half that makes "a control is missing because you upgraded" a
+    thing the page can say instead of a thing the user has to guess. `installed`
+    is re-read per request on purpose: an in-place upgrade replaces plugin.json
+    under a running server, and that is the case worth catching.
+
+    `ui/panel/version-banner.js` is what renders it (F100), interrupting the
+    reader when — and only when — the two builds disagree. The endpoint landed
+    before that part did and was exercised by a case rather than left as untested
+    code until it had a caller — the same call the help endpoint made, for the
+    same reason."""
+    return _staleness(ASSEMBLED_VERSION, _output.plugin_version())
+
+
 def _write_pidfile(project, info):
     path = _pidfile(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    _ensure_pidfile_ignored(project)
+    _ensure_panel_files_ignored(project)
+    # The build stamp is added HERE and not by serve(), so every pidfile this
+    # plugin writes carries it and --status always has both halves of the
+    # comparison (F100). A copy, never a mutation of the caller's dict.
+    record = dict(info)
+    record.setdefault("version", ASSEMBLED_VERSION)
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(info, fh, indent=2)
+        json.dump(record, fh, indent=2)
+    return record
 
 
 def _rm_pidfile(project):
@@ -480,13 +699,46 @@ def _pid_alive(pid):
     return True
 
 
+def status_lines(project, info, alive, stderr, installed):
+    """Every line `--status` prints, as data rather than as side effects.
+
+    Pure so the two things `--status` now has to get right can be asserted on
+    the lines themselves: that a died launch is distinguishable from a clean
+    stop (F99) and that a running panel says which build it assembled (F100).
+    `stderr` is `_launch_stderr()`'s dict or None, `installed` is the version
+    of the plugin whose copy of this file is running - which is the NEW one
+    after an upgrade, since the command invokes it out of ${CLAUDE_PLUGIN_ROOT}.
+    """
+    if info and alive:
+        # --status answers "is it running", which needs the port but not the token.
+        return ["panel RUNNING: %s (PID %s)"
+                % (_redact_token(info.get("url")), info.get("pid")),
+                _build_line(_staleness(info.get("version"), installed))]
+    lines = []
+    if info and info.get("pid"):
+        # A pidfile naming a process that is not there is NOT the same state as no
+        # pidfile at all: the panel got far enough to bind and then went away.
+        lines.append("panel not running: the pidfile named PID %s and that "
+                     "process is gone (project: %s)"
+                     % (info.get("pid"), project))
+    else:
+        lines.append("panel not running (project: %s)" % project)
+    if stderr:
+        lines.append("its last launch left this on stderr %ss ago (%s): %s"
+                     % (stderr["age"], stderr["path"], stderr["line"]))
+    return lines
+
+
 def status_panel(project):
     info = _read_pidfile(project)
-    if info and _pid_alive(info.get("pid")):
-        # --status answers "is it running", which needs the port but not the token.
-        print("panel RUNNING: %s (PID %s)"
-              % (_redact_token(info.get("url")), info.get("pid")))
-        if _ensure_pidfile_ignored(project):
+    alive = bool(info) and _pid_alive(info.get("pid"))
+    ignored = _ensure_panel_files_ignored(project)
+    for line in status_lines(project, info, alive,
+                             None if alive else _launch_stderr(project),
+                             _output.plugin_version()):
+        print(line)
+    if alive:
+        if ignored:
             print("the full URL (with its session token) is in "
                   ".claude/audit-panel.json — it is gitignored; keep it that way")
         else:
@@ -494,30 +746,60 @@ def status_panel(project):
                   ".claude/audit-panel.json — WARNING: could not write the "
                   "ignore rule; add `audit-panel.json` to .claude/.gitignore "
                   "before anything commits it")
+        # A running panel still writing to its launch log is a third state again -
+        # up, and complaining. Reported only when there IS something, so a healthy
+        # panel says nothing about a file that is empty.
+        running_err = _launch_stderr(project)
+        if running_err:
+            print("note: it has written to %s since it started; last line: %s"
+                  % (running_err["path"], running_err["line"]))
         return 0
     _rm_pidfile(project)   # stale/none
-    print("panel not running (project: %s)" % project)
     return 0
+
+
+def stop_lines(project, info, pid, error):
+    """Every line `--stop` prints. Pure, for the same reason `status_lines` is.
+
+    F114: this printed `info["url"]` RAW while `status_lines` redacted the same
+    string one line apart in the same transcript - and the reason `--status`
+    hides it (the pidfile is gitignored on purpose, a transcript is not) applies
+    here verbatim. The redacted URL still carries the port, which is what
+    "which panel did I just stop" actually needs."""
+    if not info:
+        return ["no panel running (project: %s)" % project]
+    if error is not None:
+        return ["could not stop panel (PID %s): %s" % (pid, error)]
+    return ["stopped panel (PID %s — was %s)"
+            % (pid, _redact_token(info.get("url")))]
 
 
 def stop_panel(project):
     info = _read_pidfile(project)
     if not info or not _pid_alive(info.get("pid")):
         _rm_pidfile(project)
-        print("no panel running (project: %s)" % project)
+        for line in stop_lines(project, None, None, None):
+            print(line)
         return 0
     pid = info["pid"]
     try:
         os.kill(pid, signal.SIGTERM)
     except Exception as exc:
-        print("could not stop panel (PID %s): %s" % (pid, exc))
+        for line in stop_lines(project, info, pid, exc):
+            print(line)
         return 1
     _rm_pidfile(project)
-    print("stopped panel (PID %s — was %s)" % (pid, info.get("url")))
+    for line in stop_lines(project, info, pid, None):
+        print(line)
     return 0
 
 
 def serve(project, port=0, open_browser=True):
+    # Before anything else: the launch recipe has already redirected this child's
+    # stderr into .claude/, so the ignore rule has to exist by now or a launch
+    # dirties `git status`. _write_pidfile ensures it too, and that is too late -
+    # a launch that dies never reaches it.
+    _ensure_panel_files_ignored(project)
     # One panel per project: if one is already up, point at it instead of spawning
     # a second (and never leave an untracked process behind).
     existing = _read_pidfile(project)
@@ -527,6 +809,10 @@ def serve(project, port=0, open_browser=True):
         # made the common case ("I want the panel") a two-step manual dance.
         print("panel already running: %s  (token hidden)"
               % _redact_token(existing.get("url")))
+        # THE moment F100 bites: the user upgraded, ran /audit:panel again, and
+        # this branch hands them the instance that is still serving the old page.
+        print(_build_line(_staleness(existing.get("version"),
+                                     _output.plugin_version())))
         if open_browser and existing.get("url"):
             print("opening the running one in your browser")
             try:
@@ -559,6 +845,10 @@ def serve(project, port=0, open_browser=True):
         return 2
     url = "http://127.0.0.1:%d/?t=%s" % (port, token)
     _write_pidfile(project, {"pid": os.getpid(), "port": port, "url": url})
+    # Listening. Whatever the launch wrapper wrote to the log on the way here was
+    # not fatal, so it must not survive to be reported as a cause of death by the
+    # next --status (F99); an empty log IS the success sentinel.
+    _clear_launch_stderr(project)
     atexit.register(_rm_pidfile, project)
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))  # --stop → clean exit
     # The URL carries a live session token. Printing it put that token in terminal

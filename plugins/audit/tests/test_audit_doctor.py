@@ -91,6 +91,42 @@ def _cases(check):
     import shutil as sh
     import tempfile
 
+    # NO CASE HERE MAY REACH THE REAL AZURE CLI, and until this stub one did.
+    # `check_ado`'s transport probe runs `az extension list` whenever `az` is on
+    # PATH, and the sharded fixture further down is built by `gen-demo-manifest`,
+    # which writes a `meta.ado` block - so a `diagnose()` in the middle of this
+    # suite shelled out to a third-party CLI. Two things were wrong with that: the
+    # verdict became a function of what is installed on the machine (the `ado`
+    # group below already stubs `which` for exactly that reason, and the stub had
+    # simply never been applied to the `diagnose()` path), and `az` writes into the
+    # operator's home directory - `~/.azure`, plus `~/Library` on macOS - which is
+    # somebody's real home on any machine where this suite is run by hand.
+    # `tools/sweep-selftests.py` watches the home directory it hands each child,
+    # and that is what found this.
+    #
+    # A PASS-THROUGH, never a blanket None: `git` and `python3` are looked up here
+    # too and those cases must keep seeing the real answer. The `ado` group saves
+    # and restores whatever is current, so it composes with this rather than
+    # replacing it.
+    _real_which = shutil.which
+
+    def _which_without_az(name, *args, **kwargs):
+        if name == "az":
+            return None
+        return _real_which(name, *args, **kwargs)
+
+    shutil.which = _which_without_az
+    # The second half is the direction that looks vacuous and is not: a stub
+    # answering None to everything would satisfy the first half for ever while
+    # silently skipping every git-dependent case below.
+    check("ado: no case in this suite can reach the real Azure CLI, and the "
+          "lookups the other cases depend on still answer for themselves - a "
+          "doctor that shells out to a third-party CLI is right in production "
+          "and wrong inside a selftest, which writes into a real home directory "
+          "and makes the verdict a property of the machine",
+          sh.which("az") is None and sh.which("git") == _real_which("git")
+          and sh.which("python3") == _real_which("python3"))
+
     def levels(rep, name):
         return [r["level"] for r in rep.rows if r["check"] == name]
 
@@ -99,7 +135,7 @@ def _cases(check):
 
     # An empty directory: no config, no manifest, no state. Nothing is BROKEN, so
     # this must not report findings - a fresh repo is not a sick one.
-    tmp = tempfile.mkdtemp(prefix="audit-doctor-selftest-")
+    tmp = _harness.fixture_root("audit-doctor-selftest-")
     try:
         # A non-git directory is legitimately a FINDING (every mutating command
         # stops there), so the "fresh setup" case has to be a fresh REPO. If git is
@@ -1313,7 +1349,7 @@ def _cases(check):
 
         # --- local artifacts hygiene (the ignore that was only ever claimed) -
         if have_git:
-            hyg = tempfile.mkdtemp(prefix="doctor-hygiene-")
+            hyg = _harness.fixture_root("doctor-hygiene-")
             try:
                 subprocess.run(["git", "init", "-q", hyg],
                                stdout=subprocess.DEVNULL,

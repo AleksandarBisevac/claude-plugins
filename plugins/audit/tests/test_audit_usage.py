@@ -198,6 +198,46 @@ def _cases(check):
               "would manufacture a basis instead of stating one",
               "rates as of" not in text)
 
+        # --- the rate basis, trimmed at the door (F160) ---------------------
+        # The plan schema asks only `minLength: 1`, so a string of spaces
+        # VALIDATES and this line tested it for truth: "rates as of" followed by
+        # nothing. `rate_basis` is the one door both readers in this file go
+        # through, so the cases drive it directly AND through the render.
+        def _basis(raw):
+            return M.rate_basis({"pricingAsOf": raw})
+
+        def _rendered(raw):
+            _m = json.loads(json.dumps(manifest))
+            _m.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = raw
+            return M.render(loaded, args, _m, "all time", True)
+        check("render: a whitespace-only rate date is NOT a declaration - it "
+              "collapses to None and the line says the rates are undated, "
+              "rather than trailing off after 'rates as of': %r"
+              % (_basis("   "),),
+              _basis("   ") is None
+              and "undated rates" in _rendered("   ")
+              and "rates as of" not in _rendered("   "))
+        check("render: ...and a PADDED date is trimmed rather than refused - "
+              "the fixture that separates trimming from merely rejecting a "
+              "blank, since a version carrying the raw value through would "
+              "print the padding: %r" % (_basis(" 2026-08-06 "),),
+              _basis(" 2026-08-06 ") == "2026-08-06"
+              and "rates as of 2026-08-06" in _rendered(" 2026-08-06 "))
+        check("render: ...and a hand-edited number is None rather than a "
+              "raise - a render that raises is a report that does not print: "
+              "%r" % (_basis(20260806),),
+              _basis(20260806) is None
+              and "undated rates" in _rendered(20260806))
+        # THE OTHER-DIRECTION CASE, which looks vacuous and is the only one
+        # that fails if the trim becomes an unconditional None.
+        check("render: ...and a declared date is untouched, so the repair "
+              "cannot have been 'never report a basis'",
+              _basis("2026-08-06") == "2026-08-06")
+        check("render: both readers in this file go through ONE door, so the "
+              "terminal line and the --json payload cannot disagree about a "
+              "value's whitespace",
+              M.rate_basis({}) is None and M.rate_basis(None) is None)
+
         no_cost = M.render(loaded, args, manifest, "all time", False)
         check("render: --no-cost drops every dollar figure", "$" not in no_cost)
         check("render: --no-cost drops the rate basis too - with no dollars on "

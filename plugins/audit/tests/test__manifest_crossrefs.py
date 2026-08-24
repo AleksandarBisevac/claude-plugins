@@ -449,6 +449,60 @@ def _cases(check):
           % (M._check_ado_parents(_covered, _covered["phases"]),),
           M._check_ado_parents(_covered, _covered["phases"]) == ([], []))
 
+    # --- F120: the board demands what the connector cannot supply -------------
+    # `_covered` is the fixture on purpose: every phase declares its own parent,
+    # so `_require_parent_warnings` is silent over it and any warning below is
+    # the BUG one and not that one leaking. Push creates a bug card with no
+    # parent link at all, so on this board those creates were refused at push
+    # time and the validator - whose inventory call deliberately omits bugs -
+    # could not see it coming.
+    def _withbugs(plan, bugs):
+        out = dict(plan)
+        out["bugs"] = bugs
+        return out
+
+    _bugged = _withbugs(_covered, [{"id": "BUG-1", "title": "x", "status": "open"},
+                                   {"id": "BUG-2", "title": "y", "status": "open",
+                                    "ado": {"id": 900}}])
+    _f, _w = M._check_ado_parents(_bugged, _bugged["phases"])
+    # Joined rather than indexed, here and below. A mutation that stops the
+    # warning firing leaves this list EMPTY, and `_w[-1]` would raise inside the
+    # case rather than failing it - taking every case after this one, and their
+    # unprinted output, down with it. That happened while proving these red.
+    _said = "".join(_w)
+    check("ap43 requireParent draws a warning about the UNLINKED bug and names "
+          "it, because a push would create that card outside the backlog this "
+          "board requires everything to sit in: %r" % (_w,),
+          _f == [] and len([x for x in _w if "requireParent" in x]) == 1
+          and "BUG-1" in _said)
+    check("ap44 ...and NOT about the linked one, which a push only ever "
+          "UPDATES - the same reason its neighbour is a warning rather than a "
+          "finding, applied to which items it counts: %r" % (_said[-90:],),
+          "BUG-1" in _said and "BUG-2" not in _said)
+    check("ap45 ...as a WARNING, so validate() still calls that manifest VALID "
+          "- a board whose standard this connector cannot fully meet is a gap "
+          "to report before the push, not a file to refuse: %r"
+          % (_rules.validate(_bugged)[0],),
+          _rules.validate(_bugged)[0] == []
+          and len([x for x in _rules.validate(_bugged)[1]
+                   if "not linked yet" in x]) == 1)
+    # THE SECOND DIRECTION, twice. A check that fired unconditionally would
+    # light up on both of these and every case above would still pass.
+    _all_linked = _withbugs(_covered, [{"id": "BUG-1", "title": "x",
+                                        "status": "open", "ado": {"id": 901}}])
+    check("ap46 a plan whose bugs are ALL linked is silent, because nothing is "
+          "about to be created without a parent on their account: %r"
+          % (M._check_ado_parents(_all_linked, _all_linked["phases"]),),
+          M._check_ado_parents(_all_linked, _all_linked["phases"]) == ([], []))
+    _no_rule = _withbugs(
+        _plan({"phaseWorkItems": False}, _covered["phases"]),
+        [{"id": "BUG-1", "title": "x", "status": "open"}])
+    check("ap47 ...and so is the SAME unlinked bug on a board that never asked "
+          "for a parent - the warning is about the board's rule, not about a "
+          "bug having no parent, which is normal: %r"
+          % (M._check_ado_parents(_no_rule, _no_rule["phases"]),),
+          M._check_ado_parents(_no_rule, _no_rule["phases"]) == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)

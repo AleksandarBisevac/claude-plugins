@@ -63,6 +63,7 @@ def _cases(check):
                "READY_LIST_MAX", "HIGH_SEVERITIES", "_is_high_severity",
                "parse_gitmodules", "_strip_git_root", "submodule_conflicts",
                "_status_index", "ready_tasks", "_by_status", "_by_status_values",
+               "PARKED_PROPOSAL_STATUS", "is_parked_proposal",
                "areas_of", "effective_bug_status", "TERMINAL", "rollup",
                "unmet_refs", "evaluate_gate", "budget_breaches")
     _forked = sorted(n for n in _shared
@@ -349,6 +350,56 @@ def _cases(check):
           "this is what fails if either grows its own idea of the order",
           [r["porder"] for r in _rp] == _rhtml.phase_ranks(_pinned),
           repr((([r["porder"] for r in _rp]), _rhtml.phase_ranks(_pinned))))
+    # --- what `parked` means, and that it is decided once ---------------------
+    # Two surfaces print the word: `rollup`'s count, which the header line reads,
+    # and `audit-status._proposal_lines`. Each used to decide it, so a proposed
+    # entry with no payload made one render say two different numbers.
+    check("pp1 the decision is the RAW status alone - a proposed entry with no "
+          "payload is parked, because a status surface reports what is there "
+          "and materializability is a different question",
+          M.is_parked_proposal("proposed") is True
+          and M.is_parked_proposal("dropped") is False
+          and M.is_parked_proposal("materialized") is False)
+    check("pp2 ...and a MISSING status is not parked. `proposal_rows` normalises "
+          "an absent status to `proposed` for a badge to paint; a surface that "
+          "counted through that reading would be inventing one",
+          M.is_parked_proposal(None) is False
+          and M.is_parked_proposal("open") is False)
+    _pp = {"phases": [], "proposals": [
+        {"id": "A", "status": "proposed",
+         "payload": {"phase": {"id": "P9", "title": "x", "tasks": []}}},
+        {"id": "B", "status": "proposed"},
+        {"id": "C", "status": "dropped"},
+        {"id": "D"}]}
+    _ppsum = M.rollup(_pp, [], [])["proposals"]
+    check("pp3 the rollup counts through that one predicate: the payload-bearing "
+          "and the payload-less proposed entries both count, the dropped and "
+          "the status-less ones do not",
+          _ppsum["parked"] == 2 and _ppsum["total"] == 4, repr(_ppsum))
+    check("pp4 SECOND-DIRECTION CASE: `parked` is not the total and not the "
+          "count of anything that merely appears in `proposals[]`. A count that "
+          "stopped reading the status passes pp3 only if this one is here",
+          _ppsum["parked"] != _ppsum["total"])
+    # Read out of the AST, because the property is about WHERE the decision is
+    # taken and every case above passes just as well against a second copy of it
+    # that happens to agree today. `_proposal_lines` is the renderer's half.
+    with open(_CMD.__file__, "r", encoding="utf-8") as fh:
+        _cmd_tree = ast.parse(fh.read(), filename=_CMD.__file__)
+    _pl = [n for n in ast.walk(_cmd_tree)
+           if isinstance(n, ast.FunctionDef) and n.name == "_proposal_lines"]
+    _pl_calls = [c.func.attr for n in _pl for c in ast.walk(n)
+                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)]
+    _pl_literal = [c for n in _pl for c in ast.walk(n)
+                   if isinstance(c, ast.Compare)
+                   and any(isinstance(v, ast.Constant)
+                           and v.value == M.PARKED_PROPOSAL_STATUS
+                           for v in c.comparators)]
+    check("pp5 the renderer ASKS this function and does not spell the word "
+          "again - one decision is the whole of the fix, and a comparison "
+          "against the literal is how the second one came back: %r"
+          % (sorted(set(_pl_calls)),),
+          len(_pl) == 1 and "is_parked_proposal" in _pl_calls
+          and _pl_literal == [])
     check("pd7 ...and its second direction: with nothing pinned the report emits "
           "NO ranks, because it hides the sort control in the same breath, while "
           "the panel offers the control always and stamps the identity. Same "

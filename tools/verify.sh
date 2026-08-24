@@ -7,6 +7,15 @@
 #   tools/verify.sh --release       the full set PLUS the checks a version bump owes
 #   tools/verify.sh --affected      only the checks the working tree's changes need
 #
+# `--affected` REFUSES rather than narrowing when the selector names a check this
+# file cannot dispatch: it exits 2 having run nothing, because a narrowed run that
+# quietly drops a gate reports the change as covered when it is not.
+#
+# `--release` also PRINTS the followers a bump stales, in the order they must be
+# redone and with the command that refreshes each. That list had never been written
+# down anywhere: it existed only as the gates that catch each follower, so it was
+# learned by going red once per follower. Read it before you start, not after.
+#
 # WHY THIS EXISTS. Nothing here is new; every line below was already a command
 # somebody had to remember. Typing them by hand cost real money twice in one day:
 #
@@ -118,6 +127,71 @@ if [ "$AFFECTED" -eq 1 ]; then
     echo "verify: --affected — running only what the working tree needs"
     sed 's/^/  /' "$WORKDIR/affected.txt"
     rc=0
+    # THE STEP LIST, CUT OUT ONCE, BEFORE ANYTHING DISPATCHES OVER IT. The selector
+    # prints its reasons first and its commands after a `run:` line, and BOTH halves
+    # are indented by two spaces - so a dispatcher reading the whole file cannot tell
+    # a command it does not recognise from a sentence it was never meant to run. That
+    # ambiguity is why the loops below matched on a prefix and dropped everything
+    # else in silence. One extraction, one meaning: every line of steps.txt is a
+    # command, and nothing else is.
+    #
+    # The `(nothing ...)` line is the selector's way of saying it selected no check
+    # at all; it is a sentence in the command position and the only one there is.
+    awk '/^run:$/ { steps = 1; next }
+         steps && /^  \(/ { next }
+         steps && /^  / { sub(/^  /, ""); print }' \
+      "$WORKDIR/affected.txt" > "$WORKDIR/steps.txt"
+
+    # REFUSE, DO NOT SKIP - and refuse before a single step runs. This runner
+    # dispatches a fixed list of command prefixes, and the selector emits a plugin
+    # validator for any change under commands/, skills/ or agents/. The `case` had
+    # no arm for it, so that step matched nothing, ran nothing, and the summary
+    # below went on announcing that every selected check was green. It is the exact
+    # defect the `npx ` arm was added for one prefix earlier, which is the argument
+    # for ending the arms race: a check the selector names and this runner cannot
+    # run is a disagreement between the two, and the honest answer names it and
+    # stops.
+    #
+    # This grep is now the ONLY place the accepted prefixes are spelled. The loops
+    # below dispatch whatever survives it, so a prefix cannot be accepted here and
+    # dropped there.
+    #
+    # THE FOURTH PREFIX IS THE INSTANCE; THE REFUSAL BELOW IS THE CLASS. Adding a
+    # prefix is what was done for `npx ` and it left the next one to be found the
+    # same way, so it is not the fix on its own - but declining to add it would
+    # leave every change under commands/, skills/ or agents/ unable to narrow at
+    # all, and those are among the most frequently edited files here. The plugin
+    # validator is a gate the full run already invokes twice, so nothing new is
+    # being asked of the machine.
+    grep -v -e '^python3 ' -e '^node ' -e '^npx ' -e '^claude ' \
+      "$WORKDIR/steps.txt" > "$WORKDIR/undispatchable.txt"
+    if [ -s "$WORKDIR/undispatchable.txt" ]; then
+      echo ""
+      echo "VERIFY (--affected) REFUSED. Nothing ran. tools/affected.py selected"
+      echo "check(s) this runner has no way to dispatch:"
+      sed 's/^/  /' "$WORKDIR/undispatchable.txt"
+      echo ""
+      echo "A narrowed run that dropped these would still have reported every"
+      echo "selected check green, which is worse than not narrowing at all. Teach"
+      echo "the accepted-prefix list above the new prefix, or stop the selector"
+      echo "emitting it. Until then, run with no flag: that is the full set."
+      exit 2
+    fi
+
+    # ...AND AN EMPTY SELECTION IS NOT A GREEN RUN. The selector says so in words
+    # when it matched no check at all, and the summary below would answer that with
+    # "every selected check is green" - a verdict over nothing, which is the same
+    # sentence a run that checked everything prints. Refused for the same reason as
+    # above and with the same exit: this mode cannot say anything about the change.
+    if [ ! -s "$WORKDIR/steps.txt" ]; then
+      echo ""
+      echo "VERIFY (--affected) REFUSED. The selector matched NO check for this"
+      echo "change, so there was nothing to narrow to. That is a run that checked"
+      echo "nothing, not a run that found nothing wrong."
+      echo "Run with no flag: that is the full set."
+      exit 2
+    fi
+
     # The report documents go concurrently here for the same reason as in the full
     # run: three file:// Chromiums with nothing shared. Running them through the
     # serial loop below cost more than the narrowing saved on a change that
@@ -126,12 +200,11 @@ if [ "$AFFECTED" -eq 1 ]; then
     n=0
     while IFS= read -r cmd; do
       case "$cmd" in
-        "  node tools/check-report-interactive.mjs "*)
-          c=$(printf '%s' "$cmd" | sed 's/^  //')
+        "node tools/check-report-interactive.mjs "*)
           n=$((n + 1))
-          ( sh -c "$c" >"$WORKDIR/par-$n.log" 2>&1; echo $? >"$WORKDIR/par-$n.rc" ) & ;;
+          ( sh -c "$cmd" >"$WORKDIR/par-$n.log" 2>&1; echo $? >"$WORKDIR/par-$n.rc" ) & ;;
       esac
-    done < "$WORKDIR/affected.txt"
+    done < "$WORKDIR/steps.txt"
     [ "$n" -eq 0 ] || wait
     i=0
     while [ "$i" -lt "$n" ]; do
@@ -142,18 +215,15 @@ if [ "$AFFECTED" -eq 1 ]; then
     done
     while IFS= read -r cmd; do
       case "$cmd" in
-        "  node tools/check-report-interactive.mjs "*) ;;
-        # `npx ` is in the list because `npx vitest run` became selectable and this
-        # case statement did not know the word - so the selector named a gate and
-        # the runner silently skipped it, which is worse than not selecting it at
-        # all: the summary would have said every selected check was green.
-        "  python3 "*|"  node "*|"  npx "*)
-          c=$(printf '%s' "$cmd" | sed 's/^  //')
-          printf '  %-58s' "$c"
-          if sh -c "$c" >"$WORKDIR/step.log" 2>&1; then printf 'ok\n'
+        "node tools/check-report-interactive.mjs "*) ;;
+        # Everything the guard above let through, and nothing has to be spelled
+        # twice for that to hold.
+        *)
+          printf '  %-58s' "$cmd"
+          if sh -c "$cmd" >"$WORKDIR/step.log" 2>&1; then printf 'ok\n'
           else printf 'FAILED\n'; sed 's/^/      /' "$WORKDIR/step.log" | tail -10; rc=1; fi ;;
       esac
-    done < "$WORKDIR/affected.txt"
+    done < "$WORKDIR/steps.txt"
     echo ""
     if [ "$rc" -ne 0 ]; then
       echo "VERIFY (--affected) FAILED. This was a NARROWED run: re-run without"
@@ -196,6 +266,14 @@ run "gate parity (every description of the gate set)" python3 tools/gate-parity.
 # gated is the import graph, which is exact: `bench-hooks.py` (no flag) prints the
 # measurement for a human choosing what to optimise.
 run "hook import budget" python3 tools/bench-hooks.py --gate
+
+# The half of the pipeline that WRITES to a repository, against a real one. Nothing
+# else here creates a git repository, so the commit trail, the branch resolution,
+# `guard-history-rewrite`'s ancestry question, the journal's git anchor and the
+# ledger's author had never been executed by a gate - each reads git and each fails
+# OPEN when git cannot be asked, so the gap looked exactly like a clean result. It is
+# also where the five hooks ci.yml's launcher steps leave out are wired.
+run "git pipeline (a real repository)" python3 tools/check-git-pipeline.py
 run "ruff" ruff check plugins/audit tools
 run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \
   plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
@@ -221,6 +299,22 @@ run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
 run "committed artifacts match a fresh render" python3 tools/check-rendered-artifacts.py
+# THE HALF OF THAT CLAIM THE TOOL ABOVE DELIBERATELY DOES NOT MAKE, and the only gate
+# CI ran that this file did not — so "every gate CI runs, in one command" was false by
+# exactly one step, and it was the step that catches a release follower. docs/index.html
+# is the GitHub Pages demo and a BYTE COPY of the committed example report; it is not in
+# check-rendered-artifacts.py's table on purpose, because covering it there would render
+# one published page from two inputs. Fresh source (above) plus proven copy (here) is a
+# fresh copy — and `copy_check_missing()` in that tool now reads THIS line, so deleting
+# it turns the tool above red rather than going quiet.
+docs_index_is_copy() {
+  cmp -s docs/index.html examples/acme-store/acme-store-audit.html && return 0
+  echo "docs/index.html has drifted from examples/acme-store/acme-store-audit.html"
+  echo "fix: examples/report.sh — it re-renders the example AND makes this copy"
+  echo "     by hand: cp examples/acme-store/acme-store-audit.html docs/index.html"
+  return 1
+}
+run "docs/index.html is still a byte copy" docs_index_is_copy
 # The other question about the same files, and the only one that reads the BYTES
 # GIT TRACKS rather than the code that wrote them: a committed journal row once
 # carried a user's home directory into a repository that ships to clients. Fixing
@@ -272,17 +366,83 @@ else
 fi
 
 # --- what a version bump owes -------------------------------------------------
-# These are not extra rigour; they are the three things that follow a bump and get
-# forgotten because they live in different files from the number itself.
+# THE FOLLOWER LIST LIVED IN A PERSON'S MEMORY. Bumping the version in
+# plugins/audit/.claude-plugin/plugin.json is itself a source change, and it stales
+# other files that carry the number. Cutting 1.4.0 surfaced them ONE AT A TIME, each
+# as a red gate after the fact — which is the only way anyone has ever learned this
+# list: by going red once per follower. Nothing in the repository said so. The `#R`
+# block below is that list, written down once, printed by `--release` at the moment
+# somebody needs it, and by nothing else.
+#
+# THE ORDER IS LOAD-BEARING AND WAS GOT WRONG ONCE. Screenshots were re-captured for
+# a set of UI changes, the bump then invalidated every picture, and the shutter had
+# to run a second time. Capture FOLLOWS the bump; it never precedes it. And
+# docs/index.html is a byte copy, so it can only be refreshed after the artifact it
+# copies.
+#
+# THIS BLOCK CHECKS AND NEVER REFRESHES, which is the one design decision here worth
+# arguing about. A verifier that repaired what it found would go green BECAUSE it
+# repaired it, and a green that covers nothing is the single failure this whole file
+# exists to prevent. So the rows below assert, and the recipe for each sits beside it
+# in the printed list.
+#
+# EVERY ROW CALLS THE LINT THAT ALREADY OWNS ITS QUESTION rather than re-deciding it
+# in shell — `raw_url_pin_drift`, `artifact_version_drift`, `screenshot_capture_drift`
+# in _refs.py, and the `cmp` above. The sweep runs those same rules over the same
+# tree, so a stale follower already fails a plain `tools/verify.sh`; what `--release`
+# adds is that the followers are NAMED, in order, with their recipes, at the one
+# moment the order matters. The README row used to be a `grep` written here — a
+# second spelling of half of `raw_url_pin_drift()`, and the half that decides which
+# version is current.
+#
+#R a bump to plugins/audit/.claude-plugin/plugin.json stales the following, and they
+#R must be redone IN THIS ORDER:
+#R
+#R   1. plugins/audit/README.md — the `curl` pins name the tag a reader fetches
+#R      from, so an unbumped pin serves the previous release's files.
+#R        rewrite each `claude-plugins/v<old>/` in the README to the new tag
+#R
+#R   2. the committed rendered artifacts — every report stamps the version that
+#R      produced it, in the page and again inside its embedded Markdown twin.
+#R        examples/report.sh
+#R        ...and the scale demo, which renders from a generated fixture. Its exact
+#R        commands are printed by the gate that compares it, built from the same
+#R        flags that comparison renders with:
+#R          python3 tools/check-rendered-artifacts.py --how
+#R
+#R   3. docs/index.html — a BYTE COPY of the example report, so it follows 2 and
+#R      can never precede it.
+#R        examples/report.sh makes this copy for you; by hand it is
+#R          cp examples/acme-store/acme-store-audit.html docs/index.html
+#R
+#R   4. docs/screenshots/ — each image records the version it was shot at.
+#R        node tools/capture-screenshots.mjs
+#R
+#R CAPTURE FOLLOWS THE BUMP. Capturing first and bumping afterwards invalidates
+#R every picture and the shutter runs twice. That is not a hypothetical.
 if [ "$RELEASE" -eq 1 ]; then
   echo "verify: release preflight"
   version=$(python3 -c 'import json,io;print(json.load(io.open("plugins/audit/.claude-plugin/plugin.json",encoding="utf-8"))["version"])')
   echo "  plugin.json version: $version"
+  echo ""
+  # The list, printed from the comment block above so there is exactly one copy of
+  # it. `--help` prints this file's header the same way and for the same reason.
+  sed -n '/^#R/{s/^#R //;s/^#R$//;p;}' "$0" | sed '/./s/^/  /'
+  echo ""
 
-  readme_pins_current() {
-    stale=$(grep -o 'claude-plugins/v[0-9][^/]*/' plugins/audit/README.md \
-            | sort -u | grep -v "^claude-plugins/v$version/$" || true)
-    [ -z "$stale" ] || { echo "README pins not on v$version:"; echo "$stale"; return 1; }
+  # One caller for the rules that already own these questions. Each returns the
+  # findings and exits non-zero when there are any, so a row goes red naming the
+  # file rather than naming this function.
+  refs_rule() {
+    python3 - "$1" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.path.join("plugins", "audit", "scripts"))
+import _refs
+rows = getattr(_refs, sys.argv[1])()
+for row in rows:
+    sys.stdout.write("%s\n" % (row,))
+sys.exit(1 if rows else 0)
+PYEOF
   }
   changelog_has_section() {
     grep -q "^## \[$version\]" CHANGELOG.md \
@@ -293,7 +453,12 @@ if [ "$RELEASE" -eq 1 ]; then
       && { echo "tag v$version already exists — a pushed tag is never moved here"; return 1; }
     return 0
   }
-  run "README curl pins name v$version" readme_pins_current
+  run "follower 1: fetch pins name v$version" refs_rule raw_url_pin_drift
+  run "follower 2: artifacts stamp v$version" refs_rule artifact_version_drift
+  run "follower 3: docs/index.html copies follower 2" docs_index_is_copy
+  run "follower 4: screenshots were shot at v$version" refs_rule screenshot_capture_drift
+  # Not followers — these are properties of the release COMMIT rather than files the
+  # number stales, which is why they sit below the numbered list instead of in it.
   run "CHANGELOG has a [$version] section" changelog_has_section
   run "tag v$version does not exist yet" tag_is_free
 fi

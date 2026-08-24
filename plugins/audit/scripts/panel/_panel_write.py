@@ -99,6 +99,7 @@ import _priority              # noqa: E402  (what a valid tier is, and who holds
 #                                            the SAME function set-priority.py asks)
 import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
 #                                            the SAME rule /audit:logs prune runs)
+import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -455,15 +456,86 @@ def prune_gate_events(project, body):
         return {"ok": False,
                 "findings": ["olderThanDays must be a whole number of days, at "
                              "least 1 (got %r)" % (older,)]}
-    return _gate_feed.prune(project, read_config(project),
-                            older_than_days=older,
-                            dry_run=bool(body.get("dryRun")))
+    return _redacted_feed_answer(
+        project, _gate_feed.prune(project, read_config(project),
+                                  older_than_days=older,
+                                  dry_run=bool(body.get("dryRun"))))
+
+
+def _redacted_feed_answer(project, result):
+    """`_gate_feed.prune`'s answer with the feed's own path made safe to paint.
+
+    THE PAGE NOT RENDERING IT IS NOT A REASON TO SHIP IT RAW. `path` is
+    `logs_dir()` joined onto the project root, so on a real machine it carries
+    the operator's home directory and user name, and it travels in an HTTP
+    response on the surface `docs/screenshots/panel-gate.png` is a committed
+    render of. The previous release closed this same channel one card up
+    (`_panel_runstate._redact_gate_row`, which redacts the events table this
+    prune acts on), and a redactor scoped to the cell somebody happened to paint
+    fails the moment the next reader looks one field further.
+
+    REDACTED RATHER THAN DROPPED, and the two are not the same answer. The
+    counts are a claim and the file they were counted in is the basis that makes
+    the claim checkable, so dropping the field would leave the claim with no
+    basis at all; `_gate_feed.prune` also documents every field as present on
+    every outcome, and a panel answering in a different shape from
+    `/audit:logs prune` would be a second contract for one rule.
+    `repo_relative_or_token` keeps the basis and loses the machine - and its
+    token says something the raw path did not, namely that `logsDir` points
+    somewhere this repository does not contain.
+
+    THE FINDINGS CARRY THE SAME BYTES, TWICE. `could not read %s: %s`
+    interpolates the path and then an OSError that spells the same filename
+    again, so the substitution runs over every finding rather than over the one
+    key: the leak is the path, not the field it happens to sit under.
+
+    A REFUSAL FROM `feed_path` NAMES `logsDir` AND LEAVES `path` AT None, so
+    there is nothing here to match on. That sentence is `_gate_feed`'s to
+    redact; it is left alone rather than half-cleaned, because a redactor that
+    guessed at a substring it was not given would be a second rule.
+    """
+    if not isinstance(result, dict):
+        return result
+    shown = dict(result)
+    raw = result.get("path")
+    if not (isinstance(raw, str) and raw):
+        return shown
+    safe = _journal_io.repo_relative_or_token(project, raw)
+    shown["path"] = safe
+    findings = result.get("findings")
+    if isinstance(findings, list):
+        shown["findings"] = [f.replace(raw, safe) if isinstance(f, str) else f
+                             for f in findings]
+    return shown
 
 
 # --- write locking ---------------------------------------------------------------
+# The panel wears a different identity in each of the three places that need one,
+# and F111 is what happens when one of them is reused for another:
+#
+#   the LOCK      `_panel_session()` -- a pid, because liveness is the question;
+#   the JOURNAL   nothing. `_journal_io` falls through to its persisted
+#                 per-checkout writer token, which is what names the committed
+#                 file; `via: "panel"` says who wrote the row;
+#   the CLAIM     `PANEL_JOURNAL_WRITER`, a fixed key -- one panel per project,
+#                 so the claim is per project and not per process.
+PANEL_JOURNAL_WRITER = "panel"
+
+
 def _panel_session():
-    """This panel's lock identity. A pid the OS can vouch for is what lets a
-    crashed panel's lock be judged dead rather than waited out for an hour."""
+    """This panel's LOCK identity, and nothing else's.
+
+    A pid the OS can vouch for is what lets a crashed panel's lock be judged dead
+    rather than waited out for an hour. That is the whole reason it is a pid.
+
+    IT MUST NOT NAME A COMMITTED FILE (F111). This value went to the journal as
+    `actor.sessionId` too, and `_journal_io.writer_id()` takes a session id as the
+    writer id -- so the trail's own committed file became `<month>.panel-<pid>`,
+    a shape this plugin's own PII gate refuses, in the one field with no repair
+    path (`genesis_prev()` seeds the chain from those bytes, so a committed name
+    cannot be corrected without breaking `verify()` on every clone). It changed on
+    every launch as well, scattering a month of panel edits across a file per
+    panel process. `_journal` passes no session id at all now."""
     return "panel-%d" % os.getpid()
 
 
@@ -792,22 +864,58 @@ def _journal(project, config, action, target, rows):
     The module handle is _panel_state's memo, reached by identity: the reader
     (`journal_state`) and this writer must agree about whether there is a journal
     on this install, including when a selftest swaps a stub into it.
+
+    NO `sessionId` IN THE ACTOR, and that absence is the fix rather than an
+    omission: `_panel_session()`'s docstring says why. Without one `_journal_io`
+    names the file from its persisted per-checkout writer token, and `via` is
+    what records that the panel wrote the row.
     """
     mod = _journalmod()
     if mod is None or not hasattr(mod, "append"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     try:
-        ok = bool(mod.append(project, {
+        written = mod.append(project, {
             "action": action,
             "target": target,
             "summary": "%d change(s): %s" % (
                 len(rows), "; ".join(_fmt_change(r) for r in rows)),
             "actor": {"author": _viewer(project, config).get("author"),
-                      "sessionId": _panel_session(), "via": "panel"}}))
+                      "via": "panel"}})
     except Exception:
-        ok = False
-    return {"journaled": True} if ok else {"journaled": False,
-                                           "journaledWhy": "failed"}
+        written = False
+    if not written:
+        return {"journaled": False, "journaledWhy": "failed"}
+    _claim_panel_write(mod, project, config, written)
+    return {"journaled": True}
+
+
+def _claim_panel_write(mod, project, config, written):
+    """Leave the claim `guard-bash-writes` needs, so this append is not read as a
+    shell write into the audit trail (F104). Returns the slot, or None.
+
+    The panel server is a DETACHED process this plugin launched, so the guard's
+    per-session sidecar can never name what it wrote: the operator's session did
+    not write it. It gets a slot of its own under a fixed key, which the guard
+    reads alongside the session's.
+
+    THE PATH COMES FROM `append`, never from re-deriving a name here. Which file
+    the row landed in is `_journal_io`'s answer -- it changed once already (F111)
+    -- and a second guess at it would be a claim about a file that does not exist,
+    which is silence dressed as evidence.
+
+    Fail-soft like everything else on this path: a save that succeeded must not be
+    reported as failed because the claim could not be left. An older journal
+    module has no `record_plugin_write` and returns True rather than a path from
+    `append`; both mean there is nothing to claim, not that the write failed."""
+    if not isinstance(written, str):
+        return None
+    recorder = getattr(mod, "record_plugin_write", None)
+    if recorder is None:
+        return None
+    try:
+        return recorder(project, config, PANEL_JOURNAL_WRITER, written)
+    except Exception:
+        return None
 
 
 # --- writes ---------------------------------------------------------------------
@@ -832,7 +940,7 @@ def write_config(project, obj):
         return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
                 "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged",
-                "path": os.path.relpath(path, project)}
+                "path": _mio.posix_rel(path, project)}
     # The config decides where the manifest is and which guards run; writing it
     # under a running phase is the same class of surprise as writing the manifest.
     lock = _acquire_write_lock(project, current, None)
@@ -843,7 +951,7 @@ def write_config(project, obj):
     finally:
         _release_write_lock(lock)
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
-           "path": os.path.relpath(path, project)}
+           "path": _mio.posix_rel(path, project)}
     # `current`, not the config just written: the actor is resolved under the mode
     # that was in force when they made the change, not one this same save may have
     # altered.
@@ -868,7 +976,7 @@ def theme_state(project):
                    for k, t, names in _theme.THEME_GROUPS],
         "single": sorted(_theme.THEME_SINGLE),
         "source": info["source"],
-        "path": (os.path.relpath(info["path"], project)
+        "path": (_mio.posix_rel(info["path"], project)
                  if info.get("path") else None),
         "name": info["name"],
         "error": info["error"],
@@ -1051,7 +1159,7 @@ def write_theme(project, body):
     back, err = _theme.load_theme_file(path)
     if err:
         return {"ok": False, "findings": ["written but not readable back: %s" % err]}
-    written = [os.path.relpath(path, project).replace(os.sep, "/")]
+    written = [_mio.posix_rel(path, project)]
     if save_as:
         cfg = dict(read_config(project))
         ui = dict(cfg.get("ui") or {})
@@ -1254,7 +1362,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
     """
     if not _mio.is_sharded(raw_index):
         _atomic_write_json(mpath, assembled)
-        return [os.path.relpath(mpath, project)]
+        return [_mio.posix_rel(mpath, project)]
 
     base = os.path.dirname(os.path.abspath(mpath))
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
@@ -1295,7 +1403,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
         for k in _mio.INDEX_ONLY_FIELDS:
             body.pop(k, None)
         _atomic_write_json(spath, body)
-        written.append(os.path.relpath(spath, project))
+        written.append(_mio.posix_rel(spath, project))
 
     # The INDEX is written for `meta`, and for any index-only field a phase patch
     # touched. Those two are separate reasons and both are needed: a priority
@@ -1313,7 +1421,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
             idx["phases"] = [_index_only_stub(entry, by_pid)
                              for entry in (raw_index.get("phases") or [])]
         _atomic_write_json(mpath, idx)
-        written.append(os.path.relpath(mpath, project))
+        written.append(_mio.posix_rel(mpath, project))
     return written
 
 
@@ -1400,7 +1508,7 @@ def apply_composition(project, patch):
         return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
                 "healed": [], "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged", "written": [],
-                "path": os.path.relpath(mpath, project),
+                "path": _mio.posix_rel(mpath, project),
                 "layout": "sharded" if _mio.is_sharded(raw_index) else "single"}
 
     touched = _touched_phase_ids(assembled, patch)
@@ -1424,7 +1532,7 @@ def apply_composition(project, patch):
         _release_write_lock(lock)
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
            "healed": healed,
-           "path": os.path.relpath(mpath, project),
+           "path": _mio.posix_rel(mpath, project),
            "layout": "sharded" if sharded else "single",
            "written": written}
     out.update(_journal(project, config, "composition.write",

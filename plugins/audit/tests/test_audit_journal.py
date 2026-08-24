@@ -34,11 +34,13 @@ that are about the library's own boundary live in `test__journal_io.py`.
 NOTHING ELSE ABOUT THIS SUITE DEPENDS ON WHERE IT SITS. It reads no source, names
 no `__file__`, builds no path off its own directory, and takes no
 `split(a)[1].split(b)[0]` slice. Its fixtures are real files, all of them under a
-single `tempfile.mkdtemp(prefix="audit-journal-")` removed in one `finally`
+single `_harness.fixture_root()` removed in one `finally`
 (`shutil.rmtree(..., ignore_errors=True)`) - the git repositories the k-group and
 the l-group build are subdirectories of it, so nothing is left behind on a case
-that fails part way. It loads no sibling through `_loader`, so no
-`KNOWN_LAYER_DEBT` entry moved with it.
+that fails part way. The root comes from the harness rather than from `tempfile`
+because those repositories are exactly what a plain removal leaves behind on
+windows; `remove_tree()` says why, and the `finally` above is still the fast path.
+It loads no sibling through `_loader`, so no `KNOWN_LAYER_DEBT` entry moved with it.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -60,7 +62,6 @@ M = _loader.load_script("audit-journal.py", modname="audit_journal")
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     import shutil
-    import tempfile
 
     def run(argv, project):
         lines = []
@@ -77,7 +78,7 @@ def _cases(check):
             y, m = y - 1, m + 12
         return "%04d-%02d" % (y, m)
 
-    tmp = tempfile.mkdtemp(prefix="audit-journal-")
+    tmp = _harness.fixture_root("audit-journal-")
     try:
         proj = os.path.join(tmp, "repo")
         os.makedirs(os.path.join(proj, "docs", "audit"))
@@ -471,8 +472,16 @@ def _cases(check):
         M.append(jproj, {"action": "x", "summary": "s",
                        "details": {"from": "x" * 500},
                        "actor": {"sessionId": "s-v2"}}, config=jcfg)
-        check("j7 a long value is truncated to %d chars" % M.MAX_VALUE_CHARS,
-              M.read_all(jproj, jcfg)[-1].get("details", {}).get("from") == "x" * 120)
+        # AND SAYS SO. A value cut in silence left a short value and a cut one
+        # identical in a committed row, inside the one block that already sets
+        # `truncated` when it drops change entries. Read through the command's
+        # OWN re-exports, which is this suite's whole subject: the trail as
+        # `audit-journal.py` sees it.
+        check("j7 a long value is truncated to %d chars and carries the marker "
+              "that says it was" % M.MAX_VALUE_CHARS,
+              M.read_all(jproj, jcfg)[-1].get("details", {}).get("from")
+              == "x" * (M.MAX_VALUE_CHARS - len(M.VALUE_TRUNCATED))
+              + M.VALUE_TRUNCATED)
         many = [{"id": "P1.%d" % i, "field": "status", "from": "a", "to": "b"}
                 for i in range(20)]
         det = M.normalise_details({"changes": many})

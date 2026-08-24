@@ -37,10 +37,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
+import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
 import _locks                 # noqa: E402  (lock paths + the liveness verdict, at layer 1)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
@@ -202,6 +199,49 @@ def data_fingerprint(project, config):
         return "unavailable"
 
 
+# --- what a feed row may say once it leaves the machine ---------------------------
+def _redacted_event(project, row):
+    """One gate-events row with its `file` cell put through the journal's redactor.
+
+    `audit-logs.py prune` counts an out-of-repository row by CLASS and never echoes
+    its path, on the argument that the path is the thing being removed and printing
+    it would put it back. This card renders the same rows, and it was giving the
+    opposite answer: the user name, the temp root and the session slug of whoever
+    ran the gate, painted verbatim into a card `docs/screenshots/panel-gate.png` is
+    a committed render of - and `tools/check-committed-pii.py` cannot read a PNG.
+    Redacted HERE rather than in the browser, so the path never reaches the page.
+
+    `_journal_io.repo_relative_or_token` is the rule, not a second one written to
+    resemble it: the same function every committed journal row goes through, with
+    the same failure direction - anything unresolvable, empty or outside becomes
+    the token, because a guess that leaks is worse than a cell that says less.
+
+    NOT quite the same verdict as `_gate_feed.classify`, and the difference is the
+    failure direction rather than an inconsistency: that one asks `within_root`,
+    which answers *inside* for a path it cannot resolve because a gate must not
+    move on a guess, while this one lands every such tie on the token because a
+    surface must not paint on one. So this card can only ever say LESS about a row
+    than the prune would keep - never more, which is the only direction that is
+    safe here.
+
+    ONLY `file` is rewritten. The other keys `append_gate_event` allows are a
+    verdict word, a tier word, a session id, and a `reason` that is either a fixed
+    sentence or a hook message's first line - so a path in one of those is a leak
+    at the WRITER, and rewriting it here would only hide it from this one card.
+
+    An absent or blank `file` is returned untouched: that cell renders empty today,
+    and stamping the token onto it would claim a path the row never named.
+    """
+    if not isinstance(row, dict):
+        return row
+    named = row.get("file")
+    if not (isinstance(named, str) and named.strip()):
+        return row
+    shown = dict(row)
+    shown["file"] = _journal_io.repo_relative_or_token(project, named.strip())
+    return shown
+
+
 def _gate_block(project, config):
     """The Plan gate card's payload (v0.34 B3): tier + why, whether a bypass is
     armed, and the tail of the gate events feed.
@@ -210,9 +250,11 @@ def _gate_block(project, config):
     `plan_gate_knob`, `manifest_state` through `_cores()[3]`), so the card can
     never disagree with the gate about what tier is in force — the same rule
     the policy switchboard follows. Events are the newest ~20 lines of
-    `<logsDir>/plan-gate-events.jsonl`, newest first; the armed indicator
-    honours the same TTL require-plan honours, so the card never claims a
-    bypass the gate would refuse. Never raises; a bare dict on any miss."""
+    `<logsDir>/plan-gate-events.jsonl`, newest first, each row's `file` cell
+    through `_redacted_event` so a path outside the repository leaves as its
+    class and not as itself; the armed indicator honours the same TTL
+    require-plan honours, so the card never claims a bypass the gate would
+    refuse. Never raises; a bare dict on any miss."""
     out = {"mode": "observe", "source": "", "bypassArmed": False, "events": []}
     try:
         cfg_mod = _paths.hooks_config()
@@ -273,7 +315,7 @@ def _gate_block(project, config):
                 except Exception:
                     continue
                 if isinstance(row, dict):
-                    out["events"].append(row)
+                    out["events"].append(_redacted_event(project, row))
         except Exception:
             pass
     except Exception:

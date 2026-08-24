@@ -6,6 +6,8 @@ that can be gated without flaking.
     python3 tools/bench-hooks.py             # the measurement, for a human
     python3 tools/bench-hooks.py --json      # the same, machine-readable
     python3 tools/bench-hooks.py --gate      # the deterministic check CI runs
+    python3 tools/bench-hooks.py --gate --python /usr/bin/python3.9
+                                             # ...and on one you name as well
 
 WHY THE WALL CLOCK IS NOT THE GATE. A hook is unlike every other cost in this repo:
 it is not the sweep's wall clock and not CI's CPU, it is latency added to EVERY
@@ -28,6 +30,15 @@ avoid (it imports `_config`, which reaches the config, the globs and the locks);
 `EXTRA_ALLOWED` is what one named hook may add and why. Anything else fails BY NAME.
 That catches the whole class the measurement was reaching for, with no timing in it.
 
+AND IT IS ASKED OF EVERY INTERPRETER THIS MACHINE CAN OFFER, not of the one that
+typed the command. The import graph moves between versions - a C accelerator that
+exists on 3.9 and has merged away by 3.13 is enough - and this plugin publishes
+support for a RANGE (`vermin -t=3.8-` is a gate). A verdict taken at one point in
+that range is still worth having, and it now arrives with the point named and with
+the versions nobody could reach listed as unreached. Both halves matter: a gate
+that says which interpreter it ran on can be argued with, and one that says which
+it did not is not mistaken for a gate that ran on all of them.
+
 The two regressions that motivated this are worth naming, because both were invisible
 to every gate the repo had:
 
@@ -44,6 +55,7 @@ import ast
 import io
 import json
 import os
+import shutil
 import statistics
 import subprocess
 import sys
@@ -76,6 +88,11 @@ _FIX_ABSENT = "no-such-hook-at-all" + _EXT
 _FIX_GREEDY = "greedy-hook" + _EXT
 _FIX_LEAN = "lean-hook" + _EXT
 _FIX_BROKEN = "broken-hook" + _EXT
+# An interpreter name that resolves to nothing, for the cases about a probe that
+# cannot run. Deliberately not one of the names above: "a hook that is not there"
+# and "an interpreter that is not there" are two different questions, and sharing
+# one fixture between them is how a case comes to pass for the other one's reason.
+_FIX_NO_PYTHON = "no-such-interpreter-anywhere"
 
 # --- the import budget --------------------------------------------------------
 # THE FLOOR IS DERIVED, and it used to be a frozen list. That list was measured on
@@ -175,9 +192,24 @@ def floor_regressions(hooks_dir=None):
 # What one named hook may add, and the reason it may. A reason is required by the
 # selftest, not by convention: an allowance nobody can explain is an allowance that
 # outlives the need for it.
+#
+# `modules` IS THE ALLOWANCE A HUMAN AGREED TO. `derive` is what that allowance
+# costs, measured on the interpreter doing the judging rather than written out —
+# the same move `shared_floor()` already made, for the same reason and one layer
+# down. The entry below read `("hashlib", "_hashlib", "_blake2")`, which is exactly
+# what `import hashlib` drags on 3.13 and 3.14; on 3.9 it drags `_sha3` as well, so
+# the gate was green on the interpreter that wrote the list and red on a version
+# `vermin -t=3.8-` and COMPATIBILITY.md both promise support for. A C accelerator
+# appearing or merging away is a version fact, and a version fact belongs in a
+# measurement.
+#
+# It does not widen the rule. The allowance still buys exactly one named module's
+# own graph: a hook that started importing `subprocess` would be reported, because
+# `hashlib` does not drag it.
 EXTRA_ALLOWED = {
     "journal-writes.py": {
-        "modules": ("hashlib", "_hashlib", "_blake2"),
+        "modules": ("hashlib",),
+        "derive": ("hashlib",),
         "why": "the journal is a hash chain - each row commits to its predecessor, "
                "so this hook cannot defer hashing into a branch",
     },
@@ -202,6 +234,23 @@ _PROBE = (
     "print(json.dumps(sorted(m for m in set(sys.modules) - _base "
     "if '.' not in m)))\n"
 )
+
+# The same question asked of a NAMED module rather than of a file, which is what an
+# allowance's `derive` needs: not "what does this hook pull" but "what does the one
+# thing it is allowed to import cost here".
+_IMPORT_PROBE = (
+    "import sys, json\n"
+    "_base = set(sys.modules)\n"
+    "for _name in %r:\n"
+    "    __import__(_name)\n"
+    "print(json.dumps(sorted(m for m in set(sys.modules) - _base "
+    "if '.' not in m)))\n"
+)
+
+# The version this plugin promises to run on, held by `vermin -t=3.8-` in CI and
+# published in COMPATIBILITY.md. It is here because the budget is a claim about that
+# whole RANGE, and a verdict from one point in it has to say which point.
+SUPPORTED_MINOR_MIN = 8
 
 
 def hook_files(hooks_dir=None):
@@ -240,6 +289,161 @@ def modules_pulled(hook, hooks_dir=None, python=None):
         return None
 
 
+def modules_pulled_by_import(names, python=None):
+    """Top-level modules a fresh interpreter gains from importing `names`, or None.
+
+    None on any failure, for the reason `modules_pulled` gives: a probe that would
+    not run must never be spelled the way "this costs nothing" is spelled. Here it
+    matters twice over, because an empty allowance would then report a hook over
+    budget for something it was granted.
+    """
+    try:
+        out = subprocess.run(
+            [python or sys.executable, "-c", _IMPORT_PROBE % (list(names),)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        return set(json.loads(out.stdout.decode("utf-8", "replace")))
+    except Exception:
+        return None
+
+
+def allowance_for(hook, python=None, table=None):
+    """`(modules, problem)` — what one hook may add beyond the floor, on `python`.
+
+    Exactly one of the two is None. A `derive` the probe could not run yields the
+    problem, never a narrower allowance: silently falling back to the declared names
+    alone is how a measured allowance would decay back into the hand-written list
+    this replaced, and it would do it on the machine least able to notice.
+
+    `table` is a parameter for the reason `compare()` in `tools/gate-parity.py` has
+    one: the live table's declared names happen to EQUAL what its `derive` measures
+    on most interpreters, so a case asked over the real entry cannot tell a derived
+    allowance from a frozen one except on the one version where they diverge. A
+    fixture whose declared set is deliberately smaller can, on every version.
+    """
+    spec = (EXTRA_ALLOWED if table is None else table).get(hook)
+    if not spec:
+        return frozenset(), None
+    out = set(spec.get("modules") or ())
+    derive = tuple(spec.get("derive") or ())
+    if derive:
+        pulled = modules_pulled_by_import(derive, python=python)
+        if pulled is None:
+            return None, ("its allowance derives from %s and that probe would not "
+                          "run, so what this hook may add cannot be established"
+                          % ", ".join(derive))
+        out |= pulled
+    return frozenset(out), None
+
+
+# --- which interpreters the verdict covers ------------------------------------
+# THE FLOOR BEING DERIVED WAS READ AS THE WHOLE REPAIR, AND IT IS HALF OF ONE.
+# Deriving it stopped the SHARED floor disagreeing with itself between versions.
+# It left the hooks' own graphs, and every allowance, measured on exactly one
+# interpreter — whichever one typed the command — while the line that comes out
+# says `10 hook(s) within budget` and names no condition at all.
+#
+# `journal-writes.py` is the proof rather than the hypothesis: its allowance was
+# three module names, correct on 3.13 and 3.14, one short on 3.9. The gate was
+# green on every interpreter anyone had run it on and red on a version this plugin
+# publishes support for, and nothing in the output could have told you which of
+# those you were reading.
+#
+# So the verdict now carries its basis: which interpreters it was taken on, and
+# which supported versions it did NOT reach. A machine that offers one interpreter
+# still gets a useful answer — it is the answer it can have — but it gets it with
+# the condition attached instead of as a property of the system.
+def interpreter_version(python):
+    """`"3.12.4"` for `python`, or None when it will not run or will not say."""
+    try:
+        out = subprocess.run(
+            [python, "-c",
+             "import sys;print('%d.%d.%d' % sys.version_info[:3])"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    text = out.stdout.decode("utf-8", "replace").strip()
+    return text or None
+
+
+def candidate_names():
+    """The interpreter names to look for on PATH.
+
+    DERIVED from `sys.version_info` rather than written out. A frozen top rots the
+    day a newer release ships and nobody notices, because the tool goes on happily
+    measuring the versions it was told about; the running interpreter's own minor is
+    by definition the newest this machine knows of.
+    """
+    top = max(sys.version_info[1], SUPPORTED_MINOR_MIN)
+    names = ["python3.%d" % m
+             for m in range(SUPPORTED_MINOR_MIN, top + 1)]
+    # `python3` and `python` are here because a machine's newest interpreter is not
+    # always reachable under a versioned name - a system Python often is not - and
+    # a name that resolves to one already found is dropped below by real path.
+    return names + ["python3", "python"]
+
+
+def discover_interpreters(extra=None):
+    """`{"found": [(path, version)], "unusable": [(name, why)]}`.
+
+    `sys.executable` first: it is the one interpreter that is certainly there, so a
+    machine with nothing else still gets a measured answer rather than none.
+
+    An `extra` (from `--python`) that will not run is REPORTED. "You named an
+    interpreter and it is not one" and "you named none" are different answers, and
+    a tool that dropped the first would measure fewer versions than it was asked to
+    and say the same thing either way.
+    """
+    found, unusable, seen = [], [], set()
+
+    def consider(name, loud):
+        path = name if os.path.isabs(name) else shutil.which(name)
+        if not path:
+            if loud:
+                unusable.append((name, "no such interpreter on PATH"))
+            return
+        key = os.path.realpath(path)
+        if key in seen:
+            return
+        version = interpreter_version(path)
+        if version is None:
+            if loud:
+                unusable.append((name, "would not run, or would not report a "
+                                       "version"))
+            return
+        seen.add(key)
+        found.append((path, version))
+
+    consider(sys.executable, True)
+    for name in candidate_names():
+        consider(name, False)
+    for name in (extra or ()):
+        consider(name, True)
+    return {"found": found, "unusable": unusable}
+
+
+def unmeasured_minors(found):
+    """The supported 3.x minors no discovered interpreter covers, as sorted ints.
+
+    The ceiling is the highest minor anything here knows about - the running
+    interpreter or a discovered one - so this never invents versions that do not
+    exist yet, and never quietly stops at a number somebody typed once.
+    """
+    covered = set()
+    for _path, version in found:
+        bits = str(version).split(".")
+        if len(bits) >= 2 and bits[0] == "3" and bits[1].isdigit():
+            covered.add(int(bits[1]))
+    top = max([sys.version_info[1], SUPPORTED_MINOR_MIN] + sorted(covered))
+    return [m for m in range(SUPPORTED_MINOR_MIN, top + 1) if m not in covered]
+
+
 def budget_violations(hooks_dir=None, python=None):
     """[(hook, sorted-unbudgeted-modules, notable-among-them)] — empty when clean.
 
@@ -252,13 +456,25 @@ def budget_violations(hooks_dir=None, python=None):
     floor = shared_floor(hooks_dir=hooks_dir, python=python)
     if floor is None:
         return [(_FLOOR_MODULE, None, ())]
+    # One probe per allowance, not one per hook: the allowances are keyed by hook
+    # and there is at most a handful of them, but the derivation is a subprocess and
+    # this runs once per interpreter now.
+    allowances = {}
+    for hook in EXTRA_ALLOWED:
+        allowances[hook] = allowance_for(hook, python=python)
     for hook in hook_files(hooks_dir):
+        granted, problem = allowances.get(hook, (frozenset(), None))
+        if problem is not None:
+            # Reported as its own row rather than folded into "over budget": the
+            # hook may be perfectly lean, and accusing it of the modules it was
+            # granted would be a finding about the probe wearing the hook's name.
+            out.append((hook, None, ()))
+            continue
         pulled = modules_pulled(hook, hooks_dir=hooks_dir, python=python)
         if pulled is None:
             out.append((hook, None, ()))
             continue
-        allowed = set(floor)
-        allowed.update(EXTRA_ALLOWED.get(hook, {}).get("modules", ()))
+        allowed = set(floor) | set(granted)
         extra = sorted(pulled - allowed)
         if extra:
             out.append((hook, extra, tuple(m for m in extra if m in NOTABLE)))
@@ -335,10 +551,20 @@ def measure(repeats=9, hooks_dir=None):
         return {"baseline_ms": round(baseline, 2), "repeats": repeats,
                 "lanes": lanes}
     finally:
-        _output.rmtree_quiet(root) if hasattr(_output, "rmtree_quiet") else None
-        if os.path.isdir(root):
-            import shutil
-            shutil.rmtree(root, ignore_errors=True)
+        # F156. What stood here was a call to `_output.rmtree_quiet()` behind a
+        # `hasattr` for it - and no such helper has ever existed, in `_output` or
+        # anywhere else, so the condition was false on every run and the statement
+        # was a no-op wearing a defensive coat. The `isdir` guard below it existed
+        # only to avoid removing twice after a call that never happened, and
+        # `ignore_errors=True` already tolerates a directory that is not there.
+        #
+        # A PLAIN REMOVAL IS THE RIGHT ONE HERE, which is the other half of the
+        # judgement and is recorded rather than left to the next reader (F155).
+        # This fixture is a `src/` directory of text; nothing under it is a git
+        # repository, so there are no read-only loose objects for windows to
+        # refuse to unlink. The tree that DOES need the careful removal reaches it
+        # through `_harness.remove_tree()`, re-exported by `tools/_suite.py`.
+        shutil.rmtree(root, ignore_errors=True)
 
 
 # --- rendering ----------------------------------------------------------------
@@ -379,6 +605,48 @@ def render_violations(violations):
             out.append("      the expensive one(s): %s - import inside the branch "
                        "that needs it, or add an EXTRA_ALLOWED entry saying why "
                        "every invocation should pay" % ", ".join(notable))
+    return "\n".join(out)
+
+
+def render_gate(report):
+    """The whole verdict, with the condition that makes it true. Returns text.
+
+    THE CONDITION IS NOT AN APPENDIX. `10 hook(s) within budget` with no interpreter
+    named is the sentence F87 is about: it was read as a property of the system and
+    it was a property of one machine. So the versions come first, the per-version
+    verdicts follow, and the versions nobody could measure are named LAST and out
+    loud - a gap said plainly is the difference between a narrow answer and a wrong
+    one.
+    """
+    out = []
+    if report["problem"]:
+        return "hook import budget: NOT MEASURED - %s" % report["problem"]
+    drift = report["drift"]
+    if drift:
+        out.append("shared floor: %d change(s) to what EVERY hook pays for"
+                   % len(drift))
+        for mod, why in drift:
+            out.append("  %-14s %s" % (mod if mod else "-", why))
+    versions = ", ".join(row["version"] for row in report["measured"])
+    out.append("hook import budget, measured on %d interpreter(s): %s"
+               % (len(report["measured"]), versions))
+    for row in report["measured"]:
+        head = render_violations(row["violations"]).splitlines()
+        out.append("  %-9s %s" % (row["version"], head[0].split(": ", 1)[-1]))
+        for line in head[1:]:
+            out.append("  " + line)
+    for name, why in report["unusable"]:
+        out.append("  %s: named but not usable - %s" % (name, why))
+    gaps = report["unmeasured"]
+    if gaps:
+        # Never "everything is fine": this verdict covers the versions above and
+        # says so. `vermin -t=3.8-` promises the rest, and a budget that quietly
+        # spoke for versions it never ran on is what made this line necessary.
+        out.append("  NOT MEASURED: %s - no interpreter for %s was found here, so "
+                   "this covers the version(s) above and not the whole supported "
+                   "range. Name one with --python <path>."
+                   % (", ".join("3.%d" % m for m in gaps),
+                      "them" if len(gaps) > 1 else "it"))
     return "\n".join(out)
 
 
@@ -546,6 +814,116 @@ def _cases(check):
           and "subprocess" in render_violations(
               [(_FIX_GREEDY, ["subprocess"], ("subprocess",))]))
 
+    # --- the condition the verdict is true under (F87) -------------------------
+    _found = discover_interpreters()
+    check("h11 the running interpreter is always among the discovered ones, and "
+          "each carries the version it actually reports - a gate that named no "
+          "interpreter is the sentence F87 is about: %r"
+          % ([v for _p, v in _found["found"]],),
+          any(os.path.realpath(p) == os.path.realpath(sys.executable)
+              for p, _v in _found["found"])
+          and all(str(v)[:2] == "3." for _p, v in _found["found"]))
+
+    # The second direction, and the one a discovery function gets wrong: an
+    # interpreter somebody NAMED and that is not one must be reported. Dropping it
+    # measures fewer versions than were asked for and prints the same line either
+    # way.
+    _named = discover_interpreters([_FIX_NO_PYTHON])
+    check("h12 an interpreter named with --python that will not run is REPORTED, "
+          "not dropped - 'you named one and it is not one' must not be spelled "
+          "like 'you named none': %r" % (_named["unusable"],),
+          [n for n, _w in _named["unusable"]] == [_FIX_NO_PYTHON]
+          and _named["found"] == _found["found"])
+
+    # THE F87 REGRESSION CASE. The allowance was written out as three module names
+    # and `hashlib` drags a fourth on 3.9, so `journal-writes.py` was over budget on
+    # a version this plugin promises while every interpreter anyone had run it on
+    # said `within budget`.
+    #
+    # ASKED OVER A FIXTURE, and that is the whole reason the fixture exists. The live
+    # entry declares `hashlib` and derives from `hashlib`, so on any interpreter
+    # where the old hand-written list was already correct the two spellings produce
+    # the SAME set - the case would pass identically against the frozen list, which
+    # is a case that cannot fail on most machines. The fixture declares NOTHING and
+    # derives from `hashlib`, so the entire grant is the measurement: a build that
+    # stopped deriving hands back an empty allowance here, on every version.
+    _fixture_table = {_FIX_LEAN: {"modules": (), "derive": ("hashlib",),
+                                  "why": "a fixture, not a real allowance"}}
+    _granted, _why_not = allowance_for(_FIX_LEAN, table=_fixture_table)
+    _bare = modules_pulled_by_import(("hashlib",))
+    check("h13 an allowance is MEASURED, not listed: an entry that declares no "
+          "module and derives from one is granted exactly what importing that "
+          "module costs on this interpreter, which is what the hand-written list "
+          "was one short of on 3.9: %r" % (sorted(_granted or ()),),
+          _why_not is None and _bare is not None and _granted == frozenset(_bare)
+          and "hashlib" in _granted and len(_granted) > 1)
+
+    # ...and the mechanism is WIRED to the real allowance rather than only available
+    # to it. h4e's lesson: a derivation nothing consults is a derivation that can be
+    # deleted without colouring anything.
+    _live = EXTRA_ALLOWED["journal-writes.py"]
+    _live_granted, _live_why = allowance_for("journal-writes.py")
+    check("h13b ...and the live entry really derives - it names `derive` and its "
+          "grant carries what that module drags here, so the hook that carries "
+          "'auditable' is judged against a measurement and not against a snapshot: "
+          "%r" % (sorted(_live_granted or ()),),
+          bool(_live.get("derive")) and _live_why is None
+          and _bare is not None and _bare.issubset(_live_granted))
+    _dead_grant, _dead_why = allowance_for("journal-writes.py",
+                                           python=_FIX_NO_PYTHON)
+    check("h14 ...and a `derive` the probe cannot run is a PROBLEM, never a "
+          "narrower allowance - falling back to the declared names alone is how a "
+          "measured allowance decays into the list it replaced, silently and on "
+          "the machine least able to notice: %r" % (_dead_why,),
+          _dead_grant is None and _dead_why is not None
+          and "hashlib" in _dead_why)
+    # ...and a hook with no entry gets an EMPTY allowance and no problem, which is
+    # the direction that fails if the two are ever merged into one falsy answer.
+    check("h15 a hook with no allowance is granted nothing, and that is not a "
+          "problem - the case that goes red if 'no entry' and 'the probe died' "
+          "ever come back as the same value",
+          allowance_for("guard-edits.py") == (frozenset(), None))
+
+    # h16: one red interpreter fails the whole gate. Without it, a loop that
+    # measured four and read only the last would pass every case above.
+    _one_red = {"drift": [], "unusable": [], "unmeasured": [], "problem": None,
+                "measured": [{"python": "a", "version": "3.9.6",
+                              "violations": []},
+                             {"python": "b", "version": "3.14.0",
+                              "violations": [(_FIX_GREEDY, ["subprocess"],
+                                              ("subprocess",))]}]}
+    _all_green = dict(_one_red,
+                      measured=[dict(_one_red["measured"][0]),
+                                dict(_one_red["measured"][1], violations=[])])
+    check("h16 a violation on ONE interpreter fails the gate, and an all-green set "
+          "does not - the second half is the case that fails if the verdict is "
+          "ever taken from the last row measured",
+          gate_failed(_one_red) is True and gate_failed(_all_green) is False)
+    check("h17 ...and a report that measured NOTHING fails too: zero measurements "
+          "and zero violations are spelled identically by any `any()` over an "
+          "empty list, and one of them is a broken probe",
+          gate_failed({"drift": [], "measured": [], "unusable": [],
+                       "unmeasured": [], "problem": "the probe died"}) is True)
+
+    # The rendering, both directions. A version nobody could measure must not read
+    # like a version that passed, and the versions that DID pass must be named.
+    _text = render_gate(_all_green)
+    _gapped = render_gate(dict(_all_green, unmeasured=[8, 10]))
+    check("h18 the verdict names the interpreters it covers, and an unmeasured "
+          "version is named as unmeasured rather than omitted - omission is what "
+          "let one machine's answer read as a property of the system: %r"
+          % (_gapped.splitlines()[-1:],),
+          "3.9.6" in _text and "3.14.0" in _text
+          and "NOT MEASURED" not in _text
+          and "NOT MEASURED" in _gapped and "3.8" in _gapped
+          and "3.10" in _gapped)
+
+    check("h19 the supported range starts where the published floor does, and the "
+          "list of names to look for is derived from it rather than written out",
+          SUPPORTED_MINOR_MIN == 8
+          and candidate_names()[0] == "python3.8"
+          and ("python3.%d" % sys.version_info[1]) in candidate_names())
+
 
 def gate_findings(hooks_dir=None, python=None):
     """`(floor_drift, budget_violations)` — everything `--gate` decides on.
@@ -564,6 +942,61 @@ def gate_findings(hooks_dir=None, python=None):
             budget_violations(hooks_dir=hooks_dir, python=python))
 
 
+def gate_report(hooks_dir=None, extra_pythons=None):
+    """`--gate`'s whole answer, per interpreter, plus what it could not reach.
+
+    {"drift": [...], "measured": [{"python", "version", "violations"}],
+     "unusable": [(name, why)], "unmeasured": [minor], "problem": None|str}
+
+    `drift` is asked ONCE and not per interpreter, and that is a fact about the
+    question rather than a saving: `floor_regressions()` reads `_config.py`'s AST,
+    which is what the file SAYS. Running it under four interpreters would be four
+    copies of one answer, and copies of one answer are how a reader comes to
+    believe a version-independent check is version-dependent.
+
+    `problem` is set only when nothing could be measured at all. That cannot happen
+    from `sys.executable` alone, so it is the shape of a broken probe rather than of
+    a bare machine - and a gate that reported zero measurements as zero violations
+    would be exactly the silent pass this file's own `h2` exists for.
+    """
+    found = discover_interpreters(extra_pythons)
+    measured = []
+    for path, version in found["found"]:
+        measured.append({"python": path, "version": version,
+                         "violations": budget_violations(hooks_dir=hooks_dir,
+                                                         python=path)})
+    problem = None
+    if not measured:
+        problem = ("no interpreter could be probed at all, so nothing was "
+                   "checked - this is a broken probe, not a clean tree")
+    return {"drift": floor_regressions(hooks_dir=hooks_dir),
+            "measured": measured, "unusable": found["unusable"],
+            "unmeasured": unmeasured_minors(found["found"]),
+            "problem": problem}
+
+
+def gate_failed(report):
+    """Does this report fail the build? A separate function because the answer has
+    three sources and a `--gate` branch that spelled them inline would be the place
+    one of them quietly stops being read - which is the defect `h4e` records."""
+    if report["problem"]:
+        return True
+    if report["drift"]:
+        return True
+    return any(row["violations"] for row in report["measured"])
+
+
+def _extra_pythons(argv):
+    """Every `--python <path>` in `argv`, in order. A flag with no value is dropped
+    here and refused by the usage guard in `__main__`, so it can never silently
+    become "measure nothing extra"."""
+    out = []
+    for i, arg in enumerate(argv):
+        if arg == "--python" and i + 1 < len(argv):
+            out.append(argv[i + 1])
+    return out
+
+
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
     return run(_cases)
@@ -574,14 +1007,9 @@ def main(argv):
     if "--selftest" in argv:
         return _selftest()
     if "--gate" in argv:
-        drift, violations = gate_findings()
-        if drift:
-            print("shared floor: %d change(s) to what EVERY hook pays for"
-                  % len(drift))
-            for mod, why in drift:
-                print("  %-14s %s" % (mod if mod else "-", why))
-        print(render_violations(violations))
-        return 1 if (drift or violations) else 0
+        report = gate_report(extra_pythons=_extra_pythons(argv))
+        print(render_gate(report))
+        return 1 if gate_failed(report) else 0
     data = measure()
     if "--json" in argv:
         print(json.dumps(data, indent=2, sort_keys=True))
@@ -593,9 +1021,19 @@ def main(argv):
 if __name__ == "__main__":
     _output.safe_stdio()
     args = sys.argv[1:]
+    _expect_value = False
     for _a in args:
+        if _expect_value:
+            _expect_value = False
+            continue
+        if _a == "--python":
+            _expect_value = True
+            continue
         if _a not in ("--selftest", "--gate", "--json"):
             sys.stderr.write("usage: bench-hooks.py [--gate | --json | "
-                             "--selftest]\n")
+                             "--selftest] [--python PATH ...]\n")
             raise SystemExit(2)
+    if _expect_value:
+        sys.stderr.write("bench-hooks.py: --python needs an interpreter path\n")
+        raise SystemExit(2)
     raise SystemExit(main(args))

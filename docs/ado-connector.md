@@ -336,6 +336,15 @@ age. It is read-only against ADO: it creates no work item, moves none, and write
 step and nothing breaks: every parent link simply reports `not verified`, which is what
 a missing basis is for.
 
+The ranks are not transcribed out of that response by hand — `az devops invoke --area
+work --resource backlogconfiguration` fetches it and
+`resolve-ado-parent.py <manifest> --hierarchy-from <payload>` prints the block, which
+is written in verbatim. One consequence of that is visible from outside: the payload
+ranks a bug but never names its type, so the rung is filed under **your**
+`types.bug`. Rename that key afterwards and the cached rung stops matching — bugs go
+back to `not verified` until you re-run the fetch, which is the honest answer rather
+than a bug graded against the wrong rank.
+
 **b. Point each phase at its own parent.** Beside the phase's `ado` link, never inside
 it:
 
@@ -432,6 +441,15 @@ empty list is the free-form spelling and keeps meaning that.
 validator names every item that resolves to no parent at all, and the gate refuses
 their creates — so a push would create nothing for them.
 
+**It is scoped to the items this connector parents**, which is phases and — with
+`phaseWorkItems` off — tasks. A push creates a **bug** card with no parent link at all
+and names no third kind to hang, so reading the key as *every* item made a governed
+board one this connector could never receive a bug on, and said so only at create time.
+A bug create is exempt now, the gate prints a `NOTE:` naming the rule it did not apply
+and the item it did not apply it to, and validation warns up front that this board asks
+for a parent the connector cannot supply for those cards. Parent them by hand once they
+exist, or leave `requireParent` off if that is not a bargain you want.
+
 **`fields` is what this project SUPPLIES.** Without it the honest block above gated out
 every create: the connector's payload is title, description, state, area, iteration,
 tags and a parent link, so there was no way to put an `Activity` on a Task, and the
@@ -490,6 +508,30 @@ the payload and hands it back**, so send back what it printed (`MERGED: …`, or
 `payload` under `--json`). Sending the payload you wrote instead creates an item
 without the fields the gate has just counted as present — which is how a green gate
 still lands a non-conforming item.
+
+**The same gate grades the board, and it is a different flag.** `--item` takes a payload
+about to be CREATED: the work item type at the top level, a resolved `parent` beside it,
+`meta.ado.fields` merged in first, and exit 1 meaning *do not create this*. `--fetched`
+takes the rows `fetch-ado-items.py --out` writes — items already ON the board, with the
+type and the parent inside `fields` — and asks whether they still conform;
+`/audit:sync status` runs it over the payload it has already fetched. Its exit 1 is a
+**finding about cards somebody is looking at**, not a refusal of anything, and nothing is
+being created, so the template is deliberately not merged: supplying a field the board
+does not have would grade a fiction. Exit 2 means a row was not graded at all — an unreadable
+payload, or a row carrying no work item type — and it is a missing basis to report, never
+a clean board.
+
+Feeding a fetched payload to `--item` is the mistake worth naming, because it failed
+*quietly in both directions*: `requireParent` looked for a top-level key that shape does
+not have and refused items whose parent was in fact set, while every type-scoped rule
+matched nothing and checked nothing. `--item` refuses that shape outright now.
+
+**And a `NOTE:` line beside exit 0 is not a refusal.** When `requireParent` narrows —
+a bug create, on a board that asks for a parent on every card — the gate prints which
+rule it did not apply and to which item, and `--json` carries it as
+`parentRuleExemption`. It moves neither the exit code nor `conforms`. Put it in front of
+whoever is confirming the push: a standard that quietly stopped applying is exactly the
+silent pass the printing exists to prevent.
 
 ### 5. "When a task is done, the card goes to Review with zero remaining work"
 
@@ -765,6 +807,10 @@ Common symptoms:
   fetched, so there is no basis for the type check. Run `/audit:sync parents`. The
   creates proceed either way; the structural checks (an item under itself, a declared
   loop) run offline and are unaffected.
+- **Only the BUGS say `not verified`** → the cache was fetched under a different
+  `types.bug`. The payload ranks a bug and never names its type, so the cached rung
+  carries whatever that key said at fetch time, and a rename afterwards leaves the
+  ladder keyed to a name no bug row carries. Re-run `/audit:sync parents`.
 - **A phase's `adoParent` did nothing for its tasks** → with `phaseWorkItems` on, a
   task hangs under its phase's own work item. A task's own `adoParent` is inert there
   and sync warns about it; move the declaration to the phase, or set `phaseWorkItems`

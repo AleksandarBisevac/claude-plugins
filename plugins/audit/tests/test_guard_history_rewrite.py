@@ -31,7 +31,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -89,7 +88,7 @@ def _cases(check):
           M.reset_target("git reset --hard --quiet HEAD~2") == "HEAD~2",
           repr(M.reset_target("git reset --hard --quiet HEAD~2")))
 
-    tmp = tempfile.mkdtemp(prefix="qg-histguard-")
+    tmp = _harness.fixture_root("qg-histguard-")
     try:
         repo, shas = _repo_with_trail(tmp)
 

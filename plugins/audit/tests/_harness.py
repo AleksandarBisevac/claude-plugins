@@ -70,10 +70,13 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import atexit
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +111,96 @@ import _output  # noqa: E402  (the anchor: reachable now that SCRIPTS_DIR is on 
 # Returns the list it installed, which is why the cases can assert this ran instead of
 # asserting that some import happened to work.
 SCRIPT_DIRS = _output.install_path()
+
+
+# --- fixture roots that do not outlive the suite ------------------------------
+def remove_tree(path):
+    """`shutil.rmtree` that also works on a fixture containing a git repository.
+
+    WHY A WRAPPER AT ALL. Git writes its loose objects READ-ONLY - measurably, in
+    every `git init` plus commit this tree builds. On POSIX that is irrelevant,
+    because unlinking a file needs a writable DIRECTORY and not a writable file, so
+    `shutil.rmtree` removes the repository and nobody ever noticed. On windows the
+    read-only ATTRIBUTE is checked on the file itself and `os.unlink` raises, so the
+    same call leaves `.git/objects/**` behind - and with `ignore_errors=True`, which
+    is how every caller here spells it, leaves it behind SILENTLY.
+
+    That was invisible until `tools/sweep-selftests.py` started asserting the
+    scratch directory is empty afterwards: the windows leg of CI would have gone red
+    on the suites that build a repository, and the finding would have read as a
+    problem with the new check rather than as the removal that had never worked.
+    Confirmed by emulating the one rule that differs - unlink refuses a file with no
+    owner-write bit - which named the exposed suites rather than guessing at them.
+
+    THE ORDINARY REMOVAL RUNS FIRST AND THE CHMOD PASS IS THE FALLBACK, so nothing
+    is relaxed on the platform where nothing needed relaxing: on POSIX the second
+    half never executes. Doing it the other way round - chmod the tree, then remove
+    - would also pass, and would silently paper over a genuine permission failure on
+    both platforms rather than only over the one that is a git artifact.
+
+    NEITHER `onerror` NOR `onexc`. The first is deprecated and the second arrived in
+    3.12, and this tree holds a 3.8 floor; a helper that had to pick between them by
+    version would be a version test in a fixture. Asking whether the directory is
+    still there afterwards needs neither.
+    """
+    shutil.rmtree(path, ignore_errors=True)
+    if not os.path.exists(path):
+        return
+    for base, dirs, names in os.walk(path):
+        for name in dirs + names:
+            try:
+                os.chmod(os.path.join(base, name), 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def fixture_root(prefix):
+    """A temp directory for a suite's fixture, removed before the process exits.
+
+    WHY THIS EXISTS (F119). A set of suites allocated their top-level fixture with
+    a bare `tempfile.mkdtemp()` and never removed it - the NESTED fixtures each had
+    a `finally`, the one holding the git repositories had none. Nobody noticed
+    because `mkdtemp` answers to `TMPDIR`, and on a developer's machine that is the
+    system temp, where a leaked `.git/` and `docs/` tree is invisible. Point
+    `TMPDIR` at the directory you are working in - which an agent sandbox, a CI
+    runner and now `tools/sweep-selftests.py` all do - and the same suites deposit
+    a git repository next to your files and leave it there.
+
+    ATEXIT RATHER THAN A `finally`, and that is the whole design decision. These
+    roots are allocated in the opening lines of a `_cases()` body that then runs to
+    the end of the file; wrapping one in a `try` re-indents the entire body,
+    which is a diff nobody can review and a merge conflict for every suite. The
+    obligation this removes is also the one most easily forgotten, so it should not
+    be an obligation: ask for a root and the removal is already arranged. `atexit`
+    covers the paths a trailing `shutil.rmtree` misses anyway - a case that raises,
+    a `SystemExit`, `run()` recording an escape and returning normally.
+
+    IT IS NOT A GUARANTEE, AND THE GUARD IS NOT THIS FUNCTION. `atexit` does not
+    run for a `SIGKILL`, and a suite is free to go on calling `mkdtemp` directly.
+    What proves the tree clean is `sweep-selftests.py`, and BOTH WATCHED halves of
+    what it does are load-bearing here. It runs every suite from a scratch directory
+    with `TMPDIR` pinned there AND with the suite's HOME pinned to a second
+    directory - under every name a home lookup reads, since this product's own state
+    (a config tree, a usage ledger, a panel pidfile) lives exactly there and an
+    absolute path under `$HOME` is invisible to a `TMPDIR` pin. Both watched
+    directories are planted with a file first, so the runner refuses the suite not
+    only when something is left behind but when that planted file is DELETED or
+    REWRITTEN - the destructive half, which a strays-only check reports as spotless.
+
+    A THIRD DIRECTORY IS PINNED AND DELIBERATELY NOT WATCHED: `PYTHONPYCACHEPREFIX`
+    sends the interpreter's bytecode cache out of both watched trees. An interpreter
+    writes that cache where its own configuration says, and macOS's system python
+    says "under the HOME I was given" - so without it a suite that merely started a
+    grandchild would be convicted of a leak the interpreter committed. Pinning it
+    rather than exempting one platform's spelling of a cache directory is what keeps
+    the two watched channels free of a premise nobody re-checks.
+
+    This function is only the easy way to be clean.
+    """
+    root = tempfile.mkdtemp(prefix=prefix)
+    atexit.register(remove_tree, root)
+    return root
 
 
 # --- the shared runner --------------------------------------------------------
@@ -733,6 +826,103 @@ def _cases(check):
           "broken cases were leaning on: `feed.count(str(tmpdir)) == 0` passed "
           "on the windows runner by looking for something no encoder can emit",
           _row.count(_win_p) == 0 and in_json(_win_p) != _win_p)
+
+    # --- fixture_root, driven through a real interpreter exit (F119) ----------
+    # THE CLAIM IS ABOUT WHAT SURVIVES THE PROCESS, so it cannot be asserted from
+    # inside this one: nothing registered with `atexit` has run yet, and reading
+    # the registry back would assert that a callback was recorded rather than that
+    # a directory is gone. A child that exits is the only place the question has an
+    # answer. The PAIR is the point - the same child, allocating the same fixture
+    # the two available ways - because a case that only watched `fixture_root`
+    # would pass just as happily against a version that did nothing, on a machine
+    # where something else swept the temp directory.
+    import subprocess
+    _fr_work = tempfile.mkdtemp(prefix="harness-fixture-root-")
+    try:
+        _fr_script = os.path.join(_fr_work, "probe_child")
+        _fr_src = (
+            "import sys, tempfile\n"
+            "sys.path.insert(0, %r)\n"
+            "import _harness\n"
+            "kept = tempfile.mkdtemp(prefix='probe-bare-')\n"
+            "swept = _harness.fixture_root('probe-managed-')\n"
+            "sys.stdout.write(kept + '\\n' + swept + '\\n')\n" % (TESTS_DIR,))
+        with open(_fr_script, "w") as _fh:
+            _fh.write(_fr_src)
+        _fr_out = subprocess.run([sys.executable, _fr_script],
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 timeout=60)
+        _fr_lines = _fr_out.stdout.decode("utf-8", "replace").split()
+        _fr_kept = _fr_lines[0] if len(_fr_lines) > 1 else ""
+        _fr_swept = _fr_lines[1] if len(_fr_lines) > 1 else ""
+        check("fr1 a root from fixture_root() is GONE once the process that asked "
+              "for it has exited - the whole contract, and the only place it can "
+              "be observed (child exit %r, %r)"
+              % (_fr_out.returncode, _fr_swept),
+              _fr_out.returncode == 0 and _fr_swept != ""
+              and not os.path.exists(_fr_swept))
+        check("fr2 ...and a bare tempfile.mkdtemp() in the SAME child is still "
+              "there, which is what makes fr1 a claim about this function rather "
+              "than about the machine's temp directory (%r)" % (_fr_kept,),
+              _fr_kept != "" and _fr_kept != _fr_swept
+              and os.path.isdir(_fr_kept))
+        if _fr_kept and os.path.isdir(_fr_kept):
+            shutil.rmtree(_fr_kept, ignore_errors=True)
+
+        # THE FIXTURE IS A READ-ONLY FILE INSIDE A DIRECTORY, which is what `git
+        # init` plus a commit produces and what windows refuses to unlink. Built
+        # here rather than by running git, so the case says what it means and costs
+        # nothing; `remove_tree`'s docstring carries the measurement that chose it.
+        # WHETHER THE FALLBACK RAN IS THE THING BEING ASSERTED, and "the tree is
+        # gone" cannot say it: on POSIX both a correct implementation and one that
+        # chmods everything up front remove both trees. So `os.chmod` is watched
+        # across each removal, and restored either way.
+        _chmods = []
+        _real_chmod = os.chmod
+
+        def _spy_chmod(target, mode, *a, **kw):
+            _chmods.append(target)
+            return _real_chmod(target, mode, *a, **kw)
+
+        _ro_root = os.path.join(_fr_work, "read-only-tree")
+        os.makedirs(os.path.join(_ro_root, "objects", "ab"))
+        _ro_file = os.path.join(_ro_root, "objects", "ab", "loose")
+        with open(_ro_file, "w") as _fh:
+            _fh.write("x")
+        _real_chmod(_ro_file, 0o444)
+        _ok_root = os.path.join(_fr_work, "ordinary-tree")
+        os.makedirs(os.path.join(_ok_root, "nested"))
+        with open(os.path.join(_ok_root, "nested", "plain"), "w") as _fh:
+            _fh.write("x")
+        os.chmod = _spy_chmod
+        try:
+            # POSIX unlinks a read-only file happily, so the fallback is reached
+            # here only by taking the directory's write bit away as well - which is
+            # the permission windows reports for the file itself.
+            _real_chmod(os.path.dirname(_ro_file), 0o500)
+            remove_tree(_ro_root)
+            _ro_chmods = list(_chmods)
+            del _chmods[:]
+            remove_tree(_ok_root)
+            _ok_chmods = list(_chmods)
+        finally:
+            os.chmod = _real_chmod
+        check("fr3 remove_tree() takes a tree it could not remove first time with "
+              "it, by clearing the permission and retrying - the shape a git "
+              "fixture always has, and the one a plain rmtree leaves behind while "
+              "reporting nothing (%r)" % (_ro_chmods,),
+              not os.path.exists(_ro_root) and _ro_chmods != [])
+
+        # fr4 is the OTHER direction. A version that chmod'ed the whole tree before
+        # removing it passes fr3 exactly as well, and quietly relaxes permissions on
+        # every fixture in the tree; this is the only case that fails against it.
+        check("fr4 ...and an ordinary tree is removed by the plain rmtree with the "
+              "fallback never entered, so a real permission failure is still a "
+              "permission failure rather than something to chmod away (%r)"
+              % (_ok_chmods,),
+              not os.path.exists(_ok_root) and _ok_chmods == [])
+    finally:
+        shutil.rmtree(_fr_work, ignore_errors=True)
 
 
 def _selftest():

@@ -998,6 +998,7 @@ UI_ASSETS = (
     "panel/usage-metrics.js",
     "panel/usage-model.js",
     "panel/usage-view.js",
+    "panel/version-banner.js",
     "panel/write-confirmation.js",
     "report-css/badges.css",
     "report-css/controls.css",

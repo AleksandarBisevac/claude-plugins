@@ -17,6 +17,7 @@ it lives in; every fixture is built under one `tempfile.mkdtemp()` and removed i
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import io
 import json
 import os
 import shutil
@@ -533,6 +534,123 @@ def _cases(check):
         check("lay7 ...and a bool is not the integer it equals - True == 1 in Python, "
               "so a version of True must not resolve through the table",
               M.declared_layout({"meta": {"version": True}}) is None)
+        # lay8-lay11: the SAME agreement, for the split that has nothing to shard.
+        # lay1/lay2 above could not reach it - their fixture carries phases, so the
+        # unconditional sharded stamp and a stamp taken from the result agree, and
+        # every case in this file passed with the bug in place. `phases: []` is the
+        # fixture that tells the two versions apart, and it is reachable: an
+        # /audit:init that parks every synthesized phase and is asked for the
+        # sharded layout writes exactly this document.
+        _empty = os.path.join(_ldir, "empty.json")
+        M.save_sharded(_empty, {"meta": {"version": 2, "repo": "demo"},
+                                "phases": [], "bugs": []})
+        _eraw = M.read_json(_empty)
+        check("lay8 a split with no phase to shard writes no `shard` pointer, so "
+              "the file READS as single-file whatever its version says",
+              M.layout_of(_eraw) == "single-file", repr(_eraw.get("phases")))
+        check("lay9 ...and meta.version NAMES that layout rather than the one the "
+              "caller asked for - the version is stamped off the result. Left at "
+              "the sharded number this is a manifest whose two readings disagree "
+              "at the moment it is written, before any caller has touched it",
+              M.declared_layout(_eraw) == M.layout_of(_eraw), repr(_eraw.get("meta")))
+        check("lay10 SECOND-DIRECTION CASE: a split that DID shard something still "
+              "stamps the sharded number. A version taken from the result has two "
+              "wrong implementations and this is the one lay8/lay9 cannot see - "
+              "they pass just as well if the stamp becomes single-file always",
+              M.declared_layout(M.read_json(_lsharded)) == "sharded",
+              repr(M.read_json(_lsharded).get("meta")))
+        _nomut = {"meta": {"version": 2}, "phases": [{"id": "P1", "title": "a"}]}
+        M.split_manifest(_nomut)
+        check("lay11 the version is a stamp on the INDEX and never a rewrite of the "
+              "caller's manifest - `split_manifest` must not mutate what it was "
+              "handed, or a failed write would leave the in-memory plan converted",
+              _nomut["meta"]["version"] == 2, repr(_nomut["meta"]))
+
+        # --- two ids, one shard file (data loss) ------------------------------
+        # `_shard_name` maps every character outside [A-Za-z0-9._-] onto `_`, so it
+        # is not injective. `P/9` and `P_9` are the smallest pair that proves it and
+        # they differ in the ONE character that matters, so a fix that only trimmed
+        # whitespace or lowercased would still fail here.
+        _coldir = os.path.join(tmp, "shard-collision")
+        os.makedirs(_coldir)
+        _colsrc = {"meta": {"version": 2}, "phases": [
+            {"id": "P/9", "title": "slash", "status": "pending",
+             "tasks": [{"id": "P/9.1", "title": "first", "status": "pending"}]},
+            {"id": "P_9", "title": "underscore", "status": "pending",
+             "tasks": [{"id": "P_9.1", "title": "second", "status": "pending"}]}]}
+        check("col1 the collision is REPORTED with the file and both ids, in one "
+              "group - a caller has to be able to say which pair to rename",
+              M.shard_name_collisions(_colsrc)
+              == [("phases/P_9.json", ["P/9", "P_9"])],
+              repr(M.shard_name_collisions(_colsrc)))
+        _colpath = os.path.join(_coldir, "audit-plan.json")
+        _refused = ""
+        try:
+            M.save_sharded(_colpath, _colsrc)
+        except ValueError as _exc:
+            _refused = str(_exc)
+        check("col2 save_sharded REFUSES rather than writing. Without this the "
+              "second body lands on the first file and `load_manifest` returns "
+              "the same phase twice, tasks and all, while the index lists both",
+              "P/9" in _refused and "P_9" in _refused
+              and "phases/P_9.json" in _refused, repr(_refused))
+        check("col3 ...and it refuses BEFORE the first mutation: no index, and no "
+              "shard directory that was not there before",
+              not os.path.exists(_colpath)
+              and not os.path.exists(os.path.join(_coldir, "phases")),
+              repr(sorted(os.listdir(_coldir))))
+        check("col4 SECOND-DIRECTION CASE: ids that sanitise apart collide with "
+              "nothing and save normally. A guard that fired on every sharded "
+              "write would pass col1-col3 and break every caller in the tree",
+              M.shard_name_collisions({"phases": [{"id": "P1"}, {"id": "P2"}]}) == []
+              and M.shard_name_collisions(_lsrc) == [],
+              repr(M.shard_name_collisions(_lsrc)))
+        check("col5 a phase the split passes through - no id - takes no file and "
+              "so cannot collide with the phase that does",
+              M.shard_name_collisions(
+                  {"phases": [{"title": "no id"}, {"title": "also none"},
+                              {"id": "P1"}]}) == [])
+        check("col6 the shard directory is part of the identity: the same pair "
+              "collides wherever the shards are put, and the reported path says "
+              "where",
+              M.shard_name_collisions(_colsrc, "elsewhere")
+              == [("elsewhere/P_9.json", ["P/9", "P_9"])],
+              repr(M.shard_name_collisions(_colsrc, "elsewhere")))
+        # col7-col9: the SECOND way two ids reach one file. `P1` and `p1` survive
+        # `_shard_name` as different names and are the same file on macOS and on
+        # Windows - measured on darwin, where `os.path.normcase` is the identity
+        # and so cannot be the test. The fixture differs ONLY in case, which is
+        # what tells a case-folding detector from an exact one.
+        _casesrc = {"phases": [
+            {"id": "P1", "title": "upper", "tasks": [{"id": "P1.1"}]},
+            {"id": "p1", "title": "lower", "tasks": [{"id": "p1.1"}]}]}
+        check("col8 a pair differing only in case is one shard file, and the "
+              "reported path is the FIRST spelling so the message is stable",
+              M.shard_name_collisions(_casesrc)
+              == [("phases/P1.json", ["P1", "p1"])],
+              repr(M.shard_name_collisions(_casesrc)))
+        _caserefused = ""
+        try:
+            M.save_sharded(os.path.join(_coldir, "case.json"), _casesrc)
+        except ValueError as _exc:
+            _caserefused = str(_exc)
+        check("col9 ...and save_sharded refuses it too. The validator accepts "
+              "both ids and every earlier case in this file passes while the "
+              "phase is silently lost, so this is the only thing standing in "
+              "front of it",
+              "P1" in _caserefused and "p1" in _caserefused
+              and not os.path.exists(os.path.join(_coldir, "case.json")),
+              repr(_caserefused))
+        _okpath = os.path.join(_coldir, "ok.json")
+        _okwritten = M.save_sharded(_okpath, _lsrc)
+        _okraw = M.read_json(_okpath)
+        check("col10 every stub points at a file that was actually written - the "
+              "stub's `shard` and the writer's path were composed separately and "
+              "`shard_rel_path` is now the one derivation of both",
+              sorted(os.path.abspath(os.path.join(_coldir, s["shard"]))
+                     for s in _okraw["phases"])
+              == sorted(os.path.abspath(p) for p in _okwritten[:-1]),
+              repr([s["shard"] for s in _okraw["phases"]]))
 
         # --- joining shards back into one file --------------------------------
         _jsrc = M.load_manifest(_lsharded)
@@ -597,6 +715,50 @@ def _cases(check):
                                     _lsharded)[0] == "")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- the spelling a published path carries ---------------------------------
+    # `os.path.relpath` answers in the PLATFORM's separator. Every value below is
+    # read back by something that holds the other spelling: the index stores
+    # `phases/P3.json`, the journal's chained rows are compared across machines,
+    # and the panel matches `theme_state()["path"]` against the path the theme
+    # write returned. The backslash is built from `chr(92)` rather than `os.sep`
+    # so this asks the same question on the platform where `os.sep` is already "/".
+    _bs = chr(92)
+    _joined = os.path.join("a", "b" + _bs + "P3.json")
+    check("px1 posix_rel spells a project-relative path with \"/\" whatever the "
+          "platform joined it with - the index stores that spelling, so a "
+          "reported path that does not use it names a file the manifest has "
+          "never heard of: %r" % (M.posix_rel(_joined, "a"),),
+          M.posix_rel(_joined, "a") == "b/P3.json"
+          and _bs not in M.posix_rel(_joined, "a")
+          and M.posix_rel(os.path.join("a", "b", "c.json"), "a") == "b/c.json")
+
+    # THE REASON THIS IS A CASE AND NOT A COMMENT. Two writers return the same
+    # kind of value - project-relative paths that were written - and they drifted:
+    # one journal row spelled its target with "/" while the `written` list beside
+    # it kept the platform's. Reading the SOURCE is what catches the next one; a
+    # behavioural case cannot, because on POSIX both spellings are identical and
+    # every assertion about them passes without the code being right.
+    # The SUITE is in the list, not only the two writers. Respelling the writers
+    # turned three of its expectations red on Windows and nowhere else, because
+    # each one retyped `os.path.relpath` as the value it expected back - a reader
+    # of a published path holding the spelling the writer just stopped using. A
+    # rule that binds only the producing side leaves the comparison free to drift
+    # the other way, which is the same fault with the arrow reversed.
+    _writers = ("../scripts/manifest/audit-task.py",
+                "../scripts/panel/_panel_write.py",
+                "test__panel_write.py")
+    _raw = {}
+    for _rel in _writers:
+        _src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    _rel), encoding="utf-8").read()
+        _raw[_rel.rsplit("/", 1)[-1]] = _src.count("os.path.relpath(")
+    check("px2 neither writer of a published path calls os.path.relpath "
+          "directly, NOR the suite that compares against one - a retyped "
+          "expectation is the same disagreement with the arrow reversed, and on "
+          "POSIX both spellings are one string so nothing behavioural sees it: "
+          "%r" % (_raw,),
+          set(_raw.values()) == set([0]) and len(_raw) == len(_writers))
 
 
 def _selftest():

@@ -91,9 +91,17 @@ UI_HTML = _panel_ui.raw_template()
 # render. One substitution rather than a template engine, so every selftest that
 # asks `... in UI_HTML` still sees the whole finished stylesheet.
 UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True))
-# The build serving this page. Baked at import rather than substituted per request
-# because it cannot change while the process lives, and a request-time placeholder
-# would promise that it can.
+# The build this page was ASSEMBLED FROM. Baked at import rather than substituted
+# per request because THAT value cannot change while the process lives, and a
+# request-time placeholder would promise that it can.
+#
+# It is not the whole answer, and reading it as one is the fault the endpoint
+# beside it exists for (F100). The build INSTALLED on disk does move under a
+# running server - an in-place upgrade replaces plugin.json - so "which build is
+# serving this page" and "is that still the build you have" are two questions and
+# only the first is baked here. The second is `GET /api/version`
+# (`panel-server.version_state`), which re-reads the installed half per request and
+# answers `stale: null` rather than `false` when either half is missing.
 UI_HTML = UI_HTML.replace("__AUDIT_VERSION__",
                           json.dumps(_output.plugin_version()))
 # `ensure_ascii=False` because the page is served as UTF-8 and this prose contains

@@ -1,2 +1,4 @@
 # audit plugin: the panel pidfile holds a live session token
 audit-panel.json
+# ...and the stderr of its detached launch, so a failure has a reason
+audit-panel.log

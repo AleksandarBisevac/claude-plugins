@@ -68,6 +68,30 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 
+# --- path spelling --------------------------------------------------------------
+def posix_rel(path, start):
+    """A `start`-relative path spelled with "/" on EVERY platform.
+
+    `os.path.relpath` answers in the platform's separator, so the same phase shard
+    is `phases/P3.json` in the index that stores it and `phases\\P3.json` in the
+    line a Windows reader is shown. One file, two spellings, and the one nobody
+    can search for is the one on screen.
+
+    Every value that is PUBLISHED - reported to a human, put in `--json`, or
+    persisted - goes through here. Values used to open a file do not need it
+    (Python takes either separator); values compared against a manifest do, because
+    the manifest holds this spelling.
+
+    Backslashes are replaced UNCONDITIONALLY rather than only `os.sep`. Written as
+    `os.sep` this is the identity on POSIX, so no case here could ask it anything
+    and the body could be deleted without a single suite going red - a check that
+    can only fail on the platform nobody runs locally. The cost is a POSIX filename
+    holding a literal backslash, which is respelled in what is REPORTED and never
+    in what is opened; the same trade `_config.slashed()` already takes in `hooks/`.
+    """
+    return os.path.relpath(path, start).replace("\\", "/")
+
+
 # --- reading + assembly ---------------------------------------------------------
 def read_json(path):
     """Parse a JSON file. Raises like open()/json.load on a missing/invalid file."""
@@ -448,24 +472,112 @@ _STUB_KEYS = ("id", "title")
 
 def _shard_name(pid):
     """Filesystem-safe shard basename for a phase id (ids are already validated;
-    this is defensive)."""
+    this is defensive).
+
+    IT IS NOT INJECTIVE and it cannot be: every character outside `[A-Za-z0-9._-]`
+    collapses onto `_`, so distinct ids share a name. That is safe here only
+    because `shard_name_collisions()` below is asked before anything is written —
+    a sanitiser is allowed to lose information as long as somebody checks what it
+    lost.
+    """
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(pid))
     return safe or "phase"
+
+
+def shard_rel_path(pid, shard_rel_dir="phases"):
+    """Where a phase's body is stored, relative to the index. Posix separators —
+    the value goes into the stub as a portable reference and `load_manifest`
+    joins it back against the index's own directory.
+
+    ONE DERIVATION, because there were three. `split_manifest` composed the
+    stub's `shard` value, `save_sharded` rebuilt the same name from `_shard_name`
+    to decide which file to open, and `migrate-manifest._preview` spelled it a
+    third time with the directory hardcoded to the default. Three expressions of
+    one filename are three chances for the index to point at a file the writer
+    did not write, and the collision check below only means anything if it asks
+    the same question the writer answers.
+    """
+    return "%s/%s.json" % (shard_rel_dir, _shard_name(pid))
+
+
+def shard_name_collisions(manifest, shard_rel_dir="phases"):
+    """`[(shard path, [phase ids])]` for every shard file more than one phase
+    would be written to. `[]` when every phase gets a file of its own.
+
+    THIS IS A DATA-LOSS CHECK, not a tidiness one. `_shard_name` maps `P/9` and
+    `P_9` onto one basename, `save_sharded` writes the shards in document order,
+    and the second body lands on the first. Nothing raises: the index still lists
+    both stubs, both point at the surviving file, and `load_manifest` hands back
+    a manifest carrying the same phase twice — id, title and tasks — while the
+    phase that was overwritten is gone from disk entirely.
+
+    CASE IS FOLDED, AND THAT IS THE SECOND WAY IN rather than a nicety. `P1` and
+    `p1` survive `_shard_name` as different names and are one file on macOS and on
+    Windows, which lose the phase exactly the way the sanitiser does — measured on
+    darwin, where `os.path.normcase` is the identity and therefore answers this
+    question wrong. Folding always, on every platform, is the portable answer for
+    a document that travels: a plan that splits cleanly on a Linux runner must not
+    lose a phase the first time a colleague on a laptop saves it. The cost is
+    naming a pair that one filesystem could in fact keep apart, which is a rename
+    the user can make; the alternative cost is a phase that is simply gone.
+
+    Asked of the manifest and answered through `split_manifest`, so "which phases
+    get a shard" is decided in the one place that decides it. A phase the split
+    passes through untouched (no id, not a dict) has no file and cannot collide.
+
+    Groups come back ordered by the folded path, the ids inside a group in
+    document order, and the path REPORTED is the first spelling of it — so a
+    refusal reads the same on every machine.
+    """
+    shards = split_manifest(manifest, shard_rel_dir)[1]
+    grouped = {}
+    for pid in shards:
+        rel = shard_rel_path(pid, shard_rel_dir)
+        grouped.setdefault(rel.casefold(), []).append((rel, pid))
+    return [(grouped[key][0][0], [pid for _rel, pid in grouped[key]])
+            for key in sorted(grouped) if len(grouped[key]) > 1]
+
+
+def describe_shard_collisions(collisions):
+    """The `ids -> file` clauses a refusal prints, joined into one string.
+
+    Here rather than at each refusal because there are two of them and they name
+    the same pairs: `save_sharded` (which protects every writer) and
+    `/audit:migrate` (which has to answer a `--dry-run` that never reaches the
+    writer). Two spellings of one sentence are how the preview and the run start
+    describing different problems.
+    """
+    return "; ".join("phase ids %s -> %s" % (", ".join(str(i) for i in ids), rel)
+                     for rel, ids in collisions)
 
 
 def split_manifest(manifest, shard_rel_dir="phases"):
     """Split an ASSEMBLED manifest into (index_dict, {phaseId: shard_body}).
 
-    index_dict holds `$schema`, `meta` (version set to the one that names the sharded
-    layout, from `LAYOUT_VERSION`), `fileIndex`, `bugs`,
-    `deferred`, `proposals` and a lightweight `{id, title, shard}` stub per phase;
-    each phase's full body (tasks + branch/baseRef/mergedAt/review/summary/claim/…)
-    is the shard. `load_manifest` reverses this exactly (modulo meta.version)."""
+    index_dict holds `$schema`, `meta` (version set to the one that names the layout
+    the index ACTUALLY reads as, from `LAYOUT_VERSION`), `fileIndex`,
+    `bugs`, `deferred`, `proposals` and a lightweight `{id, title, shard}` stub per
+    phase; each phase's full body (tasks + branch/baseRef/mergedAt/review/summary/
+    claim/…) is the shard. `load_manifest` reverses this exactly (modulo
+    meta.version).
+
+    THE VERSION IS STAMPED FROM THE RESULT, NOT FROM THE DIRECTION OF TRAVEL, and
+    that is the whole of the fix: a split with nothing to shard — no phases at all,
+    or none carrying an id — produces an index with no `shard` pointer anywhere,
+    which `is_sharded()` and therefore every consumer in this plugin reads as
+    single-file. Stamping the sharded number on it regardless is how a manifest
+    ends up with the two readings of its layout disagreeing at the moment it is
+    written, before any caller has touched it: `/audit:doctor` reports the
+    disagreement, and the next writer to ask `is_sharded()` inlines the document
+    while the number goes on claiming otherwise. An `/audit:init` that parks every
+    phase and is asked for the sharded layout reaches it in one step.
+
+    So `declared_layout(index) == layout_of(index)` is an invariant of this
+    function's output rather than a coincidence of which caller ran it."""
     index = {}
     if "$schema" in manifest:
         index["$schema"] = manifest["$schema"]
     meta = dict(manifest.get("meta") or {})
-    meta["version"] = LAYOUT_VERSION["sharded"]
     index["meta"] = meta
     index["phases"] = []
     shards = {}
@@ -474,7 +586,7 @@ def split_manifest(manifest, shard_rel_dir="phases"):
             index["phases"].append(ph)                 # defensive passthrough
             continue
         pid = ph["id"]
-        rel = "%s/%s.json" % (shard_rel_dir, _shard_name(pid))
+        rel = shard_rel_path(pid, shard_rel_dir)
         stub = {k: ph.get(k) for k in _STUB_KEYS if k in ph}
         stub["shard"] = rel
         # The index-only fields MOVE: into the stub, out of the body. A migration
@@ -488,6 +600,11 @@ def split_manifest(manifest, shard_rel_dir="phases"):
                     stub[k] = body.pop(k)
         shards[pid] = body
         index["phases"].append(stub)
+    # AFTER the loop, off the stubs that were actually written — see the docstring.
+    # `meta` is the dict already installed under `index["meta"]`, so this lands in
+    # the position the key had (or at the end, when the source carried none), which
+    # is where the unconditional stamp above it used to land.
+    meta["version"] = LAYOUT_VERSION[layout_of(index)]
     for k in ("fileIndex", "bugs", "deferred", "proposals"):
         if k in manifest:
             index[k] = manifest[k]
@@ -531,14 +648,40 @@ def _atomic_write_json(path, data):
 def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     """Write an assembled `manifest` as index + per-phase shards, each file written
     atomically (temp + os.replace). Returns the list of written paths (shards first,
-    then the index — so a reader never sees an index pointing at a missing shard)."""
+    then the index — so a reader never sees an index pointing at a missing shard).
+
+    IT REFUSES BEFORE THE FIRST WRITE when `shard_name_collisions()` reports one.
+    Raising is the only honest answer available: renaming a shard to make room
+    would move a file a parallel worktree may already be holding open, and writing
+    anyway loses a phase in silence — the failure this guard exists for.
+
+    THE GUARD IS HERE RATHER THAN IN THE CALLERS, and that placement is the fix.
+    `/audit:phase add` grew a refusal of its own for the id it is about to mint,
+    which covers the id that command allocates and nothing else: `/audit:migrate`,
+    `/audit:init`, the panel and `/audit:propose materialize` all reach this
+    function with a whole manifest and none of them asked. A rule enforced by
+    every caller is a rule the next caller does not know about.
+
+    Nothing is created before the check, so a refused save leaves the shard
+    directory exactly as it found it — including not existing.
+    """
+    collisions = shard_name_collisions(manifest, shard_rel_dir)
+    if collisions:
+        raise ValueError(
+            "refusing to write %s: %s. Two phase ids the shard filename cannot "
+            "tell apart would be written to one file and the second would "
+            "silently replace the first -- rename one of them. Filenames are "
+            "compared without case, because a split that is clean on a "
+            "case-sensitive volume loses a phase on macOS or Windows."
+            % (index_path, describe_shard_collisions(collisions)))
     index, shards = split_manifest(manifest, shard_rel_dir)
     base = os.path.dirname(os.path.abspath(index_path))
-    sdir = os.path.join(base, shard_rel_dir)
-    os.makedirs(sdir, exist_ok=True)
+    os.makedirs(os.path.join(base, shard_rel_dir), exist_ok=True)
     written = []
     for pid, body in shards.items():
-        p = os.path.join(sdir, "%s.json" % _shard_name(pid))
+        # Through `shard_rel_path` so the file opened here IS the file the stub
+        # in `index` points at; the two used to be composed separately.
+        p = os.path.join(base, shard_rel_path(pid, shard_rel_dir))
         _atomic_write_json(p, body)
         written.append(p)
     _atomic_write_json(index_path, index)

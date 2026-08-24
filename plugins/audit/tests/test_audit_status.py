@@ -380,12 +380,102 @@ def _cases(_record):
           and "+1 legacy proposal(s) (free-form) - /audit:propose list"
               in _txt_out,
           _txt_out[-200:])
+    # F93. The block now takes its rows from `_proposals.proposal_rows`, which
+    # NORMALISES a missing status to `proposed` so a badge has something to
+    # paint. Routing this surface through that reading would have moved an
+    # entry carrying NO status out of the legacy footer and into the parked
+    # list - a status surface inventing a status is exactly the failure sp7 is
+    # about. These two are the pair that keeps the classification on the RAW
+    # value: the fixture holds one entry that is genuinely parked and one that
+    # carries no status at all, so a surface reading the normalised field
+    # reports two parked and no footer, and one reading the raw field reports
+    # one of each.
+    _fx_ns = copy.deepcopy(_fx)
+    _fx_ns["proposals"] = [
+        {"id": "PROP-1", "name": "Really parked", "status": "proposed",
+         "payload": {"phase": {"id": "P3", "title": "Parked",
+                               "status": "pending", "tasks": []}}},
+        {"id": "no-status-at-all", "name": "Written without a status"},
+    ]
+    _txt_ns = M.render_status(_fx_ns, M.rollup(_fx_ns, [], []))
+    check("sp8 an entry written with NO status is reported in the legacy "
+          "footer, not counted as parked - the row's display status says "
+          "`proposed`, and this surface must not repeat it",
+          "+1 legacy proposal(s) (free-form) - /audit:propose list" in _txt_ns
+          and "no-status-at-all " not in _txt_ns,
+          _txt_ns.split("PROPOSALS")[-1][:200])
+    check("sp9 ...and the header counts one parked, not two: %r"
+          % ([ln for ln in _txt_ns.split("\n") if "PROPOSALS" in ln],),
+          any(ln.strip().startswith("PROPOSALS") and "2 total - 1 parked" in ln
+              for ln in _txt_ns.split("\n")))
+    # The cell itself is `_proposals.reserved_cell` and nothing else. Pinned by
+    # IDENTITY as well as by output: a copy of the function that happened to
+    # agree today would pass the render assertion and still be the third
+    # spelling F93 is about.
+    _fx_cell = copy.deepcopy(_fx)
+    _fx_cell["proposals"] = [
+        {"id": "PROP-1", "name": "Two tasks", "status": "proposed",
+         "payload": {"phase": {"id": "P3", "title": "x", "status": "pending",
+                               "tasks": [{"id": "P3.1", "title": "a",
+                                          "status": "pending"},
+                                         "not a task"]}}}]
+    _txt_cell = M.render_status(_fx_cell, M.rollup(_fx_cell, [], []))
+    check("sp10 the reserved cell counts task OBJECTS, which is what the "
+          "/audit:propose table has always counted - this block used to count "
+          "the LIST and the two disagreed by one on exactly this payload",
+          "P3 (1 task)" in _txt_cell and "P3 (2 task" not in _txt_cell,
+          _txt_cell.split("PROPOSALS")[-1][:160])
+    check("sp11 ...and it is the SAME function, not a copy that agrees today",
+          M._proposals.reserved_cell.__module__ == "_proposals")
+
     _empty_p = {"meta": {"version": 2}, "phases": [],
                 "proposals": _fx_p["proposals"][:1]}
     _txt_ep = M.render_status(_empty_p, M.rollup(_empty_p, [], []))
     check("sp3 an empty plan with parked proposals points at /audit:propose",
           "parked proposal" in _txt_ep and "/audit:propose" in _txt_ep,
           _txt_ep[:200])
+    # sp12-sp15: ONE WORD, ONE NUMBER. The header line and the PROPOSALS block
+    # both say "parked" and each used to decide what it meant: the header
+    # counted `proposed` AND payload-bearing, the block counted every raw
+    # `proposed`. A payload-LESS proposed entry is the fixture that separates
+    # them - with a payload on both, the two rules give the same answer and no
+    # case in this file could see the disagreement.
+    _fx_mix = {"meta": {"version": 2}, "phases": [], "proposals": [
+        {"id": "PROP-1", "name": "With payload", "status": "proposed",
+         "payload": {"phase": {"id": "P3", "title": "x", "status": "pending",
+                               "tasks": []}}},
+        {"id": "PROP-2", "name": "Parked, nothing drafted yet",
+         "status": "proposed"}]}
+    _sum_mix = M.rollup(_fx_mix, [], [])
+    _txt_mix = M.render_status(_fx_mix, _sum_mix)
+    _hdr_mix = [ln for ln in _txt_mix.split("\n") if "parked proposal(s)" in ln]
+    _blk_mix = [ln for ln in _txt_mix.split("\n")
+                if ln.strip().startswith("PROPOSALS")]
+    check("sp12 the header and the PROPOSALS block print the SAME number under "
+          "the same word - they disagreed by one on exactly this manifest: "
+          "%r vs %r" % (_hdr_mix, _blk_mix),
+          len(_hdr_mix) == 1 and len(_blk_mix) == 1
+          and "2 parked proposal(s)" in _hdr_mix[0]
+          and "2 total - 2 parked" in _blk_mix[0])
+    check("sp13 ...and the rollup agrees with both, since it is what the header "
+          "reads",
+          _sum_mix["proposals"]["parked"] == 2,
+          repr(_sum_mix["proposals"]))
+    check("sp14 the payload-less entry is LISTED, and without a materialize "
+          "command - counting it and then hiding it would be the same failure "
+          "wearing the other face",
+          "PROP-2" in _txt_mix
+          and "/audit:propose materialize PROP-2" not in _txt_mix
+          and "/audit:propose materialize PROP-1" in _txt_mix,
+          _txt_mix.split("PROPOSALS")[-1][:200])
+    check("sp15 SECOND-DIRECTION CASE: `parked` is not simply the total. A "
+          "dropped entry beside a proposed one counts once, so a count that "
+          "stopped reading the status at all would pass sp12-sp14 and fail here",
+          M.rollup({"phases": [], "proposals": [
+              {"id": "A", "status": "proposed"},
+              {"id": "B", "status": "dropped"},
+              {"id": "C", "status": "materialized"}]}, [], [])["proposals"]
+          ["parked"] == 1)
     _few = {"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "narrow", "status": "pending", "tasks": [
             {"id": "P1.1", "title": "t", "status": "pending"}]}]}
@@ -790,6 +880,50 @@ def _cases(_record):
         check("u9 usage_summary survives a torn ledger line",
               M.usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
                             project_dir=_empty)["totals"]["tokens"] == 35)
+        # --- the rate basis, trimmed at the door (F160) --------------------
+        # The plan schema asks only `minLength: 1` of `meta.usage.pricingAsOf`,
+        # so a string of spaces VALIDATES - and `_usage_line` tests the value
+        # for truth, so it printed "rates as of" followed by nothing, beside a
+        # cost figure the budget preflight acts on. Asserted THROUGH the render
+        # as well as on the payload, because the payload is the door and the
+        # line is what a person reads.
+        def _u_basis(raw):
+            return M.usage_summary(
+                {"meta": {"usage": {"pricingAsOf": raw}}},
+                os.path.join(_empty, "docs", "audit", "m.json"),
+                project_dir=_empty)
+        _u_blank = _u_basis("   ")
+        check("u10 a whitespace-only `meta.usage.pricingAsOf` becomes None in "
+              "the summary - the shape absence already has: %r"
+              % (_u_blank["pricingAsOf"],),
+              _u_blank["pricingAsOf"] is None)
+        _u_blank_txt = M.render_status(_fx, M.rollup(_fx, [], [],
+                                                     usage=_u_blank))
+        check("u10b ...so the line says the rates are UNDATED rather than "
+              "trailing off after 'rates as of'. The claim without its basis "
+              "is the one thing this project's output rule forbids: %r"
+              % ([ln for ln in _u_blank_txt.splitlines() if "rates" in ln],),
+              "rates undated" in _u_blank_txt
+              and "rates as of" not in _u_blank_txt)
+        check("u11 ...and a padded date is TRIMMED rather than refused - the "
+              "fixture that separates trimming from merely rejecting a blank: "
+              "%r" % (_u_basis(" 2026-08-06 ")["pricingAsOf"],),
+              _u_basis(" 2026-08-06 ")["pricingAsOf"] == "2026-08-06")
+        # The label carries the FIELD and not the whole summary: `ledgerDir` is
+        # an absolute path under the machine's temp directory, and a label
+        # prints on a pass as well as on a failure.
+        _u_num = _u_basis(20260806)
+        check("u12 ...and a hand-edited number is None, not a raise that "
+              "would take the whole usage block down: %r"
+              % (None if _u_num is None else _u_num["pricingAsOf"],),
+              _u_num is not None and _u_num["pricingAsOf"] is None)
+        # THE OTHER-DIRECTION CASE: it passes on the pre-fix code by
+        # construction and is the only one that fails if the trim collapses to
+        # an unconditional None and every project is told its rates are undated.
+        check("u13 ...and a declared date still reaches the line intact",
+              _u_basis("2026-08-06")["pricingAsOf"] == "2026-08-06"
+              and "rates as of 2026-08-06" in M.render_status(
+                  _fx, M.rollup(_fx, [], [], usage=_u_basis("2026-08-06"))))
     finally:
         import shutil as _sh
         _sh.rmtree(_empty, ignore_errors=True)

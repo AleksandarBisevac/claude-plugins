@@ -57,6 +57,24 @@ import _journal_io  # noqa: E402  (the trail this command is a front end for)
 # asks for them by hand, case by case, about the trail AS THIS COMMAND SEES IT.
 # `tests/test__journal_io.py` pins each name to be that module's own object, so a
 # second implementation here fails a case rather than drifting.
+#
+# THE LIST IS NO LONGER REMEMBERED, WHICH IS THE HALF THAT KEPT FAILING. Pinning
+# each LISTED name proves none of them is a copy; it proves nothing about a name
+# that was never listed, and a release added a row-shape constant here that nobody
+# re-exported -- one fact, two homes, nothing comparing them. So
+# `test__journal_io.py` now DERIVES the row-shape set from `_journal_io`'s own
+# source: every public module-level constant that building a row can read, found by
+# walking out from `_normalise`. A constant a row can carry and this file does not
+# re-export fails that case BY NAME.
+#
+# The line that derivation draws is "can a row read it", and it is drawn there
+# because that is the question this list exists to answer. It takes in the bounds,
+# the versions, the allow-lists and the redaction vocabulary a row can end up
+# carrying (`OUTSIDE_TOKEN`, `UNNAMED_PROGRAM`); it leaves out the writer-state
+# vocabulary (`WRITER_TOKEN_FILE`, `PLUGIN_WRITE_*`, `MAX_WRITER_KEY_CHARS`), which
+# names a gitignored scratch file that no row has ever read. The names below the
+# derived set -- where a journal LIVES and how it is locked -- are here for the
+# CLI's own reasons and stay hand-listed.
 ROW_VERSION = _journal_io.ROW_VERSION
 DETAILS_VERSION = _journal_io.DETAILS_VERSION
 DETAILS_KEYS = _journal_io.DETAILS_KEYS
@@ -64,6 +82,11 @@ CHANGE_KEYS = _journal_io.CHANGE_KEYS
 MAX_CHANGES = _journal_io.MAX_CHANGES
 MAX_VALUE_CHARS = _journal_io.MAX_VALUE_CHARS
 MAX_DETAILS_BYTES = _journal_io.MAX_DETAILS_BYTES
+MAX_SUMMARY_CHARS = _journal_io.MAX_SUMMARY_CHARS
+SUMMARY_TRUNCATED = _journal_io.SUMMARY_TRUNCATED
+VALUE_TRUNCATED = _journal_io.VALUE_TRUNCATED
+OUTSIDE_TOKEN = _journal_io.OUTSIDE_TOKEN
+UNNAMED_PROGRAM = _journal_io.UNNAMED_PROGRAM
 DEFAULT_DIRNAME = _journal_io.DEFAULT_DIRNAME
 ARCHIVE_DIRNAME = _journal_io.ARCHIVE_DIRNAME
 DEFAULT_MANIFEST = _journal_io.DEFAULT_MANIFEST

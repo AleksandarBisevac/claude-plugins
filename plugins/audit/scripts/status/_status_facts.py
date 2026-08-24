@@ -245,6 +245,38 @@ def _by_status_values(values):
     return out
 
 
+# The word `proposed` as a status surface reads it. Spelled once here rather than
+# at each site that asks, because it was asked twice with two different answers.
+PARKED_PROPOSAL_STATUS = "proposed"
+
+
+def is_parked_proposal(raw_status):
+    """Whether a proposal's status AS WRITTEN means it is still parked.
+
+    WHAT `parked` MEANS ON A STATUS SURFACE, decided here so the header and the
+    PROPOSALS block cannot each decide it. They did: the header counted entries
+    that were `proposed` AND carried a payload, the block counted every entry
+    whose raw status was `proposed`, and a payload-less proposed entry made the
+    two lines of one render disagree by one under the same word.
+
+    The answer is the raw status alone, and it follows the decision the proposal
+    ROWS already record: a status surface reads `statusRaw`, reports what is
+    there, and never invents. Whether `/audit:propose materialize` can act on an
+    entry is a different question with a different answer -- `hasPayload` on the
+    row, which is what puts the copy-pasteable command on the line that has one.
+    An entry with nothing drafted yet is still a decision waiting on a human, so
+    folding the payload into the count left it out of the count of exactly that,
+    while the block below went on listing it. Counted here and listed there, or
+    neither -- counted in one place and not the other is the state that made one
+    render print two numbers under one word.
+
+    Takes the RAW value, not the entry, so both callers can pass what they hold:
+    `rollup` walks `proposals[]` and has the dict, `_proposal_lines` has rows
+    whose `statusRaw` is that same value carried through.
+    """
+    return raw_status == PARKED_PROPOSAL_STATUS
+
+
 # A phase's `area` -> its tags. Re-exported rather than reimplemented: the panel
 # and this file each carried their own copy, and one of them would eventually have
 # learned something the other had not. `_areas` also owns what a tag MEANS now
@@ -356,13 +388,16 @@ def rollup(manifest, findings, warnings, usage=None):
                  "openHighSeverity": sum(
                      1 for b in open_bugs
                      if _is_high_severity(b.get("severity")))},
-        # "parked" counts only what /audit:propose materialize can act on —
-        # status 'proposed' WITH a payload. Legacy free-form entries show up in
-        # total/byStatus but are not parked work.
+        # "parked" is every entry whose status AS WRITTEN is 'proposed', payload
+        # or not — `is_parked_proposal` holds the decision and says why. It used
+        # to require a payload as well, which is a count of what
+        # /audit:propose materialize can act on rather than of what is waiting on
+        # a human, and it disagreed with the PROPOSALS block that prints beneath
+        # it. Legacy free-form entries (a status outside the vocabulary) show up
+        # in total/byStatus and are not parked.
         "proposals": {"total": len(props), "byStatus": _by_status(props),
                       "parked": sum(1 for x in props
-                                    if x.get("status") == "proposed"
-                                    and isinstance(x.get("payload"), dict))},
+                                    if is_parked_proposal(x.get("status")))},
         "ready": ready_tasks(manifest),
     }
     # The sister key to "ready", and the reason the priority feature needed no

@@ -26,6 +26,87 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        run: |
+          # WHY THIS IS A STEP AND NOT A FIX. `panel/panel-server.py` answers "is
+          # the panel still running" with `os.kill(pid, 0)`, and two readings of
+          # that call cannot both be right. Reading one: Windows CPython sends
+          # anything that is not a console-control event to TerminateProcess, so
+          # the probe would KILL the panel `--status` is asking about. Reading
+          # two: `test_panel_server.py` calls `_pid_alive(os.getpid())` with no
+          # platform guard, this leg runs the whole sweep, and the sweep demands
+          # a tally line that a terminated process cannot print - so it survives.
+          #
+          # NEITHER CAN BE SETTLED FROM A UNIX MACHINE, and a fix applied to the
+          # wrong one buys untested platform-specific code on the exact path that
+          # decides whether a user's panel is alive. So this runs the probe and
+          # prints what happened. It changes nothing and gates nothing:
+          # `continue-on-error` is here so a surprising answer is READ rather
+          # than mistaken for a broken build, and the real verdict is whether the
+          # sweep below stays green on this same leg.
+          #
+          # WHAT THE DOCUMENTED MECHANISM SAYS, so the log can be compared with
+          # it rather than read alone. `CTRL_C_EVENT` is 0 (Microsoft's
+          # GenerateConsoleCtrlEvent reference tabulates it), which is the value
+          # `_pid_alive` passes - so signal 0 is one OF the console-control
+          # events, not one of the values that fall through to TerminateProcess.
+          # The same table then says a CTRL+C with a nonzero process group id
+          # "will succeed, but the CTRL+C signal will not be received", which
+          # predicts a call that returns having done nothing - and that would
+          # make a DEAD pid answer alive too. The dead-pid probe is here for
+          # that: it is the consequence worth knowing about, and the opposite of
+          # the one the fault was opened for.
+          probe=$(mktemp -d)/probe.py
+          cat > "$probe" <<'PY'
+          import os
+          import sys
+
+          mode = sys.argv[1]
+          if mode == "consts":
+              import signal
+              sys.stdout.write("CTRL_C_EVENT=%r CTRL_BREAK_EVENT=%r"
+                               % (signal.CTRL_C_EVENT, signal.CTRL_BREAK_EVENT))
+          else:
+              # A pid that is legal and names nothing, for the dead half.
+              pid = os.getpid() if mode == "live" else 2147483000
+              try:
+                  os.kill(pid, 0)
+                  sys.stdout.write("RETURNED - the call came back and this "
+                                   "process is still running")
+              except OSError as exc:
+                  sys.stdout.write("RAISED %s: %s" % (type(exc).__name__, exc))
+          PY
+          # NO SILENT ROW. A terminated interpreter exits 0 with nothing on
+          # stdout, so "it printed nothing and exited fine" is the one outcome
+          # that must never be reported as clear - which is exactly what a bare
+          # `python -c ... || echo failed` would do to it. Every probe goes
+          # through here so all four are read the same way.
+          report() {
+            label=$1
+            shift
+            out=$("$@" 2>&1)
+            rc=$?
+            if [ -n "$out" ]; then
+              printf '  %-9s %s (exit %s)\n' "$label" "$out" "$rc"
+            elif [ "$rc" -eq 0 ]; then
+              printf '  %-9s NO OUTPUT, exit 0 - the interpreter was TERMINATED mid-run\n' "$label"
+            else
+              printf '  %-9s NO OUTPUT, exit %s - the interpreter died\n' "$label" "$rc"
+            fi
+          }
+          echo "F117: panel-server._pid_alive() asks os.kill(pid, 0). On this runner:"
+          report consts python "$probe" consts
+          report live python "$probe" live
+          report dead python "$probe" dead
+          report verbatim python -c "import os;os.kill(os.getpid(),0);print('SURVIVED')"
+          echo "READ IT LIKE THIS: 'live RETURNED' plus 'dead RAISED' means the probe"
+          echo "is a probe and _pid_alive is correct here. 'live RETURNED' plus 'dead"
+          echo "RETURNED' means every pid reads as alive, so --status would call a"
+          echo "stopped panel running. 'live' terminated or raised means the opposite"
+          echo "fault, and is the one this was opened for."
       - name: Selftest sweep (one runner, shared with tools/verify.sh; covers tools/)
         shell: bash
         run: python tools/sweep-selftests.py
@@ -210,6 +291,140 @@ jobs:
             echo "warn must not emit a permissionDecision, got: $out"; exit 1
           fi
           echo "OK: inert / deny / allow / required / warn all behave through the launcher"
+      - name: The TDD nudge, end to end through the launcher
+        shell: bash
+        run: |
+          set -e
+          # THE LAST HOOK PROVEN ONLY BY DIRECT CALL. Every other hook is driven
+          # through py-launch.sh - by the steps above and by the git pipeline
+          # below - and this one was named as the remainder by both of them
+          # rather than wired. Its selftests call decide() and cannot prove the
+          # launcher, the stdin contract or the PostToolUse JSON, and this hook's
+          # channel is a DIFFERENT one from every step above: it never emits a
+          # permissionDecision, it emits additionalContext, so a hook that ran
+          # perfectly and emitted the blocking shape would look identical to a
+          # working one in every check written for its neighbours.
+          #
+          # It needs no repository, unlike the hooks in the pipeline step: its
+          # evidence is its own state file, keyed by session id.
+          proj=$(mktemp -d)
+          mkdir -p "$proj/src"
+
+          # THE PAYLOAD IS SPELLED FOR THE INTERPRETER, NOT FOR THE SHELL.
+          # `mktemp -d` under Git Bash answers an MSYS path (/tmp/tmp.XXXX);
+          # the Python that runs the hook is native Windows and reads that as a
+          # driveless path under whatever drive it happens to be on. The steps
+          # above never hit this because their payloads name a RELATIVE file and
+          # only the env var carries the root. This one names an absolute file,
+          # so it needs the mixed spelling - drive letter, forward slashes -
+          # which is valid in JSON and to both interpreters. `cygpath` exists
+          # only on the platform that needs it.
+          if command -v cygpath >/dev/null 2>&1; then
+            projp=$(cygpath -m "$proj")
+          else
+            projp="$proj"
+          fi
+
+          payload() {
+            printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/%s"},"session_id":"%s","cwd":"%s","hook_event_name":"PostToolUse"}' \
+              "$projp" "$1" "$2" "$projp"
+          }
+
+          tdd() {
+            payload "$1" "$2" \
+              | env CLAUDE_PROJECT_DIR="$projp" sh plugins/audit/hooks/py-launch.sh \
+                  remind-tdd.py open
+          }
+
+          # THIS HOOK IS FAIL-OPEN: `main()` swallows every exception and exits
+          # 0, so a hook that CRASHED and a hook that decided to stay quiet are
+          # the same empty string on stdout. Asserting on stdout alone therefore
+          # cannot say which happened - the exact confusion the comment above
+          # says this step exists to prevent, one channel over. When an
+          # expectation fails, ask `decide()` directly with nothing swallowing
+          # the error, so the log names the cause instead of showing "<>".
+          explain() {
+            echo "--- asking decide() directly, exceptions unswallowed ---"
+            payload "$1" "$2" | env CLAUDE_PROJECT_DIR="$projp" python3 -c "import importlib.util,json,os,sys; h=os.path.join('plugins','audit','hooks'); sys.path.insert(0,h); s=importlib.util.spec_from_file_location('remind_tdd',os.path.join(h,'remind-tdd.py')); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('decide() ->', m.decide(json.load(sys.stdin)))" || true
+          }
+
+          # 1. source edited, no test touched -> the nudge, on the non-blocking
+          #    channel. Both halves are asserted: a permissionDecision here would
+          #    BLOCK an edit that has already happened.
+          out=$(tdd src/cart.ts ci-tdd-warn)
+          echo "$out" | grep -q '"additionalContext"' \
+            || { echo "expected a nudge on additionalContext, got: <$out>"
+                 explain src/cart.ts ci-tdd-warn; exit 1; }
+          echo "$out" | grep -q 'tdd-reminder' \
+            || { echo "the nudge does not name itself, got: <$out>"; exit 1; }
+          if echo "$out" | grep -q 'permissionDecision'; then
+            echo "a nudge must never emit a permissionDecision, got: $out"; exit 1
+          fi
+
+          # 2. a test file, in a FRESH session -> recorded, and silent.
+          out=$(tdd src/cart.test.ts ci-tdd-quiet)
+          if [ -n "$out" ]; then echo "touching a test must be silent, got: $out"; exit 1; fi
+
+          # 3. ...and source in THAT session is now silent, because the state
+          #    file written by step 2 was read back by a separate invocation.
+          #    That round trip is the whole mechanism and no direct call to
+          #    decide() exercises it across two processes.
+          out=$(tdd src/checkout.ts ci-tdd-quiet)
+          if [ -n "$out" ]; then echo "expected silence after a test touch, got: $out"; exit 1; fi
+
+          # 4. THE SECOND DIRECTION, and it is what makes step 3 mean anything:
+          #    the SAME file in a THIRD session warns. Without it, a hook that
+          #    had simply stopped speaking would pass steps 2 and 3 exactly as a
+          #    working one does.
+          out=$(tdd src/checkout.ts ci-tdd-again)
+          echo "$out" | grep -q 'tdd-reminder' \
+            || { echo "a fresh session must warn again; the silence in step 3 was not the state file: $out"
+                 explain src/checkout.ts ci-tdd-again; exit 1; }
+
+          # 5. ...and the config reaches it through the launcher too, which is a
+          #    claim about the file the user edits and not about decide().
+          mkdir -p "$proj/.claude"
+          printf '{"tddReminder":{"enabled":false}}' > "$proj/.claude/audit.config.json"
+          out=$(tdd src/basket.ts ci-tdd-disabled)
+          if [ -n "$out" ]; then echo "disabled must be silent, got: $out"; exit 1; fi
+          echo "OK: nudge / record / satisfied / fresh session / disabled all behave through the launcher"
+      - name: The write half of the pipeline, against a REAL git repository
+        shell: bash
+        run: |
+          set -e
+          # NOTHING IN THE GATE SET EVER CREATED A REPOSITORY (F54). The three steps
+          # above drive hooks through the launcher against a synthetic project
+          # directory - a manifest and a config file, no source and no history - and
+          # every other job here works on manifest data or rendered output. So an
+          # entire column of this product had never been executed by a gate: the
+          # commit trail, the branch resolution, the ancestry question inside
+          # `guard-history-rewrite`, the journal's git anchor, the ledger's author.
+          # Every one of them reads git and every one of them FAILS OPEN when git
+          # cannot be asked, which is why their absence was invisible - on a fixture
+          # with no `.git`, a check that could not run printed what a check that
+          # found nothing prints.
+          #
+          # It also carries F53. The three steps above wire four hooks; the ones
+          # they left out were `journal-writes`, `meter-usage`,
+          # `guard-history-rewrite`, `guard-bash-writes` and `detect-plan-skip`, and
+          # the first two are the ones the product's own adjectives rest on -
+          # "auditable" and "measurable". All five are wired here, on both matrix
+          # platforms, and three of them belong HERE rather than beside the four
+          # above because their evidence IS a repository: a ledger author from
+          # `git config`, a dirty set from `git status --porcelain`, an ancestry
+          # question from `merge-base --is-ancestor`. `remind-tdd.py` was the one
+          # hook still proven only by direct call, and the step above wires it -
+          # so every hook `hooks.json` registers is now driven through the
+          # launcher by one side or the other, and no hook is named as a
+          # remainder anywhere.
+          #
+          # A PYTHON TOOL RATHER THAN A SHELL BLOCK, unlike its neighbours, and the
+          # reason is this repo's own history: the selftest sweep lived inline here
+          # AND in `tools/verify.sh`, the two copies checked different things, and a
+          # file that asserted nothing was green locally and red in CI. A fixture
+          # with a dozen assertions on it is exactly the size that goes wrong that
+          # way, so it is one file with its own cases, called from both sides.
+          python tools/check-git-pipeline.py
 
   manifests:
     name: manifest validation
@@ -673,7 +888,23 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          # MORE THAN ONE, and the extra ones exist for the hook import budget
+          # below. That check reads an import GRAPH, and a stdlib import graph is
+          # not the same on every version - `hashlib` drags a third C accelerator
+          # on 3.9 and two on 3.13 - while this plugin publishes support for 3.8
+          # and up (`vermin -t=3.8-`, further down this same job). A budget taken
+          # on one interpreter and read as a property of the product is F87.
+          #
+          # The LAST version listed is what bare `python` resolves to, so 3.12
+          # stays last and every other step in this job is unchanged. The others
+          # are reachable as `python3.<minor>`, which is what `bench-hooks.py`
+          # looks for; a version this action stops providing is REPORTED by that
+          # command as unmeasured rather than silently dropped, so this list
+          # cannot fail quietly.
+          python-version: |
+            3.9
+            3.11
+            3.12
       - name: Install pinned lint tools (dev/CI-only, not a runtime dependency)
         run: pip install ruff==0.16.2 vermin==1.8.0
       - name: ruff (E9+F, py38 target from pyproject.toml)
@@ -720,6 +951,19 @@ jobs:
           # floor would simply absorb it - so `floor_regressions()` asks that of the
           # SOURCE, and the gate fails on either half. Its own cases run inside the
           # selftest job's sweep.
+          #
+          # AND "RUN ONCE" NOW MEANS ONE COMMAND, NOT ONE INTERPRETER. Deriving the
+          # floor repaired the SHARED half and left the hooks' own graphs and every
+          # allowance measured on whichever interpreter typed the command: the
+          # allowance for `journal-writes.py` was three module names, right on 3.13
+          # and 3.14 and one short on 3.9, so the gate was green everywhere anyone
+          # had run it and red on a version this plugin promises. The command now
+          # measures every interpreter it can find - the `setup-python` block at the
+          # top of this job is what puts more than one here - names the versions it
+          # covered, and names the supported versions it could not reach. A
+          # single-version answer is still worth having; reading it as a property of
+          # the product is what was wrong.
+          python -V
           python tools/bench-hooks.py --gate
       - name: vermin holds the 3.8 floor
         run: |

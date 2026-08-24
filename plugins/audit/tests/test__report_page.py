@@ -343,6 +343,74 @@ def _cases(check):
           and M._ready_block(_m, dict(_s, ready=[], priorityNote=None))
           == ([], []))
 
+    # --- F141: `parked` is decided in `_status_facts`, not a third time here ---
+    # The fixture carries ONE parked entry and TWO dropped ones on purpose: a
+    # predicate that answered `dropped` instead would report a different number
+    # from this data, which is what lets pg19 below tell the two apart. A fixture
+    # with one of each would have made the swapped predicate agree by accident.
+    _pm = {"meta": {"title": "page", "repo": "r"}, "bugs": [], "phases": [],
+           "proposals": [{"id": "PROP-1", "name": "one", "status": "proposed"},
+                         {"id": "PROP-2", "name": "two", "status": "dropped",
+                          "notes": "declined"},
+                         {"id": "PROP-3", "name": "three", "status": "dropped",
+                          "notes": "declined too"}]}
+    _ps = dict(_s, phases=[])
+    _suffix = M._parked_suffix(_pm, _ps)
+    _prec = M._proposals_block(_pm)[1]
+    check("pg17 an all-parked plan says so where the other counts are, and the "
+          "Proposals nav entry carries the same number - one manifest read twice "
+          "on one page, which is exactly the pair that disagreed before the word "
+          "had a single home: %r / %r" % (_suffix, _prec),
+          _suffix == " \u00b7 1 parked proposal, not started"
+          and _prec == [("proposals", "Proposals", 1, False)])
+    # Read out of the AST, because every behavioural case above passes just as
+    # well against a private copy of the rule that happens to agree today - which
+    # is the state this file was actually in.
+    with open(M.__file__, "r", encoding="utf-8") as fh:
+        _pg_src = fh.read()
+    _pg_tree = ast.parse(_pg_src, filename=M.__file__)
+    _word = [n for n in ast.walk(_pg_tree) if isinstance(n, ast.Constant)
+             and n.value == M._status_facts.PARKED_PROPOSAL_STATUS]
+    _askers = sorted(set(
+        fn.name for fn in ast.walk(_pg_tree) if isinstance(fn, ast.FunctionDef)
+        for c in ast.walk(fn) if isinstance(c, ast.Call)
+        and isinstance(c.func, ast.Attribute)
+        and c.func.attr == "is_parked_proposal"))
+    check("pg18 the word itself is spelled NOWHERE in this module as a Python "
+          "string - not as a comparison and not as the `or` default the chip "
+          "renders - and both sites that need it ask the shared predicate: %r"
+          % (_askers,),
+          _word == [] and _askers == ["_parked_suffix", "_proposals_block"])
+    # And the half the AST cannot see: that the call is LIVE. A module can import
+    # a predicate, name it in a comment, and still decide the question itself.
+    _seen = []
+    _real = M._status_facts.is_parked_proposal
+
+    def _says_dropped(raw_status):
+        _seen.append(raw_status)
+        return raw_status == "dropped"
+
+    try:
+        M._status_facts.is_parked_proposal = _says_dropped
+        _suffix_swapped = M._parked_suffix(_pm, _ps)
+        _prec_swapped = M._proposals_block(_pm)[1]
+    finally:
+        M._status_facts.is_parked_proposal = _real
+    check("pg19 ...and BOTH sites follow the predicate when it changes its mind, "
+          "which is the property the fix is for: the next change to what `parked` "
+          "means reaches this page without anyone editing it: %r / %r"
+          % (_suffix_swapped, _prec_swapped),
+          _suffix_swapped == " \u00b7 2 parked proposals, not started"
+          and _prec_swapped == [("proposals", "Proposals", 2, False)]
+          and sorted(set(_seen)) == ["dropped", "proposed"])
+    check("pg20 SECOND-DIRECTION CASE: a plan with no proposals at all still "
+          "says nothing in either place. This passes on the pre-change code by "
+          "construction and is the only one here that fails if either site "
+          "starts counting entries instead of asking about their status",
+          M._parked_suffix(dict(_pm, proposals=[]), _ps) == ""
+          and M._proposals_block(dict(_pm, proposals=[])) == ([], [])
+          and M._parked_suffix(_pm, _s) == "")
+
 
 def _selftest():
     return _harness.run(_cases)

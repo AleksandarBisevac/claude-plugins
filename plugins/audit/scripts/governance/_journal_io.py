@@ -63,6 +63,22 @@ A field with a reader has a redaction question; a field with none has a deletion
 answer. See the `redaction` section below for why substituting known strings was
 measured and rejected.
 
+HOW MUCH A ROW MAY CARRY is a different question from what it may SAY, and it had
+been answered on only one side. `details` is bounded three ways -- an allow-list,
+a clip per value, a cap on the canonical block -- and a block that hits the cap
+writes `truncated`, which sends the reader to `summary`. `summary` itself had no
+bound at all, so the row pointed at a field nothing had checked. It goes through
+`_clip_summary` now, and a summary that was cut SAYS it was cut: a reader cannot
+otherwise tell a short sentence from a shortened one.
+
+THE SAME SILENCE SAT ONE LEVEL DOWN. The clip per value had the bound and not the
+marker, so a `details` value that was short and one that was cut read identically
+-- in the one block that also sets `truncated` when it drops change entries, which
+is what had taught a reader that these rows announce a cut. Both cuts go through
+`_clip_marked` now and both say so in the same words; the per-value marker is
+in-band and the block-level flag stays a claim about the change list, so the two
+are never the same statement and cannot disagree.
+
 THE CEILING ON `commandSha256`, which is the one digest here that is not a chain
 link. It is UNSALTED, deliberately and unavoidably: unsalted is what makes it
 useful -- "was it this command?" is answered by hashing your candidate -- and a
@@ -104,9 +120,9 @@ FAIL-SOFT BY CONTRACT. `append()` returns the path of the file the row landed in
 (truthy) on success, False on failure, and never raises: a save that SUCCEEDED
 must never be reported as failed because the journal was unwritable. The callers
 (panel PUTs, the journal-writes hook) treat False as "not logged", never as "the
-write failed" -- and the hook records the returned path in its per-session
-sidecar, so guard-bash-writes can tell the plugin's own append from a shell
-write into the journal (F-F3).
+write failed" -- and each records the returned path in a sidecar of its own
+(`record_plugin_write`), so guard-bash-writes can tell the plugin's own append
+from a shell write into the journal (F-F3 for the hook, F104 for the panel).
 """
 import errno
 import hashlib
@@ -157,14 +173,69 @@ DETAILS_VERSION = 2
 # `command` off it, no writer -- this hook, the panel, `audit-task.py`, or
 # `audit-journal.py --details` -- can put command text in a row, and no writer has to
 # remember to filter. `command_facts()` supplies what replaces it.
+#
+# `reason` IS on this list, and it was added on purpose rather than by reflex.
+# `/audit:task cancel` and `/audit:phase cancel` both pass one, `commands/task.md`
+# says the row carries it, and the allow-list dropped it in silence -- so the field
+# was written, discarded, and believed by everything that read the document instead
+# of the row. The three tests an addition has to pass are met here: it is a FIELD OF
+# THE PLAN that moved (the sentence a cancel is justified by), not something the
+# plugin observed about the machine; it is bounded like any other value by
+# `MAX_VALUE_CHARS`; and it exposes nothing new, because `summary` already carries
+# the same words verbatim into the same committed file. A key that fails any of
+# those three does not belong here -- `command` is the standing example.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
-                "toPhase", "truncated", "commandSha256", "commandBytes",
+                "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
                 "program", "cwd")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
 MAX_DETAILS_BYTES = 4096    # the whole block, canonically spelled
+# `summary` was the one field of a row with no bound at all, while the `details`
+# block beside it has three of them: an allow-list, a clip per value, and a cap on
+# the whole block. The asymmetry was not merely untidy -- a `details` that hits its
+# cap writes `truncated` and sends the reader to the summary, so a row was
+# promising a fallback nothing had ever checked. A phase cancel is the case that
+# made it concrete: its summary names every task the cancel cascaded to, and a wide
+# phase writes every one of them into a file that is committed on purpose.
+#
+# NOT A LEAK, which is why this is a BOUND and not a redaction: a task id names
+# neither a machine nor a person, and `_normalised_target`/`repo_relative_or_token`
+# already own the questions that are about privacy. `MAX_VALUE_CHARS` is
+# deliberately not reused for it -- a details value is one piece of evidence, while
+# the summary is the whole sentence `audit-journal list` prints, and clipping it to
+# a value's length would cut ordinary summaries that were never the problem.
+MAX_SUMMARY_CHARS = 400
+# ...AND A CUT SUMMARY SAYS SO. Every other bound in a row leaves something beside
+# it that names the cut (`truncated` next to a shortened `changes` list); a summary
+# is one string with nothing beside it, so a short one and a cut one would read
+# identically -- a claim whose basis is missing, which is the failure this repo
+# repeats most. The marker is spent OUT OF the bound rather than added on top of
+# it, so `MAX_SUMMARY_CHARS` stays a fact about the field that a reader can measure
+# instead of an approximation the marker pushes past.
+SUMMARY_TRUNCATED = " [truncated]"
+# ...AND SO DOES A CUT VALUE, in the same words and out of the same literal. `_clip`
+# had been shortening a `details` value in silence, which inside THIS block is worse
+# than it would be anywhere else: a change LIST that gets cut writes `truncated`
+# beside itself, so a reader of these rows has already been taught that this row
+# type announces a cut -- and then a value the clip shortened said nothing at all,
+# leaving a short value and a shortened one identical in a file that is committed
+# on purpose.
+#
+# IN-BAND, AND DELIBERATELY NOT A SECOND `truncated`. The block-level flag is a
+# claim about the change LIST (or about the whole block hitting its cap); a marker
+# inside one value is a claim about THAT VALUE. Spelling the second one as a key
+# would make one word answer two questions, and a reader could no longer tell
+# "entries were dropped" from "one string was shortened". The two cannot
+# contradict each other because they are never the same statement.
+#
+# ONE LITERAL, TWO NAMES. The words are one fact -- how a cut in a committed row
+# announces itself -- and each bound keeps a name that says which field it guards.
+# The alias is what stops the two spellings drifting the way two copies of a string
+# do; giving a value a different marker later means breaking this line on purpose,
+# which is exactly the review that change deserves.
+VALUE_TRUNCATED = SUMMARY_TRUNCATED
 DEFAULT_DIRNAME = "journal"
 ARCHIVE_DIRNAME = "archive"
 _MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -389,6 +460,95 @@ def file_for(directory, ts, actor, fallback=None):
                         % (month_of(ts), writer_id(actor, fallback=fallback)))
 
 
+# --- the plugin's own appends, declared to the guard (F-F3) -------------------
+# An append puts a journal file into `git status`, and `guard-bash-writes` used to
+# blame whatever shell command ran next. The fix is a sidecar naming the files the
+# plugin itself wrote, which that guard subtracts before it reads the journal
+# class. `journal-writes.py` has written one per SESSION since F-F3; the panel
+# server is the plugin's other journal writer and is not a session at all, so it
+# needs the same claim under a key of its own (F104).
+#
+# THIS IS THE SHARED HOME FOR THAT WRITE, and `journal-writes.py` still carries its
+# own copy of it -- a hook may not import from `scripts/`, but it already loads
+# THIS module (`_config._load_journal_lib`) to append at all, so it can be
+# collapsed onto these two functions without gaining an edge. Until it is, the
+# agreement between the two spellings is pinned by a case rather than asserted by
+# a comment: a copy with a comment saying it is a copy is still a copy.
+#
+# `guard-bash-writes` reads these files and CANNOT share the derivation, because a
+# hook importing `scripts/` is the one edge the layer rule forbids outright. Its
+# reader is driven against this writer by a case for the same reason.
+PLUGIN_WRITE_SIDECAR = "bash-writes-plugin-%s.json"
+PLUGIN_WRITE_KEY = "pluginWrote"
+MAX_WRITER_KEY_CHARS = 40
+
+
+def plugin_write_sidecar(project, config, writer):
+    """`<stateDir>/bash-writes-plugin-<writer>.json`, or None when there is no
+    state directory to resolve it against.
+
+    `stateDir` and not the journal directory: the claim is local, per-checkout
+    scratch that ages out with the rest of the session state (the `bash-writes-`
+    prefix is in `detect-plan-skip`'s GC tuple), while the journal is the
+    opposite kind of artifact and stays tracked.
+
+    Sanitised and clipped the way a session id is, because `writer` names a FILE
+    and a caller that can write a separator into it can write outside the state
+    directory."""
+    mod = _config_mod()
+    if mod is None:
+        return None
+    key = _SAFE.sub("-", str(writer or "")).strip("-.")[:MAX_WRITER_KEY_CHARS]
+    key = key.strip("-.")
+    if not key:
+        return None
+    try:
+        state = mod.state_dir(mod.Path(project), config or {})
+    except Exception:
+        return None
+    return os.path.join(str(state), PLUGIN_WRITE_SIDECAR % key)
+
+
+def record_plugin_write(project, config, writer, path):
+    """Note that `writer` -- a part of this plugin -- appended to journal file
+    `path`. Returns the slot it wrote, or None. Never raises.
+
+    ONE WRITER PER SLOT is the whole safety argument, and it is why `writer` is a
+    parameter rather than a constant: hooks registered on one event run in
+    parallel, so the session's slot and the panel's slot must be different files.
+    Two writers on one slot would lose an entry, and a lost entry is a shell
+    command blamed for the plugin's own append -- the fault this exists to close.
+
+    The path is stored repo-relative, because that is the only spelling the guard
+    can compare against a `git status` line."""
+    mod = _config_mod()
+    slot = plugin_write_sidecar(project, config, writer)
+    if mod is None or slot is None or not path:
+        return None
+    try:
+        rel = mod.rel_path(project, str(path))
+    except Exception:
+        return None
+    wrote = []
+    try:
+        with open(slot, "r", encoding="utf-8") as fh:
+            held = json.load(fh)
+        if isinstance(held, dict) and isinstance(held.get(PLUGIN_WRITE_KEY), list):
+            wrote = [str(x) for x in held[PLUGIN_WRITE_KEY]]
+    except Exception:
+        pass                     # no slot yet is the normal first-append state
+    if rel in wrote:
+        return slot
+    wrote.append(rel)
+    try:
+        mod.ensure_local_dir(os.path.dirname(slot))
+        with open(slot, "w", encoding="utf-8") as fh:
+            json.dump({PLUGIN_WRITE_KEY: wrote}, fh)
+    except Exception:
+        return None
+    return slot
+
+
 # --- reading ------------------------------------------------------------------
 def read_file(path):
     """(rows, torn). `torn` is True when the LAST line is not parseable JSON.
@@ -601,16 +761,42 @@ def repo_relative_or_token(project, path):
 
 
 # --- details (row v2) ---------------------------------------------------------
+def _clip_marked(text, limit, marker):
+    """`text` bounded to `limit`, SAYING SO when it had to be cut.
+
+    ONE RULE, BOTH BOUNDS. A `summary` and a `details` value are held to different
+    budgets -- a value is one piece of evidence, a summary is the whole sentence
+    `audit-journal list` prints -- but a cut announces itself identically in both,
+    and the caller passes the pair so each call site still names the constant a
+    reader can go and measure.
+
+    The marker is spent OUT OF `limit` rather than added on top of it, so the bound
+    stays a fact about the field instead of an approximation the marker pushes
+    past.
+
+    Returns the text unchanged when it fits, so the overwhelming majority of rows
+    hash exactly as they did before either bound existed; only text that was
+    already past its bound changes at all.
+    """
+    if len(text) <= limit:
+        return text
+    return text[:limit - len(marker)] + marker
+
+
 def _clip(value):
-    """One details value, bounded. Strings are truncated to MAX_VALUE_CHARS;
-    scalars pass; anything structured is spelled canonically first, so the bound
-    applies to what would actually be written."""
+    """One details value, bounded -- and saying so when it had to be cut.
+
+    Strings are held to MAX_VALUE_CHARS; scalars pass; anything structured is
+    spelled canonically first, so the bound applies to what would actually be
+    written -- and so does the marker, which is the half that used to be missing:
+    a canonical spelling cut mid-brace is not JSON any more and had nothing on it
+    to say why."""
     if isinstance(value, str):
-        return value[:MAX_VALUE_CHARS]
+        return _clip_marked(value, MAX_VALUE_CHARS, VALUE_TRUNCATED)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     try:
-        return canonical(value)[:MAX_VALUE_CHARS]
+        return _clip_marked(canonical(value), MAX_VALUE_CHARS, VALUE_TRUNCATED)
     except Exception:
         return None
 
@@ -679,6 +865,15 @@ def normalise_details(details, project=None):
 
 
 # --- appending ----------------------------------------------------------------
+def _clip_summary(text):
+    """The row's `summary`, bounded -- and saying so when it had to be cut.
+
+    A one-line adapter onto `_clip_marked` so the field keeps a named home the
+    row builder and its cases can point at; the rule it applies is shared with
+    every `details` value one level down."""
+    return _clip_marked(text, MAX_SUMMARY_CHARS, SUMMARY_TRUNCATED)
+
+
 def _normalised_target(target, project):
     """`target`, with an absolute INSIDE-repo spelling collapsed to repo-relative.
 
@@ -709,7 +904,12 @@ def _normalise(entry, project=None):
     level down: a writer that could put a machine path in a committed row would be
     deciding the privacy of every repository this plugin ships into. `project` is
     what makes the path questions answerable; without it the redaction still
-    happens, it just cannot resolve anything and says so."""
+    happens, it just cannot resolve anything and says so.
+
+    AND HOW MUCH IT MAY SAY: `summary` goes through `_clip_summary` here, the same
+    way every `details` value goes through `_clip` one level down. It is the last
+    field of the row that a caller could have used to write a payload into a
+    committed file, and it was the field a truncated `details` block points at."""
     entry = entry if isinstance(entry, dict) else {}
     actor = entry.get("actor")
     actor = dict(actor) if isinstance(actor, dict) else {}
@@ -735,7 +935,7 @@ def _normalise(entry, project=None):
         },
         "action": str(entry.get("action") or "").strip(),
         "target": _normalised_target(entry.get("target"), project),
-        "summary": str(entry.get("summary") or ""),
+        "summary": _clip_summary(str(entry.get("summary") or "")),
     }
     details = normalise_details(entry.get("details"), project=project)
     if details is not None:

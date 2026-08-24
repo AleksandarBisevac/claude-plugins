@@ -25,6 +25,10 @@ import tempfile
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _proposals                                  # noqa: E402  (the rule the door
+#                                                    is a front end for -- imported
+#                                                    here so mz43 can pin the payload
+#                                                    column BY IDENTITY)
 
 M = _loader.load_script("materialize-proposal.py", modname="materialize_proposal")
 
@@ -146,6 +150,13 @@ def _cases(check):
         with open(lpath, "r", encoding="utf-8") as fh:
             check("mz41 ...and listing writes nothing: `list` is read-only and "
                   "takes no lock", len(json.load(fh)["proposals"]) == 4)
+        # F93. The payload column is `_proposals.reserved_cell` and not a copy
+        # of it. Pinned by IDENTITY because a second implementation that agreed
+        # with this table today would pass mz36 and mz37 unchanged and still be
+        # the duplication - which is how the SAME cell ended up spelled a third
+        # time in `/audit:status`, counting different tasks.
+        check("mz45 the reserved-phase cell is the shared rule's, by identity",
+              M._reserved_cell is _proposals.reserved_cell)
 
         # Empty is a RESULT, and which empty it is decides what to do next.
         epath = _write(tmp, _manifest([]), name="empty-plan.json")

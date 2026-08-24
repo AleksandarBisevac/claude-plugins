@@ -245,6 +245,72 @@ def _cases(check):
           empty["rows"] == [] and empty["phaseCount"] == 0
           and empty["hidden"] == 0 and empty["total"] == 0)
 
+    # ---- the status a row carries, and the one it was WRITTEN with (F93) ----
+    # A row normalises a MISSING status to `proposed` so a badge has something
+    # to paint. `/audit:status` classifies by the RAW one, because an entry
+    # carrying no status is exactly what its legacy footer exists to report and
+    # a normalisation would move it into the parked list instead. Both readings
+    # ride one row; these are the cases that keep them apart.
+    vocab = _manifest([_prop("PROP-1"),                       # proposed
+                       _prop("PROP-2", "materialized"),
+                       _prop("PROP-3", "dropped"),
+                       _prop("PROP-4", "open"),               # out of vocabulary
+                       _prop("PROP-5", None)])                # none at all
+    by_id = dict((r["id"], r) for r in M.proposal_rows(vocab))
+    check("mz35 an entry with NO status displays as `proposed` and SAYS the "
+          "value it was written with was none - a surface that only got the "
+          "display value could not tell it from a real parked one: %r"
+          % ({k: (v["status"], v["statusRaw"]) for k, v in by_id.items()},),
+          by_id["PROP-5"]["status"] == "proposed"
+          and by_id["PROP-5"]["statusRaw"] is None
+          and by_id["PROP-1"]["statusRaw"] == "proposed")
+    check("mz36 `statusKnown` is read off the plugin's OWN vocabulary, so a "
+          "word added to `PROPOSAL_STATUS` is known here without this file "
+          "learning it: %r"
+          % ({k: v["statusKnown"] for k, v in by_id.items()},),
+          [by_id[k]["statusKnown"] for k in
+           ("PROP-1", "PROP-2", "PROP-3", "PROP-4", "PROP-5")]
+          == [True, True, True, False, False])
+    check("mz37 the default list filter and the vocabulary are the same table "
+          "seen from two sides - HISTORY_STATUS plus `proposed` IS "
+          "PROPOSAL_STATUS, so a fourth word cannot be added to the vocabulary "
+          "and silently stay outside what `list` hides: %r vs %r"
+          % (sorted(set(M.HISTORY_STATUS) | set(["proposed"])),
+             sorted(M._vocab.PROPOSAL_STATUS)),
+          set(M.HISTORY_STATUS) | set(["proposed"])
+          == set(M._vocab.PROPOSAL_STATUS))
+
+    # ---- the reserved cell, which three surfaces print (F93) ----
+    cell = _manifest([_prop("PROP-1", payload=_payload("P4", tasks=("a", "b"))),
+                      _prop("PROP-2", payload=_payload("P5", tasks=("a",))),
+                      _prop("PROP-3")])
+    rows_c = dict((r["id"], r) for r in M.proposal_rows(cell))
+    check("mz38 the cell agrees the noun with the count, and says `-` when "
+          "there is no payload to reserve anything: %r"
+          % ([M.reserved_cell(rows_c[k])
+              for k in ("PROP-1", "PROP-2", "PROP-3")],),
+          [M.reserved_cell(rows_c[k]) for k in
+           ("PROP-1", "PROP-2", "PROP-3")] == ["P4 (2 tasks)", "P5 (1 task)",
+                                               "-"])
+    # A payload whose `tasks` list holds something that is not a task object:
+    # counting the LIST gives one answer and counting the task OBJECTS another,
+    # and the two surfaces used to give one each. The fixture exists so the two
+    # implementations cannot agree by accident.
+    malformed = _manifest([_prop("PROP-1", payload=_payload("P4",
+                                                            tasks=("a",)))])
+    malformed["proposals"][0]["payload"]["phase"]["tasks"].append("not a task")
+    row_m = M.proposal_rows(malformed)[0]
+    check("mz39 a payload carrying a malformed task counts the task OBJECTS, "
+          "not the length of the list - the number a reader uses to decide "
+          "whether a materialization is small: %r"
+          % (M.reserved_cell(row_m),),
+          row_m["taskCount"] == 1 and M.reserved_cell(row_m) == "P4 (1 task)")
+    check("mz40 a row with no payload never reaches `phaseId` - `hasPayload` "
+          "is the basis, so a legacy entry cannot be printed as reserving a "
+          "phase that does not exist",
+          M.reserved_cell({"hasPayload": False, "phaseId": "P9",
+                           "taskCount": 3}) == "-")
+
 
 
 def _selftest():

@@ -31,7 +31,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -44,7 +43,7 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-edits.py"),
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    tmp = tempfile.mkdtemp(prefix="guard-edits-selftest-")
+    tmp = _harness.fixture_root("guard-edits-selftest-")
     # token identifier assembled at runtime so this SOURCE file never contains a
     # literal logger-call-with-token (which the guard itself would flag).
     tok = "access" + "Token"

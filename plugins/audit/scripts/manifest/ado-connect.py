@@ -95,28 +95,59 @@ def iso_now():
 
 
 # --- observations: the only part that touches this machine ----------------------
-def az_extensions():
-    """Installed `az` extension names, or None when the list did not answer.
+def extension_reading(has_az, completed, error):
+    """`{names, saw}` from ONE `az extension list` attempt. Takes no I/O.
 
-    None is a distinct answer on purpose - `transport_verdict` stops on it
-    rather than reading it as "the extension is missing" OR as "present".
+    `names` is None whenever the list did not answer - a distinct value on
+    purpose, since `transport_verdict` stops on it rather than reading it as
+    "the extension is missing" OR as "present". `saw` is the half this door used
+    to throw away: `az extension list did not answer` is true of a tool that is
+    absent, of a sandbox that refused it, and of output that was not JSON, and
+    those are three different places to go next. The operator had to re-run the
+    command by hand to find out which - so the exit code and the stderr, which
+    are the only evidence this process has, are carried instead of summarised.
+
+    Pure so that both causes are reachable from a case on a machine with no `az`
+    at all, which is why the split exists rather than an inline `except`.
     """
+    if not has_az:
+        return {"names": None, "saw": "az is not on PATH"}
+    if error is not None:
+        return {"names": None,
+                "saw": "`az extension list` could not be run: %s: %s"
+                       % (type(error).__name__, error)}
+    code = getattr(completed, "returncode", None)
+    stderr = (getattr(completed, "stderr", "") or "").strip()
+    if code != 0:
+        return {"names": None,
+                "saw": "`az extension list` exited %s: %s"
+                       % (code, stderr or "(nothing on stderr)")}
+    stdout = getattr(completed, "stdout", "") or ""
+    try:
+        parsed = json.loads(stdout or "null")
+    except Exception as exc:
+        return {"names": None,
+                "saw": "`az extension list` exited 0 and its output is not JSON "
+                       "(%s): %r" % (exc, stdout[:120])}
+    if not isinstance(parsed, list):
+        return {"names": None,
+                "saw": "`az extension list` exited 0 and returned %s, not the "
+                       "list of extensions" % (type(parsed).__name__,)}
+    names = [e.get("name") for e in parsed if isinstance(e, dict)]
+    return {"names": names,
+            "saw": "`az extension list` named %d extension(s)" % (len(names),)}
+
+
+def az_extensions():
+    """`extension_reading` over a real attempt. The I/O edge, and nothing else."""
     if not shutil.which("az"):
-        return None
+        return extension_reading(False, None, None)
     try:
         out = subprocess.run(["az", "extension", "list", "--output", "json"],
                              capture_output=True, text=True, timeout=20)
-    except Exception:
-        return None
-    if out.returncode != 0:
-        return None
-    try:
-        parsed = json.loads(out.stdout or "null")
-    except Exception:
-        return None
-    if not isinstance(parsed, list):
-        return None
-    return [e.get("name") for e in parsed if isinstance(e, dict)]
+    except Exception as exc:
+        return extension_reading(True, None, exc)
+    return extension_reading(True, out, None)
 
 
 def azure_signin():
@@ -162,11 +193,18 @@ def observe(transport_hint):
     """
     has_mcp = transport_hint == "mcp"
     has_az = bool(shutil.which("az"))
+    # Not consulted when MCP carries the session: the extension list is slow, and
+    # az is not the transport then. SAID rather than left blank - "we did not
+    # look" and "we looked and saw nothing" are different answers, and this is
+    # the field that has to keep them apart.
+    reading = ({"names": None,
+                "saw": "not consulted - the session carries the azure-devops "
+                       "MCP tools, so az is not the transport"}
+               if has_mcp else az_extensions())
     return {"hasMcp": has_mcp,
             "hasAz": has_az,
-            # Not consulted when MCP carries the session: the extension list is
-            # slow, and az is not the transport then.
-            "extensions": None if has_mcp else az_extensions(),
+            "extensions": reading["names"],
+            "extensionsSaw": reading["saw"],
             "signedInAs": None if has_mcp else azure_signin(),
             # MEMBERSHIP, never the value. This is the whole of what this
             # command knows about that variable.
@@ -213,12 +251,22 @@ def report(manifest, facts, envelope, organization, project, now):
     t = _conn.transport_verdict(facts.get("hasAz"), facts.get("extensions"),
                                 facts.get("hasMcp"))
     data["transport"] = t
+    # The RULE's basis, then WHAT WAS SEEN, then the remedy. The rule can only say
+    # that the list did not answer; the observation is the thing that separates a
+    # missing extension from a sandbox refusing the call, and a reader who has
+    # both goes to the right place in one step instead of re-running by hand.
+    # Absent when the caller made no such observation, because a report that
+    # invented one would be the same defect one layer along.
     if t["stop"]:
         lines.append("STOP (transport): %s" % (t["stop"],))
         lines.append("  basis: %s" % (t["basis"],))
+        if facts.get("extensionsSaw"):
+            lines.append("  saw:   %s" % (facts["extensionsSaw"],))
         lines.append("  fix:   %s" % (t["remedy"],))
         return {"lines": lines, "code": 1, "data": data}
     lines.append("transport: %s - %s" % (t["transport"], t["basis"]))
+    if facts.get("extensionsSaw"):
+        lines.append("  saw: %s" % (facts["extensionsSaw"],))
 
     if not organization or not project:
         lines.append("STOP (target): no organization/project to connect to - "

@@ -26,6 +26,19 @@
  * fixture HOME, and asserts it got exactly those before a shutter opens. Nothing
  * about the product changes; see the fixture-homes section.
  *
+ * AND A SHOT OF ANYTHING BUT A FIXTURE IS REFUSED (F137). The two paragraphs above
+ * each closed one channel by which a machine reached a committed PNG, one at a
+ * time and after the fact. What they could not close is the general case:
+ * `tools/check-committed-pii.py` refuses a committed artifact naming the machine
+ * that made it, and it CANNOT READ AN IMAGE — while every file in
+ * docs/screenshots/ is a picture of exactly the surfaces it scans as text, and
+ * re-capturing is a required step of every release. So two refusals live here,
+ * where the fixture is still in hand: the paths this run will paint are checked
+ * against that file's own detectors before the browser is imported
+ * (paintedIdentityProblem), and every shutter asks the PAGE whether this run built
+ * it (fixtureProblem). The first can fire today, on windows. The second is a
+ * tripwire on a future edit and says so.
+ *
  * AND THE TEMP DIR IS PART OF THE PICTURE. The panel prints its project path in the
  * topbar, so the scratch tree sits at a FIXED path, claimed under a lockfile, and
  * two consecutive captures ON ONE MACHINE produce byte-identical PNGs. See
@@ -62,7 +75,7 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { rmSync, mkdirSync, readFileSync, statSync, cpSync,
-         writeFileSync, readdirSync, appendFileSync } from 'node:fs';
+         writeFileSync, readdirSync, appendFileSync, realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir, release } from 'node:os';
 import path from 'node:path';
@@ -164,6 +177,19 @@ function py(args, env = {}) {
   });
 }
 
+/**
+ * Which local port is serving which directory — filled by serveDir, read by the
+ * shutter.
+ *
+ * A REPORT PAGE NAMES NO FILESYSTEM PATH (that is why the report PNGs were already
+ * byte-identical between runs), so a page cannot be asked where it came from the
+ * way a panel can. What it can be asked is its origin, and this is the table that
+ * turns an origin back into the directory this run served it out of. Filled inside
+ * serveDir rather than at the two call sites, so a server added later is covered
+ * the day it is written and not the day somebody remembers.
+ */
+const SERVED = new Map();
+
 /** Minimal static file server — Playwright refuses file:// for these pages. */
 function serveDir(dir) {
   const types = { '.html': 'text/html; charset=utf-8', '.md': 'text/markdown',
@@ -179,7 +205,11 @@ function serveDir(dir) {
     } catch { res.writeHead(404).end('not found'); }
   });
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      SERVED.set(port, path.resolve(dir));
+      resolve({ server, port });
+    });
   });
 }
 
@@ -4496,6 +4526,210 @@ async function assertComboOverlay(page, project) {
   await page.waitForTimeout(200);
 }
 
+/**
+ * The `reason` a `bypass.armed` row really carries, read from the hook that writes it.
+ *
+ * NOT A SENTENCE TYPED HERE (F167). The gate-card fixture below used to seed a
+ * prompt-shaped line — `#no-plan` followed by what somebody was doing — and the
+ * committed PNG of that card therefore advertised the plugin publishing a
+ * sentence a person had written. `detect-plan-skip._arm_bypass` records the FACT
+ * and the KEYWORD now and never the wording, so the picture was documenting a
+ * leak the product no longer has, which is worse than a stale picture: a reader
+ * learns from it that this surface prints prompts.
+ *
+ * THE FIXTURE IS DERIVED RATHER THAN RETYPED because a retyped one is exactly how
+ * this fault arrived — the writer was repaired and the copy was not, and nothing
+ * compared them. `ARMED_REASON` is a published constant for that purpose and the
+ * hook's own case pins the row against it byte for byte; this reads the same
+ * object through `importlib`, with `_config.DEFAULTS` supplying the keyword a
+ * project that has configured nothing arms with.
+ *
+ * IT THROWS RATHER THAN FALLING BACK. There is no default sentence to reach for:
+ * the whole point is that this file does not know one, and a capture that
+ * invented a reason would put the retyped copy straight back.
+ * @returns {string} the `reason` cell `_arm_bypass` appends, keyword substituted
+ */
+export function armedBypassReason() {
+  let got;
+  try {
+    got = JSON.parse(py(['-c',
+      'import importlib.util,json,os,sys;'
+      + 'sys.path.insert(0,os.path.join("plugins","audit","hooks"));'
+      + 'import _config;'
+      + 's=importlib.util.spec_from_file_location("dps",os.path.join('
+      + '"plugins","audit","hooks","detect-plan-skip.py"));'
+      + 'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);'
+      + 'k=_config.DEFAULTS["bypassKeyword"];'
+      + 'print(json.dumps({"keyword":k,"reason":m.ARMED_REASON % k}))']));
+  } catch (err) {
+    throw new Error('the bypass row this fixture seeds could not be read out of '
+      + `hooks/detect-plan-skip.py (ARMED_REASON): ${err.message}`);
+  }
+  // The substitution is the half a rename would break silently: `%` over a string
+  // with no placeholder left in it returns that string unchanged, so a reason that
+  // stopped naming the keyword would seed a row the hook cannot produce.
+  if (!got.reason || !got.keyword || !got.reason.includes(got.keyword)) {
+    throw new Error('ARMED_REASON no longer carries the keyword it is armed by, '
+      + `so this fixture would seed a row nothing writes: ${JSON.stringify(got)}`);
+  }
+  return got.reason;
+}
+
+/**
+ * Every `reason` template `require-plan.py` writes into the gate feed, by event.
+ *
+ * The program is here rather than in a `tools/*.py` for the reason
+ * `armedBypassReason`'s one-liner is: the derivation and the fixture it feeds are
+ * one decision, and splitting them puts a file between the sentence and the copy
+ * of it. Reads `require-plan.py` as SOURCE and never imports it — the hook wants a
+ * repo, a config and a session before it will say anything, and none of that is
+ * needed to read what it would say.
+ *
+ * Three shapes are resolved, which is all `decide()` uses: a bare literal, a
+ * literal under `%` (`"... %d" % magnitude`), and a NAME bound to either —
+ * `reason` is a two-armed choice assigned once and then handed to four different
+ * rows, so an extractor that stopped at the call site would find a variable and
+ * no sentence. Both arms come back; `gateReason` is what picks between them.
+ *
+ * NO SENTENCE IS QUOTED IN THIS COMMENT, and the first draft of it quoted three.
+ * A retyped copy in a comment is a retyped copy: it rots the same way, and the
+ * case that hunts for one reads source text and cannot tell prose from code. It
+ * found these. Describe the shape instead of spelling it.
+ */
+const GATE_REASON_PROGRAM = [
+  'import ast, io, json, os, sys',
+  'src = os.path.join("plugins", "audit", "hooks", "require-plan.py")',
+  'tree = ast.parse(io.open(src, encoding="utf-8").read())',
+  'def lit(n):',
+  '    return isinstance(n, ast.Constant) and isinstance(n.value, str)',
+  'def texts(node, scope):',
+  '    if lit(node):',
+  '        return [node.value]',
+  '    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):',
+  '        return texts(node.left, scope)',
+  '    if isinstance(node, ast.IfExp):',
+  '        return texts(node.body, scope) + texts(node.orelse, scope)',
+  '    if isinstance(node, ast.Name):',
+  '        out = []',
+  '        for stmt in ast.walk(scope):',
+  '            if isinstance(stmt, ast.Assign) and any(',
+  '                    isinstance(t, ast.Name) and t.id == node.id',
+  '                    for t in stmt.targets):',
+  '                out += texts(stmt.value, scope)',
+  '        return out',
+  '    return []',
+  'found = {}',
+  'for fn in ast.walk(tree):',
+  '    if not isinstance(fn, ast.FunctionDef):',
+  '        continue',
+  '    for call in ast.walk(fn):',
+  '        if not (isinstance(call, ast.Call)',
+  '                and isinstance(call.func, ast.Attribute)',
+  '                and call.func.attr == "append_gate_event" and call.args):',
+  '            continue',
+  '        payload = call.args[-1]',
+  '        if not isinstance(payload, ast.Dict):',
+  '            continue',
+  '        cells = dict((k.value, v) for k, v',
+  '                     in zip(payload.keys, payload.values) if lit(k))',
+  '        if "event" not in cells or "reason" not in cells:',
+  '            continue',
+  '        for name in texts(cells["event"], fn):',
+  '            row = found.setdefault(name, [])',
+  '            for tpl in texts(cells["reason"], fn):',
+  '                if tpl not in row:',
+  '                    row.append(tpl)',
+  'json.dump(found, sys.stdout)',
+].join('\n');
+
+/**
+ * Memoised because the seeded block asks five times and the answer is one file.
+ * @type {?Object<string, Array<string>>}
+ */
+let GATE_REASONS = null;
+
+/** @returns {Object<string, Array<string>>} event name -> its reason templates */
+function gateReasonTemplates() {
+  if (GATE_REASONS) return GATE_REASONS;
+  let got;
+  try {
+    got = JSON.parse(py(['-c', GATE_REASON_PROGRAM]));
+  } catch (err) {
+    throw new Error('the gate rows this fixture seeds could not be read out of '
+      + `hooks/require-plan.py: ${err.message}`);
+  }
+  if (!got || !Object.keys(got).length) {
+    throw new Error('hooks/require-plan.py declares no gate-event reason at all, '
+      + 'so every row below would be a sentence typed here — the shape this '
+      + 'derivation exists to refuse');
+  }
+  GATE_REASONS = got;
+  return got;
+}
+
+/**
+ * The `reason` cell a `require-plan.py` gate row really carries, template read out
+ * of the writer and this fixture's own numbers put into it.
+ *
+ * NOT SENTENCES TYPED HERE (F169). Five of the six rows seeded below used to be
+ * retyped copies of sentences `require-plan.decide` owns, and every one of them
+ * AGREED with its writer on the day it was checked. That is what made them worth
+ * replacing rather than what made them safe: an agreement nothing compares is not
+ * correctness, it is a coincidence that has not been tested yet. The sixth row is
+ * the proof — it drifted the day its writer was repaired and its copy was not
+ * (F167), in this same block, one release earlier.
+ *
+ * A TEMPLATE, NOT A SENTENCE, and that is the whole design. A magnitude line
+ * carries numbers the FIXTURE chose — 96 lines over an 80 threshold is a picture
+ * decision, not something the hook has an opinion about. Deriving the finished
+ * sentence would mean standing up a repo and driving `decide()`; deriving the
+ * template and filling it leaves the numbers here and the WORDING there, and the
+ * wording is the half that can drift.
+ *
+ * THE ARM IS PICKED BY ARITY. `reason` is a two-armed choice — a magnitude line
+ * taking two numbers, or a flat one naming the session's second file and taking
+ * none — and the count of values a caller supplies is what says which arm it
+ * meant. Exactly one arm must fit, which is the refusing part: a rewording that
+ * left two arms taking the same count stops the capture instead of picking one.
+ *
+ * IT THROWS RATHER THAN FALLING BACK, for `armedBypassReason`'s reason: there is
+ * no default sentence to reach for. A capture that invented one would be the
+ * retyped copy again, wearing a function call.
+ * @param {string} event - the gate event whose row this is, e.g. `deny`
+ * @param {...number} values - the `%d` values this fixture chose, in order
+ * @returns {string} the `reason` cell, worded by the hook and numbered here
+ */
+export function gateReason(event, ...values) {
+  const byEvent = gateReasonTemplates();
+  const candidates = byEvent[event] || [];
+  if (!candidates.length) {
+    throw new Error(`require-plan.py writes no reason for a "${event}" gate row, `
+      + 'so this fixture would seed a row nothing produces. It writes: '
+      + `${Object.keys(byEvent).sort().join(', ')}`);
+  }
+  if (!values.every((v) => Number.isInteger(v))) {
+    throw new Error(`gateReason("${event}") takes the whole numbers a %d prints; `
+      + `got ${JSON.stringify(values)}`);
+  }
+  const fits = candidates.filter((t) => t.split('%d').length - 1 === values.length);
+  if (fits.length !== 1) {
+    throw new Error(`require-plan.py has ${fits.length} reasons for "${event}" `
+      + `taking ${values.length} number(s), and this fixture needs exactly one to `
+      + `know which sentence it is seeding: ${JSON.stringify(candidates)}`);
+  }
+  let next = 0;
+  const filled = fits[0].replace(/%d/g, () => String(values[next++]));
+  // The half a rename breaks silently, and the same one `armedBypassReason`
+  // guards: `%` over a string with no placeholder left returns it unchanged, so a
+  // template that grew a conversion this cannot fill would otherwise seed the
+  // raw `%s` into a committed PNG.
+  if (filled.includes('%')) {
+    throw new Error(`"${fits[0]}" carries a conversion this fixture cannot fill, `
+      + `so the row would be seeded as ${JSON.stringify(filled)}`);
+  }
+  return filled;
+}
+
 /* ---- the plan gate card (gt, v0.34 B3) --------------------------------------
  *
  * Server truth is pinned in _panel_state (the gate block) and panel-server (the
@@ -5551,10 +5785,140 @@ function recordCapture(name, file, surface) {
   writeFileSync(sidecar, `${JSON.stringify({ note: body.note, images: ordered }, null, 2)}\n`);
 }
 
+/* ---- the shutter may only open on a fixture (F137) --------------------------
+ *
+ * WHAT THIS FILE RENDERS, and why nothing checked it. Both legs build their own
+ * subject: the report leg renders the committed example plan, the panel leg
+ * generates a manifest with gen-demo-manifest.py, and everything lands under
+ * claimScratch()'s tree. There is no --project argument and no way to point either
+ * leg at a real repository. So every existing call site is a fixture — by habit,
+ * which is exactly the property that had nothing enforcing it.
+ *
+ * WHY THAT MATTERS MORE HERE THAN ANYWHERE ELSE. `tools/check-committed-pii.py`
+ * refuses a committed artifact that names the machine that made it, and it reads
+ * journals, rendered reports and theme documents. It cannot read a PNG, and every
+ * file in docs/screenshots/ is a picture of one of those same surfaces — the plan
+ * gate card renders file paths, the topbar renders the project path. A re-capture
+ * is a REQUIRED step of every release, so the day one of these pages is pointed at
+ * a real project the leak is committed and no gate in the tree can see it.
+ *
+ * OCR IS ABSURD AND THE CAPTURE ALREADY KNOWS. So the check is here, at the
+ * moment the fixture and the page are both in hand, and it asks the PAGE rather
+ * than a variable set during setup: a panel is asked for the project it is
+ * painting, a report page for the origin it was served from, and each must resolve
+ * back into this run's own scratch tree. A stage that navigated somewhere else,
+ * or a future edit that starts a panel on a real repository, is refused instead of
+ * photographed.
+ *
+ * REFUSE, WITH NO ESCAPE HATCH, and that is a decision rather than an oversight.
+ * "Refuse unless told, and stamp what it shot" would mean adding a flag whose only
+ * possible user is somebody about to commit a leak — the capability to shoot your
+ * own project does not exist in this file today, so an opt-out would be inventing
+ * a door in order to guard it. If a legitimate reason to shoot a real project ever
+ * arrives, it owes a way to name that project AND a provenance stamp beside the
+ * image; docs/screenshots/captured-at.json is where such a stamp goes, next to the
+ * version and the ui digest it already carries per file. Until then the refusal IS
+ * the guarantee, and it is asserted at every shutter rather than recorded once.
+ *
+ * IT CANNOT FIRE TODAY, which is said plainly because a guard nobody has seen red
+ * is a guard nobody should trust. It is a tripwire on an edit, and the edit is the
+ * thing it must survive; `fixtureProblem` is therefore a pure function over a
+ * description of the page, driven from both directions in
+ * tools/ui-tests/capture-provenance.test.mjs.
+ */
+
+/** Is `child` inside `root` (or root itself)? Both are absolute paths. */
+function withinDir(root, child) {
+  // REAL paths, not merely absolute ones. `path.resolve` normalises without
+  // following a symlink, and on macOS `/tmp` IS a symlink to `/private/tmp` - so
+  // the scratch root spelled one way and the project the panel reports spelled the
+  // other are the same directory that `path.relative` answers with `..`. That
+  // refused every panel shot on the first real run, which is the failure this
+  // guard exists to avoid making: a refusal nobody can act on reads exactly like
+  // the leak it is guarding against. `realpathSync` falls back to the resolved
+  // spelling for a path that does not exist yet, since a missing directory is a
+  // different question and one the caller already answers.
+  const real = (p) => {
+    try { return realpathSync(path.resolve(p)); }
+    catch (_) { return path.resolve(p); }
+  };
+  const rel = path.relative(real(root), real(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Why the page described by `facts` is not one of this run's fixtures, or null.
+ *
+ * `facts` is `{origin, project}` as read out of the live page; `fixtures` is
+ * `{work, served}` — the claimed scratch tree, and the port→directory table
+ * serveDir fills.
+ *
+ * NOTHING THAT FAILED IS QUOTED BACK. A panel's project path is the very string
+ * that would carry a home directory, and a panel URL carries the session token in
+ * its query — printing either to make the message helpful would be the leak this
+ * function exists to stop, arriving through the diagnostic instead of through the
+ * picture. The message names the property and the root that was expected, which is
+ * enough for somebody with the run in front of them; the panel's own topbar shows
+ * the value.
+ */
+export function fixtureProblem(facts, fixtures) {
+  const { work, served } = fixtures || {};
+  if (!work) {
+    return 'the shutter opened before a scratch tree was claimed, so nothing can '
+         + 'say what this page was built from';
+  }
+  if (typeof facts?.project === 'string' && facts.project) {
+    return withinDir(work, facts.project) ? null
+      : `this panel is serving a project OUTSIDE the fixture tree this run built `
+      + `(${work}). Its topbar paints that path and its plan-gate card paints the `
+      + `files under it, so the picture would carry whatever the path names — and `
+      + `no committed-PII rule can read a PNG. The path is deliberately not `
+      + `repeated here; the panel shows it.`;
+  }
+  const port = Number(String(facts?.origin || '').split(':').pop());
+  const dir = served ? served.get(port) : undefined;
+  if (!dir) {
+    return 'the page about to be photographed is neither a panel naming its '
+         + 'project nor a document this run served out of its own fixture tree — '
+         + 'a panel whose inline script died reports exactly this way, and so '
+         + 'would a stage that navigated somewhere else. Nothing here can vouch '
+         + 'for what is on the screen.';
+  }
+  return withinDir(work, dir) ? null
+    : `this document was served out of a directory outside the fixture tree this `
+    + `run built (${work}), so nothing built it that this run can vouch for`;
+}
+
+/** What the live page says about where it came from — the input to fixtureProblem.
+ *
+ * `location.origin`, never `location.href`: a panel URL carries its session token
+ * in the query string, and that token has already been kept out of stdout once
+ * (see startPanel). `typeof` inside a try, because a panel whose script threw
+ * before `const PROJECT` ran leaves the binding in its temporal dead zone — and a
+ * diagnostic that dies with a stack before it can accuse anything is worse than
+ * no diagnostic.
+ */
+async function pageFixtureFacts(page) {
+  return page.evaluate(() => {
+    let project = null;
+    try { if (typeof PROJECT === 'string') project = PROJECT; } catch { project = null; }
+    return { origin: location.origin, project };
+  });
+}
+
 async function shot(page, name, { full = false, dialog = false } = {}) {
   await settle(page);
   await noToast(page, name);
   if (!dialog) await noDialog(page, name);
+  // BEFORE the `--check` return, so the gate exercises this too: a check that only
+  // ran on the mode that writes files would be proved by the run nobody makes in CI.
+  const notFixture = fixtureProblem(await pageFixtureFacts(page),
+                                    { work: SCRATCH_ROOT, served: SERVED });
+  if (notFixture) {
+    fail(`${name}: refusing to photograph a surface that is not this run's own `
+       + `fixture — ${notFixture}`);
+    return;
+  }
   if (CHECK) return;
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
@@ -5595,6 +5959,66 @@ function scratchPath() {
   const root = process.platform === 'win32' ? tmpdir() : '/tmp';
   return path.join(root,
     `audit-shots${process.getuid ? `-${process.getuid()}` : ''}`);
+}
+
+/**
+ * The scratch tree this run claimed — null until claimScratch() has run.
+ *
+ * Held in a name of its own rather than recomputed at the shutter, because the
+ * shutter's question is "did THIS run build what I am looking at", and a second
+ * call to scratchPath() would answer "could a run have built it", which is a
+ * weaker claim that stays true after the tree has been handed to somebody else.
+ */
+let SCRATCH_ROOT = null;
+
+/**
+ * Would the paths this run is about to PAINT carry machine identity?
+ *
+ * THE ANSWER COMES FROM check-committed-pii.py, over a pipe, and that is the whole
+ * design. That file owns the detector vocabulary — the three spellings one leaked
+ * home directory arrives in, the windows form, the temp-session form — and it owns
+ * them because they were written once and are proven red once. Re-spelling those
+ * patterns in JavaScript would be a second table nothing compares against the
+ * first, which is how two correct files come to disagree.
+ *
+ * WHAT IT FEEDS IN IS THE SCRATCH ROOT, and that is the whole set rather than a
+ * sample: the panel paints its project path in the topbar, the theme card names
+ * the file it read, the help drawer quotes paths, and every one of those is a
+ * suffix of this directory. The report leg names no filesystem path at all.
+ *
+ * THIS ONE CAN FIRE TODAY, on windows. The root is `/tmp/audit-shots-<uid>` on a
+ * POSIX host — a number, not a name — but windows has no /tmp and keeps the
+ * platform temp directory, which is per-user and therefore SPELLS the user's name.
+ * claimScratch's header treats "already per-user" as the reason the collision
+ * problem does not arise there; it is also the reason a panel PNG captured on
+ * windows would carry `C:\Users\<name>\...` in its topbar, into a public
+ * repository, where no rule in the tree can read it back out. Refusing is the
+ * honest answer: this host cannot produce committed screenshots without painting
+ * its operator into them.
+ *
+ * A CHILD THAT COULD NOT RUN IS A REFUSAL TOO, never a pass. "It is clean" and "I
+ * could not ask" are different answers and only one of them is safe to print as
+ * the other.
+ */
+function paintedIdentityProblem() {
+  const painted = scratchPath();
+  const checker = path.join(REPO, 'tools', 'check-committed-pii.py');
+  const r = spawnSync(PY, [checker, '--scan-text'],
+                      { cwd: REPO, input: `${painted}\n`, encoding: 'utf8' });
+  // stdout is kept on EVERY exit code: this tool exits 1 by design when it finds
+  // something and writes the finding to stdout, so a runner that read only stderr
+  // on a non-zero exit would throw away the answer it asked for.
+  const said = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  if (r.error || r.status === null) {
+    return `check-committed-pii.py could not be run, so nothing can say whether `
+         + `the paths this capture paints name the machine it runs on: `
+         + `${r.error ? r.error.message : 'the child was killed by a signal'}`;
+  }
+  if (r.status === 0) { note(`painted paths: ${said}`); return null; }
+  return `the directory this capture builds its fixtures in carries machine `
+       + `identity, and the panel PAINTS that path into its topbar — every panel `
+       + `PNG this run wrote would commit it, and no rule in this repository can `
+       + `read a PNG back. check-committed-pii.py said: ${said}`;
 }
 
 /**
@@ -5723,6 +6147,10 @@ function claimScratch() {
       rmSync(path.join(work, entry), { recursive: true, force: true });
     }
   }
+  // Recorded HERE and nowhere else, at the one moment this run can honestly say it
+  // owns the tree: the lock is held and the debris is gone. The shutter reads it
+  // to decide whether the page in front of it was built by this run.
+  SCRATCH_ROOT = work;
   return work;
 }
 
@@ -5884,6 +6312,18 @@ async function main() {
   // `shot` and `awaitConfirmDialog` are function declarations and therefore hoisted,
   // so naming them here is safe however far below they sit.
   const stageCtx = { note, fail, tabTo, shot, awaitConfirmDialog };
+
+  // FIRST, BEFORE THE BROWSER IS EVEN IMPORTED, and a hard exit rather than a
+  // `fail()`: this one says the pictures this host produces would carry its
+  // operator's name, and every shot after it would be another copy of that. The
+  // other preconditions below are things a reader fixes and re-runs; this is a
+  // thing a reader must not be allowed to half-do.
+  const painted = paintedIdentityProblem();
+  if (painted) {
+    console.error(`refusing to capture: ${painted}`);
+    process.exit(1);
+  }
+
   let chromium;
   try {
     ({ chromium } = await import('playwright'));
@@ -6460,24 +6900,36 @@ async function main() {
       // gate check at the end drives; every row uses the vocabulary the hooks
       // really write (event names, reason shapes), because a committed PNG that
       // invents its own vocab is documentation of a product that does not exist.
+      // NO `reason` HERE IS TYPED HERE. The `bypass.armed` row reads its sentence
+      // out of `_arm_bypass` (F167) — it used to be a prompt-shaped line, and that
+      // made this PNG a picture of a leak the hook no longer has — and its five
+      // siblings read theirs out of `require-plan.decide` (F169), which agreed
+      // with the copies right up until the release that repaired one writer.
+      // See `armedBypassReason` and `gateReason`.
       // Asserted before the shutter: a card that fell back to its "no events
       // yet" state would photograph the feature as absent.
       {
         const gateLogs = path.join(big, '.claude', 'logs');
         mkdirSync(gateLogs, { recursive: true });
+        // Every `reason` below is its writer's own wording (F169). What this file
+        // still chooses is the numbers, and only the numbers: a magnitude, and the
+        // bar it is graded against. Both magnitude rows quote the SAME bar on
+        // purpose — one card showing two thresholds would be a picture of two
+        // projects — and it is `trivialLineThreshold`'s default, which
+        // `_config.DEFAULTS` prints and this comment therefore does not.
         const seeded = [
           ['2026-04-18T09:12:04Z', 'observe', 'src/web/mod06_02.ts', 'observe',
-            'change magnitude 96 (> 80)'],
+            gateReason('observe', 96, 80)],
           ['2026-04-18T09:40:31Z', 'allow.trivial', 'src/web/mod06_04.ts', 'allow',
-            'first small file (magnitude 41)'],
+            gateReason('allow.trivial', 41)],
           ['2026-04-19T10:02:47Z', 'warn', 'src/mobile/mod07_01.ts', 'warn',
-            'second distinct file in session'],
+            gateReason('warn')],
           ['2026-04-19T14:21:09Z', 'deny', 'src/mobile/mod07_03.ts', 'deny',
-            'change magnitude 214 (> 80)'],
+            gateReason('deny', 214, 80)],
           ['2026-04-19T14:24:52Z', 'bypass.armed', null, null,
-            '#no-plan hotfix the retry policy config'],
+            armedBypassReason()],
           ['2026-04-19T14:26:10Z', 'bypass.consumed', 'src/mobile/mod07_03.ts',
-            'allow', 'single-use bypass consumed'],
+            'allow', gateReason('bypass.consumed')],
         ];
         writeFileSync(path.join(gateLogs, 'plan-gate-events.jsonl'),
           seeded.map(([ts, event, file, mode, reason]) => JSON.stringify(

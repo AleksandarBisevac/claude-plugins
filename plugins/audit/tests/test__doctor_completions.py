@@ -55,7 +55,6 @@ def _manifest(tasks):
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    import tempfile
 
     # ------------------------------------------------------- _hours_between
     check("dc1 two timestamps a day apart are 24 hours, whichever way round "
@@ -83,7 +82,7 @@ def _cases(check):
     have_git = bool(shutil.which("git"))
     if not have_git:
         print("SKIP git-dependent cases (git is not on PATH)")
-    tmp = tempfile.mkdtemp(prefix="doctor-completions-")
+    tmp = _harness.fixture_root("doctor-completions-")
     try:
         mrel = "docs/audit/audit-plan.json"
         os.makedirs(os.path.join(tmp, "docs", "audit"))
@@ -281,7 +280,7 @@ def _cases(check):
             # defective fixture needs the opposite order, so it gets its own
             # repo: commit first, journal second, and then the commit's tree
             # cannot contain a file that did not exist when it was written.
-            deep_tmp = tempfile.mkdtemp(prefix="doctor-completions-deep-")
+            deep_tmp = _harness.fixture_root("doctor-completions-deep-")
             try:
                 os.makedirs(os.path.join(deep_tmp, "docs", "audit"))
                 subprocess.run(["git", "init", "-q", deep_tmp], check=True,

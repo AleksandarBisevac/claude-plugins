@@ -8,11 +8,16 @@ built once at import and re-substituted per request for the session token.
 **This directory is a CUT, not a filing.** Each part is one contiguous run of the
 old single-file `panel.js` in its original sequence, which is what makes the
 assembled page byte-for-byte what it was — the whole safety argument for the split.
-680 substring assertions and 26 index-bounded slices over `UI_HTML` are pinned to
-that order (`python3 tools/count-ui-pins.py`). Some of those slices use a COMMENT as
-an endpoint, which makes those comment lines load-bearing source — print the live
-list rather than trusting one, because a slice can be taken over an intermediate
-variable and a scan that looks only for `UI_HTML[...]` misses it:
+Substring assertions and index-bounded slices over `UI_HTML` are pinned to that
+order; print how many of each before you start (`python3 tools/count-ui-pins.py`,
+`--json` for a machine-readable shape). Both figures used to be written out here and
+had rotted well below the live ones by the time anybody re-derived them, which is the
+defect this repo's own rule about numbers in prose exists for — and the repair it
+prescribes is to delete the number and keep the command, never to correct it. Some of
+those slices use a COMMENT as an endpoint, which makes those comment lines
+load-bearing source — print the live list rather than trusting one, because a slice
+can be taken over an intermediate variable and a scan that looks only for
+`UI_HTML[...]` misses it:
 
     grep -rn '\.index("//' plugins/audit/tests/
 
@@ -51,6 +56,7 @@ views, the CSV export after the usage metrics). Moving either would be a regroup
 | `usage-cards.js` | Phase budgets, the monthly overview, the tokens heatmap, the person header and the cost bands. |
 | `browse-dialog.js` | The sortable, searchable dialog behind every ranked usage list. |
 | `usage-view.js` | `renderUsage()` — the Usage tab assembled from everything above. |
+| `version-banner.js` | The build serving this page against the build installed, from `GET /api/version` — a page-level notice, above the shell, and only when the two are known to differ. Self-starting and contained; no view renders it and `boot()` does not route it. |
 | `boot.js` | The last two statements: the focus-obscured repair, registered inside its own guard, and the `boot()` call. |
 
 ## Constraints that hold for every part

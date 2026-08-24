@@ -370,7 +370,31 @@ def _declared_result(item, block, meta_parent):
                    block)
 
 
-def resolve(item, ado=None, phase=None):
+# What a BUG's answer is about, spelled once because both bug paths below say
+# it. MEASURED FROM THE COMMAND, not assumed: push applies "the resolved parent
+# from step 1 for each phase (and, with phaseWorkItems false, each task)" and
+# names no third kind, so a bug's parent link is one the connector never creates
+# and never changes. Its `adoParent` is therefore a RECORD - usually the one a
+# pull wrote off the board - and saying so is what keeps a manifest-side answer
+# about a bug from reading as a plan for a write.
+_BUG_RECORDED = ("a push neither creates nor changes a bug's parent link, so "
+                 "this is what the manifest RECORDS about where the bug hangs "
+                 "and never what a push will do")
+
+
+def _bug_note(result):
+    """The same answer, with the clause that says what kind of answer it is.
+
+    A NEW RESULT AND NEVER AN EDIT OF THE CALLER'S: `_declared_result` hands
+    back a dict the row and the plan both read, and a basis appended in place
+    would be an argument mutated by the one function everything asks.
+    """
+    return _result(result["id"], result["source"],
+                   "%s — %s" % (result["basis"].rstrip("."), _BUG_RECORDED),
+                   result["declaration"], result["warnings"])
+
+
+def resolve(item, ado=None, phase=None, kind=None):
     """Where this one item hangs: {id, source, basis, declaration, warnings}.
 
     THE ONE FUNCTION, and every surface calls it — the validator, the push plan,
@@ -387,6 +411,17 @@ def resolve(item, ado=None, phase=None):
     printed sentence — unless `conventions.requireParent` is on, which is the
     board saying otherwise, and which is graded where the plan can be seen.
 
+    `kind="bug"` IS THE ONE EXCEPTION TO RULE 4, and it is a fact about the
+    connector rather than a preference: push hangs phases (and, with
+    `phaseWorkItems` false, tasks) under the resolved parent and names no third
+    kind, so `meta.ado.parentWorkItem` — "all of this AUDIT hangs under Feature
+    X" — reaches no bug. A bug that falls through to the fallback would be
+    reported as drifting from a board that was never going to carry the link,
+    which is a false alarm about somebody else's card. Its own declaration is
+    still honoured, because a pull wrote most of them off the board and that is
+    a record worth reading. Nothing about a bug is invented here: the answer is
+    the same shape, and the basis says what kind of answer it is.
+
     `phase` is the task's phase, or None when `item` IS a phase; `ado` is
     `meta.ado`, from which the two settings this needs are read in ONE place, so
     "absent phaseWorkItems means on" is decided here rather than at four call
@@ -398,12 +433,21 @@ def resolve(item, ado=None, phase=None):
     if phase is not None and ado.get("phaseWorkItems") is not False:
         return _phase_result(item, phase, FIELD in item)
     if FIELD in item:
-        return _declared_result(item, item.get(FIELD), meta_parent)
-    if meta_parent is not None:
+        declared = _declared_result(item, item.get(FIELD), meta_parent)
+        return _bug_note(declared) if kind == "bug" else declared
+    if meta_parent is not None and kind != "bug":
         return _result(meta_parent, "meta",
                        "nothing on %s declares a parent, so "
                        "meta.ado.parentWorkItem #%d is the fallback it has "
                        "always been" % (item.get("id") or "?", meta_parent))
+    if kind == "bug":
+        return _result(None, "none",
+                       "nothing on %s declares a parent%s; %s"
+                       % (item.get("id") or "?",
+                          ("" if meta_parent is None else
+                           " — meta.ado.parentWorkItem #%d is the AUDIT's own "
+                           "branch and does not reach a bug" % (meta_parent,)),
+                          _BUG_RECORDED))
     return _result(None, "none",
                    "neither %s nor meta.ado.parentWorkItem names a parent for "
                    "%s, so it is created uncategorised — a free-standing branch "
@@ -433,7 +477,7 @@ def _type_names(block):
     return out
 
 
-def levels_from_backlog_config(payload):
+def levels_from_backlog_config(payload, ado=None):
     """{"levels": {type name: rank}, "basis": ...} — or None when the payload
     is not a backlog configuration.
 
@@ -447,6 +491,28 @@ def levels_from_backlog_config(payload):
     hard-coded table gets wrong: neither measured project's `workItemTypes`
     list names Bug at all, and the same organization runs one project at
     `asRequirements` and another at `asTasks`.
+
+    THE PAYLOAD PLACES A BUG BY RANK AND NEVER NAMES ITS TYPE, WHICH IS WHY
+    `ado` IS HERE (F143). The rank has a source and the NAME had none, so the
+    name was a literal `"Bug"` - a shipped table of one row inside a function
+    whose whole argument is that no table may ship. On a board that renamed the
+    type, that rank was filed under a name no item carries: `inventory` stamps
+    a bug row with `bug_type(ado)`, `_level_entry` looks the row's own type up
+    in these levels, the two never met, and every bug on the most governed kind
+    of board reported `not verified` - the one verdict that reads as "we did
+    not look".
+
+    So the rank comes from the payload and the name comes from `bug_type`, the
+    ONE derivation of the configured bug type, rather than from a second
+    spelling of it here. `ado` is optional and defaults to that function's own
+    default, so a caller that has no connector config gets exactly the answer
+    this returned before the argument existed.
+
+    THE NAME IS THEREFORE AS FRESH AS THE FETCH. `meta.ado.hierarchy` is a
+    cache: change `meta.ado.types.bug` afterwards and the cached key stops
+    matching, which reports `not verified` again rather than grading a bug
+    against the wrong rank. The `basis` says which key was read, so a stale
+    cache can be checked instead of believed.
     """
     if not isinstance(payload, dict):
         return None
@@ -471,15 +537,95 @@ def levels_from_backlog_config(payload):
         return None
     behavior = payload.get("bugsBehavior")
     placed = BUGS_BEHAVIOR.get(behavior) if isinstance(behavior, str) else None
-    if placed in ranks and "Bug" not in levels:
-        levels["Bug"] = ranks[placed]
+    bug_wit = bug_type(ado)
+    if bug_wit in levels:
+        # The board's own type lists named it, so the rank has a source of its
+        # own and `bugsBehavior` has nothing left to place. Said rather than
+        # left implied: neither measured project's lists name a bug at all, so
+        # a reader who sees this clause is looking at a third kind of board.
+        bugs_said = ("%r is ranked by this board's own type lists, so "
+                     "bugsBehavior placed nothing" % (bug_wit,))
+    elif placed in ranks:
+        levels[bug_wit] = ranks[placed]
+        bugs_said = ("the payload places a bug by RANK and never names its "
+                     "type, so that rank is filed under meta.ado.types.bug "
+                     "(%r) — re-run this fetch after renaming that key, or the "
+                     "cached name stops matching and bugs read `not verified`"
+                     % (bug_wit,))
+    else:
+        bugs_said = ("no bug rank was placed: bugsBehavior=%s names no backlog "
+                     "this payload ranks, so every bug reports `not verified` "
+                     "rather than being graded against a guess"
+                     % (behavior if isinstance(behavior, str) else "unset",))
     return {"levels": levels,
             "basis": ("ranks read from this project's own backlog "
                       "configuration (az devops invoke --area work --resource "
-                      "backlogconfiguration), bugsBehavior=%s: %s"
+                      "backlogconfiguration), bugsBehavior=%s; %s: %s"
                       % (behavior if isinstance(behavior, str) else "unset",
+                         bugs_said,
                          ", ".join("%s=%d" % (n, r)
                                    for n, r in sorted(levels.items()))))}
+
+
+# --- what `meta.ado.types` names ---------------------------------------------------
+# The work item type this connector CREATES and never parents, when the board has
+# not renamed it. It is spelled HERE because this module already reads every other
+# name in `meta.ado.types` - `pbi` and `task`, in `inventory` below - and because
+# "which kinds does a push leave unparented" is this module's own question.
+DEFAULT_BUG_TYPE = "Bug"
+
+
+def bug_type(ado):
+    """The work item type name a push gives a bug card. Never blank.
+
+    ONE DOOR, BECAUSE TWO DOORS DISAGREED. This derivation existed twice for a
+    release - once inline in `inventory` and once as `_ado_conventions`'s own
+    default - and the two spellings did not answer the same way about the two
+    inputs that matter: a `meta.ado.types.bug` of `""` or `"  "` reached a bug
+    ROW as itself while the exemption rule read it as `Bug`, and a padded
+    `" Defect "` reached the row padded and the rule trimmed. Either mismatch
+    makes `parent_rule_exemption` fail to recognise the very rows this module
+    just stamped, so `requireParent` refuses a bug create the exemption exists
+    to allow - a refusal at create time, which is exactly the failure that rule
+    was written to end.
+
+    TRIMMED AND NEVER BLANK, in that order. Padding in a config file is a typo
+    and not a type name anything can match, so it is removed the same way the
+    board's own names are (`_type_names`); a name that is empty once trimmed is
+    nobody's answer at all, so it falls through to the default rather than
+    stamping a row with the empty string.
+    """
+    block = ado if isinstance(ado, dict) else {}
+    types = block.get("types")
+    types = types if isinstance(types, dict) else {}
+    named = types.get("bug")
+    if isinstance(named, str) and named.strip():
+        return named.strip()
+    return DEFAULT_BUG_TYPE
+
+
+def unparented_types(ado):
+    """The work item type names a push creates and never gives a parent link.
+
+    Read off `meta.ado.types`, because the BOARD names its own types and a
+    shipped list would be wrong on the first board that renamed one - the same
+    reason nothing here ships a default vocabulary or a default skeleton.
+
+    ONE KIND TODAY AND A TUPLE ANYWAY. Push hangs a phase under the resolved
+    parent, hangs a task under its phase (or, with `phaseWorkItems` off, under
+    the resolved parent too), and names no third kind - so a bug is the only
+    item that reaches the board unparented. Returning the collection rather
+    than the single name keeps the rule reading as "which kinds are exempt",
+    which is the question, instead of "is this the bug type", which is today's
+    answer to it.
+
+    IT LIVES BESIDE `resolve` AND NOT BESIDE THE RULE IT NARROWS.
+    `_ado_conventions` grades a `conventions` block; this is a fact about what
+    a PUSH does, which is this module's subject, and `parent_rule_exemption`
+    already takes the answer as an argument rather than reading it - the seam
+    that lets the two modules stay layer-mates with one derivation between them.
+    """
+    return (bug_type(ado),)
 
 
 # --- the inventory every check and every plan reads ------------------------------
@@ -506,19 +652,35 @@ def _parent_type(result, phase_type):
     return kind if isinstance(kind, str) and kind.strip() else None
 
 
-def inventory(phases, ado=None):
-    """{"rows": [...], "warnings": [...]} — every phase and task with its parent.
+def inventory(phases, ado=None, bugs=None):
+    """{"rows": [...], "warnings": [...]} — every item asked about, with its
+    parent.
 
     The rows are what `hierarchy_violations` and `plan_lines` both read, so the
     walk happens ONCE and the two cannot disagree about which items were in the
     plan. Each row is {kind, id, workItemId, type, parent, parentType, source,
     basis, declaration}.
+
+    `bugs` IS OPTIONAL AND ITS DEFAULT IS NOT AN EMPTY LIST. `None` means the
+    caller did not ask about bugs; `[]` means it asked and there are none. The
+    two were one answer until a linked bug turned out to have no manifest-side
+    basis for a parent verdict at all (F101) — `status` fetches a bug's
+    `System.Parent` like any other item's and had nothing to compare it with,
+    and "we did not ask about this kind of item" is not one of the sentences
+    that feature can say. A default of `[]` would have made every caller look
+    as if it had asked.
+
+    WHY EVERY CALLER DOES NOT SIMPLY ASK. The validator grades the PLAN and a
+    bug row would put a bug in front of `requireParent`'s homeless count, where
+    it would report a warning about a link push was never going to create. The
+    door grades the whole MANIFEST and passes the list.
     """
     ado = ado if isinstance(ado, dict) else {}
     types = ado.get("types")
     types = types if isinstance(types, dict) else {}
     phase_type = types.get("pbi") if isinstance(types.get("pbi"), str) else None
     task_type = types.get("task") if isinstance(types.get("task"), str) else "Task"
+    bug_wit = bug_type(ado)
     rows, warnings = [], []
     for phase in (phases if isinstance(phases, list) else []):
         if not isinstance(phase, dict):
@@ -533,6 +695,15 @@ def inventory(phases, ado=None):
             tresult = resolve(task, ado=ado, phase=phase)
             rows.append(_row("task", task, task_type, tresult, phase_type))
             warnings.extend(tresult["warnings"])
+    # After the plan and never inside it: a bug belongs to no phase, and a row
+    # order that interleaved them would put an item the push does not parent in
+    # the middle of the items it does.
+    for bug in (bugs if isinstance(bugs, list) else []):
+        if not isinstance(bug, dict):
+            continue
+        bresult = resolve(bug, ado=ado, kind="bug")
+        rows.append(_row("bug", bug, bug_wit, bresult, phase_type))
+        warnings.extend(bresult["warnings"])
     return {"rows": rows, "warnings": warnings}
 
 
@@ -740,6 +911,10 @@ def hierarchy_violations(rows, levels=None):
     A row refused by tier A is NOT graded by tier B. Its ranks are beside the
     point once the link closes a loop, and two refusals for one item would make
     the plan's count read as two problems.
+
+    A BUG ROW IS NOT GRADED AT ALL, and the loop below says why at the line
+    that skips it. `checked` therefore counts the links this connector would
+    create, which is what the plan's "N link(s) checked" has always meant.
     """
     rows = [r for r in (rows or []) if isinstance(r, dict)]
     edges = _edges(rows)
@@ -750,6 +925,14 @@ def hierarchy_violations(rows, levels=None):
     for row in rows:
         if row.get("parent") is None:
             continue                      # uncategorised: not a hierarchy question
+        if row.get("kind") == "bug":
+            # NOT GRADED, AND ITS EDGE STILL COUNTS. A bug's declaration is a
+            # record of somebody's board — usually written by a pull — and the
+            # push creates no bug parent link, so refusing one would refuse a
+            # link nobody is making and would exit 1 over another team's
+            # arrangement. The edge stays in `edges` above, because a loop the
+            # board really carries is worth finding when a PHASE closes it.
+            continue
         checked += 1
         structural = _structural_entry(row, edges, by_item)
         if structural is not None:
@@ -782,10 +965,23 @@ def plan_lines(rows, violations=None):
     BOTH COUNTS ARE PRINTED AT ZERO. A number that appears only on bad news
     cannot be told apart from a number nobody computed, and the operator reading
     a confirm gate has no other way to learn that the check ran.
+
+    BUG ROWS ARE NOT IN THIS BLOCK, and their absence is not silent: this is
+    the PUSH PLAN, and a push creates no bug parent link, so a bug counted as
+    "uncategorised (no parent anywhere)" would make the ordinary state of every
+    bug read as a gap in the plan. They are in the inventory because `status`
+    needs a basis for a linked bug's `parent?` cell. WHO SAYS SO is the caller:
+    `resolve-ado-parent.py` prints the bug line, because it is the side that
+    knows whether it asked — a count taken here could not tell a manifest with
+    no bugs from a caller that passed none.
     """
     rows = [r for r in (rows or []) if isinstance(r, dict)]
+    # The check runs over the WHOLE row set and the block prints part of it:
+    # dropping bugs first would build a smaller graph, which is the same
+    # mistake `scope_result` exists to avoid one layer up.
     result = violations if isinstance(violations, dict) else \
         hierarchy_violations(rows)
+    rows = [r for r in rows if r.get("kind") != "bug"]
     refused = dict((e.get("id"), e) for e in result.get("refusals") or [])
     uncategorised = [r for r in rows if r.get("parent") is None]
     out = ["parents: %d item(s), %d refused by the hierarchy check, "

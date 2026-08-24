@@ -43,14 +43,13 @@ def _detail(rep, name):
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     import platform
-    import tempfile
 
     cfgmod = _loader.load_hooks_config()
     have_git = bool(shutil.which("git"))
     if not have_git:
         print("SKIP git-dependent cases (git is not on PATH)")
 
-    tmp = tempfile.mkdtemp(prefix="doctor-hygiene-")
+    tmp = _harness.fixture_root("doctor-hygiene-")
     try:
         mrel = "docs/audit/audit-plan.json"
 
@@ -137,8 +136,8 @@ def _cases(check):
             # --------------------------------------- check_local_artifacts
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
-            check("dh7 a repo with none of the four artifacts yet says exactly "
-                  "that, naming all four so the reader knows what was looked "
+            check("dh7 a repo with none of the artifacts yet says exactly "
+                  "that, naming each one so the reader knows what was looked "
                   "for: %r" % (_detail(rep, "hygiene"),),
                   _levels(rep, "hygiene") == ["OK"]
                   and "no local artifacts yet" in _detail(rep, "hygiene"))
@@ -239,6 +238,99 @@ def _cases(check):
                   % (_detail(rep, "hygiene"),),
                   "not ignored yet" in _detail(rep, "hygiene")
                   and "ledger" in _detail(rep, "hygiene"))
+
+            # ------------------------------ the panel's launch log (F99)
+            # It leaks the MACHINE where the pidfile leaks a CREDENTIAL: the
+            # log is a dead launch's stderr, so what lands in it is a
+            # traceback spelling absolute paths, and a home directory is a
+            # person's name on most of them.
+            logfile = os.path.join(tmp, ".claude", "audit-panel.log")
+            with open(logfile, "w", encoding="utf-8") as fh:
+                fh.write("Traceback (most recent call last):\n"
+                         "  File \"/Users/somebody/proj/x.py\", line 1\n")
+            rep = base.Report()
+            M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
+            _log_rows = [r for r in rep.rows if r["check"] == "hygiene"
+                         and "audit-panel.log" in r["detail"]]
+            # THE SECOND DIRECTION, and it looks vacuous on purpose: it is the
+            # only case that fails if the log's row becomes unconditional,
+            # which a tracked-file assertion alone could never notice.
+            check("dh15 a launch log sitting UNTRACKED draws no row of its "
+                  "own, which is what fails if the new warning stops reading "
+                  "git: %r" % ([r["detail"] for r in _log_rows],),
+                  _log_rows == [])
+
+            subprocess.run(["git", "-C", tmp, "add", "-f",
+                            ".claude/audit-panel.log"], check=True,
+                           stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
+                            "commit", "-q", "-m", "log"], check=True,
+                           stdout=subprocess.DEVNULL)
+            rep = base.Report()
+            M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
+            _log_rows = [r for r in rep.rows if r["check"] == "hygiene"
+                         and "audit-panel.log" in r["detail"]]
+            _pid_rows = [r for r in rep.rows if r["check"] == "hygiene"
+                         and "audit-panel.json" in r["detail"]]
+            check("dh16 ...and a TRACKED one gets a row of its own that names "
+                  "what leaks - absolute machine paths, which is exactly what "
+                  "the committed-PII backstop exists for. Counted, because "
+                  "one row per panel file is the shape: %r"
+                  % ([r["detail"] for r in _log_rows],),
+                  len(_log_rows) == 1
+                  and "audit-panel.log) is TRACKED" in _log_rows[0]["detail"]
+                  and "absolute paths" in _log_rows[0]["detail"])
+            check("dh17 ...carrying a DIFFERENT repair from the pidfile's, "
+                  "because they are different acts: a leaked token is rotated "
+                  "by a restart and a leaked traceback cannot be. Compared "
+                  "against the pidfile's rather than merely non-empty, which "
+                  "one shared sentence would pass: %r"
+                  % ([r["fix"] for r in _log_rows + _pid_rows],),
+                  len(_pid_rows) == 1 and len(_log_rows) == 1
+                  and _log_rows[0]["fix"] != _pid_rows[0]["fix"]
+                  and "rotate" in (_pid_rows[0]["fix"] or "")
+                  and "rotate" not in (_log_rows[0]["fix"] or ""))
+            _others = [r for r in rep.rows if r["check"] == "hygiene"
+                       and "local file(s) tracked" in r["detail"]]
+            # COUNTED AGAINST A SECOND, INDEPENDENT COUNT, not read off the
+            # one example the row names: the example is whichever path sorts
+            # first, so a panel file folded into this row leaves it unchanged
+            # and only the number moves.
+            _led = subprocess.run(["git", "-C", tmp, "ls-files", "--",
+                                   ".claude/usage"],
+                                  capture_output=True, text=True)
+            _led_n = len([ln for ln in _led.stdout.splitlines() if ln.strip()])
+            check("dh18 ...and neither panel file is ALSO counted in the "
+                  "ledger/state/logs row, which counts %d here: the two are a "
+                  "partition, and a presence assertion on either alone would "
+                  "not catch a double count: %r"
+                  % (_led_n, [r["detail"] for r in _others],),
+                  _led_n > 0 and len(_others) == 1
+                  and _others[0]["detail"].startswith("%d local file(s)"
+                                                      % (_led_n,))
+                  and "audit-panel" not in _others[0]["detail"])
+
+        # Outside the git gate: this compares two tables and shells out to
+        # nothing. The names live in TWO homes - here for the git check, and in
+        # `panel-server.py` to write their ignore rules. That is a DECISION and
+        # its argument is written out above `_PANEL_FILES` in
+        # `_doctor_hygiene.py`; the failure text below carries the short form,
+        # so whoever meets this red is told the merge was weighed rather than
+        # left to rediscover the question.
+        _ps = _loader.load_script("panel-server.py",
+                                  modname="panel_server_hygiene")
+        _mine = sorted(row[0] for row in M._PANEL_FILES)
+        _theirs = sorted(row[0] for row in _ps._PANEL_PRIVATE_FILES)
+        check("dh19 the panel files this check looks for are the same set "
+              "panel-server writes ignore rules for - %r vs %r. Add the missing "
+              "row rather than merging the tables: two homes is the recorded "
+              "answer (F148, argued above `_PANEL_FILES` in _doctor_hygiene.py), "
+              "because the tables share only their keys and a shared key list "
+              "would leave this very case standing. A file in one table and not "
+              "the other either self-ignores and is never reported, or is "
+              "reported and never ignored"
+              % (_mine, _theirs),
+              _mine and _mine == _theirs)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

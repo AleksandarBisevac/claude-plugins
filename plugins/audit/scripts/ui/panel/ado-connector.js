@@ -103,6 +103,33 @@ function adoFieldDrop(fields,wit,name){
  if(!Object.keys(t).length)delete fields[wit];
  return fields;}
 /**
+ * The banner's clause about work items MORE THAN ONE manifest item claims.
+ *
+ * Two manifest items pointing at one card is a real arrangement on a real
+ * board — an import that adopts a card somebody had already linked by hand
+ * makes one — and nothing anywhere refuses it: a link's shape is validated and
+ * the uniqueness of its target never is. So a push writes every claimant to the
+ * same card and the last one wins, and until this clause existed no surface
+ * said so.
+ *
+ * THREE ANSWERS AND NEVER TWO, which is the whole reason it is a function.
+ * `shared` names the cards, `none` says each is claimed once, and ANYTHING ELSE
+ * — no link walked yet, or a payload with no `shared` in it at all — says that
+ * nothing was counted. Folding that last case into `none` would print agreement
+ * where there is only silence, the same collapse `_shared_claims` and the
+ * candidate cache before it exist to prevent.
+ *
+ * @param {{state: string, items: {adoId: number, claimants: string[]}[]}|null|undefined} shared -
+ *   `adoStatus.shared` as the server sends it
+ * @returns {string} one clause, never empty
+ */
+function adoSharedWords(shared){
+ const state=(shared||{}).state,items=(shared||{}).items||[];
+ if(state==='shared')return plural(items.length,'work item')
+  +' claimed by more than one item ('+items.map(x=>'#'+x.adoId).join(', ')+')';
+ if(state==='none')return 'no work item claimed twice';
+ return 'shared claims not counted';}
+/**
  * The connector draft every control on this card edits.
  *
  * Null is a VALUE here and not an absence: it means "no connector in the
@@ -141,7 +168,7 @@ let ADRAFT=null;
 function renderAdoCard(c){
  const comp=STATE.composition||{},saved=(comp.meta||{}).ado??null;
  const st=comp.adoStatus||{configured:false,enabled:false,echo:false,
-   linked:{tasks:0,bugs:0,phases:0},lastSyncedAt:null};
+   linked:{tasks:0,bugs:0,phases:0},lastSyncedAt:null,shared:null};
  ADRAFT=saved===null?null:JSON.parse(JSON.stringify(saved));
  const card=el('div',{class:'card',id:'adocard'});
  card.append(h2h('Azure DevOps connector (meta.ado)',MDESC.adoConnector,
@@ -165,8 +192,19 @@ function renderAdoCard(c){
     +' · '+plural(st.linked.bugs,'bug')+' · '+plural(st.linked.phases,'phase')
     +(st.lastSyncedAt?(' · last synced '+st.lastSyncedAt):'')
     +(st.echo?' · echo on':' · echo off')];
- card.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0]},
-   banner[2]));
+ // The shared-claim clause rides on the states that describe a manifest
+ // CARRYING links: `off` keeps them and `linked` counts them. The remaining
+ // banners are about a plan with nothing on the board, where the question has
+ // no subject — and a clause reading "not counted" there would blame the
+ // reader for a fetch nobody owed. A collision escalates the TONE and never
+ // the name: `data-adostate` still says which banner this is, so a card whose
+ // links are all fine and a card whose links collide stay the same banner
+ // making different news.
+ if(banner[0]==='linked'||banner[0]==='off'){
+  banner[2]+=' · '+adoSharedWords(st.shared);
+  if((st.shared||{}).state==='shared')banner[1]='warn';}
+ card.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0],
+   'data-adoshared':(st.shared||{}).state||'uncounted'},banner[2]));
  // --- draft plumbing. Deleting a key is how "use the default" is written
  // (delPath's rule); an emptied draft reads as null — connector removed.
  const A=()=>(ADRAFT=ADRAFT||{});

@@ -46,7 +46,7 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "remind-tdd.py"),
 def _cases(check):
     import shutil as _sh_r
 
-    tmp = Path(tempfile.mkdtemp(prefix="remind-tdd-selftest-"))
+    tmp = Path(_harness.fixture_root("remind-tdd-selftest-"))
     sd = tmp / "state"
     sd.mkdir(parents=True, exist_ok=True)
     # Pin repo_root to the temp dir regardless of the caller's environment.

@@ -45,6 +45,15 @@
 .brand.roomy h1{white-space:nowrap}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
  max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
+/* The staleness notice (F100), between the bar and the shell it is about.
+   PLACEMENT ONLY. The block inside it is `.findings warn`, the panel's existing
+   notice — a second warning component is how two warnings come to read as two
+   different severities — so nothing about colour, radius or padding is decided
+   here. The gutters and the centre line are the shell's own and are repeated
+   as literals because the shell writes them as literals too — there is no token
+   for either — so the agreement is pinned by a case that reads both values out
+   of the assembled sheet rather than by this sentence. */
+.buildstale{max-width:92rem;margin:0 auto;padding:0 1.25rem}
 .view{min-width:0}
 .tabs{position:sticky;top:calc(var(--topbar-h) + var(--sp-1))}
 .tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;

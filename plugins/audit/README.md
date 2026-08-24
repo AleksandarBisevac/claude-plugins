@@ -55,7 +55,11 @@ of its tasks matched, and nothing auto-expands. **Save as PDF** prints A4 in eit
 `/audit:panel` opens a local, **on-demand** browser UI (an ephemeral Python-stdlib server) to
 manage the plugin without hand-editing JSON. It's an **open / stop / status** trio backed by a
 per-project pidfile, so a running panel is always discoverable and stoppable — never a stray
-background process:
+background process. It leaves two files beside your config, and writes a targeted ignore rule
+for each: `.claude/audit-panel.json`, the pidfile, which also records the plugin build that
+assembled the page; and `.claude/audit-panel.log`, the detached launch's stderr, emptied by
+the server once it is actually listening — so a launch that never got up leaves a reason
+`status` can print instead of looking exactly like one that was started and stopped:
 
 - **`/audit:panel`** — open it (prints the `http://127.0.0.1:<port>/…` URL and opens your browser)
 - **`/audit:panel stop`** — stop it · **`/audit:panel status`** — check if it's running
@@ -427,7 +431,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:status` | `[--gate] [--fail-on <c1,c2,...>] [--json] [--color auto\|always\|never]` | Read-only rollup — phases, tasks, bugs, and the ready-now list, with per-phase progress and resumable-phase flags. No locks, no mutations. |
 | `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
 | `/audit:run` | `<taskId> [--dry-run]` | Execute exactly one task by id, with status guards (offers reopen if `done`, attempt-reset if `blocked`, warns if `in_progress`) and unmet-blocker checks. Reopening a bugfix task reopens its linked bug. |
-| `/audit:phase` | `<phaseId> [--dry-run] \| priority <phaseId> <tier> [--force] \| priority <phaseId> --clear \| cancel <phaseId> --reason "<why>"` | Everything a phase has done to it. **A bare `<phaseId>` runs it** — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge); `--dry-run` previews the plan and mutates nothing. **`priority`** says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused **by name**, or written anyway with `--force`, in which case the first in manifest order wins); `--clear` unpins. **`cancel`** closes a phase as **terminal but not done**, cascading to the work still open inside it and recording the reason, the moment and a `phase.cancel` journal row; an id that resolves to a task is refused, pointing at `/audit:task cancel`. `priority` and `cancel` are the only reserved first tokens — any other first token is a phase id. |
+| `/audit:phase` | `<phaseId> [--dry-run] \| add "<title>" --outcome "<what success is>" [--id <P7>] [--area a,b] [--gate <entry>] \| priority <phaseId> <tier> [--force] \| priority <phaseId> --clear \| cancel <phaseId> --reason "<why>"` | Everything a phase has done to it. **A bare `<phaseId>` runs it** — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge); `--dry-run` previews the plan and mutates nothing. **`priority`** says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused **by name**, or written anyway with `--force`, in which case the first in manifest order wins); `--clear` unpins. **`cancel`** closes a phase as **terminal but not done**, cascading to the work still open inside it and recording the reason, the moment and a `phase.cancel` journal row; an id that resolves to a task is refused, pointing at `/audit:task cancel`. **`add`** puts one more phase into a plan that already exists — the verb nothing had: `/audit:init` writes a whole plan, `/audit:propose materialize` moves a parked one, and `/audit:task add` needs the phase to be there. It continues the `P<n>` sequence over live **and** parked-proposal ids, initializes the whole new-phase template, appends the phase last, and in the sharded layout writes its new shard **and** the index stub pointing at it; `--outcome` is required (a phase whose success cannot be stated in a line is one sign-off cannot address) and the gate comes from `--gate` or from `meta.buildCommands`, with the report saying which. `add`, `priority` and `cancel` are the reserved first tokens — any other first token is a phase id. |
 | `/audit:review` | `<phaseId>` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. |
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
@@ -446,7 +450,11 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 **`/audit:panel` sub-commands** — bare `/audit:panel` opens it (prints the
 `http://127.0.0.1:<port>/…` URL and opens your browser), `/audit:panel stop` stops it,
 `/audit:panel status` reports whether one is running; `--port <n>` pins the port. One panel
-per project, tracked by a `.claude/audit-panel.json` pidfile.
+per project, tracked by a `.claude/audit-panel.json` pidfile — which stamps the build that
+assembled the page, so `status` can say when the panel that is up is older than the plugin
+now installed and needs a stop-and-start to pick the difference up. Beside it,
+`.claude/audit-panel.log` holds the detached launch's stderr and gives a failed launch a
+reason; the panel gitignores both.
 
 **Headless entry points** (no Claude, run in CI or any terminal): `scripts/status/audit-status.py
 --json | --gate` turns the manifest into a pipeline gate, `scripts/report/render-report.py` renders
@@ -631,8 +639,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.3.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.3.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -1522,7 +1530,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.3.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

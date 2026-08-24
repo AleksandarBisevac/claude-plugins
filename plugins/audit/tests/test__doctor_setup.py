@@ -16,6 +16,7 @@ red because git is not installed reports the wrong defect.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import json
 import os
 import shutil
@@ -414,6 +415,46 @@ def _cases(check):
               % (_detail(rep, "manifest"),),
               "2 parked proposal(s)" in _detail(rep, "manifest"))
 
+        # "Parked" is the RAW status alone, and this doctor line used to hold the
+        # rule that was retired -- `proposed` AND a dict payload. The fixture is
+        # built so the two readings disagree in BOTH directions: three entries
+        # are proposed (one of them with nothing drafted yet) and one is not, so
+        # the payload rule gives two, a predicate that answered True for
+        # everything would give four, and only the raw-status rule gives three.
+        payloadless = _manifest()
+        payloadless["proposals"] = [
+            {"id": "PROP-1", "name": "a", "status": "proposed",
+             "payload": {"phase": {"id": "P9", "title": "p", "status": "pending",
+                                   "tasks": []}}},
+            {"id": "PROP-2", "name": "b", "status": "proposed",
+             "payload": {"phase": {"id": "P8", "title": "q", "status": "pending",
+                                   "tasks": []}}},
+            # Proposed, nothing drafted: still a decision waiting on a human.
+            {"id": "PROP-3", "name": "c", "status": "proposed"},
+            {"id": "PROP-4", "name": "d", "status": "materialized",
+             "payload": {"phase": {"id": "P7", "title": "r", "status": "pending",
+                                   "tasks": []}}},
+        ]
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(payloadless, fh)
+        rep = base.Report()
+        rel, manifest = M.check_manifest(rep, tmp, cfg)
+        check("ds20d a PROPOSED entry with no payload yet is parked here too - "
+              "requiring a payload counts what /audit:propose materialize can "
+              "act on, which is a different question from what is waiting on a "
+              "human: %r" % (_detail(rep, "manifest"),),
+              "3 parked proposal(s)" in _detail(rep, "manifest"))
+        # THE AGREEMENT, DRIVEN RATHER THAN ASSERTED IN A COMMENT. This is the
+        # defect itself: one manifest, read by /audit:status and /audit:doctor,
+        # answered "how many are waiting on a human" with two different numbers
+        # under one word. Comparing the doctor's rendered line against the
+        # rollup's key is what fails when either side grows a second opinion.
+        _rolled = M._status_facts.rollup(manifest, [], [])["proposals"]["parked"]
+        check("ds20e ...and it is the same number /audit:status prints, because "
+              "both read `_status_facts.is_parked_proposal`: rollup says %r"
+              % (_rolled,),
+              "%d parked proposal(s)" % _rolled in _detail(rep, "manifest"))
+
         # F14 said this next branch could never execute, on the reading that the
         # validator makes every out-of-vocabulary proposal status a finding — and
         # a finding takes the OTHER arm, so the count could not print. Measured:
@@ -448,6 +489,49 @@ def _cases(check):
               % ([r["level"] for r in _mrows],),
               any(r["level"] == "OK" and "valid" in r["detail"]
                   for r in _mrows))
+
+        # THE VOCABULARY IS THE MANIFEST'S, NOT THIS CHECK'S (F142). The words
+        # were spelled here as a literal tuple while `_manifest_vocab` holds the
+        # real one - and this line is the one that DECIDES what counts as out of
+        # vocabulary, so the copy was not merely redundant, it was authoritative
+        # and would have gone on reporting a newly added status as a legacy
+        # free-form entry. Driven by widening the real tuple rather than asserted
+        # in a comment: a literal cannot see the change, so it keeps saying two.
+        # `_manifest_crossrefs` binds its own alias at import, so the validator
+        # is untouched by this and the VALID arm still prints.
+        _vocab_real = M._manifest_vocab.PROPOSAL_STATUS
+        try:
+            M._manifest_vocab.PROPOSAL_STATUS = _vocab_real + ("parked-old",)
+            rep = base.Report()
+            M.check_manifest(rep, tmp, cfg)
+            _widened = _detail(rep, "manifest")
+        finally:
+            M._manifest_vocab.PROPOSAL_STATUS = _vocab_real
+        check("ds20f a status ADDED to `_manifest_vocab.PROPOSAL_STATUS` stops "
+              "being legacy here the moment it is added, because this check asks "
+              "that tuple instead of holding a copy of what was in it: %r"
+              % (_widened,),
+              "1 legacy proposal(s)" in _widened
+              and "2 legacy proposal(s)" not in _widened
+              and "1 parked proposal(s)" in _widened)
+        rep = base.Report()
+        M.check_manifest(rep, tmp, cfg)
+        check("ds20g SECOND-DIRECTION CASE: with the vocabulary back as it was, "
+              "the same manifest is two legacy entries again - so ds20f measured "
+              "the vocabulary rather than a widening that leaked into the rest "
+              "of the suite, and a check that had quietly stopped counting could "
+              "not pass both: %r" % (_detail(rep, "manifest"),),
+              "2 legacy proposal(s)" in _detail(rep, "manifest"))
+        with open(M.__file__, "r", encoding="utf-8") as fh:
+            _ds_tree = ast.parse(fh.read(), filename=M.__file__)
+        _spelled = sorted(n.value for n in ast.walk(_ds_tree)
+                          if isinstance(n, ast.Constant)
+                          and n.value in M._manifest_vocab.PROPOSAL_STATUS)
+        check("ds20h ...and no word of the vocabulary is spelled in this file at "
+              "all. The two cases above pass just as well against a private copy "
+              "that happens to agree today, which is exactly the state this "
+              "check was in: %r" % (_spelled,),
+              _spelled == [])
 
         broken = _manifest()
         broken["meta"].pop("version")

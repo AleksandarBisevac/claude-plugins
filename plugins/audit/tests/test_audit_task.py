@@ -43,7 +43,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # resolution), i (reserved/parked ids), t (template fields), s (skills
 # three-state), x (fileIndex), r (validator rollback), k (lock), y (layout:
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
-# u (usage errors).
+# n (named-manifest project resolution), c (cancel), p (add-phase: the F58
+# verb, both layouts), w (the _waiting_on index), u (usage errors).
 def _cases(check):
     import contextlib
     import shutil
@@ -591,6 +592,394 @@ def _cases(check):
         code, jtext = run(["cancel", "P1", mpe, "--reason", "x",
                            "--project-dir", proje, "--json"])
         check("c9 a done PHASE is refused as well", code == 2)
+
+        # The three verbs' rows are built by ONE function, and this is the pair
+        # that says so from the OUTPUT rather than from the source. `cancel`
+        # used to build its own and passed the whole `_viewer()` DICT as
+        # `actor.author`; `_journal_io` normalises a non-string author to None
+        # and defaults an absent `via` to "unknown", so every cancel row went
+        # in with no author and the wrong channel and nothing on the row said
+        # so. Comparing the two rows FROM ONE RUN is what makes this
+        # environment-independent - whether an author resolves at all depends
+        # on the machine, whether the two agree does not.
+        projac, mpac = mk("c-actor", base_manifest())
+        run(["add", "Actor probe", "--phase", "P2", "--project-dir", projac])
+        run(["cancel", "P3", mpac, "--reason", "shelved",
+             "--project-dir", projac])
+        jmac = _panel_write._journalmod()
+        rows_ac = jmac.read_all(projac) if jmac else []
+        add_ac = [r for r in rows_ac if r.get("action") == "task.add"]
+        can_ac = [r for r in rows_ac if r.get("action") == "phase.cancel"]
+        check("c10 both rows were written (1 add, 1 cancel): %d/%d"
+              % (len(add_ac), len(can_ac)),
+              len(add_ac) == 1 and len(can_ac) == 1)
+        check("c11 ...and the cancel row's actor is the add row's actor, "
+              "field for field - via=cli and an author of the same type, "
+              "which is what a per-verb row builder had already lost: %r vs %r"
+              % ((can_ac[0].get("actor") if can_ac else None),
+                 (add_ac[0].get("actor") if add_ac else None)),
+              bool(add_ac) and bool(can_ac)
+              and can_ac[0].get("actor") == add_ac[0].get("actor")
+              and (can_ac[0].get("actor") or {}).get("via") == "cli")
+
+        # WHAT WENT WITH THE PHASE, in the row rather than only in the prose.
+        # The cascaded ids were handed over as `details.cascaded`, which is not
+        # on `_journal_io.DETAILS_KEYS`: written, dropped in silence, and
+        # believed. They ride `changes` now -- the shape the allow-list already
+        # bounds and clips -- and the statuses below are deliberately all
+        # different, so a builder that stamped a constant `from`, or read the
+        # status AFTER `_cancel_task` had overwritten it, emits rows that are
+        # identical to each other and cannot pass this.
+        cascade_fx = base_manifest()
+        cascade_fx["phases"][1]["tasks"] = [
+            {"id": "P2.1", "title": "a", "status": "done", "files": ["src/a.ts"]},
+            {"id": "P2.2", "title": "b", "status": "pending"},
+            {"id": "P2.3", "title": "c", "status": "blocked"},
+            {"id": "P2.4", "title": "d", "status": "in_progress"},
+        ]
+        projcc, mpcc = mk("c-cascade-row", cascade_fx)
+        code, txt = run(["cancel", "P2", mpcc, "--reason", "shelved",
+                         "--project-dir", projcc])
+        jmcc = _panel_write._journalmod()
+        rows_cc = [r for r in (jmcc.read_all(projcc) if jmcc else [])
+                   if r.get("action") == "phase.cancel"]
+        det_cc = (rows_cc[0].get("details") or {}) if rows_cc else {}
+        check("c12 the cascade survives INTO the row: every task the phase took "
+              "with it is a `changes` entry naming the status it held, and the "
+              "already-done one is not among them. Compared whole rather than "
+              "probed for one id, because a writer that emitted only the first "
+              "would pass a presence check for ever: %r"
+              % (det_cc.get("changes"),),
+              code == 0 and len(rows_cc) == 1
+              and det_cc.get("changes") == [
+                  {"id": "P2.2", "field": "status", "from": "pending",
+                   "to": "cancelled"},
+                  {"id": "P2.3", "field": "status", "from": "blocked",
+                   "to": "cancelled"},
+                  {"id": "P2.4", "field": "status", "from": "in_progress",
+                   "to": "cancelled"}])
+        check("c12b ...and the details block is EXACTLY the keys the writer "
+              "means. No `cancelledId`: it was handed over and dropped while "
+              "`phaseId` already carried the same string, so restoring it to "
+              "the allow-list would have grown a committed row for nothing: %r"
+              % (sorted(det_cc),),
+              sorted(det_cc) == ["changes", "phaseId", "reason"]
+              and det_cc.get("phaseId") == "P2"
+              and det_cc.get("reason") == "shelved")
+
+        projct, mpct = mk("c-cascade-none", base_manifest())
+        run(["cancel", "P2.3", mpct, "--reason", "dropped",
+             "--project-dir", projct])
+        jmct = _panel_write._journalmod()
+        rows_ct = [r for r in (jmct.read_all(projct) if jmct else [])
+                   if r.get("action") == "task.cancel"]
+        det_ct = (rows_ct[0].get("details") or {}) if rows_ct else {}
+        check("c13 SECOND-DIRECTION CASE: a TASK cancel takes nothing with it, "
+              "so its row carries no `changes` key at all. This passes on the "
+              "pre-change code by construction and is the only case here that "
+              "goes red if the cascade is written unconditionally: %r"
+              % (det_ct,),
+              len(rows_ct) == 1
+              and sorted(det_ct) == ["phaseId", "reason", "taskId"]
+              and det_ct.get("taskId") == "P2.3")
+
+        projcj, mpcj = mk("c-cascade-json", cascade_fx)
+        code, txt_cj = run(["cancel", "P2", mpcj, "--reason", "shelved",
+                            "--project-dir", projcj, "--json"])
+        parsed_cj = {}
+        try:
+            parsed_cj = json.loads(txt_cj)
+        except Exception:
+            pass
+        check("c14 the --json block still names the cascade as bare ids: the "
+              "ROW's shape moved, the command's output is a separate contract "
+              "and did not: %r" % (parsed_cj.get("cascaded"),),
+              code == 0
+              and parsed_cj.get("cascaded") == ["P2.2", "P2.3", "P2.4"])
+
+        # THE BOUND, DRIVEN THROUGH THE VERB rather than trusted from the
+        # constant. A details block over MAX_DETAILS_BYTES does not lose its
+        # tail, it collapses to a truncation marker and a count -- taking
+        # `reason` with it, which is the one thing this row exists to preserve.
+        # A phase far past the change cap is what proves the cascade is bounded
+        # before it can get there, and it goes red the day a per-entry field is
+        # added that is fat enough to reach the byte cap.
+        wide = base_manifest()
+        _jmod = _panel_write._journalmod()
+        wide["phases"][1]["tasks"] = [
+            {"id": "P2.%d" % n, "title": "t", "status": "pending"}
+            for n in range(1, 2 * _jmod.MAX_CHANGES + 1)]
+        projcw, mpcw = mk("c-cascade-wide", wide)
+        code, txt = run(["cancel", "P2", mpcw, "--reason", "whole area shelved",
+                         "--project-dir", projcw])
+        rows_cw = [r for r in (_jmod.read_all(projcw) if _jmod else [])
+                   if r.get("action") == "phase.cancel"]
+        det_cw = (rows_cw[0].get("details") or {}) if rows_cw else {}
+        check("c15 a cascade wider than the change cap is CUT and says so, and "
+              "the reason and the phase id survive the cut - the why is what "
+              "the row exists for, and the collapse a byte-cap overflow forces "
+              "would take it: kept %d, truncated %r"
+              % (len(det_cw.get("changes") or []), det_cw.get("truncated")),
+              code == 0 and len(rows_cw) == 1
+              and len(det_cw.get("changes") or []) == _jmod.MAX_CHANGES
+              and det_cw.get("truncated") is True
+              and det_cw.get("reason") == "whole area shelved"
+              and det_cw.get("phaseId") == "P2")
+
+        # ---- (p) add-phase: one more phase in a plan that already exists ------
+        # F58. Nothing appended to `phases[]` except the ADO pull: init writes a
+        # whole plan, materialize MOVES one that was already written, and `add`
+        # needs the phase to be there. Every case below is about the half a hand
+        # edit forgets.
+        def phase_fixture():
+            """P0 done, P1 live, and P2 RESERVED by a parked proposal.
+
+            The reservation is the point: allocation that counted only LIVE ids
+            would hand out P2 and collide with the payload materialization is
+            holding it for, and every other value in this fixture is chosen so
+            that mistake shows up as a different id rather than as a pass."""
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"unit": "pytest -q",
+                                           "lint": "ruff check"}},
+                "phases": [
+                    {"id": "P0", "title": "Shipped", "status": "done",
+                     "testGate": ["unit"],
+                     "tasks": [{"id": "P0.1", "title": "old",
+                                "status": "done"}]},
+                    {"id": "P1", "title": "Live", "status": "in_progress",
+                     "testGate": ["unit"], "tasks": []},
+                ],
+                "fileIndex": {}, "bugs": [],
+                "proposals": [{
+                    "id": "PROP-9", "name": "Parked phase",
+                    "status": "proposed", "origin": "audit:init",
+                    "createdISO": "2026-01-01T00:00:00Z",
+                    "scope": "x", "benefit": "y", "openQuestions": [],
+                    "materializedAs": None, "materializedAt": None,
+                    "payload": {"phase": {
+                        "id": "P2", "title": "Parked", "status": "pending",
+                        "tasks": [{"id": "P2.1", "title": "t",
+                                   "status": "pending"}]}}}]}
+
+        def phase_in(mpath, pid):
+            try:
+                return [ph for ph in _mio.load_manifest(mpath).get("phases") or []
+                        if ph.get("id") == pid][0]
+            except Exception:
+                return None
+
+        projp, mpp = mk("p-single", phase_fixture())
+        code, txt = run(["add-phase", "Search hardening", "--project-dir", projp,
+                         "--outcome", "no injection path reaches the index"])
+        check("p1 add-phase exits 0 and the phase lands pending",
+              code == 0 and (phase_in(mpp, "P3") or {}).get("status")
+              == "pending")
+        check("p2 the id counts LIVE and PARKED ids alike - P2 is reserved by "
+              "PROP-9's payload, so the new phase is P3 and not the id "
+              "materialization is holding: %r"
+              % ([ph.get("id") for ph in _mio.load_manifest(mpp)["phases"]],),
+              phase_in(mpp, "P3") is not None)
+        check("p3 ...and it is APPENDED - the written order is the plan's order",
+              [ph.get("id") for ph in _mio.load_manifest(mpp)["phases"]]
+              == ["P0", "P1", "P3"])
+        newp = phase_in(mpp, "P3") or {}
+        check("p4 every new-phase template field initialized, each exactly once",
+              set(newp.keys()) == set(M._PHASE_TEMPLATE_KEYS))
+        check("p5 the conventions template VALUES are the ones written",
+              newp.get("baseRef") is None and newp.get("branch") is None
+              and newp.get("mergedAt") is None and newp.get("summary") is None
+              and newp.get("tasks") == [] and newp.get("blockedBy") == []
+              and newp.get("review") == {"tool": None, "model": "sonnet",
+                                         "status": "pending", "findings": []})
+        check("p6 testGate comes from meta.buildCommands when --gate is absent, "
+              "and the line carries the BASIS rather than only the value",
+              newp.get("testGate") == ["unit", "lint"]
+              and "from meta.buildCommands" in txt)
+        check("p7 --outcome is REQUIRED - a phase whose success cannot be "
+              "stated in a line is a phase sign-off cannot address, and the "
+              "refusal happens before any write",
+              run(["add-phase", "No outcome", "--project-dir", projp])[0] == 2
+              and run(["add-phase", "Blank", "--outcome", "   ",
+                       "--project-dir", projp])[0] == 2
+              and phase_in(mpp, "P4") is None)
+
+        # An EMPTY gate is an answer, and the one that must not read as a
+        # clean result: the phase is signed off on review alone, so the line
+        # says which of the two reasons produced it.
+        nogate = phase_fixture()
+        nogate["meta"].pop("buildCommands")
+        projg, mpg = mk("p-nogate", nogate)
+        code, txt = run(["add-phase", "Gateless", "--project-dir", projg,
+                         "--outcome", "o"])
+        check("p8 a phase with no gate SAYS so, with the reason: %r"
+              % (txt.splitlines()[2] if len(txt.splitlines()) > 2 else txt,),
+              code == 0 and (phase_in(mpg, "P3") or {}).get("testGate") == []
+              and "gate: none" in txt
+              and "declares no meta.buildCommands" in txt)
+        code, txt = run(["add-phase", "Explicit gate", "--project-dir", projg,
+                         "--outcome", "o", "--gate", "make check",
+                         "--gate", "npm test"])
+        check("p9 --gate wins over the manifest, and says that it did",
+              code == 0
+              and (phase_in(mpg, "P4") or {}).get("testGate")
+              == ["make check", "npm test"]
+              and "from --gate" in txt)
+
+        # `area` is a STRING for one tag and a LIST for several - the shape
+        # every hand-written manifest and /audit:init phase already uses. A
+        # one-element list would validate and still be the odd one out in
+        # every diff, which is why the two are separate cases.
+        proj_area, mpa = mk("p-area", phase_fixture())
+        run(["add-phase", "One tag", "--project-dir", proj_area, "--outcome", "o",
+             "--area", "backend"])
+        run(["add-phase", "Two tags", "--project-dir", proj_area, "--outcome", "o",
+             "--area", "backend,security", "--review-skill", "code-review"])
+        check("p10 one --area tag is written as a bare string",
+              (phase_in(mpa, "P3") or {}).get("area") == "backend")
+        check("p11 ...and several as a list, in the order given",
+              (phase_in(mpa, "P4") or {}).get("area")
+              == ["backend", "security"])
+        check("p12 an untagged phase carries NO area key at all - the "
+              "conventions default it to absent, and `area: null` would claim "
+              "the question was considered",
+              "area" not in (phase_in(mpp, "P3") or {})
+              and (phase_in(mpa, "P4") or {}).get("reviewSkill")
+              == "code-review")
+
+        # Every refusal, and every one of them before a byte is written.
+        projr2, mpr2 = mk("p-refuse", phase_fixture())
+        before_r2 = open(mpr2, "rb").read()
+        code, txt = run(["add-phase", "Dup", "--id", "P1", "--outcome", "o",
+                         "--project-dir", projr2])
+        check("p13 an --id that is already a live phase is refused, and the "
+              "alternative offered is one the next command would accept",
+              code == 2 and "already exists" in txt
+              and "/audit:task add --phase P1" in txt)
+        code, txt = run(["add-phase", "Dup", "--id", "P0", "--outcome", "o",
+                         "--project-dir", projr2])
+        check("p14 ...and for a DONE phase the offer is dropped rather than "
+              "pointing at a command that refuses done phases",
+              code == 2 and "/audit:task add --phase P0" not in txt)
+        code, txt = run(["add-phase", "Reserved", "--id", "P2", "--outcome",
+                         "o", "--project-dir", projr2])
+        check("p15 an --id RESERVED by a parked payload refuses toward "
+              "/audit:propose materialize, naming the proposal",
+              code == 2 and "PROP-9" in txt and "materialize" in txt)
+        code, txt = run(["add-phase", "Taskish", "--id", "P0.1", "--outcome",
+                         "o", "--project-dir", projr2])
+        check("p16 an --id that is already a TASK id is refused too",
+              code == 2 and "TASK id" in txt)
+        code, txt = run(["add-phase", "Blank id", "--id", "  ", "--outcome",
+                         "o", "--project-dir", projr2])
+        check("p17 ...and a blank --id, rather than falling back to the "
+              "allocator as if it had not been passed", code == 2)
+        check("p18 not one of those refusals wrote a byte",
+              open(mpr2, "rb").read() == before_r2)
+
+        # THE SHARDED HALF, which is where a hand edit goes wrong: a new phase
+        # needs a shard that does not exist AND an index stub pointing at it.
+        projs2, mps2 = mk("p-sharded", phase_fixture(), sharded=True)
+        idx2 = _mio.read_json(mps2)
+        check("p19 fixture really is sharded", _mio.is_sharded(idx2))
+        sbase2 = os.path.dirname(mps2)
+        p0_before = open(os.path.join(sbase2, "phases", "P0.json"), "rb").read()
+        code, txt = run(["add-phase", "Sharded phase", "--project-dir", projs2,
+                         "--outcome", "o"])
+        shard_p3 = os.path.join(sbase2, "phases", "P3.json")
+        stubs = {s.get("id"): s.get("shard")
+                 for s in _mio.read_json(mps2).get("phases") or []}
+        check("p20 the shard FILE is created", code == 0
+              and os.path.isfile(shard_p3))
+        check("p21 ...and the index carries a stub pointing at it - without "
+              "both halves the phase exists only in the dict the writer was "
+              "handed, and the command reports a success that wrote no phase: "
+              "%r" % (stubs,),
+              stubs.get("P3") == "phases/P3.json")
+        check("p22 ...and it reads back as one assembled phase",
+              (phase_in(mps2, "P3") or {}).get("title") == "Sharded phase")
+        check("p23 an untouched phase's shard is not rewritten",
+              open(os.path.join(sbase2, "phases", "P0.json"), "rb").read()
+              == p0_before)
+        check("p24 the report names both files it wrote",
+              "phases/P3.json" in txt and "audit-plan.json" in txt)
+
+        idx_before3 = open(mps2, "rb").read()
+        code, txt = run(["add-phase", "Bad", "--project-dir", projs2,
+                         "--outcome", "o", "--blocked-by", "NOPE"])
+        check("p25 a phase that would leave the manifest invalid is rolled "
+              "back and the index is byte-identical",
+              code == 1 and open(mps2, "rb").read() == idx_before3)
+        check("p26 ...and the orphan SHARD is gone rather than left behind - a "
+              "phase body the restored index no longer points at is a file the "
+              "next reader cannot explain",
+              not os.path.isfile(os.path.join(sbase2, "phases", "P4.json")))
+
+        projv, mpv = mk("p-single-rb", phase_fixture())
+        before_v = open(mpv, "rb").read()
+        code, txt = run(["add-phase", "Bad", "--project-dir", projv,
+                         "--outcome", "o", "--blocked-by", "NOPE"])
+        check("p27 the single-file layout rolls back byte-for-byte too",
+              code == 1 and open(mpv, "rb").read() == before_v)
+
+        # Two ids the shard FILENAME cannot tell apart would land on one file
+        # and the second write would overwrite the first phase's body.
+        projz, mpz = mk("p-collide", phase_fixture(), sharded=True)
+        code, _txt = run(["add-phase", "Slashy", "--id", "P/9", "--outcome",
+                          "o", "--project-dir", projz])
+        code2, txt2 = run(["add-phase", "Twin", "--id", "P_9", "--outcome",
+                           "o", "--project-dir", projz])
+        check("p28 the sanitised twin of an existing shard name is refused, "
+              "naming the phase that already occupies the file",
+              code == 0 and code2 == 2 and "P/9" in txt2
+              and "overwrite" in txt2)
+
+        projj2, mpj2 = mk("p-journal", phase_fixture())
+        code, txt = run(["add-phase", "Journalled", "--project-dir", projj2,
+                         "--outcome", "the search path is proven safe",
+                         "--json"])
+        parsed_p = None
+        try:
+            parsed_p = json.loads(txt)
+        except Exception:
+            pass
+        check("p29 --json emits one parseable object naming the phase it wrote",
+              code == 0 and isinstance(parsed_p, dict)
+              and parsed_p.get("id") == "P3"
+              and (parsed_p.get("phase") or {}).get("status") == "pending"
+              and parsed_p.get("testGateBasis") == "from meta.buildCommands")
+        jm3 = _panel_write._journalmod()
+        rows3 = jm3.read_all(projj2) if jm3 else []
+        addp = [r for r in rows3 if r.get("action") == "phase.add"]
+        check("p30 exactly one phase.add row is journaled - counted rather "
+              "than found, because a writer that appended twice would look "
+              "the same to a presence check: %d" % (len(addp),),
+              len(addp) == 1)
+        check("p31 ...carrying the desiredOutcome in the SUMMARY, which is "
+              "where it survives: _journal_io.DETAILS_KEYS is an allow-list "
+              "and drops an unlisted details key in silence",
+              bool(addp)
+              and "the search path is proven safe" in (addp[0].get("summary") or "")
+              and (addp[0].get("details") or {}) == {"phaseId": "P3"})
+        check("p32 ...and the actor is the one the add row writes: the author "
+              "STRING and via=cli, not a nested viewer dict",
+              bool(addp)
+              and (addp[0].get("actor") or {}).get("via") == "cli"
+              and not isinstance((addp[0].get("actor") or {}).get("author"),
+                                 dict))
+
+        projq, mpq = mk("p-invalid", phase_fixture())
+        bad_q = phase_fixture()
+        bad_q["phases"][0]["status"] = "nonsense"
+        _panel_write._atomic_write_json(mpq, bad_q)
+        before_q = open(mpq, "rb").read()
+        code, txt = run(["add-phase", "X", "--outcome", "o",
+                         "--project-dir", projq])
+        check("p33 a manifest that was ALREADY invalid is refused with nothing "
+              "written - which is what tells 'your phase broke it' apart from "
+              "'it was broken when you arrived'",
+              code == 1 and "already invalid" in txt
+              and open(mpq, "rb").read() == before_q)
 
         # ---- (w) the index _waiting_on resolves refs through -------------------
         # A phase with NO tasks still has a status and can still be the thing a

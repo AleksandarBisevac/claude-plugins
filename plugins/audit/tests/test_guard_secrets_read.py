@@ -49,7 +49,7 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-secrets-read.py"),
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     cfg = _config._deep_merge(_config.DEFAULTS, {})
-    tmp = Path(tempfile.mkdtemp(prefix="guard-secrets-selftest-"))
+    tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
 
     # Pin the project dir: repo_root prefers CLAUDE_PROJECT_DIR over the payload's
     # cwd, so unpinned this suite graded the shell plan gate against whatever
@@ -422,6 +422,195 @@ def _cases(check):
               and M._resolve_write_expr("p", {}) is None
           ) else "block", bash("true"))
 
+    # (s57+) F103: ONE OPERATION, TWO SPELLINGS, OPPOSITE VERDICTS. Reported from a
+    # live session where a python heredoc writing under the session scratchpad was
+    # refused as an inline-eval source write, while an equivalent heredoc earlier in
+    # the SAME session was allowed. Measured against this classifier before anything
+    # was changed, because the brief's candidates were guesses and all three were
+    # wrong: the target's extension separated nothing (`.py`, `.json` and `.sh` share
+    # a verdict for every spelling), the payload text separated nothing (no secret
+    # rule fired at all - the refusal came from the eval-WRITE arm), and heredoc
+    # versus `-c` separated nothing (the two columns matched row for row).
+    #
+    # What separated them was how the write call's path ARGUMENT was spelled.
+    # `_resolve_write_expr` asked for every literal ANYWHERE in the expression and
+    # joined whatever came back, so a mixed expression lost its unreadable half in
+    # silence: `base + '/probe.json'` resolved to `/probe.json`, a path no command in
+    # that session named, and the `/private/tmp/...` prefix that made the real target
+    # exempt scratch went missing on the way. The `os.path.join` spelling of the same
+    # write resolved to nothing and was allowed. A guard that answers differently for
+    # two spellings of one operation leaves rewording as the only move that reads as
+    # available, which is the route-around the header warns about.
+    _scratch = "/private/tmp/claude-501/sess/scratchpad"
+    _plus = ("python3 - <<'PY'\nimport json\nbase = '%s'\n"
+             "open(base + '/probe.json', 'w').write(json.dumps({}))\nPY" % _scratch)
+    _join = ("python3 - <<'PY'\nimport os, json\nbase = '%s'\n"
+             "open(os.path.join(base, 'probe.json'), 'w').write(json.dumps({}))\nPY"
+             % _scratch)
+    check("s57 F103: the `+` and `os.path.join` spellings of one scratchpad write "
+          "get ONE verdict, and it is allow - asserted as the pair, because the "
+          "defect was a disagreement and a case reading either spelling alone "
+          "cannot see one",
+          M.decide(bash(_plus), cfg=cfg)[0] == "allow"
+          and M.decide(bash(_join), cfg=cfg)[0] == "allow",
+          repr((M.decide(bash(_plus), cfg=cfg), M.decide(bash(_join), cfg=cfg))))
+    _expect("s58 THE OTHER DIRECTION: a concatenation that resolves to a SOURCE "
+            "path is still a source write. The repair resolves the operands - it "
+            "does not stop reading mixed expressions, which is the mutation that "
+            "would leave s57 green", "block",
+            bash("python3 - <<'PY'\nbase = 'src/app'\n"
+                 "open(base + '.ts', 'w').write(x)\nPY"))
+    check("s59 the resolver itself, on the two halves the old body could not tell "
+          "apart: every operand resolved gives the WHOLE path, and one operand it "
+          "cannot read gives None rather than the readable half",
+          M._resolve_write_expr("base + '/probe.json'",
+                                {"base": "/private/tmp/x"})
+          == "/private/tmp/x/probe.json"
+          and M._resolve_write_expr("base + '/probe.json'", {}) is None
+          and M._resolve_write_expr("'%s/probe.json' % base",
+                                    {"base": "/private/tmp/x"}) is None,
+          repr([M._resolve_write_expr("base + '/probe.json'",
+                                      {"base": "/private/tmp/x"}),
+                M._resolve_write_expr("base + '/probe.json'", {}),
+                M._resolve_write_expr("'%s/probe.json' % base",
+                                      {"base": "/private/tmp/x"})]))
+    check("s60 ...and the split that reads operands is quote-aware, so a `+` INSIDE "
+          "a literal is one operand: splitting on the character would hand the "
+          "caller half a filename, which is the invented answer again",
+          M._resolve_write_expr("'a+b.py'", {}) == "a+b.py",
+          repr(M._resolve_write_expr("'a+b.py'", {})))
+    # THE FIXTURE CLAUSE IS BUILT, NOT WRITTEN, and so is `_payload` below.
+    # `_refs.absolute_reach_violations()` reads this file as TEXT, and a
+    # root-anchored literal sitting in the first argument of `open(` is the exact
+    # shape it exists to catch - it reported all three of these on their first run.
+    # `test__refs.py` builds every fixture path off `M.PLUGIN_REL` for the same
+    # reason. Repairing by rewording is not available here (the clause IS the
+    # subject), and widening the lint would stop it catching what it is for, so the
+    # literal is assembled instead and the assertion is unchanged.
+    _tmp_root = "/tmp/"
+    _s61 = "open(%r + rel, 'w').write(x)" % _tmp_root
+    check("s61 ...and the fabrication cut the OTHER way too: a temp-root literal "
+          "joined to a variable used to resolve to the literal alone and claim the "
+          "scratch exemption for a path whose variable half could have been "
+          "anything. Asserted on the target list, because the verdict is allow "
+          "either way and a verdict case here would assert nothing",
+          M._eval_write_targets(_s61) == [],
+          repr(M._eval_write_targets(_s61)))
+
+    # (s62+) F103, the same root said twice: the arm reported a target it had not
+    # read from a path argument. `(?:fs\.)?` was optional around a bare
+    # `write`/`append`, and nothing in any of these languages puts a path first in a
+    # call spelled that way - Python's `f.write(data)` and Node's `fs.write(fd, buf)`
+    # both take the payload there. So `open(scratch, 'w').write(text)` was read
+    # twice, and a scratch write whose payload quoted a source path was refused,
+    # naming a file the command had only written INTO another file.
+    _scratch_out = "/private/tmp/s/out.txt"
+    _payload = "open(%r,'w').write('src/app.py')" % _scratch_out
+    _expect("s62 a scratch write whose PAYLOAD quotes a source path writes the "
+            "scratch file, and the payload is not a second target", "allow",
+            bash("python3 - <<'PY'\n" + _payload + "\nPY"))
+    check("s63 ...counted rather than found: the clause names the scratch file and "
+          "nothing else, so a payload arm coming back would be visible here even "
+          "while s62 stayed green on the exemption",
+          M._eval_write_targets(_payload) == [_scratch_out],
+          repr(M._eval_write_targets(_payload)))
+    # THE SECOND-DIRECTION PAIR for that narrowing, and they are here for the
+    # mutation that drops the write/append arm altogether rather than narrowing it.
+    # Both spellings really do put the path first, and neither carries the `fs.`
+    # prefix and the `File` infix at once, so each fails on a different half.
+    _expect("s64 a destructured writeFileSync still names a source write", "block",
+            bash('node -e "writeFileSync(\'src/gen.ts\', x)"'))
+    _expect("s65 ...and so does fs.appendFile, where the infix is absent", "block",
+            bash('node -e "fs.appendFile(\'src/gen.ts\', x)"'))
+
+    # (s66+) F116, the same root reported a third way and from the cleanest angle
+    # yet: a heredoc that CREATED a markdown file was refused as "reading a secret
+    # file via shell". The OPERATION was a write, the target was `.md`, and the
+    # only secret-ish content was an example command inside an English sentence
+    # naming a key file under a home directory. Rewording the sentence let the
+    # identical operation through - which is the route-around the header warns
+    # about, arrived at by the only move that reads as available.
+    #
+    # MEASURED BEFORE CHANGING ANYTHING, and the answer was not a pattern being
+    # too broad. F31 already separated a heredoc body that nothing executes from
+    # the command, and it spent that separation on Rule #2's two arms and on the
+    # inline-eval arms. The shell-read arm, the echo arm, the sandbox arm and the
+    # shell-write arm went on reading the RAW command, so one body was data for
+    # one branch and a command for the next one down. Two further findings came
+    # out of the same probe and are pinned below: the body's LANGUAGE decides
+    # which rules may read it (s72), and a data body piped onward really does run,
+    # which was a live bypass of Rule #2 rather than a risk this fix introduced
+    # (s69).
+    _key = "~/.ssh/id_rsa"
+    _tokvar = "$API_TOKEN"
+    _doc = ("To inspect the deploy key run `cat %s` and paste nothing from it "
+            "into a ticket." % _key)
+    _expect("s66 F116: creating a markdown file whose PROSE quotes a read command "
+            "naming a key file is a write - a heredoc body fed to `cat` is text "
+            "the shell hands to a file and never runs", "allow",
+            bash("cat > notes.md <<'EOF'\n# Runbook\n%s\nEOF" % _doc))
+    _expect("s67 THE OTHER DIRECTION, and the mutation it exists for is the one "
+            "that turns s66 into a hole by dropping every heredoc body: the same "
+            "text fed to a SHELL is a program, and the read in it is refused",
+            "block", bash("bash -s <<'EOF'\ncat %s\nEOF" % _key))
+    _expect("s68 ...and so is a data body PIPED onward, because what the far side "
+            "does with the text cannot be read from here. Classifying a body by "
+            "its consumer alone would have handed this guard a bypass in the "
+            "course of fixing s66", "block",
+            bash("cat <<'EOF' | bash\ncat %s\nEOF" % _key))
+    _expect("s69 the same pipe on Rule #2's dump verb, and this one was ALLOWED "
+            "before the classification existed: the body left as data through "
+            "`_executed_text` while `| bash` ran it. Found by probing the "
+            "narrowing, not reported", "block",
+            bash("cat <<'EOF' | bash\nprintenv %s\nEOF" % _tokvar[1:]))
+    _expect("s70 an example `echo` of a token variable inside a file being WRITTEN "
+            "is documentation, not a leak", "allow",
+            bash("cat > notes.md <<'EOF'\nDebug with `echo %s` if you must.\nEOF"
+                 % _tokvar))
+    _expect("s71 ...while the same echo the shell actually runs is still refused - "
+            "the echo arm reads the view WITHOUT the emitter half, because there "
+            "the argument list is the payload", "block", bash("echo " + _tokvar))
+    _expect("s72 dropping an interpreter body from the SHELL-GRAMMAR view gives up "
+            "no refusal, which is what makes it a narrowing: a python body that "
+            "shells out to read the file is still blocked, by the arm that wants "
+            "the secret token with no read verb in front of it", "block",
+            bash("python3 - <<'PY'\nimport os\nos.system('cat .env')\nPY"))
+    _views = ("cat > notes.md <<'D'\ndatabody\nD\n"
+              "bash -s <<'S'\nshellbody\nS\n"
+              "python3 - <<'P'\ncodebody\nP")
+    check("s73 the two readings of one command, COUNTED rather than found - "
+          "presence would pass on a view that carried everything, which is the "
+          "mutation that reverts this: the shell view holds the shell body and "
+          "not the interpreter one, the runnable view holds both, and the data "
+          "body is in neither",
+          [(M._shell_text(_views).count(w), M._runnable_text(_views).count(w))
+           for w in ("databody", "shellbody", "codebody")]
+          == [(0, 0), (1, 1), (0, 1)],
+          repr([(M._shell_text(_views).count(w), M._runnable_text(_views).count(w))
+                for w in ("databody", "shellbody", "codebody")]))
+    _expect("s74 F31's rule reaching the branch it never reached: a commit message "
+            "that NAMES a key file is prose the shell hands to git on stdin",
+            "allow",
+            bash("git commit -F - <<'MSG'\ndocs: say why `cat %s` is not a debug "
+                 "step\nMSG" % _key))
+    # s75/s76 are F116's pair for the sandbox arm; they sit with the other
+    # unsandboxed cases further down, where the payload builder for them exists.
+    # THE FIXTURE WAS WRONG BEFORE IT WAS RIGHT, and the mutation is what said so.
+    # The prose first read ``build > src/app.ts`.`` - a trailing backtick and full
+    # stop, which is how a sentence ends. `_SHELL_REDIRECT` takes its target up to
+    # whitespace, so the buggy version extracted a token ending in punctuation,
+    # matched no source extension, and ALLOWED: both versions agreed and the case
+    # asserted nothing. A redirect at the end of a line is what separates them.
+    _expect("s77 the plan-gate arm read the raw text as well: a redirect written "
+            "INSIDE a file being created is prose, not a write the shell performs",
+            "allow",
+            bash("cat > notes.md <<'EOF'\nRegenerate with: build > "
+                 "src/app.ts\nEOF"), use_cfg=cfg_enforced)
+    _expect("s78 ...and the same redirect the shell runs is still refused under "
+            "the same config - the pair is the point, because either case alone "
+            "passes on a broken half", "block",
+            bash("build > src/app.ts"), use_cfg=cfg_enforced)
+
     # (s35+) F20/F22. The original symptom - a read-only one-liner refused as a
     # write - is gone with F-P-7 above. Measuring the same function again found
     # it wrong in BOTH directions instead, which is the shape a heuristic decays
@@ -635,6 +824,19 @@ def _cases(check):
                         "tool_input": {"command": "direnv exec . npm test",
                                        "dangerouslyDisableSandbox": "false"},
                         "cwd": str(tmp)}, cfg=cfg)[0] == "allow")
+    # (s75/s76) F116's pair for THIS arm, filed here because the payload builder
+    # above is what they need. The sandbox branch read the raw command too, so an
+    # unsandboxed session writing a runbook that merely names the dotenv file was
+    # told it had reached the environment layer.
+    _expect("s75 prose naming the dotenv file inside a file being WRITTEN is not a "
+            "command reaching the environment layer, sandbox or no sandbox",
+            "allow",
+            bash_unsandboxed("cat > notes.md <<'EOF'\nCopy the .env sample "
+                             "first.\nEOF"))
+    _expect("s76 ...while an unsandboxed command that really does reach it is "
+            "still refused, so s75 is the body leaving and not the arm being "
+            "switched off", "block",
+            bash_unsandboxed("direnv exec . printenv VERCEL_SCOPE"))
 
     # (d19) The false positive item 5 names, kept as a pin rather than fixed:
     # F-P-7 already narrowed the eval branch to the paths a write call NAMES, so
@@ -842,6 +1044,160 @@ def _cases(check):
               _v == "ask" and len(_rw) == 2
               and _rw[-1].get("event") == "ask.shown"
               and _rw[-1].get("mode") == "ask", repr(_rw))
+
+        # F136. `file` fell back to `tool_input.command`, so the whole shell call
+        # was written into the field every reader treats as a path - and a command
+        # is not an ABSOLUTE path, so the panel's redactor resolved it against the
+        # repo root, found it inside, and painted the home directory in it. The
+        # fixture is that exact shape: a key file under someone's home, named by a
+        # command that starts with an ordinary program.
+        _leaky_cmd = "cat /Users/probe-user/.ssh/credentials.env"
+        _v, _m = M.decide({"tool_name": "Bash",
+                           "tool_input": {"command": _leaky_cmd},
+                           "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _raw = _feed.read_text(encoding="utf-8")
+        _rw = _rows()
+        # Counted over the whole FILE, not over one row's keys: the leak is the
+        # bytes on disk, and a fallback that moved the text to another key would
+        # pass a key-set assertion while publishing exactly as much. `probe-user`
+        # is counted separately because a truncation at 200 chars would drop the
+        # tail of the command and still keep the part that names the person.
+        check("t4 a Bash deny records the command as FACTS - the text occurs 0 "
+              "times in the feed, the home directory in it 0 times, and what "
+              "the row keeps is a program name, a digest and a byte length",
+              _v == "block" and len(_rw) == 3
+              and _raw.count(_leaky_cmd) == 0
+              and _raw.count("probe-user") == 0
+              and _rw[-1].get("program") == "cat"
+              and _rw[-1].get("commandBytes") == len(_leaky_cmd)
+              and len(str(_rw[-1].get("commandSha256"))) == 64,
+              repr((_v, _rw[-1])))
+        check("t5 ...and it names NO file, because the payload named none - the "
+              "old row put the command there, which claimed a whole shell call "
+              "was a path in this repository",
+              not _rw[-1].get("file")
+              and str(_rw[-1].get("reason", "")).count("probe-user") == 0,
+              repr(_rw[-1]))
+        # The other half of the same change: dropping `command` from the `file`
+        # fallback must not drop the two spellings that ARE targets. t1 covers
+        # `file_path`; this is the glob, the one `_gate_feed.classify` documents
+        # as a non-path that still belongs in the field.
+        _v, _ = M.decide({"tool_name": "Grep",
+                          "tool_input": {"pattern": "x", "glob": "**/.env*"},
+                          "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t6 ...while a Grep glob is still named in `file` - a target the "
+              "payload really does spell, and the field's meaning is now 'the "
+              "path or pattern this verdict was about'",
+              _v == "block" and len(_rw) == 4
+              and _rw[-1].get("file") == "**/.env*"
+              and "program" not in _rw[-1], repr(_rw[-1]))
+
+        # F153. THE SAME CHANNEL ONE FIELD OVER. `file` is redacted by every
+        # reader that paints it; `reason` - the cell beside it - was painted
+        # verbatim, and the Read/Grep branches interpolate the payload's path
+        # into the message whose FIRST LINE is that cell. So one row published
+        # an absolute path in one cell and the token in the next.
+        #
+        # THE FIXTURE IS A DIRECTORY THIS PROJECT DOES NOT CONTAIN, which is the
+        # shape a home directory has. A path merely outside `src/` would resolve
+        # inside the repo and be respelled to itself, and the case would pass
+        # against the leaking version too.
+        _away = Path(_harness.fixture_root("guard-secrets-away-"))
+        _away_secret = str(_away / "deploy" / ".env")
+        _v, _m = M.decide({"tool_name": "Read",
+                           "tool_input": {"file_path": _away_secret},
+                           "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        # Counted three ways over one fixture, because deleting the whole
+        # sentence would satisfy a bare `not in`: the path is gone from `reason`,
+        # the redactor's token is there once in its place, and the TERMINAL
+        # message still carries the path exactly once - that half is the human's
+        # own machine and must not be the thing that got fixed.
+        check("t7 a deny over a path outside this repository records the "
+              "REDACTED spelling in `reason`: the absolute path occurs 0 times "
+              "there, the outside token once, and the terminal message the "
+              "human reads still names the file",
+              _v == "block" and len(_rw) == 5
+              and str(_rw[-1].get("reason", "")).count(_away_secret) == 0
+              and str(_rw[-1].get("reason", ""))
+              .count(_config.slashed(_away_secret)) == 0
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 1
+              and _m.count(_config.slashed(_away_secret)) == 1,
+              repr((_m, _rw[-1])))
+        # THE SECOND-DIRECTION CASE, and it looks vacuous on purpose: a
+        # redaction that always fires - stripping every path, or refusing to
+        # record a reason at all - passes t7 and fails here. An in-repo denial
+        # still has to name the file an operator would act on.
+        _v, _ = M.decide({"tool_name": "Read",
+                          "tool_input": {"file_path": "apps/y/.env"},
+                          "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t8 ...while an in-repository deny still NAMES the file in "
+              "`reason` - the row has to stay actionable, and a guard that "
+              "records less than the operator needs is worse than the leak it "
+              "closed",
+              _v == "block" and len(_rw) == 6
+              and str(_rw[-1].get("reason", "")).count("apps/y/.env") == 1
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 0,
+              repr(_rw[-1]))
+        # t9: the value that fires the branch is NOT the value `file` picks. A
+        # repair keyed on `target` alone - the obvious one - passes t7 and t8 and
+        # leaks here, because `file` takes `path` while the glob branch is what
+        # denied and the glob is what the message quotes.
+        _away_glob = str(_away / "**" / ".env")
+        _v, _m = M.decide({"tool_name": "Grep",
+                           "tool_input": {"pattern": "x", "path": "src",
+                                          "glob": _away_glob},
+                           "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t9 ...and a Grep denied on its GLOB is redacted even though "
+              "`file` took the payload's `path`: every value the payload names "
+              "is respelled, not only the one that became a cell",
+              _v == "block" and len(_rw) == 7
+              and _rw[-1].get("file") == "src"
+              and str(_rw[-1].get("reason", "")).count(_away_glob) == 0
+              and str(_rw[-1].get("reason", ""))
+              .count(_config.slashed(_away_glob)) == 0
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 1
+              and _m.count(_config.slashed(_away_glob)) == 1,
+              repr((_m, _rw[-1])))
+        # t10: FAIL-CLOSED. With the module that owns the redaction unreachable,
+        # the cell is OMITTED rather than written raw - `append_gate_event` drops
+        # a None value, and an absent cell claims nothing. The rest of the row
+        # still lands, which is what says the verdict was recorded and only the
+        # sentence was withheld.
+        _prev_jl = _config._JOURNAL_LIB
+        _config._JOURNAL_LIB = {"tried": True, "mod": None}
+        try:
+            _v, _ = M.decide({"tool_name": "Read",
+                              "tool_input": {"file_path": _away_secret},
+                              "session_id": "sess-t", "cwd": str(tmp_t)},
+                             cfg=cfg)
+        finally:
+            _config._JOURNAL_LIB = _prev_jl
+        _rw = _rows()
+        _raw = _feed.read_text(encoding="utf-8")
+        # DERIVED, not asserted twice: the away directory may appear in the feed
+        # exactly as often as a `file` cell holds it - that cell is the one the
+        # readers redact, and it is the design this release settled. The `== 2`
+        # is what keeps the equality from being 0 == 0, which a version that
+        # dropped every row would also satisfy. Counted in the encoder's
+        # spelling on the raw side and the decoded one on the parsed side, which
+        # is the pair the windows runner reads differently.
+        _in_file_cells = sum(str(r.get("file") or "").count(str(_away))
+                             for r in _rw)
+        check("t10 ...and with the redactor unreachable the `reason` cell is "
+              "OMITTED rather than written raw - the verdict is still recorded, "
+              "and the away directory occurs in the feed only where a `file` "
+              "cell holds it",
+              _v == "block" and len(_rw) == 8
+              and "reason" not in _rw[-1]
+              and _rw[-1].get("event") == "deny"
+              and _in_file_cells == 2
+              and _raw.count(_harness.in_json(str(_away))) == _in_file_cells,
+              repr((_rw[-1], _in_file_cells,
+                    _raw.count(_harness.in_json(str(_away))))))
     finally:
         if _prev_t is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

@@ -92,7 +92,7 @@ claude-plugins/                           # this repo (personal, public)
           _ado_conventions.py             # meta.ado.conventions: what an item must look like to belong
           _ado_fields.py                  # meta.ado.fields: what this project supplies to those fields
           _ado_parent.py                  # where ONE item hangs on the board, and whether that place can be true
-          resolve-ado-parent.py           # the door onto it: resolve, check the hierarchy, refuse a link nothing can build
+          resolve-ado-parent.py           # the door onto it: resolve, check the hierarchy, refuse a link nothing can build, build the cached ladder
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
           _ado_connect.py                 # every decision /audit:sync connect makes: transport, auth path, probe, process
           ado-connect.py                  # the door onto it: the read-only ladder to a first working connector
@@ -100,6 +100,7 @@ claude-plugins/                           # this repo (personal, public)
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
           _ado_fetch.py                   # the linked side of a board in ONE query per chunk, bounded, with the field list that is a contract
           fetch-ado-items.py              # the door onto it: every linked item in one call per chunk, partial answers named rather than hidden
+          read-ado-links.py               # the MANIFEST side of that: which items are linked, and what ADO state each one's status means
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate, and the rows both surfaces list
@@ -117,7 +118,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
-          audit-task.py                   # /audit:task add doer: id allocation, full template init, lock+journal
+          audit-task.py                   # /audit:task add + /audit:phase add + cancel doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
@@ -265,7 +266,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _gate_feed -> _loader, _output, _usage_core
+  _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
@@ -296,16 +297,16 @@ L3:
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _output
-  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts, _warning_groups
+  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
+  _panel_composition -> _ado_drift, _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
-  _panel_runstate -> _locks, _output, _panel_paths
+  _panel_runstate -> _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
-  _proposals -> _locks, _manifest_io, _manifest_rules, _output
+  _proposals -> _fmt, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
   _usage_detail -> _output, _ui_theme, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_viz
@@ -317,8 +318,8 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _areas, _gate_feed, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
-  _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
+  _panel_write -> _ado_parent, _areas, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
+  _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L7:
   ado-connect -> _ado_connect, _output
@@ -326,17 +327,18 @@ L7:
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
-  audit-task -> _manifest_io, _output, _panel_write, _warning_groups
+  audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-task -> _manifest_io, _output, _panel_write, _proposals, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
-  check-ado-item -> _ado_conventions, _ado_fields, _output
+  check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  materialize-proposal -> _fmt, _manifest_io, _output, _proposals, _warning_groups
+  materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
+  read-ado-links -> _ado_drift, _manifest_io, _output
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
@@ -814,11 +816,16 @@ holds no `.py`, which turns an editorial rule into a mechanical one.
 for byte, after the stdlib imports and above the first sibling import. It walks UP until it
 finds the directory containing `_output.py`, so it encodes no depth and terminates at the
 filesystem root with a named `ImportError` rather than looping; then it imports `_output`
-and calls `install_path()`. `path_preamble_violations()` COUNTS occurrences rather than
-testing membership (a doubled preamble is as wrong as a missing one) and AST-checks that
-`install_path()` runs above the first sibling import — a preamble below the imports it
-exists to enable is decoration. `_output.py` is exempt by name, for two reasons: it *is*
-the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
+and calls `install_path()`. `path_preamble_violations()` COUNTS rather than testing
+membership (a doubled preamble is as wrong as a missing one), and it counts the block's
+**lines** as well as the block — each line of it must occur once. Lines rather than the
+block alone is F94: a file that pastes the preamble once and then repeats only its
+`import _output` / `install_path()` tail carries the TEXT once and bootstraps TWICE, so a
+count of the whole block read the files under `panel/` doing exactly that as compliant
+while the house rule said this function counted the preamble "once, never twice". It also
+AST-checks that `install_path()` runs above the first sibling import — a preamble below
+the imports it exists to enable is decoration. `_output.py` is exempt by name, for two
+reasons: it *is* the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
 would read as compliant.
 
 **`ui_surface_digests()` answers which files a surface's pictures are OF** (F85), and it lives at
@@ -1472,6 +1479,31 @@ printing the clean message; `--json` carries the same distinction as `hasStandar
 script can tell them apart too. A caller that cannot would read an unconfigured board as a
 conforming one, which is the quiet failure the whole feature exists to prevent.
 
+**`--item` and `--fetched` are two shapes and two questions** (F106), which is why they are
+two flags and exactly one is required. `--item` grades a payload the connector is ABOUT to
+create — work item type at the top level, a resolved `parent` beside it — and its exit 1
+means *do not create this*. `--fetched` grades the rows `fetch-ado-items.py --out` already
+wrote: items ON the board, with the type and the parent INSIDE `fields`, and its exit 1 is a
+finding about cards somebody is already looking at, not a refusal of anything. That payload
+used to be fed to `--item`, where `requireParent` read a top-level key the shape does not
+have and refused items whose parent was in fact set, while the type-scoped rules silently
+graded nothing at all — so `--item` refuses the fetched shape outright now and `--fetched`
+translates it through `_ado_conventions.as_gradable_item`, which is the one place that says
+which key holds what. Two further differences follow from *already created*:
+`meta.ado.fields` is NOT merged on this path (that template is what a CREATE must send, and
+merging it into a card the board already has would grade a fiction), and the worst outcome
+across the rows wins, with a row whose work item type the payload does not carry taken as
+exit 2 rather than folded into a conforming count — an ungraded row reported as clean is the
+silent pass this command exists to stop.
+
+**A `NOTE:` line travels beside the verdict and moves neither half of it** (F120).
+`requireParent` grades the parent the connector RESOLVED, and push resolves none for a bug —
+it creates that card with no parent link and names no third kind to hang — so the rule is
+scoped by work item type from `meta.ado.types`, and the narrowing is PRINTED rather than
+applied in silence. A board asking for a parent on every card is asking for something this
+connector cannot supply, which is a sentence its operator is entitled to. Exit code and
+`conforms` are untouched; `--json` carries it as `parentRuleExemption`.
+
 ### `plugins/audit/scripts/manifest/_ado_drift.py`
 Who wrote a linked work item **last**, and whether pushing would overwrite them (layer 2).
 `/audit:sync status` used to offer a difference two readings — our side is right (`push`), or
@@ -1546,6 +1578,51 @@ manifest that could not be read or a missing `meta.ado`. It reads the manifest t
 `_manifest_io.load_manifest`, so a sharded manifest's phase-held links are planned for like any
 other; `--dry-run` prints the queries without spending a call, and exits 1 when a chunk would be
 refused, because finding that out before the calls is the point of printing the plan.
+
+### `plugins/audit/scripts/manifest/read-ado-links.py`
+The **manifest** side of the question `fetch-ado-items.py` asks the board (layer 7): which
+items carry an `ado` link, and what ADO state each one's status means. It calls no board at
+all, and it exists because `/audit:sync` was telling the orchestrator to do both halves by
+hand, in prose, and prose got both wrong on a real board.
+
+**The read has to be the loader's.** "Resolve and read the manifest" plus "count linked vs
+unlinked" describes a `json.load` of `manifestPath`, and on the sharded layout that file is an
+index whose phases are stubs — so the phases' links and every task's link are invisible and
+come back counted as *unlinked*. Nothing errors; the number is simply smaller. The same walk
+`fetch-ado-items.py` uses (`_ado_drift.link_inventory`) decides what "linked" means here, so
+the two cannot come to disagree, and this module adds only the half that walk deliberately
+does not carry: the item's status.
+
+**The `stateMap` translation is code now, and this file owns the table.** It used to live in
+`commands/sync.md`, which meant a reader had to apply it — and `status` step 3 was never told
+to, so every drift row read `state not compared (no mapped state supplied)`. That is worse
+than an incomplete table: `_ado_drift.summarize()` counts an overwrite only for a row whose
+state differs, so an unstamped payload reports `0 would overwrite a change made after our
+last sync` — the one number the push confirm gate exists for — on a board where the answer
+was never computed. The command file now names this door and states no map of its own.
+
+**The bug status is `_manifest_io.effective_bug_status`**, which is the half no prose reader
+would have applied: a bug with a materialized fix task that is done reads `fixed` while its
+stored `status` still says `open`, and a human `wontfix` beats that derivation. Translating
+the stored value would map a fixed bug to `New` and then report the board's `Resolved` card
+as ours to overwrite. Each row prints which of the two answered it, and a derived status is
+named under the table rather than left looking like a typo.
+
+**One card claimed twice is a tie it refuses to break.** Nothing anywhere requires a
+work-item id to be claimed once — `check_ado_meta` grades the shape of an `ado` link and
+never the uniqueness of its target, so an import that adopts a card somebody had already
+linked by hand produces two claimants for one id. Where they mean the same state the
+entry is stamped and the duplicate is still named; where they do not, the entry is left
+UNSTAMPED with both claimants printed, because stamping whichever the walk reached first
+would push one item's status onto a card the other one owns, out of a table that reads as
+ordinary. Both invocations report it, and the count is printed at zero.
+
+**A gate in one direction only.** Exit 1 is a `--items` payload with entries in it of which
+not one could be given a state — every reading downstream then has no basis, including that
+overwrite count. An EMPTY payload is exit 0 with its zeros printed: nothing was asked about,
+which is a different answer from nothing could be answered. `--items` without `--out` is a
+usage error rather than a preview, because a run that reported a translation and wrote no
+file is one forgotten flag away from the unstamped payload reaching the drift door.
 
 ### `plugins/audit/scripts/manifest/_ado_conventions.py`
 `meta.ado.conventions` — what a work item must look like to **belong** on a board (layer 1).
@@ -1664,9 +1741,17 @@ like the existing invalid-state fallback — never an aborted batch.
 
 **The ranks are asked, never shipped.** The payload that ranks Task under Product Backlog Item
 under Feature under Epic also carries `bugsBehavior`, and neither measured project's type list
-names `Bug` at all — that field is the only thing placing it. The same organization runs one
+names a bug at all — that field is the only thing placing it. The same organization runs one
 project at `asRequirements` and another at `asTasks`, so a table shipped here would be wrong on the
 second board and confidently so.
+
+**The rank has a source and the name had none** (F143). `levels_from_backlog_config()` takes the
+bug rung's rank off `bugsBehavior` and its NAME off `bug_type(ado)`, i.e. `meta.ado.types.bug` —
+the same derivation `inventory()` stamps a bug row with, so the ladder key and the row graded
+against it cannot be two spellings. A literal there filed the rank under a name no work item
+carries on a board that renamed the type, and every bug on the most governed kind of board came
+back `not verified`. `resolve-ado-parent.py --hierarchy-from` is the door that reaches it: the
+function had no caller at all while three documents carried the rule instead (F157).
 
 ### `plugins/audit/scripts/manifest/resolve-ado-parent.py`
 The door onto `_ado_parent` (layer 7), same shape as `check-ado-item.py` over `_ado_conventions`:
@@ -1683,6 +1768,19 @@ nothing" about an id that does not exist reads exactly like a healthy plan.
 **Exit 0 includes "no parent anywhere."** Uncategorised work is an answer and a create, not an
 error; `conventions.requireParent` is the board saying otherwise and is graded where the whole
 plan can be seen.
+
+**`--hierarchy-from <payload|->` is the same door one question over: it BUILDS the ladder the rest
+of the file reads.** `/audit:sync parents` fetches the project's `backlogconfiguration` and used to
+assemble `meta.ado.hierarchy` from prose, so the rule for placing the bug rung was written out in
+`commands/sync.md`, `reference/tracker-sync.md` and `docs/ado-connector.md` — and moved under all
+three when the name stopped being a literal (F157). The mode prints the block whole, `fetchedAt`
+included, so a caller copies an answer instead of following a recipe; the manifest stays the first
+argument because `meta.ado.types.bug` is where the bug rung's name comes from. Exit 2 covers both
+an unreadable payload and one that ranks no backlog level, and it prints nothing on stdout in
+either case: an empty ladder cached as evidence reads as a project that ranks nothing, which is
+the shape that turns tier B off while looking like a basis. The item flags are **refused** beside
+it rather than ignored — `--phase` cannot narrow a question about the project, and a flag that is
+silently accepted leaves the caller believing it applied.
 
 **The hierarchy is computed over the whole plan; the verdict is scoped.** A loop is a property of
 the graph and not of the item you asked about, so `--phase P3` still finds one that leaves P3 —
@@ -1906,6 +2004,16 @@ the feed already self-trims by size, and "old" is not the same claim as "does no
 A row is scored in the first class it falls into, so the class counts add up to the removed
 total, and every class is reported including the ones at zero.
 
+**One thing is deliberately NOT a class**: a row an older release wrote, whose `file` may hold
+a whole shell command and whose `reason` may hold an absolute path. Both writers are fixed and
+neither fix reaches what is already on disk; nothing in a row records which release wrote it,
+so classing them would mean guessing at a shape and *removing* on the guess — and a
+repo-relative path containing a space reads exactly like a program with an argument. What the
+rule returns instead is `oldestKeptDays`, how far back the feed still reaches once the prune
+has run: `None` when no kept row carries a readable stamp, never zero, because a feed starting
+today and no row being willing to say are different answers. Age is the only lever that reaches
+those rows, and that number is what aims it.
+
 `feed_path()` is the blast radius, and it is CONSTRUCTED rather than checked after the fact:
 the writer's own `logs_dir()` + `GATE_EVENTS_FILE`, so no argument can widen it. Its one
 refusal is a feed that is a symlink out of its own directory — the gate appends *through*
@@ -1933,8 +2041,11 @@ deliberately out of reach because it is the tamper-evident trail. **Both counts 
 every value including zero**, `state` separates a feed nobody has written from an empty one,
 and removed rows are counted by class and never echoed — printing an out-of-repository path
 to explain that it was removed writes it back into the transcript the prune was clearing.
-The verb is mandatory: a bare invocation must not prune. Exit 0 the prune ran, 1 it could
-not, 2 a usage error. Layer 7. `--selftest`.
+It also renders the limit the rule cannot decide — an `oldest` line plus the standing note
+about rows an older release wrote — and only where there is history for it to be about, on a
+feed that exists with rows left in it. "Nothing to remove" is otherwise a true statement about
+the rule and a misleading one about the file. The verb is mandatory: a bare invocation must
+not prune. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
@@ -2002,6 +2113,28 @@ TOOLS, not `os.replace` — same blindness `_panel_write._journal` covers). `--p
 resolves the single in_progress phase or exits 2 naming the choices; `--skills null` writes
 the explicit JSON-null opt-out (v0.37 B1); a held lock prints audit-lock's own message
 (exit 3 live / 4 stale, `--takeover` to seize what a human confirmed dead).
+
+**`add-phase "<title>" --outcome "<…>"` is the same discipline one noun up (F58)** — the writer
+behind `/audit:phase add`, and the answer to the one thing nothing in this tree could do:
+append a phase to a plan that already exists. `/audit:init` synthesizes a whole plan,
+`/audit:propose materialize` MOVES a parked payload, `add` needs the phase to be there, and the
+only other code that touched `phases[]` was the ADO pull — so the remaining options were re-running
+init over finished work or hand-editing the index. It allocates the id through
+`_proposals.next_phase_id` over live AND parked ids (the same allocation materialization uses, so
+the two cannot hand out one id twice), initializes the conventions' new-phase template exactly
+once, appends the phase LAST (written order is the plan's order), and in the sharded layout writes
+the new SHARD plus the index STUB that points at it while touching no other shard — the half a hand
+edit forgets. `--outcome` is required for the reason `cancel --reason` is: a phase whose success
+cannot be stated in a line is a phase sign-off cannot address. The gate comes from `--gate` or from
+`meta.buildCommands` keys and the report carries WHICH, including when the answer is an empty gate.
+Refusals — a live id, a task id, a parked reservation, and a sharded id whose shard FILENAME an
+existing phase already occupies — all land before any write, and a rollback deletes a shard the
+write had just created rather than leaving a phase body the restored index no longer points at.
+The `phase.add` journal row carries the outcome in its summary, because `_journal_io.DETAILS_KEYS`
+is an allow-list that drops an unlisted details key in silence. One row builder now serves all
+three verbs: `cancel` had its own and passed the whole viewer DICT as `actor.author`, which
+`_journal_io` normalises to a null author with `via: unknown`, so every cancel row went in
+anonymous and nothing on the row said so.
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
@@ -2163,7 +2296,8 @@ report's Markdown renderer strictly below the Usage section's assembly instead o
 
 ### `plugins/audit/commands/panel.md` + `plugins/audit/scripts/panel/panel-server.py` (v0.13.0–v0.14.0)
 `/audit:panel` opens a **localhost web UI** to manage the plugin without hand-editing JSON.
-`panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`), `stop`,
+`panel.md` dispatches on its argument — bare = open (launched detached via `nohup … &`, with
+stderr **appended to a per-project log** rather than sent to `/dev/null`), `stop`,
 `status`, `--port <n>` — and `panel-server.py` is a single dependency-free Python-stdlib HTTP
 server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered parts under
 `scripts/ui/panel-css/` and `scripts/ui/panel/`;
@@ -2172,7 +2306,29 @@ byte-identically — the served page is still one self-contained HTML file, the 
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
 `audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
 on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned). Four tabs:
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), which
+carries a **build stamp** as well — written by `_write_pidfile` rather than by `serve()`, so
+every pidfile this plugin writes has it and `--status` always holds both halves of the
+comparison below.
+
+**The pidfile is no longer the panel's only per-project artifact** (F99). A detached launch
+that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
+was then stopped — no pidfile, no message, nothing on record — so the recipe appends it to
+`.claude/audit-panel.log` instead, the server empties that file once it is actually
+listening (anything left in it therefore belongs to a launch that never got up), and
+`--status` prints its last line. `_ensure_panel_files_ignored` writes a **targeted** rule for
+each of the two into `.claude/.gitignore` — never a blanket ignore, because
+`audit.config.json` and `settings.json` beside them are exactly what a team SHOULD commit —
+with each note on its own line, since git reads `#` as a comment only at the start of one.
+
+**`GET /api/version` is the other build question.** The page already carries the build it was
+assembled FROM; what it cannot know is what is on disk NOW, which is what turns "a control is
+missing" from a guess into a sentence. `installed` is re-read per request, because an in-place
+upgrade replaces `plugin.json` under a running server and that is the case worth catching, and
+`ui/panel/version-banner.js` interrupts the reader when — and only when — the two disagree.
+Nothing re-assembles per request: a new front end served off an old API and stamped with the
+new version is a page that lies rather than one that lags, so the banner asks for a relaunch.
+Four tabs:
 **Settings** (a form over the WHOLE of `.claude/audit.config.json` in four groups, described
 once by `SETTINGS_GROUPS`/`FIELD_HELP` in `panel-server.py` and rendered from that — the
 coverage is asserted against `validate-config.py`'s own key sets, so a new config key with no
@@ -2268,7 +2424,17 @@ Who is running what: the shared git-dir locks with a liveness verdict and its ba
 used to claim "running" about a process it had not checked), `data_fingerprint` — the cheap
 per-request stat the 5-second poll watches so a file that moved on disk hands off to
 `refreshFromDisk` — and `_gate_block`, the Plan gate card computed with the hooks' own
-functions so it cannot disagree with the gate about what tier is in force.
+functions so it cannot disagree with the gate about what tier is in force. Each feed row it
+serves goes through `_redacted_event` first: the `file` cell is put through
+`_journal_io.repo_relative_or_token`, so an out-of-repository row reaches the browser as its
+class and not as somebody's home directory. That is the same answer `audit-logs.py prune`
+gives about the same rows, and this card is the one `docs/screenshots/panel-gate.png` is a
+committed render of — a surface `tools/check-committed-pii.py` cannot read, because it reads
+text and a PNG has none. That gap is guarded at the other end instead:
+`tools/capture-screenshots.mjs` refuses to open a shutter on anything but the fixture it built
+itself, and pipes the paths its fixtures will paint through
+`check-committed-pii.py --scan-text` before the browser starts, so one detector vocabulary
+covers the committed bytes and the committed pixels.
 
 ### `plugins/audit/scripts/panel/_panel_usage.py`
 The Usage tab's payload: the ledger folded into compact positional facts the browser

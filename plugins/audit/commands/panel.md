@@ -16,18 +16,45 @@ and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel/pan
 - **`status`** → run `python3 "$PANEL" --project "$(pwd)" --status` and print the result.
 - **otherwise (open)** →
   1. Launch it **detached** so it survives this turn, passing `--port <n>` through from
-     `$ARGUMENTS` if given:
+     `$ARGUMENTS` if given. **Stderr goes to a per-project log, never to `/dev/null`** —
+     see *Why the launch keeps its stderr* below; the append (`2>>`) and the log's name
+     are both load-bearing, so copy the two lines as they stand:
      ```
-     nohup python3 "$PANEL" --project "$(pwd)" >/dev/null 2>&1 &
+     mkdir -p "$(pwd)/.claude"
+     nohup python3 "$PANEL" --project "$(pwd)" >/dev/null 2>>"$(pwd)/.claude/audit-panel.log" &
      ```
   2. Wait ~1s, then read the live URL back:
      ```
      sleep 1; python3 "$PANEL" --project "$(pwd)" --status
      ```
-  3. Tell the user, clearly: **the panel is RUNNING at `<the URL from --status>`** (their
-     browser opens automatically), and **stop it anytime with `/audit:panel stop`** (or
-     `/audit:panel status` to check). It's per-project — launching again just points at the
-     already-running one, so it never leaves an untracked process behind.
+  3. Tell the user **exactly what `--status` said**, and nothing it did not say. It reports
+     one of three states and they are not interchangeable:
+     - `panel RUNNING: <url> (PID n)` → the panel is up; their browser opens automatically.
+       **Stop it anytime with `/audit:panel stop`** (or `/audit:panel status` to check).
+       It's per-project — launching again just points at the already-running one, so it
+       never leaves an untracked process behind.
+     - `panel not running` **with** an `its last launch left this on stderr …` line → the
+       launch FAILED and that line is the reason. Report the reason; do not report a launch.
+     - `panel not running` with no such line → nothing was started and nothing was recorded.
+  4. If `--status` prints `stop and relaunch to pick it up`, say so: the panel that is up
+     assembled its page from an older build of the plugin, and the controls that shipped
+     since are missing from it until it is stopped and started again.
+
+### Why the launch keeps its stderr
+
+A detached launch that discarded stderr left a failed launch looking **exactly** like a
+launch that succeeded and was then stopped — no pidfile, no message, nothing on record
+(F99). The log is emptied by the server itself once it is actually listening, so anything
+left in it belongs to a launch that never got up, and `--status` prints its last line.
+`.claude/audit-panel.log` is gitignored by the panel itself, beside the pidfile.
+
+Two things are **expected and harmless** under Claude Code's sandbox, so do not chase them
+and do not report them as failures:
+
+- `nice(5) failed: operation not permitted` on launch — `nohup` asking for a priority the
+  sandbox declines. The server does not need it and starts normally.
+- the stop signal refused on the first attempt from inside the sandbox. The server stops
+  correctly; re-run `/audit:panel stop`, or stop it from an unsandboxed shell.
 
 **Prefer a visible terminal window?** (foreground, `Ctrl-C` to stop) — tell the user they can
 run it themselves; in a Node repo `npm run panel` / `npm run panel:stop` is the shortcut,

@@ -33,10 +33,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
@@ -297,12 +293,27 @@ def usage_state(project):
     config = read_config(project)
     ucfg = cfg_mod.usage_cfg(config)
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
+    # THE RATE BASIS, TRIMMED AT THE DOOR (F168), which is the surface F160
+    # missed. The `pricingAsOfDeclared` line below already DECIDES on the trimmed
+    # value and this served the merged one AS TYPED, so the two disagreed about
+    # one config value inside one dict literal: a padded date reached the tab as
+    # `rates as of` followed by the padding, and a whitespace-only one shipped a
+    # truthy empty string beside a flag saying the project had declared nothing.
+    # The trim `report/_usage_load`, `status/audit-status` and
+    # `usage/audit-usage` apply to `meta.usage`'s copy of this key, applied here
+    # where the CONFIG file's copy becomes plugin data: whitespace collapses to
+    # None, the shape absence already has, so no renderer learns a second empty.
+    # `isinstance` before `.strip()`, because a hand-edited config may carry a
+    # number here and a raise inside this dict would cost the whole tab, not one
+    # line of it.
+    as_of_raw = ucfg.get("pricingAsOf")
     # What the CONFIG says, which is answerable with no ledger at all and so is
     # true of every exit below.
     declared = {"enabled": bool(ucfg.get("enabled", True)),
                 "ledgerDir": ledger_dir,
                 "showCost": bool(ucfg.get("showCost", True)),
-                "pricingAsOf": ucfg.get("pricingAsOf"),
+                "pricingAsOf": (as_of_raw.strip() or None)
+                if isinstance(as_of_raw, str) else None,
                 "pricingAsOfDeclared": _declared_as_of(config),
                 "bands": ucfg.get("bands") or {}}
     try:

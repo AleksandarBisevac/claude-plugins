@@ -57,7 +57,7 @@ def _cases(check):
     import platform
     import shutil
 
-    tmp = Path(tempfile.mkdtemp(prefix="require-plan-selftest-"))
+    tmp = Path(_harness.fixture_root("require-plan-selftest-"))
     sd = tmp / "state"
     ld = tmp / "logs"
     sd.mkdir(parents=True, exist_ok=True)
@@ -518,7 +518,7 @@ def _cases(check):
     # main() routing: Pre prints the ask payload; Post prints nothing (silence
     # is the approval record - the gate event feed carries the trace).
     import io as _io
-    gproj = Path(tempfile.mkdtemp(prefix="require-plan-ask-"))
+    gproj = Path(_harness.fixture_root("require-plan-ask-"))
     (gproj / ".claude").mkdir(parents=True, exist_ok=True)
     (gproj / ".claude" / "audit.config.json").write_text(
         json.dumps({"planGate": "ask"}), encoding="utf-8")

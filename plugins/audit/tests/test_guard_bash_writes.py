@@ -51,6 +51,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
+import _panel_write                                # noqa: E402  (the (pw) group's REAL writer)
 
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-bash-writes.py"),
                  modname="guard_bash_writes")
@@ -98,7 +99,7 @@ RWP_CASES = (("gitstatus", "git status --porcelain", True),
 
 
 def _cases(check):
-    tmp = Path(tempfile.mkdtemp(prefix="bash-writes-selftest-"))
+    tmp = Path(_harness.fixture_root("bash-writes-selftest-"))
     sd = tmp / "state"
     sd.mkdir(parents=True, exist_ok=True)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
@@ -186,7 +187,7 @@ def _cases(check):
     # behaviour. sc2 counts OCCURRENCES in the state file rather than asserting
     # absence, because "not retained on disk" is the claim and a substring that
     # went from one to nought is the only thing that says it.
-    outside = Path(tempfile.mkdtemp(prefix="bash-writes-outside-"))
+    outside = Path(_harness.fixture_root("bash-writes-outside-"))
     outside_file = outside / "probe.py"
     outside_rel = _config.rel_path(str(tmp), str(outside_file))
     s = "bw-sc"
@@ -391,6 +392,75 @@ def _cases(check):
               "likely the plugin itself" in M.JOURNAL_TEMPLATE)
     finally:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+
+    # (pw) F104: THE PANEL IS THE PLUGIN'S OTHER JOURNAL WRITER, and the guard
+    # could not name it. The panel server is a detached process this plugin
+    # launched and invites every user to run; it appends rows of its own, and the
+    # per-session sidecar the (k) group covers can never name them, because the
+    # operator's session did not make them. So the guard reported the panel's row
+    # as a shell write into the append-only audit trail - with a chain that
+    # verified clean behind it, which is the worst shape of wrong answer: nothing
+    # is broken and only a manual check can say so.
+    #
+    # DRIVEN THROUGH THE REAL PANEL WRITER, for (k)'s reason: the key the panel
+    # writes and the key this guard reads are two literals in two files that a
+    # hook may not share (no `scripts/` import), so a case that planted the
+    # sidecar by hand would pin the guard against itself.
+    pproj = tmp / "panelwriter"
+    (pproj / "docs" / "audit").mkdir(parents=True, exist_ok=True)
+    plant_plan(pproj)
+    psd = pproj / ".claude" / "state"
+    pcfg = _config._deep_merge(_config.DEFAULTS, {})
+    os.environ["CLAUDE_PROJECT_DIR"] = str(pproj)
+    _pw_detail = ""
+    _pw_silent = _pw_other = _pw_both = False
+    try:
+        for _sid in ("bw-pw1", "bw-pw2"):
+            seed(_sid, use_cfg=pcfg, state_dir=psd, cwd=pproj)
+        _pres = _panel_write._journal(str(pproj), _panel_write.read_config(
+            str(pproj)), "config.write", ".claude/audit.config.json",
+            [{"target": "config", "field": "trivialLineThreshold",
+              "from": 40, "to": 41}])
+        _pjrows = _config._load_journal_lib().read_all(str(pproj), pcfg)
+        _pjrel = ("docs/audit/journal/%s" % _pjrows[-1]["_file"]) if _pjrows else None
+        _pdata = {"tool_name": "Bash", "tool_input": {"command": "x"},
+                  "session_id": "bw-pw1", "cwd": str(pproj)}
+        _pv, _pd = M.decide(_pdata, cfg=pcfg, state_dir=psd, dirty=[_pjrel])
+        _pw_silent = (_pres.get("journaled") is True and _pjrel is not None
+                      and _pv == "silent")
+        _pw_detail = "journaled=%r rel=%r verdict=%r %r" % (
+            _pres, _pjrel, _pv, _pd)
+        # SECOND DIRECTION, and the one that disappears if the reader is loosened
+        # into "anything in the journal directory came from the plugin": a journal
+        # file NOTHING claims is the `sed`-shaped write the template exists for.
+        # The claim file is sitting right there while this runs.
+        _pother = "docs/audit/journal/2026-08.deadbeefdeadbeef.jsonl"
+        _pv2, _pd2 = M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                               "session_id": "bw-pw2", "cwd": str(pproj)},
+                              cfg=pcfg, state_dir=psd, dirty=[_pother])
+        _pw_other = _pv2 == "warn" and "append-only audit journal" in _pd2
+        # BOTH SLOTS, not one instead of the other: a reader that swapped the
+        # session's key for the panel's would pass every case above.
+        _jw2 = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                            modname="journal_writes_for_pw", cache=False)
+        _jw2.record_plugin_write(str(pproj), pcfg,
+                                 {"session_id": "bw-pw1"}, _pother)
+        _pset = M._plugin_wrote(psd, "bw-pw1")
+        _pw_both = _pjrel in _pset and _pother in _pset
+        _pw_detail += " | set=%r" % (sorted(_pset),)
+    except Exception as exc:  # pragma: no cover
+        _pw_detail = "panel-writer integration error: %s" % exc
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    check("pw1 a row the PANEL appended is silent on the next Bash pass of a "
+          "session that never wrote it - the panel leaves its own claim and the "
+          "guard subtracts it", _pw_silent, _pw_detail)
+    check("pw2 ...while a journal file no writer claims still warns, with the "
+          "panel's claim file present - the guard's purpose survives the fix",
+          _pw_other, _pw_detail)
+    check("pw3 ...and the session's slot and the panel's are BOTH read: one "
+          "replacing the other would satisfy pw1 and pw2 and lose the case the "
+          "(k) group is about", _pw_both, _pw_detail)
 
     # (f) REAL git integration: init a repo, dirty it, no `dirty` injection
     s = "bw-f"

@@ -22,11 +22,16 @@ const { apUseFallback, apIsFallback, apChoiceOf, apPatchValue, apOptions,
     'apPatchValue', 'apOptions', 'apFallbackWords', 'apCandidateLabel',
     'adoFieldValue', 'adoFieldSet', 'adoFieldDrop', 'typedNumber']);
 
+// `state` is on the first candidate on purpose. `_candidate_row` has always
+// returned it and the label used to drop it, so a fixture without one cannot
+// tell the two versions of `apCandidateLabel` apart - it would print the same
+// string either way and the case would be green against the bug.
 const CACHE = {
   fallback: { id: 41, source: 'meta' },
   candidates: [
-    { id: 55, type: 'Feature', title: 'Payments', url: 'https://x/55' },
-    { id: 56, type: null, title: null, url: null },
+    { id: 55, type: 'Feature', title: 'Payments', state: 'Active',
+      url: 'https://x/55' },
+    { id: 56, type: null, title: null, state: null, url: null },
   ],
   fetchedAt: '2026-08-20T00:00:00Z',
   cache: 'items',
@@ -141,10 +146,38 @@ describe('the option list', () => {
     });
 
   it('never shows a bare number for a candidate: the hierarchy check grades a '
-     + 'link by the parent’s TYPE, so the type is in the label', () => {
-    expect(apCandidateLabel(CACHE.candidates[0])).toBe('#55 · Feature · Payments');
+     + 'link by the parent’s TYPE, so the type is in the label - and the board '
+     + 'STATE is in it too, because hanging a phase under a closed Feature is '
+     + 'the mistake nothing else on this screen would catch', () => {
+    expect(apCandidateLabel(CACHE.candidates[0]))
+      .toBe('#55 · Feature · Payments · state Active');
     expect(apCandidateLabel(CACHE.candidates[1]))
       .toBe('#56 · nothing recorded but the id');
+  });
+
+  it('LABELS the state rather than joining it in as a fourth fragment, so a '
+     + 'title that ends in a word cannot be read as a state', () => {
+    // `#77 · Epic · Payments · Closed` is the spelling this rejects: the last
+    // two fragments are then indistinguishable to a reader.
+    expect(apCandidateLabel({ id: 77, type: 'Epic', title: 'Payments',
+      state: 'Closed' })).toBe('#77 · Epic · Payments · state Closed');
+    expect(apCandidateLabel({ id: 77, type: 'Epic', title: 'Payments · Closed' }))
+      .toBe('#77 · Epic · Payments · Closed');
+  });
+
+  it('says "nothing recorded but the id" only when that is TRUE - a cache '
+     + 'carrying a state and nothing else is not nothing', () => {
+    expect(apCandidateLabel({ id: 58, type: null, title: null, state: 'New' }))
+      .toBe('#58 · state New');
+    expect(apCandidateLabel({ id: 59 })).toBe('#59 · nothing recorded but the id');
+  });
+
+  it('keeps the state OUT of what a pick writes: it is a live board attribute '
+     + 'read at fetch time, and a declaration recording one would be a fact '
+     + 'about the board frozen into the manifest', () => {
+    expect(apPatchValue('55', CACHE, '').value).toEqual({
+      id: 55, source: 'declared', type: 'Feature', title: 'Payments',
+      url: 'https://x/55', observedAt: '2026-08-20T00:00:00Z' });
   });
 });
 

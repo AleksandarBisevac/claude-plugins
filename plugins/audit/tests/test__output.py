@@ -560,6 +560,7 @@ def _cases(check):
                                   "scripts/manifest/fetch-ado-items.py",
                                   "scripts/manifest/materialize-proposal.py",
                                   "scripts/manifest/migrate-manifest.py",
+                                  "scripts/manifest/read-ado-links.py",
                                   "scripts/manifest/repair-commits.py",
                                   "scripts/manifest/resolve-ado-parent.py",
                                   "scripts/manifest/resolve-branch.py",
@@ -674,6 +675,7 @@ def _cases(check):
                                      "plugins/audit/scripts/manifest/fetch-ado-items.py",
                                      "plugins/audit/scripts/manifest/materialize-proposal.py",
                                      "plugins/audit/scripts/manifest/migrate-manifest.py",
+                                     "plugins/audit/scripts/manifest/read-ado-links.py",
                                      "plugins/audit/scripts/manifest/repair-commits.py",
           "plugins/audit/scripts/manifest/resolve-ado-parent.py",
                                      "plugins/audit/scripts/manifest/resolve-branch.py",
@@ -986,6 +988,26 @@ def _cases(check):
         with open(os.path.join(pre, "too_late.py"), "w", encoding="utf-8") as fh:
             fh.write("import os\nimport sys\n\nimport _sibling  # noqa: E402\n\n"
                      + M.PATH_PREAMBLE)
+        # F94, the shape a whole-block count CANNOT see: one correct preamble
+        # followed by a repeat of its last two statements. The files under
+        # `panel/` carried exactly this while the lint returned nothing for them.
+        # The tail is SLICED off `PATH_PREAMBLE` rather than typed out - a fixture
+        # spelling it again is a second copy of the bytes the rule is about.
+        _tail = M.PATH_PREAMBLE[M.PATH_PREAMBLE.index("\nimport _output"):]
+        with open(os.path.join(pre, "partial.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE + _tail
+                     + "\nimport _sibling  # noqa: E402\n")
+        # ...and the file that must NOT be named: it MENTIONS a preamble line
+        # inside a longer line, once in a docstring and once in a commented
+        # one-liner. `_loader.py` and `panel-server.py` do exactly that in the
+        # live tree, which is why the repeat check is whole-line equality.
+        with open(os.path.join(pre, "prose.py"), "w", encoding="utf-8") as fh:
+            fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE
+                     + '\ndef _why():\n'
+                       '    """Folders are labels: _output.install_path() adds '
+                       'each one."""\n'
+                       '    return None\n\n'
+                       '#   import _output;_output.install_path();import _x as u\n')
         hits = {}
         for name, why in M.path_preamble_violations(pre):
             hits.setdefault(name, []).append(why)
@@ -1010,7 +1032,34 @@ def _cases(check):
               "three above and is the only case that fails if the lint starts "
               "reporting everything: %r" % (sorted(hits),),
               "ok.py" not in hits and sorted(hits) == ["doubled.py", "missing.py",
+                                                       "partial.py",
                                                        "too_late.py"])
+        check("pp11 F94: a file carrying ONE preamble and then repeating its TAIL "
+              "is named. The whole-block count finds one occurrence and says "
+              "nothing, so only the line check fires - the same division of "
+              "labour pp9 pins the other way round: %r" % (hits.get("partial.py"),),
+              any("repeats a line of the pinned path preamble" in w
+                  for w in hits.get("partial.py", []))
+              and not any("times" in w for w in hits.get("partial.py", [])))
+        _partial = open(os.path.join(pre, "partial.py"), encoding="utf-8").read()
+        _repeated = M._preamble_line_repeats(_partial)
+        _tail_lines = [ln for ln in _tail.splitlines() if ln.strip()]
+        _both = [n for n, ln in enumerate(_partial.splitlines(), 1)
+                 if ln in _tail_lines]
+        check("pp12 ...and the lines it names are the LATER occurrences, never "
+              "the first. Each tail statement is in that file twice and exactly "
+              "the second half comes back, which is what tells a reader which "
+              "lines to delete rather than only that something is doubled: "
+              "%r out of %r" % (_repeated, _both),
+              len(_both) == 2 * len(_tail_lines)
+              and _repeated == _both[len(_tail_lines):])
+        check("pp13 ...and a file MENTIONING a preamble line inside a LONGER line "
+              "is not named. `_loader.py` and `panel-server.py` each do that in "
+              "the live tree, so a repeat counted with `in` instead of by "
+              "whole-line equality convicts two correct files - and this is the "
+              "only case that fails if the check widens to a substring: %r"
+              % (hits.get("prose.py"),),
+              "prose.py" not in hits)
     finally:
         shutil.rmtree(pre, ignore_errors=True)
 

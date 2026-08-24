@@ -59,11 +59,15 @@ State: <stateDir>/bash-writes-<session_id>.json
   Written for THIS session and read for every other one in the same stateDir
   (`_other_sessions`), which is what makes a second writer visible at all. The
   file's mtime is its own timestamp: no field had to be added for the window.
-Read-only sidecar: <stateDir>/bash-writes-plugin-<sid>.json {"pluginWrote": [rel]}
-  — journal files the plugin ITSELF appended to (written by journal-writes.py,
-  the single writer; hooks on one event run in parallel). Those rels are
-  skipped before the journal check, so the plugin's own append is never
-  blamed on the next shell command (F-F3).
+Read-only sidecars: <stateDir>/bash-writes-plugin-<key>.json {"pluginWrote": [rel]}
+  — journal files the plugin ITSELF appended to. Those rels are skipped before
+  the journal check, so the plugin's own append is never blamed on the next
+  shell command (F-F3). One slot per writer, each with a SINGLE writer, because
+  hooks on one event run in parallel: `<sid>` is this session's, written by
+  journal-writes.py, and `panel` is the panel server's, written by
+  `_panel_write` (F104 — a detached process this plugin launched, whose appends
+  the session's slot can never name because the session did not make them).
+  A PEER SESSION'S slot is not read: see `_plugin_wrote`.
 
 Config: `.claude/audit.config.json` → bashWriteCheck.enabled (default true).
 Non-git repos, git errors/timeouts (5 s) → silent. ALWAYS exits 0.
@@ -85,6 +89,16 @@ import _config  # noqa: E402
 # that hook, and the two must agree about how a session id becomes a file name.
 # `test_guard_bash_writes.py`'s k1 drives the REAL writer, so a drift here goes red.
 _SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
+
+# The sidecar's name and the panel's key, mirrored from `_journal_io`
+# (`PLUGIN_WRITE_SIDECAR`, and `_panel_write.PANEL_JOURNAL_WRITER`) for the one
+# reason a hook ever mirrors a constant: it may not import from `scripts/`. The
+# (pw) group drives the REAL panel writer and reads it back through the function
+# below, so a drift in either spelling goes red rather than going quiet -- and
+# quiet is the direction that matters, because an empty sidecar is
+# indistinguishable from "the plugin appended nothing".
+PLUGIN_SIDECAR = "bash-writes-plugin-%s.json"
+PANEL_WRITER = "panel"
 
 # --- the git call -------------------------------------------------------------
 # `-uall` is load-bearing, and the measurement is the reason it survives a profile:
@@ -513,25 +527,49 @@ def _save_state(state_dir, session_id, state):
         pass
 
 
-def _plugin_wrote(state_dir, session_id):
-    """Journal files THIS session's own plugin hooks appended to (F-F3).
+def _sidecar_rels(state_dir, key):
+    """The rels ONE plugin sidecar names, or an empty set on any miss.
 
-    Written by journal-writes.py after each successful append, as
-    `<stateDir>/bash-writes-plugin-<sid>.json` `{"pluginWrote": [rel, ...]}`.
-    Read-only here, and that is load-bearing: hooks registered on the same
-    event run in PARALLEL, so the sidecar has exactly one writer (the hook
-    that made the journal write) and this one only ever looks. Empty set on
-    any miss -- a missing sidecar means nothing was appended by the plugin."""
+    Empty is the honest answer to every failure here: a missing slot means that
+    writer appended nothing, which is the ordinary state."""
     try:
-        sid = _SAFE_SID.sub("-", str(session_id or "")).strip("-.")
-        sid = (sid or "no-session")[:40]
-        with open(state_dir / ("bash-writes-plugin-%s.json" % sid),
-                  "r", encoding="utf-8") as fh:
+        with open(state_dir / (PLUGIN_SIDECAR % key), "r", encoding="utf-8") as fh:
             obj = json.load(fh)
         wrote = obj.get("pluginWrote") if isinstance(obj, dict) else None
         return {str(x) for x in wrote} if isinstance(wrote, list) else set()
     except Exception:
         return set()
+
+
+def _plugin_wrote(state_dir, session_id):
+    """Journal files the PLUGIN ITSELF appended to, from every writer that can
+    leave a claim here (F-F3, F104).
+
+    Written by journal-writes.py after each successful append, as
+    `<stateDir>/bash-writes-plugin-<sid>.json` `{"pluginWrote": [rel, ...]}`.
+    Read-only here, and that is load-bearing: hooks registered on the same
+    event run in PARALLEL, so each sidecar has exactly one writer (the hook
+    that made the journal write) and this one only ever looks.
+
+    TWO SLOTS, NOT ONE, AND NOT EVERY SLOT IN THE DIRECTORY. The panel server is
+    a detached process this plugin launched, and it writes the journal too -- so
+    its appends were reported as this session's shell writes, with a clean chain
+    behind them and nothing but a manual check to say so (F104). It cannot use
+    the session's slot: the session did not write those rows. It gets a fixed key
+    of its own, because a panel is one per project (`panel-server` refuses a
+    second) and a per-process key would fragment the claim exactly as it
+    fragmented the journal.
+
+    A PEER SESSION'S SLOT IS DELIBERATELY NOT READ. `test_guard_bash_writes`'s k2
+    is the reason: a journal write nothing claims is the `sed`-shaped write this
+    guard exists for, and honouring another session's claim would let a real
+    tampering pass whenever that session had ever appended to the same file."""
+    sid = _SAFE_SID.sub("-", str(session_id or "")).strip("-.")
+    sid = (sid or "no-session")[:40]
+    out = set()
+    for key in (sid, PANEL_WRITER):
+        out |= _sidecar_rels(state_dir, key)
+    return out
 
 
 def _state_mtime(state_dir, session_id):

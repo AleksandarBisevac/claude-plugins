@@ -336,6 +336,61 @@ def _require_parent_warnings(ado, rows):
                          for r in homeless[:6]))]
 
 
+def _bug_parent_warnings(ado, bugs):
+    """`requireParent` against the ONE kind a push creates and never parents.
+
+    F120, and it is the half `_require_parent_warnings` structurally cannot
+    answer. That function reads `_parent.inventory`'s rows, and the inventory is
+    deliberately called WITHOUT bugs there - bug rows in front of the homeless
+    count would report a warning about a link push was never going to create.
+    Correct, and it left the validator blind to the case where that same fact is
+    the whole problem: with `requireParent` on, the gate refused every bug
+    CREATE, and the refusal arrived after the plan and after the confirm rather
+    than here, where the contradiction actually lives.
+
+    So this asks the bugs directly and asks a different question of them. Not
+    "where does this bug hang" - nowhere, by design, and `_ado_parent` says so
+    with a basis - but "this board demands something the connector cannot
+    supply", which is U-FIELDS' shape one rule over: the standard is expressible
+    and unmeetable, and the only useful moment to say so is before the push.
+
+    A WARNING, never a finding, for the reason its neighbour gives: an
+    already-linked plan does UPDATES, the conformance gate runs on CREATE only,
+    and calling a working setup invalid would fail its CI on upgrade. LINKED
+    BUGS ARE EXCLUDED for that same reason and it is the whole filter - a bug
+    with an `ado.id` is an update, and no card is about to be created without a
+    parent on its account.
+    """
+    conventions = ado.get("conventions")
+    if not isinstance(conventions, dict) or conventions.get("requireParent") is not True:
+        return []
+    pending = [bug.get("id") or "?" for bug in (bugs if isinstance(bugs, list) else [])
+               if isinstance(bug, dict) and not _linked(bug)]
+    if not pending:
+        return []
+    return ["meta.ado.conventions.requireParent is true, and a push creates a "
+            "bug card with no parent link at all - %d bug(s) are not linked "
+            "yet (%s), so for those this board asks for something the "
+            "connector cannot supply. Phases (and tasks, with phaseWorkItems "
+            "off) get the resolved parent and no third kind does; "
+            "meta.ado.parentWorkItem is the AUDIT's own branch and does not "
+            "reach a bug. Their creates are no longer refused over it - parent "
+            "those cards by hand once they exist, or drop requireParent."
+            % (len(pending), ", ".join(str(x) for x in pending[:6]))]
+
+
+def _linked(item):
+    """Does this item already carry a work item id? A push UPDATES those.
+
+    Spelled here rather than borrowed from `_ado_parent._work_item_id`, which
+    is that module's private and answers a stricter question (a POSITIVE id,
+    for a graph edge). The question here is only whether a CREATE is still
+    coming, and a malformed link is `_manifest_ado`'s finding to report.
+    """
+    link = item.get("ado")
+    return isinstance(link, dict) and link.get("id") is not None
+
+
 def _check_ado_parents(manifest, phases):
     """Where every item would hang, and whether that place can be true.
 
@@ -387,6 +442,9 @@ def _check_ado_parents(manifest, phases):
     warnings = list(inv["warnings"])
     warnings.extend(e["message"] for e in result["warnings"])
     warnings.extend(_require_parent_warnings(ado, inv["rows"]))
+    # The bugs are asked SEPARATELY and never through the inventory above, whose
+    # `bugs` argument stays unpassed on purpose - see `_bug_parent_warnings`.
+    warnings.extend(_bug_parent_warnings(ado, manifest.get("bugs")))
     return (findings, warnings)
 
 

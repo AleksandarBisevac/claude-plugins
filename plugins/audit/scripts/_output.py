@@ -715,15 +715,50 @@ def _first_sibling_import_line(tree, sibling_names):
     return min(lines) if lines else None
 
 
+def _preamble_line_repeats(src):
+    """Source line numbers where a line of `PATH_PREAMBLE` occurs after its first.
+
+    WHOLE-LINE EQUALITY, NOT `in`, and that is the whole reason this could be added
+    without exempting anything. `_loader.py` and `panel-server.py` both MENTION
+    `_output.install_path()` in prose - a docstring sentence and a commented
+    one-liner - so a substring count would convict two correct files, and the
+    repair for that would be a widening nobody could hold. A repeat is a source
+    line that IS a preamble line, spelled identically down to its indentation.
+
+    Counting the LINES rather than a named tail is the deliberate choice: the tail
+    is where the repeat happened to land this time, and a constant naming it would
+    be a second copy of a fact whose home is `PATH_PREAMBLE`. Derived from the
+    block itself, this catches a repeat of any part of it.
+    """
+    wanted = set(line for line in PATH_PREAMBLE.splitlines() if line.strip())
+    seen = set()
+    repeats = []
+    for number, line in enumerate(src.splitlines(), 1):
+        if line not in wanted:
+            continue
+        if line in seen:
+            repeats.append(number)
+        else:
+            seen.add(line)
+    return repeats
+
+
 def path_preamble_violations(script_dir=None):
     """(relname, problem) for every `.py` under `scripts/` whose bootstrap is wrong.
 
-    Three ways to be wrong, and the second and third are the reason this is not one
+    The ways to be wrong, and every one but the first is a reason this is not one
     `if PATH_PREAMBLE in src`:
 
       * NOT EXACTLY ONCE. Counted, not tested for membership — a doubled preamble is
         as wrong as a missing one (it is a second `install_path()` call and a second
         walk-up under two more leaked names), and `in` cannot tell one from two.
+      * PARTIALLY REPEATED. Counting the WHOLE block finds one occurrence in a file
+        that pastes the block once and then repeats its last two statements, because
+        a doubled `import _output` / `_output.install_path()` tail is not the whole
+        block — so the files under `panel/` carrying exactly that were reported by
+        nothing, while the house rule said this function counted the preamble "once,
+        never twice". It counted the TEXT once; the bootstrap ran twice. Every line
+        of the block is therefore counted too, and each must occur once.
       * NO `install_path()` CALL AT MODULE LEVEL. A file could carry the text inside
         a docstring and satisfy a text count; this is read off the AST.
       * A SIBLING IMPORT ABOVE THE CALL. A preamble pasted below the imports it
@@ -762,6 +797,13 @@ def path_preamble_violations(script_dir=None):
         if found != 1:
             violations.append((rel, "carries the pinned path preamble %d times, "
                                     "not once" % found))
+        repeats = _preamble_line_repeats(src)
+        if repeats:
+            violations.append((rel, "repeats a line of the pinned path preamble at "
+                                    "%s - a partial repeat is a second bootstrap, "
+                                    "and counting the whole block reads it as "
+                                    "compliant"
+                                    % ", ".join(str(n) for n in repeats)))
         installed = _install_path_line(tree)
         first_sibling = _first_sibling_import_line(tree, sibling_names)
         if installed is None:

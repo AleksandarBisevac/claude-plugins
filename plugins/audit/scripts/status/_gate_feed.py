@@ -33,6 +33,14 @@ removed total and a reader can add them up. `classify()` returns every class,
 including the ones at zero: a count that appears only when it is non-zero cannot be
 told from a count nobody computed.
 
+AND ONE THING THAT IS DELIBERATELY NOT A CLASS: a row an OLDER RELEASE wrote, whose
+`file` may hold a whole shell command and whose `reason` may hold an absolute path.
+Both writers are fixed; neither fix reaches what is already on disk, and nothing in
+a row records which release wrote it, so classing them would mean guessing at a
+shape and REMOVING on the guess. `oldestKeptDays` is the answer instead - a real
+number, for the one lever that does reach them - and `audit-logs.py` renders the
+statement beside it. See `classify()` for the false positive that decided it.
+
 CONTAINMENT IS ASKED ONCE, of `hooks/_config.within_root` - the same function
 require-plan, remind-tdd and guard-secrets-read ask, so "inside this repository"
 has one answer across the plugin. Note what that does NOT cover: the file-safety
@@ -42,9 +50,13 @@ resolve a path, which is right for a gate (a wrong guess leaves a gate where it
 already was) and wrong for a writer (a wrong guess writes). So the writer's
 boundary is spelled as "this exact file in this exact directory" and fails closed.
 
-Layer 2: it reaches `_loader` and `_usage_core`, both layer 1, and nothing else.
-`parse_ts` comes from `_usage_core` for the reason `_ado_drift` states about the
-same call - the alternative was this tree's next ISO parser.
+Layer 2: it reaches `_loader`, `_usage_core` and `_journal_io`, all layer 1, and
+nothing else. `parse_ts` comes from `_usage_core` for the reason `_ado_drift`
+states about the same call - the alternative was this tree's next ISO parser - and
+`repo_relative_or_token` comes from `_journal_io` for the reason both of the
+panel's redactors give: it is the one rule in this tree for "say this path without
+naming the machine", and a second one written to resemble it would be a second
+answer to a question with one right answer.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__gate_feed.py` - see `plugins/audit/tests/_harness.py`.
@@ -77,6 +89,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _journal_io  # noqa: E402  (repo_relative_or_token: this tree's ONE path redactor)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _usage_core  # noqa: E402  (parse_ts: this tree's ONE ISO-8601 reader)
 
@@ -102,6 +115,18 @@ def hooks_config():
 
 
 # --- where this module may write ------------------------------------------------
+def _why(exc):
+    """An exception's REASON, without the filename it spells.
+
+    `str(OSError)` ends in the path the call failed on - the same machine path
+    the caller below has just put through the redactor one argument earlier - so
+    interpolating the exception would hand back what the redaction removed.
+    `strerror` is the message with no filename in it; anything carrying no
+    `strerror` (a `ValueError` over an embedded null byte, say) is named by its
+    class, which is a basis without being a path."""
+    return getattr(exc, "strerror", None) or exc.__class__.__name__
+
+
 def feed_path(project, config=None):
     """`(path, refusal)` - the ONE file this module may rewrite, or why it may not.
 
@@ -124,24 +149,41 @@ def feed_path(project, config=None):
     The refusal names `logsDir` and never the resolved destination. A path outside
     the repository is the thing being removed, and printing it in the reason would
     put it straight back into the transcript.
+
+    IT USED TO NAME IT RESOLVED, WHICH IS AN ABSOLUTE PATH ON A REAL MACHINE. The
+    sentence interpolated `logs_dir()`, i.e. the project root with `logsDir` joined
+    onto it - the operator's home directory and user name - and it travels to two
+    surfaces: `/audit:logs prune`'s stdout, and an HTTP response the panel paints.
+    Neither reader could repair it: `_panel_write._redacted_feed_answer` substitutes
+    the feed's `path`, and a refusal leaves `path` at None, so it had nothing to
+    match on and said so. Redacted HERE, through
+    `_journal_io.repo_relative_or_token` - the SAME rule the panel's two redactors
+    use, not a second one written to resemble it - so `.claude/logs` is what a
+    reader gets, and `<outside-repo>` when `logsDir` really does point out of the
+    tree, which is worth knowing and is not the same as being shown where.
+
+    The exception in the first branch goes through `_why` for the same reason:
+    `str(OSError)` spells the filename again, and a sentence that redacts its
+    argument and then quotes an exception has published it anyway.
     """
     mod = hooks_config()
     cfg = config if isinstance(config, dict) else mod.load(Path(project))
     logs = mod.logs_dir(Path(project), cfg)
     target = os.path.join(str(logs), mod.GATE_EVENTS_FILE)
+    shown = _journal_io.repo_relative_or_token(project, str(logs))
     try:
         real_logs = os.path.realpath(str(logs))
         real_target = os.path.realpath(target)
     except (OSError, ValueError) as exc:
         return (None, "could not resolve %s inside %s: %s"
-                % (mod.GATE_EVENTS_FILE, logs, exc))
+                % (mod.GATE_EVENTS_FILE, shown, _why(exc)))
     if os.path.dirname(real_target) != real_logs:
         return (None,
                 "%s in %s resolves outside that directory (a symlink). Refusing: "
                 "the gate appends THROUGH the link, and rewriting the file would "
                 "replace the link and send the feed somewhere the gate does not "
                 "write. Remove the link, or point logsDir at the directory you "
-                "actually want." % (mod.GATE_EVENTS_FILE, logs))
+                "actually want." % (mod.GATE_EVENTS_FILE, shown))
     return (target, None)
 
 
@@ -156,23 +198,49 @@ def classify(project, lines, older_than_days=None, now=None):
     writer happens to use.
 
     A `file` that is not a path is the normal case, not an edge: `guard-secrets-read`
-    puts a glob or even a whole shell command in that field. Those are relative
-    spellings, so they resolve inside the project and are KEPT - the question asked
-    is "does this name somewhere outside the repository", and a command line does
-    not.
+    puts a Grep glob in that field. A glob is a relative spelling, so it resolves
+    inside the project and is KEPT - the question asked is "does this name somewhere
+    outside the repository", and a pattern does not.
+
+    IT USED TO PUT A WHOLE SHELL COMMAND THERE TOO, and that is history this pruner
+    cannot clean. The writer no longer does it (`hooks/_config.append_gate_event`
+    converts a `command` to a digest, a byte length and a program name), but a feed
+    written by an older release still holds those rows, and a command line is a
+    relative spelling like any other - it resolves inside the project and is kept
+    here exactly as it is painted by the panel. Nothing structural separates it from
+    a path, which is the whole reason the repair had to be made at the writer; what
+    clears the rows already on disk is the size self-trim, or `--older-than`.
+
+    NO CLASS FOR THOSE ROWS, AND THAT IS THE DECISION (F154). A class would have to
+    guess which cell is a command, on a shape - a space, a leading word that looks
+    like a program - and the guess is wrong in the direction that costs most: a
+    tracked file whose repo-relative path contains a space reads as `program arg`,
+    and this command REMOVES what it classes and never echoes it, so an operator
+    could not tell what went. `gf5` pins the opposite behaviour on purpose. What the
+    product owes instead is to SAY SO, which is `oldestKeptDays` below plus the
+    standing note `audit-logs.py` renders beside it: the same release also stopped
+    writing an absolute path into `reason` (F153), so the whole statement is "rows
+    older than your upgrade may hold either, nothing in a row records which release
+    wrote it, and `--older-than` is the lever" - with a real number for how far back
+    this feed goes, so the lever can be aimed.
 
     An unparseable `ts` is never aged out. Age is a claim about when a row was
     written, and without a readable stamp there is no basis for it; keeping the row
     is the side of the tie that loses nothing.
+
+    `oldestKeptDays` obeys the same rule from the other end: it is None when no kept
+    row carries a readable stamp, never 0, because "the feed starts today" and "no
+    row would say" are different answers and a reader acts on them differently.
     """
     mod = hooks_config()
     counts = dict((name, 0) for name in CLASSES)
+    base = time.time() if now is None else float(now)
     cutoff = None
     if older_than_days is not None:
-        base = time.time() if now is None else float(now)
         cutoff = base - (float(older_than_days) * _SECONDS_PER_DAY)
 
     keep = []
+    oldest = None
     for raw in lines:
         line = raw.rstrip("\n")
         text = line.strip()
@@ -191,16 +259,22 @@ def classify(project, lines, older_than_days=None, now=None):
                 and not mod.within_root(project, named.strip()):
             counts[CLASS_OUTSIDE] += 1
             continue
-        if cutoff is not None:
-            when = _usage_core.parse_ts(row.get("ts"))
-            if when is not None and when < cutoff:
-                counts[CLASS_AGED] += 1
-                continue
+        when = _usage_core.parse_ts(row.get("ts"))
+        if cutoff is not None and when is not None and when < cutoff:
+            counts[CLASS_AGED] += 1
+            continue
+        if when is not None and (oldest is None or when < oldest):
+            oldest = when
         keep.append(line)
 
     removed = sum(counts[name] for name in CLASSES)
+    # Floored, and floored deliberately: this number is aimed at `--older-than`,
+    # which removes rows STRICTLY older than the threshold, so rounding up would
+    # name a day on which the oldest row is already gone.
+    age = None if oldest is None else int(max(0.0, base - oldest)
+                                          // _SECONDS_PER_DAY)
     return {"keep": keep, "kept": len(keep), "removed": removed,
-            "classes": counts}
+            "classes": counts, "oldestKeptDays": age}
 
 
 # --- the action -----------------------------------------------------------------
@@ -213,11 +287,19 @@ def prune(project, config=None, older_than_days=None, dry_run=False, now=None):
     apart from "the counts were not computed" by which keys exist:
 
         {"ok", "findings", "path", "exists", "kept", "removed", "classes",
-         "olderThanDays", "dryRun", "wrote"}
+         "olderThanDays", "oldestKeptDays", "dryRun", "wrote"}
 
     `exists` is the one that separates a feed nobody has written yet from a feed
     that is empty. Both report zero and zero; only one of them means the gate has
     never had anything to say here.
+
+    `oldestKeptDays` is how far back the feed still reaches once this prune has
+    run, and it is here because of what a prune CANNOT decide (F154): a row
+    written by an older release can hold a whole shell command in `file` or an
+    absolute path in `reason`, nothing in a row records which release wrote it,
+    and `classify` refuses to guess. Age is the only lever that reaches them, so
+    the answer carries the number the lever is aimed with. None means no kept row
+    has a readable stamp - not zero, which would claim the feed starts today.
 
     `wrote` is False when nothing was removed, and that is deliberate rather than
     an optimisation: a prune that changes nothing leaves the mtime alone, so it
@@ -233,8 +315,8 @@ def prune(project, config=None, older_than_days=None, dry_run=False, now=None):
     out = {"ok": True, "findings": [], "path": None, "exists": False,
            "kept": 0, "removed": 0,
            "classes": dict((name, 0) for name in CLASSES),
-           "olderThanDays": older_than_days, "dryRun": bool(dry_run),
-           "wrote": False}
+           "olderThanDays": older_than_days, "oldestKeptDays": None,
+           "dryRun": bool(dry_run), "wrote": False}
 
     path, refusal = feed_path(project, config)
     if refusal:
@@ -258,6 +340,7 @@ def prune(project, config=None, older_than_days=None, dry_run=False, now=None):
     out["kept"] = verdict["kept"]
     out["removed"] = verdict["removed"]
     out["classes"] = verdict["classes"]
+    out["oldestKeptDays"] = verdict["oldestKeptDays"]
     if out["dryRun"] or not verdict["removed"]:
         return out
 

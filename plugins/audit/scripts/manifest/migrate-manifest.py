@@ -40,6 +40,11 @@ Safe by default:
      way, and the repair is written out with the rest of the manifest)
   - refuses if any phase is `in_progress` (a mid-run layout change corrupts the run);
     override with --force
+  - refuses, in the sharded direction, when two phase ids sanitise to one shard
+    FILENAME: the second body would silently replace the first. `--dry-run` refuses
+    it too, so the preview is not the step that discovers it
+  - refuses, in the sharded direction, when no phase carries an id: a split with
+    nothing to shard reads as single-file whatever the version says
   - backs up the original to <manifest>.bak-<UTC> before writing
   - re-reads the RESULT: it must validate AND read as the requested layout by BOTH
     readings of the layout - the phase stubs and `meta.version`. On any failure it
@@ -252,9 +257,12 @@ def _preview(raw_index, index_path, manifest, to, target):
     only the write would leave the one irreversible-looking step unmentioned."""
     if to == "sharded":
         shards = _mio.split_manifest(manifest)[1]
+        # `_mio.shard_rel_path`, not a fourth spelling of the same filename: this
+        # line hardcoded the default directory AND rebuilt the name by hand, so a
+        # preview could name files the writer would not write.
         return ("DRY RUN: would write index %s + %d shard(s): %s"
                 % (target, len(shards),
-                   ", ".join("phases/%s.json" % _mio._shard_name(p) for p in shards)))
+                   ", ".join(_mio.shard_rel_path(p) for p in shards)))
     sdir, why = _mio.shard_dir_to_retire(raw_index, index_path)
     return ("DRY RUN: would write one file %s (%d phase(s) inlined) and %s"
             % (target, len(manifest.get("phases") or []),
@@ -310,6 +318,18 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
         return 1, ("refusing: no phase in %s carries an id, so a split has nothing to "
                    "put in a shard — the result would be stamped as sharded and still "
                    "read as single-file everywhere. Add a phase first." % path)
+    # `_mio.save_sharded` refuses this too, and that refusal is the one that
+    # protects every OTHER writer. It is asked again here because a `--dry-run`
+    # never reaches the writer: a preview that listed the shard files and said
+    # nothing about two of them being one file would send the user into the real
+    # run to find out. It returns the same code the neighbouring refusals do, and
+    # the ids come from `_mio` so the two messages cannot name different pairs.
+    collisions = _mio.shard_name_collisions(manifest) if to == "sharded" else []
+    if collisions:
+        return 1, ("refusing: %s — two ids the shard filename cannot tell apart "
+                   "would be written to one file and the second would silently "
+                   "replace the first. Rename one of them, then migrate."
+                   % _mio.describe_shard_collisions(collisions))
 
     target = out or path
     if dry_run:

@@ -32,6 +32,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _gate_feed                                  # noqa: E402
+import _usage_core                                 # noqa: E402  (the ONE ISO reader; `now` here is a stamp, not a clock)
 
 M = _loader.load_script("audit-logs.py", modname="audit_logs")
 
@@ -138,6 +139,68 @@ def _cases_body(check, tmp, outside):
           aged.count("older than 1 day(s) 1") == 1
           and aged.count("not applied") == 0)
 
+    # -------------------------------------------- the limit this prune states
+    # F154. Rows an older release wrote can hold a whole shell command in `file`
+    # or an absolute path in `reason`, both writers are fixed, and neither fix
+    # reaches what is on disk. Nothing in a row says which release wrote it, so
+    # the rule keeps them - and "Nothing to remove" is then a true statement
+    # about the RULE and a misleading one about the FILE unless it is said.
+    #
+    # THE PAIR IS THE CASE. The note printing is half of it; the OTHER half is
+    # that it does not print where there is no history for it to be about, which
+    # a version that appended it unconditionally would fail. `al1`'s empty feed
+    # and `al4`'s unwritten one are both already rendered above, so the negative
+    # costs nothing but the assertion.
+    check("al8a a feed with rows left in it carries the history note and the "
+          "`oldest` line that aims it - the note is what the prune cannot "
+          "decide, and without the number beside it nobody could aim "
+          "`--older-than`:\n%s" % echoed,
+          echoed.count("A row written by an older release") == 1
+          and echoed.count("`oldest` above is what to aim it with.") == 1
+          and echoed.count("  oldest    ") == 1)
+    check("al8b ...and neither appears on a feed with nothing left in it: an "
+          "empty feed and one the gate never wrote have no history for the note "
+          "to be about, and a standing warning that fires on every outcome is "
+          "one nobody reads",
+          zero.count("A row written by an older release") == 0
+          and zero.count("  oldest    ") == 0
+          and unwritten.count("A row written by an older release") == 0
+          and unwritten.count("  oldest    ") == 0)
+    # THE NUMBER IS READ OFF THE ROW, not off the clock. Two fixtures, one
+    # stamped in 1970 and one stamped `now`, so a render that printed a constant
+    # - or that measured the file's mtime - disagrees with one of them.
+    fresh_proj = _project(tmp, lines=[
+        _row(ts="1970-01-02T00:00:00Z", event="deny", file="src/old.ts"),
+        _row(ts="2026-08-20T10:00:00Z", event="warn", file="src/new.ts")])
+    reach = M.render(
+        _gate_feed.prune(str(fresh_proj),
+                         now=_usage_core.parse_ts("2026-08-22T10:00:00Z")),
+        str(fresh_proj))
+    recent = _project(tmp, lines=[_row(ts="2026-08-20T10:00:00Z",
+                                       event="warn", file="src/new.ts")])
+    near = M.render(
+        _gate_feed.prune(str(recent),
+                         now=_usage_core.parse_ts("2026-08-22T10:00:00Z")),
+        str(recent))
+    check("al8c `oldest` is the age of the OLDEST kept row, read off its stamp: "
+          "two fixtures differing only in whether the 1970 row is there report "
+          "different numbers against the same clock:\n%s\n%s" % (reach, near),
+          reach.count("oldest       20686 day(s)") == 1
+          and near.count("oldest       2 day(s)") == 1)
+    # ...and the third answer, which is neither a number nor a zero. A row with
+    # an unreadable stamp is kept (gf9), so this shape reaches the render, and a
+    # `%d` over None would either crash or print 0 - the second being the claim
+    # that the feed starts today.
+    nostamp = _project(tmp, lines=[_row(ts="whenever", event="deny",
+                                        file="src/a.ts")])
+    unstamped = M.render(_gate_feed.prune(str(nostamp)), str(nostamp))
+    check("al8d ...while a feed whose kept rows carry no readable stamp says so "
+          "rather than reporting zero days - 'the feed starts today' and 'no row "
+          "would say' are different answers:\n%s" % unstamped,
+          unstamped.count("no kept row carries a readable stamp") == 1
+          and unstamped.count("day(s)") == 0
+          and unstamped.count("A row written by an older release") == 1)
+
     # ----------------------------------------------------------- exit codes
     script = os.path.join(_harness.SCRIPTS_DIR, "status", "audit-logs.py")
 
@@ -161,7 +224,7 @@ def _cases_body(check, tmp, outside):
           "human one: %r" % (sorted(parsed),),
           sorted(parsed) == sorted(["ok", "findings", "path", "exists", "kept",
                                     "removed", "classes", "olderThanDays",
-                                    "dryRun", "wrote"]))
+                                    "oldestKeptDays", "dryRun", "wrote"]))
 
     bad_dir = run("prune", "--project", str(live / "nope"))
     check("al11 a --project that is not a directory is a USAGE error (2), not a "
@@ -185,7 +248,8 @@ def _cases_body(check, tmp, outside):
     refusal = {"ok": False, "findings": ["logsDir is a symlink"], "path": None,
                "exists": False, "kept": 0, "removed": 0,
                "classes": dict((n, 0) for n in _gate_feed.CLASSES),
-               "olderThanDays": None, "dryRun": False, "wrote": False}
+               "olderThanDays": None, "oldestKeptDays": None,
+               "dryRun": False, "wrote": False}
     refused = M.render(refusal, str(live))
     check("al15 a refusal renders the reason and says plainly that nothing was "
           "written - the failure mode this replaces is a command that prints "
@@ -220,6 +284,19 @@ def _cases_body(check, tmp, outside):
               refused_run.returncode == 1
               and refused_run.stdout.count("REFUSED") == 1
               and far.read_bytes() == far_before)
+        # F144, at THIS door. `render` puts a finding through verbatim, so a
+        # refusal sentence naming its directory resolved reaches a terminal and a
+        # CI log as the operator's home directory. The redaction is `_gate_feed`'s
+        # (the panel's own redactor keys on `path`, which a refusal leaves None),
+        # and this is the case that says the command inherits it rather than
+        # having to repeat it. The project header on line one is deliberately NOT
+        # asserted away: it is the cwd the human just typed, and `llogs` is longer
+        # than it, so this needle cannot be satisfied by that line.
+        check("al17 ...and the reason it prints names logsDir repo-relative, so "
+              "the absolute logs directory occurs 0 times in stdout: %r"
+              % (refused_run.stdout,),
+              refused_run.stdout.count(str(llogs)) == 0
+              and refused_run.stdout.count(".claude/logs") == 1)
 
 
 def _selftest():

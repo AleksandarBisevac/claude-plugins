@@ -101,6 +101,27 @@ def _task(tid, parent="absent", link=None):
     return out
 
 
+def _bug(bid, parent="absent", link=None, ptype=None):
+    """One manifest bug. Same three declaration states as `_phase`, plus the
+    parent's TYPE, because a bug's declaration is usually the one a pull wrote
+    off the board and the type is the half the hierarchy check would read."""
+    out = {"id": bid, "title": bid, "status": "open"}
+    if parent != "absent":
+        block = None
+        if parent is not None:
+            block = {"id": parent}
+            if ptype is not None:
+                block["type"] = ptype
+        out[M.FIELD] = block
+    if link is not None:
+        out["ado"] = {"id": link}
+    return out
+
+
+def _kinds(rows):
+    return [r["kind"] for r in rows]
+
+
 def _sources(rows):
     return [r["source"] for r in rows]
 
@@ -261,6 +282,136 @@ def _cases(check):
           "uncategorised creates rather than an error: %r" % (_sources(_rows),),
           _parents(_rows) == [None] * 5 and _sources(_rows) == ["none"] * 5)
 
+    # --- the bug work item type: ONE derivation, two consumers -----------------
+    # IT WAS TWO FOR A RELEASE. `inventory` read `meta.ado.types.bug` raw and
+    # `_ado_conventions` trimmed it and refused a blank, so a bug ROW carried one
+    # spelling while the tuple handed to `parent_rule_exemption` carried another -
+    # and an exemption that cannot match the row it is about is `requireParent`
+    # refusing the bug create the exemption exists to allow, at create time.
+    #
+    # THE FIXTURES ARE THE INPUTS THAT TELL THE TWO VERSIONS APART, which is why a
+    # plain well-formed name is not the only one here: `"Defect"` reaches both
+    # spellings identically and would have passed before the fix. A blank, a
+    # padded name and a `types` that is not an object are the three that do not.
+    _BT_CASES = [(None, M.DEFAULT_BUG_TYPE),
+                 ({}, M.DEFAULT_BUG_TYPE),
+                 ({"types": {}}, M.DEFAULT_BUG_TYPE),
+                 ({"types": ["Bug"]}, M.DEFAULT_BUG_TYPE),
+                 ({"types": {"bug": ""}}, M.DEFAULT_BUG_TYPE),
+                 ({"types": {"bug": "  "}}, M.DEFAULT_BUG_TYPE),
+                 ({"types": {"bug": " Defect "}}, "Defect"),
+                 ({"types": {"bug": "Defect"}}, "Defect")]
+    _bt_seen = [(ado, M.bug_type(ado), M.unparented_types(ado),
+                 M.inventory([], ado, [_bug("BUG-1")])["rows"][0]["type"], want)
+                for ado, want in _BT_CASES]
+    # Compared as a WHOLE LIST rather than case by case: the two consumers
+    # disagreed on two of these inputs and agreed on the rest, so any assertion
+    # that stopped at the first fixture would have gone green on the bug.
+    _bt_bad = [r for r in _bt_seen
+               if not (r[1] == r[4] and r[2] == (r[4],) and r[3] == r[4])]
+    check("bt1 the bug ROW's type, `unparented_types` and `bug_type` are one "
+          "derivation and answer identically for every shape `meta.ado.types` "
+          "can take - a blank, a padded name and a non-object `types` included, "
+          "which are the inputs the two old spellings disagreed on: %r"
+          % (_bt_bad,),
+          _bt_bad == [] and len(_bt_seen) == len(_BT_CASES))
+    # THE SECOND DIRECTION, and it reads vacuous on purpose: every fixture above
+    # whose answer is the default would also pass a derivation that returned the
+    # default unconditionally, which would stop a renamed board being read at all.
+    check("bt2 a board that NAMED its bug type is never given the connector's "
+          "default, which is the only case that fails if the derivation "
+          "collapses to a constant: %r"
+          % ((M.bug_type({"types": {"bug": "Defect"}}), M.DEFAULT_BUG_TYPE),),
+          M.bug_type({"types": {"bug": "Defect"}}) == "Defect"
+          and M.DEFAULT_BUG_TYPE == "Bug")
+    check("bt3 ...and `unparented_types` is a TUPLE of that one name, because "
+          "the question it answers is 'which kinds are exempt' and not 'is this "
+          "the bug type' - a caller reading it as a string would match on a "
+          "letter: %r" % (M.unparented_types({"types": {"bug": "Defect"}}),),
+          M.unparented_types({"types": {"bug": "Defect"}}) == ("Defect",))
+
+    # --- bugs: in the inventory, out of the plan (F101) ------------------------
+    # A LINKED BUG HAD NO MANIFEST SIDE AT ALL. `status` fetches its
+    # `System.Parent` exactly as it does a phase's and had nothing to compare it
+    # with, so the row is what the manifest RECORDS - and the fallback, which is
+    # the AUDIT's own branch, deliberately does not reach it, because a push
+    # creates no bug parent link and a bug reported as drifting from a link
+    # nobody was going to make is a false alarm about somebody else's card.
+    _bug_ado = {"parentWorkItem": 500, "types": {"pbi": "Product Backlog Item",
+                                                 "task": "Task", "bug": "Bug"}}
+    _res = M.resolve(_bug("BUG-1", parent=101), ado=_bug_ado, kind="bug")
+    check("bg1 a bug's OWN declaration is honoured - a pull wrote most of them "
+          "off the board, and dropping that would throw away the only "
+          "board-derived answer a manifest keeps: %r" % (_res["id"],),
+          _res["id"] == 101 and _res["source"] == "item")
+    check("bg2 ...and its basis says what KIND of answer it is: a record of "
+          "where the bug hangs, never a plan for a write: %r" % (_res["basis"],),
+          "RECORDS" in _res["basis"] and "never what a push will do"
+          in _res["basis"])
+    _res = M.resolve(_bug("BUG-2"), ado=_bug_ado, kind="bug")
+    check("bg3 a bug that declares NOTHING does not fall through to "
+          "meta.ado.parentWorkItem: source `none`, and the basis names the "
+          "fallback it did not take rather than leaving a reader to wonder "
+          "whether one was set: %r" % (_res,),
+          _res["id"] is None and _res["source"] == "none"
+          and "500" in _res["basis"])
+    # THE CASE THAT TELLS THE TWO IMPLEMENTATIONS APART. A resolver that simply
+    # never applied a fallback would pass bg3 and fail this: the SAME manifest,
+    # the SAME `ado`, and the phase does take #500.
+    _mixed_rows = M.inventory([_phase("P1")], _bug_ado, [_bug("BUG-2")])["rows"]
+    check("bg4 ...while a PHASE in that same manifest still takes it, which is "
+          "the only thing that tells 'the fallback does not reach a bug' apart "
+          "from 'the fallback stopped working': %r"
+          % (list(zip(_kinds(_mixed_rows), _parents(_mixed_rows))),),
+          _kinds(_mixed_rows) == ["phase", "bug"]
+          and _parents(_mixed_rows) == [500, None])
+    # The default is NOT an empty list, and this is the pair that says so: the
+    # same phases, asked two ways, produce two different row sets.
+    _no_bugs = M.inventory([_phase("P1", tasks=[_task("P1.1")])], _bug_ado)
+    _with_bugs = M.inventory([_phase("P1", tasks=[_task("P1.1")])], _bug_ado,
+                             [_bug("BUG-1", parent=101, link=900)])
+    check("bg5 bugs are walked only when the caller ASKS: the default is None "
+          "and not [], because 'we did not ask about this kind of item' and "
+          "'there are none' are the two answers this whole entry is about: %r"
+          % ((_kinds(_no_bugs["rows"]), _kinds(_with_bugs["rows"])),),
+          _kinds(_no_bugs["rows"]) == ["phase", "task"]
+          and _kinds(_with_bugs["rows"]) == ["phase", "task", "bug"])
+    check("bg6 ...and asking about bugs changes nothing about the plan's own "
+          "rows - the vacuous-looking direction, and the only case that fails "
+          "if a bug row ever starts displacing or re-resolving one",
+          _with_bugs["rows"][:2] == _no_bugs["rows"])
+    # A bug of type Bug ranks 2 on this project and its declared parent is a
+    # Task at rank 1 - the pair the wrong way round, which is a B1 REFUSAL for
+    # any row that is graded. The phase beside it declares the same parent, so
+    # the fixture cannot be satisfied by a check that stopped refusing.
+    _wrong_way = {"id": "P1", "title": "P1", "status": "pending",
+                  "ado": {"id": 800}, "tasks": [],
+                  M.FIELD: {"id": 700, "type": "Task"}}
+    _rows = M.inventory([_wrong_way],
+                        {"types": {"pbi": "Product Backlog Item", "bug": "Bug"}},
+                        [_bug("BUG-1", parent=700, link=900,
+                              ptype="Task")])["rows"]
+    _res = M.hierarchy_violations(_rows, LEVELS)
+    check("bg7 an inverted rank on a BUG is not refused while the SAME "
+          "arrangement on a phase is: the push creates no bug parent link, so "
+          "refusing one would exit 1 over another team's arrangement - counted, "
+          "because one refusal and two look alike to `in`: %r"
+          % ([e["id"] for e in _res["refusals"]],),
+          [e["id"] for e in _res["refusals"]] == ["P1"]
+          and _codes(_res)[0] == ["B1"])
+    check("bg8 ...and `checked` counts the links this connector would create, "
+          "so a bug's declared parent never reads as a link the hierarchy "
+          "check looked at: %r" % (_res["checked"],),
+          _res["checked"] == 1)
+    _lines = M.plan_lines(_rows, _res)
+    check("bg9 the PUSH PLAN carries no bug row and no bug in its counts: a bug "
+          "with no parent is the ordinary state of every bug, and counting it "
+          "as 'uncategorised (no parent anywhere)' would report that as a gap "
+          "in the plan: %r" % (_lines[0],),
+          "1 item(s)" in _lines[0]
+          and len([x for x in _lines if " -> " in x]) == 1
+          and "BUG-1" not in "\n".join(_lines))
+
     # --- the project's own backlog ranks --------------------------------------
     _levels = M.levels_from_backlog_config(BACKLOG)
     check("bl1 the captured Scrum payload ranks the whole ladder, Bug included: "
@@ -284,6 +435,80 @@ def _cases(check):
               "rather than an empty ladder - an unreadable response must not "
               "read as 'this project ranks nothing'" % (_junk,),
               M.levels_from_backlog_config(_junk) is None)
+
+    # --- F143: the payload gives the bug's RANK and never its NAME -------------
+    # The name used to be the literal "Bug" - a shipped table of one row inside
+    # the one function whose entire argument is that no table may ship. `Defect`
+    # is the fixture value because it is what a board that renamed its bug type
+    # actually carries, and it is the value the two versions disagree about: the
+    # literal files the rank under a name no work item on that board has.
+    _renamed_ado = {"types": {"pbi": "Product Backlog Item", "bug": "Defect"}}
+    _renamed = M.levels_from_backlog_config(BACKLOG, _renamed_ado)
+    check("bl6 a renamed bug type is ranked under THAT name and under no "
+          "other - the payload gave the rank, meta.ado.types.bug gave the "
+          "name, and the ladder is still the same size: %r"
+          % (_renamed["levels"],),
+          _renamed["levels"].get("Defect") == 2
+          and "Bug" not in _renamed["levels"]
+          and len(_renamed["levels"]) == len(LEVELS))
+    check("bl7 ...and the basis names the key the name came from, so a cached "
+          "ladder carrying a type nobody recognises can be traced to the "
+          "config that named it instead of being trusted: %r"
+          % (_renamed["basis"],),
+          "meta.ado.types.bug" in _renamed["basis"]
+          and _renamed["basis"].count("'Defect'") == 1)
+    # bl8 is the CONSEQUENCE end to end, because bl6 alone would pass on a
+    # version that put the right key in a dict nothing reads. A phase declaring
+    # one of this board's bug-typed work items as its parent is rank 2 under
+    # rank 2 - a NOTE, which is a graded answer. Under the literal it came back
+    # `not verified`, the one verdict that means nobody looked.
+    _dfx = [{"id": "P1", "title": "p", "status": "pending", "tasks": [],
+             "ado": {"id": 500},
+             M.FIELD: {"id": 501, "type": "Defect", "source": "declared"}}]
+    _drows = M.inventory(_dfx, _renamed_ado)["rows"]
+    _dgraded = M.hierarchy_violations(_drows, _renamed["levels"])
+    _dblind = M.hierarchy_violations(
+        _drows, M.levels_from_backlog_config(BACKLOG)["levels"])
+    check("bl8 the renamed type is GRADED end to end - one equal-rank note and "
+          "nothing unverified - where the literal spelling left the same link "
+          "unverified and unremarked: %r vs %r"
+          % (_dgraded["warnings"], _dblind["unverified"]),
+          len(_dgraded["unverified"]) == 0 and len(_dgraded["warnings"]) == 1
+          and _dgraded["warnings"][0]["code"] == "B2"
+          and len(_dblind["unverified"]) == 1
+          and _dblind["unverified"][0]["code"] == "B0")
+    # THE SECOND DIRECTION, and it looks vacuous on purpose: it passes on the
+    # pre-F143 code by construction and is the only case that fails when the
+    # placement becomes unconditional. `asTasks` would put the bug at rank 1,
+    # the type list puts it at 2, so the two versions cannot agree by accident.
+    _named = {"bugsBehavior": "asTasks",
+              "taskBacklog": {"rank": 1, "workItemTypes": [{"name": "Task"}]},
+              "requirementBacklog": {"rank": 2,
+                                     "workItemTypes": [{"name": "Defect"},
+                                                       {"name": "User Story"}]}}
+    _kept = M.levels_from_backlog_config(_named, _renamed_ado)
+    check("bl9 a board whose own type lists rank the bug type keeps THAT rank "
+          "- bugsBehavior places nothing over it, and the basis says so: %r"
+          % (_kept["levels"],),
+          _kept["levels"]["Defect"] == 2
+          and "placed nothing" in _kept["basis"])
+    _off = dict(BACKLOG)
+    _off["bugsBehavior"] = "off"
+    _offlv = M.levels_from_backlog_config(_off, _renamed_ado)
+    check("bl10 a bugsBehavior naming no ranked backlog places no bug rank at "
+          "all, and the basis SAYS none was placed - a ladder silently missing "
+          "a rung reads as a board that ranks nothing there: %r"
+          % (_offlv["basis"],),
+          "Defect" not in _offlv["levels"] and "Bug" not in _offlv["levels"]
+          and "no bug rank was placed" in _offlv["basis"])
+    check("bl11 the name comes through `bug_type` and not through a second "
+          "reading of the key: a padded config value is trimmed here exactly "
+          "as it is on the row `inventory` stamps, which is what keeps the "
+          "ladder key and the row's own type meeting at all",
+          M.levels_from_backlog_config(
+              BACKLOG, {"types": {"bug": " Defect "}})["levels"]
+          .get("Defect") == 2
+          and M.bug_type({"types": {"bug": " Defect "}}) == "Defect")
 
     # --- tier A: structural, offline, and it needs no ranks -------------------
     # LEVELS IS DELIBERATELY None IN THIS FAMILY. Tier A must stand on the

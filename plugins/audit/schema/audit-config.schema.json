@@ -83,7 +83,7 @@
     },
     "enforce": {
       "type": "boolean",
-      "description": "LEGACY: force the plan-first gate to DENY regardless of evidence — planGate: \"deny\" says the same thing, and planGate wins when both are set. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. Only the plan gate is graded — the secret guards deny by default either way."
+      "description": "LEGACY: force the plan-first gate to DENY regardless of evidence — planGate: \"deny\" says the same thing, and planGate wins when both are set. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. What is graded is the plan-coverage class wherever it is enforced: require-plan's Edit/Write path, the shell-write branch of guard-secrets-read and the PostToolUse report in guard-bash-writes all resolve the same tier. The secret guards are never graded and deny at every tier."
     },
     "planGate": {
       "type": "string",
@@ -93,7 +93,7 @@
         "ask",
         "deny"
       ],
-      "description": "Pin the plan-first gate to one tier by hand instead of grading it on evidence: observe (record only, report once per session), warn (advisory), ask (each out-of-plan edit waits for the human's approval — approving covers one edit), deny (refuse). Absent (the default) the gate grades itself: observe with no manifest, warn with a manifest but nothing running, deny once a phase is in_progress. Beats the legacy enforce when both are set; a value outside the enum is read as unset (fail-open, never deny) and flagged by validate-config.py. Only the plan gate is affected — the secret guards deny at every tier."
+      "description": "Pin the plan-first gate to one tier by hand instead of grading it on evidence: observe (record only, report once per session), warn (advisory), ask (each out-of-plan edit waits for the human's approval — approving covers one edit), deny (refuse). Absent (the default) the gate grades itself: observe with no manifest, warn with a manifest but nothing running, deny once a phase is in_progress. Beats the legacy enforce when both are set; a value outside the enum is read as unset (fail-open, never deny) and flagged by validate-config.py. Reaches every plan-coverage surface, not just require-plan's Edit path: the shell-write branch of guard-secrets-read and the PostToolUse report in guard-bash-writes resolve the same tier, so one file gets one verdict whichever way it is written. The secret guards are never graded and deny at every tier."
     },
     "trivialLineThreshold": {
       "type": "integer",
@@ -174,12 +174,12 @@
     },
     "bashWriteCheck": {
       "type": "object",
-      "description": "Post-Bash unplanned-source-write detector.",
+      "description": "Post-Bash unplanned-source-write detector. This is the master off switch and not the only key that decides whether its plan-coverage class speaks: with it enabled, that class still resolves a tier through the plan gate, so planGate: \"observe\" — or simply a repo with no manifest — silences it. The lock and journal classes bind their claim to evidence of their own and report at every tier.",
       "additionalProperties": true,
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Enable the git-status diff after Bash. Default true."
+          "description": "Enable the git-status diff after Bash. Default true; see the parent description for the tier the plan-coverage class still has to clear."
         }
       }
     },

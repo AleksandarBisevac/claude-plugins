@@ -141,6 +141,39 @@ def _cases(check):
         check("a declared date is reported as declared, and travels with it",
               M.usage_state(proj)["pricingAsOfDeclared"] is True
               and M.usage_state(proj)["pricingAsOf"] == "2026-01-02")
+        # --- F168: the rate basis, trimmed at the door -------------------------
+        # `_declared_as_of` decides on the TRIMMED config value and this payload
+        # served the MERGED one as typed, so the two disagreed about one config
+        # value inside one dict literal. The fixture is padded rather than clean
+        # on purpose: an unpadded date passes on both versions of the code, so it
+        # cannot tell the fix from the bug. The case above is the other half of
+        # that pair - it is what fails if the trim ever eats a legitimate date.
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricingAsOf": "  2026-01-02  "}}, fh)
+        _pad = M.usage_state(proj)
+        check("pa1 a PADDED date is trimmed where the config becomes plugin "
+              "data. usage-view.js prints 'rates as of ' + this value verbatim, "
+              "so serving it as typed puts the padding on the tab: %r"
+              % (_pad["pricingAsOf"],),
+              _pad["pricingAsOf"] == "2026-01-02"
+              and _pad["pricingAsOfDeclared"] is True)
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricingAsOf": "   "}}, fh)
+        _blank = M.usage_state(proj)
+        check("pa2 ...and a whitespace-only one collapses to None - the shape "
+              "absence already has - rather than shipping a TRUTHY empty string "
+              "beside a flag saying this project declared nothing, which is the "
+              "second kind of empty the other three readers were taught not to "
+              "serve: %r" % (_blank["pricingAsOf"],),
+              _blank["pricingAsOf"] is None
+              and _blank["pricingAsOfDeclared"] is False)
+        with open(_cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricingAsOf": 20260102}}, fh)
+        check("pa3 a hand-edited NUMBER answers None instead of raising - the "
+              "trim sits inside the payload's own dict literal, so an exception "
+              "there costs the whole Usage tab and not one line of context",
+              M.usage_state(proj)["pricingAsOf"] is None
+              and M.usage_state(proj)["pricingAsOfDeclared"] is False)
         with open(_cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"usage": {"showCost": True}}, fh)
         _dd = M.usage_state(proj)

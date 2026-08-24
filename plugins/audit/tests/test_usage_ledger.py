@@ -133,11 +133,38 @@ def _cases(check):
           == ("P3", "P3.2", "task"))
 
     # --- author ------------------------------------------------------------
-    check("author: none mode returns None", M.resolve_author(".", "none") is None)
-    h = M.resolve_author(".", "hash")
-    check("author: hash mode is pseudonymous and stable",
-          isinstance(h, str) and h.startswith("anon-")
-          and h == M.resolve_author(".", "hash"))
+    # A FIXTURE REPOSITORY, NOT `"."` (F119). These cases passed the PROCESS CWD as
+    # the project root, so the identity they hashed was whatever the directory the
+    # suite happened to be launched from carried: the developer's own address from
+    # inside a checkout, and `$USER` through `resolve_author`'s fallback from
+    # anywhere else. Both spellings satisfy "starts with anon- and is stable", so
+    # the pair asserted the prefix and the determinism of sha256 - never that the
+    # repository was read at all. Pinning `user.email` in a fixture makes the
+    # expected digest a value no ambient identity can produce.
+    import hashlib
+    import subprocess
+    authroot = _harness.fixture_root("usage-ledger-author-")
+    _author_email = "fixture-author@example.invalid"
+    subprocess.run(["git", "init", "-q", authroot], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   timeout=30)
+    subprocess.run(["git", "-C", authroot, "config", "user.email",
+                    _author_email], check=True, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, timeout=30)
+    _want = "anon-" + hashlib.sha256(
+        _author_email.encode("utf-8")).hexdigest()[:12]
+    check("author: none mode returns None",
+          M.resolve_author(authroot, "none") is None)
+    h = M.resolve_author(authroot, "hash")
+    check("author: hash mode is the pseudonym of the REPOSITORY's identity, "
+          "and stable - the digest is the one that address produces and no "
+          "other, so a lookup that read the ambient identity instead cannot "
+          "match it (got %r, wanted %r)" % (h, _want),
+          h == _want and h == M.resolve_author(authroot, "hash"))
+    check("author: ...and email mode hands back that same address unhashed, "
+          "which is what makes the digest above a claim about the repository "
+          "rather than about sha256",
+          M.resolve_author(authroot, "email") == _author_email)
 
     tmp = tempfile.mkdtemp(prefix="usage-ledger-selftest-")
     try:

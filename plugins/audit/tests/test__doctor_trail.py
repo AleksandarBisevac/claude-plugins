@@ -46,11 +46,10 @@ def _age(path, days):
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    import tempfile
 
     cfgmod = _loader.load_hooks_config()
     ul = _loader.load_script("usage_ledger.py", modname="dt_ledger")
-    tmp = tempfile.mkdtemp(prefix="doctor-trail-")
+    tmp = _harness.fixture_root("doctor-trail-")
     try:
         mrel = "docs/audit/audit-plan.json"
         os.makedirs(os.path.join(tmp, "docs", "audit"))

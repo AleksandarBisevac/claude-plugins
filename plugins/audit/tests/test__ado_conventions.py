@@ -33,6 +33,12 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _ado_conventions as M                       # noqa: E402
 import _manifest_ado as _ado                       # noqa: E402
+# The tuple `parent_rule_exemption` narrows on is DERIVED by `_ado_parent`, not
+# by the module under test: a work item type name comes from `meta.ado.types`,
+# which is that module's to read. Asked here through the real door rather than
+# hand-written, so a fixture cannot agree with an exemption the connector's own
+# rows would not have matched.
+import _ado_parent as _adop                        # noqa: E402
 
 
 # A board standard modelled on a real one, so the cases are not shaped by what
@@ -216,6 +222,123 @@ def _cases(check):
     check("ac16 a board that does not require a parent does not get the finding",
           M.conformance_violations(_task(parent=None), _noparent) == [])
 
+    # --- F120: the rule is scoped by kind, and the exemption is SPOKEN --------
+    # The fixture is a BUG with no parent on a board that requires one — the
+    # exact payload push builds for `/audit:sync push bugs`, which is the one
+    # kind the connector creates without a parent link. Before this, that
+    # payload was refused and nothing anywhere had warned it would be.
+    _BUGS = _adop.unparented_types({"types": {"bug": "Bug", "task": "Task"}})
+    _bug = {"type": "Bug",
+            "fields": {"System.Title": "Panel drops the filter on reload",
+                       "System.Description": "Done when: it stops.",
+                       "System.Tags": "type:qa; supplier:databridge"}}
+    _v = M.conformance_violations(_bug, BOARD, _BUGS)
+    check("ac63 a bug create is no longer refused for a parent push was never "
+          "going to give it - the gate reads requireParent as every item THIS "
+          "PLUGIN PARENTS, which is what push implements: %r" % (_v,),
+          _v == [])
+    # The PAIRED half over the same board and the same absent parent: a Task is
+    # a kind push does parent, so it is still refused. A rule that stopped
+    # applying to everything would pass ac63 and fail here.
+    check("ac64 ...while a TASK with no parent on that same board is refused as "
+          "it always was, so the narrowing is by KIND and not by giving up: %r"
+          % (M.conformance_violations(_task(parent=None), BOARD, _BUGS),),
+          len([v for v in M.conformance_violations(_task(parent=None), BOARD,
+                                                   _BUGS)
+               if "carries none" in v]) == 1)
+    # The exemption must be a SENTENCE and not a silence: this board wants a
+    # parent on every card and cannot have one here, which is the thing to say.
+    _note = M.parent_rule_exemption(_bug, BOARD, _BUGS)
+    # The rule is named at the FRONT, not merely somewhere in the sentence. An
+    # earlier spelling of this case asked whether "requireParent" appeared at
+    # all, and it does - in the closing advice - so a note whose opening clause
+    # stopped naming which rule had narrowed passed it unchanged.
+    check("ac65 ...and the skip SAYS it skipped, opening with the rule that "
+          "narrowed and naming the type - a rule that quietly stopped applying "
+          "is the silent pass the typeless half of F106 already cost this "
+          "file: %r" % ((_note or "")[:60],),
+          _note is not None and "Bug" in _note
+          and _note.startswith("`requireParent` was NOT applied"))
+    # THE SECOND DIRECTION, and it looks vacuous on purpose: it is the only case
+    # that fails if the exemption becomes unconditional, which would exempt
+    # every kind and put F120 back as a silent pass instead of a refusal.
+    check("ac66 a TASK draws no exemption sentence at all over that same board, "
+          "which is the case that fails if the exemption stops reading the "
+          "type: %r" % (M.parent_rule_exemption(_task(), BOARD, _BUGS),),
+          M.parent_rule_exemption(_task(), BOARD, _BUGS) is None)
+    check("ac67 ...and neither does a bug on a board that never asked for a "
+          "parent, because there is no rule there to have narrowed",
+          M.parent_rule_exemption(_bug, _noparent, _BUGS) is None)
+    # The LOUD default. A caller that has not been taught the question gets the
+    # pre-F120 refusal — wrong, but visible — rather than a pass nobody asked
+    # for. Same bytes as ac63, only the argument dropped.
+    check("ac68 an unpassed `unparented` exempts NOTHING, so a caller that "
+          "never learned the question keeps the loud old answer instead of "
+          "inheriting a quiet new one: %r"
+          % (M.conformance_violations(_bug, BOARD),),
+          len([v for v in M.conformance_violations(_bug, BOARD)
+               if "carries none" in v]) == 1
+          and M.parent_rule_exemption(_bug, BOARD) is None)
+    # The type name comes from the BOARD, not from this module. A board that
+    # renamed its bug type must exempt THAT name and stop exempting `Bug` —
+    # asserted both ways over one pair, so a rule that returned a constant
+    # fails the second half.
+    _renamed = _adop.unparented_types({"types": {"bug": "Defect"}})
+    _defect = dict(_bug, type="Defect")
+    check("ac69 `meta.ado.types.bug` is what names the exempt type, so a board "
+          "that renamed it exempts the new name and refuses the old one - a "
+          "shipped constant passes the first half and fails this: %r"
+          % (_renamed,),
+          _renamed == ("Defect",)
+          and M.conformance_violations(_defect, BOARD, _renamed) == []
+          and len(M.conformance_violations(_bug, BOARD, _renamed)) == 1)
+    # ac70 WAS HERE AND IS NOW `bt1` IN `test__ado_parent.py`, with the function
+    # it covered: an absent, blank or wrongly-typed `types` block falling back to
+    # the connector's own default is a fact about the DERIVATION, and the
+    # derivation moved to the module that reads every other name in
+    # `meta.ado.types`. What stays here is what this module actually owns - that
+    # a name it is HANDED narrows `requireParent` and nothing else.
+    check("ac70 an exemption tuple this module never derived still narrows the "
+          "rule, which is the whole seam: the name arrives as an argument and "
+          "the exemption is the only thing scoped by it: %r"
+          % (M.parent_rule_exemption(_defect, BOARD, _renamed),),
+          M.parent_rule_exemption(_defect, BOARD, _renamed) is not None
+          and M.parent_rule_exemption(_bug, BOARD, _renamed) is None)
+    # The exemption narrows requireParent and NOTHING else, or a bug would stop
+    # being graded against the board's real standard - which is the failure
+    # F106's quiet half already demonstrated.
+    _bad_bug = {"type": "Bug",
+                "fields": {"System.Title": "x", "System.Description": "no marker",
+                           "System.Tags": "type:nope"}}
+    _v = M.conformance_violations(_bad_bug, dict(BOARD, **{
+        "requiredFields": {"Bug": ["Microsoft.VSTS.Scheduling.RemainingWork"]},
+        "descriptionMustContain": {"Bug": ["Done when"]}}), _BUGS)
+    check("ac71 ...and every OTHER rule still grades that bug - fields, "
+          "skeleton and vocabulary all fire, so the exemption narrowed one "
+          "rule and did not switch the gate off for a kind: %r" % (_v,),
+          len(_v) == 3 and not any("carries none" in v for v in _v))
+    # The sentence is USER-FACING prose, and a board on the Basic process spells
+    # its bug type `Issue` - so the article has to come from the name. Both
+    # spellings are asserted over the SAME sentence: a helper that always
+    # answered "an" would pass the vowel half and fail the consonant one.
+    _issue = _adop.unparented_types({"types": {"bug": "Issue"}})
+    _issue_note = M.parent_rule_exemption(dict(_bug, type="Issue"), BOARD,
+                                          _issue)
+    _bug_note = M.parent_rule_exemption(_bug, BOARD, _BUGS)
+    check("ac72 the exemption picks the article off the type name, so a Basic "
+          "board reads `an Issue` and not `a Issue` - counted, because the "
+          "sentence says it twice and a fix to one of them is not a fix: %r"
+          % (_issue_note,),
+          _issue_note.count("an Issue") == 2
+          and "a Issue" not in _issue_note
+          and _bug_note.count("a Bug") == 2
+          and "an Bug" not in _bug_note)
+    check("ac73 ...and `_a_type` answers for a type name that is empty rather "
+          "than reading `'' in 'AEIOU'` as a vowel, which is the shape that "
+          "would make a nameless type `an`: %r" % (M._a_type(""),),
+          M._a_type("") == "a " and M._a_type("Epic") == "an Epic"
+          and M._a_type("Product Backlog Item") == "a Product Backlog Item")
+
     # --- the config half ------------------------------------------------------
     _f, _w = M.check_conventions_config(None)
     check("ac17 an absent conventions block is legal and silent - an optional "
@@ -297,13 +420,105 @@ def _cases(check):
     check("ac33 ...while the shape the connector actually sends is left alone - "
           "a guard that refused both shapes would just be off",
           M.rest_payload_reason(_task()) is None)
-    check("ac34 ...and a payload merely MISSING `type` is a conformance question, "
-          "not a shape one: no fetch marker, no refusal",
-          M.rest_payload_reason({"fields": {"System.Tags": "x"}}) is None)
+    # ac34 REWRITTEN AT F106, AND THE OLD ANSWER WAS THE BUG. It pinned that a
+    # payload merely missing `type` drew no refusal, on the reasoning that a
+    # missing type is a conformance question while only REST decoration proves a
+    # shape mistake. What it was really protecting is the half ac33 holds - a
+    # guard that refuses everything gets switched off, so something has to stay
+    # gradeable. But the shape it chose to leave gradeable is EXACTLY what
+    # `_ado_fetch.as_items()` emits, so the guard could not see the payload it
+    # was built for and the false verdict shipped anyway. The new answer is
+    # better because `type` is not decoration: every type-scoped rule is a
+    # lookup on it, so its absence means the grade cannot be GIVEN rather than
+    # that the item fails it - and ac33 still kills the always-refuse mutation
+    # over the shape that really is a create payload.
+    check("ac34 a payload with `fields` and no top-level `type` is a SHAPE "
+          "refusal whatever decoration it carries or lacks - the type is what "
+          "the rules are keyed by, so a missing one is a grade that cannot be "
+          "given: %r"
+          % ((M.rest_payload_reason({"fields": {"System.Tags": "x"}})
+              or "")[:40],),
+          M.rest_payload_reason({"fields": {"System.Tags": "x"}}) is not None)
     # Without this, the guard could be satisfied by a rule that never runs.
     check("ac35 ...proven by the fetched item still being graded when the guard "
           "is not consulted, which is exactly the false accusation F-P-16 names",
           any("parent" in v for v in M.conformance_violations(_fetched, BOARD)))
+
+    # --- F106: the producer's own output, not a fixture resembling one ---------
+    # Measured live against `test-audit-lab/DC application` work item #121: the
+    # top-level keys `_ado_fetch.as_items()` emits are `fields` and `id`, the
+    # parent is INSIDE `fields`, and every REST marker is stripped. This is the
+    # payload `/audit:sync status` step 5 hands the gate.
+    _batched = {"id": 121,
+                "fields": {"System.Parent": 101,
+                           "System.WorkItemType": "Issue",
+                           "System.Title": "Add the audit trail",
+                           "System.State": "To Do",
+                           "System.Tags": "audit-plugin"}}
+    check("ac53 the batched row a real fetch produces is refused although it "
+          "carries no REST marker at all - the marker was never the tell, and "
+          "believing it was is what let this shape through: %r"
+          % ((M.rest_payload_reason(_batched) or "")[:40],),
+          M.rest_payload_reason(_batched) is not None)
+    check("ac54 ...and the read-back decoration is NAMED only when it is there, "
+          "so the corroborating half is read off the payload rather than "
+          "asserted about it",
+          "`rev`" not in (M.rest_payload_reason(_batched) or "")
+          and "`rev`" in (M.rest_payload_reason(_fetched) or ""))
+    # A board that row really does conform to, so ac56 can assert `[]`. An
+    # assertion over a non-empty list passes while the line it names moves.
+    _BOARD121 = {"requireParent": True,
+                 "requiredFields": {"Issue": ["System.Title"]},
+                 "tagVocabulary": {"*": ["audit-plugin"]}}
+    _graded = M.as_gradable_item(_batched)
+    check("ac55 as_gradable_item reads the type out of System.WorkItemType and "
+          "the parent out of System.Parent, so the same row becomes gradeable: "
+          "%r" % (sorted(_graded),),
+          _graded.get("type") == "Issue" and _graded.get("parent") == 101
+          and M.rest_payload_reason(_graded) is None)
+    check("ac56 ...and the parent finding is GONE over those same bytes, which "
+          "is the F106 verdict undone by translating the payload rather than by "
+          "loosening the rule: %r"
+          % (M.conformance_violations(_graded, _BOARD121),),
+          M.conformance_violations(_graded, _BOARD121) == [])
+    _raw = M.conformance_violations(_batched, _BOARD121)
+    check("ac57 ...while the UNTRANSLATED row is still refused by that same "
+          "board for a parent it has - the reason the guard must fire before "
+          "anything is graded: %r" % (_raw,),
+          len([v for v in _raw if "carries none" in v]) == 1)
+    check("ac58 ...and that grade now SAYS the type-scoped rules never ran "
+          "instead of passing them in silence - the quiet half of F106 and the "
+          "more dangerous one, since a refusal at least gets argued with: %r"
+          % (_raw[:1],),
+          len([v for v in _raw if "requiredFields" in v]) == 1)
+    # The second direction. This looks vacuous and is the only case that fails
+    # if the line above becomes unconditional, which would refuse a typeless
+    # payload on a board that scopes nothing by type and could grade it in full.
+    check("ac59 ...while a board that scopes NOTHING by type says nothing about "
+          "a missing type, because there is nothing it could not apply",
+          M.conformance_violations({"fields": {"System.Tags": "audit-plugin"}},
+                                   {"tagVocabulary":
+                                    {"*": ["audit-plugin"]}}) == [])
+    _typeless = M.as_gradable_item({"id": 9, "fields": {"System.Title": "x"}})
+    check("ac60 as_gradable_item invents no type when the SELECT did not return "
+          "one, so the row is refused rather than graded against the rules for a "
+          "type nobody read",
+          "type" not in _typeless
+          and M.rest_payload_reason(_typeless) is not None)
+    _nowhere = M.as_gradable_item(
+        {"id": 10, "fields": {"System.WorkItemType": "Issue",
+                              "System.Title": "x",
+                              "System.Tags": "audit-plugin"}})
+    check("ac61 ...and an ABSENT System.Parent leaves `parent` out rather than "
+          "standing a falsy value in for it: the board hangs that item nowhere, "
+          "and requireParent has to be able to say so: %r"
+          % (M.conformance_violations(_nowhere, _BOARD121),),
+          "parent" not in _nowhere
+          and len([v for v in M.conformance_violations(_nowhere, _BOARD121)
+                   if "carries none" in v]) == 1)
+    check("ac62 a row that is not an object at all comes back as an ungradeable "
+          "shape rather than as an empty pass - garbage in, refusal out",
+          M.rest_payload_reason(M.as_gradable_item("nope")) is not None)
 
     # F-P-18: the two blocks were each valid and disagreed with each other, so a
     # standard that refused every item the connector writes validated clean.

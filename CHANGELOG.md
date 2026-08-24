@@ -4,6 +4,231 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.4.0] - 2026-08-25
+
+**Everything here was found by running 1.3.0, not by reviewing it** — a live board, a running
+panel, and a fault register worked through in parallel. Three entries turned out to be already
+fixed and stale in the register; two of the faults were found by the repair of another.
+
+**A path published in the platform's spelling.** `os.path.relpath` answers with the separator the
+machine uses, so a phase shard was `phases/P3.json` in the index that stores it and `phases\P3.json`
+in the line a Windows reader was shown. One writer already respelled its journal row and said why in
+a comment; the `manifestPath` two lines above it and the `written` list it returned did not. Worst
+of it was a composition response holding both spellings at once, whose unrespelled half was what
+reached the **chained journal row** — a chain whose content depends on the machine that wrote it.
+Every published or persisted project-relative path now goes through one helper, and a case reads
+both writers' source, because on POSIX the two spellings are the same string and no behavioural
+assertion can tell them apart.
+
+**A wiring step that had never run, and could not say why it failed.** The new end-to-end step for
+the TDD nudge sat skipped behind a failing sweep in every earlier round. Reached at last, it handed
+native Windows Python a Git-Bash path — its neighbours never hit that, because their payloads name a
+relative file and only the environment carries the root. Worse, it asserted on stdout alone against a
+**fail-open** hook, so a crash and a deliberate silence were the same empty string: the failure said
+`got: <>` and named nothing. Every failing branch now re-asks the decision with nothing swallowing
+the error, and prints the traceback.
+
+**Three checks that could only ever have been red on Windows.** A guard's refusal quotes the path
+*as the rule matched it*, not as the payload spelled it; `str(OSError)` embeds its filename through
+`repr()`, so a Windows path doubles its separators inside the message; and a new tool handed `sh` a
+launcher path with no forward slash in it, which sent `py-launch.sh` looking for every hook in the
+caller's directory. All three were green on the machine they were written on. Two of the repairs
+were themselves written against `os.sep` first — the identity on POSIX — and survived their own
+mutation locally before being rewritten to ask the same question on both platforms.
+
+**A guard bypass that shipped.** A heredoc body piped onward — `cat <<'EOF' | bash` — was dropped
+as inert data while the pipe executed it, so an environment dump inside one was allowed where the
+same dump written plainly was refused. The rule the guard exists for, defeated by a rewording.
+Nobody reported it: it surfaced while checking whether a narrowing being made for something else
+would widen a hole, and the hole was already there. A body piped onward is now kept as shell.
+
+**The secret guard answered differently for two spellings of one operation, and neither candidate
+explanation was right.** A grid of path spellings, extensions, payloads and invocation forms showed
+extension, payload text and heredoc-vs-inline all separate nothing. What separated them was how the
+write's path argument was spelled: literals were collected from anywhere in the expression and
+joined, so `base + '/probe.json'` resolved to a root-anchored path no command names, losing the
+prefix that made the real target exempt. The same walk allowed a genuine source write spelled
+`base = 'src/app'; open(base + '.ts', 'w')`.
+
+**And it judged a markdown file by the prose inside it.** The data/code separation added in an
+earlier release covered two branches and was written up as though it covered all of them, so a
+heredoc body was data for one rule and a command for the next. Every branch now reads a named view,
+and which view a body gets depends on its language — a shell heredoc is shell text; a program in a
+language where a shell read verb is merely a word is not. No refusal was given up: those bodies
+still reach the inline-eval arms, whose pattern is strictly broader, and that is pinned rather than
+argued.
+
+**`sync status`'s drift column compared nothing, on `sync status`'s own documented path.** The
+translation the comparison needs was demanded only by `push`, so following `status` step by step
+produced `state not compared` on every row — the honest sentence, printed once per link, which
+reads as a broken command. It is a door now (`read-ado-links.py`), run between the fetch and the
+drift lens, because the state map is the fourth thing prose could not be held to. The cases read
+the command file itself: a suite over the module stayed green through the entire bug.
+
+**The conformance gate refused every item it was handed by the plugin's own batch fetch.** A
+fetched row spells the work item type and the parent inside `fields`, so `requireParent` fired on
+items that had a parent while the type-scoped rules silently checked nothing — one refusal and two
+silent passes from one input. The guard built for exactly this false accusation could not see it,
+because it detected a read-back by REST decoration the batch producer strips. It now keys off the
+absence of a top-level type, which no read-back shape carries either, and `--fetched` grades what
+is already on the board.
+
+**`sync.md` never named the manifest layout.** In the sharded layout the index holds each phase as a
+stub, so the obvious read — the file at `manifestPath` — finds the bugs and stops. Preflight now
+names the loader and the counting step names the door that walks phases, tasks and bugs.
+
+**The panel painted, in full, the path the CLI refuses to print.** The plan-gate card rendered each
+row's file cell verbatim, and the rows it renders include paths outside the repository. The
+redaction now runs in the payload, through the same function the committed journal rows use, so the
+path never reaches the browser. An in-repo path is untouched — a redactor that narrowed to nothing
+would be the same bug wearing the opposite coat.
+
+**The panel named its journal file after its own process id**, which the release before this one
+had just made a reportable finding: the chain is seeded from the file's basename, so a name
+committed there can never be corrected. The pid keeps its place in the lock identity, where a pid
+the OS can vouch for is what lets a crashed panel's lock be judged dead; the journal writer falls
+through to the per-checkout token. Old files keep verifying, and that is measured rather than
+asserted.
+
+**The panel's parent column showed a declaration and never the board**, so a phase somebody had
+dragged under a different epic read exactly like one that agreed. There was no cached board answer
+to show — `sync status` computes the verdict live and writes nothing — so the cell now carries the
+third state the panel could honestly give: whether anyone ever asked, and which command would ask.
+
+**A failed panel launch left nothing on record at all.** The recipe sent both streams to
+`/dev/null`, so "it refused" and "it is gone" left identical traces. Stderr now goes to a
+per-project log that the server empties the moment it is listening — an empty log is the success
+sentinel — and `--status` reports the last line at the left margin, because this server's own port
+refusal is one error line followed by indented advice and a plain tail reports the advice.
+
+**A running panel serves the page it assembled at startup, and now says so.** Re-assembling per
+request was measured and rejected: only the template comes off disk, so it would serve a new front
+end off an old API and stamp the new version on it. The assembled build is stamped into the pidfile
+and compared; where either half is missing the answer is *no basis*, never *up to date*.
+
+**`--status` hid the panel's session token and `--stop` printed it** into the same transcript.
+
+**The leak backstop could not be run on the repository where the leak was found.** It is a flag now
+— and the walk reports what it covered as well as what it found, because "no findings" and "this
+tree holds nothing of ours" were the same answer, which is what a mistyped path produces first.
+
+**`/audit:phase add` puts one more phase into a plan that already exists.** Nothing appended to
+`phases[]` before it except the ADO pull, so a plan that outlived its first round left re-running
+`init` over finished work or hand-editing the index — wrong twice in the sharded layout, where a
+phase is a shard file *and* an index stub. It allocates over live and parked ids alike with the same
+allocator `propose materialize` uses, writes both halves, rolls a refusal back including the shard
+it created, and journals the row.
+
+**The gate set never created a git repository, and every git-reading path fails open** — so on a
+fixture with no repository, a check that could not run printed what a check that found nothing
+prints. The absence was invisible rather than tolerated. A new gate builds a real repository and
+drives the branch resolver, the commit trail, all three arms of the history guard, the journal, the
+meter and three more hooks through it. Its own isolation was a live bug: with only a repo-local
+identity the branch resolver composed a branch carrying the machine owner's initials.
+
+**The hook import budget was green on one interpreter and red on another the project promises.**
+The floor was already derived; the allowance beside it was still hand-written, and on 3.9 `hashlib`
+pulls a module that list does not name. Both are derived now, and the gate measures every
+interpreter it can find and names the supported ones it could not reach — including, honestly, on
+CI, where the runner image has no 3.8.
+
+**Every gate proved a check goes red and none proved one stays quiet.** The allow half exists now,
+built from the same table pointed the other way: the guard is weakened until it over-fires and a
+known-good input must go red. Two of its rows were wrong on first writing and only the experiment
+said so — one judged a helper rather than the lint, the other mutated a loop the document in
+question never enters.
+
+**A sharded save could lose a phase, silently, and the count stayed right.** Two phase ids whose
+shard filenames collide wrote to one file and the second overwrote the first — measured, the round
+trip returned the same phase twice with the same tasks, so nothing on any surface looked wrong. The
+shard path was derived in three places; it is derived once now, the writer refuses before creating
+anything, and case is folded on every platform rather than per-platform: the standard library's
+platform answer is the identity on macOS, which is the wrong answer for a document that travels
+between machines.
+
+**The conformance gate refused every item the plugin's own batch fetch handed it.** A fetched row
+spells the work item type and the parent inside `fields`, so `requireParent` fired on items that had
+a parent while the type-scoped rules silently checked nothing — one refusal and two silent passes
+from one input. The guard built for exactly that false accusation could not see it, because it
+detected a read-back by REST decoration the batch producer strips. It keys off the absence of a
+top-level type now, which no read-back shape carries either.
+
+**`sync status`'s drift column compared nothing on `sync status`'s own documented path.** The
+translation the comparison needs was demanded only by `push`, so following the command step by step
+produced `state not compared` on all sixty-nine rows of a real board — the honest sentence, printed
+once per link, reading as a broken command. It is a door now, run between the fetch and the drift
+lens, because the state map is the fourth thing prose could not be held to.
+
+**`requireParent` refused every bug create, and the validator could not see it.** The gate had no
+signal for kind at all: its payload carries a type NAME while the manifest-kind-to-type map lives in
+`meta.ado.types`, which the command never read. It is scoped now — `requireParent` means every item
+this plugin parents — and the exemption is SPOKEN rather than silent, because a board that really
+wants a parent on every card is asking for something this connector cannot give it, and that is a
+sentence to print rather than a check to skip.
+
+**Two spellings of the configured bug type did not duplicate, they disagreed.** One read it raw and
+one trimmed it, so a board configured with a stray space stamped a row with one name while the
+exemption written to recognise those rows looked for another. Neither file collided with the other,
+and every rule in the tree passed over it — which is what the new configuration-read rule below
+exists for.
+
+**Every gate proves a check goes red, and now every guard proves it stays quiet.** The allow half is
+the same table pointed the other way: the guard is weakened until it over-fires and a known-good
+input must go red. Two of its first rows were wrong on writing and only the experiment said so — one
+judged a helper rather than the lint, the other mutated a loop the document in question never enters.
+
+**A rule for the defect this release kept making.** Three of the faults found while fixing the
+others were one shape: two things that had to agree, with nothing comparing them. The new
+configuration-read rule catches the cheapest general form — two modules reading one key through
+expressions that disagree about whitespace or case. Its vocabulary is derived from the schemas this
+plugin already publishes, so a key added there is watched by default, and the narrowing was measured
+rather than preferred: comparing the default each reader supplies as well convicted most of the keys
+two modules share, every hit a validator beside a consumer. It found a second live divergence before
+it shipped — a timestamp that validates as non-empty while being whitespace, rendered as a basis with
+no content on three surfaces and called undeclared on a fourth.
+
+**Suites left fixtures where you were working.** Eight of them allocated a top-level fixture root and
+never removed it; the allocation answers to `TMPDIR`, so on a developer's machine the leak vanishes
+into the system temp and where that variable points at a working directory the fixture lands beside
+your files. Every child now runs with its working directory, its temp variables and its home
+directory pinned at a private scratch holding one planted file, and the check reports anything added
+**and that file being deleted or rewritten** — the destructive half a strays-only check calls
+spotless. It found a suite running the real `az extension list` on any machine with the Azure CLI,
+including CI.
+
+**Git writes loose objects read-only, and the ordinary removal cannot unlink them on Windows.** Every
+caller here passed "ignore errors", so removal had never worked there and nothing said so. The rule
+that now forbids it is per module and keyed on the discriminating fact, which is not that a tree
+holds a repository but that something was written to one: initialising into an empty directory leaves
+no read-only file, and a single staging operation does.
+
+**A release bump owes four followers and they have an order.** The fetch pins, the rendered
+artifacts, the byte copy of the example report, and every committed screenshot — each caught by a
+gate, and the gates were the only place that list existed. `tools/verify.sh --release` names them in
+order now, checks rather than repairs, and refuses if the tag already exists. One of the four could
+previously only go red after a push: the byte-copy comparison lived in CI alone, so the local
+runner's claim to run every gate CI runs was false by exactly that step.
+
+**The screenshot capture refuses to photograph anything but its own fixture.** The scratch root is a
+number on POSIX and a per-user path on Windows, and the panel paints that path into its topbar — so
+a Windows re-capture would have committed the operator's name into every panel picture, on a step
+every release requires. The committed-identity check says TEXT artifact now, because it cannot read a
+PNG and its old headline was false about a repository that also commits screenshots of the surfaces
+it scans.
+
+**The plan-gate feed stopped carrying what it had no business carrying.** A command became a digest,
+a byte length and a program name; a path outside the repository became a token; a hook that wrote a
+hundred and twenty characters of the user's prompt into a row the panel paints now records the fact
+and the keyword instead. The redaction runs at the writer where the value is a path, and at the
+reader where the reader is the one that must not publish it.
+
+**Also:** the manifest validator's summary counted items while its body printed collapsed lines;
+`connect`'s `--json` shape and its documentation disagreed; one message served both "the sandbox
+refused" and "the extension is missing"; a confirm gate asked to approve a plan it had not printed;
+`propose`'s reserved-phase cell was composed in five places across Python and JavaScript and is
+now composed in one, with the raw status carried beside the normalised one so a surface can name
+a value outside the vocabulary instead of quietly substituting a default.
+
 ## [1.3.0] - 2026-08-24
 
 **A user found their own username and directory layout inside a committed journal

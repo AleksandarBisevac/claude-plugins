@@ -2,7 +2,22 @@
 
 A Claude Code plugin marketplace (`quality-gates` → plugin `audit`). Python here is **hooks and
 CLI scripts**, not a package: there is no `[project]` table, nothing is installed, nothing is
-published. It dogfoods its own plugin, so your edits run under its plan gate and TDD reminder.
+published. It dogfoods its own plugin, so its hooks fire on your edits.
+
+**Which tier the plan gate is in is not a property this file may assert** (F57). The gate grades
+itself on evidence — observe with no manifest, warn with a manifest but nothing running, deny once
+a phase is `in_progress` — and this sentence used to say edits "run under" it, which reads as the
+denying tier while only the weakest reading was true: the dogfood manifest's phases were all
+finished when that was written, so the gate was advisory here and had been for releases. That is
+exactly the kind of fact a document cannot keep. A document that names a gate owes the reader its
+tier or should not name the gate, and the tier is computed rather than written down — so ask the
+thing that computes it:
+
+```bash
+/audit:doctor          # prints which tier is active and what put it there
+```
+
+The TDD reminder is unconditional and non-blocking, so it needs no tier.
 
 `CONTRIBUTING.md` is the rulebook and `PLUGIN-BUILD-GUIDE.md` is the architecture. This file
 states only what you must know *before* an edit; it deliberately restates no procedure, because
@@ -67,9 +82,12 @@ Five things beyond the code, and four of them fail CI *by name* if missed:
 4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint);
 5. **`scripts/` only** — `_output.PATH_PREAMBLE`, pasted byte for byte after the stdlib
    imports and above the first sibling import. Copy it from any neighbour;
-   `path_preamble_violations()` counts it (once, never twice) and checks the ordering, and
-   `depth_sensitive_paths()` fails any file that reads `__file__` outside it. `hooks/` gets
-   none of this — hooks may not import `scripts/`, so they resolve by basename through
+   `path_preamble_violations()` counts its LINES (once, never twice) and checks the
+   ordering, and `depth_sensitive_paths()` fails any file that reads `__file__` outside
+   it. **Lines, not the whole block** — that was F94: a file repeating only the
+   `import _output` / `install_path()` tail carries the text once and bootstraps twice,
+   so a count of the block read it as compliant. `hooks/` gets none of this — hooks may
+   not import `scripts/`, so they resolve by basename through
    `hooks/_config.find_script()` instead.
 
 Name by role: `_underscore.py` for an importable helper, `hyphen-name.py` for an entry point.
@@ -160,10 +178,11 @@ The commands it calls, with the manifest and plugin-structure half handed to
 out here is left out on the record and not by omission:
 
 ```bash
-python3 tools/sweep-selftests.py           # hooks + scripts + tests, in parallel
+python3 tools/sweep-selftests.py           # hooks, scripts, tests AND tools/, each in a scratch dir
 python3 tools/sweep-selftests.py --selftest
 python3 tools/gate-parity.py               # every description of the gate set, compared
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
+python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
@@ -181,6 +200,30 @@ nothing was green locally and red in CI. `tools/sweep-selftests.py` is the singl
 holds the union of both rules, and it runs the tree across all cores but two. Re-derive the
 wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape
 for a bisect.
+
+**And every child runs in scratch directories it is expected to leave unchanged.** Four
+things are pointed away from your machine per child: its cwd and `TMPDIR` at one scratch
+directory, its HOME at a second — under every name a home lookup reads, not just `HOME` —
+and `PYTHONPYCACHEPREFIX` at a third, so a bytecode cache the interpreter writes under the
+HOME it was handed cannot convict the suite that triggered it. **The working directory and
+the home directory are the watched pair**, each holding one file the suite did not put
+there, and a suite is red if anything was added to either — or, the destructive half a
+strays-only check would call spotless, if that planted file was deleted or rewritten.
+Findings name which of the two channels they came from, and the three outcomes are worded
+apart because they are three different bugs. Suites here leaked git fixtures into whatever
+directory `TMPDIR` named for a long time and no gate could see it, because `TMPDIR` is
+normally the system temp and a stray fixture there is somebody else's problem; the home
+channel is the one that caught a suite shelling out to the real `az`, which writes into the
+operator's home directory on any machine that has it — CI's ubuntu runner included. A suite
+that needs scratch space builds it under `tempfile.mkdtemp()` and removes it in `finally`.
+
+**And this paragraph is a checked one.** `gate-parity.py`'s `isolation_drift()` reads the
+runner's own constants rather than restating them, and fails when a family of variables it pins
+is named by none of the documents that describe the isolation — this one, `CONTRIBUTING.md`, and
+the docstring beside `_harness.fixture_root()` — or when the runner's watched directories, their
+channel labels and the files planted in them stop agreeing with each other. That surface grew
+more than once and left each document behind by a different amount, which is what a rule is worth
+more than another correction of.
 
 **`gate-parity.py` is why that cannot come back.** `tools/verify.sh`,
 `.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list are hand-maintained descriptions
@@ -218,11 +261,21 @@ and confirm it goes red before trusting it — `tools/redfirst.sh` does that for
 python3 tools/prove-gates.py          # --list to see the table without running it
 ```
 
-does it for every load-bearing lint at once, naming the case that must fail. It mutates the tree
+does it for every load-bearing lint at once, in both directions — the case that must fail
+when the guarded thing breaks, and the allow case that must fail when the guard is weakened until
+it over-fires. It mutates the tree
 and restores each time, so it is minutes rather than seconds and is not a per-commit gate. Its
-table is derived from the three lint modules by name, so a lint added without a row fails the
+tables are derived from the files that hold a lint, so a lint added without a row fails the
 sweep — which is how the annotation half of `house_style_violations()` was found unenforced
 after the document had claimed it for a long time.
+
+**Derived two ways, because a name is a convention.** A lint whose name ends in one of the
+reporting shapes is reached by that shape; one whose name says nothing is reached by what it
+*does* — no required argument, and a walk of the tree through one of the shared walks. That
+second arm exists because a lint with a row in neither table was invisible to the coverage rule
+itself: a check it never derives can never be reported missing, so the table went on looking
+complete. A walk that is not a verdict declares itself in `NOT_A_GATE`, with a reason that is
+checked in both directions.
 
 ## Releasing
 

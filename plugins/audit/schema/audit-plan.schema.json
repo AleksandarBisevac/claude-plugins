@@ -352,7 +352,7 @@
                 },
                 "requireParent": {
                   "type": "boolean",
-                  "description": "true = every pushed item must hang under a parent work item. For a team that already has a Feature/Story backlog this is what puts audit work INSIDE their planning rather than beside it."
+                  "description": "true = every pushed item THIS CONNECTOR PARENTS must hang under a parent work item. For a team that already has a Feature/Story backlog this is what puts audit work INSIDE their planning rather than beside it. Scoped by work item type, because push hangs phases (and, with phaseWorkItems false, tasks) and creates a bug card with no parent link at all: reading it as every item refused every bug create on any board that set this, at create time. A bug create is exempt and the gate SAYS so on the item it exempted; validation warns once, up front, that this board asks for a parent the connector cannot supply for those."
                 }
               }
             },

@@ -275,7 +275,12 @@ COMPOSITION_HELP = {
                       "the phase under nothing even when the fallback is set, "
                       "and is a declaration rather than an oversight. A parent "
                       "is applied at CREATE only: changing it here does not "
-                      "re-parent an item that is already on the board.",
+                      "re-parent an item that is already on the board. The "
+                      "muted line beneath the control is the other half and is "
+                      "not editable: it says what the BOARD says - the work "
+                      "item this phase hangs under there and when that was "
+                      "seen - and where nobody has asked, it says that instead "
+                      "of reading as agreement.",
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
                   "for this task.",

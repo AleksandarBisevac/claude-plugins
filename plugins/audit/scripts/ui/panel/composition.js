@@ -24,6 +24,28 @@
  *   what the phase hangs under RIGHT NOW, from `_ado_parent.resolve` - which is
  *   not the same question as what it declares: an absent declaration resolves to
  *   the fallback and an unusable one resolves to nothing
+ * @property {AdoParentBoard} adoParentBoard - what the BOARD says, which is a
+ *   third question again. Both fields above are read out of the manifest, so
+ *   without this one a phase the board agrees with and a phase nobody has ever
+ *   compared paint the same cell
+ */
+
+/**
+ * The board side of one phase's parent, as `_panel_composition._board_parent`
+ * reports it - three named states and never a live reading.
+ *
+ * NOTHING CACHES AN OBSERVED PARENT PER ITEM, which is why `observed` is the
+ * narrow case rather than the usual one: it means a PULL wrote the declaration
+ * off the board, at `observedAt`. `never-asked` is the honest majority - the
+ * item is linked and nobody has compared the two sides - and it exists because
+ * silence rendered as agreement is the defect this block was added for.
+ *
+ * @typedef {object} AdoParentBoard
+ * @property {'unlinked'|'observed'|'never-asked'} state
+ * @property {number|null} id - the observed parent, and only in `observed`
+ * @property {string|null} observedAt - when the board was read, when it recorded it
+ * @property {string} basis - the server's sentence for that state
+ * @property {string} refresh - the command that asks the board
  */
 
 /**
@@ -185,14 +207,31 @@ function apFallbackWords(fb){
  *
  * The type is in it because the hierarchy check grades a link BY TYPE, so a
  * reader choosing between a Feature and an Epic is choosing between two
- * different verdicts. A candidate that recorded neither type nor title says so
- * instead of showing a bare number that could be anything.
+ * different verdicts. The candidate's own board STATE is in it for the neighbour
+ * of that reason: `_candidate_row` has always carried it and this label has
+ * always dropped it, so a closed Feature and an active one were one option, and
+ * hanging a phase under finished work is the mistake nothing else on this screen
+ * would catch.
  *
- * @param {{id: number, type: ?string, title: ?string}} c - a cached candidate
+ * IT IS LABELLED RATHER THAN JOINED IN AS A FOURTH FRAGMENT. `#77 · Epic ·
+ * Payments · Closed` reads as a title that ends in a word; `state Closed` cannot.
+ *
+ * No moment rides here: every option in this menu came out of one cache, and the
+ * line under the table (`.apcache`) already says when that cache was fetched and
+ * how it was scoped. A per-option stamp would be that sentence fifty times.
+ *
+ * A candidate that recorded NONE of the three says so instead of showing a bare
+ * number that could be anything - and "nothing recorded but the id" is computed
+ * from the same list it describes, so a cache carrying only a state cannot make
+ * it a false sentence.
+ *
+ * @param {{id: number, type: ?string, title: ?string, state: ?string}} c - a
+ *   cached candidate
  * @returns {string} the option's label
  */
 function apCandidateLabel(c){
  const bits=[c.type,c.title].filter(Boolean);
+ if(c.state)bits.push('state '+c.state);
  return '#'+c.id+(bits.length?(' · '+bits.join(' · ')):' · nothing recorded but the id');}
 /**
  * Which option a stored declaration selects.
@@ -273,6 +312,47 @@ function apOptions(cache){
    ...(c.candidates||[]).map(x=>[String(x.id),apCandidateLabel(x)]),
    ['none','none — uncategorised on purpose'],
    ['other','other id…']];}
+// The board states this build knows, spelled once: `apBoardState` normalises
+// against it and `apBoardWords` renders off that, so the attribute a gate reads
+// and the words a person reads can never name different states.
+const AP_BOARD=['unlinked','observed','never-asked'];
+/**
+ * Which board state this row is in, with anything else named as such.
+ *
+ * A value outside the list is a DEFECT and not an old server - the payload
+ * comes from the process serving this page - so it reports `not-reported`
+ * rather than falling back to the commonest state, which would be a guess
+ * wearing the words of an answer.
+ *
+ * @param {AdoParentBoard} b - the row's `adoParentBoard`
+ * @returns {string} one of AP_BOARD, or 'not-reported'
+ */
+function apBoardState(b){
+ const st=(b||{}).state;
+ return AP_BOARD.includes(st)?st:'not-reported';}
+/**
+ * The board half of the parent cell, in one short line.
+ *
+ * THE DECLARATION IS THE OTHER HALF AND IT IS ALREADY PAINTED, which is what
+ * makes the silence dangerous: a select reading `#101` with nothing beside it
+ * looks the same whether the board agrees or nobody ever asked, and on the
+ * board this was found on it was the second (F101). So `never-asked` says so
+ * outright, and it is not an error - nothing is wrong with a phase nobody has
+ * compared; what was wrong was showing it as agreement.
+ *
+ * The date is cut to its day: the cell is one control wide, and the moment is
+ * on the title in full.
+ *
+ * @param {AdoParentBoard} b - the row's `adoParentBoard`
+ * @returns {string} the words for the muted line under the control
+ */
+function apBoardWords(b){
+ const st=apBoardState(b);
+ if(st==='observed')return 'board: #'+b.id
+   +(b.observedAt?(' · seen '+b.observedAt.slice(0,10)):' · moment not recorded');
+ if(st==='unlinked')return 'board: no work item yet';
+ if(st==='never-asked')return 'board: not asked';
+ return 'board: not reported';}
 
 function modelItems(){
  if(MITEMS)return MITEMS;
@@ -752,6 +832,16 @@ function renderComp(){closeCombo();
   const apDecl=(ph.adoParent&&typeof ph.adoParent==='object'
     &&!apIsFallback(ph.adoParent))?ph.adoParent:null;
   const apNote=el('span',{class:'mut small apnote'});
+  // WHAT THE BOARD SAYS, beside what the manifest declares - and where nothing
+  // has been asked, that is what it says (F101). Written once at render and
+  // never touched by `apApply`: the declaration is what an edit changes, and
+  // the board's answer is not something a save here can move. Same class as the
+  // unfinished-edit note because it is the same kind of line under the same
+  // control; the STATE is on a `data-` hook of its own, which is what a browser
+  // gate reads rather than the prose.
+  const apBoard=el('span',{class:'mut small apnote',
+    'data-apboard':apBoardState(ph.adoParentBoard),
+    title:(ph.adoParentBoard||{}).basis||null},apBoardWords(ph.adoParentBoard));
   const apId=el('input',{type:'number',min:'1',step:'1',
     'data-adoparentid':ph.id||'',placeholder:'work item id',
     'aria-label':'ADO parent work item id for phase '+(ph.id||''),
@@ -824,7 +914,7 @@ function renderComp(){closeCombo();
     // the accessible name never depended on the words removed.
     el('td',{class:'tmodel'},revCombo),
     el('td',{class:'phprio'},prio),
-    el('td',{class:'phparent'},ap,apId,apNote));
+    el('td',{class:'phparent'},ap,apId,apBoard,apNote));
   // The row still TOGGLES when it is frozen — a closed phase is the one you most
   // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};

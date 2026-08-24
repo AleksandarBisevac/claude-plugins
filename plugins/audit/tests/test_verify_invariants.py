@@ -31,7 +31,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -150,7 +149,7 @@ def _run(argv):
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    tmp = tempfile.mkdtemp(prefix="vi-")
+    tmp = _harness.fixture_root("vi-")
     try:
         clean_root = os.path.join(tmp, "clean")
         os.makedirs(clean_root)

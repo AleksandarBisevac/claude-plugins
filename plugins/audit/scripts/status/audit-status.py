@@ -81,6 +81,10 @@ import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machin
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
+import _proposals  # noqa: E402  (the proposal READ side: one derivation of the rows
+#                                  and of the "reserved phase (N tasks)" cell that this
+#                                  block, the /audit:propose table and the panel's tab
+#                                  all print - F93)
 import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, the gate)
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 
@@ -108,6 +112,8 @@ _status_index = _status_facts._status_index
 ready_tasks = _status_facts.ready_tasks
 _by_status = _status_facts._by_status
 _by_status_values = _status_facts._by_status_values
+PARKED_PROPOSAL_STATUS = _status_facts.PARKED_PROPOSAL_STATUS
+is_parked_proposal = _status_facts.is_parked_proposal
 areas_of = _status_facts.areas_of
 effective_bug_status = _status_facts.effective_bug_status
 TERMINAL = _status_facts.TERMINAL
@@ -214,10 +220,21 @@ def usage_summary(manifest, manifest_path, project_dir=None):
     try:
         total = ul.totals(rows)
         by_phase = ul.aggregate(rows, "phase")
+        # Trimmed at the door (F160): the plan schema asks only that
+        # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates
+        # and `_usage_line` below printed "rates as of" followed by nothing - a
+        # basis with no content, beside a cost figure the budget preflight acts
+        # on. A whitespace-only setting is a typo, not a declaration, so it
+        # collapses to the shape absence already has and the line says "rates
+        # undated" instead. `isinstance` guards a hand-edited number, and the
+        # same trim is what `panel/_panel_paths._declared_as_of` applies to the
+        # config file's copy of this key.
+        as_of_raw = meta_usage.get("pricingAsOf") \
+            if isinstance(meta_usage, dict) else None
         return {
             "ledgerDir": ledger_dir,
-            "pricingAsOf": meta_usage.get("pricingAsOf")
-            if isinstance(meta_usage, dict) else None,
+            "pricingAsOf": (as_of_raw.strip() or None)
+            if isinstance(as_of_raw, str) else None,
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,
             "totals": total,
@@ -726,31 +743,39 @@ def _proposal_lines(manifest, summary, pt=None):
     invisible here, which is the one failure a status surface must not have.
     Such entries are counted in a legacy footer that points at
     /audit:propose list, which reads them in full. The validator stays tolerant
-    of them on purpose; counting is this surface's job, judging is not."""
-    props = [x for x in ((manifest or {}).get("proposals") or [])
-             if isinstance(x, dict)]
-    parked = [x for x in props if x.get("status") == "proposed"]
-    legacy = [x for x in props
-              if x.get("status") not in ("proposed", "materialized", "dropped")]
+    of them on purpose; counting is this surface's job, judging is not.
+
+    THE ROWS COME FROM `_proposals.proposal_rows` AND THE CLASSIFICATION FROM
+    THE RAW STATUS (F93). This block used to walk `proposals[]` itself and
+    compose the reserved cell itself, which made it the third spelling of a
+    string two other surfaces already print. Routing it NAIVELY would have
+    changed what it reports, and that is the thing the fault turned on:
+    `proposal_rows` normalises a MISSING status to `proposed`, so an entry
+    carrying none would have moved out of the legacy footer and into the parked
+    list -- a status surface inventing a status is exactly the failure the
+    paragraph above is about. So the rows carry both readings and this block
+    reads `statusRaw`/`statusKnown`, which is the same classification it always
+    made, from a derivation it no longer owns."""
+    rows = _proposals.proposal_rows(manifest or {})
+    # `_status_facts.is_parked_proposal`, not `== "proposed"` spelled again here:
+    # the rollup that feeds the header line above asks the same question, and the
+    # two used to answer it differently — see that function for what `parked`
+    # means and why the payload is not part of it.
+    parked = [r for r in rows if _status_facts.is_parked_proposal(r["statusRaw"])]
+    legacy = [r for r in rows if not r["statusKnown"]]
     if not parked and not legacy:
         return []
     pt = pt or _cli_fmt.PLAIN
     sp = summary.get("proposals") or {}
     out = ["", pt.paint("  PROPOSALS  %d total - %d parked"
-                        % (sp.get("total", len(props)), len(parked)),
+                        % (sp.get("total", len(rows)), len(parked)),
                         "header")]
-    for x in parked:
-        payload = x.get("payload") if isinstance(x.get("payload"), dict) else {}
-        ph = payload.get("phase") if isinstance(payload.get("phase"), dict) else {}
-        tasks = ph.get("tasks") if isinstance(ph.get("tasks"), list) else []
-        reserved = "-"
-        if ph.get("id"):
-            reserved = "%s (%s)" % (ph["id"], _fmt.plural(len(tasks), "task"))
+    for r in parked:
         row = "    %-16s %-14s %s" % (
-            x.get("id") or "?", reserved,
-            _clip(_one_line(x.get("name") or x.get("id")), 40))
-        if ph.get("id"):
-            row += "   materialize: /audit:propose materialize %s" % (x.get("id") or "?")
+            r["id"] or "?", _proposals.reserved_cell(r),
+            _clip(_one_line(r["name"] or r["id"]), 40))
+        if r["hasPayload"]:
+            row += "   materialize: /audit:propose materialize %s" % (r["id"] or "?")
         out.append(row)
     if legacy:
         out.append("    +%d legacy proposal(s) (free-form) - /audit:propose list"

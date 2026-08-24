@@ -183,7 +183,7 @@ def _cases_output(record, path):
            and len(warn_lines) == 1 and len(vwarn) == 19
            and warn_lines[0].startswith("WARNING: 19 tasks in 4 phases "
                                         "(P0, P1, BF1, P8; --verbose names each): ")
-           and text.rstrip().endswith("19 warning(s))"))
+           and text.rstrip().endswith("1 warning line(s), 19 item(s))"))
 
     # The negative that pairs with it, and the reason findings were left alone:
     # a finding stops the command and is read item by item. Three of them share
@@ -200,6 +200,53 @@ def _cases_output(record, path):
            "counts them: %d line(s)" % (len(flines),),
            fcode == 1 and len(flines) == 2
            and "INVALID: 2 finding(s)" in ftext)
+
+    # --- F115: the summary has to be derivable from the body -------------------
+    # The defect this pins closed printed a pair of WARNING lines and a total in
+    # the twenties, both true, with nothing on the surface joining them. So the
+    # assertion is not the literal tail: it is the tail rebuilt FROM THE LINES the
+    # same run printed, which is the only thing that makes the number checkable
+    # and the only shape that would have failed before the fix.
+    plan = _skills_plan((("P0", 7), ("P1", 5), ("BF1", 1), ("P8", 6)))
+    plan["meta"]["nonsenseKey"] = 1          # a second, differently-shaped warning
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    tcode, ttext = _run([path])
+    tlines = [ln for ln in ttext.splitlines() if ln.startswith("WARNING: ")]
+    _, vtext2 = _run([path, "--verbose"])
+    titems = [ln for ln in vtext2.splitlines() if ln.startswith("WARNING: ")]
+    record("c15 when the collapse does something, the OK line names BOTH the "
+           "lines it printed and the items behind them - rebuilt from this run's "
+           "own output, so a total nobody can reach from the body fails here: "
+           "%d line(s), %d item(s), tail %r"
+           % (len(tlines), len(titems), ttext.rstrip()[-40:]),
+           tcode == 0 and len(tlines) == 2 and len(titems) == 20
+           and ttext.rstrip().endswith(
+               M.warning_tail(len(tlines), len(titems)) + ")")
+           and ttext.rstrip().endswith("2 warning line(s), 20 item(s))"))
+
+    # THE SECOND DIRECTION, and it reads vacuous by design: a tail that named two
+    # numbers unconditionally would satisfy c15 for ever while telling a reader of
+    # an ordinary one-warning run to reconcile a number with itself. This is the
+    # only case that fails when `warning_tail` stops being conditional.
+    lone = _valid_manifest()
+    lone["meta"]["nonsenseKey"] = 1
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(lone, fh)
+    lcode, ltext = _run([path])
+    llines = [ln for ln in ltext.splitlines() if ln.startswith("WARNING: ")]
+    record("c16 ...and when nothing collapsed there is ONE number, because the "
+           "two counts are then the same fact and a reader can count the lines: "
+           "%d line(s), tail %r" % (len(llines), ltext.rstrip()[-30:]),
+           lcode == 0 and len(llines) == 1
+           and ltext.rstrip().endswith(", 1 warning(s))")
+           and "item(s)" not in ltext)
+    record("c17 warning_tail is silent when there is nothing to count - a plan "
+           "with no warnings must not grow a `0` where the tail used to be "
+           "absent: %r" % (M.warning_tail(0, 0),),
+           M.warning_tail(0, 0) == ""
+           and M.warning_tail(1, 1) == ", 1 warning(s)"
+           and M.warning_tail(2, 20) == ", 2 warning line(s), 20 item(s)")
 
     record("c14 `--verbose` is a flag and not the path - passing it alone is "
            "still the usage error it was, so the flag cannot be mistaken for a "

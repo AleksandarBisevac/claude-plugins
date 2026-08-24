@@ -112,6 +112,16 @@ is still true of a nested key.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.
+- **When two keys COMPOSE rather than compete, that is written down too**, because
+  a reader who finds only one of them draws the wrong conclusion. There is one such
+  pair: `bashWriteCheck.enabled` and the plan gate both have to be permissive before
+  the shell-write watcher's plan-coverage class says anything. `enabled: false`
+  silences the hook outright; with it left on, that class still resolves a tier
+  through `planGate` (and through the graded ladder when `planGate` is absent), so
+  a repository with no manifest hears nothing from it. The watcher's other two
+  classes — a write into a held manifest lock, a write into the audit journal — bind
+  their claim to evidence of their own and report at every tier. Changing which of
+  the two keys decides, in either direction, is a major release.
 - **A malformed file does not take the guards down.** The hooks fall back to the
   documented defaults and warn once; the `/audit:*` commands refuse to run until it
   parses. Those halves differ on purpose — a guard that switches itself off because a

@@ -34,11 +34,35 @@ import json
 import os
 import sys
 
-TESTS = os.path.join("plugins", "audit", "tests")
+# ANCHORED TO THIS FILE, NOT TO THE CWD (F119). These were repo-relative, so the
+# walk below found nothing whenever the tool was run from anywhere but the
+# repository root - and this tool exits 0 by design, so "no pins here" printed as a
+# change budget of nothing rather than as a scanner that had not looked. `p0` is
+# the case that says so, and it is what went red the day `tools/sweep-selftests.py`
+# started running every suite from a scratch directory. Same shape as `tools/where.py`.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(_HERE)
+TESTS = os.path.join(REPO, "plugins", "audit", "tests")
 TARGETS = ("UI_HTML", "_SCRIPT", "_CSS", "TOKEN_CSS")
-CODE_DIRS = (os.path.join("plugins", "audit", "scripts"),
-             os.path.join("plugins", "audit", "hooks"))
+CODE_DIRS = (os.path.join(REPO, "plugins", "audit", "scripts"),
+             os.path.join(REPO, "plugins", "audit", "hooks"))
 LONG_FILE_LINES = 500
+
+
+def _repo_label(path):
+    """A directory as this repo spells it, or unchanged when it is not in the repo.
+
+    The anchoring above made every scanned directory absolute, and an absolute path
+    is a machine's layout: printing one in the report (and in `--json`) would put a
+    home directory in output people paste into issues, and would change the keys a
+    reader has been matching against. A fixture directory in the system temp is not
+    in the repo and keeps the name the caller passed, which is what `p5` reads.
+    """
+    try:
+        rel = os.path.relpath(path, REPO)
+    except ValueError:                       # a different drive, on windows
+        return path
+    return path if rel.split(os.sep)[0] == os.pardir else rel
 
 
 def _py_files(root):
@@ -117,7 +141,7 @@ def long_files(dirs=CODE_DIRS, limit=LONG_FILE_LINES):
             with open(path, "r", encoding="utf-8") as fh:
                 if sum(1 for _ in fh) > limit:
                     n += 1
-        out[d] = n
+        out[_repo_label(d)] = n
     out["total"] = sum(v for k, v in out.items() if k != "total")
     return out
 
@@ -239,6 +263,23 @@ def _cases(check):
           "everything is one of the six figures that rotted in CLAUDE.md",
           real["pins"]["cssShaped"]
           == real["perTarget"]["_CSS"] + real["perTarget"]["TOKEN_CSS"])
+
+    # F119. `p0` is the case that reddened, and this is the case that says WHY: the
+    # roots were repo-relative, so the walk found nothing from any directory but the
+    # repository root, and this tool exits 0 by design - a scanner that had not
+    # looked printed as a change budget of nothing. `p0` can only ever say that a
+    # figure is zero; this says which property makes it non-zero.
+    _roots = (TESTS,) + CODE_DIRS
+    check("p7 every scanned root is ANCHORED to this file rather than to the "
+          "process cwd, so the walk reaches the tree from any directory: %r"
+          % (_roots,),
+          all(os.path.isabs(d) and os.path.isdir(d) for d in _roots))
+
+    check("p8 ...and the report still names those roots the way this repo "
+          "spells them, so anchoring did not put a machine's home directory "
+          "into the report and into --json: %r" % (sorted(real["longFiles"]),),
+          os.path.join("plugins", "audit", "scripts") in real["longFiles"]
+          and not any(os.path.isabs(k) for k in real["longFiles"]))
 
 
 def _selftest():

@@ -202,12 +202,26 @@ project=<project> --api-version 7.1` returns this project's own ladder:
 `taskBacklog.rank`, `requirementBacklog.rank` and each `portfolioBacklogs[].rank`,
 each with the `workItemTypes[].name` it admits.
 
-**A Bug is placed by `bugsBehavior` and by nothing else.** The type lists do not name
-it: `asRequirements` ranks Bug with the requirement backlog, `asTasks` with the task
+**A bug is placed by `bugsBehavior` and by nothing else.** The type lists do not name
+one: `asRequirements` ranks it with the requirement backlog, `asTasks` with the task
 backlog, and the same organization can run one project each way. That is why the
 plugin ships no hierarchy table — it caches this project's answer in
 `meta.ado.hierarchy` (`/audit:sync parents`), and with no cache reports every parent
 link as `not verified` rather than grading against a guess.
+
+**The payload gives that rung its rank and never its name.** The name comes from
+`meta.ado.types.bug` — the same key a push stamps a bug card with, so the ladder key
+and the row being graded against it are one spelling. Which is why this paragraph is
+not a recipe: the block is built by
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-ado-parent.py" \
+  <manifest> --hierarchy-from <payload.json|->
+```
+
+and that is the only derivation of the ladder there is. Rename `types.bug` after a
+fetch and the cached rung stops matching, so bugs report `not verified` again rather
+than being graded against the wrong rank — re-run the fetch.
 
 **ADO does not enforce the ladder on an API-created link.** The structural checks in
 `scripts/manifest/_ado_parent.py` — an item under itself, an item under something the

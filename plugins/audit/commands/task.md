@@ -23,7 +23,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve an
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
 `add` writes through `scripts/manifest/audit-task.py`, which takes and releases the **index lock**
 itself; hold the lock by hand (conventions → Concurrency lock) only around writes YOU make
-with Edit — the `move` subcommand, and the new-phase creation in `add` step 1.
+with Edit — which is now the `move` subcommand and nothing else. **Creating a phase is
+`/audit:phase add` and is no longer done here by hand** (see step 1).
 
 ## Subcommand: `add "<title>" [--phase <id>]`
 
@@ -41,12 +42,15 @@ per add is the class of error the script exists to delete.
      alternatives below.
    - Otherwise call without `--phase`: the script defaults to the single
      `in_progress` phase, or exits 2 NAMING the choices. On that exit 2, ask
-     (AskUserQuestion): one of the named phases, or **new phase**. A new phase gets
-     the conventions doc's new-phase template (id continues the `P<n>` sequence,
-     counting live phases AND every reserved `proposals[].payload` phase id — see
-     conventions → ID allocation; ask for its title; `testGate` from
-     `meta.buildCommands` keys); create it with Edit under the **index lock**,
-     release, then re-run the script with `--phase <newId>`.
+     (AskUserQuestion): one of the named phases, or **new phase**. A new phase is
+     `/audit:phase add "<title>" --outcome "<what success looks like>"` — follow
+     `${CLAUDE_PLUGIN_ROOT}/commands/phase.md` → *Subcommand: `add`*, which takes
+     the index lock itself, then re-run this add with `--phase <newId>`. **Do not
+     hand-write the phase.** This step used to say "create it with Edit under the
+     index lock", and that instruction was wrong in the sharded layout in a way
+     a reader could not see: a phase there is a shard file AND an index stub, and
+     an Edit that produced one of them leaves a manifest the next command cannot
+     read.
    - When a still-parked proposal (`proposals[]`, status `proposed`) already
      covers this work (title/scope overlap), say so and offer
      `/audit:propose materialize <PROP-id>` as the alternative before creating a
@@ -132,8 +136,11 @@ What it writes:
   a task `/audit:next` would otherwise still offer. **`/audit:phase cancel <phaseId>` is
   where a phase is spelled now**, and this section is the procedure it follows; taking a
   phase id here still does exactly this, as the legacy spelling.
-- **journal** → one `task.cancel` / `phase.cancel` row carrying the reason, so the why
-  outlives the session.
+- **journal** → one `task.cancel` / `phase.cancel` row carrying the reason twice over —
+  in the row's `summary` sentence and in `details.reason` — so the why outlives the
+  session and a reader parsing rows never has to parse prose to recover it. `details`
+  is an allow-list, so the second of those is a decision recorded in
+  `_journal_io.DETAILS_KEYS` beside the key rather than something a writer chose.
 - **ADO** (when linked) → the next echo/sync moves the card to the mapped state,
   `Removed` by default.
 

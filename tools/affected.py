@@ -96,6 +96,22 @@ VITEST = "npx vitest run"
 # see the sweep-document branch for what this selects on instead.
 PARITY = "python3 tools/gate-parity.py"
 
+# A tool's OWN cases. Every `.py` under `tools/` carries an inline suite, and until
+# this existed nothing here selected one: a change to a tool was classified "a tool
+# no suite covers" and the narrowed run skipped exactly the cases that change owed.
+# The classification was the worse half - it reads as a fact about the file when it
+# was a fact about this selector, which is the one thing a reader must never be told
+# wrong by a tool whose whole subject is what a narrowed run leaves out.
+#
+# DERIVED, not a list. `sweep-selftests.py` walks `tools/` and demands the
+# `N/M cases passed` contract from every file it is not told is migrated, so a `.py`
+# outside the migrated set HAS a suite by construction - and the migrated set is read
+# off the same classifier the sweep asks rather than name-transformed here. The path
+# is substituted whole: a format string spelling a module basename is what
+# `_refs.tool_basename_drift()` reads as a reference to a file that does not exist.
+TOOL_SELFTEST = "python3 %s --selftest"
+MIGRATED = frozenset(_output.covered_repo_paths(REPO))
+
 # The documents `_refs.sweep_glob_drift()` pins, READ OFF `_refs` rather than listed
 # again here. Two of them start with a dot and were unreachable by every rule below;
 # a third copy of the list is also how the two would come to disagree.
@@ -211,6 +227,25 @@ def _suite_for(module_basename):
 
 
 # --- the selection rules ------------------------------------------------------
+def _once(gates):
+    """`gates` with repeats removed, first occurrence kept.
+
+    ORDER-PRESERVING AND APPLIED ONCE AT THE END, rather than a membership test at
+    each append. The parity check is reachable from several branches - a sweep
+    document, the runner, the comparison itself - so a change touching two of them
+    named it twice and `verify.sh` ran it twice, which is a narrowed run paying more
+    than it saved. Order is kept because the runner reads this list as its steps and
+    a reordered list is a diff nobody asked for.
+    """
+    seen = set()
+    out = []
+    for gate in gates:
+        if gate not in seen:
+            seen.add(gate)
+            out.append(gate)
+    return out
+
+
 def select(paths):
     """What to run, and why. Returns (plan, reasons, full)."""
     suites = set()
@@ -338,9 +373,23 @@ def select(paths):
                            % (posix,))
             continue
         if posix.startswith("tools/"):
-            if "capture-screenshots" in posix:
+            # THE TOOL'S OWN CASES FIRST, and outside the chain below rather than as
+            # another arm of it: what a tool is a gate FOR and whether it has a suite
+            # are two questions, and answering them in one chain is what left the
+            # sweep runner - the one file every other suite is run BY - selectable
+            # only through an arm written for it by name.
+            own = posix.endswith(".py") and posix not in MIGRATED
+            if own:
+                gates.append(TOOL_SELFTEST % (posix,))
+                reasons.append("%s - a tool, so its own cases run" % (posix,))
+            if "capture-screenshots" in posix or posix.startswith("tools/ui-checks/"):
+                # `ui-checks/` holds the concerns that moved OUT of the panel gate
+                # and are imported back into it, so editing one edits the gate. They
+                # matched nothing here and fell to the line below, which said no
+                # suite covered them while the panel gate ran them on every full run.
                 panel = True
-                reasons.append("%s - the panel gate itself" % (posix,))
+                reasons.append("%s - the panel gate, or a part it imports"
+                               % (posix,))
             elif "check-report-interactive" in posix:
                 report = True
                 reasons.append("%s - the report gate itself" % (posix,))
@@ -353,15 +402,16 @@ def select(paths):
                 gates.append(PARITY)
                 reasons.append("%s - part of the gate set, so gate parity is "
                                "re-checked" % (posix,))
-            elif "sweep-selftests" in posix:
-                # The runner every other suite is run BY. Nothing else can vouch
-                # for it, so its own cases are the selection - and a broken runner
-                # that still exits 0 would make the whole sweep vacuous.
-                gates.append("python3 tools/sweep-selftests.py --selftest")
-                reasons.append("%s - the selftest runner itself, so its own cases "
-                               "run" % (posix,))
-            else:
-                reasons.append("%s - a tool no suite covers" % (posix,))
+            elif not own:
+                # SAID AS A PROPERTY OF THIS FILE, not of the tool. It read "a tool
+                # no suite covers", which is a claim about the tool - and it was
+                # false for every `.py` here and for `ui-checks/` besides. What is
+                # true is that nothing above matched, and a reader deciding whether
+                # to trust a narrowed run needs to be told which of the two they got.
+                reasons.append("%s - NO RULE HERE MATCHES IT, so nothing was "
+                               "selected for it. That is this selector's gap and "
+                               "not a statement that the file is uncovered"
+                               % (posix,))
             continue
         if posix.startswith("examples/") or posix.startswith("docs/"):
             artifacts = True
@@ -385,7 +435,7 @@ def select(paths):
             gates.append(REPORT_GATE % (doc,))
     if panel:
         gates.append(PANEL_GATE)
-    return sorted(suites), gates, reasons, full
+    return sorted(suites), _once(gates), reasons, full
 
 
 def main(argv):
@@ -456,6 +506,11 @@ def _cases(check):
         suites, gates, _why, full = select(list(paths))
         return {"suites": suites, "gates": gates, "full": full}
 
+    def why(*paths):
+        """The reason lines alone, joined - what a reader of a narrowed run gets."""
+        _suites, _gates, reasons, _full = select(list(paths))
+        return " | ".join(reasons)
+
     yml = ".github/workflows/ci.yml"
     dotted = sel(yml)
     undotted = sel("github/workflows/ci.yml")
@@ -494,6 +549,23 @@ def _cases(check):
           PARITY in claude["gates"]
           and PARITY in contributing["gates"]
           and PARITY not in png["gates"])
+
+    both = sel("CLAUDE.md", "CONTRIBUTING.md", "tools/gate-parity.py")
+    check("a3c ...and a gate three of those branches all reach is named ONCE. "
+          "COUNTED rather than found: every sweep document appends the parity "
+          "check and so does the comparison itself, so a change touching two of "
+          "them made the narrowed run pay for it twice and `in` could not see "
+          "it: %r" % (both["gates"],),
+          both["gates"].count(PARITY) == 1)
+
+    report_part = sel("plugins/audit/scripts/ui/report/areas.js")
+    check("a3d THE SECOND DIRECTION, and it looks vacuous on purpose: a dedup "
+          "that collapsed DIFFERENT gates is the other way to be wrong, and the "
+          "report documents are separate runs. One gate per document, and the "
+          "count comes from the list rather than from a number typed here: %r"
+          % (report_part["gates"],),
+          len([g for g in report_part["gates"]
+               if g.startswith("node tools/check-report")]) == len(REPORT_DOCS))
 
     surfaces = [sfc for sfc, _m in _refs.SURFACES]
     reached = [sfc for sfc in surfaces if refs_reads(sfc.replace(os.sep, "/"))]
@@ -540,6 +612,34 @@ def _cases(check):
           "nothing else can vouch for it: %r" % (runner["gates"],),
           any("sweep-selftests.py --selftest" in g
               for g in runner["gates"]))
+
+    # THE FIXTURE IS A TOOL THE OLD BRANCH HAD NO ARM FOR, which is what tells the
+    # two versions apart: the runner above was selectable by a rule written for it
+    # BY NAME, so a case pointed at it passes on the version that covers one file
+    # and on the version that covers the directory alike.
+    bench = sel("tools/bench-hooks.py")
+    check("a9b THE PAIR: every other tool selects its own cases too. A change to "
+          "one was classified 'a tool no suite covers' and the narrowed run "
+          "skipped exactly the cases that change owed - so `verify.sh --affected` "
+          "on any tool change ran none of them: %r" % (bench["gates"],),
+          TOOL_SELFTEST % ("tools/bench-hooks.py",) in bench["gates"]
+          and not bench["full"])
+
+    check("a9c ...and the line a reader gets when nothing matches is a statement "
+          "about THIS FILE, not about the file it was handed. The pair is what "
+          "makes it a rule rather than a rewording: a shell script no arm matches "
+          "still says so, and a tool that IS covered never reaches that line - "
+          "which is the case that fails if it becomes unconditional: %r"
+          % (why("tools/redfirst.sh"),),
+          "selector's gap" in why("tools/redfirst.sh")
+          and "selector's gap" not in why("tools/bench-hooks.py"))
+
+    imported = sel("tools/ui-checks/responsive.mjs")
+    check("a9d a part the panel gate IMPORTS selects the panel gate. These moved "
+          "out of `capture-screenshots.mjs` and are imported back into it, so the "
+          "full run drives them on every panel screenshot while the narrowed run "
+          "reported them as covered by nothing: %r" % (imported["gates"],),
+          PANEL_GATE in imported["gates"] and not imported["full"])
 
     py = sel("plugins/audit/scripts/_output.py")
     check("a10 a .py selects its own suite plus every suite that lints the whole "

@@ -70,7 +70,13 @@ esac
 if [ "$detach" -eq 1 ]; then
   # Detached, so it outlives this shell — then read the URL back from the
   # pidfile rather than guessing it, since --port 0 means the kernel picks one.
-  nohup "$PY" "$panel" --project "$project" "$@" >/dev/null 2>&1 &
+  # Stderr goes to the launch log, NEVER to /dev/null: a child that dies at
+  # startup would otherwise leave exactly the trace a clean stop leaves, and
+  # --status would have nothing to report but its absence (F99). The append is
+  # load-bearing — panel-server.py empties that file once it is listening, and an
+  # O_APPEND fd re-seeks instead of writing past the hole.
+  mkdir -p "$project/.claude"
+  nohup "$PY" "$panel" --project "$project" "$@" >/dev/null 2>>"$project/.claude/audit-panel.log" &
   sleep 1
   "$PY" "$panel" --project "$project" --status
   echo "stop it with: examples/panel.sh stop"

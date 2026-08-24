@@ -512,6 +512,18 @@ def _cases(check):
     # tree here would be a second answer to what is in it.
     _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
                    "demo/gen-demo-manifest.py": "the other walk, by $def name",
+                   # A THIRD WALK, ADDED WITH ITS ROW. `_deps.config_vocabulary()`
+                   # reads the meta $def for the key names its configuration-read
+                   # rule compares two modules over - a VOCABULARY, not a field
+                   # map, so it answers neither of the questions above and neither
+                   # of them answers it. Named here rather than spelled around:
+                   # dodging this count by building the keyword, or by resolving
+                   # the `$ref` as a generic pointer, would have made a real
+                   # reader invisible to the case that exists to find them - the
+                   # "made invisible rather than absent" repair `_deps`' own
+                   # KNOWN_LAYER_DEBT comment refuses one file over.
+                   "_deps.py": "a third walk - the meta vocabulary, by property "
+                               "name, for the two-modules-one-key rule",
                    "manifest/_manifest_vocab.py": "no walk - prose that names the "
                                                   "keyword: the SCHEMA_ANCHORS "
                                                   "comment, and the pointer at "

@@ -29,7 +29,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -87,7 +86,7 @@ def _cases(check):
           "commits resolve', which is what a clean exit would claim",
           M.main(["/no/such/manifest.json"]) == 2)
 
-    tmp = tempfile.mkdtemp(prefix="qg-repair-")
+    tmp = _harness.fixture_root("qg-repair-")
     try:
         repo, mpath, shas = _repo_with_orphan(tmp)
 

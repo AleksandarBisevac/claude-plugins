@@ -28,6 +28,25 @@ Both halves are here on purpose. `check_conventions_config` grades the block
 someone wrote; `conformance_violations` grades an item against it. Splitting them
 across files would put the shape and its use in two places that could disagree.
 
+SHAPE BEFORE SUBSTANCE, and that is the third thing here. There are two payloads
+in play - one about to be created, one read back off the board - they overlap
+enough to grade each other's rules wrongly, and only the first can be graded as
+written. `rest_payload_reason` says when a caller has the wrong one and
+`as_gradable_item` converts the other, so the answer to "can this be graded" is
+a function with cases rather than a paragraph a caller has to remember.
+
+AND ONE RULE IS SCOPED BY KIND, WHICH IS F120. `requireParent` reads the parent
+the connector RESOLVED for an item, and push resolves one for a phase (and, with
+`phaseWorkItems` off, a task) and for no third kind: a bug card is created with
+no parent link at all, which `_ado_parent.resolve(kind="bug")` already says from
+the other side by refusing to let `meta.ado.parentWorkItem` reach a bug. So the
+rule was refusing every bug create on any board that set it, at create time, for
+a parent nothing was ever going to supply. It is scoped now - and the exemption
+is SPOKEN rather than silent, because a board that really does want a parent on
+every card is asking for something this connector cannot give it, and that is a
+sentence to print, not a check to skip. `parent_rule_exemption` is that door;
+`conformance_violations` asks it too, so the reason and the skip cannot drift.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__ado_conventions.py` - see
 `plugins/audit/tests/_harness.py`.
@@ -258,32 +277,49 @@ def _tag_violations(tags, vocabulary):
     return out
 
 
-# The keys only a FETCHED work item carries. `az boards work-item show` and the
-# REST API both return these; a payload the connector is about to send has no
-# revision, no url and no links, because it does not exist yet.
+# The keys only a FETCHED work item carries. NOT THE TELL any more - see
+# `rest_payload_reason` - but still worth NAMING when they are there, because
+# "you handed me a work item read back from the board" is a sentence a caller can
+# act on, where "your payload has no type" leaves it guessing which end is wrong.
 _FETCHED_ONLY = ("rev", "url", "_links", "relations")
 
 
 def rest_payload_reason(item):
-    """Why this looks like a work item READ BACK, not one about to be sent.
+    """Why this payload cannot be graded as an item about to be sent.
 
     `None` when the payload is the shape this module grades. Otherwise a
     sentence naming what gave it away, for a caller to print before refusing.
 
     This exists because the two shapes OVERLAP, which is worse than being
-    unrelated. `az boards work-item show` output carries `fields`, so the tag
-    rules really do read the tags - but `type` and `parent` live somewhere else
-    in that shape, so `requireParent` fires on an item that HAS a parent and
-    `requiredFields` grades a work item type it never learned. The result was a
-    confident "DOES NOT CONFORM: do NOT create this item" about a correct,
-    long-existing item. A checker whose every message is precise, aimed at the
-    wrong shape, is worse than one that says nothing.
+    unrelated. A fetched work item carries `fields`, so the tag rules really do
+    read its tags - but `type` and `parent` live somewhere else in that shape, so
+    `requireParent` fires on an item that HAS a parent while `requiredFields`
+    and `descriptionMustContain` grade a work item type they never learned. The
+    result was a confident "DOES NOT CONFORM: do NOT create this item" about a
+    correct, long-existing item. A checker whose every message is precise, aimed
+    at the wrong shape, is worse than one that says nothing.
 
-    The tell is deliberately structural rather than a guess: the payload must
-    look fetched (a revision, a url, links, relations - none of which a
-    not-yet-created item can have) AND be missing the `type` this module needs.
-    An item that merely omits `type` is left alone; that is a conformance
-    question, not a shape one.
+    THE TELL IS THE ABSENT `type`, NOT THE PRESENT DECORATION, AND THAT IS F106.
+    This guard used to require one of `_FETCHED_ONLY` to be present. That read
+    as structural and was not: `_ado_fetch.as_items()` - this plugin's OWN batch
+    producer, and what `/audit:sync status` feeds the gate - emits
+    `{"id": ..., "fields": {...}}` and strips all four markers, so the guard
+    could not see the one shape it was built for and the item that HAD a parent
+    was refused for carrying none. Teaching that producer to keep a marker would
+    fix that producer; the next one to trim a field - a `jq` over
+    `az boards work-item show`, a hand-assembled row, a narrower SELECT - brings
+    the bug straight back, because a list of decorations that happen to be
+    present is a list and not a rule.
+
+    Absence of `type` cannot be defeated that way, because `type` is not
+    decoration: it is what this module NEEDS. Every type-scoped rule is a
+    lookup on it, ADO will not create a work item without one, and no read-back
+    shape carries it at the top level - a fetched row spells the type inside
+    `fields`. So the question is now "a work-item-shaped payload whose work item
+    type this module cannot see", which covers the decorated read-back and the
+    batched row with one test. `fields` still has to be a dict, because that is
+    what makes this a work item payload at all rather than some other object a
+    caller passed by mistake.
     """
     if not isinstance(item, dict):
         return None
@@ -292,14 +328,61 @@ def rest_payload_reason(item):
     if not isinstance(item.get("fields"), dict):
         return None
     seen = [k for k in _FETCHED_ONLY if k in item]
-    if not seen:
-        return None
-    return ("this payload carries %s and no top-level `type`, so it looks like "
-            "a work item read back from ADO rather than one about to be sent. "
-            "The expected shape is {\"type\": \"Task\", \"fields\": {...}, "
-            "\"parent\": 123} - `type` and `parent` sit beside `fields`, not "
-            "inside it. Graded as-is, `requireParent` would fire on an item "
-            "that HAS a parent." % (", ".join("`" + k + "`" for k in seen),))
+    read_back = ("" if not seen else
+                 " It also carries %s, which only a work item READ BACK from "
+                 "ADO has."
+                 % (", ".join("`" + k + "`" for k in seen),))
+    return ("this payload has no top-level `type`, so it is not an item about to "
+            "be sent and cannot be graded as one. The expected shape is "
+            "{\"type\": \"Task\", \"fields\": {...}, \"parent\": 123} - `type` "
+            "and `parent` sit beside `fields`, not inside it. Graded as-is, "
+            "`requiredFields` and `descriptionMustContain` are both keyed BY the "
+            "work item type and so would check nothing at all, while "
+            "`requireParent` would fire on an item that HAS a parent, because a "
+            "fetched item's parent is at fields[\"System.Parent\"]. To grade an "
+            "item that is ALREADY on the board, translate it first - "
+            "`as_gradable_item()`, or `check-ado-item.py --fetched`.%s"
+            % (read_back,))
+
+
+def as_gradable_item(fetched):
+    """A work item READ BACK from the board, in the shape this module grades.
+
+    The status path has a real question to ask - does the item ALREADY on the
+    board still conform - and the payload it holds is the one
+    `rest_payload_reason` refuses. This is the translation, and it is code
+    rather than a paragraph in `commands/sync.md` because every key in it has
+    been got wrong once already: the work item type is at
+    `fields["System.WorkItemType"]`, the parent at `fields["System.Parent"]`
+    (ABSENT and never null when the board hangs it nowhere - `_ado_fetch` says
+    so from a live read), and `fields` passes through untouched. A prose
+    instruction naming three keys is a prose instruction nothing can check,
+    which is how F106 got onto a board in the first place.
+
+    NOTHING IS INVENTED. A row whose `System.WorkItemType` is missing - a
+    narrower SELECT, a hand-built row - comes back with no `type` at all, so
+    `rest_payload_reason` refuses it and the caller learns the type is unknown
+    instead of being graded against the rules for a type nobody read. Same for
+    the parent: the key is omitted rather than set to a falsy stand-in, because
+    `requireParent` reads "absent" as the finding and a stand-in would read as
+    an answer.
+    """
+    row = fetched if isinstance(fetched, dict) else {}
+    fields = row.get("fields")
+    fields = fields if isinstance(fields, dict) else {}
+    out = {"fields": fields}
+    wit = fields.get("System.WorkItemType")
+    if isinstance(wit, str) and wit.strip():
+        out["type"] = wit.strip()
+    ident = row.get("id")
+    if ident is None:
+        ident = fields.get("System.Id")
+    if ident is not None:
+        out["id"] = ident
+    parent = fields.get("System.Parent")
+    if parent is not None:
+        out["parent"] = parent
+    return out
 
 
 def provenance_tag_violations(tag, conventions):
@@ -327,7 +410,119 @@ def provenance_tag_violations(tag, conventions):
     return _tag_violations(split_tags(tag), vocabulary)
 
 
-def conformance_violations(item, conventions):
+def _typeless_rule_reason(wit, conventions):
+    """Which of this board's rules a payload with no `type` hides from.
+
+    `None` when the item names a type, or when the board scopes nothing by type
+    and a typeless item can therefore be graded in full.
+
+    THE OTHER HALF OF F106, and the more dangerous one. `requiredFields` and
+    `descriptionMustContain` are both lookups on the work item type, so an item
+    with no type sails past every entry in them and the answer comes back as
+    "conforms". One payload produced a refusal on the only rule it could reach
+    and a silent pass on the rules the board actually cares about - and a silent
+    pass is worse than the refusal, because the refusal was at least argued with.
+    A rule set that narrows to nothing has to say that it narrowed to nothing.
+    """
+    if wit:
+        return None
+    scoped = sorted(key for key in ("requiredFields", "descriptionMustContain")
+                    if isinstance(conventions.get(key), dict)
+                    and conventions[key])
+    if not scoped:
+        return None
+    return ("item carries no top-level `type`, so %s could not be applied to it "
+            "at all - this is a PARTIAL grade and not a clean one. The type "
+            "belongs beside `fields`; a row fetched from the board spells it at "
+            "fields[\"System.WorkItemType\"]" % (" and ".join(scoped),))
+
+
+# THE BUG TYPE NAME IS NOT SPELLED IN THIS FILE, and that is the fix rather than
+# an omission. `DEFAULT_BUG_TYPE` and an `unparented_types` lived here for a
+# release while `_ado_parent.inventory` derived the same name inline, and the two
+# spellings disagreed about a blank and about a padded name - so a bug ROW carried
+# one type and `parent_rule_exemption` below looked for another, and the
+# exemption stopped firing for the rows it exists for. Both now come from
+# `_ado_parent.bug_type`, which is the module that reads every other name in
+# `meta.ado.types`; the tuple reaches `parent_rule_exemption` as an ARGUMENT,
+# which is what keeps these two layer-mates from needing an import between them.
+
+
+# Read only as the first letter of a WORK ITEM TYPE NAME, which is the whole
+# domain: `Bug`, `Task`, `Issue`, `Epic`, `Product Backlog Item` and whatever a
+# board renamed them to. A tuple rather than a string, because `"" in "AEIOU"` is
+# True and an empty type name would come back "an".
+_VOWEL_INITIALS = ("A", "E", "I", "O", "U")
+
+
+def _a_type(wit):
+    """`a Task` / `an Issue` - the type name with the article that fits it.
+
+    A helper for a one-character difference because the alternative shipped: the
+    sentence below spelled `a %s` and a Basic-process board, whose bug type is
+    `Issue`, read `a Issue` twice in the same paragraph. The first letter is the
+    whole rule here - English's real exceptions (`an hour`, `a unicorn`) need a
+    pronunciation this cannot have and a board would have to rename a type into
+    one to meet them, which costs a wrong article and nothing else.
+    """
+    return "%s %s" % ("an" if wit[:1].upper() in _VOWEL_INITIALS else "a", wit)
+
+
+def parent_rule_exemption(item, conventions, unparented=None):
+    """Why `requireParent` was not applied to this item. `None` when it was.
+
+    F120. The gate was type-agnostic and push is not: a payload with no parent
+    was a violation whatever kind of item it was, while push supplies a parent
+    for a phase and a task and never for a bug. A board that legitimately set
+    `requireParent` therefore could not have a bug pushed to it at all, and the
+    refusal arrived at CREATE time - after the plan, after the confirm - rather
+    than where the contradiction lives, which is the configuration.
+
+    THE ANSWER IS THE ONE `_ado_parent` ALREADY GAVE, not a new one. That module
+    refuses to let `meta.ado.parentWorkItem` reach a bug, on the basis that "a
+    push neither creates nor changes a bug's parent link"; reading
+    `requireParent` as "every item THIS PLUGIN PARENTS" is the same fact stated
+    from the gate's side. The alternative reading - every item, full stop - is
+    coherent and would mean this connector simply cannot push a bug to a
+    governed board, which is a product decision nobody took and one the refusal
+    was making by accident.
+
+    A SENTENCE AND NOT A SILENT SKIP. A board that asks for a parent on every
+    card is asking for something the connector cannot supply, and a rule that
+    quietly stopped applying would be exactly the silent pass the typeless half
+    of F106 was: the reader is entitled to know the rule narrowed and why. It is
+    NOT a violation, because refusing the create is the bug being fixed - so it
+    travels beside the verdict rather than inside it, the same way
+    `rest_payload_reason` does.
+
+    `unparented` ABSENT MEANS THE CALLER DID NOT SAY, and nothing is exempt.
+    That is deliberately the LOUD default: a caller which has not been taught
+    the question gets the pre-F120 refusal, which is wrong but visible, rather
+    than a pass nobody asked for. `_ado_parent.unparented_types(meta.ado)` is
+    the answer, and `check-ado-item.py` is the caller that reads it.
+    """
+    if not isinstance(conventions, dict):
+        return None
+    if conventions.get("requireParent") is not True:
+        return None
+    if not isinstance(item, dict):
+        return None
+    wit = item.get("type")
+    wit = wit.strip() if isinstance(wit, str) else ""
+    if not wit or wit not in (unparented or ()):
+        return None
+    a_wit = _a_type(wit)
+    return ("`requireParent` was NOT applied to this %s: a push creates %s "
+            "card with no parent link and names no third kind to hang, so "
+            "there is no resolved parent here for the rule to read. "
+            "meta.ado.parentWorkItem is the AUDIT's own branch and does not "
+            "reach %s either. If this board really wants every card inside "
+            "the backlog, that is a gap between its standard and what this "
+            "connector can supply - parent these by hand once they exist, or "
+            "drop requireParent." % (wit, a_wit, a_wit))
+
+
+def conformance_violations(item, conventions, unparented=None):
     """What stops `item` from belonging on this board. `[]` means it conforms.
 
     `item` is the normalised shape the connector is about to send:
@@ -341,6 +536,13 @@ def conformance_violations(item, conventions):
     story and a task do not owe the same fields - and a checker that demanded
     acceptance criteria on a task would be refused so often it would be switched
     off, which is the failure mode a conformance check has to avoid.
+
+    `unparented` is the type names push creates without a parent link, from
+    `_ado_parent.unparented_types(meta.ado)`. It narrows `requireParent` and
+    nothing else, and the REASON it narrowed is `parent_rule_exemption`'s to
+    give - asked here so the skip and the sentence cannot come apart, and
+    printed by the caller, since an exemption nobody prints is the silent pass
+    this module spends the rest of its length refusing.
     """
     if not isinstance(conventions, dict) or not conventions:
         return []
@@ -351,6 +553,13 @@ def conformance_violations(item, conventions):
     fields = item.get("fields")
     fields = fields if isinstance(fields, dict) else {}
     out = []
+
+    # First, because it says how much of what follows is a real answer. A caller
+    # that reaches this function without `rest_payload_reason` - the panel, a
+    # future command - still learns that the type-scoped half never ran.
+    partial = _typeless_rule_reason(wit, conventions)
+    if partial:
+        out.append(partial)
 
     required = conventions.get("requiredFields") or {}
     if isinstance(required, dict):
@@ -373,7 +582,11 @@ def conformance_violations(item, conventions):
         out.extend(_tag_violations(split_tags(fields.get("System.Tags")),
                                    vocabulary))
 
-    if conventions.get("requireParent") is True:
+    # The exemption is asked as a PREDICATE here and printed as a sentence by
+    # the caller - one function, so a kind that stops being graded and the
+    # reason given for it cannot disagree.
+    if (conventions.get("requireParent") is True
+            and parent_rule_exemption(item, conventions, unparented) is None):
         parent = item.get("parent")
         # 0 is not a work item id, and neither is "". Anything else that is
         # present counts - the connector may carry the id as an int or a string

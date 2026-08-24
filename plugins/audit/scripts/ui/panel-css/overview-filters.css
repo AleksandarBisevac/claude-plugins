@@ -25,5 +25,10 @@
 .ovtools input[type=search]{flex:1 1 13rem;min-width:9rem;padding:var(--sp-0) var(--sp-2)}
 .ovtools select{font-size:.8rem;padding:var(--sp-0) var(--sp-1)}
 .ovtools label.inl{display:inline-flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--muted)}
+/* The gate-prune note (F164): a STATEMENT, not a control label, so it takes a
+   flex line of its own. Declared last in the DOM for that reason — a full-basis
+   item placed before the button would push the button onto a third line, away
+   from the box it acts on. No margin: `.ovtools`'s own gap is the row gap too. */
+.ovtools [data-gphint]{flex-basis:100%}
 .ovgrp{display:flex;align-items:baseline;gap:var(--sp-1);margin:.9rem 0 .1rem;
  padding-bottom:var(--sp-0);border-bottom:1px solid var(--border)}

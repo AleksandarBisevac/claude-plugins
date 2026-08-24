@@ -30,9 +30,12 @@ hero renders the "could not be evaluated" state the product already has for a
 gate that raises — an honest unknown, never a fabricated Clear.
 
 Imports go one way only: `_report_md` (the Markdown twin this page embeds),
-`_report_usage`, `_report_ui`, `_report_html` and `_manifest_io` (layer 1, which
-owns reading a manifest's shape) are all below this file; it must never import
-render-report.
+`_report_usage`, `_report_ui`, `_report_html`, `_status_facts` (layer 2, for
+`is_parked_proposal`) and `_manifest_io` (layer 1, which owns reading a
+manifest's shape) are all below this file; it must never import render-report.
+`_status_facts` is imported for that ONE predicate and nothing else -- the gate
+verdict it also holds still arrives as the injected `verdict` callable, because
+retiring that edge is a separate decision from sharing a word.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_page.py`, byte-identical labels and all - see
@@ -71,6 +74,7 @@ import _report_ui    # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/
 import _report_html  # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage  # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _report_md    # noqa: E402  (the Markdown twin this page embeds base64)
+import _status_facts  # noqa: E402  (layer 2: what `parked` means, decided once)
 
 
 # --- module aliases (CSS/SCRIPT, fragment + usage re-exports) -------------------
@@ -406,11 +410,19 @@ def _parked_suffix(manifest, summary):
     `--no-proposals` turns that section off, and a reader who asked for a report
     without proposals still must not be shown "0 phases" as if it were the whole
     truth. The count is stated where the other counts already are.
+
+    `_status_facts.is_parked_proposal`, not `== "proposed"` spelled here (F141).
+    The word had already been decided twice in two places and reconciled twice, in
+    two separate faults -- and this file was spelling it inline in two MORE, so the
+    next change to the rule had two more places to miss. The predicate agrees with
+    what was written here today; that is the reason to route through it rather than
+    the reason to leave it alone.
     """
     if summary["phases"]:
         return ""
     parked = len([p for p in (manifest.get("proposals") or [])
-                  if isinstance(p, dict) and p.get("status") == "proposed"])
+                  if isinstance(p, dict)
+                  and _status_facts.is_parked_proposal(p.get("status"))])
     if not parked:
         return ""
     return (" · %d parked proposal%s, not started"
@@ -766,7 +778,11 @@ def _proposals_block(manifest, show=True):
     props = [p for p in (manifest.get("proposals") or []) if isinstance(p, dict)]
     if not props or not show:
         return [], []
-    parked = len([p for p in props if p.get("status") == "proposed"])
+    # The same predicate the top bar's suffix asks, and the same one
+    # `/audit:status` and the doctor ask -- see `_parked_suffix` above for why
+    # this file stopped deciding the word for itself.
+    parked = len([p for p in props
+                  if _status_facts.is_parked_proposal(p.get("status"))])
     record = ("proposals", "Proposals", parked or None, False)
     parts = ['<h2 id="%s">Proposals</h2>' % _anchor(record),
              '<p class="muted">Phases that were synthesized and parked rather '
@@ -777,7 +793,10 @@ def _proposals_block(manifest, show=True):
         payload = prop.get("payload")
         phase = payload.get("phase") if isinstance(payload, dict) else None
         tasks = [t for t in ((phase or {}).get("tasks") or []) if isinstance(t, dict)]
-        status = prop.get("status") or "proposed"
+        # A missing status renders as parked, which is what `_proposals.proposal_rows`
+        # normalises it to as well -- through the constant, so the word itself is
+        # still only spelled in `_status_facts`.
+        status = prop.get("status") or _status_facts.PARKED_PROPOSAL_STATUS
         head = ('<summary><span class="mono">%s</span> %s %s'
                 '<span class="muted"> · %s</span></summary>'
                 % (e(prop.get("id")), e(prop.get("name") or ""), _chip(status),

@@ -90,6 +90,7 @@ which is what a fence pinned in `PLUGIN-BUILD-GUIDE.md` requires.
 
 import ast
 import io
+import json
 import os
 import re
 import sys
@@ -477,6 +478,19 @@ LAYERS = (
      # opinion between two teams, it is a failure, and a payload missing the chunk
      # that timed out reads downstream as a clean board for exactly those items.
      "fetch-ado-items",
+     # `read-ado-links` is the MANIFEST side of the same question `fetch-ado-items`
+     # asks the board: which items carry a link, and what ADO state each one's
+     # status means. It reads `_ado_drift.link_inventory` (L2) for the first half -
+     # the same walk the fetch asks, so "linked" cannot come to mean two things -
+     # and `_manifest_io` (L1) for the loader and `effective_bug_status`. A command
+     # rather than a paragraph for `check-ado-item`'s reason twice over: the caller
+     # is orchestrator PROSE, and prose had been performing both halves by hand -
+     # reading the sharded INDEX (which holds neither the phases' links nor the
+     # tasks') and skipping the stateMap translation entirely, which leaves the
+     # drift door's overwrite count structurally zero. A GATE only in the one
+     # direction that has no basis at all: a non-empty payload of which not one
+     # entry could be given a state.
+     "read-ado-links",
      # `resolve-ado-parent` is the door onto `_ado_parent`: where each item
      # would hang, and whether that place can be true. A command for the reason
      # `check-ado-item` is one - the caller is orchestrator PROSE reaching
@@ -1787,15 +1801,45 @@ def ui_asset_names(ui_dir):
 # for the other: this one asks "is there a second implementation", a differential
 # test asks "do the two agree". A concern can pass one and fail the other, and
 # the contrast pairs did exactly that for as long as they existed.
+#
+# A NEEDLE IS A SPELLING, AND CODE HAS SEVERAL (F130). Every row here began as a
+# bare substring copied out of the offending line, which reads as precision and is
+# not: `===1?'':'s'` cannot see `=== 1 ? '' : 's'`, so a hand-rolled plural sat in
+# a panel part for as long as it existed with this rule green over it. A cap of
+# zero is satisfied by a needle that cannot fire, and that is indistinguishable
+# from a clean tree.
+#
+# What made it survive is worth more than the repair: the sample the needle was
+# proved against was written in the SAME spelling as the needle, so the proof was
+# a value compared with itself. `test__deps.py` now points every row at several
+# spellings of the thing it forbids - spaced, quoted the other way, renamed - and
+# a row whose needle misses any of them is red before the tree is.
+#
+# So a needle is written to survive the edits a reader would make without thinking
+# about this table: whitespace anywhere an expression allows it, either quote
+# character, and a local name the author chose. It is NOT widened past the
+# distinction it exists to draw - `!=` was tried on the phase-order row and
+# convicted a badge that renders when a tier is present, and the note on the
+# literal-`(s)` row is what an over-firing rule costs. Narrow enough to name a
+# real convention, tolerant of how it is typed.
 SHARED_CONCERNS = (
-    ("blob download", "shared/download.js", "URL.createObjectURL", 0,
+    ("blob download", "shared/download.js", r"re:createObjectURL", 0,
      "one revoke policy. Four sites had drifted to three, one of them revoking "
      "synchronously after click() while a sibling part argued that must never "
-     "happen - a download that fails with no error anywhere."),
-    ("web storage", "shared/storage.js", "localStorage.", 0,
+     "happen - a download that fails with no error anywhere. The needle is the "
+     "METHOD alone rather than `URL.createObjectURL`, because the object it "
+     "hangs off is the one part of the call a copy is free to respell - "
+     "`window.URL`, a bracket lookup, a destructured binding - and the name "
+     "itself can mean nothing else."),
+    ("web storage", "shared/storage.js", r"re:(?:local|session)Storage\s*[.\[]", 0,
      "fourteen sites each wrapped their own try/catch for one rule: a document "
-     "opened over file:// may refuse storage, and neither surface may break."),
-    ("pluralisation", "shared/plural.js", "===1?'':'s'", 0,
+     "opened over file:// may refuse storage, and neither surface may break. "
+     "`sessionStorage` is the same rule and the same refusal, and the trailing "
+     "dot of the original needle also missed a bracket lookup - two ways to "
+     "write the concern that the row named without seeing."),
+    ("pluralisation", "shared/plural.js",
+     r"re:(?:[!=]==?|[<>]=?)\s*1\s*\?\s*"
+     r"(?:(?:''|\"\")\s*:\s*(?:'s'|\"s\")|(?:'s'|\"s\")\s*:\s*(?:''|\"\"))", 0,
      "EXTRACTED, and the decision it was blocked on went the only way it could: "
      "the panel carried two conventions for one job - this suffix and a literal "
      "'(s)' - so adopting a helper in one of them would have made the split "
@@ -1803,16 +1847,28 @@ SHARED_CONCERNS = (
      "(`test(s)`, `label(s)` and `dParse(s)` all match it), so it is not counted "
      "here; what stops it returning is that `plural` expresses what it never "
      "could - a clause whose VERB agrees too, which is why several of those "
-     "sites read '1 task(s) are blocked'."),
-    ("literal (s) pluralisation", "shared/plural.js", r"re:\(s\)\s+[a-z]", 0,
+     "sites read '1 task(s) are blocked'. THIS IS THE ROW F130 WAS FILED "
+     "AGAINST: the needle was the offending line with its spaces removed, so a "
+     "panel part spelling the same ternary with spaces was invisible to it, and "
+     "an inverted `!== 1 ? 's' : ''` would have been too. The comparison, the "
+     "spacing and the quote character are all free now; what stays fixed is the "
+     "pair of branches, which is what makes it a plural rather than a sentence "
+     "- `binSize === 1 ? '' : ' Days are rolled up'` is a real line in the panel "
+     "and must not be convicted."),
+    ("literal (s) pluralisation", "shared/plural.js",
+     r"re:\(s\)(?:\s+[a-z]|['\"])", 0,
      "The second convention, and the row that made the registry learn regexes. "
      "A substring cannot express it: `(s) ` matches the sentences AND "
      "`dParse(s) + 6 * DAY`, since a space follows the paren in both, and what "
      "separates them is whether a WORD or an operator comes next. Kept as its "
      "own row rather than folded into the suffix one, because one needle cannot "
      "see both and a row that silently covers half its concern is worse than "
-     "two rows that each say what they check."),
-    ("clipboard copy", "shared/clipboard.js", "navigator.clipboard", 0,
+     "two rows that each say what they check. The quote alternative is the same "
+     "distinction at the END of a string: '1 task(s)' has no following word, so "
+     "the original needle saw only the ones with a sentence after them, while a "
+     "call can never be followed by a quote character."),
+    ("clipboard copy", "shared/clipboard.js",
+     r"re:navigator\s*[.\[]\s*['\"]?clipboard|clipboard\s*\.\s*writeText", 0,
      "EXTRACTED as copyText once the RULE was separated from the remedy. The "
      "earlier note was right that the part is thin and the fallback has to be "
      "injected, and wrong to read that as a reason to leave it: what is shared is "
@@ -1820,8 +1876,11 @@ SHARED_CONCERNS = (
      "some browsers throw and others reject, and an implementation handling one "
      "is broken exactly where a report is opened from disk. The fallbacks stay "
      "the callers': the panel copies through a hidden textarea and toasts, the "
-     "report selects the text in place, and both are right for their surface."),
-    ("table header construction", "panel/core.js", "el('thead'", 1,
+     "report selects the text in place, and both are right for their surface. "
+     "The second alternative names the CALL, because a copy that reached the "
+     "API through a destructured binding would carry `writeText` and no "
+     "`navigator` at all."),
+    ("table header construction", "panel/core.js", r"re:el\(\s*['\"]thead['\"]", 1,
      "EXTRACTED into headRow/tableHead, and the row this registry gained from "
      "the SCOUT rather than from reading - five agents read the whole panel and "
      "none reported it. Fourteen of the fifteen sites are converted, including "
@@ -1835,19 +1894,27 @@ SHARED_CONCERNS = (
     # The three the SCOUT found after the save/discard footers were factored -
     # reshaping the tree moved the next-largest duplications into view, which is
     # the argument for running it again after every extraction rather than once.
-    ("save confirmation", "panel/write-confirmation.js", "'nothing to save", 0,
+    ("save confirmation", "panel/write-confirmation.js",
+     r"re:['\"]nothing to save", 0,
      "EXTRACTED as confirmSave. Four surfaces opened their Save with the same "
      "three steps in the same order - ask the form, refuse an empty save, get "
      "consent - and then diverged completely: a different endpoint, payload and "
      "re-render each. Only the opening was ever shared, and the needle is its "
-     "one user-visible string, which is what a fifth surface would copy first."),
-    ("caret restore", "panel/write-confirmation.js", "setSelectionRange(caret,caret)", 0,
+     "one user-visible string, which is what a fifth surface would copy first. "
+     "The quote is a character class because a copied string is exactly the "
+     "thing an author re-quotes on the way in."),
+    ("caret restore", "panel/write-confirmation.js",
+     r"re:setSelectionRange\s*\(\s*([A-Za-z_$][\w$]*)\s*,\s*\1\s*\)", 0,
      "EXTRACTED as restoreCaret. The panel had carried a comment calling this "
      "'ONE rule, and two places that need it' while four views spelled it - the "
      "comment was written when it was true and nothing counted it afterwards, "
-     "which is the whole case for a row here rather than a note there."),
+     "which is the whole case for a row here rather than a note there. The "
+     "needle used to pin the ARGUMENT NAME, so the same call written over a "
+     "local called `pos` was a concern it could not see; what says 'restore a "
+     "caret' rather than 'select a span' is that the two arguments are the same "
+     "name, whichever name that is, so the pattern matches itself instead."),
     ("theme token walk", "panel/theme-state.js",
-     "const now=tVal(name,mode),was=", 0,
+     r"re:tVal\(\s*[\w.$]+\s*,\s*[\w.$]+\s*\)\s*,\s*\w+\s*=", 0,
      "EXTRACTED as tDiff. The needle is the COMPARISON, not `TMODES.forEach` - "
      "that first spelling matched two walks in the Appearance editor which are "
      "not this concern at all (one builds a cell per mode, the other walks "
@@ -1857,16 +1924,24 @@ SHARED_CONCERNS = (
      "single-valued token, comparing as strings - and disagreed on nothing but "
      "WHICH baseline. Both copies were mine, hours apart: the second arrived the "
      "same afternoon the first was documented as the meaning of 'differs', which "
-     "is how quickly a walk gets retyped when the difference is one argument."),
-    ("select option loop", "panel/core.js", "o.selected=true;", 3,
+     "is how quickly a walk gets retyped when the difference is one argument. "
+     "The declaration keyword and the two local names are out of the needle now "
+     "- a retyped comparison is free to call them anything - and what is left is "
+     "the shape nothing innocent has: a token's value read for a mode, and a "
+     "second binding declared in the same statement to compare it against."),
+    ("select option loop", "panel/core.js", r"re:\.selected\s*=\s*(?:true|!0)\b", 3,
      "EXTRACTED as fillOptions, which now serves five sites: build the option, "
      "mark it when its value is the chosen one, append. The residual THREE are "
      "deliberate and named - two decorate individual options (a title naming an "
      "area's owner, a disabled state over the chart's point cap) and one decides "
      "`selected` through a path normalisation. A per-option callback would have "
      "carried every caller's private business into the helper, which is the "
-     "duplication back with extra steps."),
-    ("heatmap calendar", "shared/calendar.js", r"re:function (startOf|endOf)\(", 0,
+     "duplication back with extra steps. The needle no longer pins the receiver "
+     "or the spacing: `opt.selected = true` is the same loop, and so is `!0`."),
+    ("heatmap calendar", "shared/calendar.js",
+     r"re:(?:function|const|let|var)\s+"
+     r"(?:startOf|endOf|periodStart|periodEnd|periodShift|seekPeriod"
+     r"|weekdayIndex)\s*[=(]", 0,
      "EXTRACTED, and the oldest duplication in this tree: five functions - a "
      "Monday-first weekday, startOf, endOf, shift and seek - written twice under "
      "the same names, once inside the report's IIFE and once inside the panel's "
@@ -1875,9 +1950,15 @@ SHARED_CONCERNS = (
      "them was a source change. This is that change; the calendar closes over "
      "nothing, so hoisting cost no state. Only the DATA half stayed behind, as a "
      "predicate, because one surface holds its days as a sorted array and the "
-     "other as an object and each has a reason."),
+     "other as an object and each has a reason. THE NEEDLE HAD OUTLIVED THE "
+     "NAMES IT SPELLED: the extraction renamed all five, so the row was matching "
+     "nothing anywhere - not even the file it names as home - and a cap of zero "
+     "was being met by a pattern that could not fire. It carries the old "
+     "spellings AND the new ones now, the way the row below already did, and "
+     "accepts an arrow binding as well as a declaration."),
     ("heatmap row shapes", "shared/calendar.js",
-     r"re:function (dayRows|weekRows|weekdayRows|dateRows|monthRows|heatRows)\(", 0,
+     r"re:(?:function|const|let|var)\s+"
+     r"(?:dayRows|weekRows|weekdayRows|dateRows|monthRows|heatRows)\s*[=(]", 0,
      "EXTRACTED, and its own row rather than folded into the calendar above "
      "because the two failed differently and one of them failed in PRODUCTION. "
      "The calendar's copies agreed; these did not have to, and the branch that "
@@ -1886,20 +1967,52 @@ SHARED_CONCERNS = (
      "cell summed over the four-or-so occurrences of that weekday. A reader "
      "reported it as a copy of the weekly view. The needle names the old "
      "spellings AND the new ones, because what would bring the defect back is "
-     "someone retyping a row builder into a surface under either."),
-    ("day <-> milliseconds", "shared/dates.js", r"re:864e5|86400000", 0,
+     "someone retyping a row builder into a surface under either. It accepts an "
+     "arrow binding too, since a row builder is a pure function of its arguments "
+     "and `const dateRows = (...) =>` is the same thing typed differently."),
+    ("day <-> milliseconds", "shared/dates.js",
+     r"re:864[eE]5|86_?400_?000"
+     r"|24\s*\*\s*60\s*\*\s*60\s*\*\s*1000|1000\s*\*\s*60\s*\*\s*60\s*\*\s*24", 0,
      "EXTRACTED as DAY_MS. The needle is the CONSTANT rather than one spelling "
      "of the arithmetic - a narrower pattern found five of the nine and a shell "
      "regex found three, because the divisions and the multiplications look "
      "nothing alike - and it now matches BOTH spellings, which is how the "
-     "report's own `86400000` came to light. That second reader is why this went "
+     "report's own `86400000` came to light. It now also reads the two factored "
+     "spellings a day gets written as when nobody reaches for a constant - "
+     "hours, minutes, seconds, milliseconds, in either direction - and tolerates "
+     "the digit separators and the capital exponent. That second reader is why this went "
      "to shared/ and not to panel/core.js as the earlier note predicted: the "
      "note said the report carries milliseconds throughout, and it does, in a "
      "constant of its own under a different name. The panel's day-number helpers "
      "(dnum, dayIso) stayed in panel/core.js, where they have one reader - "
      "dayIso replacing three identical local copies."),
+    ("which mode the page is painting", None,
+     r"re:(?:function|const|let|var)\s+"
+     r"(?:isDark|isDarkMode|darkNow|inDarkMode)\s*[=(]", 2,
+     "NOT EXTRACTED, AND THE ROW SAYS SO RATHER THAN WAITING FOR THE "
+     "EXTRACTION. `isDark` is written once in `panel/core.js` and once in "
+     "`report/page-state.js`, the skill has named it as known duplication for "
+     "releases, and the register could not see it - which is the same failure "
+     "the caret-restore row records one file over: a comment saying 'one rule, "
+     "two places' was written when it was true and nothing counted it "
+     "afterwards. THE CAP IS TODAY'S COUNT, so the pair may not become a "
+     "trio, and it is not zero because zero would demand the extraction in a "
+     "change that is not allowed to touch `ui/`. THE TWO COPIES ALREADY "
+     "DISAGREE, which is what makes it a row and not a note: the report guards "
+     "`window.matchMedia` before calling it and the panel does not, so the "
+     "panel throws where the report returns light, and the copies differ on "
+     "the one line neither author would think to compare. THE HOME WHEN IT "
+     "GOES is `shared/theme.js` - both surfaces read the same `data-theme` "
+     "attribute with the same precedence, so this is the promotion rule's "
+     "second reader, and the wiring is the four steps the UI skill lists. THE "
+     "NEEDLE IS THE DECLARATION AND NOT THE CALL, because every surface calls "
+     "it and an extraction keeps the calls; a rename is covered by the "
+     "spellings listed and, past those, by `sc2` reporting a needle that "
+     "matches nothing anywhere - which for an unextracted row is the shape a "
+     "typo takes."),
     ("phase execution order", None,
-     r"re:priority\s*(==\s*null\s*\?\s*[^'\"\s]|\|\|\s*0|\?\?)", 0,
+     r"re:priority\s*(?:===?\s*(?:null|undefined)\s*\)?\s*\?\s*[^'\"\s]"
+     r"|\|\|\s*0|\?\?)", 0,
      "THE HOME IS PYTHON: `_priority.sort_key` is documented as the only "
      "expression of phase order in this tree, because a second one is how two "
      "orders come to disagree. Both surfaces are handed a NUMBER instead - the "
@@ -1913,7 +2026,12 @@ SHARED_CONCERNS = (
      "answer), and a nullish default. A bare null test could not be the needle: "
      "the Composition tab writes an empty form value for an absent tier, which "
      "is a different job, and a row that fires on innocent code is a row someone "
-     "switches off. The panel carried the comparator for a while with a comment "
+     "switches off. THAT LIMIT WAS RE-MEASURED WHEN THE REST OF THIS TABLE WAS "
+     "WIDENED: admitting `!=` alongside `==` immediately convicted the Overview "
+     "badge, which renders only when a tier is present and decides no order at "
+     "all - so the equality test stays one-directional, and what the widening "
+     "bought is the strict spelling, `undefined`, and a closing paren between "
+     "the test and the branch. The panel carried the comparator for a while with a comment "
      "saying it mirrored sort_key - correct the whole time, held correct by "
      "nothing, and a comment claiming two implementations agree is not a check."),
 )
@@ -2210,6 +2328,873 @@ def tool_navigability_violations(tools_dir=None):
     """
     root = tools_dir if tools_dir is not None else _TOOLS_DIR
     return ui_navigability_violations(root)
+
+
+# --- panel routes and what reaches them -----------------------------------------
+# THE PAIRING NOTHING CHECKED, AND IT IS WHY AN ENDPOINT SHIPPED WITH NO CONTROL.
+# `POST /api/gate-events/prune` answered with a real verdict for a whole release
+# while a sweep of the assembled page for any control naming it found nothing, and
+# `commands/logs.md` said so out loud - "the card does not carry that button yet -
+# the endpoint ships ahead of it" (F110). Every half was tested: the route has
+# cases, the writer has cases, the page has hundreds of substring pins. What no
+# side could see is the JOIN, because the route table lives in Python and the
+# controls live in JavaScript, and nothing here read both.
+#
+# WHAT COUNTS AS REACHING A ROUTE, and the answer is deliberately narrow: a string
+# literal in the panel's OWN JavaScript, which is the code the page is assembled
+# from. A gate that drives the route in a browser is a caller and not a control;
+# so is a document that describes it. Both are legitimate readers and both get a
+# row below NAMING the file, which is checked - a declared reader that stopped
+# naming the route is a finding, not a comment nobody re-reads.
+#
+# THE TWO ROUTES THE BROWSER ASKS FOR ITSELF ARE OUT OF SCOPE STRUCTURALLY rather
+# than by a row. Nothing in the page fetches the page, and nothing fetches the tab
+# icon; the browser does both on its own, so "no code names it" is their ordinary
+# state. Scoping by a `/api/` prefix instead would have been cheaper and wrong: it
+# would also drop `/report`, which IS reached from a control and must stay checked.
+_PANEL_SERVER = os.path.join(_output.SCRIPTS_DIR, "panel", "panel-server.py")
+_PANEL_JS_DIR = os.path.join(_UI_DIR, "panel")
+
+# The handler methods a route can be dispatched from. Named rather than derived
+# from `do_` so a helper added to the class is not mistaken for a dispatcher - and
+# `panel_route_violations` refuses an EMPTY route table, which is what makes a
+# rename here loud instead of turning this whole lint into a no-op.
+_PANEL_DISPATCHERS = {"do_GET": "GET", "do_PUT": "PUT", "do_POST": "POST"}
+
+_PANEL_BROWSER_ROUTES = frozenset(("/", "/favicon.ico"))
+
+# Routes reached from somewhere OTHER than a control, with the file that reaches
+# them. The file is verified: it must still name the route, or the row is the
+# finding. A row is a statement about how a route IS reached, never permission for
+# it to be reached by nothing - that case has its own table below.
+PANEL_ROUTE_READERS = (
+    ("GET /api/areas", "plugins/audit/commands/panel.md",
+     "the areas registry is documented as over-the-API-only since v0.28 - the "
+     "phases' area tags are edited in the Composition table and the registry "
+     "itself has no card, which is a recorded decision and not an oversight."),
+    ("PUT /api/areas", "plugins/audit/commands/panel.md",
+     "the write half of the same decision: the registry is replaced wholesale "
+     "through the panel's one writer, by whatever holds it, and no form on the "
+     "page composes that payload."),
+    ("GET /api/journal", "tools/capture-screenshots.mjs",
+     "the browser gate drives it to prove the trail a save writes is readable "
+     "back. No control renders those rows, so this row records a caller and not "
+     "a control - see PANEL_ROUTE_UNREACHED for why that distinction is kept."),
+)
+
+# WHERE A ROUTE IS REACHED BY NOTHING AT ALL, said here rather than left as a gap,
+# and each row is an open defect of F110's own class rather than a decision. The
+# table exists so the pair above stays honest: without it this lint would have to
+# ship red on the day it was written, and the repair for that is never to widen
+# what counts as a caller until the tree goes quiet. It can only shrink - a NEW
+# route with no control fails the build by name, which is the whole point.
+PANEL_ROUTE_UNREACHED = (
+    ("GET /api/version",
+     "the build serving the page is substituted into it at assembly, so no "
+     "control has ever needed to ask; the route answers a comparison nothing "
+     "out of process performs either. Either a control reads it or it goes."),
+    ("POST /api/validate",
+     "it re-runs `build_state` and returns two of the fields `GET /api/state` "
+     "already carries, so there is nothing a control could show that the page "
+     "does not already hold. The open question is whether it should exist."),
+)
+
+# A minimum long enough that a label cannot pass as a reason. Same instrument as
+# `prove-gates.py`'s `_MIN_ALLOW_REASON`, for the same failure: a table of
+# one-word excuses reads as coverage.
+_MIN_ROUTE_REASON = 80
+
+# `'/api/help?doc='` names `/api/help`. The query is the CALLER's business, so a
+# literal is cut at the first `?` before it is compared with a route - without
+# that, every query-string caller in the tree reads as a route nobody calls.
+_JS_STRING_RES = (
+    re.compile(r"'([^'\\\n]*)'"),
+    re.compile(r'"([^"\\\n]*)"'),
+    re.compile(r"`([^`\\\n]*)`"),
+)
+
+
+def panel_routes(server_path=None):
+    """`["GET /api/state", ...]` - every route the panel's dispatchers answer.
+
+    Read from the AST rather than by grepping for `/api/`, because the strings
+    that matter are the ones compared against `path` INSIDE a dispatcher: the
+    same literal appears in this file's own comments, in docstrings above the
+    handler and in the test suites, and a grep cannot tell those apart from a
+    route. `do_GET`/`do_PUT`/`do_POST` are the three that dispatch, so a method
+    added to the class is not read as one until it is named in
+    `_PANEL_DISPATCHERS`.
+
+    Raises OSError or SyntaxError rather than answering `[]`. A server that
+    cannot be read has no route table, and an empty list here would read exactly
+    like a panel whose every route is called.
+    """
+    path = server_path if server_path is not None else _PANEL_SERVER
+    with open(path, "r", encoding="utf-8") as fh:
+        tree = ast.parse(fh.read(), filename=path)
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        method = _PANEL_DISPATCHERS.get(node.name)
+        if method is None:
+            continue
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Compare):
+                continue
+            if not (isinstance(sub.left, ast.Name) and sub.left.id == "path"):
+                continue
+            if len(sub.ops) != 1 or not isinstance(sub.ops[0], ast.Eq):
+                continue
+            target = sub.comparators[0]
+            if isinstance(target, ast.Constant) and isinstance(target.value, str):
+                found.append("%s %s" % (method, target.value))
+    return sorted(set(found))
+
+
+def panel_route_callers(js_dir=None):
+    """`{path: [file, ...]}` - every request path the panel's JavaScript names.
+
+    Comments are stripped through `_code_only` first, for the reason the shared
+    concern registry gives about the same corpus: a route MENTIONED in a comment
+    is a mention, and half the routes in this directory are mentioned in the
+    JSDoc above the function that calls them. Counting those would make a control
+    that was deleted go on reading as present.
+
+    `scripts/ui/panel/` only. `ui/shared/` ships into the report too, which is a
+    page opened from disk with no server behind it, so a shared part may not name
+    a route at all - scanning it would be scanning for something the assembly
+    rules already forbid.
+
+    A literal carrying a backslash is skipped rather than unescaped. That
+    direction over-fires (a route reached only from such a literal would read as
+    uncalled) and over-firing is the loud half; a route path in this tree carries
+    no escape, so the case is theoretical today and would arrive as a build
+    failure naming the route rather than as silence.
+
+    THE OTHER DIRECTION IS THE ONE TO KNOW ABOUT: this reads literals, not calls,
+    so a route NAMED in code that never reaches `api()` would count as reached.
+    Closing that means telling a call from an assignment, which is a JavaScript
+    parser, and there is no stdlib one - the same trade `ui_navigability_violations`
+    argues for its marker regex. What is bought without one is the failure this
+    lint exists for: a route with no mention of it anywhere on the page.
+    """
+    root = js_dir if js_dir is not None else _PANEL_JS_DIR
+    callers = {}
+    names = [n for n in ui_asset_names(root) if n.endswith(".js")]
+    if not names:
+        # Not `{}`. A directory holding no JavaScript is not a page whose every
+        # route is uncalled, and the caller must not be able to confuse the two.
+        raise OSError("no .js under %s: the panel's controls cannot be read"
+                      % (root,))
+    for name in names:
+        with open(os.path.join(root, name), "r", encoding="utf-8") as fh:
+            body = _code_only(fh.read())
+        for rex in _JS_STRING_RES:
+            for literal in rex.findall(body):
+                if not literal.startswith("/"):
+                    continue
+                where = literal.split("?", 1)[0]
+                callers.setdefault(where, [])
+                if name not in callers[where]:
+                    callers[where].append(name)
+    return callers
+
+
+def panel_route_violations(server_path=None, js_dir=None, readers=None,
+                           unreached=None):
+    """(route, problem) for every panel route no control on the page reaches.
+
+    The pair this checks is the one F110 slipped through: a route table in
+    Python and a set of controls in JavaScript, each half tested on its own and
+    neither compared with the other.
+
+    Three shapes are reported, and the last two are the ones that keep this from
+    quietly becoming a no-op:
+
+      * a route reached by no control and named in neither table;
+      * a `PANEL_ROUTE_READERS` row whose declared reader no longer names it, or
+        which names a route the server no longer serves - a declaration that has
+        stopped being true is worse than none, because it reads as a check;
+      * an EMPTY route table, or a reader row whose reason is too short to be
+        one. A dispatcher renamed out of `_PANEL_DISPATCHERS` would otherwise
+        turn every route invisible and print what a clean panel prints.
+
+    `readers` and `unreached` default to this module's own tables and are
+    arguments for the reason `layer_violations` takes `layers`: the tables
+    describe THIS panel, so a caller handing over a fixture server must be able
+    to hand over the declarations that go with it. Without that every fixture
+    case would fail on rows about routes its server never had, which says
+    nothing about the rule being tested.
+    """
+    try:
+        routes = panel_routes(server_path)
+    except (OSError, SyntaxError) as exc:
+        return [(os.path.basename(server_path or _PANEL_SERVER),
+                 "unreadable: %s; no panel route could be checked" % (exc,))]
+    if not routes:
+        return [(os.path.basename(server_path or _PANEL_SERVER),
+                 "no route found in %s - the dispatchers have been renamed and "
+                 "this lint is now checking nothing"
+                 % (", ".join(sorted(_PANEL_DISPATCHERS)),))]
+    try:
+        callers = panel_route_callers(js_dir)
+    except OSError as exc:
+        return [("scripts/ui/panel", "unlistable: %s; no control could be "
+                                     "matched to a route" % (exc,))]
+
+    reader_rows = PANEL_ROUTE_READERS if readers is None else readers
+    unreached_rows = PANEL_ROUTE_UNREACHED if unreached is None else unreached
+    violations = []
+    declared = dict((route, (who, why)) for route, who, why in reader_rows)
+    excused = dict(unreached_rows)
+    for route, who, why in reader_rows:
+        if route not in routes:
+            violations.append((route, "declared as reached by %s, but the panel "
+                                      "serves no such route any more" % (who,)))
+            continue
+        if len(why) < _MIN_ROUTE_REASON:
+            violations.append((route, "its reader row carries %d characters of "
+                                      "reason; a row shorter than %d is a label"
+                               % (len(why), _MIN_ROUTE_REASON)))
+        target = os.path.join(_output.REPO_ROOT, who)
+        try:
+            with open(target, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as exc:
+            violations.append((route, "its declared reader %s cannot be read: %s"
+                               % (who, exc)))
+            continue
+        if route.split(" ", 1)[1] not in text:
+            violations.append((route, "its declared reader %s no longer names it"
+                               % (who,)))
+    for route, why in unreached_rows:
+        if route not in routes:
+            violations.append((route, "recorded as unreached, but the panel "
+                                      "serves no such route any more"))
+        elif len(why) < _MIN_ROUTE_REASON:
+            violations.append((route, "its unreached row carries %d characters "
+                                      "of reason; a row shorter than %d is a "
+                                      "label" % (len(why), _MIN_ROUTE_REASON)))
+    for route in routes:
+        where = route.split(" ", 1)[1]
+        if where in _PANEL_BROWSER_ROUTES:
+            continue
+        if where in callers or route in declared or route in excused:
+            continue
+        violations.append((route, "no control in scripts/ui/panel/ names it, and "
+                                  "no row declares who does - an endpoint the "
+                                  "page cannot reach"))
+    return violations
+
+
+# --- one config key, one interpretation -------------------------------------------
+# TWO THINGS THAT HAD TO AGREE, WITH NOTHING COMPARING THEM. That is one shape, and
+# a single release closed three defects wearing it: two helpers deriving the same
+# configured value in two files, a new door built beside a walk another module
+# already performed, and a lint whose documents were not updated when its behaviour
+# changed. Only the first is mechanisable from source alone, and it is the one that
+# SHIPPED. `meta.ado.types.bug` was derived once inline in `_ado_parent.inventory`
+# and once as `_ado_conventions`' own default; the two spellings disagreed about a
+# PADDED name, so a bug row carried one type while the exemption written to
+# recognise those rows looked for another, and `requireParent` refused the create
+# that exemption exists to allow. Neither file collided with the other, no needle
+# could be written for a derivation that exists once, and every check in this module
+# passed over it. `_ado_parent.bug_type` is the one door that ended it; this is the
+# rule that would have named it the day it arrived.
+#
+# WHAT COUNTS AS A CONFIGURATION KEY IS DERIVED, NEVER TYPED HERE. The two schemas
+# under `plugins/audit/schema/` are what this plugin publishes as the definition of
+# a config file and of a manifest, so a key added there is watched by default and no
+# hand list can go stale behind them - the same argument the two prose scans make
+# for reading a set derived off `.gitignore`. A path is ANCHORED at a top-level
+# property of the config schema or of the plan schema's `meta`, and the anchor is
+# what does the real work rather than the vocabulary: `detected["types"]["bug"]` in
+# `ado-connect.py` is a BOARD's answer to a probe and not a configured value, and an
+# unanchored scan reads it as `meta.ado.types.bug` and convicts a file that reads no
+# configuration at all. That was not hypothetical; it was the first thing this scan
+# reported before the anchor existed.
+#
+# ONE KEY PATH SPANS BOTH SCHEMAS ON PURPOSE. `usage.ledgerDir`, `usage.showCost`
+# and `usage.pricingAsOf` are declared in the config file AND under `meta.usage`,
+# and the plan schema says of the first: "Must match usage.ledgerDir in
+# .claude/audit.config.json when either is customized." They are one fact with two
+# homes, so reading them under one key path is the rule working, not a collision.
+#
+# ONLY WHITESPACE AND CASE ARE COMPARED, AND THE NARROWING WAS MEASURED RATHER THAN
+# PREFERRED. The wider rule this obviously wants - compare the DEFAULT each reader
+# supplies as well - was run over this tree first and convicted most of the keys two
+# modules share, every hit the same pair: `_config_rules` grades a key and supplies
+# no fallback, because a validator has nothing to fall back TO, while the module
+# that CONSUMES the key reads it with `or DEFAULT`. That difference is the two
+# modules doing different jobs, and a coverage rule that convicts the architecture
+# arrives red and gets an exemption written for it on day one - which is how an
+# exemption table stops meaning anything. Whitespace is not a job difference:
+# whatever a reader is FOR, `" Bug "` and `"Bug"` are either the same configured
+# value or they are not, and two modules must not answer that differently.
+#
+# WHAT THIS FOLLOWS, said rather than implied, because a rule whose blind spot is
+# undocumented reads as coverage. It follows a literal lookup chain - `.get("k")` and
+# `["k"]` - down to an anchor; a local bound from one; a parameter NAMED after an
+# anchor; and a call to a MERGED-BLOCK ACCESSOR, a helper named `<root>_cfg` for the
+# top-level block it hands back with defaults filled in.
+#
+# THAT LAST SHAPE WAS ADDED BY F168, AND THE FAULT IS THE ARGUMENT FOR IT. The
+# panel's Usage payload reaches `usage.pricingAsOf` through `usage_cfg(config)`, so
+# no key on that line was an anchor, so the module was absent from the key's reader
+# list ENTIRELY - and the read it was absent for is the one that served the value as
+# typed while deciding, in the same dict literal, on the trimmed one. A rule added
+# to catch one key read two ways could not see the copy that shipped. It was widened
+# rather than merely recorded because widening it convicted exactly that key and
+# nothing else on this tree: a rule that arrives red on unrelated code buys an
+# exemption on day one, and this one arrives red on the defect and green behind its
+# repair.
+#
+# WHERE IT STILL STOPS. At a block accessor whose NAME does not spell its block
+# (`render-report._panel_cfg`), because the attribution IS the name and no callee is
+# opened; at a key read off a block that arrived any other way - through a second
+# call, or assembled rather than looked up; at a value normalised inside a helper,
+# on the far side of a call this scan does not follow; and at any disagreement that
+# is not about text. It is a floor under one shape and not a proof that two readers
+# agree - the same division of labour `SHARED_CONCERNS` records between "is there a
+# second implementation" and "do the two agree".
+_CONFIG_SCHEMA = os.path.join(_output.PLUGIN_ROOT, "schema",
+                              "audit-config.schema.json")
+_PLAN_SCHEMA = os.path.join(_output.PLUGIN_ROOT, "schema",
+                            "audit-plan.schema.json")
+
+# The string methods that change what a configured value MEANS without changing
+# what it looks like in the file. `replace` is deliberately absent: it takes
+# arguments, so two readers calling it are not doing the same thing by virtue of the
+# name alone, and a rule convicting them would be reporting a coincidence.
+_TEXT_NORMALISERS = frozenset(("strip", "lstrip", "rstrip", "lower", "upper",
+                               "casefold", "title"))
+
+# The suffix that makes a helper's NAME the block it returns. `usage_cfg(cfg)` and
+# `policy_cfg(cfg)` hand back one top-level block with its defaults filled in, and
+# the caller then reads keys off the result with the block's name appearing nowhere
+# on the line - which is a chain with no anchor and, before this, a read the walk
+# below could not see at all.
+#
+# WHICH PREFIXES COUNT IS DERIVED, like the vocabulary itself: the text in front of
+# this suffix has to be a top-level property of one of the two schemas. So an
+# accessor added for a block the schemas already declare is followed the day it
+# lands, no hand list can go stale behind it, and `render-report._panel_cfg` - named
+# for the surface it serves rather than for a block - stays outside the rule instead
+# of turning every `*_cfg` call in the tree into an anchor.
+_BLOCK_ACCESSOR_SUFFIX = "_cfg"
+
+# A reason shorter than this is a label. The same instrument as `_MIN_ROUTE_REASON`
+# above and `prove-gates.py`'s `_MIN_ALLOW_REASON`, kept as its own constant because
+# the two tables here are free to disagree about how much argument a row owes.
+_MIN_MIRROR_REASON = 80
+
+
+def _schema_property_names(node):
+    """Every name declared under a `properties` object anywhere in `node`.
+
+    Recursive over the whole document rather than one level, because the
+    vocabulary that matters is nested: `bug` lives at
+    `meta.ado.types.properties.bug` and a one-level read would see `ado` alone.
+    """
+    names = set()
+    if isinstance(node, dict):
+        declared = node.get("properties")
+        if isinstance(declared, dict):
+            names.update(declared)
+        for value in node.values():
+            names |= _schema_property_names(value)
+    elif isinstance(node, list):
+        for value in node:
+            names |= _schema_property_names(value)
+    return names
+
+
+def config_vocabulary(config_schema=None, plan_schema=None):
+    """`(roots, names)` - the configuration key names the two schemas declare.
+
+    `names` is every property name anywhere in the config schema or under the
+    plan schema's `meta`; `roots` is the TOP-LEVEL properties of each, which is
+    where a configuration path is allowed to start.
+
+    ONLY `meta` OF THE PLAN SCHEMA, and the omission is the design. The rest of
+    that document describes phases, tasks and findings - `id`, `title`, `type`,
+    `basis`, `message` - which are the field names of ordinary records this tree
+    reads by the hundred. Admitting them would make every `task["id"]` a
+    configuration read, and the scan reported them by the dozen before this was
+    narrowed. `meta` is the half a user CONFIGURES, which is this rule's subject.
+
+    Raises rather than returning an empty vocabulary on an unreadable schema:
+    this is a guard, and a guard with nothing in its vocabulary reports exactly
+    what a clean tree reports. `config_read_violations` catches and says so.
+    """
+    with open(config_schema or _CONFIG_SCHEMA, "r", encoding="utf-8") as fh:
+        config = json.load(fh)
+    with open(plan_schema or _PLAN_SCHEMA, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    meta = (plan.get("$defs") or {}).get("meta") or {}
+    names = _schema_property_names(config) | _schema_property_names(meta)
+    roots = set(config.get("properties") or {}) | set(meta.get("properties") or {})
+    return frozenset(roots), frozenset(names)
+
+
+def _keyed_read(node):
+    """`(receiver, key)` when `node` is a string-keyed dict lookup, else `None`.
+
+    Both spellings, because this tree uses both for the same job: `.get("k")`
+    where absence is ordinary and `["k"]` where the caller has already
+    established the key is there.
+    """
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get" and node.args):
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return node.func.value, first.value
+        return None
+    if isinstance(node, ast.Subscript):
+        index = node.slice
+        # Python 3.8 wraps a literal subscript in an `ast.Index`; 3.9 dropped the
+        # wrapper and later versions no longer build one. Unwrapped BY SHAPE
+        # rather than by naming the deprecated class, so this reads the same tree
+        # on the 3.8 floor and on the interpreter CI actually runs.
+        if not isinstance(index, ast.Constant) and hasattr(index, "value"):
+            index = index.value
+        if isinstance(index, ast.Constant) and isinstance(index.value, str):
+            return node.value, index.value
+    return None
+
+
+def _peel_normalisers(node):
+    """`(inner, normalisers)` - `node` with its wrappers taken off.
+
+    A FALLBACK is peeled and NOT recorded. `or DEFAULT` and `X if ... else
+    DEFAULT` say what a reader does when the key is absent, and the section note
+    above records why that is deliberately not compared.
+    """
+    found = set()
+    while True:
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            node = node.values[0]
+            continue
+        if isinstance(node, ast.IfExp):
+            node = node.body
+            continue
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _TEXT_NORMALISERS):
+            found.add(node.func.attr)
+            node = node.func.value
+            continue
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "str" and node.args):
+            node = node.args[0]
+            continue
+        return node, frozenset(found)
+
+
+def _block_accessor(node, roots):
+    """The configuration block a `<root>_cfg(...)` call returns, or `None`.
+
+    Both spellings of the call, because a caller reaches these through a module
+    alias (`cfg_mod.usage_cfg(config)`) as often as by the bare name.
+
+    ATTRIBUTED BY NAME, AND THAT IS WHERE IT ENDS. Nothing here opens the callee,
+    so this believes a word: a function called `usage_cfg` is taken to return the
+    `usage` block, and a helper named for a block it does not hand back would be
+    read wrongly here. Parsing the body would be the honest version and is not
+    what this buys - the name is also the only thing the READER of a call site
+    has, so a rule that trusts it is wrong in exactly the places a person is.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name):
+        name = func.id
+    elif isinstance(func, ast.Attribute):
+        name = func.attr
+    else:
+        return None
+    if not name.endswith(_BLOCK_ACCESSOR_SUFFIX):
+        return None
+    block = name[:-len(_BLOCK_ACCESSOR_SUFFIX)]
+    return block if block in roots else None
+
+
+def _resolve_config_path(node, env, roots):
+    """`(path, normalisers)` for a configuration read, or `(None, ...)`.
+
+    `path` is a tuple of key names from an anchor down, `env` maps a local name
+    to the `(path, normalisers)` it was bound from. The recursion stops at a
+    receiver nothing identifies, and returns a path only when the last key it
+    could not resolve a receiver for is itself an ANCHOR - a top-level property
+    of one of the two schemas.
+
+    A MERGED-BLOCK ACCESSOR IS AN ANCHOR TOO (F168). A block that arrives through
+    `usage_cfg(config)` leaves no key on the line, so every read off it used to
+    resolve to nothing and the module holding those reads was missing from the
+    key's reader list entirely - including the read that served `pricingAsOf` as
+    typed while the flag beside it was decided on the trimmed value. What that
+    still does not reach is the section note above: the accessor is recognised by
+    NAME, and no other call is followed.
+    """
+    node, normalisers = _peel_normalisers(node)
+    if isinstance(node, ast.Name):
+        known = env.get(node.id)
+        if known is None:
+            return None, normalisers
+        return known[0], normalisers | known[1]
+    block = _block_accessor(node, roots)
+    if block is not None:
+        return (block,), normalisers
+    read = _keyed_read(node)
+    if read is None:
+        return None, normalisers
+    receiver, key = read
+    base, inner = _resolve_config_path(receiver, env, roots)
+    normalisers = normalisers | inner
+    if base is None:
+        return ((key,) if key in roots else None), normalisers
+    return base + (key,), normalisers
+
+
+def _name_normalisers(scope, name):
+    """Text normalisers applied to the local `name` anywhere in `scope`.
+
+    THE READ AND THE TRIM DO NOT HAVE TO SHARE A LINE, which is the whole reason
+    this exists. `_ado_parent.bug_type` - the one door the divergence this rule
+    is named for was repaired into - reads `types.get("bug")` on one line and
+    decides about its whitespace on the next two. A rule reading only the
+    expression would see the repaired module as normalising NOTHING, and would
+    then stay quiet about the very copy it exists to catch.
+
+    Scoped to one function and matched by name, so a local rebound to something
+    else inside the same body is attributed the normalisers of both. That
+    imprecision is recorded rather than removed: names here are short-lived, and
+    the alternative is a live-range analysis for a rule whose whole value is that
+    it is cheap enough to run on every commit.
+    """
+    found = set()
+    for node in ast.walk(scope):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _TEXT_NORMALISERS
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == name):
+            found.add(node.func.attr)
+    return frozenset(found)
+
+
+def _enclosing_normalisers(parents, node):
+    """Text normalisers wrapped AROUND `node`, read upward from it.
+
+    `_peel_normalisers` looks down from an expression and `_name_normalisers`
+    looks along a local; neither can see `(types.get("bug") or "Bug").strip()`,
+    where the trim sits above the read and the read is what the walk hands over.
+    That hole was found by the case asserting two AGREEING readers stay quiet -
+    the one that looks vacuous - because it was the only case whose two spellings
+    differed in exactly this way.
+
+    An `or`/`if-else` between the read and the method is climbed through: the
+    fallback says what happens when the key is absent, and the trim above it is
+    still an answer about the key's text.
+    """
+    found = set()
+    while True:
+        parent = parents.get(node)
+        if parent is None:
+            return frozenset(found)
+        if isinstance(parent, ast.BoolOp) and isinstance(parent.op, ast.Or):
+            node = parent
+            continue
+        if isinstance(parent, ast.IfExp) and parent.body is node:
+            node = parent
+            continue
+        if (isinstance(parent, ast.Attribute)
+                and parent.attr in _TEXT_NORMALISERS and parent.value is node):
+            grandparent = parents.get(parent)
+            if isinstance(grandparent, ast.Call) and grandparent.func is parent:
+                found.add(parent.attr)
+                node = grandparent
+                continue
+        return frozenset(found)
+
+
+def _parent_map(tree):
+    """`{child node: parent node}` for one module, built once and read by scope."""
+    parents = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    return parents
+
+
+def _read_bindings(tree):
+    """`{(lineno, col): local name}` for every read assigned to a bare name.
+
+    Keyed by POSITION rather than by node, so the two scopes a read is visited
+    from - the module and the function holding it - agree about which local it
+    was bound to without either having to be the authority.
+    """
+    bound = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        if not isinstance(node.targets[0], ast.Name):
+            continue
+        value, _normalisers = _peel_normalisers(node.value)
+        if _keyed_read(value) is not None:
+            bound[(value.lineno, value.col_offset)] = node.targets[0].id
+    return bound
+
+
+def _scope_config_reads(scope, env, roots, names, bound, parents):
+    """`{(lineno, col): (path, normalisers)}` for the reads inside one scope.
+
+    Two passes, and the order is load-bearing: the bindings first, so a read
+    written after `ado = meta.get("ado")` resolves through it. This codebase
+    almost never spells a whole path in one expression - it destructures the
+    block and reads a key off the local - so a scan without this pass sees a
+    handful of chains and none of the reads that matter.
+    """
+    env = dict(env)
+    for node in ast.walk(scope):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        if not isinstance(node.targets[0], ast.Name):
+            continue
+        path, normalisers = _resolve_config_path(node.value, env, roots)
+        if path is None:
+            continue
+        local = node.targets[0].id
+        env[local] = (path, normalisers | _name_normalisers(scope, local))
+    found = {}
+    for node in ast.walk(scope):
+        if _keyed_read(node) is None:
+            continue
+        path, normalisers = _resolve_config_path(node, env, roots)
+        if path is None or len(path) < 2:
+            continue
+        if not all(key in names for key in path):
+            continue
+        normalisers = normalisers | _enclosing_normalisers(parents, node)
+        local = bound.get((node.lineno, node.col_offset))
+        if local is not None:
+            normalisers = normalisers | _name_normalisers(scope, local)
+        found[(node.lineno, node.col_offset)] = (path, normalisers)
+    return found
+
+
+def _module_config_reads(tree, roots, names):
+    """`[(key path, lineno, normalisers)]` for one parsed module.
+
+    Every function is scanned with its own environment, seeded with the
+    parameters NAMED after an anchor - `def bug_type(ado)` is handed the ADO
+    block and this tree says so in the parameter name throughout. Without that
+    seed a helper taking the block as an argument reads no configuration at all,
+    which is exactly where the derivation this rule is named for lived.
+
+    The module scope is walked too, and it descends into those same functions
+    with no parameters bound - so a read is visited twice and the LONGER path
+    wins, with the normalisers of both. A shorter answer is the scan failing to
+    resolve a receiver, never a second opinion about where the key lives.
+    """
+    bound = _read_bindings(tree)
+    parents = _parent_map(tree)
+    scopes = [(tree, {})]
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        env = {}
+        for arg in list(node.args.args) + list(node.args.kwonlyargs):
+            if arg.arg in roots:
+                env[arg.arg] = ((arg.arg,), frozenset())
+        scopes.append((node, env))
+    found = {}
+    for scope, env in scopes:
+        for site, (path, normalisers) in _scope_config_reads(
+                scope, env, roots, names, bound, parents).items():
+            seen = found.get(site)
+            if seen is None:
+                found[site] = (path, normalisers)
+            elif len(path) > len(seen[0]):
+                found[site] = (path, normalisers | seen[1])
+            else:
+                found[site] = (seen[0], seen[1] | normalisers)
+    return sorted((".".join(path), lineno, tuple(sorted(normalisers)))
+                  for (lineno, _col), (path, normalisers) in found.items())
+
+
+def config_key_reads(script_dir=None, hooks_dir=None, vocabulary=None):
+    """`({key path: [(relname, lineno, normalisers)]}, unreadable)`.
+
+    Every configuration key read anywhere under `scripts/` or `hooks/`, through
+    the SAME walk every other rule in this module uses (`_real_source_files`) -
+    hooks included, because a hook mirroring a constant is one of the two readers
+    this compares and scanning only `scripts/` would make the mirror invisible on
+    exactly the side that cannot import the other.
+
+    `unreadable` is `[(relname, why)]` for a file that would not parse, returned
+    beside the answer rather than dropped from it: a module the scan could not
+    open is not a module with no configuration reads in it.
+    """
+    roots, names = config_vocabulary() if vocabulary is None else vocabulary
+    reads = {}
+    unreadable = []
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            unreadable.append((rel, "%s" % (exc,)))
+            continue
+        for key, lineno, normalisers in _module_config_reads(tree, roots, names):
+            reads.setdefault(key, []).append((rel, lineno, normalisers))
+    return reads, unreadable
+
+
+def config_divergences(script_dir=None, hooks_dir=None, vocabulary=None):
+    """`{key path: {relname: normalisers}}` for keys two modules read differently.
+
+    The judgement, with no table applied - `config_read_violations` is what
+    decides which of these are declared. Separate so a case can ask what the tree
+    ACTUALLY does without the allow-list standing in front of the answer, the
+    same reason `shared_concern_slack` is not folded into its violation rule.
+    """
+    reads, _unreadable = config_key_reads(script_dir, hooks_dir, vocabulary)
+    divergent = {}
+    for key, sites in reads.items():
+        by_module = {}
+        for rel, _lineno, normalisers in sites:
+            by_module[rel] = by_module.get(rel, frozenset()) | frozenset(normalisers)
+        if len(by_module) < 2 or len(set(by_module.values())) < 2:
+            continue
+        divergent[key] = by_module
+    return divergent
+
+
+def _spell_normalisers(normalisers):
+    """`as typed` / `through strip` - how a module interprets a value, in words."""
+    if not normalisers:
+        return "as typed"
+    return "through %s" % (", ".join(sorted(normalisers)),)
+
+
+# WHERE TWO MODULES READ ONE KEY DIFFERENTLY AND THAT IS THE RIGHT ANSWER. Every
+# row is a decision with its reason attached, the way `KNOWN_LAYER_DEBT` and
+# `PANEL_ROUTE_READERS` already are here, and the reason is CHECKED rather than
+# read: the row names the modules that disagree, they must still be exactly the
+# modules that disagree, and each must be named in the reason itself. A row about
+# one file while the recorded divergence belongs to another is an allow-list entry
+# for a different thing, which is `ld3`'s finding one table over.
+#
+# THE TABLE MAY ONLY SHRINK. A new divergence fails the build by name; so does a
+# row whose readers have come to agree, because a row nobody checks reads exactly
+# like a check.
+KNOWN_CONFIG_MIRRORS = (
+    ("ado.sprint.team",
+     ("manifest/_manifest_ado.py", "status/_doctor_ado.py"),
+     "NEITHER OF THESE DERIVES THE VALUE, which is the whole reason they are "
+     "allowed to differ. `_manifest_ado` VALIDATES the key and trims only to "
+     "refuse a team that is blank once trimmed - the trim is the test, not an "
+     "interpretation it hands on. `_doctor_ado` ECHOES the configured value with "
+     "%r into a diagnostic line, deliberately verbatim, because a doctor exists "
+     "to show what is in the file and not what the plugin would make of it; the "
+     "quotes are there so a reader SEES the padding this row is about. Nothing "
+     "in Python resolves the team for use - the sync command does that against "
+     "the board - so there is no second derivation here for the first to "
+     "disagree with. THE DAY A MODULE RESOLVES THE TEAM FOR USE it has to trim, "
+     "and this row has to go rather than be widened to cover it."),
+    # `usage.pricingAsOf` was the second row here and is GONE rather than kept as
+    # history (F160). Its recorded residual was real - the plan schema asks only
+    # `minLength: 1`, so a whitespace-only value validated, reached three surfaces
+    # as `rates as of` followed by nothing, and was called undeclared by the
+    # fourth - and its own revisit trigger named the repair: trim the manifest key
+    # where it is rendered. `_usage_load`, `audit-status` and `audit-usage` now do,
+    # so all four readers answer the same way about whitespace and there is nothing
+    # left to declare. The row could not stay: a row whose readers have come to
+    # agree fails this module's own check, which is what keeps this table from
+    # recording its own history.
+)
+
+
+def config_read_violations(script_dir=None, hooks_dir=None, mirrors=None,
+                           vocabulary=None):
+    """`(key path, problem)` for a configuration key two modules interpret apart.
+
+    The pair nothing compared, and the reason this module grew a fourth kind of
+    check: a key read in two files, with two answers about whitespace, and both
+    files green under every other rule here.
+
+    Four shapes are reported, and the last three are what stop this becoming a
+    no-op the way a needle that no longer matches does:
+
+      * a key two modules normalise differently, named in no row;
+      * a `KNOWN_CONFIG_MIRRORS` row whose readers have come to agree, or whose
+        recorded readers are no longer the ones that disagree, or whose reason is
+        too short to be one or does not name the modules it is about;
+      * a file the scan could not parse, which is not a file with no
+        configuration reads in it;
+      * an empty vocabulary or an empty scan - a schema that moved, or a walk
+        that stopped finding anything, would otherwise print what a clean tree
+        prints.
+
+    `mirrors` and `vocabulary` default to this module's own and are arguments for
+    the reason `layer_violations` takes `layers`: a caller handing over a fixture
+    tree has to be able to hand over the declarations that go with it, or every
+    fixture case fails on rows about keys its tree never had.
+    """
+    try:
+        roots, names = config_vocabulary() if vocabulary is None else vocabulary
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        return [("<schema>", "the configuration schemas could not be read (%s), "
+                             "so no configuration key was checked at all"
+                 % (exc,))]
+    if not roots or not names:
+        return [("<schema>", "the configuration schemas declare no properties - "
+                             "this rule has an empty vocabulary and is now "
+                             "checking nothing")]
+    reads, unreadable = config_key_reads(script_dir, hooks_dir, (roots, names))
+    violations = [(rel, "will not parse (%s), so its configuration reads were "
+                        "not checked" % (why,)) for rel, why in unreadable]
+    if not reads:
+        return violations + [
+            ("<tree>", "no configuration key is read anywhere under scripts/ or "
+                       "hooks/ - a tree this rule finds nothing in has gone "
+                       "blind, not clean")]
+    divergent = config_divergences(script_dir, hooks_dir, (roots, names))
+    rows = KNOWN_CONFIG_MIRRORS if mirrors is None else mirrors
+    declared = dict((key, (tuple(readers), why)) for key, readers, why in rows)
+    for key, readers, why in rows:
+        if key not in divergent:
+            violations.append((key, "declared as a divergence its readers are "
+                                    "allowed to keep, but they agree now (or no "
+                                    "longer read it) - delete the row"))
+            continue
+        if len(why) < _MIN_MIRROR_REASON:
+            violations.append((key, "its row carries %d characters of reason; a "
+                                    "row shorter than %d is a label"
+                               % (len(why), _MIN_MIRROR_REASON)))
+        seen = tuple(sorted(divergent[key]))
+        if seen != tuple(sorted(readers)):
+            violations.append((key, "its row records %s, but %s read it apart "
+                                    "now - a reason written about other modules"
+                               % (", ".join(sorted(readers)), ", ".join(seen))))
+            continue
+        unnamed = sorted(rel for rel in readers
+                         if os.path.basename(rel)[:-3] not in why)
+        if unnamed:
+            violations.append((key, "its reason never names %s, so the row and "
+                                    "the divergence it excuses are about "
+                                    "different modules"
+                               % (", ".join(unnamed),)))
+    for key in sorted(divergent):
+        if key in declared:
+            continue
+        violations.append((key, "read apart by %s - one configuration key, one "
+                                "derivation: put the answer in one place and let "
+                                "the other module call it"
+                           % ("; ".join("%s %s" % (rel, _spell_normalisers(ns))
+                                        for rel, ns
+                                        in sorted(divergent[key].items())),)))
+    return violations
 
 
 # --- known layer debt ---------------------------------------------------------

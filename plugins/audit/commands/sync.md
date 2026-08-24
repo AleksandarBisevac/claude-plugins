@@ -26,6 +26,17 @@ without one.
    `${CLAUDE_PLUGIN_ROOT}/reference/tracker-sync.md` (the shared contract + the ADO
    binding: field reference names, state fallback, parent links, iteration resolution).
    Resolve and read the manifest. Missing → stop, point to `/audit:init`.
+
+   **The manifest may be SHARDED, and then the file at `manifestPath` is an INDEX
+   whose phases are stubs** — the tasks, and every `ado` link on them, live in the
+   phase shards beside it. A plain read of that file is therefore not a read of the
+   manifest: it finds the bugs' links and none of the phases' or tasks', and reports
+   the difference as *unlinked* rather than as unread. Nothing errors; the number is
+   simply smaller. Every script below goes through `_manifest_io.load_manifest`, and
+   the counts and links this command would otherwise walk itself come from
+   **`read-ado-links.py`** (step 2 of `status`). No step in this file wants the raw
+   file, so if you are about to `Read` the manifest to count something, that is the
+   door to run instead.
 2. **`meta.ado` must exist** — else stop and point at **`/audit:sync connect`**, which
    verifies the transport, reports which auth path is in effect, proves access with a
    read-only query and detects the board's process before writing the block. Print the
@@ -117,23 +128,61 @@ transports, in every subcommand.
 | `bug.title` / task: `[<taskId>] <title>` / phase: `[<phaseId>] <title>` | Title |
 | `bug.description` + `repro` + `expected`/`actual` | Repro Steps (Bug) / Description |
 | `bug.severity` high/med/low | Severity `2 - High` / `3 - Medium` / `4 - Low` |
-| bug status (default `open` → `New` · `triaged`/`in_progress` → `Active` · `fixed` → `Resolved` · `wontfix` → `Closed`) | State via `meta.ado.stateMap.bug` |
-| task status (default `pending` → `New` · `in_progress` → `Active` · `blocked` → `Active` + tag `blocked` · `done` → `Closed` · `cancelled` → `Removed`) | State via `meta.ado.stateMap.task` |
-| phase status via `meta.ado.stateMap.phase` (defaults = the task defaults; NOTE phase-item vocabularies differ — a Scrum PBI knows no "In Progress", see tracker-sync.md) | State |
+| bug / task / phase status → **State**: not a row you translate here. `read-ado-links.py` owns `meta.ado.stateMap` over the built-in defaults and prints the target state per item **with the basis that produced it** | State (a `blocked` task also gets the tag `blocked`) |
 | task `done` + `meta.ado.onComplete.remainingWork` (default 0 when `onComplete` present) | `Microsoft.VSTS.Scheduling.RemainingWork`, same update call — stock processes REFUSE it (they force-clear the field at done) → retry state-only, report the skip (tracker-sync.md) |
 | `meta.ado.areaPath` (when set) | Area |
 | resolved sprint (`meta.ado.sprint`) else `meta.ado.iterationPath` (when set) | Iteration |
 | `meta.ado.fields.<work item type>` (when set) | those fields verbatim on CREATE — merged by `check-ado-item.py` **before** the conformance gate, so a board that requires e.g. `Microsoft.VSTS.Common.Activity` can be satisfied; a field this table already maps, or one ADO reports read-only, is refused at validation |
 | always | provenance tag from `meta.ado.tag` (absent = `audit-plugin`; null = none) — tag writes READ-MERGE-WRITE the item's tag list, never wholesale; comment with `fixedIn` SHA when a bug closes |
 
-A `stateMap` value of `null` = **never move state for that transition** — skip the
-State field, the team moves that card by hand. **States are applied by UPDATE, never
-at create** — ADO allows only the initial state at creation (tracker-sync.md →
-"States are applied by UPDATE"), so every non-initial target is a second call after
-the create. A state the process rejects degrades per item (retry without State,
-report, hint at `stateMap`) — tracker-sync.md → "Invalid-state fallback". The
-built-in defaults name Agile-process states; Scrum projects set `stateMap` (doctor
-carries the advisory).
+## The state translation is a door, not a table you apply
+
+**This file used to carry the map** — a status column, an ADO-state column, and an
+instruction to translate. Two readings of it went wrong at once, and neither showed
+up as an error. `status` step 3 was never told to apply it, so every drift row read
+`state not compared (no mapped state supplied)`; and nobody applies
+`effective_bug_status` from prose, so a bug whose fix task is done would have been
+translated from its stored `open` and reported the board's `Resolved` card as ours to
+overwrite. **A table in prose has to be applied by a reader, and that is the part that
+cannot be tested.** So it is code:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" <manifest> \
+  [--items <fetched.json> --out <mapped.json>] [--json]
+```
+
+With no `--items` it prints the manifest side: linked vs unlinked per kind, then one
+row per link — `kind | manifest id | ado id | status | state | basis`. With
+`--items` it stamps `mapped` onto the payload `fetch-ado-items.py` wrote and writes
+`--out`, which is the file the drift door must be handed. Exit 0 = answered. **Exit 1
+= entries were given and not one of them could be given a state**, so every reading
+downstream has no basis — including the overwrite count the confirm gate reads, which
+is zero for that reason alone. Exit 2 is unreadable input, and `--items` without
+`--out` is refused rather than treated as a preview.
+
+**An entry it could not stamp is passed through and NAMED, never dropped** — a
+shorter payload reads downstream as a board with fewer cards. The ways that happens
+each carry their own word in the report: no manifest item links to that work item; the
+transition is configured `null`; nothing maps that status at all; or **two manifest
+items claim the same card and mean different states**, which the door refuses to
+break rather than stamping whichever it walked into first. Nothing validates that a
+work-item id is claimed once, so that last one is a real manifest defect to go and
+unpick, and it is reported on both invocations.
+
+Do not re-derive any of it here, and do not reconstruct a state from the report: a
+second copy of that map is a second answer, and the first thing to disagree would be
+somebody's board.
+
+A `stateMap` value of `null` = **never move state for that transition** — the door
+prints `never` for that row, skip the State field, the team moves that card by hand.
+**States are applied by UPDATE, never at create** — ADO allows only the initial state
+at creation (tracker-sync.md → "States are applied by UPDATE"), so every non-initial
+target is a second call after the create. A state the process rejects degrades per
+item (retry without State, report, hint at `stateMap`) — tracker-sync.md →
+"Invalid-state fallback". The built-in defaults name Agile-process states, which the
+door says on every row that used one; Scrum projects set `stateMap` (`connect` says so
+from the process it detected, and doctor carries the advisory). Phase-item
+vocabularies differ — a Scrum PBI knows no "In Progress" (tracker-sync.md).
 
 The manifest side of a link is the item's `ado` field — `{id, url, lastSyncedAt}`
 (plus `iterationPath` on sprint-stamped items) — **written only by this command and
@@ -246,14 +295,31 @@ none of them a reason to guess: `types` is then simply not proposed.
 
 ### 5. The write — the only step that writes, and it asks first
 
-Print the plan the command produced (`N to set, M to change, K already right`), then
-**confirm via AskUserQuestion before writing** — this turns on an outward-facing connector.
-Then, under the concurrency lock, apply it to `meta.ado`:
+**Print the door's PLAN block verbatim, as its own block above the question.** The
+command composed it already: the head line `PLAN - <configured or not>: N to set, M to
+change, K already right.`, then one `set` / `CHANGE` / `keep` row per key, then the
+`restamp (not counted above)` line for the evidence block. **Paste those lines — do not
+re-render them, and do not fold them into the AskUserQuestion's option text.** An option
+label can carry a small plan and cannot carry a large one, and the day it is large is the
+day a reader most needs the shape stated rather than narrated. The counts are printed by
+the door **even at zero**, so a plan with nothing to do says so instead of leaving it to
+be inferred from silence.
+
+This is not a hypothetical: `connect`'s first live use reached its confirm with no plan
+block above it, and the counts a reader sizes a write by existed only inside an option
+label. A second rendering is a second answer, and here the first thing to disagree would
+be how much the operator thought they were approving.
+
+Then **confirm via AskUserQuestion before writing** — this turns on an outward-facing
+connector. Then, under the concurrency lock, apply it to `meta.ado`:
 
 - `organization`, `project`, `enabled: true`, and `types` when a process was detected;
-- **`connection`** — the evidence block the command hands back under `--json`
-  (`data.connection`): `{process, pbiType, stateMapNeeded, authPath, fetchedAt, basis}`.
-  Same shape as the two caches `parents` writes, and the panel's ADO card reads it.
+- **`connection`** — the evidence block the command hands back under `--json` at the
+  **top level, as `connection`**: `{process, pbiType, stateMapNeeded, authPath,
+  fetchedAt, basis}`. `--json` prints the answer document itself and wraps it in no
+  envelope, so there is no `data` to reach through — this file said otherwise once and
+  it cost a live run a retry. Same shape as the two caches `parents` writes, and the
+  panel's ADO card reads it.
 
 Revalidate with `validate-manifest.py` after the write, as every mutating command does.
 
@@ -331,15 +397,23 @@ failed echo.
    they are what step 2c reads, and a fetch that dropped them would leave 2c unable to
    tell your own write from somebody else's.
 2c. **Whose card is this, and who moved it last — every UPDATE, before the confirm.**
-   Take the payload `fetch-ado-items.py --out` already wrote (each `{id, fields}`),
-   add `mapped` to each entry — the `stateMap`-translated status from the table
-   above, which the fetch deliberately does not invent because that table lives here
-   and a second copy would be a second answer — and run:
+   Take the payload `fetch-ado-items.py --out` already wrote (each `{id, fields}`)
+   and stamp `mapped` onto it with the translation door — the fetch deliberately
+   does not invent that field, and this file no longer carries a table anyone could
+   apply by hand:
 
    ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" \
+     <manifest> --items fetched.json --out mapped.json
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/explain-ado-drift.py" \
-     <manifest> --items <fetched.json>
+     <manifest> --items mapped.json
    ```
+
+   **The first command is not optional and its exit 1 is a stop here**, harder than
+   in `status`: an unstamped payload makes the count in step 3 (`K update(s) would
+   overwrite a change made after our last sync`) structurally zero, and that count is
+   what the confirm gate is asking the operator to read. A push confirmed against a
+   zero nothing could have reached is the failure this pair exists to prevent.
 
    Exit 0 = answered; **exit 2 = could not read the input, so stop rather than
    push blind**. There is no exit 1: "somebody else moved this card" is the normal
@@ -368,6 +442,15 @@ failed echo.
    fields the gate just counted as present, which is how a green gate still lands a
    non-conforming item. A malformed `meta.ado.fields` is exit 2, not 1: the config
    could not be applied, which is not the item's fault.
+
+   **A `NOTE:` line is not a refusal, and exit 0 can now carry one.** `requireParent`
+   is scoped to the item kinds this connector actually parents, so on a board that asks
+   for a parent on every card a bug create is exempt — and the gate PRINTS which rule it
+   did not apply and to which item rather than narrowing in silence (`parentRuleExemption`
+   under `--json`). It moves neither the exit code nor `conforms`. Carry it into the plan
+   below **beside the create it describes**: a board's standard that quietly stopped
+   applying is exactly the silent pass the printing exists to prevent, and the operator
+   confirming the push is the person entitled to know.
 
    **Do not reimplement the rule here.** It is Python with cases precisely because
    prose cannot be tested — a second copy in this file is a second answer, and the
@@ -569,20 +652,36 @@ Both keys are **cached evidence**, so both carry a `fetchedAt` and a one-sentenc
 `basis` naming the query. Evidence with no moment cannot be aged, and evidence with
 no basis has to be trusted rather than checked.
 
-1. **The ladder** — which work item type may parent which, asked of THIS project:
+1. **The ladder** — which work item type may parent which, asked of THIS project.
+   Fetch the payload, then hand it to the door; **do not build the block by reading
+   it**:
 
    ```bash
    az devops invoke --area work --resource backlogconfiguration \
-     --route-parameters project=<project> --api-version 7.1
+     --route-parameters project=<project> --api-version 7.1 > backlogconfig.json
+
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-ado-parent.py" \
+     <manifest> --hierarchy-from backlogconfig.json
    ```
 
-   Write `meta.ado.hierarchy = {levels: {<type>: <rank>}, fetchedAt, basis}` from
-   `taskBacklog`, `requirementBacklog` and each `portfolioBacklogs[]` — and place
-   `Bug` from the payload's `bugsBehavior`, which is the only field that says where
-   it goes (the type lists do not name it). tracker-sync.md → "Backlog levels"
-   carries the shape. **No table ships with the plugin**: the same organization runs
-   one project at `asRequirements` and another at `asTasks`, so a shipped ladder
-   would be wrong on the second board and confidently so.
+   What it prints **is** `meta.ado.hierarchy` — the ranks off `taskBacklog`,
+   `requirementBacklog` and each `portfolioBacklogs[]`, the `fetchedAt`, and the
+   `basis` naming the query — so write it in verbatim under the lock and revalidate.
+   `--hierarchy-from -` reads the payload on stdin instead, for a piped fetch.
+   Exit 0 = a ladder. **Exit 2 = the payload could not be read, or ranks no backlog
+   level at all**: write nothing and say which, because an empty ladder cached as
+   evidence reads as a project that ranks nothing and turns the type check off.
+
+   **Do not re-derive where a bug goes.** Its rank comes from the payload's
+   `bugsBehavior`, which is the only field that says (the type lists do not name a
+   bug at all) — but the NAME that rank is filed under is `meta.ado.types.bug`, so
+   a board that renamed the type gets its own name and prose naming the type instead
+   files the rank under a name no work item carries. That is the same reason the
+   chunk size and the state map are doors rather than paragraphs. tracker-sync.md
+   → "Backlog levels" carries what the payload holds. **No table ships with the
+   plugin**: the same organization runs one project at `asRequirements` and another
+   at `asTasks`, so a shipped ladder would be wrong on the second board and
+   confidently so.
 
 2. **The candidates** — the parent-shaped items on this board right now, so a picker
    can offer them instead of asking for an id from memory. WIQL over the types that
@@ -611,7 +710,26 @@ Read-only, no ADO writes, no manifest writes.
 1. Lead with the connector line: `enabled`/`echo`/`phaseWorkItems` state (and the
    DISABLED banner from Preflight 3 when off), `sprint: <resolved path>` or
    `sprint: unresolvable (team '<t>')` when resolution fails.
-2. Count linked vs unlinked bugs/tasks/phases.
+2. **The link inventory is a door, not a walk you write here.** Counting linked vs
+   unlinked means reading every phase, every task and every bug — which on the
+   sharded layout is a walk over the ASSEMBLED manifest and not over the file at
+   `manifestPath` (Preflight 1). Do not do it by hand:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" <manifest>
+   ```
+
+   Print its counts as it prints them — per kind, then the totals, then the target
+   state each linked item's status means and which of `meta.ado.stateMap` or the
+   built-in defaults answered. It also names the work items **more than one manifest
+   item claims** (`SHARED: #<id> …`), with that count printed even at zero: nothing
+   validates that a work-item id is claimed once, so this is the only place it is
+   ever counted, and two rows carrying one id read as a typo until it is said.
+
+   Exit 0 = answered. **Exit 2 = the manifest or one of its shards could not be
+   read** — stop and say which file, because a short table is indistinguishable from
+   a small board. Do not re-tally any of it below; the numbers in step 3's table are
+   this command's.
 3. For linked items, fetch the ADO side **in one query per chunk — never one call per
    item** — and print:
    `manifest id | title | manifest status | ado id | ado state | drift?` — drift = the
@@ -659,10 +777,31 @@ Read-only, no ADO writes, no manifest writes.
    `--dry-run` above, and give the tool call the same bound and the same named
    outcome. Where the two could disagree, the `az` shapes are the measured ones.
 
+   **Stamp the payload before you compare it — the drift door cannot invent the
+   manifest's side.** `explain-ado-drift.py` reads `mapped` off each entry and
+   reports `state not compared (no mapped state supplied)` for every row that has
+   none, which is honest per row and useless over a board: `summarize()` counts an
+   overwrite only where the two states DIFFER, so an unstamped payload closes with
+   `0 would overwrite a change made after our last sync` — the one number the push
+   confirm gate exists for — on a board where the answer was never computed. Run the
+   translation door over the file the fetch just wrote:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" \
+     <manifest> --items fetched.json --out mapped.json
+   ```
+
+   Then hand **`mapped.json`**, never `fetched.json`, to the door below. Exit 0 =
+   stamped, with each entry it could not stamp named and why. **Exit 1 = entries
+   were given and not one could be given a state**, so every reading below has no
+   basis — report that and stop rather than printing a table of `state not
+   compared`. Exit 2 is unreadable input. The translation itself is not restated
+   here: see *The state translation is a door* above.
+
    **A difference has THREE readings, not two**, and the third is the common one on
    a board several teams write to: somebody else moved this card after we last
    touched it, and neither side is wrong. Do not decide that here — run the same
-   door push step 2c runs (`explain-ado-drift.py <manifest> --items <fetched.json>`,
+   door push step 2c runs (`explain-ado-drift.py <manifest> --items mapped.json`,
    `--json` when you want to compose the table yourself) and print what it answers
    in the `drift?` cell:
    - `local ahead — push is the fix` (nobody wrote after our `lastSyncedAt`);
@@ -706,9 +845,18 @@ Read-only, no ADO writes, no manifest writes.
    (distinct owners across the areas in play). Display only — `status` stays read-only
    and proposes nothing here; an unmapped owner is push's business.
 5. **Conformance of what is already there** (only when `meta.ado.conventions` is set).
-   For each linked item you fetched in step 3, run the same gate over the ADO side's
-   own fields and append `conforms` / `N violation(s)` to its row, closing with
-   `conventions: N of M linked item(s) conform`.
+   Run the gate over the ADO side itself — the same `fetched.json` step 3 wrote, not a payload you assemble:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/check-ado-item.py" \
+     <manifest> --fetched <fetched.json>
+   ```
+
+   **`--fetched`, never `--item`.** They are different shapes and different verdicts: a fetched row spells the work item type and the parent INSIDE `fields`, so grading it as a create payload refused items whose parent was set while the type-scoped rules checked nothing at all. `--item` refuses that shape outright now, and this flag translates it. Do not translate it in prose here — `_ado_conventions.as_gradable_item` owns which key holds what, and a second copy is a second answer.
+
+   Append the command's per-row answer to each row's `conforms?` cell and print its closing line as it comes: `conventions: N of M linked item(s) conform` is computed there, so do not re-tally it. A row printed as `NOT GRADED` is neither conforming nor refused — the payload carried no work item type for it, so say that and leave the cell unfilled rather than guessing.
+
+   Exit 0 = every graded row conforms. **Exit 1 = at least one item ALREADY on the board does not conform** — a finding to print, not an error to stop on, and not a refusal to create anything. Exit 2 = something was not graded at all (unreadable payload, a row with no work item type, or the `--json` payload handed over instead of `--out`, which can be partial) — report it as a missing basis, never as a clean board. `meta.ado.fields` is NOT merged on this path: that template is what a CREATE must send, and merging it here would grade fields the board does not have.
 
    This is the half that makes the push gate honest. The gate above lives in prose,
    and prose is the one surface here nothing can test — so *did the orchestrator

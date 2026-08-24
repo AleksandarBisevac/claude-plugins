@@ -9,9 +9,32 @@ source path is exactly the shape `guard-secrets-read` refuses (F20/F22), so the
 check would be blocked on the machines that most need it.
 
   resolve-ado-parent.py <manifest> [--all | --phase P3 | --task P3.1] [--json]
+  resolve-ado-parent.py <manifest> --hierarchy-from <backlogconfig.json|->
 
 `--all` is the default, because the push plan needs the whole picture and a
 command whose default answers about nothing is a command people forget to scope.
+
+`--hierarchy-from` IS THE SECOND HALF OF THE SAME DOOR, and it exists because
+prose was doing the job. `/audit:sync parents` asks the project for its backlog
+configuration and then had to BUILD `meta.ado.hierarchy` out of the answer, so
+the rule for placing the bug rung was written out in three documents - and the
+rule moved under them (F143/F157). The rank comes from `bugsBehavior`; the NAME
+comes from `meta.ado.types.bug`, which is why the manifest is still the first
+argument here. A document telling a reader to file that rank under `Bug` files
+it under a name no work item carries on a board that renamed the type, while
+the `basis` line goes on claiming the whole ladder came from the project's own
+configuration. So this mode prints the block to write, whole: the reader copies
+an answer instead of following a recipe, and `levels_from_backlog_config` stays
+the one place the ladder is derived.
+
+IT WALKS BUGS TOO, and they are reported apart from the plan. `status` fetches a
+linked bug's `System.Parent` like any other item's and had nothing on the
+manifest side to compare it with, so a linked bug got no `parent?` verdict and
+nothing said why (F101). A bug's row is what the manifest RECORDS about where it
+hangs - usually written by a pull, off the board - and never a plan for a write:
+a push creates no bug parent link, so the bug rows stay out of the plan block's
+counts and out of the hierarchy check, and one line names them instead. The
+scopes are unchanged; `--all` is the only one that reaches a bug.
 
 THE HIERARCHY IS ALWAYS COMPUTED OVER THE WHOLE PLAN, even when the scope is one
 phase. A loop is a property of the graph and not of the item you happened to ask
@@ -35,6 +58,7 @@ This module carries no `--selftest` of its own; its cases live in
 import json
 import os
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -62,9 +86,12 @@ import _ado_parent as _parent  # noqa: E402  (the rules this command is a door o
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 
 USAGE = ("usage: resolve-ado-parent.py <manifest> "
-         "[--all | --phase <id> | --task <id>] [--json]\n")
+         "[--all | --phase <id> | --task <id>] [--json]\n"
+         "       resolve-ado-parent.py <manifest> "
+         "--hierarchy-from <backlogconfig.json|->\n")
 
 
+# --- arguments, and the scope they name -----------------------------------------
 def parse_args(argv):
     """(options, error). `error` is a sentence, and then nothing else is read.
 
@@ -73,24 +100,43 @@ def parse_args(argv):
     raising, because a usage error is exit 2 and never an exception the caller
     has to translate.
     """
-    opts = {"manifest": None, "scope": "all", "target": None, "json": False}
+    opts = {"manifest": None, "scope": "all", "target": None, "json": False,
+            "hierarchyFrom": None}
     rest = list(argv)
     if not rest or rest[0].startswith("-"):
         return (opts, "a manifest path is the first argument")
     opts["manifest"] = rest.pop(0)
+    # Every flag that shapes the ITEM report, remembered as it is seen. The
+    # ladder mode answers about the PROJECT and has one output shape, so each of
+    # these would be accepted and then do nothing there - and a flag that is
+    # silently ignored leaves the caller believing it applied.
+    about_items = []
     while rest:
         flag = rest.pop(0)
         if flag == "--json":
             opts["json"] = True
+            about_items.append(flag)
         elif flag == "--all":
             opts["scope"] = "all"
+            about_items.append(flag)
         elif flag in ("--phase", "--task"):
             if not rest:
                 return (opts, "%s needs an id" % (flag,))
             opts["scope"] = flag[2:]
             opts["target"] = rest.pop(0)
+            about_items.append(flag)
+        elif flag == "--hierarchy-from":
+            if not rest:
+                return (opts, "%s needs the backlogconfiguration payload - a "
+                              "path, or - to read it from stdin" % (flag,))
+            opts["hierarchyFrom"] = rest.pop(0)
         else:
             return (opts, "unknown flag %r" % (flag,))
+    if opts["hierarchyFrom"] is not None and about_items:
+        return (opts, "--hierarchy-from asks this PROJECT what its ladder is, "
+                      "not where an item hangs, and it always prints the block "
+                      "to write - so %s answers nothing here"
+                      % (", ".join(sorted(set(about_items))),))
     return (opts, None)
 
 
@@ -107,10 +153,15 @@ def in_scope(row, opts):
     target = opts["target"]
     if opts["scope"] == "task":
         return row["kind"] == "task" and row["id"] == target
-    return row["id"] == target or str(row["id"] or "").startswith(
-        "%s." % (target,))
+    # A bug is not a phase and is under none: the id prefix rule below is about
+    # `P3` covering `P3.1`, and without the kind guard `--phase BUG-3` would
+    # answer about a bug in a sentence that names a phase.
+    return row["kind"] != "bug" and (
+        row["id"] == target
+        or str(row["id"] or "").startswith("%s." % (target,)))
 
 
+# --- the manifest side: which settings there are to resolve against -------------
 def _ado_of(manifest):
     """`meta.ado`, or {} — tolerant on the way down, like `conventions_of`.
 
@@ -136,6 +187,72 @@ def levels_of(ado):
     return levels if isinstance(levels, dict) else None
 
 
+# --- the ladder itself: building the cache the rest of this file reads ----------
+def iso_now():
+    """Wall clock, isolated so nothing above reaches for one.
+
+    `time.gmtime()` rather than `datetime`, the same spelling
+    `repair-commits.py` uses in this directory: it needs no inline import and no
+    note about which `utcnow` is deprecated, and the format is the one every
+    stamped moment in this manifest already carries. Not borrowed from
+    `_proposals.iso_now()` either - that module owns parked proposals, and an
+    import edge into it to reach two lines would say this door depends on
+    proposals when it does not.
+    """
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def read_backlog_payload(path):
+    """(payload, error) — the `backlogconfiguration` response, off a file or
+    stdin.
+
+    Returned WITH its error for `parse_args`' reason: an unreadable payload is
+    exit 2, and never an exception a caller has to translate into one. `-` reads
+    stdin so the fetch can be piped straight in, the way `ado-connect.py
+    --probe -` takes the envelope it grades.
+    """
+    try:
+        if path == "-":
+            return (json.load(sys.stdin), None)
+        with open(path, "r", encoding="utf-8") as fh:
+            return (json.load(fh), None)
+    except Exception as exc:
+        return (None, "cannot read/parse the backlogconfiguration payload %s: "
+                      "%s" % (path, exc))
+
+
+def hierarchy_block(payload, ado, now):
+    """(block, error) — `meta.ado.hierarchy` exactly as it should be written.
+
+    THE BLOCK IS THE ANSWER, so it is emitted whole and copied verbatim rather
+    than described. `levels` and `basis` come from `levels_from_backlog_config`,
+    which is the ONE derivation of the ladder; `fetchedAt` is added here because
+    a cache with no moment cannot be aged, and the moment a payload was parsed
+    is the moment the fetch that produced it can be dated from.
+
+    A `None` FROM THE RULES IS AN ERROR AND NEVER AN EMPTY LADDER. A response
+    nobody could parse, cached as `{}`, reads as "this project ranks nothing" -
+    a basis-shaped object that switches the type check off while looking like
+    evidence. So nothing is printed and the caller writes nothing.
+
+    A new dict rather than the one the rules returned: `basis` is the sentence
+    that has to survive into the cache unchanged, and a function that edits its
+    caller's value and also returns it is two contracts.
+    """
+    levels = _parent.levels_from_backlog_config(payload, ado)
+    if levels is None:
+        return (None, "that payload ranks no backlog level - no taskBacklog, "
+                      "requirementBacklog or portfolioBacklogs[] entry in it "
+                      "carries both a rank and a workItemTypes list. "
+                      "Nothing was written: an empty ladder cached as evidence "
+                      "reads as a project that ranks nothing, which is the "
+                      "shape that turns the type check off")
+    block = dict(levels)
+    block["fetchedAt"] = now
+    return (block, None)
+
+
+# --- the report: the whole-graph verdict, narrowed to what was asked ------------
 def scope_result(result, scoped, scoped_ids):
     """The whole-graph verdict, narrowed to the rows the caller asked about.
 
@@ -151,7 +268,35 @@ def scope_result(result, scoped, scoped_ids):
             "warnings": [e for e in result["warnings"] if e["id"] in scoped_ids],
             "unverified": [e for e in result["unverified"]
                            if e["id"] in scoped_ids],
-            "checked": len([r for r in scoped if r["parent"] is not None])}
+            # A bug's declared parent is NOT a checked link, for the reason
+            # `hierarchy_violations` skips it: nothing here would create it. A
+            # count that included one would say the hierarchy check looked at a
+            # link it refuses to have an opinion about, which is the "nothing
+            # was wrong" that means "nothing was looked at".
+            "checked": len([r for r in scoped if r["parent"] is not None
+                            and r["kind"] != "bug"])}
+
+
+def bug_line(rows):
+    """The one sentence about bugs — printed ALWAYS, including at zero.
+
+    THIS COMMAND ALWAYS ASKS ABOUT BUGS, which is why the line can be
+    unconditional here and could not be inside `plan_lines`: a count taken
+    there cannot tell a manifest with no bugs from a caller that passed none,
+    and those are the two answers this whole feature is about keeping apart.
+
+    It says how many were RESOLVED and how many of them are LINKED, because the
+    linked ones are the rows `status` has a board side for. It does not appear
+    in the plan block above: a push creates no bug parent link, so a bug
+    counted among the plan's uncategorised items would report the ordinary
+    state of every bug as a gap.
+    """
+    bugs = [r for r in rows if r.get("kind") == "bug"]
+    linked = [r for r in bugs if r.get("workItemId") is not None]
+    return ("  bugs: %d resolved, %d linked - reported so `status` has a "
+            "manifest side for a linked bug's parent, and counted apart "
+            "because a push neither creates nor changes a bug's parent link"
+            % (len(bugs), len(linked)))
 
 
 def report(rows, scoped, scoped_result, result, ado):
@@ -174,9 +319,14 @@ def report(rows, scoped, scoped_result, result, ado):
                               (" (%s)" % ", ".join(
                                   str(e["id"]) for e in elsewhere))
                               if elsewhere else ""))
+    # OVER THE WHOLE INVENTORY, never the scope: a `--phase P3` run that
+    # printed "0 bugs" would be answering about P3 in a sentence that reads as
+    # a fact about the manifest. It sits beside the scope line for that reason.
+    lines.append(bug_line(rows))
     return lines
 
 
+# --- cli ------------------------------------------------------------------------
 def main(argv):
     opts, error = parse_args(argv)
     if error:
@@ -191,7 +341,29 @@ def main(argv):
         return 2
 
     ado = _ado_of(manifest)
-    inv = _parent.inventory(manifest.get("phases"), ado)
+
+    if opts["hierarchyFrom"] is not None:
+        # The ladder mode returns before any of the item walk below: it answers
+        # about the project, it creates no link and refuses none, so exit 1 -
+        # "do NOT create these" - is not one of its answers.
+        payload, error = read_backlog_payload(opts["hierarchyFrom"])
+        block = None
+        if error is None:
+            block, error = hierarchy_block(payload, ado, iso_now())
+        if error:
+            sys.stderr.write("ERROR: %s\n" % (error,))
+            return 2
+        print(json.dumps(block, indent=2, sort_keys=True))
+        return 0
+
+    # BUGS ARE ASKED ABOUT HERE AND NOWHERE ELSE. `status` fetches a linked
+    # bug's `System.Parent` exactly as it does a phase's, and until this list
+    # was passed there was no manifest side to compare it with - so a linked bug
+    # got no `parent?` verdict at all and nothing said that was why (F101). The
+    # list is passed even when it is empty, because `inventory` reads None as
+    # "not asked" and this command always asks.
+    inv = _parent.inventory(manifest.get("phases"), ado,
+                            manifest.get("bugs") or [])
     rows = inv["rows"]
     # The WHOLE graph, always - a loop is a property of the plan and not of the
     # item asked about. See the module docstring.

@@ -94,7 +94,7 @@ def _cases(check):
                   "severity": "high"}],
     }
 
-    tmp = tempfile.mkdtemp(prefix="render-report-selftest-")
+    tmp = _harness.fixture_root("render-report-selftest-")
     mp = os.path.join(tmp, "m.json")
     with open(mp, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh)

@@ -248,6 +248,239 @@ def _cases(check):
               "conventions at all - the two blocks are graded independently",
               M.main([m_reserved, "--item", item_good]) == 2)
 
+        # --- F106: --item and --fetched over the SAME bytes -----------------
+        # The row is the one measured live (`test-audit-lab/DC application` work
+        # item #121, parent #101): top-level keys `fields` and `id`, the parent
+        # INSIDE `fields`, no REST marker anywhere. This is what
+        # `/audit:sync status` step 5 hands the gate, and feeding it to --item
+        # produced "must hang under a parent work item, and this one carries
+        # none" about an item whose parent is set.
+        ROW = {"id": 121,
+               "fields": {"System.Parent": 101,
+                          "System.WorkItemType": "Issue",
+                          "System.Title": "Add the audit trail",
+                          "System.State": "To Do",
+                          "System.Tags": "audit-plugin"}}
+        _b121 = {"requireParent": True,
+                 "requiredFields": {"Issue": ["System.Title"]},
+                 "tagVocabulary": {"*": ["audit-plugin"]}}
+        m_121 = _write(tmp, "board121.json",
+                       {"meta": {"ado": {"conventions": _b121}}})
+        row_one = _write(tmp, "row.json", ROW)
+        row_list = _write(tmp, "rows.json", [ROW])
+        # A board the SAME row fails, so the wording and the count cases below
+        # have a run with findings in it to read. Asserting "no create verdict"
+        # over a conforming run proves nothing: there is no verdict line there
+        # to be wrong, and a mutation that appended "do NOT create this item" to
+        # the violation line survived exactly that version of the case.
+        _needs121 = {"requiredFields": {
+                         "Issue": ["Microsoft.VSTS.Scheduling.RemainingWork"]},
+                     "descriptionMustContain": {"Issue": ["Done when"]}}
+        m_needs = _write(tmp, "needs121.json",
+                         {"meta": {"ado": {"conventions": _needs121}}})
+        code_n, out_n = _run([m_needs, "--fetched", row_one])
+
+        check("ci22 the batched row a real fetch produces is refused as the "
+              "wrong SHAPE (2) by --item even though it carries no REST marker "
+              "- the marker was never the tell, and F106 is the shape that "
+              "slipped past it",
+              M.main([m_121, "--item", row_one]) == 2)
+        code_f, out_f = _run([m_121, "--fetched", row_one])
+        check("ci23 ...while --fetched grades the SAME bytes and the parent "
+              "finding is gone: the verdict was undone by translating the "
+              "payload, not by loosening the rule: %r" % (out_f.strip()[:70],),
+              code_f == 0 and out_f.count("conforms") == 1
+              and "carries none" not in out_f)
+        check("ci24 ...and a run that DOES find violations still delivers no "
+              "CREATE verdict, because nobody is creating an item that is "
+              "already on the board - read over the failing run, since the "
+              "clean one has no verdict line to get wrong: %r"
+              % (out_n.strip().splitlines()[:1],),
+              out_n.count("violation(s)") == 1 and "do NOT create" not in out_n
+              and "do NOT create" not in out_f)
+        check("ci25 ...closing with the line `status` step 5 prints, so the "
+              "count comes from the command rather than from prose that has to "
+              "tally it: %r" % (out_f.strip().splitlines()[-1:],),
+              out_f.count("conventions: 1 of 1 linked item(s) conform") == 1)
+        check("ci26 the item LIST goes to --fetched, and handing it to --item is "
+              "a 2 rather than a conformance verdict about a list",
+              M.main([m_121, "--item", row_list]) == 2
+              and M.main([m_121, "--fetched", row_list]) == 0)
+
+        # THE SILENT HALF, over the board defined above. `requiredFields` and
+        # `descriptionMustContain` are both keyed by the work item type, so on
+        # the untranslated shape they checked NOTHING - the row came back with
+        # one violation (a parent it has) and none of the rules the board
+        # actually cares about. Both directions are asserted over one row: it
+        # conforms to `_b121` and fails this one.
+        check("ci27 the type-scoped rules really RUN on a fetched row now - both "
+              "of them fire on the item that fails both, where the untranslated "
+              "payload passed them in silence: %r" % (out_n.strip()[:60],),
+              code_n == 1 and out_n.count("FINDING:") == 2
+              and out_n.count("RemainingWork") == 1
+              and out_n.count("Done when") == 1)
+
+        # A row the gate cannot read is a ROW, not a skip, and not a pass.
+        rows_mixed = _write(tmp, "mixed.json",
+                            [ROW, {"id": 123,
+                                   "fields": {"System.Title": "no type here"}}])
+        code_m, out_m = _run([m_121, "--fetched", rows_mixed])
+        check("ci28 a row whose payload carries no System.WorkItemType is NAMED "
+              "and counted apart, never dropped and never counted as "
+              "conforming: %r" % (out_m.strip().splitlines()[-1:],),
+              out_m.count("NOT GRADED") == 2
+              and out_m.count("conventions: 1 of 2 linked item(s) conform") == 1)
+        check("ci29 ...and it takes the exit code to 2, because a row nothing "
+              "graded is a missing basis rather than a milder verdict",
+              code_m == 2)
+
+        # An empty payload must not read as a clean board.
+        rows_none = _write(tmp, "none.json", [])
+        code_e, out_e = _run([m_121, "--fetched", rows_none])
+        check("ci30 an empty fetched payload SAYS that nothing was checked "
+              "rather than printing a clean count nobody could act on: %r"
+              % (out_e.strip()[:60],),
+              code_e == 0 and "nothing was checked" in out_e
+              and "conforms" not in out_e)
+
+        # The PARTIAL payload is refused by name: `--json` omits a chunk that
+        # timed out, so grading it would report a whole board from a fetch that
+        # lost part of it.
+        partial = _write(tmp, "partial.json",
+                         {"items": [ROW],
+                          "failures": [{"status": "timed_out"}]})
+        check("ci31 `fetch-ado-items.py --json` is refused (2) and `--out` named "
+              "instead - a chunk that timed out is simply absent from `items`, "
+              "and grading that reads as a clean board for exactly those ids",
+              M.main([m_121, "--fetched", partial]) == 2)
+
+        # meta.ado.fields is a CREATE template and is NOT merged here.
+        _tpl121 = {"Issue": {"Microsoft.VSTS.Scheduling.RemainingWork": 3}}
+        m_tpl = _write(tmp, "tpl121.json",
+                       {"meta": {"ado": {"conventions": {"requiredFields": {
+                           "Issue": [
+                               "Microsoft.VSTS.Scheduling.RemainingWork"]}},
+                           "fields": _tpl121}}})
+        item_issue = _write(tmp, "issue.json",
+                            {"type": "Issue", "fields": {"System.Title": "x"}})
+        check("ci32 --fetched does NOT merge meta.ado.fields, and the pair is "
+              "the proof: the create path PASSES because the template will be "
+              "sent, while the board row is refused because the board really "
+              "does not carry that field - merging there would grade a fiction",
+              M.main([m_tpl, "--item", item_issue]) == 0
+              and M.main([m_tpl, "--fetched", row_one]) == 1)
+
+        check("ci33 exactly one input flag is required: naming both is a usage "
+              "error rather than a guess about which shape was meant",
+              M.main([m_121, "--item", row_one, "--fetched", row_one]) == 2
+              and M.main([m_121]) == 2)
+        # The exit code alone cannot see this: a filename of `--json` fails to
+        # open and produces the same 2. So the PARSE is asserted, and `-` is
+        # asserted in the same case because it is a VALUE (stdin) - a mutation
+        # that refused every dash-leading value would otherwise look correct.
+        check("ci34 ...and a flag whose value is the NEXT flag is refused at "
+              "parse time rather than opened as a file called `--json`, while "
+              "`-` stays a value",
+              M.flag_value([m_121, "--fetched", "--json"], "--fetched") is None
+              and M.flag_value([m_121, "--fetched", "-"], "--fetched") == "-"
+              and M.main([m_121, "--fetched", "--json"]) == 2)
+        _, out_ns = _run([m_none, "--fetched", row_one])
+        check("ci35 a board with no conventions gets the same 'nothing was "
+              "checked' sentence on this path as on the other one, so the two "
+              "zeroes stay apart here too: %r" % (out_ns.strip()[:50],),
+              "no standard" in out_ns and "conforms" not in out_ns)
+        _, out_j = _run([m_121, "--fetched", rows_mixed, "--json"])
+        _payload = json.loads(out_j)
+        check("ci36 --json carries the same split a script has to read: which "
+              "rows were graded, which were not, and how many conform",
+              _payload["conforming"] == 1 and _payload["graded"] == 1
+              and _payload["notGradeable"] == 1 and _payload["total"] == 2
+              and _payload["conforms"] is False)
+
+        # --- F120: the one kind push creates without a parent ---------------
+        # BOARD requires a parent, and this is the payload `/audit:sync push
+        # bugs` builds: a bug create, with no `parent` key, because push hangs
+        # phases and tasks and names no third kind. It used to come back "must
+        # hang under a parent work item, and this one carries none" — exit 1,
+        # at create time, on a board that could then never receive a bug.
+        BUGP = {"type": "Bug", "fields": {"System.Description": "Panel drops it.",
+                                          "System.Tags": "type:refactor"}}
+        item_bug = _write(tmp, "bug.json", BUGP)
+        code_b, out_b = _run([m_std, "--item", item_bug])
+        check("ci37 a bug create is no longer refused for the parent push was "
+              "never going to supply - the gate reads requireParent as every "
+              "item THIS PLUGIN PARENTS, which is what push implements: %r"
+              % (out_b.strip()[-60:],),
+              code_b == 0 and "carries none" not in out_b)
+        check("ci38 ...and it SAYS the rule was skipped rather than passing in "
+              "silence: this board wants a parent on every card and cannot have "
+              "one here, which is the sentence its operator is owed: %r"
+              % (out_b.strip()[:60],),
+              out_b.count("NOTE: `requireParent` was NOT applied") == 1
+              and out_b.count("NOTE:") == 1)
+        # THE SECOND DIRECTION, and the only case that fails if the exemption
+        # becomes unconditional: a kind push DOES parent is refused as before,
+        # over the same board and the same missing parent.
+        item_noparent = _write(tmp, "noparent.json",
+                               {"type": "Task",
+                                "fields": {"System.Description": "Done when: x.",
+                                           "System.Tags": "type:refactor"}})
+        code_t, out_t = _run([m_std, "--item", item_noparent])
+        check("ci39 ...while a TASK with no parent on that same board is still "
+              "refused, and draws no NOTE - the narrowing is by KIND, not the "
+              "rule giving up: %r" % (out_t.strip()[-50:],),
+              code_t == 1 and out_t.count("carries none") == 1
+              and out_t.count("NOTE:") == 0)
+        _, out_bj = _run([m_std, "--item", item_bug, "--json"])
+        _pj = json.loads(out_bj)
+        check("ci40 --json carries it as `parentRuleExemption` and NOT as a "
+              "violation, so a script reading `conforms` gets the verdict and "
+              "one reading this gets the whole of it",
+              _pj.get("conforms") is True and _pj.get("violations") == []
+              and "requireParent" in (_pj.get("parentRuleExemption") or ""))
+        _, out_tj = _run([m_std, "--item", item_noparent, "--json"])
+        check("ci41 ...and it is null for the kind that IS graded, which is what "
+              "a script reads to tell 'no rule was skipped' from 'the key is "
+              "not there'",
+              json.loads(out_tj).get("parentRuleExemption") is None)
+        # The exempt TYPE NAME comes from the board, not from this plugin.
+        m_renamed = _write(tmp, "renamed.json",
+                           {"meta": {"ado": {"conventions": BOARD,
+                                             "types": {"bug": "Defect"}}}})
+        item_defect = _write(tmp, "defect.json", dict(BUGP, type="Defect"))
+        check("ci42 `meta.ado.types.bug` names the exempt type, so a board that "
+              "renamed it exempts the new name and refuses the old one - both "
+              "halves, since a baked-in constant passes the first",
+              M.main([m_renamed, "--item", item_defect]) == 0
+              and M.main([m_renamed, "--item", item_bug]) == 1)
+        # ...and the exemption does not switch the gate off for that kind.
+        m_bugrules = _write(tmp, "bugrules.json",
+                            {"meta": {"ado": {"conventions": dict(
+                                BOARD, **{"descriptionMustContain": {
+                                    "Bug": ["Repro:"]}})}}})
+        code_r, out_r = _run([m_bugrules, "--item", item_bug])
+        check("ci43 every OTHER rule still grades that bug - the skeleton fires "
+              "on the payload ci37 passes, so one rule narrowed and the gate "
+              "did not stop reading the kind: %r" % (out_r.strip()[:60],),
+              code_r == 1 and out_r.count("FINDING:") == 1
+              and "Repro:" in out_r)
+        # The --fetched side of the same rule, over a Bug row already on the
+        # board with no System.Parent. Counted, not merely found: the NOTE has
+        # to appear once and the row still has to be tallied as conforming.
+        bug_row = _write(tmp, "bugrow.json",
+                         [{"id": 77,
+                           "fields": {"System.WorkItemType": "Bug",
+                                      "System.Title": "already there",
+                                      "System.Description": "x",
+                                      "System.Tags": "type:refactor"}}])
+        code_fb, out_fb = _run([m_std, "--fetched", bug_row])
+        check("ci44 a Bug already ON the board with no parent is reported as "
+              "conforming with the same NOTE, not as a violation - this "
+              "connector could never have parented that card either: %r"
+              % (out_fb.strip().splitlines()[-1:],),
+              code_fb == 0 and out_fb.count("NOTE:") == 1
+              and out_fb.count("conventions: 1 of 1 linked item(s) conform") == 1)
+
         # The rule is READ from the manifest, not baked in.
         m_other = _write(tmp, "other.json", {"meta": {"ado": {"conventions": {
             "descriptionMustContain": {"Task": ["Acceptance"]}}}}})

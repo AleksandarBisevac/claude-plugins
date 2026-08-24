@@ -282,6 +282,32 @@ def apply_filters(rows, args, tags_by_phase=None):
 
 
 # --- rendering ------------------------------------------------------------------
+def rate_basis(usage):
+    """`meta.usage.pricingAsOf` as a BASIS, or None when the manifest declares none.
+
+    THE TRIM IS THE POINT (F160). The plan schema asks only that this key be
+    non-empty, so a string of spaces validates - and both readers below test the
+    value for truth, so `"  "` reached the terminal as `rates as of` followed by
+    nothing and the `--json` payload as a basis a consumer would print the same
+    way. A basis with no content is exactly what this project's output rule
+    forbids, and a whitespace-only setting is a typo rather than a declaration:
+    it collapses to None, which is the shape absence already has, so neither
+    caller needs to learn a second kind of empty.
+
+    ONE DOOR because this file has two readers - the terminal line and the JSON
+    payload - and they must not be able to disagree about a value's whitespace.
+    The parameter is named for the block it takes, which is also what lets
+    `_deps.config_read_violations` see the read and compare it against the other
+    modules that render this key; `panel/_panel_paths._declared_as_of` applies
+    the same trim to the config file's copy.
+
+    `isinstance` before `.strip()`, because a hand-edited manifest may carry a
+    number here and a raise inside a render is a report that does not print.
+    """
+    value = (usage or {}).get("pricingAsOf")
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
 def render(rows, args, manifest, window, show_cost, pt=None):
     phase_titles, task_titles = titles_of(manifest)
     tot = ul.totals(rows)
@@ -327,8 +353,7 @@ def render(rows, args, manifest, window, show_cost, pt=None):
     # — see render-report._usage_context for why manufacturing one is worse than
     # admitting the manifest never declared it.
     if show_cost and rows:
-        as_of = ((((manifest or {}).get("meta") or {}).get("usage") or {})
-                 .get("pricingAsOf"))
+        as_of = rate_basis(((manifest or {}).get("meta") or {}).get("usage"))
         out.append(("- " if md else "          ") + "costs priced at %s" % (
             "rates as of %s" % as_of if as_of
             else "undated rates - set usage.pricingAsOf"))
@@ -852,7 +877,7 @@ def main(argv):
         payload = {
             "window": {"since": since, "until": args.until},
             "ledgerDir": ledger_dir,
-            "pricingAsOf": meta_usage.get("pricingAsOf"),
+            "pricingAsOf": rate_basis(meta_usage),
             "totals": ul.totals(rows),
             "byPhase": ul.aggregate(rows, "phase"),
             "byTask": ul.aggregate(rows, "task"),

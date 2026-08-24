@@ -42,6 +42,29 @@ filename the writer uses, so no argument this command takes can widen it. The **
 (`docs/audit/journal/`) is deliberately out of reach: that is the tamper-evident trail, it
 is append-only on purpose, and a command that could prune it could edit the evidence.
 
+## What a prune cannot decide, and why it says so
+
+Two of the feed's own writers were repaired: a `file` cell that held a whole shell command
+(it is a digest, a byte length and a program name now) and a `reason` cell that held an
+absolute path (it carries the same repo-relative spelling or `<outside-repo>` token the
+`file` cell gets). **Neither repair reaches a row that is already on disk**, and nothing in
+a row records which release wrote it — so this prune keeps them rather than guessing at a
+shape and removing on the guess. Guessing would be worse than the gap: a tracked file whose
+repo-relative path contains a space reads exactly like a program followed by an argument,
+and a removed row is counted and never echoed, so nobody could tell what went.
+
+So the output **says it** instead, and carries the number that makes it actionable:
+
+- **`oldest`** — how far back the feed still reaches after this prune, in whole days. It
+  prints only when a feed exists with rows left in it, and reads *no kept row carries a
+  readable stamp* when none does: the feed starting today and no row being willing to say
+  are different answers.
+- the note under the counts, which is what `oldest` is for. **`--older-than DAYS` is the
+  only lever that reaches those rows** — aim it past the point where this project upgraded.
+
+If a user asks whether their feed is clean, that pair is the honest answer: the classes
+above are decided on evidence, and this is the part that is not decidable at all.
+
 ## Reading the output
 
 Both counts always print, including at zero, and so does every class that was actually
@@ -70,9 +93,15 @@ counts and leaves the file byte-for-byte as it was.
 ## Doing the same from the panel
 
 The panel's server exposes the same rule at `POST /api/gate-events/prune`
-(`{"dryRun": true}` for the preview, `{"olderThanDays": N}` for the age pass), so the
-control belongs on the **Plan gate** card that renders these rows. **The card does not
-carry that button yet** — the endpoint ships ahead of it. Until it does, this command is
-the way to run a prune.
+(`{"dryRun": true}` for the preview, `{"olderThanDays": N}` for the age pass), and the
+**Plan gate** card that renders these rows now carries the control: an optional
+*older than* box and a **Clean up…** button that previews with `dryRun` first and prunes
+only after the confirm dialog. Same rule, same counts, same refusals — the card asks the
+endpoint, it does not re-decide anything.
+
+**The card is not the place to read what the prune could not decide.** It reports counts;
+the section above — the `oldest` line and the note beside it — is printed by this command
+and nowhere else. Point a user here when the question is whether the feed is *clean*
+rather than how many rows went.
 
 Related: `/audit:doctor`, `/audit:panel`, `/audit:status`.

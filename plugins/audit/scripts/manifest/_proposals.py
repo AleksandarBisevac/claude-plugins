@@ -11,8 +11,8 @@ import this, downward.
 
 WHAT LIVES HERE. The refusals, the id allocation, the collision remap, the
 dependency closure, the plan, `run()` - which takes the index lock, applies,
-revalidates and writes - and `proposal_rows`, which is the READ side both surfaces
-render. Orchestration is part of the rule: a caller that had to remember to lock,
+revalidates and writes - and `proposal_rows` plus `reserved_cell`, which are the
+READ side every surface renders. Orchestration is part of the rule: a caller that had to remember to lock,
 or to refuse a write whose result would be invalid, is a second chance to get it
 wrong.
 
@@ -21,8 +21,10 @@ one verb no script produced: `commands/propose.md` specified a table and a model
 rendered it from that prose, so what a user got was whatever the model recalled -
 an accurate summary, and no table. Meanwhile the panel derived its own rows in
 `_panel_composition`, including a second walk that answered the same question
-`unresolved_refs` already answered. One derivation now, two renderings: cards in
-the panel, a table on the command line.
+`unresolved_refs` already answered. One derivation now, three renderings: cards in
+the panel, a table on the command line, and the PROPOSALS block `/audit:status`
+prints -- which was the third place the "reserved phase (N tasks)" cell was
+composed, and F93 is why `reserved_cell` lives here rather than in any of them.
 
 WHAT DOES NOT. Argument parsing, printing, and asking a human anything. `plan_for`
 reports what a materialization would pull in and `run()` refuses while the answer
@@ -30,7 +32,10 @@ is undecided, because a rule that stops to interview cannot be called from an HT
 endpoint and a rule that guesses is worse than one that refuses.
 
 This file carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_materialize_proposal.py`, beside the door's.
+`plugins/audit/tests/test__proposals.py`, which is what `--selftest` here points
+at. They were in `test_materialize_proposal.py` while this module was part of that
+file and this sentence went on naming it afterwards -- the door's suite still tests
+the door, and the two are no longer one.
 """
 import json
 import os
@@ -58,12 +63,14 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
+import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_io as _mio  # noqa: E402  (layout-aware read and write)
+import _manifest_vocab as _vocab  # noqa: E402  (PROPOSAL_STATUS: the words a
+#                                                proposal status may be, so a
+#                                                surface reporting the ones that
+#                                                are NOT reads the vocabulary
+#                                                rather than restating it)
 
 LOCK_NAME = "index"
 
@@ -255,6 +262,29 @@ def closure(manifest, pid, _seen=None):
 HISTORY_STATUS = ("materialized", "dropped")
 
 
+def reserved_cell(row):
+    """The phase a proposal reserves and how big it is, as ONE string.
+
+    THE CELL HAD THREE SPELLINGS (F93): `materialize-proposal`'s table composed
+    it, `audit-status`'s PROPOSALS block composed it again, and the panel's
+    Proposals tab composes it in JavaScript. Two of the three counted their own
+    tasks, and they did not count the same ones -- the CLI table counts the task
+    OBJECTS in the payload while the status block counted the list's length,
+    entries that are not objects included. Which meant a payload carrying a
+    malformed task made the two surfaces disagree by one, on a number a reader
+    uses to decide whether a materialization is small.
+
+    `-` when there is no payload, and `hasPayload` is the basis for that rather
+    than a truthy `phaseId`: a legacy free-form entry reserves nothing, and
+    printing a phase id for it would invent one."""
+    if not row.get("hasPayload"):
+        return "-"
+    count = row.get("taskCount")
+    return "%s (%s)" % (row.get("phaseId"),
+                        _fmt.plural(count if isinstance(count, int) else 0,
+                                    "task"))
+
+
 def proposal_rows(manifest):
     """`proposals[]` as a reader sees it, whichever surface is asking.
 
@@ -282,10 +312,24 @@ def proposal_rows(manifest):
         phase = payload.get("phase") if isinstance(payload, dict) else None
         tasks = [t for t in ((phase or {}).get("tasks") or [])
                  if isinstance(t, dict)]
+        raw_status = prop.get("status")
         out.append({
             "id": prop.get("id"),
             "name": prop.get("name"),
-            "status": prop.get("status") or "proposed",
+            # THREE FIELDS, NOT ONE, AND THAT IS THE F93 DECISION. `status` is
+            # what a badge renders and normalises a MISSING one to `proposed`;
+            # `statusRaw` is the value as written, None included; `statusKnown`
+            # says whether that value is a word this plugin's vocabulary holds.
+            # A surface that classifies -- `/audit:status` counts parked work
+            # and reports what is out of vocabulary in a legacy footer nothing
+            # else reports -- must read the RAW one, because the normalisation
+            # invents a status for an entry that carries none and a status
+            # surface's whole job is to say what is there. Carrying all three
+            # from one derivation is what lets both questions be answered
+            # without a second walk over `proposals[]`.
+            "status": raw_status or "proposed",
+            "statusRaw": raw_status,
+            "statusKnown": raw_status in _vocab.PROPOSAL_STATUS,
             "scope": prop.get("scope"),
             "benefit": prop.get("benefit"),
             "technicalNote": prop.get("technicalNote"),

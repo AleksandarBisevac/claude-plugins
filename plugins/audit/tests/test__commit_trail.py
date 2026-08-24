@@ -22,7 +22,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import os
 import subprocess
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -64,7 +63,7 @@ def _cases(check):
           "empty rather than raising - nothing to reach is a state, not an error",
           M.dangling(_manifest(), None) == {"missing": [], "unreachable": [],
                                             "unchecked": []})
-    tmp = tempfile.mkdtemp(prefix="qg-trail-")
+    tmp = _harness.fixture_root("qg-trail-")
     try:
         repo, shas = _repo(tmp)
 

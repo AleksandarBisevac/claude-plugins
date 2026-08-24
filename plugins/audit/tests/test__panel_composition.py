@@ -18,12 +18,15 @@ from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
 import _ado_parent as _adop                    # noqa: E402  (the marker + resolve)
+import _ado_drift as _drift                    # noqa: E402  (link_inventory: the walk the banner counts)
+import _loader                                 # noqa: E402  (read-ado-links.py is an entry point; only a load reaches it)
 import _panel_composition as M      # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     import pathlib                                 # noqa: F401  (used by moved cases)
+    import re
     import shutil
     import tempfile
 
@@ -81,11 +84,17 @@ def _cases(check):
                              "phases": []})["meta"]["ado"]
           == {"organization": "o"})
     _as1 = M._ado_status({"meta": {}, "phases": []})
+    # The KEY SET is asserted and not just the values it holds: a key added to
+    # this payload with no case of its own would otherwise ship unrendered and
+    # unexplained, which is how a key nothing draws becomes noise.
     check("adoStatus: an unconfigured manifest reads configured=false, "
-          "nothing linked, no effective switches",
-          _as1 == {"configured": False, "enabled": False, "echo": False,
-                   "linked": {"tasks": 0, "bugs": 0, "phases": 0},
-                   "lastSyncedAt": None})
+          "nothing linked, no effective switches - and the shape is exactly "
+          "these keys: %r" % (sorted(_as1),),
+          _as1["configured"] is False and _as1["enabled"] is False
+          and _as1["echo"] is False and _as1["lastSyncedAt"] is None
+          and _as1["linked"] == {"tasks": 0, "bugs": 0, "phases": 0}
+          and sorted(_as1) == ["configured", "echo", "enabled", "lastSyncedAt",
+                               "linked", "shared"])
     _as2 = M._ado_status({"meta": {"ado": {"organization": "o",
                                          "enabled": False}}, "phases": []})
     check("adoStatus: enabled:false reads off (echo effectively off too) "
@@ -141,6 +150,129 @@ def _cases(check):
           "still wins lastSyncedAt",
           _as5["linked"] == {"tasks": 1, "bugs": 0, "phases": 2}
           and _as5["lastSyncedAt"] == "2026-08-09T00:00:00Z")
+
+    # --- the banner counts the DOOR's walk, not a second one -------------------
+    # `_ado_status` used to walk phases, `_mio.iter_tasks` and bugs itself, with
+    # its own copy of the int-and-not-bool id guard - the same walk
+    # `_ado_drift.link_inventory` already performs for `read-ado-links.py` and
+    # for /audit:doctor's `ado links` row. Two walks over one file is two answers
+    # waiting to disagree, and these are the cases that would see them disagree.
+    _lk_manifest = {
+        "meta": {"ado": {"organization": "o"}},
+        "phases": [{"id": "P1", "title": "p", "status": "pending",
+                    "ado": {"id": 9, "lastSyncedAt": "2026-08-02T00:00:00Z"},
+                    "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                               "ado": {"id": 7,
+                                       "lastSyncedAt": "2026-08-03T00:00:00Z"}},
+                              # A bool id is the F15 shape the validator holds:
+                              # `True` is an int in Python and would count as a
+                              # work item id anywhere the guard is written as
+                              # `isinstance(x, int)` alone.
+                              {"id": "P1.2", "title": "t", "status": "pending",
+                               "ado": {"id": True}}]}],
+        "bugs": [{"id": "BUG-1", "title": "b", "status": "open",
+                  "ado": {"id": 8, "lastSyncedAt": "2026-08-01T00:00:00Z"}}]}
+    # THE TRANSLATION TABLE IS PINNED AGAINST THE DOOR'S OWN VOCABULARY FIRST,
+    # read off `_ado_drift`'s source rather than off the rows a fixture happened
+    # to produce: a fourth kind added there and not here would otherwise reach a
+    # payload key nobody renders, and no fixture in this file would show it. It
+    # runs BEFORE the count case because the count case indexes that table, and
+    # a suite that dies indexing it teaches nothing about why.
+    _lk_src = _harness.module_source(_drift)
+    _lk_kinds = sorted(set(re.findall(r'_collect\(out, "([a-z]+)"', _lk_src)))
+    check("ac_lk1 every kind `link_inventory` can emit has a cell in "
+          "`_LINK_COUNT_KEY`, matched EXACTLY so a retired kind is caught too - "
+          "an empty scan is a failure here and not a clean bill: %r"
+          % ((_lk_kinds, sorted(M._LINK_COUNT_KEY)),),
+          _lk_kinds == sorted(M._LINK_COUNT_KEY) and len(_lk_kinds) == 3)
+    _lk_rows = _drift.link_inventory(_lk_manifest)
+    _lk_status = M._ado_status(_lk_manifest)
+    _lk_expect = {"tasks": 0, "bugs": 0, "phases": 0}
+    for _r in _lk_rows:
+        # `.get(kind, kind)` mirrors the module rather than re-deciding: an
+        # unmapped kind must land in its own cell on BOTH sides, so what tells a
+        # broken table apart is the literal below and not a KeyError here.
+        _lk_key = M._LINK_COUNT_KEY.get(_r["kind"], _r["kind"])
+        _lk_expect[_lk_key] = _lk_expect.get(_lk_key, 0) + 1
+    check("ac_lk2 ...and the banner's counts ARE that inventory, kind for kind: "
+          "a manifest carrying all three kinds plus a bool id, so a second walk "
+          "that dropped a kind or admitted `True` disagrees here rather than on "
+          "somebody's card: %r" % ((_lk_status["linked"], _lk_expect),),
+          _lk_status["linked"] == _lk_expect
+          and _lk_expect == {"tasks": 1, "bugs": 1, "phases": 1}
+          and len(_lk_rows) == 3)
+    # THE SECOND DIRECTION, and it reads vacuous on purpose: it is the only case
+    # that fails if a kind with no cell is quietly folded into a neighbour, which
+    # would inflate a number the operator reads as evidence.
+    _lk_odd = M._ado_status({"meta": {"ado": {}}, "phases": [],
+                             "bugs": []})
+    check("ac_lk3 a manifest with nothing linked still reports all three cells "
+          "at zero rather than an empty map - a count that appears only when it "
+          "is non-zero cannot be told from a count nobody took: %r"
+          % (_lk_odd["linked"],),
+          _lk_odd["linked"] == {"tasks": 0, "bugs": 0, "phases": 0})
+
+    # --- F147: the work items MORE THAN ONE manifest item claims --------------
+    # Nothing validates that a work-item id is claimed once, so a push writes
+    # every claimant to the same card and the last one wins. Grouping the walk
+    # the banner already does is the only place that fact is available offline.
+    # The fixture puts THREE kinds on one id and a second, unshared id beside
+    # it, so a version that grouped only within a kind, or that reported every
+    # id it saw, disagrees here rather than on somebody's board.
+    _sh_manifest = {
+        "meta": {"ado": {"organization": "o"}},
+        "phases": [{"id": "P1", "title": "p", "status": "pending",
+                    "ado": {"id": 12},
+                    "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                               "ado": {"id": 12}},
+                              {"id": "P1.2", "title": "t", "status": "pending",
+                               "ado": {"id": 30}}]}],
+        "bugs": [{"id": "BUG-2", "title": "b", "status": "open",
+                  "ado": {"id": 12}}]}
+    _sh = M._ado_status(_sh_manifest)["shared"]
+    check("sc1 a work item three items claim is named once, with every "
+          "claimant on it, and the id claimed by ONE is not in the list - a "
+          "grouping that reported every id it saw would pass a presence "
+          "assertion and fail this: %r" % (_sh["items"],),
+          _sh["state"] == "shared" and len(_sh["items"]) == 1
+          and _sh["items"][0] == {"adoId": 12,
+                                  "claimants": ["phase P1", "task P1.1",
+                                                "bug BUG-2"]})
+    check("sc2 ...and the banner's own claim carries the ids under it plus the "
+          "command that re-derives them, so the number is checkable rather "
+          "than believed: %r" % (_sh["basis"],),
+          "#12" in _sh["basis"] and "#30" not in _sh["basis"]
+          and M._LINKS_LENS in _sh["basis"]
+          and _sh["refresh"] == M._LINKS_LENS)
+    # THE TWO EMPTIES, WHICH ARE THE WHOLE REASON THIS IS A STATE AND NOT A
+    # LIST. A plan with links and no collision and a plan with no links at all
+    # both hand a banner zero rows; rendering them the same says "every card is
+    # claimed once" over a plan where nothing was ever counted.
+    _sh_clean = M._ado_status(_lk_manifest)["shared"]
+    _sh_none = M._ado_status({"meta": {"ado": {}}, "phases": [], "bugs": []})["shared"]
+    check("sc3 links walked with no collision reads `none` and links never "
+          "walked reads `unlinked` - two states, two sentences, and neither "
+          "borrows the other's: %r vs %r"
+          % (_sh_clean["state"], _sh_none["state"]),
+          _sh_clean["state"] == "none" and _sh_none["state"] == "unlinked"
+          and _sh_clean["items"] == [] and _sh_none["items"] == []
+          and _sh_clean["basis"] != _sh_none["basis"]
+          and "nothing has been counted" in _sh_none["basis"]
+          and "exactly one" in _sh_clean["basis"])
+    # `read-ado-links.py` groups its own rows the same way for the `SHARED:`
+    # lines /audit:sync status prints. It is an entry point and cannot be
+    # imported, so the grouping lives twice - and a duplication nothing compares
+    # is the one that drifts. This is the comparison.
+    _sh_links = _loader.load_script("read-ado-links.py",
+                                    modname="pc_read_ado_links")
+    _sh_theirs = _sh_links.claims_shared_by_several(
+        _sh_links.manifest_side(_sh_manifest)["rows"])
+    check("sc4 the panel's grouping and `read-ado-links.claims_shared_by_"
+          "several` answer identically over one manifest - same ids, same "
+          "claimants, same order: %r vs %r" % (_sh["items"], _sh_theirs),
+          [(e["adoId"], e["claimants"]) for e in _sh["items"]]
+          == [(e["adoId"], e["claimants"]) for e in _sh_theirs]
+          and len(_sh_theirs) == 1)
 
     # --- connector v2: where ONE phase hangs, as the panel payload carries it ---
     # THE THREE STORED STATES REACH THE CONTROL AS THREE VALUES. Absent is an
@@ -268,6 +400,101 @@ def _cases(check):
           repr(M._composition_view({
               "meta": {"ado": {"parentCandidates": {"items": []}}},
               "phases": []})["adoParents"]["basis"]))
+
+    # --- F101: and what the BOARD says, which the row used to leave out --------
+    # THE DEFECT WAS TWO FACTS PAINTING ONE CELL. Both values above are read out
+    # of the manifest, so a phase the board agrees with and a phase nobody has
+    # ever compared were the same pixels - and on the board this was found on,
+    # the one that "agreed" agreed with a declaration a panel save had written
+    # hours earlier. These cases hold the three answers apart, and the fixture
+    # ids differ from the link ids on purpose: a case where #121 declares #121
+    # could not tell an observation from a declaration.
+    _bp_unlinked = M._board_parent({"id": "P1"})
+    _bp_silent = M._board_parent({"id": "P2", "ado": {"id": 121}})
+    _bp_declared = M._board_parent(
+        {"id": "P3", "ado": {"id": 121},
+         "adoParent": {"id": 101, "source": "declared",
+                       "observedAt": "2026-08-24T09:00:00Z"}})
+    _bp_observed = M._board_parent(
+        {"id": "P4", "ado": {"id": 121},
+         "adoParent": {"id": 101, "source": "imported",
+                       "observedAt": "2026-08-24T09:00:00Z"}})
+    check("bp1 a phase with NO work item reports `unlinked` rather than a "
+          "missing board answer: nothing of it is on the board, so nothing on "
+          "the board hangs anywhere and the declaration beside it is a plan "
+          "for a create: %r" % (_bp_unlinked["state"],),
+          _bp_unlinked["state"] == "unlinked" and _bp_unlinked["id"] is None,
+          repr(_bp_unlinked))
+    check("bp2 a LINKED phase nobody has compared reports `never-asked`, names "
+          "the work item it is about, and carries the command that would ask - "
+          "this is the state the cell used to render as agreement",
+          _bp_silent["state"] == "never-asked"
+          and _bp_silent["id"] is None
+          and "#121" in _bp_silent["basis"]
+          and M._PARENT_OBSERVE in _bp_silent["basis"],
+          repr(_bp_silent))
+    # THE SECOND DIRECTION, and the whole fault in one line: a phase that
+    # DECLARES #101 is in exactly the same board state as one that declares
+    # nothing, because nobody asked either way. A reader that let a declaration
+    # stand in for an observation would pass bp2 and fail here.
+    check("bp3 ...and a phase that DOES declare a parent is in that same state, "
+          "because a declaration is not an observation - `source: declared` is "
+          "somebody typing, and the board was still never asked: %r"
+          % (_bp_declared["state"],),
+          _bp_declared["state"] == "never-asked"
+          and _bp_declared["id"] is None
+          and _bp_declared["basis"] == _bp_silent["basis"].replace("P2", "P3"),
+          repr(_bp_declared))
+    check("bp4 only an IMPORTED declaration is an observation, and it is "
+          "reported as the record of a moment: the id AND the moment ride the "
+          "block, because an observation with no `when` cannot be aged",
+          _bp_observed["state"] == "observed"
+          and _bp_observed["id"] == 101
+          and _bp_observed["observedAt"] == "2026-08-24T09:00:00Z"
+          and "2026-08-24T09:00:00Z" in _bp_observed["basis"],
+          repr(_bp_observed))
+    _bp_junk = M._board_parent({"id": "P5", "ado": {"id": 121},
+                                "adoParent": {"id": "101",
+                                              "source": "imported"}})
+    check("bp5 an imported declaration whose id is UNUSABLE is not an "
+          "observation: a pull wrote nothing readable, and reporting it as "
+          "what the board said would be the claim without the basis that makes "
+          "it true: %r" % (_bp_junk["state"],),
+          _bp_junk["state"] == "never-asked" and _bp_junk["id"] is None,
+          repr(_bp_junk))
+    _bp_all = [_bp_unlinked, _bp_silent, _bp_observed]
+    check("bp6 the three states' sentences are three DIFFERENT sentences - the "
+          "fault being fixed is two answers reading alike, so a state that "
+          "borrowed a neighbour's wording would be that fault again with more "
+          "code: %r" % ([b["state"] for b in _bp_all],),
+          len(set(b["basis"] for b in _bp_all)) == len(_bp_all)
+          and all(b["basis"] for b in _bp_all))
+    check("bp7 every state points at the command that ASKS the board, and it "
+          "is not the one that refreshes the candidate cache: `parents` writes "
+          "meta.ado only and touches no item's own link, so a reader sent "
+          "there would run a command that cannot answer this: %r"
+          % (M._PARENT_OBSERVE,),
+          M._PARENT_OBSERVE != M._PARENT_REFRESH
+          and set(b["refresh"] for b in _bp_all) == set([M._PARENT_OBSERVE]))
+    _bp_rows = M._composition_view({
+        "meta": {"ado": _ap_ado},
+        "phases": [{"id": "P1", "title": "unlinked", "status": "pending"},
+                   {"id": "P2", "title": "linked", "status": "pending",
+                    "ado": {"id": 121},
+                    "adoParent": {"id": 101, "source": "declared"}}]})["phases"]
+    check("bp8 the block rides EVERY phase row of /api/state - without that "
+          "the panel cannot show any of this, however well the derivation "
+          "works, which is the shape F101 was: the answer existed one surface "
+          "away and never reached the cell: %r"
+          % ([r.get("adoParentBoard", {}).get("state") for r in _bp_rows],),
+          # .get throughout, for ap3's reason: the mutation this case is for
+          # DROPS the key, and a KeyError would abort the suite and take every
+          # later case with it instead of naming the one thing that broke.
+          [r.get("adoParentBoard", {}).get("state") for r in _bp_rows]
+          == ["unlinked", "never-asked"]
+          and sorted(_bp_rows[0].get("adoParentBoard") or {})
+          == ["basis", "id", "observedAt", "refresh", "state"],
+          repr(_bp_rows[0].get("adoParentBoard")))
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.

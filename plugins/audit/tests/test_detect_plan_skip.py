@@ -40,7 +40,7 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py"),
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    tmp = Path(tempfile.mkdtemp(prefix="plan-skip-selftest-"))
+    tmp = Path(_harness.fixture_root("plan-skip-selftest-"))
     now = time.time()
     old = now - 8 * 86400
 
@@ -147,18 +147,29 @@ def _cases(check):
     # two say the same thing about a raise, and the harness's form also carries
     # the exception TYPE, which a bare `str(exc)` does not - see `_harness`'s
     # docstring for why the per-case guard exists at all beside `run()`'s.
+    # THE FIXTURE PROMPT IS THE CASE (F161). Its distinctive words are what a
+    # person types AROUND the keyword, and the assertions below count where they
+    # come to rest rather than looking for them - the pre-fix hook put the same
+    # snippet into three sinks, so "present somewhere" cannot tell the two
+    # versions apart and "present exactly once" can.
+    _b_secret = "acme merger pricing"
+    _b_prompt = "#no-plan   patch the acme merger pricing table  before close"
     _b_ok, bmsg = _harness.attempt(M._arm_bypass, bsd, bld, "sess-b", "#no-plan",
-                                   "#no-plan   fix the flaky test  quickly")
+                                   _b_prompt)
     bslot = bsd / "plan-bypass-sess-b.json"
     try:
-        bobj = json.loads(bslot.read_text(encoding="utf-8"))
+        braw = bslot.read_text(encoding="utf-8")
+        bobj = json.loads(braw)
     except Exception:
-        bobj = {}
-    check("b1 the slot carries the reason snippet AND armedAtEpoch as epoch "
-          "seconds",
+        braw, bobj = "", {}
+    check("b1 the slot carries armedAtEpoch as epoch seconds",
           isinstance(bobj.get("armedAtEpoch"), int)
-          and t0 - 5 <= bobj["armedAtEpoch"] <= time.time() + 5
-          and "fix the flaky test" in str(bobj.get("reason")), repr(bobj))
+          and t0 - 5 <= bobj["armedAtEpoch"] <= time.time() + 5, repr(bobj))
+    check("b1b ...and carries no `reason` at all - nothing ever read it, and "
+          "what it held was the submitted prompt. Asserted over the whole slot "
+          "TEXT as well as the parsed keys, so a version that renamed the field "
+          "rather than dropping it is still red",
+          "reason" not in bobj and _b_secret not in braw, repr(braw))
     try:
         blog = (bld / "plan-bypass.log").read_text(encoding="utf-8")
     except Exception:
@@ -182,6 +193,35 @@ def _cases(check):
           "(v0.34 B3) - the arm was previously visible only in the bypass log",
           len(bevents) == 1 and bevents[0].get("event") == "bypass.armed"
           and bevents[0].get("sessionId") == "sess-b", repr(bevents))
+    _b_reason = str((bevents[0] if bevents else {}).get("reason"))
+    check("b6 the feed row's `reason` is the FACT and the KEYWORD, pinned byte "
+          "for byte against the hook's own constant - the panel paints this "
+          "cell in its WHY column and a committed screenshot renders it, so "
+          "'contains the keyword' is not enough: the pre-fix snippet started "
+          "with the keyword too: %r" % (_b_reason,),
+          _b_reason == M.ARMED_REASON % "#no-plan")
+    check("b7 ...and it carries none of the prompt's own words (F161). The "
+          "keyword is typed in the same sentence as the work, and that "
+          "sentence has no root to redact it against: %r" % (_b_reason,),
+          _b_secret not in _b_reason)
+    # WHERE THE WORDING IS ALLOWED TO LIVE, counted rather than found. The log is
+    # the one sink nothing renders; the slot and the feed are the two that a
+    # reader or a screenshot reaches. A version that stopped writing the phrasing
+    # ANYWHERE is a different defect, and this goes red for it in the same
+    # expression that goes red for the leak.
+    _b_sinks = {"plan-bypass.log": blog, "gate feed": "".join(
+        line for line in (bld / _config.GATE_EVENTS_FILE).read_text(
+            encoding="utf-8").splitlines()), "slot": braw}
+    _b_where = sorted(k for k, v in _b_sinks.items() if _b_secret in v)
+    check("b8 the submitted prompt survives in plan-bypass.log and NOWHERE "
+          "else - not in the slot, not in the feed. An operator can still see "
+          "what they asked for; nothing that paints a surface can: %r"
+          % (_b_where,),
+          _b_where == ["plan-bypass.log"])
+    check("b9 the systemMessage names the keyword and not the sentence - the "
+          "terminal half was checked before anything was removed, and it never "
+          "carried the wording either: %r" % (str(bmsg),),
+          "#no-plan" in str(bmsg) and _b_secret not in str(bmsg))
 
     # (i) local dirs are self-ignoring - state/logs never belong in git
     import shutil as _sh

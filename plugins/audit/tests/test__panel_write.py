@@ -395,9 +395,9 @@ def _cases(check):
               open(_p2shard, "rb").read() == _p2_before)
         check("sharded: only the touched files are reported written",
               sorted(res.get("written") or []) == sorted(
-                  [os.path.relpath(os.path.join(os.path.dirname(_sm),
-                                                _idx["phases"][0]["shard"]), _sproj),
-                   os.path.relpath(_sm, _sproj)]))
+                  [_mio.posix_rel(os.path.join(os.path.dirname(_sm),
+                                               _idx["phases"][0]["shard"]), _sproj),
+                   _mio.posix_rel(_sm, _sproj)]))
         # A meta-only save used to fail with ~22 findings about phase stubs.
         res = M.apply_composition(_sproj, {"meta": {"reviewSkill": "sk2"}})
         check("sharded: a meta-only save is not blocked by findings about stubs",
@@ -471,7 +471,7 @@ def _cases(check):
               [r["field"] for r in _res.get("applied") or []] == ["areas"])
         check("areas PUT touches the INDEX only - meta lives there, and rewriting "
               "a phase shard would manufacture a conflict on a branch nobody is on",
-              _res.get("written") == [os.path.relpath(_am, _aproj)]
+              _res.get("written") == [_mio.posix_rel(_am, _aproj)]
               and open(_ashard, "rb").read() == _ashard_before)
         _after = M._read_json(_am)["meta"]["areas"]
         check("areas PUT replaces the registry wholesale, so dropping an area is "
@@ -533,7 +533,7 @@ def _cases(check):
                                           "enabled": False}})
         check("ado PUT writes through the one composition writer, INDEX only",
               _res["ok"]
-              and _res.get("written") == [os.path.relpath(_om, _oproj)]
+              and _res.get("written") == [_mio.posix_rel(_om, _oproj)]
               and open(_oshard, "rb").read() == _oshard_before
               and M._read_json(_om)["meta"]["ado"]["enabled"] is False)
         check("ado PUT echoes DOTTED rows, one per leaf that moved",
@@ -929,6 +929,58 @@ def _cases(check):
         def append(project, entry):
             raise RuntimeError("disk on fire")
 
+    # F104's two stubs. `append` returns a PATH here, which is what the real
+    # module does and what the claim has to be built from; the fixture path is
+    # deliberately unrelated to anything this fixture would produce, so a version
+    # that re-derived the name instead of forwarding the one it was given cannot
+    # pass.
+    class _JClaim(object):
+        calls = []
+
+        @staticmethod
+        def append(project, entry):
+            return "/j/2026-08.deadbeefdeadbeef.jsonl"
+
+        @staticmethod
+        def record_plugin_write(project, config, writer, path):
+            _JClaim.calls.append((project, writer, path))
+            return "slot"
+
+    class _JClaimBroken(object):
+        @staticmethod
+        def append(project, entry):
+            return "/j/2026-08.deadbeefdeadbeef.jsonl"
+
+        @staticmethod
+        def record_plugin_write(project, config, writer, path):
+            raise RuntimeError("state dir is read-only")
+
+    # "Nothing to claim" arrives by TWO routes and each stub isolates exactly one
+    # of them, because a stub that hit both would pass with either guard removed -
+    # which is how the first draft of these cases came to assert neither.
+    class _JOldBool(object):
+        """`append` reports success WITHOUT naming a file (its shape before
+        F-F3), on an install that does have the recorder."""
+
+        calls = []
+
+        @staticmethod
+        def append(project, entry):
+            return True
+
+        @staticmethod
+        def record_plugin_write(project, config, writer, path):
+            _JOldBool.calls.append(path)
+            return "slot"
+
+    class _JOldNoRecorder(object):
+        """...and the mirror: it names the file, but predates the claim, so
+        there is no `record_plugin_write` to ask for."""
+
+        @staticmethod
+        def append(project, entry):
+            return "/j/2026-08.deadbeefdeadbeef.jsonl"
+
     _saved_j = dict(M._JOURNAL)
     try:
         M._JOURNAL.update({"tried": True, "mod": _JStub})
@@ -942,9 +994,15 @@ def _cases(check):
               _ent.get("action") == "composition.write"
               and _ent.get("target") == "m.json"
               and set(_ent) == {"action", "target", "summary", "actor"})
-        check("the actor is the viewer, tagged with how the write arrived",
+        check("the actor is the viewer, tagged with how the write arrived - and "
+              "carrying NO session id (F111). The panel's only session identity "
+              "is its lock's pid, and `_journal_io.writer_id()` takes a session "
+              "id as the writer id, so passing it put `panel-<pid>` into the "
+              "COMMITTED file name - the one field `genesis_prev()` makes "
+              "uncorrectable. `via` is what records that the panel wrote the row: "
+              "%r" % (sorted(_ent.get("actor") or {}),),
               (_ent.get("actor") or {}).get("via") == "panel"
-              and (_ent.get("actor") or {}).get("sessionId") == M._panel_session())
+              and "sessionId" not in (_ent.get("actor") or {}))
         check("the changes travel in the summary the row does have room for",
               "P1.1 model: opus -> sonnet" in (_ent.get("summary") or "")
               and (_ent.get("summary") or "").startswith("1 change(s)"))
@@ -966,6 +1024,61 @@ def _cases(check):
             _fs = "it raised: %s" % exc
         check("a journal that throws never breaks the write it is recording",
               _fs == {"journaled": False, "journaledWhy": "failed"})
+
+        # F104: the panel server is a detached process this plugin launched, so
+        # the per-session sidecar guard-bash-writes reads can never name what the
+        # panel appended - the operator's session did not append it. It leaves its
+        # own claim, keyed by a constant because a panel is one per project.
+        M._JOURNAL.update({"tried": True, "mod": _JClaim})
+        _JClaim.calls = []
+        _cl = M._journal(proj, M.read_config(proj), "config.write", "x", [])
+        check("the panel declares its own append to guard-bash-writes, under the "
+              "panel's key and with the path `append` REPORTED - a re-derived "
+              "name would be a claim about a file that does not exist, which is "
+              "silence dressed as evidence: %r" % (_JClaim.calls,),
+              _cl == {"journaled": True}
+              and _JClaim.calls == [(proj, M.PANEL_JOURNAL_WRITER,
+                                     "/j/2026-08.deadbeefdeadbeef.jsonl")])
+
+        # LOOKS VACUOUS, IS NOT: it is the second-direction mutation. A claim that
+        # could not be left is not a save that failed, and a version that reported
+        # the save on the recorder's outcome would turn a read-only state
+        # directory into "your change was not logged" about a row that is on disk.
+        M._JOURNAL.update({"tried": True, "mod": _JClaimBroken})
+        try:
+            _clb = M._journal(proj, M.read_config(proj), "config.write", "x", [])
+        except Exception as exc:                                # pragma: no cover
+            _clb = "it raised: %s" % exc
+        check("a claim that cannot be left leaves the save REPORTED AS LOGGED - "
+              "the row was written; only the guard's hint was lost",
+              _clb == {"journaled": True})
+
+        # An install whose journal module predates the claim reaches the same
+        # answer by two DIFFERENT routes, and each gets the stub that reaches
+        # only it. The first draft of this used `_JStub`, whose `append` returns
+        # True AND which has no recorder: it stopped at the first guard, so
+        # deleting the second changed nothing and the case said so about neither.
+        M._JOURNAL.update({"tried": True, "mod": _JOldBool})
+        _JOldBool.calls = []
+        _cob = M._journal(proj, M.read_config(proj), "config.write", "x", [])
+        check("an `append` that reports success without NAMING a file leaves no "
+              "claim at all - a claim built from `True` would name a file that "
+              "does not exist, and the guard would subtract it from nothing: %r"
+              % (_JOldBool.calls,),
+              _cob == {"journaled": True} and _JOldBool.calls == [])
+
+        M._JOURNAL.update({"tried": True, "mod": _JOldNoRecorder})
+        try:
+            _cnr = M._journal(proj, M.read_config(proj), "config.write", "x", [])
+        except Exception as exc:                                # pragma: no cover
+            _cnr = "it raised: %s" % exc
+        check("...and a module that names the file but has no recorder to call "
+              "is the same answer - the panel ASKS for the function rather than "
+              "assuming it, so an older install logs the row instead of raising "
+              "through the save: %r" % (_cnr,),
+              not hasattr(_JOldNoRecorder, "record_plugin_write")
+              and _cnr == {"journaled": True})
+
         M._JOURNAL.update({"tried": True, "mod": _JStub})
         _JStub.rows = []
         res = M.apply_composition(proj, {"tasks": {"P1.1": {"model": "opus"}}})
@@ -1125,6 +1238,51 @@ def _cases(check):
     _jv = _jmod.verify(proj, M.read_config(proj))
     check("the chain the panel wrote verifies",
           _jv["ok"] and not _jv["findings"])
+
+    # --- F111: what the panel names the file it COMMITS -----------------------
+    # `tools/check-committed-pii.py` refuses a journal file whose writer id is
+    # none of the shapes this plugin mints, because the name is the one field
+    # with no repair path - `genesis_prev()` seeds the chain from those bytes. The
+    # panel minted a fourth shape: its own lock identity, `panel-<pid>`, which
+    # also changed on every launch, so one month of panel edits scattered into a
+    # file per panel process.
+    #
+    # The patterns are COPIED from that tool's `_WRITER_SHAPES`, named here rather
+    # than imported: the plugin ships without the repo's `tools/`, so a suite that
+    # reached for it would stop running for a consumer. The arm below is what
+    # stops the copy from rotting into something that accepts anything.
+    _WRITER_SHAPES = (r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$",
+                      r"^[0-9a-f]{16}$",
+                      r"^writer-\d+$")
+    _jname = str(_row.get("_file") or "")
+    _jstem = _jname[:-len(".jsonl")] if _jname.endswith(".jsonl") else _jname
+    _jwid = _jstem.partition(".")[2]
+    check("the file the panel's own save landed in is named by one of the writer "
+          "id shapes this plugin's PII gate accepts - a committed name cannot be "
+          "corrected afterwards, so the panel does not get to invent one: %r"
+          % (_jname,),
+          bool(_jwid) and any(re.match(s, _jwid) for s in _WRITER_SHAPES))
+    check("...and the value the panel used to pass is REFUSED by that same "
+          "table, so the case above cannot be passing against patterns that "
+          "match anything: %r" % (M._panel_session(),),
+          not any(re.match(s, M._panel_session()) for s in _WRITER_SHAPES))
+
+    # --- F104: and it declares the append to guard-bash-writes ----------------
+    # Without this the guard read the panel's row as a shell write into the audit
+    # trail: the chain verified clean, so nothing was corrupted, but the
+    # attribution was wrong and only a manual check could say so.
+    _slot = _jmod.plugin_write_sidecar(proj, M.read_config(proj),
+                                       M.PANEL_JOURNAL_WRITER)
+    _claim = {}
+    if _slot and os.path.isfile(_slot):
+        with open(_slot, "r", encoding="utf-8") as fh:
+            _claim = json.load(fh)
+    _jrel = _mio.posix_rel(
+        os.path.join(_jmod.journal_dir(proj, M.read_config(proj)), _jname), proj)
+    check("a real save leaves the claim the guard reads, naming EXACTLY the file "
+          "it appended to and nothing else - a claim listing more than the panel "
+          "wrote would excuse a shell write into the journal: %r" % (_claim,),
+          _claim.get("pluginWrote") == [_jrel])
     _jst = journal_state(proj)
     check("GET /api/journal reports the rows newest first, with the verdict beside "
           "them - a list with no verdict invites trust, a verdict with no list is "
@@ -1269,10 +1427,87 @@ def _cases(check):
         _gf_direct = _gf.prune(_gf_proj, M.read_config(_gf_proj), dry_run=True)
         _seed_feed()
         _gf_endpoint = M.prune_gate_events(_gf_proj, {"dryRun": True})
+        # `path` IS THE ONE FIELD THE PANEL IS ALLOWED TO DIFFER ON, and the
+        # comparison is written as "every other key, whole" rather than as a
+        # short list of keys: a rule the panel invented about `removed` or
+        # `classes` would otherwise have to be added to this case to be caught,
+        # which is the wrong direction for the assertion to fail in.
+        _gf_keys = sorted(set(_gf_direct) | set(_gf_endpoint))
+        _gf_diff = [k for k in _gf_keys
+                    if _gf_direct.get(k) != _gf_endpoint.get(k)]
         check("gp5 the endpoint IS the rule: the same project through "
-              "`_gate_feed.prune` directly answers identically, so the panel "
-              "holds no second opinion about what a prune removes: %r"
-              % ((_gf_direct, _gf_endpoint),), _gf_direct == _gf_endpoint)
+              "`_gate_feed.prune` directly answers identically on every field "
+              "but the one the panel redacts, so the panel holds no second "
+              "opinion about what a prune removes: %r"
+              % ((_gf_diff, _gf_direct, _gf_endpoint),),
+              _gf_diff == ["path"] and len(_gf_keys) > 1
+              and sorted(_gf_endpoint) == sorted(_gf_direct))
+        # THE LEAK, AND BOTH DIRECTIONS OF IT. The direct answer names the feed
+        # with the operator's home in it; the endpoint's answer must name the
+        # same file and contain that spelling NOWHERE - counted over every
+        # string the payload carries, not just the key that used to hold it,
+        # because a redactor scoped to one key is how the next field leaks.
+        _gf_raw = _gf_direct["path"]
+
+        def _strings(obj):
+            if isinstance(obj, str):
+                return [obj]
+            if isinstance(obj, dict):
+                return [x for v in obj.values() for x in _strings(v)]
+            if isinstance(obj, list):
+                return [x for v in obj for x in _strings(v)]
+            return []
+
+        _gf_leaks = [t for t in _strings(_gf_endpoint) if _gf_proj in t]
+        _gf_direct_leaks = [t for t in _strings(_gf_direct) if _gf_proj in t]
+        check("gp6 the endpoint answers with the feed as a repo-relative path "
+              "and the project root appears in NO string it returns, while the "
+              "direct call still carries it once - the second half is what says "
+              "the fixture can tell the two versions apart: %r"
+              % ((_gf_endpoint["path"], _gf_leaks, len(_gf_direct_leaks)),),
+              _gf_endpoint["path"] == ".claude/logs/plan-gate-events.jsonl"
+              and _gf_leaks == [] and len(_gf_direct_leaks) == 1
+              and os.path.isabs(_gf_raw))
+        # A FINDING CARRIES THE SAME BYTES TWICE - `could not read %s: %s`
+        # interpolates the path and the OSError spells the filename again - so
+        # this is asserted on the redactor directly rather than by arranging an
+        # unreadable file, which needs a permission trick that means something
+        # different on each of the two CI platforms.
+        _gf_err = {"ok": False, "path": _gf_raw, "exists": True,
+                   "findings": ["could not read %s: [Errno 13] Permission "
+                                "denied: '%s'" % (_gf_raw, _gf_raw)],
+                   "kept": 0, "removed": 0}
+        _gf_safe = M._redacted_feed_answer(_gf_proj, _gf_err)
+        _gf_rel = ".claude/logs/plan-gate-events.jsonl"
+        check("gp7 ...so the findings are redacted with the path, not merely "
+              "beside it: BOTH occurrences in the sentence are rewritten and "
+              "none is left - counted, because rewriting one of two reads "
+              "exactly like rewriting both to `in`: %r" % (_gf_safe,),
+              _gf_safe["findings"][0].count(_gf_raw) == 0
+              and _gf_safe["findings"][0].count(_gf_rel) == 2
+              and _gf_err["findings"][0].count(_gf_raw) == 2)
+        # The failure direction `repo_relative_or_token` documents: a feed
+        # `logsDir` puts outside the repository becomes the TOKEN and never a
+        # `../..` walk back to it, which would spell the home directory again.
+        _gf_outside = M._redacted_feed_answer(
+            _gf_proj, {"ok": True, "path": os.path.join(_gf_out, "feed.jsonl"),
+                       "findings": []})
+        check("gp8 a feed OUTSIDE the repository lands on the token rather than "
+              "on a relative walk back to it, which is the direction "
+              "`repo_relative_or_token` exists to fail in: %r"
+              % (_gf_outside["path"],),
+              _gf_outside["path"] == M._journal_io.OUTSIDE_TOKEN)
+        # THE SECOND DIRECTION, and it reads vacuous on purpose: it is the only
+        # case that fails if the redactor becomes unconditional and stamps the
+        # token onto a refusal that never named a file at all.
+        _gf_refusal = {"ok": False, "path": None, "exists": False,
+                       "findings": ["plan-gate-events.jsonl in logsDir "
+                                    "resolves outside that directory"]}
+        check("gp9 a refusal that never named a path is returned unchanged - "
+              "stamping a token onto `path: None` would claim a file the "
+              "answer did not name: %r"
+              % (M._redacted_feed_answer(_gf_proj, _gf_refusal),),
+              M._redacted_feed_answer(_gf_proj, _gf_refusal) == _gf_refusal)
     finally:
         _sh1.rmtree(_gf_tmp, ignore_errors=True)
         _sh1.rmtree(_gf_out, ignore_errors=True)

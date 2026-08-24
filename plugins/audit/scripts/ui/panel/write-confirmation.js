@@ -475,11 +475,12 @@ function showFindings(sel,res){
  * @param {Object} res - the write endpoint's answer
  * @param {Array<Object>} rows - the rows the dialog listed, for the applied-diff
  * @param {string} what - what was being written, for the refusal sentence
+ * @param {string=} hint - passed through to `saveOutcome`'s trailing clause
  * @returns {?Element} the slot
  */
-function showWriteResult(sel,res,rows,what){
+function showWriteResult(sel,res,rows,what,hint){
  const slot=showFindings(sel,res);
- saveOutcome(res,rows,what,slot);
+ saveOutcome(res,rows,what,slot,hint);
  return slot;}
 function restoreCaret(n,caret,keepBack){
  if(!n||!n.focus)return focusBack(keepBack);
@@ -843,6 +844,12 @@ function appliedDiff(rows,res){
  *   sentence ('the manifest', 'the config', 'the theme')
  * @param {Element|null} slot - where a drift note may be appended; null from a
  *   caller that has no slot yet, and the note is then simply not shown
+ * @param {string=} hint - one trailing clause for a caller whose save implies
+ *   something more than itself; the theme card's reload note is the only one today.
+ *   It rides THIS toast rather than following it: `toast` owns a single element and
+ *   replaces its text, so a second call a statement later is not a second message,
+ *   it is the first one deleted before anybody could read it. The theme card did
+ *   exactly that and destroyed its own save result.
  * @returns {void} It REPORTS; it does not answer. It used to hand back the drift,
  *   with `null` covering three unrelated outcomes — refused, unchanged, and saved
  *   exactly as shown — which no caller could tell apart and none of the seven
@@ -850,7 +857,7 @@ function appliedDiff(rows,res){
  *   comment saying so, and `appliedDiff` is right there for a caller that
  *   genuinely wants the drift.
  */
-function saveOutcome(res,rows,what,slot){
+function saveOutcome(res,rows,what,slot,hint){
  if(!res||!res.ok){
   toast(res&&res.locked?(what+' is locked — nothing was written')
     :('rejected — nothing was written'),'err');
@@ -860,7 +867,13 @@ function saveOutcome(res,rows,what,slot){
  const diff=appliedDiff(rows,res);
  const log=res.journaled?' · logged'
    :(res.journaledWhy==='failed'?' · NOT logged':'');
- toast('Saved · '+plural(n,'change')+log,diff?'warn':'ok');
+ // F102: the count AND the file. A local write finishes faster than a person can
+ // see it, so the only thing that separates "done, and it was fast" from "nothing
+ // happened" is a sentence naming what landed where — and the reasonable answer
+ // to that ambiguity is to press Save again. `what` was already here, spent only
+ // on the refusal sentence; the success one was the half that needed it.
+ toast('Saved · '+plural(n,'change')+' to '+what+log
+   +(hint?' — '+hint:''),diff?'warn':'ok');
  if(diff&&slot)slot.append(el('div',{class:'findings warn','data-cfdiff':'1'},
    'Saved, but not exactly what the dialog listed: '+diff.applied+' of the '
    +plural(diff.shown,'change shown was','changes shown were')+' applied'

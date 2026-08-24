@@ -33,15 +33,12 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _branch                # noqa: E402  (the naming convention, one expansion path)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
+import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -131,6 +128,105 @@ def _skills_of(task):
     return v if isinstance(v, list) else []
 
 
+# `_ado_drift.link_inventory` yields a KIND per row and the banner counts by a
+# plural key, so the two vocabularies meet in one table rather than in a
+# `kind + "s"` that would invent a key the moment a fourth kind is added.
+_LINK_COUNT_KEY = {"phase": "phases", "task": "tasks", "bug": "bugs"}
+
+# The lens that already PRINTS this, and the one command that re-derives it:
+# `/audit:sync status` runs `read-ado-links.py`, which is where the
+# `SHARED: #<id>` lines come from. THE ONLY LITERAL OF THIS COMMAND IN THIS
+# FILE - `_PARENT_OBSERVE` below asks a different question of the same
+# invocation and is spelled as this name, because two literals of one command
+# name are two commands the day it is renamed.
+_LINKS_LENS = "/audit:sync status"
+
+
+def _claimant(row):
+    """One row as the sentence a reader recognises: `phase P1`, `bug BUG-2`.
+
+    The spelling `read-ado-links.claims_shared_by_several` already uses, because
+    the panel banner and that command's `SHARED:` line describe one fact and a
+    reader who saw both should not have to work out that they agree.
+    """
+    return "%s %s" % (row.get("kind"), row.get("id"))
+
+
+def _shared_claims(inventory):
+    """{state, items, basis, refresh} — the work items MORE THAN ONE manifest
+    item claims.
+
+    THE THREE STATES ARE `_candidate_cache`'S, APPLIED TO A THIRD QUESTION.
+    "nothing carries a link here" and "every card is claimed exactly once" both
+    reach a banner as an empty list, and a banner that renders them identically
+    says the second while meaning the first — a filter narrowed to nothing
+    reading as all clear. So the state is NAMED:
+
+      unlinked   nothing in this manifest carries a work-item link, so nothing
+                 has been counted. Not agreement; there is nothing to compare
+      none       links were walked and each work item is claimed by one item
+      shared     at least one work item is claimed by several, and they are named
+
+    WHY THIS IS WORTH A BANNER AT ALL. Nothing validates that a work-item id is
+    claimed once: `check_ado_meta` grades the SHAPE of a link and never the
+    uniqueness of its target, so an import that adopts a card somebody had
+    already linked by hand produces two manifest items pointing at one card, and
+    a push then writes both to the same place. Sharing is not always a mistake —
+    a bug materialized as a fix task legitimately links one card, which is why
+    `_ado_fetch.chunk_ids` de-duplicates rather than refusing — so this NAMES
+    what it found and grades nothing.
+
+    IT TAKES THE ROWS AND NOT THE MANIFEST, so the caller's single
+    `link_inventory` walk answers both halves of the banner. A second walk here
+    would be the two-walks defect `_ado_status` was repaired of.
+
+    A SECOND DERIVATION, AND SAID SO OUT LOUD. `read-ado-links.py` groups its
+    own (state-carrying) rows the same way for the `SHARED:` lines it prints;
+    that module is an entry point and cannot be imported, so the grouping lives
+    twice until it moves down beside `link_inventory` itself. A case in
+    `test__panel_composition.py` loads that script and pins the two answers
+    equal, because a duplication nothing compares is the one that drifts.
+    """
+    rows = [r for r in (inventory or []) if isinstance(r, dict)]
+    by_ado = {}
+    for row in rows:
+        by_ado.setdefault(row.get("adoId"), []).append(row)
+    # Sorted by work-item id, so a payload regenerated from one manifest is the
+    # same payload - `read-ado-links` orders its own `SHARED:` lines the same
+    # way, and a banner whose ids reshuffle per process cannot be diffed.
+    items = [{"adoId": ado_id,
+              "claimants": [_claimant(r) for r in by_ado[ado_id]]}
+             for ado_id in sorted(by_ado)
+             if len(by_ado[ado_id]) > 1]
+    if not rows:
+        return {"state": "unlinked", "items": [],
+                "basis": "no item in this plan carries a work-item link, so "
+                         "nothing has been counted: this is not 'every card is "
+                         "claimed once', it is that there is nothing to "
+                         "compare yet. It becomes a question the first time a "
+                         "push links an item.",
+                "refresh": _LINKS_LENS}
+    if not items:
+        return {"state": "none", "items": [],
+                "basis": "%d link(s) walked, and each work item is claimed by "
+                         "exactly one item in this plan — counted, not assumed. "
+                         "%s prints the same tally."
+                         % (len(rows), _LINKS_LENS),
+                "refresh": _LINKS_LENS}
+    return {"state": "shared", "items": items,
+            "basis": "%d work item(s) carry more than one claim in this plan "
+                     "(%s). Nothing refuses that — a link's SHAPE is validated "
+                     "and the uniqueness of its target never is — so a push "
+                     "writes every claimant to the same card and the last one "
+                     "wins. %s prints which state each of them would send."
+                     % (len(items),
+                        "; ".join("#%s claimed by %s"
+                                  % (one["adoId"], ", ".join(one["claimants"]))
+                                  for one in items),
+                        _LINKS_LENS),
+            "refresh": _LINKS_LENS}
+
+
 def _ado_status(manifest):
     """The ADO card's honesty-banner facts — MANIFEST EVIDENCE only, no network.
 
@@ -138,40 +234,63 @@ def _ado_status(manifest):
     the file proves (links /audit:sync wrote), never what the connector claims.
     `enabled`/`echo` are EFFECTIVE values (absent = on; a disabled connector
     reads echo off too) because the banner answers "what happens now", not
-    "what is typed". Links count only int ids — the same shape the validator
-    enforces — so junk never inflates the count."""
+    "what is typed".
+
+    THE WALK IS `_ado_drift.link_inventory`, NOT A SECOND ONE. That function is
+    what `read-ado-links.py` (the manifest side of every ADO link) and
+    /audit:doctor's `ado links` row already ask, and this file used to put the
+    same question to the same manifest with its own nested closure - including
+    its own copy of the int-and-not-bool id guard the validator holds. Two walks
+    over one file is two answers waiting to disagree, and the panel's copy was
+    the one with no cases of its own about link SHAPES.
+
+    STILL OFFLINE, which is the property the banner is built on and the reason
+    this edge is safe to add: `link_inventory` reads the loaded manifest dict and
+    `_manifest_io.iter_tasks`, and touches no board. The fetch lives in
+    `fetch-ado-items.py`, which nothing here reaches.
+
+    Phases are walked directly and tasks through `_mio.iter_tasks` — inside
+    `link_inventory` now, but for the reason that has always applied here: a
+    phase can carry an `ado` link with no tasks under it at all, and
+    `iter_tasks` yields nothing for such a phase.
+
+    `shared` IS THE HALF ONLY THAT WALK CAN ANSWER, and it is here rather than
+    beside the counts because it is the same rows read a second way: which work
+    items MORE THAN ONE manifest item claims. `_shared_claims` says what its
+    three states are for.
+    """
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     ado = meta.get("ado")
     configured = isinstance(ado, dict)
     ado = ado if configured else {}
     enabled = configured and ado.get("enabled") is not False
     linked = {"tasks": 0, "bugs": 0, "phases": 0}
-    last = [None]
-
-    def note(item, kind):
-        link = item.get("ado") if isinstance(item, dict) else None
-        if isinstance(link, dict) and isinstance(link.get("id"), int) \
-                and not isinstance(link.get("id"), bool):
-            linked[kind] += 1
-            ts = link.get("lastSyncedAt")
-            if isinstance(ts, str) and (last[0] is None or ts > last[0]):
-                last[0] = ts
-
-    # Phases are walked directly and tasks through `_mio.iter_tasks`: a phase can
-    # carry an `ado` link with no tasks under it at all, and `iter_tasks` yields
-    # nothing for such a phase. Two passes rather than one nested walk is free
-    # here because every answer below is a count or a max — both order-free.
-    for ph in (manifest.get("phases") or []):
-        if isinstance(ph, dict):
-            note(ph, "phases")
-    for _ph, t in _mio.iter_tasks(manifest):
-        note(t, "tasks")
-    for b in (manifest.get("bugs") or []):
-        note(b, "bugs")
+    last = None
+    # ONE walk, read twice. The counts and the shared-claim grouping are two
+    # questions about the same rows, and calling `link_inventory` again for the
+    # second would put back exactly the two-walks defect this function was
+    # repaired of - with the added trap that the two could then be walked over
+    # different manifests.
+    inventory = _drift.link_inventory(manifest)
+    for row in inventory:
+        # A KIND WITH NO CELL GETS ITS OWN, rather than being skipped or folded
+        # into a neighbour. Dropping it would leave the banner reporting fewer
+        # links than the manifest carries with nothing to say so, and adding it
+        # to "tasks" would inflate a number the operator reads as evidence. A
+        # new key is the only option that neither loses the row nor lies about
+        # it; a case pins the table against the kinds `link_inventory` emits, so
+        # this branch is the runtime half of a mismatch the build already fails.
+        key = _LINK_COUNT_KEY.get(row.get("kind"), row.get("kind"))
+        linked[key] = linked.get(key, 0) + 1
+        link = row.get("link") or {}
+        ts = link.get("lastSyncedAt")
+        if isinstance(ts, str) and (last is None or ts > last):
+            last = ts
     return {"configured": configured,
             "enabled": enabled,
             "echo": enabled and ado.get("echo") is not False,
-            "linked": linked, "lastSyncedAt": last[0]}
+            "linked": linked, "lastSyncedAt": last,
+            "shared": _shared_claims(inventory)}
 
 
 # --- where a phase hangs on the board, as the Composition table shows it --------
@@ -179,6 +298,17 @@ def _ado_status(manifest):
 # every state's sentence below, and three copies of a command name is three
 # commands the day one of them is renamed.
 _PARENT_REFRESH = "/audit:sync parents"
+
+# The command that ASKS THE BOARD where one item hangs - a different question
+# from the one above, and named separately because the two are one word apart in
+# a sentence and a reader sent to the wrong one learns nothing. `parents` caches
+# the candidate list and the backlog ranks and touches no item's own link;
+# `status` fetches `System.Parent` and prints the verdict, writing nothing.
+#
+# It is the SAME invocation as `_LINKS_LENS`, and it is spelled as that name
+# rather than retyped: two questions may deserve two names, and one command
+# still deserves one literal.
+_PARENT_OBSERVE = _LINKS_LENS
 
 
 # --- the branch-naming convention, as the Composition card shows it -------------
@@ -416,6 +546,73 @@ def _resolved_parent(phase, ado):
     return {"id": res["id"], "source": res["source"], "basis": res["basis"]}
 
 
+def _board_parent(phase):
+    """What the BOARD says about this phase's parent - and the two ways of not
+    knowing, which the cell used to render as agreement.
+
+    THE PANEL ASKS NO BOARD AND MUST NOT. This is `_candidate_cache`'s shape
+    applied to a second question, for exactly its reason: the declaration is
+    already painted here and a reader takes it for the answer, so a cell that
+    looks the same whether the board agrees or was never asked SAYS agreement
+    while MEANING silence.
+
+    NOTHING CACHES AN OBSERVED PARENT PER ITEM, and that is the answer rather
+    than a gap to fill with a default. `/audit:sync status` fetches
+    `System.Parent`, prints its verdict and writes nothing; `/audit:sync
+    parents` caches the candidate list and the backlog ranks and touches no
+    item's own link. The single board-derived thing an item can carry is a
+    declaration a PULL wrote - `source: "imported"`, with the moment it was
+    seen - and that is a record of one instant, never a live reading.
+
+    Three named states, because the ways of not knowing are not one way:
+      unlinked     nothing of this phase is on the board yet, so nothing there
+                   hangs anywhere and the declaration is a plan for a create
+      observed     the declaration came OFF the board, at `observedAt`
+      never-asked  it IS linked, and nothing here records where the board hangs
+                   it
+    """
+    where = (phase.get("id") if isinstance(phase, dict) else None) or "this phase"
+    link = _ado_parent._work_item_id(phase)
+    if link is None:
+        return {"state": "unlinked", "id": None, "observedAt": None,
+                "basis": "%s has no work item on this board yet, so nothing on "
+                         "the board hangs anywhere: the declaration beside this "
+                         "is a plan for the create rather than a difference "
+                         "from the board. It becomes a question the first time "
+                         "a push creates the item." % (where,),
+                "refresh": _PARENT_OBSERVE}
+    declared = phase.get(_ado_parent.FIELD) if isinstance(phase, dict) else None
+    declared = declared if isinstance(declared, dict) else {}
+    seen = declared.get("observedAt")
+    seen = seen if isinstance(seen, str) and seen else None
+    # A positive id is required before this is called an observation: a pull
+    # that wrote an unusable id recorded nothing readable, and reporting it as
+    # what the board said would be a claim with no basis under it. Such a phase
+    # falls through to `never-asked`, whose sentence is true of it.
+    observed = _ado_parent._positive_id(declared.get("id"))
+    if declared.get("source") == "imported" and observed is not None:
+        return {"state": "observed", "id": observed, "observedAt": seen,
+                "basis": "the board hung %s under #%d when a pull read it%s - "
+                         "`source: \"imported\"` is the one board-derived "
+                         "answer a manifest keeps, and it is a record of that "
+                         "moment and not a live reading. Run %s to compare it "
+                         "with the board as it is now."
+                         % (where, observed,
+                            (", at %s" % (seen,)) if seen
+                            else ", at no recorded moment",
+                            _PARENT_OBSERVE),
+                "refresh": _PARENT_OBSERVE}
+    return {"state": "never-asked", "id": None, "observedAt": None,
+            "basis": "nothing here records where the board hangs %s's work item "
+                     "#%d: no command caches an observed parent per item, so "
+                     "the value beside this is what somebody DECLARED and not "
+                     "what the board answered. %s asks the board and prints "
+                     "the comparison; until it is run, the two agreeing and "
+                     "nobody having looked are the same picture."
+                     % (where, link, _PARENT_OBSERVE),
+            "refresh": _PARENT_OBSERVE}
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
@@ -445,7 +642,15 @@ def _composition_view(manifest):
                            # would let a reader edit a field without seeing what
                            # it currently does.
                            "adoParent": _ado_parent_of(ph),
-                           "adoParentResolved": _resolved_parent(ph, ado)})
+                           "adoParentResolved": _resolved_parent(ph, ado),
+                           # THE THIRD HALF, and it is the one that was missing
+                           # (F101). Both values above are read out of the
+                           # manifest, so a row whose board was never asked and
+                           # a row the board agrees with painted the same
+                           # pixels - which is the shape this repo has recorded
+                           # under several other names. This says which of the
+                           # two it is, without asking a board.
+                           "adoParentBoard": _board_parent(ph)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),

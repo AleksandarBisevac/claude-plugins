@@ -57,6 +57,59 @@ _output.install_path()
 import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
 
 
+# The panel's per-project files: basename, the label a row uses, WHY that row
+# exists, and the repair it prints. ONE ROW PER FILE and not one row for both,
+# because the repairs are different acts - a leaked token has to be ROTATED and a
+# leaked traceback cannot be, so a reader handed the other file's repair does
+# neither of them.
+#
+# The launch log is here for the same reason the pidfile is, arrived at from the
+# other direction: the pidfile leaks a credential, and the log leaks the machine.
+# It is the stderr of a detached launch, so what lands in it is whatever that
+# launch died of - a traceback spelling absolute paths, and a home directory is a
+# person's name on most of them. That is precisely what the committed-PII backstop
+# exists for, and an ignore rule cannot reach a file that was committed before the
+# rule was written.
+#
+# TWO HOMES, DECIDED RATHER THAN OVERLOOKED (F148). The same basenames are spelled
+# in `panel/panel-server.py` (`_PANEL_PRIVATE_FILES`), which is what writes their
+# ignore rules, and `dh19` in `tests/test__doctor_hygiene.py` compares the two SETS
+# rather than trusting either.
+#
+# The layer table is the reason usually given, and it is the weaker half of the
+# argument: this module sits at layer 3, `panel-server` at 7, and `_panel_paths` --
+# the panel module that would obviously own a filename -- is this module's own PEER
+# at 3, which it may not import. A shared home would therefore have to be a NEW
+# module at layer 2 or below.
+#
+# The reason that survives a layer-table change is what the tables hold. They
+# answer different questions and merely share a key set: over there a rule git must
+# honour and the note that goes above it, here what leaks and the repair for it --
+# and the repairs differ, which is the ONE ROW PER FILE rule above. Merging the key
+# set alone would NOT retire `dh19`, because a file added to a shared list and given
+# prose on one side only is still a file that gets reported and never ignored, or
+# ignored and never reported. A merge that leaves the check standing buys a pair of
+# string literals for a module, a `_deps.LAYERS` row, a `PLUGIN-BUILD-GUIDE.md`
+# section and -- if the prose were keyed off the shared list to force the issue --
+# a KeyError at import inside a read-only diagnostic. So the names stay in two
+# homes and the pin is the mechanism.
+#
+# Revisit when a THIRD reader of these names appears: at that point the pin is
+# comparing pairs of pairs, and a keyed lookup off one shared list starts being
+# worth the crash mode it brings.
+_PANEL_FILES = (
+    ("audit-panel.json", "panel pidfile",
+     "it holds a live session token",
+     "git rm --cached it and commit; then restart the panel to rotate the "
+     "token the history already saw"),
+    ("audit-panel.log", "panel launch log",
+     "it is the stderr of a detached launch, so it carries whatever that "
+     "launch died of - tracebacks naming absolute paths on this machine",
+     "git rm --cached it and commit; the panel empties the file on every start "
+     "that reaches listening, but emptying a file does not empty the history"),
+)
+
+
 # --- checks: locks & local artifacts --------------------------------------------
 def check_locks(rep, git_root, project, manifest_rel):
     """A held lock is why a command refuses; a stale one is why it refuses wrongly.
@@ -99,16 +152,18 @@ def check_locks(rep, git_root, project, manifest_rel):
 def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
     """Are the plugin's LOCAL artifacts staying out of git? (v0.35)
 
-    Four artifacts are per-machine by design: the usage ledger (person
-    identities, transcript cursors), stateDir (session scratch), logsDir
-    (gate telemetry) and the panel pidfile (a LIVE session token). From 0.35
-    every dir-creating writer drops a `*` .gitignore inside and the panel
-    writes a targeted rule for its pidfile — this check catches what those
-    cannot reach: files committed BEFORE the markers existed, and dirs made
-    by older versions that no hook has touched since. WARNING at most: a
-    tracked ledger is a privacy leak, not evidence of forgery. The journal
-    is deliberately NOT in this list — it is the opposite kind of artifact
-    and must stay tracked (check_journal warns about the reverse)."""
+    Every artifact it looks at is per-machine by design: the usage ledger
+    (person identities, transcript cursors), stateDir (session scratch),
+    logsDir (gate telemetry), and the panel's own files in `_PANEL_FILES` —
+    the pidfile (a LIVE session token) and the launch log (a dead launch's
+    stderr, so absolute machine paths). From 0.35 every dir-creating writer
+    drops a `*` .gitignore inside and the panel writes a targeted rule for
+    each of its files — this check catches what those cannot reach: files
+    committed BEFORE the markers existed, and dirs made by older versions
+    that no hook has touched since. WARNING at most: a tracked ledger is a
+    privacy leak, not evidence of forgery. The journal is deliberately NOT
+    in this list — it is the opposite kind of artifact and must stay tracked
+    (check_journal warns about the reverse)."""
     if not git_root or not shutil.which("git"):
         rep.ok("hygiene", "not a git repository - local artifacts cannot "
                "reach version control")
@@ -123,23 +178,29 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
         "logs": os.path.join(project, str(cfg.get("logsDir")
                                           or cfg_mod.DEFAULTS["logsDir"])),
     }
-    pidfile = os.path.join(project, ".claude", "audit-panel.json")
-    pid_base = os.path.basename(pidfile)
+    panel = [(base, label, why, fix,
+              os.path.join(project, ".claude", base))
+             for base, label, why, fix in _PANEL_FILES]
+    panel_bases = set(row[0] for row in panel)
     try:
         out = subprocess.run(
-            ["git", "ls-files", "--", pidfile] + sorted(dirs.values()),
+            ["git", "ls-files", "--"] + [row[4] for row in panel]
+            + sorted(dirs.values()),
             cwd=project, capture_output=True, text=True, timeout=30)
         tracked = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
     except Exception:
         rep.ok("hygiene", "git unavailable for the tracked-files check")
         return
-    if any(ln.endswith(pid_base) for ln in tracked):
-        rep.warn("hygiene",
-                 "the panel pidfile (.claude/%s) is TRACKED in git - it "
-                 "holds a live session token" % pid_base,
-                 "git rm --cached it and commit; then restart the panel to "
-                 "rotate the token the history already saw")
-    others = [ln for ln in tracked if not ln.endswith(pid_base)]
+    # BASENAME EQUALITY, not `endswith`. `audit-panel.json` is a suffix of
+    # `stale-audit-panel.json`, which is somebody's own file and not this
+    # plugin's - and the two rows below PARTITION the tracked list, so a name
+    # matched loosely here is a name silently dropped from `others`.
+    for base, label, why, fix, _path in panel:
+        if any(os.path.basename(ln) == base for ln in tracked):
+            rep.warn("hygiene",
+                     "the %s (.claude/%s) is TRACKED in git - %s"
+                     % (label, base, why), fix)
+    others = [ln for ln in tracked if os.path.basename(ln) not in panel_bases]
     if others:
         rep.warn("hygiene",
                  "%d local file(s) tracked in git (ledger/state/logs are "
@@ -168,12 +229,17 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
                  "inside); or add them to .gitignore yourself")
     if not tracked and not unprotected:
         seen = sorted(n for n, d in dirs.items() if os.path.isdir(d))
-        if seen or os.path.exists(pidfile):
+        seen += [label for _base, label, _why, _fix, path in panel
+                 if os.path.exists(path)]
+        if seen:
             rep.ok("hygiene", "local artifacts stay out of git (%s)"
-                   % ", ".join(seen or ["panel pidfile"]))
+                   % ", ".join(seen))
         else:
-            rep.ok("hygiene", "no local artifacts yet (ledger, state, logs, "
-                   "panel pidfile)")
+            # NAMES WHAT IT LOOKED FOR, so "nothing found" cannot be read as
+            # "nothing was checked" - the distinction this whole row exists to
+            # keep.
+            rep.ok("hygiene", "no local artifacts yet (ledger, state, logs, %s)"
+                   % ", ".join(label for _b, label, _w, _f in _PANEL_FILES))
 
 
 # --- cli ------------------------------------------------------------------------

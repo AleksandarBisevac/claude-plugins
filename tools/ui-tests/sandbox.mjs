@@ -54,6 +54,7 @@
 //   that depends on any of those is a browser-gate claim, and calling `__fire`
 //   on a chain of parents would be inventing propagation rather than testing it.
 
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
@@ -81,47 +82,190 @@ export function uiParts() {
   return out.sort();
 }
 
+// --- the python bridge ----------------------------------------------------
+//
+// Moved here from python-fmt.mjs, which now imports it back. It had to live
+// somewhere BELOW that file: `sandbox.mjs` owns REPO_ROOT and python-fmt.mjs
+// reads it at module scope, so a static import in the other direction closes a
+// cycle whose python-fmt half evaluates first and reads REPO_ROOT in its TDZ.
+// One bridge and one dependency direction, rather than a second copy of the
+// interpreter probe that could pick a different interpreter than the one the
+// formatter cases compare against.
+
+const SCRIPTS_DIR = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts');
+
+const CANDIDATES = ['python3', 'python'];
+
+let cachedInterpreter = null;
+
+// Never a skip. A missing interpreter means the cross-language claim was not
+// checked, and a suite that quietly drops its only real assertion is the exact
+// silent pass this repo rejects — so it throws, and the run goes red.
+export function pythonInterpreter() {
+  if (cachedInterpreter) return cachedInterpreter;
+  const tried = [];
+  for (const exe of CANDIDATES) {
+    const probe = spawnSync(exe, ['-c', 'import sys; print(sys.version_info[0])'],
+      { encoding: 'utf8' });
+    if (probe.status === 0 && probe.stdout.trim() === '3') {
+      cachedInterpreter = exe;
+      return exe;
+    }
+    tried.push(exe + ': ' + (probe.error ? probe.error.message
+      : 'exit ' + probe.status + ' ' + (probe.stdout + probe.stderr).trim()));
+  }
+  throw new Error(
+    'no Python 3 on PATH, so the cross-language formatter cases cannot run and '
+    + 'are NOT being silently skipped. Tried:\n  ' + tried.join('\n  '));
+}
+
+// The module is an ARGUMENT, so a second cross-language claim does not need a
+// second copy of this protocol. It began as `_fmt` only; `_ui_theme` joined it
+// when the contrast checker turned out to grade four pairs against Python's six,
+// and the fix was to stop having two tables rather than to align them by hand.
+//
+// `sys.argv[3]` is an EXTRA directory, empty for every production caller. It
+// exists so the part readers below can be pointed at a fixture module instead of
+// the shipped one — a reader that can only ever be run against the real file is a
+// reader whose failure mode cannot be reproduced, which is how F129 survived.
+const BRIDGE = [
+  'import importlib, json, os, sys',
+  'sys.path.insert(0, sys.argv[1])',
+  // install_path() puts scripts/ AND every subdirectory of it holding a .py on
+  // the path, which is how the plugin itself resolves a sibling: by BARE
+  // BASENAME, because the folders under scripts/ are labels rather than
+  // namespaces. Without it this bridge could only reach the modules at the root,
+  // and `_panel_write` — which owns the change rows the panel's dialog is
+  // compared against — sits in scripts/panel/.
+  "import _output; _output.install_path()",
+  'if len(sys.argv) > 3 and sys.argv[3]:',
+  '    sys.path.insert(0, sys.argv[3])',
+  'mod = importlib.import_module(sys.argv[2])',
+  'calls = json.load(sys.stdin)',
+  'out = []',
+  'for name, args in calls:',
+  '    fn = getattr(mod, name, None)',
+  '    if fn is None:',
+  '        sys.exit("%s has no attribute %r" % (sys.argv[2], name))',
+  '    out.append(fn(*args) if callable(fn) else fn)',
+  'json.dump(out, sys.stdout)',
+].join('\n');
+
+/**
+ * Run a batch of calls against any module under `scripts/`, in order.
+ *
+ * A non-callable attribute is returned as its VALUE, so a table can be compared
+ * as directly as a function result — which is the point for `CONTRAST_PAIRS`
+ * and its like: the claim is that the JavaScript reads Python's table, and the
+ * only way to check that is to fetch the table.
+ *
+ * @param {string} moduleName e.g. `'_ui_theme'`
+ * @param {Array<[string, Array<unknown>]>} calls
+ * @param {string} [extraPath] a directory searched before `scripts/`, for
+ *   fixture modules; production callers omit it
+ */
+export function pyCall(moduleName, calls, extraPath) {
+  if (!Array.isArray(calls) || !calls.length) {
+    throw new Error('pyCall called with no cases — an empty batch would return an '
+      + 'empty list and every comparison over it would vacuously pass');
+  }
+  const exe = pythonInterpreter();
+  let stdout;
+  try {
+    stdout = execFileSync(exe, ['-c', BRIDGE, SCRIPTS_DIR, moduleName, extraPath || ''], {
+      input: JSON.stringify(calls),
+      encoding: 'utf8',
+      // stdout is the ANSWER even on a non-zero exit here, so both streams are
+      // captured and both are reported on failure.
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (cause) {
+    throw new Error('the ' + moduleName + ' bridge failed (' + exe + '): '
+      + String(cause.stderr || cause.message).trim()
+      + '\nstdout was: ' + String(cause.stdout || '').trim());
+  }
+  const out = JSON.parse(stdout);
+  if (out.length !== calls.length) {
+    throw new Error('the ' + moduleName + ' bridge returned ' + out.length + ' results for '
+      + calls.length + ' calls');
+  }
+  return out;
+}
+
+// --- the part lists -------------------------------------------------------
+//
 // The Python that assembles the page is the ONE source of truth for which parts
-// exist and what order they load in. Reading it here means this harness cannot
+// exist and what order they load in. Asking it here means this harness cannot
 // hold a second opinion that drifts: add a part and forget to register it, and
 // the list this returns is the list the page is really built from, so the gap
 // shows up as a part nobody parses rather than as two files agreeing with each
 // other and neither with the product.
-const PANEL_UI_PY = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'panel',
-                              '_panel_ui.py');
-const REPORT_UI_PY = path.join(REPO_ROOT, 'plugins', 'audit', 'scripts', 'report',
-  '_report_ui.py');
+//
+// ASKED, NOT PARSED, and that distinction is F129. This used to match
+// `_JS_PARTS = \(([\s\S]*?)\)` over the module's SOURCE — a second Python parser,
+// written as one regex, which ended at the first closing parenthesis. A comment
+// inside the tuple containing one therefore truncated the list, and every browser
+// suite then loaded a panel missing its tail: the symptom was a function that did
+// not exist, never "the list was cut short". The workaround at the time was to
+// take the parentheses out of the comment. The regex was the defect, and the fact
+// it read is one the source already owns, so this asks the module for its own
+// value instead. A comment cannot defeat the interpreter that compiled it, and
+// neither can a quote style, a line break or a value that stops being a literal.
 
-function readReportUiPy() {
-  return fs.readFileSync(REPORT_UI_PY, 'utf8');
-}
+let reportCache = null;
+let panelCache = null;
 
-export function reportParts() {
-  const block = readReportUiPy().match(/_SCRIPT_PARTS = \(([\s\S]*?)\)/);
-  if (!block) {
-    throw new Error('_SCRIPT_PARTS is not in ' + REPORT_UI_PY
-      + ' — the assembly moved and this harness would otherwise read a stale list');
+/**
+ * One Python tuple of asset names, checked for the shapes a truncation takes.
+ *
+ * COMPLETENESS CANNOT BE ASSERTED FROM HERE — this has no second opinion about
+ * how many parts there ought to be, and inventing one would be the drifting copy
+ * the whole file avoids. What it can refuse is a list that is not a list of asset
+ * names at all, and the empty case, which is the one a short read degenerates to.
+ *
+ * @param {string} moduleName the Python module holding the tuple
+ * @param {string} attr its name there
+ * @param {string} [extraPath] a directory searched first, for fixture modules
+ */
+export function pyParts(moduleName, attr, extraPath) {
+  const [names] = pyCall(moduleName, [[attr, []]], extraPath);
+  if (!Array.isArray(names)) {
+    throw new Error(moduleName + '.' + attr + ' is ' + JSON.stringify(names)
+      + ', not a list of asset names — the assembly changed shape and this '
+      + 'harness would otherwise iterate something that is not the part list');
   }
-  const names = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   if (!names.length) {
-    throw new Error('_SCRIPT_PARTS is empty; joining nothing would load a blank '
-      + 'script and every case below would pass over it');
+    throw new Error(moduleName + '.' + attr + ' is empty; joining nothing would '
+      + 'load a blank script and every case over it would pass having run none '
+      + 'of the page');
+  }
+  const odd = names.filter((n) => typeof n !== 'string' || !n.endsWith('.js'));
+  if (odd.length) {
+    throw new Error(moduleName + '.' + attr + ' holds ' + JSON.stringify(odd)
+      + ', which are not `.js` asset names');
   }
   return names;
 }
 
-// The wrapper the page gets, read from the same place, for the same reason.
+function reportUi() {
+  if (!reportCache) {
+    const [open, close] = pyCall('_report_ui',
+      [['_SCRIPT_TAG_OPEN', []], ['_SCRIPT_TAG_CLOSE', []]]);
+    reportCache = { parts: pyParts('_report_ui', '_SCRIPT_PARTS'), open, close };
+  }
+  return reportCache;
+}
+
+export function reportParts() {
+  return reportUi().parts;
+}
+
 // The tags the page receives, read from the same place. There is no code
 // wrapper any more: the script is a module, and a module's own scope is what
 // keeps the parts' top-level names out of the page's globals.
 export function reportTags() {
-  const py = readReportUiPy();
-  const open = py.match(/_SCRIPT_TAG_OPEN = '([^']*)'/);
-  const close = py.match(/_SCRIPT_TAG_CLOSE = "([^"]*)"/);
-  if (!open || !close) {
-    throw new Error('_SCRIPT_TAG_OPEN/_SCRIPT_TAG_CLOSE are not in ' + REPORT_UI_PY);
-  }
-  return { open: open[1], close: close[1] };
+  const { open, close } = reportUi();
+  return { open, close };
 }
 
 // The report's body exactly as the page receives it, minus the wrapper: the
@@ -135,25 +279,12 @@ export function readPart(name) {
   return fs.readFileSync(path.join(UI_DIR, name), 'utf8');
 }
 
-// The panel's parts, read the same way and for the same reason: the ORDER is
+// The panel's parts, asked the same way and for the same reason: the ORDER is
 // declared once, in the module that assembles the page, and a harness that kept
 // its own copy would go on loading a stale list after a part was added.
-function readPanelUiPy() {
-  return fs.readFileSync(PANEL_UI_PY, 'utf8');
-}
-
 export function panelParts() {
-  const block = readPanelUiPy().match(/_JS_PARTS = \(([\s\S]*?)\)/);
-  if (!block) {
-    throw new Error('_JS_PARTS is not in ' + PANEL_UI_PY
-      + ' \u2014 the assembly moved and this harness would otherwise read a stale list');
-  }
-  const names = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  if (!names.length) {
-    throw new Error('_JS_PARTS is empty; joining nothing would load a blank '
-      + 'script and every case below would pass over it');
-  }
-  return names;
+  if (!panelCache) panelCache = pyParts('_panel_ui', '_JS_PARTS');
+  return panelCache;
 }
 
 // The panel's script exactly as the page receives it: the parts joined in load

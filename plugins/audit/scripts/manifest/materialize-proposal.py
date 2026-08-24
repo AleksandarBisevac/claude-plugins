@@ -63,7 +63,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
 import _manifest_io as _mio  # noqa: E402  (to resolve --all before the rule runs)
 import _proposals  # noqa: E402  (the rule this command is a front end for)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
@@ -107,16 +106,12 @@ LIST_COLUMNS = ("id", "status", "reserved phase (task count)", "name",
                 "openQuestions")
 
 
-def _reserved_cell(row):
-    """The payload column: the phase this proposal reserves, and how big it is.
-
-    `-` when there is no payload. A legacy free-form entry reserves nothing, and
-    printing a phase id for it would invent one - `hasPayload` is the basis, not
-    whether `phaseId` happens to be truthy.
-    """
-    if not row["hasPayload"]:
-        return "-"
-    return "%s (%s)" % (row["phaseId"], _fmt.plural(row["taskCount"], "task"))
+# An ALIAS, not a copy (F93). The payload column - the phase this proposal
+# reserves and how big it is - is `_proposals.reserved_cell`, because
+# `/audit:status`'s PROPOSALS block prints the same cell and the two spellings
+# had already stopped counting the same tasks. The name stays here because this
+# file's table spells it unqualified and its suite asks for it by hand.
+_reserved_cell = _proposals.reserved_cell
 
 
 def _list_row(row):

@@ -30,16 +30,24 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   when both are set). Default false, which grades
                                   the gate: observe with no manifest, warn with a
                                   manifest but nothing running, deny once a phase
-                                  is in_progress. Only the PLAN gate is graded —
-                                  the secret guards deny by default either way,
-                                  because reading .env is wrong whether or not a
-                                  plan exists.
+                                  is in_progress. What is graded is the
+                                  PLAN-COVERAGE class, wherever it is enforced —
+                                  require-plan's Edit/Write path, the shell-write
+                                  branch of guard-secrets-read and the PostToolUse
+                                  report in guard-bash-writes all resolve their
+                                  tier through plan_gate_mode below (F52), so one
+                                  file gets one verdict whichever way it is
+                                  written. The secret guards are never graded and
+                                  deny at every tier, because reading .env is
+                                  wrong whether or not a plan exists.
   planGate                str   — pin the plan gate to one tier by hand:
                                   "observe" | "warn" | "ask" | "deny". Absent (the
                                   default) keeps the graded ladder above. "ask"
                                   surfaces each out-of-plan edit for the human's
                                   approval. Beats enforce; a typo fails open to
-                                  the ladder (the validator flags it).
+                                  the ladder (the validator flags it). Reaches
+                                  every plan-coverage surface, not just the Edit
+                                  path — see `enforce` above for the list.
   trivialLineThreshold    int   — max added lines for the 1st free code file/session
   stateDir                str   — where per-session state files live
   logsDir                 str   — where the bypass log lives
@@ -52,7 +60,12 @@ Config keys (all optional; defaults in DEFAULTS below):
         (usually absolute), not as a prefix — see guard-edits.py, which owns the
         rule and pins it in its selftest.
   bashWriteCheck.enabled  bool  — PostToolUse git-status diff check for shell
-        writes into source files (guard-bash-writes.py); default true
+        writes into source files (guard-bash-writes.py); default true. TWO KEYS
+        DECIDE WHETHER ITS PLAN-COVERAGE CLASS SPEAKS, and this is the master off
+        switch rather than the only one: with it true, that class still resolves a
+        tier through plan_gate_mode, so `planGate: "observe"` — or simply a repo
+        with no manifest — silences it (F52). The lock and journal classes bind
+        their claim to evidence of their own and report at every tier.
   tddReminder             obj   — non-blocking TDD nudge (remind-tdd.py):
         enabled (bool), sourceGlobs [str], testGlobs [str], throttleMinutes (int),
         inProgressPolicy ("skip-gate-only" | "skip-all" | "warn-always")
@@ -292,6 +305,18 @@ def _load_scripts_module(name, filename):
         return mod
     except Exception:
         return None
+
+
+def slashed(value):
+    """A path as the guards MATCH it: "/" separators, on every platform.
+
+    The secret and write rules are regexes over path text, so a Windows payload is
+    respelled before any of them is asked. The respelling is published because the
+    refusal message quotes the matched spelling - a case that retypes the payload's
+    own separators asserts the wrong string on one of the two platforms, which is a
+    case that can only be red where nobody is looking.
+    """
+    return str(value).replace("\\", "/")
 
 
 def repo_root(data):
@@ -1280,7 +1305,17 @@ def plan_gate_mode(cfg, state):
 
     `enforce: true` restores always-on deny for anyone who wants it — as a decision
     someone made, rather than a default that surprises a stranger. It is the
-    legacy spelling of `planGate: "deny"`."""
+    legacy spelling of `planGate: "deny"`.
+
+    WHAT ELSE READS THIS, because the reach is the promise and it used to be
+    understated in every place it was written down. `require-plan.py` grades the
+    Edit/Write path here; `guard-secrets-read.py` grades its shell-write branch
+    here, so `sed -i src/x.ts` and `Edit src/x.ts` cannot disagree; and
+    `guard-bash-writes.py` grades its plan-coverage class here (F52) — it did not,
+    and an advisory that cried wolf in a repo which never opted in was how a
+    stranger met this plugin. Only the plan-coverage claim is graded. A guard whose
+    claim binds to evidence of its own — a secret path, a held lock, a journal file
+    — needs no tier to be right and reports at all of them."""
     try:
         knob = plan_gate_knob(cfg)
         if knob:
@@ -1411,7 +1446,113 @@ def ensure_local_dir(path):
 GATE_EVENTS_FILE = "plan-gate-events.jsonl"
 _GATE_EVENTS_MAX_BYTES = 512 * 1024
 _GATE_EVENTS_KEEP_LINES = 400
+# The keys stored AS GIVEN, and `file` means A PATH — the thing a gate's verdict
+# was about, spelled the way the consuming repo spells it. `command` is
+# deliberately NOT in this tuple and must stay out of it: the only route a
+# command has into a row is `_command_facts` below, which converts it. That is
+# what makes "no raw command text is written here" a property of the writer
+# rather than a habit every caller has to remember.
 _GATE_EVENT_KEYS = ("event", "file", "mode", "reason", "sessionId")
+
+
+def _command_facts(event):
+    """`event["command"]` as the JOURNAL spells a command it may not store — a
+    digest, a UTF-8 byte length and a program name. `{}` when there is no
+    command, and `{}` when the module owning that spelling cannot be loaded.
+
+    THE WRITER IS THE ONLY PLACE THIS CAN BE FIXED, which is why the conversion
+    is here and not at each call site. `guard-secrets-read` put the raw
+    `tool_input.command` into `file`, and a command naming a key file under a
+    home directory is not an ABSOLUTE path — so every reader's redactor resolved
+    it against the repo root, found it inside, and passed it through verbatim.
+    Each reader was correct and the leak survived all of them; a reader cannot
+    undo a field, it can only decline to paint one.
+
+    NOT A SECOND REDACTION RULE. `_journal_io.command_facts` is the one this
+    repo already has — 1.3.0 took this exact route for the journal's
+    `bash.unsandboxed` row, for this exact reason (CWE-532) — reached through
+    the door `journal_dir` already uses. The module is loaded ONLY when a
+    command is present, so an ordinary observe/warn row naming a file pays
+    nothing for it.
+
+    DROPPING THE FACTS IS THE FAIL DIRECTION, not falling back to the text. This
+    is a redactor, and `_journal_io`'s own note says why the two directions
+    differ: a gate that cannot resolve something must leave the gate where it
+    was, while a writer that cannot must not write. A row that says less costs a
+    reader a detail; a row that guesses costs them a published home directory.
+    """
+    cmd = (event or {}).get("command") if isinstance(event, dict) else None
+    if cmd is None or not str(cmd):
+        return {}
+    mod = _load_journal_lib()
+    if mod is None:
+        return {}
+    try:
+        return mod.command_facts(str(cmd))
+    except Exception:
+        return {}
+
+
+def redact_paths(root, text, values):
+    """`text` with each of `values` respelled by the journal's ONE path redactor,
+    or None when that cannot be done and `text` really does contain one.
+
+    THE FIELD BESIDE `file` HAD THE OPPOSITE TREATMENT (F153). `file` is put
+    through `_journal_io.repo_relative_or_token` by every reader that paints it;
+    `reason` — the same row, one cell over — was painted verbatim, and
+    `guard-secrets-read` interpolates the payload's path into the message whose
+    FIRST LINE becomes that cell. So a denial over a dotenv file under a home
+    directory published the absolute path in one cell while the cell next to it
+    correctly read the token.
+
+    ONE STRING, NOT TWO. The alternative repairs were to strip the path from the
+    terminal message (which is the one place a human wants it: it is their own
+    machine and their own tool call) or to author a separate recorded sentence,
+    which is "one fact, two homes" — the defect class this whole round is about.
+    Neither is taken here: the recorded reason is still the message's first line,
+    derived from it every time, with the exact substrings the caller says it
+    interpolated respelled. There is nothing to compare because nothing was
+    split.
+
+    NOT A SECOND REDACTION RULE, and not a pattern either. `_panel_write.
+    _redacted_feed_answer` already repairs its findings this way — `.replace(raw,
+    safe)` over the value it was GIVEN — and says why: "the leak is the path, not
+    the field it happens to sit under", and "a redactor that guessed at a
+    substring it was not given would be a second rule". Same technique, same
+    rule, applied one step earlier.
+
+    Both spellings of each value are respelled, because a caller may normalise
+    separators on the way into its message (`guard-secrets-read` does) while
+    handing the raw payload value here. Longest first, so a value that is a
+    prefix of another cannot eat it.
+
+    FAIL-CLOSED, which is why the miss is None rather than `text`. The direction
+    is `_command_facts`'s: a writer that cannot redact must not write. A caller
+    reads None as "omit the field" — an empty cell claims nothing, where the
+    unredacted sentence would claim a home directory. `text` comes back
+    unchanged when no value occurs in it, which is also what keeps an ordinary
+    fixed-sentence verdict from loading the journal module at all.
+    """
+    try:
+        raw = str(text or "")
+        wanted = []
+        for val in values or ():
+            if not isinstance(val, str) or not val.strip():
+                continue
+            for spelling in (val, val.replace("\\", "/")):
+                if spelling and spelling in raw and spelling not in wanted:
+                    wanted.append(spelling)
+        if not wanted:
+            return raw
+        mod = _load_journal_lib()
+        if mod is None:
+            return None
+        for spelling in sorted(wanted, key=len, reverse=True):
+            raw = raw.replace(spelling,
+                              mod.repo_relative_or_token(str(root), spelling))
+        return raw
+    except Exception:
+        return None
 
 
 def append_gate_event(logs_dir, event):
@@ -1429,6 +1570,13 @@ def append_gate_event(logs_dir, event):
     this runs inside blocking hooks, and a feed that cannot be written is
     silence, not an error.
 
+    ONE MORE INPUT KEY THAN THE ROW HAS OUTPUT KEYS, and the asymmetry is the
+    point: a caller may hand this a `command`, and what lands is
+    `_command_facts` — a digest, a byte length, a program name — never the text.
+    A verdict about a shell call and a verdict about a file are two different
+    claims, so they are two different fields; `file` stays a path, and a caller
+    with no path to name omits it rather than filling the cell with what it had.
+
     Self-trim: past ~512KB the newest ~400 lines are rewritten through
     `atomic_write_text` — a unique temp file in the feed's own directory, then
     os.replace — fail-open. This paragraph used to claim atomicity while the
@@ -1442,6 +1590,7 @@ def append_gate_event(logs_dir, event):
             val = (event or {}).get(key) if isinstance(event, dict) else None
             if val is not None:
                 row[key] = str(val)[:200]
+        row.update(_command_facts(event))
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, sort_keys=True, separators=(",", ":"),
                                 ensure_ascii=True) + "\n")

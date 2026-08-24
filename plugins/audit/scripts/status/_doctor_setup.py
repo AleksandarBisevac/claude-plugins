@@ -56,6 +56,7 @@ _output.install_path()
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 3 - imported, not loaded)
 import _status_facts  # noqa: E402  (rollup/readiness/gate facts, at layer 2)
+import _manifest_vocab  # noqa: E402  (PROPOSAL_STATUS: the manifest's own words, layer 1)
 import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
@@ -437,14 +438,31 @@ def check_manifest(rep, project, cfg):
         # Parked proposals are named here because a park-all /audit:init leaves
         # "0 phases, 0 tasks" - which reads as a dead plan unless the line says
         # the work is parked, not missing.
+        #
+        # THROUGH `_status_facts.is_parked_proposal`, which is the ONE place the
+        # word is decided, and not because sharing is tidy. This line carried the
+        # rule that was retired -- `proposed` AND a dict payload -- so a
+        # payload-less proposed entry was parked for /audit:status and not for
+        # /audit:doctor, and one manifest read by both surfaces answered "how
+        # many are waiting on a human" twice with two numbers. Requiring the
+        # payload counts what `/audit:propose materialize` can act on, which is a
+        # different question; a status surface reads the status as written.
         n_parked = sum(1 for x in (manifest.get("proposals") or [])
-                       if isinstance(x, dict) and x.get("status") == "proposed"
-                       and isinstance(x.get("payload"), dict))
+                       if isinstance(x, dict)
+                       and _status_facts.is_parked_proposal(x.get("status")))
         # Same rule as audit-status's legacy footer (F-E3): a status outside
         # the proposals vocabulary is still tracked work and must be counted.
+        #
+        # THROUGH `_manifest_vocab.PROPOSAL_STATUS`, and the copy this replaces was
+        # not merely redundant -- it was AUTHORITATIVE (F142). This line decides
+        # what counts as out-of-vocabulary, so a word added to the real vocabulary
+        # would have gone on being reported here as a legacy free-form entry, by
+        # the one check whose job is to tell a user their manifest is healthy.
+        # `audit-status`'s footer never had the problem: it reads `statusKnown`
+        # off `_proposals.proposal_rows`, which asks the same tuple.
         n_legacy = sum(1 for x in (manifest.get("proposals") or [])
-                       if isinstance(x, dict) and x.get("status")
-                       not in ("proposed", "materialized", "dropped"))
+                       if isinstance(x, dict)
+                       and x.get("status") not in _manifest_vocab.PROPOSAL_STATUS)
         rep.ok("manifest", "%s valid (%d phases, %d tasks%s%s)"
                % (manifest_rel, n_phases, n_tasks,
                   ", %d parked proposal(s)" % n_parked if n_parked else "",

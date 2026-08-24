@@ -17,7 +17,9 @@ status lives" problem one size down.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import io
 import shutil
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -55,19 +57,43 @@ def _manifest(ado=None, task_link=None, phase_link=None, bug_link=None):
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    def run(manifest, az=None):
-        """`az=None` means az is not on PATH; a string means it is."""
+    def probed(manifest, az=None, probe=None):
+        """`(rep, stderr_text)` - `run` plus the stream the notice goes to.
+
+        `az=None` means az is not on PATH; a string means it is. `probe` stands
+        in for `subprocess.run` on the branch that shells out, and it stays None
+        for every case about the OFFLINE half - those pass `az=None`, so nothing
+        here can reach the real Azure CLI. See this file's docstring, and
+        `test_audit_doctor`'s note about `az` writing into the operator's home
+        directory.
+
+        The stderr text is returned rather than the rows alone because F158's
+        progress notice is NOT a report row and cannot be one: every row is
+        collected and rendered after all the checks have run, which is after the
+        wait the notice is about.
+        """
         rep = base.Report()
-        saved = shutil.which
+        saved_which = shutil.which
+        saved_run = M.subprocess.run
+        saved_err = sys.stderr
+        sys.stderr = io.StringIO()
 
         def fake(name, *a, **k):
-            return az if name == "az" else saved(name, *a, **k)
+            return az if name == "az" else saved_which(name, *a, **k)
         shutil.which = fake
+        if probe is not None:
+            M.subprocess.run = probe
         try:
             M.check_ado(rep, "/nowhere", manifest)
+            return rep, sys.stderr.getvalue()
         finally:
-            shutil.which = saved
-        return rep
+            shutil.which = saved_which
+            M.subprocess.run = saved_run
+            sys.stderr = saved_err
+
+    def run(manifest, az=None):
+        """The rows alone, for the cases that are not about the probe."""
+        return probed(manifest, az=az)[0]
 
     rep = run(_manifest(ado=False))
     check("da1 no `meta.ado` is an ok line SAYING the connector is off, not "
@@ -173,6 +199,79 @@ def _cases(check):
           "azure-cli would send the reader back for a second round: %r"
           % (_fix,),
           "az extension add --name azure-devops" in _fix)
+
+    # --- the probe says what it is waiting for, and for how long (F158) ---
+    # `az` on PATH is the one place this read-only command waits on a
+    # third-party CLI. The bound was always there; what was missing was saying
+    # so, so these cases are about STDERR rather than about a row.
+    _ado_on = {"organization": "o", "project": "p"}
+
+    def _installed(*_a, **_k):
+        class _Out(object):
+            stdout = '[{"name": "azure-devops"}]'
+        return _Out()
+
+    def _times_out(*_a, **_k):
+        raise subprocess.TimeoutExpired(cmd=["az"], timeout=M.AZ_PROBE_SECONDS)
+
+    def _explodes(*_a, **_k):
+        raise OSError("no such file")
+
+    _r_ok, _err_ok = probed(_manifest(ado=_ado_on), az="/usr/bin/az",
+                            probe=_installed)
+    check("da15c the probe announces itself BEFORE it waits, and names the "
+          "bound it is waiting under - a bounded wait nobody is told about "
+          "reads as a hang for exactly as long as the bound: %r" % (_err_ok,),
+          "az extension list" in _err_ok
+          and "bound %ds" % M.AZ_PROBE_SECONDS in _err_ok)
+    check("da15d ...on STDERR, because `audit-doctor --json` prints one JSON "
+          "document on stdout and a `Report` row could not carry this anyway "
+          "- rows render after every check has run, which is after the wait: "
+          "%r" % (_err_ok,),
+          _err_ok.startswith("[audit]") and _err_ok.endswith("\n"))
+    check("da15e ...and the probe still reports what it found, so the notice "
+          "is an addition and not a replacement: %r"
+          % (_detail(_r_ok, "ado transport"),),
+          _levels(_r_ok, "ado transport") == ["OK"]
+          and "azure-devops extension present" in _detail(_r_ok,
+                                                          "ado transport"))
+    # THE OTHER-DIRECTION CASE, and it is the one that looks vacuous: it passes
+    # on the pre-fix code by construction, and it is the only case that fails if
+    # the notice becomes unconditional and every doctor run on a machine with no
+    # az announces a wait that never happens.
+    _r_none, _err_none = probed(_manifest(ado=_ado_on), az=None)
+    check("da15f no az means no wait, so there is nothing to announce - the "
+          "notice must not fire on the branch that never shells out: %r"
+          % (_err_none,),
+          _err_none == "")
+    _r_slow, _err_slow = probed(_manifest(ado=_ado_on), az="/usr/bin/az",
+                                probe=_times_out)
+    check("da15g the bound FIRING is its own row naming the number the reader "
+          "just waited out - a slow CLI and a broken one are different facts "
+          "wanting different next moves: %r" % (_detail(_r_slow,
+                                                        "ado transport"),),
+          _levels(_r_slow, "ado transport") == ["WARNING"]
+          and "within %ds" % M.AZ_PROBE_SECONDS in _detail(_r_slow,
+                                                           "ado transport"))
+    check("da15h ...and it stays a WARNING: a doctor whose diagnostic timed "
+          "out has learned nothing about the repo, which is not the same as "
+          "having found something broken in it",
+          not [r for r in _r_slow.rows if r["level"] == "FINDING"])
+    _r_bad, _err_bad = probed(_manifest(ado=_ado_on), az="/usr/bin/az",
+                              probe=_explodes)
+    check("da15i ...while any OTHER failure keeps the old wording and carries "
+          "the exception, rather than claiming a timeout that did not happen. "
+          "The two rows are different strings, which is what makes the report "
+          "tell them apart: %r" % (_detail(_r_bad, "ado transport"),),
+          "no such file" in _detail(_r_bad, "ado transport")
+          and "within %ds" % M.AZ_PROBE_SECONDS not in _detail(
+              _r_bad, "ado transport"))
+    check("da15j ...and the announced bound IS the bound the call is made "
+          "with - one constant, because a wait announced as one length and "
+          "cut at another is worse than an unannounced wait",
+          M.PROBE_NOTICE.count("%d") == 1
+          and M.announce_probe.__doc__ is not None
+          and "timeout=AZ_PROBE_SECONDS" in _harness.module_source(M))
 
     # --- what the links prove --------------------------------------------
     rep = run(_manifest(ado={"organization": "o", "project": "p"}))

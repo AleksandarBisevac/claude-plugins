@@ -275,7 +275,10 @@ The calendar's two copies happened to agree — the danger was that nothing said
 **row builders** were worse: the branch choosing between them was wrong in both surfaces at once,
 month falling in with year and all, so Month drew Week's picture with every cell multiplied, and
 two identical implementations of a defect read exactly like a settled decision. `isDark()` is
-still a pair (`panel/core.js` and `report/page-state.js`) and has no row yet.
+still a pair (`panel/core.js` and `report/page-state.js`), and it has a row now — capped at
+what exists rather than at zero, because the extraction is the change the row is waiting for.
+Its two copies are not even identical: the report guards `window.matchMedia` before calling it
+and the panel does not, which is the disagreement a register exists to surface.
 
 Rules going forward:
 

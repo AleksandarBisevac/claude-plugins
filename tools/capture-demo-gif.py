@@ -335,6 +335,20 @@ def main(argv):
         print("\nOK: demo GIF captured")
         return 0
     finally:
+        # F155, AND THE ANSWER HERE IS THE PLAIN CALL - said rather than left for
+        # the next reader to work out again. `build_fixture()` initialises a
+        # repository and never writes an object into one: no `add`, no `commit`,
+        # and the hooks the capture drives only read. A repository nothing was
+        # staged into holds no read-only loose object, so there is nothing for
+        # windows to refuse to unlink and the careful removal would be a demand
+        # with no failure behind it.
+        #
+        # THE PREMISE IS ENFORCED AND NOT MERELY RECORDED, which is the difference
+        # between this and an exemption written in prose:
+        # `_suite.unsafe_removal_violations()` asks for a staging or committing
+        # verb as well as an initialising one, so the day `build_fixture()` learns
+        # to stage or commit, this file becomes a finding and this comment stops
+        # being the thing anybody has to trust.
         shutil.rmtree(d, ignore_errors=True)
 
 

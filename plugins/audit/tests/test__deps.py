@@ -1009,43 +1009,122 @@ def _cases(check):
     # matching reads exactly like a clean tree - the failure this whole registry
     # exists to prevent, one level up.
     #
-    # Each needle is therefore pointed at a sample that MUST match and one that
-    # must not. Hand-kept, and a row with no sample fails rather than being
+    # Each needle is therefore pointed at samples that MUST match and samples
+    # that must not. Hand-kept, and a row with no sample fails rather than being
     # skipped, because a skipped row is the same silence.
+    #
+    # SEVERAL SPELLINGS PER ROW, WHICH IS F130. One sample per row was the shape
+    # this table had, and it was written by copying the offending line - the same
+    # line the needle was written from - so the proof was a value compared with
+    # itself. It said the needle could fire, and could not say the needle sees the
+    # convention typed any other way. `===1?'':'s'` passed it while a panel part
+    # spelled the identical ternary with spaces, and the calendar row passed it
+    # while naming five functions that had all been renamed. So every row carries
+    # the spellings an author would produce without consulting this table:
+    # whitespace, the other quote character, a different local name, an arrow
+    # instead of a declaration.
     _SAMPLES = {
-        "blob download": ("const u=URL.createObjectURL(b);", "revokeObjectURL(u)"),
-        "web storage": ("localStorage.setItem(k,v)", "storageSet(k,v)"),
-        "pluralisation": ("' change'+(n===1?'':'s')", "plural(n,'change')"),
+        "blob download": (
+            ("const u=URL.createObjectURL(b);",
+             "const u = window.URL.createObjectURL(b);",
+             "const {createObjectURL} = URL; const u = createObjectURL(b);"),
+            ("revokeObjectURL(u)", "downloadBlob(b, name)")),
+        "web storage": (
+            ("localStorage.setItem(k,v)",
+             "window.sessionStorage.getItem(k)",
+             "localStorage['audit-panel-tab']"),
+            ("storageSet(k,v)", "storageGet(k)")),
+        "pluralisation": (
+            ("' change'+(n===1?'':'s')",
+             "' change' + (n === 1 ? '' : 's')",
+             '" change" + (n !== 1 ? "s" : "")',
+             "' item'+(n>1?'s':'')"),
+            # The second miss is a REAL line from usage-view.js: the same
+            # comparison against one, branching to a sentence rather than to a
+            # suffix. It decides no plural and must not be convicted.
+            ("plural(n,'change')",
+             "(sr.binSize === 1 ? '' : ' Days are rolled up into ' + per)")),
         # The four that made this needle a regex: a space follows the paren in
         # `dParse(s) + 6 * DAY` too, so only what comes NEXT tells them apart.
-        "literal (s) pluralisation": ("' row(s) match everything'",
-                                      "dIso(dParse(s) + 6 * DAY)"),
-        "clipboard copy": ("navigator.clipboard.writeText(t)", "copyText(t)"),
-        "table header construction": ("el('thead',{},el('tr',{}))",
-                                      "tableHead(['a','b'])"),
-        "day <-> milliseconds": ("const d=ms/864e5;", "const d=ms/DAY_MS;"),
-        "save confirmation": ("toast('nothing to save - x')", "confirmSave({})"),
-        "theme token walk": ("const now=tVal(name,mode),was=b(name,mode);",
-                             "TMODES.forEach(mode=>{ drawCell(mode); });"),
-        "select option loop": ("if(cur===v)o.selected=true;",
-                               "fillOptions(sel, pairs, cur)"),
-        "heatmap calendar": ("function startOf(g, d) { return d; }",
-                             "periodStart(g, d)"),
-        # The miss sample is a CALL, because every surface still calls heatRows -
+        "literal (s) pluralisation": (
+            ("' row(s) match everything'", "'1 task(s)'", '"1 task(s)"'),
+            ("dIso(dParse(s) + 6 * DAY)", "hcode(s).join('')", "plural(n,'row')")),
+        "clipboard copy": (
+            ("navigator.clipboard.writeText(t)",
+             "navigator . clipboard . writeText(t)",
+             "const {clipboard} = navigator; clipboard.writeText(t)"),
+            ("copyText(t)", "document.execCommand('copy')")),
+        "table header construction": (
+            ("el('thead',{},el('tr',{}))", 'el("thead", {})', "el( 'thead' )"),
+            ("tableHead(['a','b'])", "el('tbody',{})")),
+        "day <-> milliseconds": (
+            ("const d=ms/864e5;", "const d = ms / 86400000;", "const d = ms / 864E5;",
+             "const d = ms / (24 * 60 * 60 * 1000);",
+             "const ms = d * 1000 * 60 * 60 * 24;"),
+            ("const d=ms/DAY_MS;", "const h = ms / 3600000;")),
+        "save confirmation": (
+            ("toast('nothing to save - x')", 'toast("nothing to save - x")'),
+            ("confirmSave({})", "toast('saved')")),
+        "theme token walk": (
+            ("const now=tVal(name,mode),was=b(name,mode);",
+             "let cur = tVal(tok, m), base = d(tok, m);"),
+            # The second miss is a single READ of a token's value, which every
+            # renderer does; what this row is about is the pair being compared.
+            ("TMODES.forEach(mode=>{ drawCell(mode); });",
+             "const v = tVal(name, mode);")),
+        "select option loop": (
+            ("if(cur===v)o.selected=true;",
+             "if (cur === v) opt.selected = true;",
+             "o.selected=!0;"),
+            ("fillOptions(sel, pairs, cur)", "if(o.selected===true)n++;")),
+        "heatmap calendar": (
+            ("function startOf(g, d) { return d; }",
+             "function periodStart(g, iso) { return iso; }",
+             "const weekdayIndex = (iso) => 0;"),
+            ("periodStart(g, d)", "cal.startOf('week')")),
+        # The miss samples are CALLS, because every surface still calls heatRows -
         # a needle that fired on the call would report the two readers this row
         # exists to permit.
-        "heatmap row shapes": ("function weekdayRows(lo, hi) { return []; }",
-                               "heatRows(g, win, days, hoursOf)"),
-        "caret restore": ("n.setSelectionRange(caret,caret)",
-                          "restoreCaret(n,caret,back)"),
-        # The miss sample carries BOTH halves this needle had to separate: the
+        "heatmap row shapes": (
+            ("function weekdayRows(lo, hi) { return []; }",
+             "const dateRows = (s, en) => [];"),
+            ("heatRows(g, win, days, hoursOf)", "rows.push(dateRows(a, b))")),
+        "caret restore": (
+            ("n.setSelectionRange(caret,caret)",
+             "n.setSelectionRange(pos, pos)",
+             "n.setSelectionRange( p , p )"),
+            # The second miss selects a SPAN rather than restoring a point, which
+            # is the job this row must leave alone.
+            ("restoreCaret(n,caret,back)", "n.setSelectionRange(0, n.value.length)")),
+        # The miss samples are the CALL, which every surface makes and which an
+        # extraction keeps, and the report's `prefersDark` - a real neighbouring
+        # line that asks the OS and is not this concern, so a needle anchored on
+        # `prefers-color-scheme` instead would have convicted it. That spelling
+        # was measured against this tree and found the same two files; the
+        # declaration was chosen over it because a surface may legitimately grow
+        # a second OS query (a listener that repaints on an OS switch) and a row
+        # that fires on innocent code is a row someone switches off.
+        "which mode the page is painting": (
+            ("const isDark=()=>root.getAttribute('data-theme')==='dark';",
+             "const isDark = () => { return t ? t === 'dark' : p(); };",
+             "function isDark() { return false; }",
+             "let darkNow = () => false;"),
+            ("if (isDark()) paintTheme();",
+             "const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;",
+             "root.setAttribute('data-theme', isDark() ? 'light' : 'dark');")),
+        # The miss samples carry BOTH halves this needle had to separate: the
         # repaired sort, which reads a rank the server computed, AND the innocent
-        # lookalike it must not fire on - a form control whose value for an
-        # absent tier is an empty string, which decides no order at all.
+        # lookalikes it must not fire on - a form control whose value for an
+        # absent tier is an empty string, and the Overview badge that renders only
+        # when a tier is present. Neither decides an order.
         "phase execution order": (
-            "ordered.sort((a,b)=>(a.priority==null?1:0)-(b.priority==null?1:0))",
-            "prio.value=ph.priority==null?'':String(ph.priority);"
-            "ordered.sort((a,b)=>a.porder-b.porder)"),
+            ("ordered.sort((a,b)=>(a.priority==null?1:0)-(b.priority==null?1:0))",
+             "ordered.sort((a,b)=>(a.priority === null ? 1 : 0) - 0)",
+             "const r = (p.priority || 0) - (q.priority || 0);",
+             "const r = (p.priority ?? 9) - 0;"),
+            ("prio.value=ph.priority==null?'':String(ph.priority);"
+             "ordered.sort((a,b)=>a.porder-b.porder)",
+             "p.priority!=null?el('span',{},'priority '+p.priority):null")),
     }
     _missing = [c for c, _h, _n, _a, _w in M.SHARED_CONCERNS if c not in _SAMPLES]
     check("sc12 every row has a sample its needle is checked against - a row "
@@ -1053,16 +1132,25 @@ def _cases(check):
           not _missing and len(_SAMPLES) == len(M.SHARED_CONCERNS))
     _blind, _noisy = [], []
     for _c, _h, _needle, _a, _w in M.SHARED_CONCERNS:
-        _hit, _miss = _SAMPLES.get(_c, ("", ""))
+        _hits, _misses = _SAMPLES.get(_c, ((), ()))
         _count = M._needle_counter(_needle)
-        if _count(_hit) < 1:
-            _blind.append((_c, _needle, _hit))
-        if _count(_miss) > 0:
-            _noisy.append((_c, _needle, _miss))
-    check("sc13 ...and each needle FIRES on the convention it names (blind: %r)"
+        _blind.extend((_c, _needle, s) for s in _hits if _count(s) < 1)
+        _noisy.extend((_c, _needle, s) for s in _misses if _count(s) > 0)
+    check("sc13 ...and each needle FIRES on EVERY spelling of the convention it "
+          "names, not merely on the one it was copied from (blind: %r)"
           % (_blind,), not _blind)
     check("sc14 ...and does NOT fire on the repaired form, or on the calls that "
           "merely look like it (noisy: %r)" % (_noisy,), not _noisy)
+    # sc13 is only as strong as the variety of what it is handed, and the version
+    # that let F130 through handed it one string per row. A row whose samples are
+    # all the same spelling proves the needle can fire and nothing else, so more
+    # than one spelling is the floor - and a needle with nothing it must decline
+    # cannot be shown to be narrower than "anything".
+    _thin = sorted(c for c, (h, m) in _SAMPLES.items() if len(h) < 2 or not m)
+    check("sc15 every row is proved against more than one spelling of what it "
+          "forbids, and against something it must decline - one sample per row "
+          "is what made the pluralisation needle look proven while it could not "
+          "see a space: %r" % (_thin,), not _thin)
     # It is a CAP, not an equality, and that is the entire difference between this
     # registry and the three save/discard counts retired in 9f73b22: those
     # required the duplication to stay, so removing a copy turned them red.
@@ -1108,6 +1196,46 @@ def _cases(check):
               and "z.js" in _caught[0][4])
     finally:
         shutil.rmtree(_slack_fixture, ignore_errors=True)
+
+    # F130, END TO END. sc13 proves the NEEDLE sees a space; this runs the LIVE
+    # lint over a tree containing the spelling that defeated it, because those are
+    # different claims and the registry only ever made the weaker one. The
+    # spelling here is the shape that sat in a panel part with this rule green
+    # over it: the identical ternary the needle was written from, typed the way an
+    # editor lays it out.
+    _f130 = tempfile.mkdtemp(prefix="audit-deps-f130-")
+    try:
+        os.makedirs(os.path.join(_f130, "panel"))
+        _f130_js = os.path.join(_f130, "panel", "hints.js")
+
+        def _f130_says(source):
+            """The concerns the lint reports over a one-file tree."""
+            with open(_f130_js, "w", encoding="utf-8") as fh:
+                fh.write(source)
+            return M.shared_concern_violations(_f130)
+
+        _spaced = _f130_says("const t = n + ' change' + (n === 1 ? '' : 's');\n")
+        check("sc16 a hand-rolled plural written WITH SPACES is caught (F130). "
+              "The needle was the offending line with its spaces removed, so "
+              "this exact source read green for as long as it existed: %r"
+              % (_spaced,),
+              [c for c, _h, _t, _a, _w in _spaced] == ["pluralisation"]
+              and "hints.js" in _spaced[0][4])
+        _tight = _f130_says("const t = n + ' change' + (n===1?'':'s');\n")
+        check("sc17 ...and so is the spelling the needle already saw - a "
+              "widening that traded one spelling for another would leave sc16 "
+              "green and the rule no better: %r" % (_tight,),
+              [c for c, _h, _t, _a, _w in _tight] == ["pluralisation"])
+        # THE SECOND DIRECTION, and it is the case that fails if the widening
+        # became "any comparison against one": the repaired call, and a real line
+        # from usage-view.js that compares against one and branches to a SENTENCE.
+        _clean = _f130_says("const t = plural(n, 'change');\n"
+                            "const u = (sr.binSize === 1 ? '' : ' Days rolled');\n")
+        check("sc18 ...while the repaired call and the sentence that merely "
+              "compares against one are left alone - the over-firing direction, "
+              "which is how a rule gets switched off: %r" % (_clean,), _clean == [])
+    finally:
+        shutil.rmtree(_f130, ignore_errors=True)
 
     # The comment scanner, pinned on the three constructs that actually appear in
     # `ui/` and that broke the two-regex version. Each is a real line from the
@@ -1736,6 +1864,149 @@ def _cases(check):
           "extension: %r" % (M.ui_navigability_violations(),),
           M.ui_navigability_violations() == [])
 
+    # --- panel routes and the controls that reach them (F110) --------------------
+    # THE JOIN NOTHING CHECKED. The route table is Python and the controls are
+    # JavaScript, so every half of `POST /api/gate-events/prune` was tested and the
+    # pairing was tested by nothing - the endpoint answered with a real verdict for
+    # a release while no control on the page named it. `pr1` is the live-tree claim
+    # and the rest are fixtures, because the failure modes worth pinning (a route
+    # named only in a comment, a dispatcher renamed, a declared reader that stopped
+    # reading) must not wait for the tree to grow one.
+    check("pr1 every route this panel serves is reached by a control in "
+          "scripts/ui/panel/, or by a row naming who else reads it: %r"
+          % (M.panel_route_violations(),),
+          M.panel_route_violations() == [])
+    _pr_live = M.panel_routes()
+    _pr_calls = M.panel_route_callers()
+    check("pr2 ...and that verdict is over real observations - %d route(s) read "
+          "off the dispatchers and %d request path(s) named by the controls. A "
+          "clean list means one thing at those numbers and something else "
+          "entirely at zero, which is what a renamed dispatcher would produce"
+          % (len(_pr_live), len(_pr_calls)),
+          len(_pr_live) >= 15 and len(_pr_calls) >= 10
+          and "POST /api/gate-events/prune" in _pr_live
+          and "/api/gate-events/prune" in _pr_calls)
+    check("pr3 the prune endpoint is reached from the Plan gate card and nowhere "
+          "else - the control F110 was about, named by the file that draws the "
+          "rows it prunes: %r" % (_pr_calls.get("/api/gate-events/prune"),),
+          _pr_calls.get("/api/gate-events/prune") == ["overview.js"])
+
+    _pr_tmp = tempfile.mkdtemp(prefix="audit-deps-routes-")
+    try:
+        _pr_head = ("def _make_handler(project, token):\n"
+                    "    class Handler(object):\n"
+                    "        def _helper(self):\n"
+                    "            path = self.path\n"
+                    # THE DECOY, and it is the reason this reads the AST rather
+                    # than grepping: a `path ==` comparison OUTSIDE the three
+                    # dispatchers is not a route, and no line-based scan can tell
+                    # the two apart.
+                    "            if path == \"/api/decoy\":\n"
+                    "                return 1\n"
+                    "        def do_GET(self):\n"
+                    "            path = self.path.split(\"?\", 1)[0]\n"
+                    "            if path == \"/\":\n"
+                    "                return\n"
+                    "            if path == \"/favicon.ico\":\n"
+                    "                return\n"
+                    "            if path == \"/api/thing\":\n"
+                    "                return\n")
+        _pr_tail = ("        def do_POST(self):\n"
+                    "            path = self.path.split(\"?\", 1)[0]\n"
+                    "            if path == \"/api/act\":\n"
+                    "                return\n"
+                    "    return Handler\n")
+        _pr_clean = os.path.join(_pr_tmp, "srv_clean.py")
+        _pr_orphan = os.path.join(_pr_tmp, "srv_orphan.py")
+        _pr_renamed = os.path.join(_pr_tmp, "srv_renamed.py")
+        with open(_pr_clean, "w", encoding="utf-8") as _fh:
+            _fh.write(_pr_head + _pr_tail)
+        with open(_pr_orphan, "w", encoding="utf-8") as _fh:
+            _fh.write(_pr_head + "            if path == \"/api/orphan\":\n"
+                                 "                return\n" + _pr_tail)
+        with open(_pr_renamed, "w", encoding="utf-8") as _fh:
+            _fh.write("def _make_handler(project, token):\n"
+                      "    class Handler(object):\n"
+                      "        def do_ANYTHING(self):\n"
+                      "            path = self.path\n"
+                      "            if path == \"/api/thing\":\n"
+                      "                return\n"
+                      "    return Handler\n")
+        _pr_js = os.path.join(_pr_tmp, "ui")
+        os.makedirs(_pr_js)
+        with open(os.path.join(_pr_js, "core.js"), "w", encoding="utf-8") as _fh:
+            # The commented-out CALL is the shape that matters: a control
+            # removed in a hurry leaves its own line behind, quotes and all, so
+            # the mention is a string literal in every way except that nothing
+            # runs it. `_code_only` is what tells those apart.
+            _fh.write("// const dead=api('GET','/api/orphan');  // the control\n"
+                      "// this replaced - left here while the endpoint stays.\n"
+                      "const a=api('GET','/api/thing');\n"
+                      "const b=api('POST','/api/act?force=1');\n")
+
+        check("pr4 a fixture whose every route is called reports nothing - and "
+              "the two the BROWSER asks for itself (the document, the tab icon) "
+              "are skipped structurally, because nothing on a page fetches the "
+              "page: %r" % (M.panel_route_violations(_pr_clean, _pr_js, (), ()),),
+              M.panel_route_violations(_pr_clean, _pr_js, (), ()) == [])
+        _pr_seen = M.panel_routes(_pr_orphan)
+        check("pr5 the table is read from the three dispatchers, so a `path ==` "
+              "comparison in a helper on the same class is NOT a route - the one "
+              "discrimination no grep over this file can make: %r" % (_pr_seen,),
+              _pr_seen == ["GET /", "GET /api/orphan", "GET /api/thing",
+                           "GET /favicon.ico", "POST /api/act"])
+        _pr_bad = M.panel_route_violations(_pr_orphan, _pr_js, (), ())
+        check("pr6 THE PAIR to pr4: one route added to the same fixture, named "
+              "in the controls only by a COMMENT, is reported - and it is the "
+              "only finding, so the comment is what was not counted rather than "
+              "the whole file: %r" % (_pr_bad,),
+              [r[0] for r in _pr_bad] == ["GET /api/orphan"]
+              and "no control" in _pr_bad[0][1])
+        _pr_call = M.panel_route_callers(_pr_js)
+        check("pr7 a caller that appends a query string still names its route - "
+              "without cutting at the `?` every such control in the tree would "
+              "read as calling nothing: %r" % (sorted(_pr_call),),
+              _pr_call.get("/api/act") == ["core.js"]
+              and _pr_call.get("/api/thing") == ["core.js"]
+              and "/api/orphan" not in _pr_call)
+        _pr_gone = M.panel_route_violations(_pr_renamed, _pr_js, (), ())
+        check("pr8 a renamed dispatcher empties the route table, and an empty "
+              "table is REPORTED rather than printed as a clean panel - the one "
+              "failure that would otherwise turn this whole lint into a no-op "
+              "while every case above went on passing: %r" % (_pr_gone,),
+              len(_pr_gone) == 1 and "no route found" in _pr_gone[0][1]
+              and "do_GET" in _pr_gone[0][1])
+
+        _pr_rot = M.panel_route_violations(_pr_clean, _pr_js, (
+            ("GET /api/thing", "LICENSE",
+             "a reader that names a real route, in a file of this repo that has "
+             "never mentioned it - which is what a row looks like once the "
+             "caller it points at has been rewritten."),
+            ("GET /api/vanished", "README.md",
+             "a row naming a route the fixture server does not serve, which is "
+             "what is left behind when an endpoint is deleted and the "
+             "declaration that described it is not."),
+            ("POST /api/act", "README.md", "too short to disagree with")), ())
+        # COUNTED per (route, problem) rather than keyed by route: the short
+        # reason and the file check both fire on the same row, and a dict would
+        # keep whichever landed last and hide the other.
+        _pr_says = [(r, p) for r, p in _pr_rot]
+        check("pr9 a declaration that has stopped being true is a finding in "
+              "both directions - a reader that no longer names its route, and a "
+              "row naming a route nothing serves - because a row nobody checks "
+              "reads exactly like a check: %r" % (_pr_says,),
+              any(r == "GET /api/thing" and "no longer names it" in p
+                  for r, p in _pr_says)
+              and any(r == "GET /api/vanished" and "no such route" in p
+                      for r, p in _pr_says))
+        check("pr10 ...and a reason too short to be one is refused, so this "
+              "table cannot become a column of labels: %r" % (_pr_says,),
+              any(r == "POST /api/act" and "is a label" in p
+                  for r, p in _pr_says))
+    finally:
+        shutil.rmtree(_pr_tmp, ignore_errors=True)
+
+
     # --- the scan memo: it must be USED, must not LIE, and must not be POISONED ---
     # A scan parses every `.py` under `scripts/` and grows the wrapper map to a
     # fixpoint, and the lints each ask for the whole graph because each judges the
@@ -1806,6 +2077,436 @@ def _cases(check):
         M._scan_edges_once = _real_once
         M._EDGES.clear()
         shutil.rmtree(_mem_tmp, ignore_errors=True)
+
+    # --- one config key, one interpretation ---------------------------------------
+    # THE DEFECT THIS RULE IS NAMED FOR IS RECONSTRUCTED, NOT DESCRIBED. Two
+    # helpers derived `meta.ado.types.bug` in two files for a release and
+    # disagreed about a PADDED name, so a bug row carried one type while the
+    # exemption written to recognise those rows looked for another. A rule that
+    # cannot see that case is the wrong rule, so it is a fixture below and not a
+    # sentence here.
+    def _ck_tree(files):
+        """A `scripts/`-shaped fixture directory holding `(name, source)`."""
+        root = tempfile.mkdtemp()
+        for _name, _body in files:
+            with open(os.path.join(root, _name), "w", encoding="utf-8") as _fh:
+                _fh.write(_body)
+        return root
+
+    _ck_reads, _ck_unreadable = M.config_key_reads()
+    _ck_shared = sorted(k for k, v in _ck_reads.items()
+                        if len(set(r[0] for r in v)) >= 2)
+    check("ck1 the real tree is scanned and the answer is not empty: %d "
+          "configuration key paths, %d of them read by two or more files, and "
+          "no file the scan could not parse (%r). Every case below asserting an "
+          "empty list is worthless without this floor, because a scan that "
+          "found nothing reports exactly what a clean tree reports"
+          % (len(_ck_reads), len(_ck_shared), _ck_unreadable),
+          not _ck_unreadable and len(_ck_shared) > 10
+          and "ado.types.bug" in _ck_reads and "usage.ledgerDir" in _ck_reads)
+    # `usage.ledgerDir` above is the one key path declared in BOTH schemas - the
+    # config file and the manifest's `meta.usage` - and the plan schema requires
+    # the two to match. Naming it here is what fails if the vocabulary stops
+    # reading one of the two documents.
+
+    _ck_live = M.config_read_violations()
+    check("ck2 ...and the real tree carries no divergence that is not declared, "
+          "which is what makes this rule shippable instead of an exemption "
+          "table written on the day it landed: %r" % (_ck_live,),
+          _ck_live == [])
+
+    _ck_dir = _ck_tree((
+        ("_ado_parent.py",
+         'def inventory(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    bug_wit = types.get("bug") or "Bug"\n'
+         '    return bug_wit\n'),
+        ("_ado_conventions.py",
+         'DEFAULT_BUG_TYPE = "Bug"\n'
+         '\n'
+         '\n'
+         'def unparented_types(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    named = types.get("bug")\n'
+         '    if isinstance(named, str) and named.strip():\n'
+         '        return (named.strip(),)\n'
+         '    return (DEFAULT_BUG_TYPE,)\n')))
+    _ck_none = os.path.join(_ck_dir, "no-hooks-here")
+    try:
+        _ck_div = M.config_divergences(_ck_dir, _ck_none)
+        _ck_hits = M.config_read_violations(_ck_dir, _ck_none, ())
+        check("ck3 THE DEFECT ITSELF: the two derivations of "
+              "`meta.ado.types.bug` as they stood before `bug_type` - one "
+              "trimming a padded name, the other taking it as typed - are a "
+              "finding that names both files and both answers. The trim in the "
+              "second file is on a LATER LINE than the read, so this is also "
+              "what fails if `_name_normalisers` stops looking past the "
+              "expression: %r" % (_ck_hits,),
+              len(_ck_hits) == 1 and _ck_hits[0][0] == "ado.types.bug"
+              and "_ado_conventions.py through strip" in _ck_hits[0][1]
+              and "_ado_parent.py as typed" in _ck_hits[0][1])
+        check("ck4 ...and the judgement under it is those two files disagreeing "
+              "about that one key and nothing else - the whole map is compared, "
+              "so a rule reporting every key in the fixture fails here rather "
+              "than passing on a message that happens to contain the words: %r"
+              % (_ck_div,),
+              sorted(_ck_div) == ["ado.types.bug"]
+              and _ck_div["ado.types.bug"] == {
+                  "_ado_conventions.py": frozenset(["strip"]),
+                  "_ado_parent.py": frozenset()})
+    finally:
+        shutil.rmtree(_ck_dir, ignore_errors=True)
+
+    # THE OTHER DIRECTION, and it is the case a review cuts for looking vacuous.
+    # ck3 fails if the rule never fires; these fail if it fires unconditionally,
+    # which is the second wrong implementation of every rule that adds a
+    # conditional and the one the natural case does not cover.
+    _ck_agree = _ck_tree((
+        ("_ado_parent.py",
+         'def bug_type(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    return (types.get("bug") or "Bug").strip()\n'),
+        ("_ado_conventions.py",
+         'def unparented_types(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    named = types.get("bug")\n'
+         '    if isinstance(named, str) and named.strip():\n'
+         '        return (named.strip(),)\n'
+         '    return ("Bug",)\n')))
+    _ck_agree_none = os.path.join(_ck_agree, "no-hooks-here")
+    try:
+        _ck_seen = M.config_key_reads(_ck_agree, _ck_agree_none)[0]
+        check("ck5 TWO READERS ARE NOT A VIOLATION. Both files read "
+              "`ado.types.bug` (%r) and both trim it - one on the expression, "
+              "one two lines down - so the rule stays quiet. Without this case "
+              "a rule that fired on every shared key would pass ck3 and ck4 and "
+              "convict the whole tree: %r"
+              % (sorted(set(r[0] for r in _ck_seen.get("ado.types.bug", ()))),
+                 M.config_read_violations(_ck_agree, _ck_agree_none, ())),
+              len(set(r[0] for r in _ck_seen.get("ado.types.bug", ()))) == 2
+              and M.config_divergences(_ck_agree, _ck_agree_none) == {}
+              and M.config_read_violations(_ck_agree, _ck_agree_none, ()) == [])
+    finally:
+        shutil.rmtree(_ck_agree, ignore_errors=True)
+
+    # THE MEASURED NARROWING, PINNED. Comparing the DEFAULT each reader supplies
+    # was tried over the real tree first and convicted most of the keys two
+    # modules share, every hit a validator beside a consumer. This is the
+    # fixture that keeps the narrowing from being quietly widened back: two
+    # readers, different fallbacks, identical text handling, no finding.
+    _ck_defaults = _ck_tree((
+        ("_config_rules.py",
+         'def check_journal(journal, findings):\n'
+         '    if journal.get("dir") is not None:\n'
+         '        findings.append("journal.dir")\n'
+         '    return findings\n'),
+        ("_journal_io.py",
+         'def journal_dir(journal):\n'
+         '    return journal.get("dir") or "audit-journal"\n')))
+    _ck_defaults_none = os.path.join(_ck_defaults, "no-hooks-here")
+    try:
+        _ck_dseen = M.config_key_reads(_ck_defaults, _ck_defaults_none)[0]
+        check("ck6 a validator that grades `journal.dir` and a consumer that "
+              "reads it with a fallback are doing different JOBS, not "
+              "disagreeing - both files are seen (%r) and neither is convicted, "
+              "because a rule that convicts the architecture arrives red: %r"
+              % (sorted(set(r[0] for r in _ck_dseen.get("journal.dir", ()))),
+                 M.config_read_violations(_ck_defaults, _ck_defaults_none, ())),
+              len(set(r[0] for r in _ck_dseen.get("journal.dir", ()))) == 2
+              and M.config_read_violations(_ck_defaults, _ck_defaults_none,
+                                           ()) == [])
+    finally:
+        shutil.rmtree(_ck_defaults, ignore_errors=True)
+
+    # THE ANCHOR. `detected["types"]["bug"]` is a BOARD's answer to a probe and
+    # not a configured value, and an unanchored scan reads it as
+    # `meta.ado.types.bug` and convicts `ado-connect.py`, which reads no
+    # configuration on that line at all. It was the first thing this scan
+    # reported before the anchor existed, so it is a case rather than a note.
+    _ck_anchor = _ck_tree((
+        ("ado-connect.py",
+         'def report(detected, lines):\n'
+         '    lines.append("types.bug -> %r" % (detected["types"]["bug"],))\n'
+         '    return lines\n'),
+        ("_ado_parent.py",
+         'def bug_type(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    return (types.get("bug") or "Bug").strip()\n')))
+    _ck_anchor_none = os.path.join(_ck_anchor, "no-hooks-here")
+    try:
+        _ck_aseen = M.config_key_reads(_ck_anchor, _ck_anchor_none)[0]
+        _ck_abug = sorted(set(r[0] for r in _ck_aseen.get("ado.types.bug", ())))
+        check("ck7 a path is anchored at a TOP-LEVEL schema property, so a "
+              "lookup through a local the schemas never name is not a "
+              "configuration read: only the file that reaches the key through "
+              "`ado` is recorded (%r), and no key path is attributed to "
+              "`ado-connect.py` at all (%r). This is what stops the rule "
+              "convicting a file that reads no configuration: %r"
+              % (_ck_abug,
+                 sorted(k for k, v in _ck_aseen.items()
+                        if any(r[0] == "ado-connect.py" for r in v)),
+                 M.config_read_violations(_ck_anchor, _ck_anchor_none, ())),
+              _ck_abug == ["_ado_parent.py"]
+              and not [k for k, v in _ck_aseen.items()
+                       if any(r[0] == "ado-connect.py" for r in v)]
+              and M.config_read_violations(_ck_anchor, _ck_anchor_none, ()) == [])
+    finally:
+        shutil.rmtree(_ck_anchor, ignore_errors=True)
+
+    # --- the declared table, in both directions ------------------------------
+    # A row is a decision with a reason, and the reason is CHECKED rather than
+    # read: it must name the modules it excuses, it must be long enough to be an
+    # argument, and its readers must still be exactly the ones that disagree.
+    # `pr9`/`pr10` ask the same of `PANEL_ROUTE_READERS`, for the same failure -
+    # a row nobody checks reads exactly like a check.
+    _ck_rows = _ck_tree((
+        ("_ado_parent.py",
+         'def inventory(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    return types.get("bug") or "Bug"\n'),
+        ("_ado_conventions.py",
+         'def unparented_types(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    named = types.get("bug")\n'
+         '    if isinstance(named, str) and named.strip():\n'
+         '        return (named.strip(),)\n'
+         '    return ("Bug",)\n')))
+    _ck_rows_none = os.path.join(_ck_rows, "no-hooks-here")
+    _CK_GOOD = ("_ado_parent.py and _ado_conventions.py are allowed to differ "
+                "here for a reason long enough to be an argument rather than a "
+                "label, which is the whole point of measuring it.")
+    try:
+        _ck_ok = M.config_read_violations(
+            _ck_rows, _ck_rows_none,
+            (("ado.types.bug", ("_ado_conventions.py", "_ado_parent.py"),
+              _CK_GOOD),))
+        check("ck8 a declared row silences the divergence it describes, and "
+              "only that one: %r" % (_ck_ok,),
+              _ck_ok == [])
+        _ck_dead = M.config_read_violations(
+            _ck_rows, _ck_rows_none,
+            (("ado.types.bug", ("_ado_conventions.py", "_ado_parent.py"),
+              _CK_GOOD),
+             ("journal.dir", ("_config_rules.py", "_journal_io.py"),
+              _CK_GOOD.replace("_ado_parent.py and _ado_conventions.py",
+                               "_config_rules.py and _journal_io.py"))))
+        check("ck9 ...and a row whose readers have come to agree, or which "
+              "names a key nothing reads apart any more, is a finding in its "
+              "own right - a table that only ever grows stops describing the "
+              "system: %r" % (_ck_dead,),
+              len(_ck_dead) == 1 and _ck_dead[0][0] == "journal.dir"
+              and "delete the row" in _ck_dead[0][1])
+        _ck_wrong = M.config_read_violations(
+            _ck_rows, _ck_rows_none,
+            (("ado.types.bug", ("_ado_parent.py", "_manifest_ado.py"),
+              _CK_GOOD.replace("_ado_conventions.py", "_manifest_ado.py")),))
+        check("ck10 a row recording readers that are not the ones disagreeing "
+              "is a finding: the divergence is real, the excuse is about other "
+              "modules, and a new reader therefore cannot slip under an "
+              "existing row: %r" % (_ck_wrong,),
+              len(_ck_wrong) == 1 and _ck_wrong[0][0] == "ado.types.bug"
+              and "_manifest_ado.py" in _ck_wrong[0][1]
+              and "_ado_conventions.py" in _ck_wrong[0][1])
+        _ck_short = M.config_read_violations(
+            _ck_rows, _ck_rows_none,
+            (("ado.types.bug", ("_ado_conventions.py", "_ado_parent.py"),
+              "validator vs consumer"),))
+        check("ck11 a reason too short to be one is refused, so this table "
+              "cannot become a column of labels: %r" % (_ck_short,),
+              any(k == "ado.types.bug" and "is a label" in p
+                  for k, p in _ck_short))
+        _ck_silent = M.config_read_violations(
+            _ck_rows, _ck_rows_none,
+            (("ado.types.bug", ("_ado_conventions.py", "_ado_parent.py"),
+              "A reason of ample length that argues at some considerable "
+              "breadth about configuration keys in general, while never once "
+              "naming either of the modules whose disagreement it excuses."),))
+        check("ck12 ...and a reason that never names the modules it excuses is "
+              "refused too - a long paragraph about something else is the "
+              "shape a copied row takes, and length alone cannot tell the two "
+              "apart: %r" % (_ck_silent,),
+              any(k == "ado.types.bug" and "different modules" in p
+                  for k, p in _ck_silent))
+    finally:
+        shutil.rmtree(_ck_rows, ignore_errors=True)
+
+    # --- the ways this rule could go quiet without going clean ----------------
+    _ck_blind = M.config_read_violations(vocabulary=(frozenset(), frozenset()))
+    check("ck13 an empty vocabulary is a FINDING, not a clean tree. A schema "
+          "that moved or a `properties` key that was renamed would otherwise "
+          "make every configuration read invisible and print what a tree with "
+          "no divergence prints: %r" % (_ck_blind,),
+          len(_ck_blind) == 1 and _ck_blind[0][0] == "<schema>"
+          and "checking nothing" in _ck_blind[0][1])
+
+    _ck_empty = _ck_tree((("quiet.py", "def f():\n    return 1\n"),))
+    _ck_broken = _ck_tree((
+        ("_ado_parent.py",
+         'def bug_type(ado):\n'
+         '    types = ado.get("types") or {}\n'
+         '    return (types.get("bug") or "Bug").strip()\n'),
+        ("torn.py", "def f(:\n")))
+    try:
+        _ck_nothing = M.config_read_violations(
+            _ck_empty, os.path.join(_ck_empty, "no-hooks-here"), ())
+        check("ck14 a tree this rule finds no configuration read in is reported "
+              "as blind rather than as clean - the same distinction "
+              "`shared_concern_violations` draws for a directory it could not "
+              "list: %r" % (_ck_nothing,),
+              len(_ck_nothing) == 1 and _ck_nothing[0][0] == "<tree>"
+              and "blind, not clean" in _ck_nothing[0][1])
+        _ck_torn = M.config_read_violations(
+            _ck_broken, os.path.join(_ck_broken, "no-hooks-here"), ())
+        check("ck15 ...and a file that will not parse is NAMED rather than "
+              "dropped from the scan, because a module nothing could read is "
+              "not a module with no configuration reads in it: %r" % (_ck_torn,),
+              [k for k, _p in _ck_torn] == ["torn.py"]
+              and "will not parse" in _ck_torn[0][1])
+    finally:
+        shutil.rmtree(_ck_empty, ignore_errors=True)
+        shutil.rmtree(_ck_broken, ignore_errors=True)
+
+    # THE LIVE ROW'S PREMISE, checked rather than read. ck2 pins that the table
+    # covers the tree; this asks whether the row's own claim still holds - the
+    # divergence it excuses must still be exactly the pair it records, and the
+    # key must still be one the schemas declare. `ld1` asks the same of
+    # `KNOWN_LAYER_DEBT`, and for the same reason: a written justification is
+    # the half of an allow-list that rots with nothing noticing.
+    _ck_real_div = M.config_divergences()
+    _ck_orphan = sorted(k for k, _r, _w in M.KNOWN_CONFIG_MIRRORS
+                        if k not in _ck_real_div)
+    _ck_pairs = sorted((k, tuple(sorted(r))) for k, r, _w in M.KNOWN_CONFIG_MIRRORS)
+    _ck_actual = sorted((k, tuple(sorted(v))) for k, v in _ck_real_div.items())
+    check("ck16 every row of KNOWN_CONFIG_MIRRORS still describes a real "
+          "divergence between exactly the modules it records, and the tree "
+          "carries no divergence no row describes - so the table may only "
+          "shrink, and it shrinks by being deleted rather than by going quiet. "
+          "declared=%r actual=%r orphaned=%r"
+          % (_ck_pairs, _ck_actual, _ck_orphan),
+          not _ck_orphan and _ck_pairs == _ck_actual
+          and all(isinstance(w, str) and len(w) >= M._MIN_MIRROR_REASON
+                  for _k, _r, w in M.KNOWN_CONFIG_MIRRORS))
+
+    # --- the merged-block accessor (F168) ------------------------------------
+    # THE READER THIS RULE COULD NOT SEE. `usage.pricingAsOf` reaches the panel
+    # through `usage_cfg(config)`, which leaves no key on the line for the walk to
+    # anchor at - so `panel/_panel_usage.py` was absent from that key's reader
+    # list ENTIRELY, and the read it was absent for is the one that served the
+    # value as typed while the flag in the same dict literal was decided on the
+    # trimmed one. A rule added to catch one key read two ways stayed quiet about
+    # the copy that shipped. ck17 is the REAL-TREE floor for the widening: every
+    # fixture below still passes with the accessor branch deleted, because a
+    # fixture proves the shape and not that this tree is still built out of it.
+    _ck_asof = sorted(set(r[0] for r in
+                          M.config_key_reads()[0].get("usage.pricingAsOf", ())))
+    check("ck17 the panel is among the modules the scan credits with reading "
+          "`usage.pricingAsOf`, which it only can be if a block arriving "
+          "through `<root>_cfg(...)` anchors the reads taken off it: %r"
+          % (_ck_asof,),
+          "panel/_panel_usage.py" in _ck_asof
+          and "report/_usage_load.py" in _ck_asof)
+
+    _ck_block = _ck_tree((
+        ("_panel_usage.py",
+         'def usage_state(project, cfg_mod, config):\n'
+         '    ucfg = cfg_mod.usage_cfg(config)\n'
+         '    return {"pricingAsOf": ucfg.get("pricingAsOf")}\n'),
+        ("_panel_paths.py",
+         'def declared_as_of(usage):\n'
+         '    return bool((usage.get("pricingAsOf") or "").strip())\n')))
+    _ck_block_none = os.path.join(_ck_block, "no-hooks-here")
+    try:
+        _ck_bhits = M.config_read_violations(_ck_block, _ck_block_none, ())
+        check("ck18 F168 ITSELF: one reader takes the block from "
+              "`usage_cfg(config)` and serves the value as typed, the other "
+              "reaches the same key through the config it was named for and "
+              "trims it - and that is now a finding naming both files and both "
+              "answers. The call is spelled through a module alias, which is "
+              "how this tree reaches the accessor: %r" % (_ck_bhits,),
+              len(_ck_bhits) == 1 and _ck_bhits[0][0] == "usage.pricingAsOf"
+              and "_panel_usage.py as typed" in _ck_bhits[0][1]
+              and "_panel_paths.py through strip" in _ck_bhits[0][1])
+        check("ck19 ...and the accessor's own module is credited with the key, "
+              "not merely convicted through it - the read has a PATH, which is "
+              "what a later reader of `config_key_reads` is served: %r"
+              % (M.config_key_reads(_ck_block, _ck_block_none)[0],),
+              sorted(set(r[0] for r in M.config_key_reads(
+                  _ck_block, _ck_block_none)[0]["usage.pricingAsOf"]))
+              == ["_panel_paths.py", "_panel_usage.py"])
+    finally:
+        shutil.rmtree(_ck_block, ignore_errors=True)
+
+    # THE SECOND DIRECTION, and the one a review cuts. ck18 fails if the accessor
+    # is never followed; this fails if following it convicts every reader that
+    # uses one - the shape where a widened rule arrives red and buys an exemption
+    # on the day it lands. Same pair, same accessor, the trim moved onto a local
+    # two lines below the read, which is where the repair actually put it.
+    _ck_bagree = _ck_tree((
+        ("_panel_usage.py",
+         'def usage_state(project, cfg_mod, config):\n'
+         '    ucfg = cfg_mod.usage_cfg(config)\n'
+         '    raw = ucfg.get("pricingAsOf")\n'
+         '    return {"pricingAsOf": raw.strip() if isinstance(raw, str)'
+         ' else None}\n'),
+        ("_panel_paths.py",
+         'def declared_as_of(usage):\n'
+         '    return bool((usage.get("pricingAsOf") or "").strip())\n')))
+    _ck_bagree_none = os.path.join(_ck_bagree, "no-hooks-here")
+    try:
+        _ck_bseen = M.config_key_reads(_ck_bagree, _ck_bagree_none)[0]
+        check("ck20 the repaired pair is SEEN and stays quiet: both files are "
+              "credited with `usage.pricingAsOf` (%r) and both are recorded as "
+              "trimming it, so the widening reports the disagreement and not "
+              "the accessor: %r"
+              % (sorted(set(r[0] for r in
+                            _ck_bseen.get("usage.pricingAsOf", ()))),
+                 M.config_read_violations(_ck_bagree, _ck_bagree_none, ())),
+              len(set(r[0] for r in _ck_bseen.get("usage.pricingAsOf", ()))) == 2
+              and M.config_divergences(_ck_bagree, _ck_bagree_none) == {}
+              and M.config_read_violations(_ck_bagree, _ck_bagree_none,
+                                           ()) == [])
+    finally:
+        shutil.rmtree(_ck_bagree, ignore_errors=True)
+
+    # THE NAME IS THE ATTRIBUTION, so the suffix alone cannot be the rule - the
+    # prefix has to be a TOP-LEVEL property, and `ck7`'s failure is what happens
+    # when an anchor admits anything. `_panel_cfg` is the harmless spelling (the
+    # real one, in `render-report.py`): its prefix is nowhere in the vocabulary,
+    # so a read off it is dropped either way. `pricing_cfg` is the spelling that
+    # can actually slip through, because `pricing` IS a property name - just a
+    # NESTED one - so dropping the top-level test invents the key path
+    # `pricing.currency`, which no schema anchors, in a file that configures
+    # nothing on that line. Both are in one fixture because the property asserted
+    # is about the file, not about either name.
+    _ck_named = _ck_tree((
+        ("render-report.py",
+         'def context(project, panel):\n'
+         '    ui = panel._panel_cfg(project)\n'
+         '    pricing = panel.pricing_cfg(project)\n'
+         '    return (ui.get("theme"), pricing.get("currency"))\n'),
+        ("_usage_load.py",
+         'def rates(usage):\n'
+         '    return (usage.get("currency") or "USD").strip()\n')))
+    _ck_named_none = os.path.join(_ck_named, "no-hooks-here")
+    try:
+        _ck_nseen = M.config_key_reads(_ck_named, _ck_named_none)[0]
+        _ck_norphan = sorted(k for k, v in _ck_nseen.items()
+                             if any(r[0] == "render-report.py" for r in v))
+        check("ck21 a `<name>_cfg` helper whose prefix is not a TOP-LEVEL "
+              "schema property is no anchor: `usage.currency` is credited only "
+              "to the file that reaches it through the block's own name (%r) "
+              "and no key path is attributed to `render-report.py` at all "
+              "(%r) - not `pricing.currency`, which is the path an accessor "
+              "test that took any property name would invent: %r"
+              % (sorted(set(r[0] for r in _ck_nseen.get("usage.currency", ()))),
+                 _ck_norphan,
+                 M.config_read_violations(_ck_named, _ck_named_none, ())),
+              sorted(set(r[0] for r in _ck_nseen.get("usage.currency", ())))
+              == ["_usage_load.py"]
+              and _ck_norphan == []
+              and M.config_read_violations(_ck_named, _ck_named_none, ()) == [])
+    finally:
+        shutil.rmtree(_ck_named, ignore_errors=True)
 
 
 def _selftest():

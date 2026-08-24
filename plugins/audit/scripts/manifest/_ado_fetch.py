@@ -348,6 +348,17 @@ def as_items(rows):
     `mapped` is deliberately NOT added here. It is the manifest status translated
     through `meta.ado.stateMap`, `commands/sync.md` owns that table, and a second
     copy would be a second answer - the same split `_ado_drift` already documents.
+
+    THIS SHAPE IS NOT CONFORMANCE-GRADEABLE AND MUST NOT BE FED TO THE GATE AS
+    IT STANDS (F106). It carries no top-level `type` and no top-level `parent` -
+    both live inside `fields` here - so `check-ado-item.py` refuses it, which is
+    the correct answer and used to be a false "DOES NOT CONFORM" instead. The
+    conversion is `_ado_conventions.as_gradable_item`, reached from this side by
+    `check-ado-item.py --fetched`; it is NOT done here, because a row this
+    function returns is what the drift and NO-ROW readers consume and they want
+    the board's own spelling. Nothing is added to this dict to make the gate
+    notice it either: a marker key would only teach ONE producer, and the guard
+    now keys off the missing `type` rather than off decoration.
     """
     out = []
     for row in (rows or []):

@@ -2,7 +2,7 @@
 """
 The cases for `status/_gate_feed.py` - the plan-gate feed's prune rule.
 
-TWO THINGS ARE PROVEN HERE, and they fail apart. The first is the
+THREE THINGS ARE PROVEN HERE, and they fail apart. The first is the
 CLASSIFICATION: which rows no longer belong, counted by class, with every
 positive paired against a negative over the SAME fixture so a case cannot be
 green because the whole file was dropped. The second is the BLAST RADIUS: the
@@ -10,6 +10,14 @@ one file this module may rewrite is derived from the writer's own `logs_dir()` +
 `GATE_EVENTS_FILE`, and `gf12` proves that by driving the REAL writer
 (`_config.append_gate_event`) and asserting the pruner names the file it just
 created - a hand-built path would agree with a hand-built expectation forever.
+
+The third is what the REFUSAL is allowed to say. It is a sentence that reaches
+`/audit:logs prune`'s stdout and an HTTP response the panel paints, and it named
+its directory resolved - a home directory on any real machine - with the panel's
+redactor keyed on a field a refusal leaves empty, so no reader could repair it.
+`gf14`/`gf14a` are the pair: the resolved spelling occurs 0 times AND the
+redacted one occurs once, because deleting the directory outright would satisfy
+half of that while leaving the sentence with no basis at all.
 
 Counts, never presence: a class that went from one to nought is the only thing
 that says a row was removed rather than merely absent, and a sibling file whose
@@ -30,6 +38,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _config                                     # noqa: E402
 import _gate_feed as M                             # noqa: E402
+import _usage_core                                 # noqa: E402  (the ONE ISO reader; `now` here is a stamp, not a clock)
 
 
 # --- fixtures -----------------------------------------------------------------
@@ -148,6 +157,77 @@ def _cases_body(check, tmp, outside):
           "is no basis for it: %r" % (no_ts,),
           no_ts["kept"] == 1 and no_ts["classes"][M.CLASS_AGED] == 0)
 
+    # ------------------------------------------------------- how far back
+    # F154. Rows an older release wrote can hold a whole shell command in `file`
+    # or an absolute path in `reason`; both writers are fixed, neither fix
+    # reaches disk, and nothing in a row records which release wrote it - so
+    # this module refuses to guess (gf5 pins that) and reports the one lever
+    # that does reach them instead. `oldestKeptDays` is what aims it.
+    #
+    # THE CLOCK IS A FIXTURE, not the machine's. `now` is passed, so the
+    # arithmetic is asserted rather than approximated, and a case written against
+    # the real clock could only ever assert "a big number".
+    _at = _usage_core.parse_ts("2026-08-22T00:00:00Z")
+    span = M.classify(str(tmp),
+                      [_row(ts="2026-08-20T00:00:00Z", event="warn",
+                            file="src/new.ts"),
+                       _row(ts="2026-08-12T00:00:00Z", event="deny",
+                            file="src/mid.ts")],
+                      now=_at)
+    check("gf10a `oldestKeptDays` is the age of the OLDEST kept row, not the "
+          "newest and not the last one read - the two rows are in newest-first "
+          "order here, which is the order a version taking the LAST stamp would "
+          "get right by accident: %r" % (span,),
+          span["oldestKeptDays"] == 10 and span["kept"] == 2)
+    # THE CASE THAT SEPARATES "kept" FROM "seen". A row aged out is removed, so
+    # it cannot be what the number reports - and a version measuring before the
+    # age `continue` reports its age instead, which would send a reader chasing
+    # history the prune had just cleared.
+    trimmed = M.classify(str(tmp),
+                         [_row(ts="1970-01-02T00:00:00Z", event="deny",
+                               file="src/ancient.ts"),
+                          _row(ts="2026-08-20T00:00:00Z", event="warn",
+                               file="src/new.ts")],
+                         older_than_days=30, now=_at)
+    check("gf10b ...and it is the oldest KEPT row: the row this prune aged out "
+          "does not set it, so the number describes the feed that is left "
+          "rather than the one that was read: %r" % (trimmed,),
+          trimmed["oldestKeptDays"] == 2 and trimmed["removed"] == 1
+          and trimmed["classes"][M.CLASS_AGED] == 1)
+    # Same rule for the classes that go on evidence rather than on age: a row
+    # removed for being out-of-repository is not part of what is left.
+    ignored = M.classify(str(tmp),
+                         [_row(ts="1970-01-02T00:00:00Z", event="deny",
+                               file=str(outside / "ancient.py")),
+                          _row(ts="2026-08-20T00:00:00Z", event="warn",
+                               file="src/new.ts")],
+                         now=_at)
+    check("gf10c ...and a row removed as out-of-repository does not set it "
+          "either - every removal class is 'no longer in the feed', so none of "
+          "them may describe what is: %r" % (ignored,),
+          ignored["oldestKeptDays"] == 2
+          and ignored["classes"][M.CLASS_OUTSIDE] == 1)
+    # None, NOT zero. gf9 keeps a row whose stamp cannot be read, so this shape
+    # really reaches here, and a zero would claim the feed starts today - which
+    # is the one answer that makes `--older-than` look pointless.
+    blind = M.classify(str(tmp),
+                       [_row(ts="whenever", event="deny", file="src/a.ts")],
+                       now=_at)
+    fresh = M.classify(str(tmp),
+                       [_row(ts="2026-08-22T00:00:00Z", event="deny",
+                             file="src/a.ts")],
+                       now=_at)
+    check("gf10d a kept row with no readable stamp leaves the number None, "
+          "while a row stamped TODAY makes it 0 - two different answers, and "
+          "collapsing them would tell a reader the feed starts today when no "
+          "row was willing to say: %r" % ((blind, fresh),),
+          blind["oldestKeptDays"] is None and blind["kept"] == 1
+          and fresh["oldestKeptDays"] == 0)
+    check("gf10e ...and an empty feed reports None as well, with both counts at "
+          "zero - there is no oldest row, which is not the same claim as a row "
+          "from today: %r" % (M.classify(str(tmp), []),),
+          M.classify(str(tmp), [])["oldestKeptDays"] is None)
+
     both = M.classify(str(tmp),
                       [_row(ts="1970-01-02T00:00:00Z", event="deny",
                             file=str(outside / "old-probe.py"))],
@@ -210,25 +290,61 @@ def _cases_body(check, tmp, outside):
         # instead of reporting this case red - which is how gf15 below and every
         # case after it would silently stop being run.
         reason = (res["findings"] or [""])[0]
-        # `str(slogs)` and not the literal `.claude/logs`: the reason renders a
-        # path the OS spelled, and on the windows runner that is `\.claude\logs`
-        # - a POSIX separator in the needle made this case red for the one thing
-        # it was not asking about. Naming the fixture's own directory is the
-        # STRONGER form as well as the portable one: the literal was satisfied by
-        # any project's logsDir, this is satisfied only by THIS one's.
         check("gf14 ...and the reason names logsDir and NOT the resolved "
               "destination, which occurs 0 times in it - a refusal that quotes "
               "the outside path has published the thing it refused to touch: "
               "%r" % (res["findings"],),
               reason.count(str(elsewhere)) == 0
-              and reason.count(str(outside)) == 0
-              and reason.count(str(slogs)) == 1)
+              and reason.count(str(outside)) == 0)
+        # F144. The needle used to be `str(slogs)` - the fixture's OWN logs
+        # directory, absolute - and the case asserted it appeared ONCE. That is
+        # the leak spelled as a requirement: on a real machine that string is the
+        # operator's home directory and user name, and it travels to
+        # `/audit:logs prune`'s stdout and to an HTTP response the panel paints.
+        # Both counts are asserted, because dropping the directory entirely would
+        # leave a refusal with no basis and would also pass a `count(...) == 0`.
+        #
+        # `.replace(os.sep, "/")` is NOT needed on the needle: the redactor's
+        # answer is posix on every platform (it ends in `.replace(os.sep, "/")`),
+        # which is what the windows runner reads differently from the raw OS
+        # spelling this case used to carry.
+        check("gf14a ...and it names logsDir REDACTED - repo-relative through the "
+              "journal's one redactor - so the absolute directory, which is a "
+              "home directory on a real machine, occurs 0 times: %r"
+              % (res["findings"],),
+              reason.count(".claude/logs") == 1
+              and reason.count(str(slogs)) == 0
+              and reason.count(str(sp)) == 0)
         check("gf15 ...and a refusal still carries both counts, at zero, "
               "beside every class - a caller must never tell 'nothing was "
               "removed' from 'the counts were not computed' by which keys "
               "exist: %r" % (res,),
               res["kept"] == 0 and res["removed"] == 0
               and sorted(res["classes"]) == sorted(M.CLASSES))
+
+    # The OTHER half of the same refusal sentence, and it is reached only when
+    # `os.path.realpath` itself fails - which no fixture here can force portably,
+    # so the redaction is judged on the value that would be interpolated. An
+    # OSError carries the filename in `str()` and NOT in `strerror`, so the two
+    # counts below are what tell the fixed sentence from the leaking one; a
+    # `strerror`-less exception falls to its class name, which is a basis without
+    # being a path.
+    # The filename is a SENTINEL, not this run's temp directory. `str(OSError)`
+    # embeds the filename through `repr()`, so a Windows path arrives inside the
+    # message with its separators DOUBLED and a count against the path as spelled
+    # finds nothing - a case that passes on one platform and is red on the other
+    # while claiming to be about redaction. A separator-free needle asks the
+    # question the case is actually for, identically on both.
+    _leaky_at = "/nowhere-real/.claude/logs"
+    _leaky = OSError(40, "Too many levels of symbolic links", _leaky_at)
+    check("gf14b ...and the exception in the OTHER refusal branch is quoted by "
+          "its REASON, not by str(), which spells the filename the sentence "
+          "just redacted one argument earlier: %r"
+          % ((M._why(_leaky), str(_leaky)),),
+          M._why(_leaky) == "Too many levels of symbolic links"
+          and str(_leaky).count(_leaky_at) == 1
+          and M._why(_leaky).count(_leaky_at) == 0
+          and M._why(ValueError("embedded null byte")) == "ValueError")
 
     # ------------------------------------------------------------------ prune
     pp = Path(tempfile.mkdtemp(prefix="gate-feed-prune-", dir=str(tmp)))

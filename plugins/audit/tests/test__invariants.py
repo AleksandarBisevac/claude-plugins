@@ -32,7 +32,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -273,7 +272,7 @@ class Repos(object):
     """
 
     def __init__(self):
-        self.tmp = tempfile.mkdtemp(prefix="audit-inv-")
+        self.tmp = _harness.fixture_root("audit-inv-")
         self.made = {}
 
     def get(self, **opts):

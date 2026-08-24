@@ -602,13 +602,36 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   if(!evs.length)gcard.append(el('div',{class:'mut'},
     'No gate events yet — verdicts land here as they happen.'));
   else{const tb=el('tbody');
+   // `e.file` ARRIVES REDACTED (F113): _panel_runstate._redacted_event puts every
+   // row through the journal's repo_relative_or_token before the payload leaves
+   // the server, so an out-of-repo row carries its class and not the operator's
+   // home directory. Do not reconstruct a fuller path here to make the cell more
+   // informative — the CLI refuses to echo exactly this string, and this card is
+   // the one docs/screenshots/panel-gate.png is a committed render of.
    evs.forEach(e=>tb.append(el('tr',{},
      el('td',{class:'mono'},String(e.ts||'').replace('T',' ').replace('Z','')),
      el('td',{},el('span',{class:'badge','data-ev':e.event||''},e.event||'')),
      el('td',{class:'mono'},e.file||''),
      el('td',{class:'d'},e.reason||''))));
+   // `reason`, NOT `why` (F170). The prune hint two elements down points at a
+   // column by name - "an absolute path in `reason`" - and its sibling in the
+   // same sentence, `file`, already lands on a heading. One of the two resolving
+   // and the other not is the reader's problem, and the pointer is the half that
+   // cannot move: those backticked words are the keys of the row as it sits in
+   // plan-gate-events.jsonl, `audit-logs._HISTORY` is where they are written, and
+   // a case pins the panel to that constant word for word. A heading is the
+   // cheaper end AND the correct one - `why` was the only question word in any
+   // table head on this page, against `what`, `field`, `capability`, `pattern`.
    gcard.append(el('div',{class:'regtblwrap'},el('table',{class:'regtbl'},
-     tableHead(['when','event','file','why']),tb)));}
+     tableHead(['when','event','file','reason']),tb)));}
+  // Appended UNCONDITIONALLY, including under "No gate events yet", and that is
+  // the one placement decision here that is not cosmetic: an empty table does
+  // NOT mean an empty file. `_panel_runstate` drops a row it cannot parse
+  // silently, so a feed made entirely of unreadable lines renders as no events
+  // at all — and unreadable rows are one of the three classes the prune exists
+  // to clear. Hiding the control on `!evs.length` would hide it in exactly the
+  // case that needs it.
+  gcard.append(gpControl());
   c.append(gcard);}
 
  // --- ready now ----------------------------------------------------------------
@@ -668,3 +691,175 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // The theme's card order, applied to what was just drawn.
  applyCardOrder('over');
  restoreCaret(keepQ?$('#ovq'):null,caret,keepBack);}
+
+// ---------- the Plan gate feed's prune control ----------
+// THE CARD IS WHERE THE ROWS ARE SHOWN, SO THE CONTROL BELONGS THERE — the words
+// are `_panel_write.prune_gate_events`'s own, and this is the half that shipped
+// late: `POST /api/gate-events/prune` answered with a real verdict while a sweep
+// of the page for any control mentioning it found nothing, so `/audit:logs prune`
+// was the only door onto a rule the panel already served (F110).
+//
+// NO RULE LIVES HERE. The endpoint classifies, refuses and rewrites; this asks it
+// twice — once with `dryRun` for the confirm dialog, once for real — which is the
+// shape the proposals tab already uses for `plan` then `materialize`. A
+// destructive button whose preview is its own effect is not a preview.
+//
+// THE COUNTS ARE THE WHOLE PAYLOAD THIS MAY RENDER. `audit-logs.py` refuses to
+// echo a removed row's path on the argument that printing it puts it back, the
+// server redacts the same cell out of the events table above (F113), and the
+// answer's `path` field names the feed FILE — an absolute path under whoever ran
+// it. None of the three is read here, and this card is the one
+// docs/screenshots/panel-gate.png is a committed render of.
+/** The feed's basename, as the confirm dialog's "what" column names it. */
+const GPFEED='plan-gate-events.jsonl';
+/**
+ * What a prune CANNOT decide — the half of `/audit:logs prune`'s answer the panel
+ * used to drop (F164).
+ *
+ * ONE FACT, ONE SENTENCE, WHEREVER IT IS RENDERED. `audit-logs.render` treats how
+ * far back the feed reaches and what a prune cannot decide as a single statement
+ * and prints them together: the `oldest` row is the number, `_HISTORY` is the
+ * note, and the note is what makes the number actionable. The panel rendered the
+ * number alone. Everything after the first sentence here is `audit-logs._HISTORY`
+ * word for word — a case reads that constant and fails if the two ever diverge —
+ * because a second wording of one fact is two facts as soon as one of them is
+ * edited.
+ *
+ * IT IS A PERSISTENT HINT AND NOT A TOAST. The toast hides itself in under three
+ * seconds and every other line on this page is one line long, so a paragraph
+ * there is a claim rendered where nobody can read it — the same defect one layer
+ * over. It belongs beside the age box because the sentence ends by naming age as
+ * the lever, and that box is the lever.
+ */
+const GPNOTE='Rows naming somewhere outside this repository, and rows nothing can '
+ +'parse, go either way. A row written by an older release can hold a whole shell '
+ +'command in its `file` cell, or an absolute path in `reason`. Both writers are '
+ +'fixed; nothing in a row records which release wrote it, so this prune keeps them '
+ +'rather than guessing at a shape and removing on the guess. Age is the lever that '
+ +'reaches them.';
+/**
+ * @type {{days: string, busy: boolean}} the control's own state.
+ *
+ * Hoisted out of the render for the reason OVF is: the 5s poll repaints Overview
+ * whenever a verdict lands, so a threshold held in the render closure would be
+ * wiped from under a reader mid-type by the very feed they are about to prune.
+ * `busy` keeps a second click out while the round trip is in flight — the dialog
+ * is modal, but the two API calls around it are not.
+ */
+const GPF={days:'',busy:false};
+/**
+ * How far back the feed still reaches, said so that "unknown" cannot read as zero.
+ *
+ * `oldestKeptDays` is the age of the OLDEST KEPT row and it is `null` — never 0 —
+ * when no kept row carries a readable stamp. Those are different answers and a
+ * reader acts on them differently: one can be aimed at with "older than" and the
+ * other cannot be aimed at all. So each gets its own clause and neither borrows
+ * the other's; a `||0` here would paint "nothing would say" as "the feed starts
+ * today", which is the substitution `_gate_feed.classify` refuses at the writing
+ * end for the same reason.
+ *
+ * `Number.isFinite` rather than `typeof x==='number'`, which admits NaN — and NaN
+ * is exactly the value `plural` truncates to 0, so the loose test would put the
+ * confusion back through the formatter.
+ * @param {number|null} days - the answer's `oldestKeptDays`
+ * @returns {string} a clause naming the reach, or naming that there is none
+ */
+const gpReach=days=>Number.isFinite(days)
+  ?'the feed reaches back '+plural(days,'day')
+  :'no kept row is stamped, so its reach is unknown';
+/**
+ * Ask for a preview, show it, and prune only if the reader says so.
+ *
+ * The dialog lists EVERY class the server returned, including the ones at zero,
+ * because `_gate_feed` returns them all on purpose: a count that appears only
+ * when it is non-zero cannot be told from a count nobody computed. Filtering the
+ * empty ones out here would put that back.
+ *
+ * The toast reports what the SECOND call did, not what the preview said, and
+ * names both when they differ. The gate keeps appending between the two calls —
+ * that race is stated in `_gate_feed.prune`'s own docstring — so the preview is a
+ * forecast and the outcome is the fact.
+ * @returns {Promise<void>} resolves once the outcome has been reported; a refusal
+ *   and a cancel both resolve, leaving the feed as it was
+ */
+async function gpPrune(){
+ if(GPF.busy)return;
+ const typed=GPF.days.trim();
+ const days=typedNumber(typed);
+ // Refused here AND at the endpoint, which is not the rule written twice: the
+ // server owns what a legal threshold is and says so in `findings`, and this
+ // exists so a half-typed box spends no round trip and gets its answer beside
+ // the control rather than as a finding about a request nobody meant to send.
+ if(typed&&(days===null||!Number.isInteger(days)||days<1)){
+  toast('Older than: a whole number of days, at least 1.','err');return;}
+ const body=days===null?{}:{olderThanDays:days};
+ GPF.busy=true;
+ try{
+  const dry=await api('POST','/api/gate-events/prune',
+    Object.assign({dryRun:true},body));
+  if(!dry.ok){toast((dry.findings||['the feed could not be read'])[0],'err');return;}
+  // Three different answers, and the first two are not failures. A feed nobody
+  // has written yet and a feed with nothing left to remove both end here, said
+  // apart, because `exists` is the field that separates them.
+  if(!dry.exists){toast('No gate events feed yet — nothing to clean up.');return;}
+  // THE CLAIM IS ABOUT THE RULE, NOT ABOUT THE FILE (F162). This used to report
+  // the FILE as clean, which is the one thing a prune cannot know — the wording
+  // is not quoted here, because a case downstream asserts it is gone from the
+  // page and a comment is source text like any other. A row an older release
+  // wrote can hold a whole shell command in `file`, and a command line resolves
+  // inside the repository exactly as a relative path does — the very property
+  // that made the leak invisible — so every class here reads it as belonging.
+  // `_gate_feed.classify` refuses to guess at that shape and says so; what the
+  // product owes instead is the reach, because age is the only lever that gets
+  // at those rows and this is the number it is aimed with. `/audit:logs prune`
+  // prints the same pair beside its own `oldest` row.
+  if(!dry.removed){
+   toast('No row breaks a rule this prune can check — '
+     +gpReach(dry.oldestKeptDays)+'.');
+   return;}
+  const cls=dry.classes||{};
+  const rows=[cfRow(GPFEED,'rows',dry.kept+dry.removed,dry.kept)].concat(
+    Object.keys(cls).map(k=>cfRow(GPFEED,k,cls[k],0)));
+  if(!await confirmChanges({
+    title:'Clean up the gate events feed',danger:1,lock:false,verb:'Prune',
+    rows:rows,
+    note:'counts only — a removed row’s path is never shown, here or by '
+     +'/audit:logs prune. This feed is telemetry, so the prune takes no manifest '
+     +'lock and writes no journal row.'}))return;
+  const done=await api('POST','/api/gate-events/prune',body);
+  if(!done.ok){toast((done.findings||['the prune was refused'])[0],'err');return;}
+  toast(plural(done.removed,'row')+' removed · '+plural(done.kept,'row')+' kept'
+    +(done.removed===dry.removed?'':' · the preview said '+dry.removed
+      +', and the gate appended in between'),'ok');
+  // The events tail rides /api/runstatus and is part of runStatusKey, so one
+  // tick repaints this card off the pruned file. Awaited rather than left to the
+  // interval: a reader who just pressed Prune should not watch the rows they
+  // removed for up to five more seconds.
+  await pollRunStatus();
+ }finally{GPF.busy=false;}}
+/**
+ * The control itself: an optional age threshold and the button that previews.
+ *
+ * The age box is empty by default and stays optional, which is `_gate_feed`'s
+ * decision rather than this form's — out-of-repository and unreadable rows are
+ * removed on evidence, while "old" is not the same claim as "does not belong", so
+ * there is no default number to prefill here and inventing one would be a
+ * threshold with no basis.
+ * @returns {HTMLDivElement} the row of controls, ready to append to the card
+ */
+function gpControl(){
+ const box=el('input',{type:'number',min:'1',step:'1',id:'gpdays',
+   value:GPF.days,placeholder:'optional',
+   'aria-label':'also remove gate events older than this many days'});
+ box.addEventListener('input',()=>{GPF.days=box.value;});
+ // GPNOTE comes LAST and takes its own flex line (`[data-gphint]`), so the button
+ // stays beside the box it acts on rather than floating against the middle of a
+ // paragraph, and the sentence gets the card's width instead of the gap between
+ // two controls. The unit stays welded to the box as its own short label.
+ return el('div',{class:'ovtools','data-gpctl':'1'},
+   el('span',{class:'filtlbl'},'older than:'),box,
+   el('span',{class:'mut small'},'days (optional)'),
+   el('button',{class:'btn small',type:'button','data-gpprune':'1',
+     title:'preview what a prune would remove, then confirm',
+     onclick:()=>gpPrune()},'Clean up…'),
+   el('span',{class:'mut small','data-gphint':'1'},GPNOTE));}

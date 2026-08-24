@@ -57,6 +57,7 @@ inconsistency to tidy.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import glob
 import json
 import os
 import sys
@@ -64,8 +65,15 @@ import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT, the anchor)
 from _output import safe_stdio                     # noqa: E402
 import _config as M                                # noqa: E402  (the module under test)
+
+
+def _text(path):
+    """The text of a file this suite READS rather than writes (f23's surfaces)."""
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
 
 
 # --- cases --------------------------------------------------------------------
@@ -154,7 +162,7 @@ def _cases(check):
           "otherwise be indistinguishable from `policy` never having shipped",
           M.policy_mod() is not None)
 
-    tmp = Path(tempfile.mkdtemp(prefix="config-selftest-"))
+    tmp = Path(_harness.fixture_root("config-selftest-"))
 
     # (a) absent config → pure defaults, no error marker
     cfg = M.load(tmp)
@@ -226,7 +234,6 @@ def _cases(check):
 
     # (f) manifest_state + plan_gate_mode — the evidence the plan gate grades on.
     import shutil
-    import tempfile
     tmp_f = Path(tempfile.mkdtemp(prefix="config-selftest-state-"))
     try:
         rel = "docs/audit/audit-plan.json"
@@ -367,6 +374,51 @@ def _cases(check):
               M.DEFAULTS.get("planGate", "MISSING") is None
               and M.plan_gate_knob({}) is None
               and M.plan_gate_knob({"planGate": "warn"}) == "warn")
+
+        # (f23) F52's CLAIM half. The grading transplant landed in
+        # `guard-bash-writes.py`, and every surface that describes the knob went on
+        # saying the plan gate was the only thing affected by it - so a reader who
+        # set `planGate: "observe"` could not discover that a second hook had gone
+        # quiet, and a reader who set `bashWriteCheck.enabled: true` could not
+        # discover that it was no longer the only key deciding. F52's own words:
+        # what erodes is a claim, not a mood.
+        #
+        # DERIVED FROM THE CALLERS, never a hand-written list - a hook that starts
+        # grading on this resolver without being documented is the exact regression,
+        # and a list typed here would go stale in the same way the prose did.
+        _graders = sorted(
+            os.path.basename(p)[:-3]
+            for p in glob.glob(os.path.join(_harness.HOOKS_DIR, "*.py"))
+            if os.path.basename(p) != "_config.py"
+            and "plan_gate_mode(" in _text(p))
+        # PER KEY, not over the schema file as a whole. Read against the whole text
+        # first, and reverting one of the two sentences left this green because the
+        # other still carried the names - a surface rotting behind a sibling that
+        # happens to be right, which is the shape "count, do not merely find" is
+        # about. Both keys publish the tier, so both owe the list.
+        _props = json.loads(_text(os.path.join(
+            _output.PLUGIN_ROOT, "schema", "audit-config.schema.json")))["properties"]
+        _published = dict(
+            [(k, _props[k]["description"]) for k in ("planGate", "enforce")]
+            + [("_config key reference", M.__doc__ or "")])
+        _gaps = dict(
+            (surface, [h for h in _graders if h not in text])
+            for surface, text in _published.items()
+            if [h for h in _graders if h not in text])
+        check("f23 every hook that grades on plan_gate_mode is NAMED on every "
+              "surface that publishes the tier - each key a user might read, and "
+              "this module's own reference for a reader of the code",
+              bool(_graders) and not _gaps,
+              "graders=%r gaps=%r" % (_graders, _gaps))
+        # THE SECOND DIRECTION, and it is here for the mutation that satisfies f23
+        # by naming every hook in the tree rather than the ones that grade. A hook
+        # whose claim binds to its own evidence must NOT be listed as graded, and
+        # `guard-edits` is the one to test with: it enforces the token-logging ban
+        # at every tier and appears in neither surface's grading sentence.
+        check("f24 ...and a hook that is not graded is not listed as one, so f23 "
+              "cannot be satisfied by naming everything",
+              "guard-edits" not in _graders,
+              "guard-edits reads plan_gate_mode now - f23's premise moved")
     finally:
         shutil.rmtree(tmp_f, ignore_errors=True)
 
@@ -456,6 +508,131 @@ def _cases(check):
         check("k3 garbage in, silence out - never a raise into a hook",
               M.append_gate_event(None, None) is None
               and M.append_gate_event(tmp_k / "logs2", "not a dict") is None)
+
+        # F136. A COMMAND IS NOT A FILE, and it used to be written as one:
+        # `guard-secrets-read` fell back to `tool_input.command` for `file`, and a
+        # command is not an ABSOLUTE path, so every reader's redactor resolved it
+        # against the repo root, called it inside, and painted it verbatim. The
+        # fixture is the shape that survived all of them - a home directory that
+        # is not at the start of the string.
+        _leaky_cmd = "cat /Users/probe-user/.ssh/id_rsa"
+        M.append_gate_event(kld, {"event": "deny", "command": _leaky_cmd,
+                                  "sessionId": "sess-cmd"})
+        _ktext = kpath.read_text(encoding="utf-8")
+        krow3 = json.loads(_ktext.splitlines()[-1])
+        # Counted over the WHOLE FILE and not over the row's keys: the leak is the
+        # bytes on disk, and a writer that stored the text under some other name
+        # would satisfy a key-set assertion while publishing exactly as much.
+        check("k3a a command is stored as facts and never as text - the command "
+              "occurs 0 times in the feed, and no key of the row carries it",
+              _ktext.count(_leaky_cmd) == 0
+              and _ktext.count("probe-user") == 0
+              and krow3.get("program") == "cat"
+              and krow3.get("commandBytes") == len(_leaky_cmd)
+              and "command" not in krow3 and "file" not in krow3,
+              repr(krow3))
+        # Against the journal's own function, the way j12 above asks `journal_dir`
+        # of `_journal_io` rather than of a second expression of the same rule. A
+        # digest recomputed in this file would agree with a second implementation
+        # in `_config` forever, which is the one thing this case must not do.
+        _jio = M._load_journal_lib()
+        check("k3b ...and the facts are the JOURNAL's, not a second digest "
+              "written here - same function, same three keys, same values",
+              _jio is not None
+              and {"program": krow3.get("program"),
+                   "commandBytes": krow3.get("commandBytes"),
+                   "commandSha256": krow3.get("commandSha256")}
+              == _jio.command_facts(_leaky_cmd),
+              repr(krow3))
+        # The failure direction, which is the opposite of every other fail-open in
+        # this file. A redactor that cannot run must write LESS, never fall back to
+        # the text it exists to keep out.
+        _saved_jl = dict(M._JOURNAL_LIB)
+        try:
+            M._JOURNAL_LIB["tried"] = True
+            M._JOURNAL_LIB["mod"] = None
+            M.append_gate_event(kld, {"event": "deny", "command": _leaky_cmd})
+        finally:
+            M._JOURNAL_LIB.clear()
+            M._JOURNAL_LIB.update(_saved_jl)
+        _ktext = kpath.read_text(encoding="utf-8")
+        krow4 = json.loads(_ktext.splitlines()[-1])
+        check("k3c with the redactor unreachable the command is DROPPED, not "
+              "fallen back to - the row says less, and the feed still holds the "
+              "text 0 times",
+              _ktext.count(_leaky_cmd) == 0
+              and set(krow4) == {"ts", "event"}, repr(krow4))
+
+        # F153. THE SAME CHANNEL ONE FIELD OVER. `file` is put through the
+        # journal's redactor by every reader that paints it; `reason` sat beside
+        # it unredacted while `guard-secrets-read` interpolated the payload's
+        # path into the message whose first line becomes that cell. These are the
+        # unit cases for the writer-side repair; the guard's own suite drives it
+        # end to end.
+        _away_dir = str(tmp_k / ".." / "config-gate-away")
+        _away_secret = _away_dir + "/deploy/.env"
+        _sent = "blocked (Rule #1): %s" % _away_secret
+        _red = M.redact_paths(str(tmp_k), _sent, (_away_secret,))
+        check("k3d a sentence naming a path outside the repo comes back with "
+              "the journal's token in its place - the path occurs 0 times, the "
+              "token once, and the sentence around it survives, which is what "
+              "says the value was respelled rather than the line discarded",
+              _red is not None and _red.count(_away_secret) == 0
+              and _red.count("<outside-repo>") == 1
+              and _red.count("blocked (Rule #1): ") == 1, repr(_red))
+        # THE SECOND-DIRECTION CASE, and it reads as vacuous on purpose: a
+        # redaction that always fires passes k3d and fails here. An in-repo path
+        # is what an operator acts on, so it has to survive.
+        _in = M.redact_paths(str(tmp_k), "blocked (Rule #1): apps/x/.env",
+                             ("apps/x/.env",))
+        check("k3e ...while a path INSIDE the repo is respelled to itself, so "
+              "the row an operator has to act on still names the file",
+              _in == "blocked (Rule #1): apps/x/.env", repr(_in))
+        # k3f: the caller normalises separators on its way into the message and
+        # hands the RAW payload value here, so the forward-slash twin is what has
+        # to be matched. Portable both ways: a literal backslash inside a
+        # directory name is legal on POSIX and is the ordinary separator on
+        # windows, and neither spelling resolves inside the fixture.
+        _raw_val = _away_dir + "\\weird" + "/x.env"
+        _slashed = _raw_val.replace("\\", "/")
+        _both = M.redact_paths(str(tmp_k), "blocked: %s" % _slashed,
+                               (_raw_val,))
+        check("k3f a value handed in one separator spelling still matches the "
+              "text's other one - the caller normalises on the way into its "
+              "message, and matching only the raw form would leak every windows "
+              "path",
+              _both is not None and _both.count(_slashed) == 0
+              and _both == "blocked: <outside-repo>", repr((_raw_val, _both)))
+        # k3g: longest first. Respelling the SHORTER value first leaves the
+        # longer one unmatchable and its tail standing - a directory name under a
+        # home directory is itself a person's project, so a half-redacted path is
+        # a leak and not a cosmetic defect.
+        _nested = M.redact_paths(str(tmp_k), "denied: %s" % _away_secret,
+                                 (_away_dir, _away_secret))
+        check("k3g a value that CONTAINS another is respelled whole - shortest "
+              "first would substitute the parent and leave the tail of the path "
+              "standing beside the token",
+              _nested == "denied: <outside-repo>", repr(_nested))
+        # The failure direction, the same one k3c pins for the command: a writer
+        # that cannot redact must write LESS. None is the caller's signal to omit
+        # the cell. And a sentence naming nothing never asks the module at all,
+        # which is what keeps a fixed-sentence verdict off this path entirely.
+        _saved_jl2 = dict(M._JOURNAL_LIB)
+        try:
+            M._JOURNAL_LIB["tried"] = True
+            M._JOURNAL_LIB["mod"] = None
+            _closed = M.redact_paths(str(tmp_k), _sent, (_away_secret,))
+            _nothing = M.redact_paths(str(tmp_k), "fixed sentence, no path",
+                                      (_away_secret,))
+        finally:
+            M._JOURNAL_LIB.clear()
+            M._JOURNAL_LIB.update(_saved_jl2)
+        check("k3h with the redactor unreachable a sentence that DOES name a "
+              "value returns None - fail-closed, so the caller omits the cell "
+              "instead of writing the path - while one that names none comes "
+              "back unchanged, never having asked for the module",
+              _closed is None and _nothing == "fixed sentence, no path",
+              repr((_closed, _nothing)))
         # The self-trim, deterministically: an already-oversized feed is
         # rewritten down to the newest ~400 lines by the very next append,
         # and that append's own row survives the rewrite as the newest line.
@@ -832,7 +1009,7 @@ def _cases(check):
     # answers with forward slashes on Windows, so nothing below compares a path
     # byte for byte; the assertions are on `watched`, on the basis clause, and on
     # `_same_dir`, which is the comparison the subject itself uses.
-    wroot = Path(tempfile.mkdtemp(prefix="cfg-tree-"))
+    wroot = Path(_harness.fixture_root("cfg-tree-"))
     try:
         wprim = wroot / "primary"
         (wprim / "pkg").mkdir(parents=True, exist_ok=True)
@@ -1183,6 +1360,22 @@ def _cases(check):
             else:
                 os.environ["TZ"] = _tz_saved
             _tzset()
+
+    # --- the spelling the guards MATCH on ---------------------------------------
+    # The secret and write rules are regexes over path text, so a Windows payload
+    # is respelled before any rule is asked - and the refusal message then quotes
+    # the RESPELLED path, not the one the payload carried. A case that retypes the
+    # payload's separators is asserting a string that only exists on one platform.
+    # The backslash is `chr(92)` rather than `os.sep`, so this asks the same
+    # question where `os.sep` is already "/".
+    _bs = chr(92)
+    _win = "C:" + _bs + "Users" + _bs + "x" + _bs + "app" + _bs + "cfg.json"
+    check("sl1 slashed() respells a Windows path the way every rule reads it, "
+          "and leaves a POSIX path alone: %r" % (M.slashed(_win),),
+          M.slashed(_win) == "C:/Users/x/app/cfg.json"
+          and _bs not in M.slashed(_win)
+          and M.slashed("a/b/c") == "a/b/c"
+          and M.slashed(7) == "7")
 
 
 def _selftest():

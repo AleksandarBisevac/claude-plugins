@@ -130,6 +130,24 @@ _JS_PARTS = (
     "panel/usage-cards.js",
     "panel/browse-dialog.js",
     "panel/usage-view.js",
+    # Late, and only because nothing reads it: it needs `api`, `el` and `$`
+    # (declared in `panel/core.js` above) and nothing reads it back, so it sits
+    # with the other self-starting page-level behaviour rather than among the
+    # view renderers boot routes.
+    #
+    # Those parentheses are typed on purpose, and this note is why. A comment
+    # here used to forbid them (F129): `tools/ui-tests/sandbox.mjs` read this
+    # list by matching the module's SOURCE with a non-greedy regex that ended at
+    # the first closing bracket, so one written here truncated the list and every
+    # browser suite loaded a page missing its tail -- which surfaced as a name
+    # that did not exist, never as a list that was cut short. That reader is
+    # gone: `sandbox.pyParts` IMPORTS this module and reads the attribute, so
+    # what the suites iterate is what the page is built from, and a comment
+    # cannot defeat the interpreter that compiled it. The punctuation above is
+    # the standing proof rather than a rule to obey -- put a source scan back and
+    # the panel suites lose this part and `panel/boot.js` at once, immediately,
+    # instead of waiting for the next author to type an ordinary sentence.
+    "panel/version-banner.js",
     "panel/boot.js",
 )
 

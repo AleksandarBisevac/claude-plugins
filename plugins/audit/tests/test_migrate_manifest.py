@@ -295,6 +295,49 @@ def _cases(check):
               _ecode == 1 and "nothing to" in _emsg, _emsg)
         check("ref4 ...and the file was not touched by the refusal",
               _mio.declared_layout(_mio.read_json(_ep)) == "single-file")
+        # ref5-ref8: two phase ids that sanitise to one shard FILENAME. This is
+        # data loss, not an odd name - the second body overwrites the first and
+        # `load_manifest` then returns the surviving phase twice, so the count of
+        # phases is unchanged and nothing looks wrong. `P/9` and `P_9` differ in
+        # exactly the character `_manifest_io._shard_name` collapses, so a fix
+        # that trimmed or lowercased instead would still fail here.
+        _cp = os.path.join(tmp, "shard-collision", "audit-plan.json")
+        os.makedirs(os.path.dirname(_cp))
+        _cman = _legacy()
+        _cman["phases"][0]["id"] = "P/9"
+        _cman["phases"][0]["tasks"][0]["id"] = "P/9.1"
+        _cman["phases"][1]["id"] = "P_9"
+        _cman["phases"][1]["tasks"][0]["id"] = "P_9.1"
+        _cman["phases"][1]["tasks"][0]["dependsOn"] = ["P/9.1"]
+        _cman["fileIndex"] = {"src/a.ts": ["P/9.1"], "src/b.ts": ["P_9.1"]}
+        _cman["bugs"][0]["taskId"] = "P_9.1"
+        with open(_cp, "w", encoding="utf-8") as fh:
+            json.dump(_cman, fh)
+        _ccode, _cmsg = M.migrate(_cp)
+        check("ref5 the forward direction REFUSES the pair, naming both ids and "
+              "the one file they would share",
+              _ccode == 1 and "P/9" in _cmsg and "P_9" in _cmsg
+              and "phases/P_9.json" in _cmsg, _cmsg)
+        check("ref6 ...and wrote nothing: no shard directory, and the source is "
+              "still the single file it was",
+              not os.path.exists(os.path.join(os.path.dirname(_cp), "phases"))
+              and _mio.layout_of(_mio.read_json(_cp)) == "single-file",
+              repr(sorted(os.listdir(os.path.dirname(_cp)))))
+        _dcode, _dmsg = M.migrate(_cp, dry_run=True)
+        check("ref7 --dry-run refuses it too. A preview that listed the shard "
+              "files and said nothing about two of them being one file would "
+              "send the reader into the real run to discover it",
+              _dcode == 1 and "P/9" in _dmsg, _dmsg)
+        _ncp = os.path.join(tmp, "no-collision", "audit-plan.json")
+        os.makedirs(os.path.dirname(_ncp))
+        with open(_ncp, "w", encoding="utf-8") as fh:
+            json.dump(_legacy(), fh)     # the SAME shape, ids left alone
+        _nccode, _ncmsg = M.migrate(_ncp)
+        check("ref8 SECOND-DIRECTION CASE: the same manifest with the ids left "
+              "alone migrates. A refusal that fired on every sharded write would "
+              "pass ref5-ref7 and stop the command working at all",
+              _nccode == 0 and _mio.layout_of(_mio.read_json(_ncp)) == "sharded",
+              _ncmsg)
 
         # --- --out leaves the source alone, in both directions ---------------
         _op = os.path.join(tmp, "out", "audit-plan.json")

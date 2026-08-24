@@ -49,10 +49,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
-
-_output.install_path()
-
 import _loader                # noqa: E402  (the one path-importlib loader for scripts/)
 import _panel_discovery       # noqa: E402  (skills/agents/MCP registry scan)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)

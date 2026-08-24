@@ -80,6 +80,35 @@ the script is only a caller:
 # printing where its cases went, and the runner requires that it NOT print the
 # contract — the net under `selftest_coverage()`'s string-literal blind spot.
 #
+# AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs
+# with its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second, and
+# `PYTHONPYCACHEPREFIX` at a third. The first two of those are the WATCHED pair and each
+# holds one file the suite did not put there; the cache prefix is redirected rather than
+# watched, because an interpreter that writes its shadow cache under the HOME it was
+# handed would otherwise convict a child for starting a grandchild.
+#
+# THE FILE IS RED IF ANYTHING WAS ADDED TO EITHER WATCHED DIRECTORY - or, the destructive
+# half a strays-only check would call spotless, if the planted file was DELETED or
+# REWRITTEN. Those are three different bugs with three different repairs, so they are
+# worded apart rather than collapsed into "dirty", and every finding names which of the
+# two channels it came from. Suites here leaked git fixtures into whatever directory
+# `TMPDIR` named for a long time and no gate could see it, because `TMPDIR` is normally
+# the system temp and a stray fixture there is somebody else's problem; the home channel
+# is what caught a suite shelling out to the real `az`, which writes into the operator's
+# home directory on any machine that has it - CI's ubuntu runner among them. HOME is
+# pinned under every name a home lookup reads, not just `HOME`: the `XDG_*` roots are set
+# independently on linux, `USERPROFILE` answers on windows, and git for windows joins
+# `HOMEDRIVE` with `HOMEPATH` by hand.
+#
+# AND THIS COMMENT IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the runner's
+# own constants - the families are tuples in that module, not a list restated here - and fails
+# when a family it pins is named by none of the documents that describe the isolation: this
+# block, CLAUDE.md's Tests section, and the docstring beside `_harness.fixture_root()`. It also
+# asks the runner about itself: a watched directory with no channel label beside it is dropped
+# by `zip` and reported about by nothing, and one with no planted file can report a stray but
+# never a deletion. The surface grew more than once and left each of the three behind by a
+# different amount, which is why there is a rule here instead of a fourth correction.
+#
 # `--jobs 1` gives the old serial shape for a bisect.
 python3 tools/sweep-selftests.py
 
@@ -101,7 +130,37 @@ python3 tools/gate-parity.py
 # a newcomer. The wall clock is NOT gated on purpose: it swings between repeats by
 # more than a deferred import is worth. `tools/bench-hooks.py` with no flag prints
 # that measurement for a human deciding whether an optimisation is worth doing.
+#
+# IT MEASURES EVERY INTERPRETER IT CAN FIND, and names the supported versions it
+# could not. A stdlib import graph is not the same on every version, and this plugin
+# promises a range rather than a point - so a verdict taken on one interpreter is
+# reported WITH that interpreter and never as a property of the product. Add one it
+# cannot find on its own with `--python <path>`.
 python3 tools/bench-hooks.py --gate
+
+# the half of the pipeline that WRITES to a repository, driven against a real one.
+# Nothing else in this list creates a git repository: every other gate works on a
+# manifest, a rendered document or a synthetic project directory, so the commit
+# trail, the branch resolution, `guard-history-rewrite`'s ancestry question, the
+# journal's git anchor and the ledger's author had never been executed by a gate at
+# all. Each of them reads git and each FAILS OPEN when git cannot be asked, so on a
+# fixture with no `.git` a check that could not run printed what a check that found
+# nothing prints - which is why the gap was invisible rather than tolerated.
+#
+# It is also where the hooks `ci.yml`'s own launcher steps leave out are driven
+# through `py-launch.sh`: journal-writes, meter-usage, guard-history-rewrite,
+# guard-bash-writes and detect-plan-skip. The first two are the ones the product's
+# adjectives rest on - "auditable" and "measurable" - and three of them belong here
+# rather than beside the others because their evidence IS a repository. `remind-tdd`
+# is wired in `ci.yml` beside the launcher steps instead, and belongs there rather than
+# here because it needs no repository: its evidence is its own state file, keyed by
+# session id. Every hook `hooks.json` registers is driven through the launcher by one
+# side or the other, so no hook is a remainder anywhere.
+#
+# What it does NOT cover is stated in its own output rather than implied: the
+# Claude-driven half - explorer, executor, reviewer - is not gateable, and a green
+# run says the machinery around the model works on a real repository.
+python3 tools/check-git-pipeline.py
 
 # the JavaScript unit tests. They ran only in CI for a long time, so a change under
 # scripts/ui/ could reach a push with none of the suites covering it having run.
@@ -126,6 +185,17 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 # the rendered artifacts, byte for byte against a fresh render, and the demo GIF's
 # preconditions — the plan gate still refusing an unplanned edit, in its own words.
 python3 tools/check-rendered-artifacts.py
+
+# ...and the half that tool deliberately does NOT make. docs/index.html is a byte
+# copy of the committed example report, so covering it with a row in that tool's
+# table would render one published page from two inputs; it is covered by a
+# COMPOSITION instead — fresh source (the line above) plus proven copy (this line).
+# CI has run this all along and this list did not name it, so the list was short by
+# exactly the step that catches a release follower. Neither half can now go quiet on
+# its own: `copy_check_missing()` in that same tool reads the files carrying this
+# cmp and goes red when one stops carrying it.
+cmp docs/index.html examples/acme-store/acme-store-audit.html
+
 python3 tools/capture-demo-gif.py --check
 
 # the same committed files, asked the other question: does any of them carry the
@@ -194,9 +264,14 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   `_output.install_path()`, which puts `scripts/` **and every subdirectory of it
   holding a `.py`** on the path — the root alone is not enough, because ~81
   module-level sibling imports need the directory the IMPORTED file sits in.
-  `path_preamble_violations()` counts occurrences (a doubled preamble is as wrong
-  as a missing one) and AST-checks that `install_path()` runs above the first
-  sibling import. `depth_sensitive_paths()` then forbids any other read of
+  `path_preamble_violations()` counts rather than testing membership (a doubled
+  preamble is as wrong as a missing one), and it counts the block's **lines** as
+  well as the block — each line of it must occur once. Lines rather than the block
+  alone is F94: a file that pastes the preamble once and then repeats only its
+  `import _output` / `install_path()` tail carries the text once and bootstraps
+  twice, so a count of the whole block read it as compliant. It also AST-checks
+  that `install_path()` runs above the first sibling import.
+  `depth_sensitive_paths()` then forbids any other read of
   `__file__` under `scripts/`, so the seventeen sites that used to derive a parent
   directory from their own location cannot come back. The directories to reach for
   instead are `_output.SCRIPTS_DIR` / `PLUGIN_ROOT` / `HOOKS_DIR` / `TESTS_DIR` /
@@ -295,11 +370,27 @@ One release = **one commit** that:
 2. finalizes the `CHANGELOG.md` section for that version,
 3. carries the annotated tag `v<version>` on that same commit.
 
-If the release changed the report, re-render the example with
-**`examples/report.sh`** rather than calling `render-report.py` directly: CI
-requires `docs/index.html` to be a byte copy of the committed example report,
-and the script makes that copy for you. The live demo went a month stale exactly
-once, by re-rendering and forgetting it.
+**The bump has followers, and they have an order.** The version is not only a
+number in one file. The README's `curl` pins name the tag a reader fetches from;
+every rendered report stamps the version that produced it; `docs/index.html` is a
+byte copy of one of those reports; every committed screenshot records the version
+it was shot at. Each of those is caught by a gate — which is precisely the problem,
+because for a long time the gates were the *only* place the list existed, and a
+releaser learned it by going red once per follower, after the fact. It is now
+printed, in the order the work must be done, with the command that refreshes each:
+
+```bash
+tools/verify.sh --release       # prints the followers in order, then checks each
+```
+
+Read that list before you start rather than after. Two orderings inside it are
+load-bearing and both have been got wrong: **capture follows the bump** — capturing
+first and bumping afterwards invalidates every picture and the shutter runs twice —
+and **`docs/index.html` follows the artifact it copies**. For that second one,
+re-render the example with **`examples/report.sh`** rather than calling
+`render-report.py` directly: CI requires `docs/index.html` to be a byte copy of the
+committed example report, and the script makes that copy for you. The live demo went
+a month stale exactly once, by re-rendering and forgetting it.
 
 Push with `git push origin main --follow-tags` **only after CI is green** on the
 commit. Verify that commit specifically — `gh workflow run ci.yml --ref main`

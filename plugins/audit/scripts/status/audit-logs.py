@@ -77,6 +77,24 @@ _NO_ECHO = ("Removed rows are counted by class and never echoed: the path in an\
             "  out-of-repository row is the thing being removed, and printing it "
             "would put it back.")
 
+# THE LIMIT OF WHAT A PRUNE CAN DECIDE, and it is printed rather than left for the
+# reader to discover (F154). Two writers were repaired in one release - a `file`
+# that held a whole shell command, and a `reason` that held an absolute path - and
+# neither repair reaches a row already on disk. Nothing in a row records which
+# release wrote it, so `_gate_feed.classify` refuses to guess and keeps them; that
+# makes "nothing to remove" a true statement about the RULE and a misleading one
+# about the FILE unless this is said beside it.
+#
+# Printed only where it can be true: with a feed present and rows kept. On a feed
+# nobody has written, or one this prune emptied, there is no history left for it to
+# be about, and a standing warning that fires on every outcome is one nobody reads.
+_HISTORY = ("A row written by an older release can hold a whole shell command in "
+            "its `file`\n  cell, or an absolute path in `reason`. Both writers "
+            "are fixed; nothing in a row\n  records which release wrote it, so "
+            "this prune keeps them rather than guessing at\n  a shape and "
+            "removing on the guess. Age is the lever that reaches them, and\n"
+            "  `oldest` above is what to aim it with.")
+
 # One label column for every row below, wide enough for the longest label a
 # --dry-run produces. A width computed from the labels actually emitted would be
 # a second thing to keep true for the sake of two characters.
@@ -107,6 +125,13 @@ def render(result, project):
     actually looked for. A number that shows up only when it is non-zero cannot be
     told from a number nobody computed, and this command exists precisely because
     somebody could not tell what the plugin had done to a file.
+
+    THE `oldest` ROW AND `_HISTORY` ARE ONE STATEMENT and print together, on a feed
+    that exists with rows left in it. The note is what the prune cannot decide; the
+    number is the basis that makes the note actionable, and a note with no number
+    would be advice nobody could aim. `None` there is rendered as "no kept row
+    carries a readable stamp" and never as a zero - the feed starting today and no
+    row being willing to say are different answers.
     """
     verb = "would remove" if result.get("dryRun") else "removed"
     kept_verb = "would keep" if result.get("dryRun") else "kept"
@@ -138,6 +163,14 @@ def render(result, project):
         lines.append((_LABEL + " %s")
                      % ("age", "not applied - pass --older-than DAYS to prune "
                                "by age as well"))
+    history = bool(result.get("exists")) and result.get("kept", 0) > 0
+    if history:
+        oldest = result.get("oldestKeptDays")
+        lines.append((_LABEL + " %s")
+                     % ("oldest", "no kept row carries a readable stamp"
+                        if oldest is None
+                        else "%d day(s) - the feed reaches back that far"
+                        % (oldest,)))
     lines.append("")
     if result.get("dryRun"):
         lines.append("  --dry-run: the feed was NOT rewritten.")
@@ -146,6 +179,8 @@ def render(result, project):
     else:
         lines.append("  Nothing to remove; the feed was not rewritten.")
     lines.append("  %s" % _NO_ECHO)
+    if history:
+        lines.append("  %s" % _HISTORY)
     return "\n".join(lines)
 
 

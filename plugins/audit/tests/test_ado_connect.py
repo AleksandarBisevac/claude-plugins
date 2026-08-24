@@ -26,20 +26,61 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (the anchor: PLUGIN_ROOT)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("ado-connect.py", modname="ado_connect")
 
+# The command file is the OTHER description of this script's contract, and nothing
+# used to compare them: it named the evidence block at a path `--json` does not
+# emit, and the first live run paid for that with a retry. `x1` reads this file and
+# indexes the real output with what it finds.
+DOC = os.path.join(_output.PLUGIN_ROOT, "commands", "sync.md")
+
 # az on PATH, the extension installed, one auth path, nothing ambiguous.
 READY = {"hasMcp": False, "hasAz": True, "extensions": ["azure-devops"],
          "signedInAs": "dev@example.com", "patEnvSet": False,
-         "storedOrgs": []}
+         "storedOrgs": [],
+         "extensionsSaw": "`az extension list` named 1 extension(s)"}
 NOW = "2026-08-24T09:00:00Z"
+
+
+def _completed(code, stdout="", stderr=""):
+    """One `az extension list` attempt, as `subprocess.run` really returns it.
+
+    The stdlib's own type rather than a stand-in: a fake shaped by the same person
+    who wrote the reader would encode that person's assumption about the shape,
+    which is the one thing this case cannot afford to get wrong.
+    """
+    return subprocess.CompletedProcess(["az", "extension", "list"], code,
+                                       stdout, stderr)
+
+
+def _plan_block(lines):
+    """The PLAN head line and every row under it, as the model must paste them.
+
+    Contiguity is the assertion: F95 was a confirm gate reaching a user with the
+    counts living only inside an option label, so what has to be pinned is that
+    the door emits ONE block to paste and not a set of facts to re-render.
+    """
+    out = []
+    for line in lines:
+        if line.startswith("PLAN - "):
+            out.append(line)
+        elif not out:
+            continue
+        elif line.strip().split(" ")[0] in ("set", "keep", "CHANGE", "restamp"):
+            out.append(line)
+        else:
+            break
+    return out
 
 
 def _row(wit, state):
@@ -274,6 +315,84 @@ def _cases(check):
           and sum(1 for line in again["lines"]
                   if "This command wrote nothing" in line) == 1)
 
+    # --- the PLAN is a block to paste, not facts to re-render (F95) ---
+    fresh_block = _plan_block(ok["lines"])
+    again_block = _plan_block(again["lines"])
+    check("r21 the plan is ONE contiguous block: the head line carries all three "
+          "counts, every row follows it immediately, and the restamp line closes "
+          "it - so the orchestrator pastes what it was handed instead of "
+          "composing counts into an option label, which is how a confirm gate "
+          "reached a real user with no plan above it: %r" % (fresh_block[:1],),
+          len(fresh_block) == len(ok["data"]["plan"]["rows"]) + 2
+          and " to set, " in fresh_block[0]
+          and " to change, " in fresh_block[0]
+          and " already right." in fresh_block[0]
+          and fresh_block[-1].strip().startswith("restamp "))
+    check("r21b ...and the block is whole when there is NOTHING to do - the "
+          "second direction, and the run where a reader most needs the shape "
+          "stated rather than inferred from a silence: %r" % (again_block[:1],),
+          len(again_block) == len(again["data"]["plan"]["rows"]) + 2
+          and again["data"]["plan"]["writes"] == 0
+          and " to set, " in again_block[0]
+          and again_block[-1].strip().startswith("restamp "))
+
+    # --- one message, two causes: what the door actually saw (F98) ---
+    #
+    # Every reading below comes from `extension_reading`, which takes no I/O -
+    # which is the only reason a machine with no `az` can reach the sandbox
+    # branch at all. That split IS the fix: the door could always see an exit
+    # code and a stderr, and threw both away into one summary.
+    absent = M.extension_reading(False, None, None)
+    refused = M.extension_reading(True, _completed(126, "", "az: Operation not "
+                                                           "permitted"), None)
+    blew_up = M.extension_reading(True, None,
+                                  OSError(1, "Operation not permitted"))
+    garbage = M.extension_reading(True, _completed(0, "not json at all"), None)
+    listed = M.extension_reading(
+        True, _completed(0, '[{"name": "azure-devops"}, {"name": "ssh"}]'), None)
+    readings = [absent, refused, blew_up, garbage, listed]
+    check("r22 every way the extension list can fail says something DIFFERENT - "
+          "counted, because `did not answer` covered a missing tool and a "
+          "sandbox refusal with one sentence and one remedy, and the operator "
+          "had to re-run the command by hand to tell them apart: %d/%d distinct"
+          % (len(set([r["saw"] for r in readings])), len(readings)),
+          len(set([r["saw"] for r in readings])) == len(readings))
+    check("r23 the SANDBOX reading carries the exit code and the stderr, which "
+          "is the evidence that sends a reader to the right place: %r"
+          % (refused["saw"],),
+          refused["names"] is None and "126" in refused["saw"]
+          and "Operation not permitted" in refused["saw"]
+          # ...and it must not claim the extension is missing, which is the
+          # wrong diagnosis the single message invited.
+          and "not installed" not in refused["saw"])
+    check("r24 ...and `names` stays None for every one of them, so the verdict "
+          "above still STOPS rather than reading a failed list as an empty one "
+          "- the basis got richer and the decision did not move: %r"
+          % ([r["names"] for r in readings],),
+          [r["names"] for r in readings[:-1]] == [None, None, None, None]
+          and listed["names"] == ["azure-devops", "ssh"])
+    saw_stop = _run({}, dict(READY, hasAz=True, extensions=None,
+                             extensionsSaw=refused["saw"]), None)
+    check("r25 the report prints that observation under the STOP, between the "
+          "rule's basis and the remedy - the rule can only say the list did not "
+          "answer, so the line that says WHY has to come from the observation",
+          saw_stop["code"] == 1
+          and sum(1 for line in saw_stop["lines"]
+                  if line.strip().startswith("saw:")) == 1
+          and sum(1 for line in saw_stop["lines"]
+                  if "126" in line) == 1)
+    blind = dict(READY, hasAz=True, extensions=None)
+    del blind["extensionsSaw"]
+    blind_stop = _run({}, blind, None)
+    check("r26 THE SECOND DIRECTION: a caller that made no such observation gets "
+          "NO `saw` line at all. A report that manufactured one would be this "
+          "same defect one layer along - a summary standing in for evidence",
+          blind_stop["code"] == 1
+          and sum(1 for line in blind_stop["lines"]
+                  if line.strip().startswith("saw:")) == 0
+          and sum(1 for line in blind_stop["lines"]
+                  if line.strip().startswith("basis:")) == 1)
+
     # --- the door itself: exit codes and unreadable input ---
     #
     # `observe()` IS PINNED TO A FIXTURE FOR EVERY `main()` CASE BELOW, and the
@@ -336,6 +455,34 @@ def _cases(check):
               "over names them",
               sum(1 for line in out.splitlines()
                   if "acme" in line and "web" in line) >= 1)
+        # --- the command file and this script are one contract (F97) ---
+        #
+        # Nothing compared them, and the drift was silent because the caller is a
+        # model that adapts: `commands/sync.md` told the reader to reach for the
+        # evidence block at `data.connection` while `--json` emits it at the top
+        # level. The repair is not a corrected sentence - it is a case that reads
+        # the doc's own spelling and indexes the real output with it.
+        with open(DOC, "r", encoding="utf-8") as fh:
+            doc = fh.read()
+        code, out = _main([m_ok, "--probe", probe_ok, "--json"])
+        emitted = json.loads(out)
+        reached = sorted(set(re.findall(r"`data\.([A-Za-z]+)`", doc)))
+        check("x1 every `data.<key>` path the command file spells for this "
+              "command is one `--json` does NOT emit, so a doc that grows a "
+              "wrapper the script never had fails here rather than on somebody's "
+              "first live run. Counted over the whole file, since one stale "
+              "spelling was all it took: %r" % (reached,),
+              code == 0 and reached == [] and "data" not in emitted)
+        check("x1b ...and the paired positive, so x1 cannot be green on a "
+              "document that describes no envelope at all: the file names "
+              "`connection` as the evidence block and that key really is at the "
+              "top level of what --json printed, alongside every other rung: %r"
+              % (sorted(emitted),),
+              doc.count("**`connection`**") == 1
+              and sorted(emitted) == ["auth", "connection", "plan", "probe",
+                                      "process", "transport"]
+              and emitted["connection"]["fetchedAt"] is not None)
+
         _seen_hints[:] = []
         M.main([m_ok, "--transport", "mcp"])
         M.main([m_ok])

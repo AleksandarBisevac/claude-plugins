@@ -7,9 +7,10 @@ UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
    bypassKeyword, case-insensitive). When present, it ARMS a single-use
    plan-first bypass for the current session (see `_arm_bypass`):
      - writes <stateDir>/plan-bypass-<session_id>.json
-       ({ts, reason, armedAtEpoch})
+       ({ts, armedAtEpoch})
      - appends a line to <logsDir>/plan-bypass.log and a `bypass.armed` line
-       to the gate events feed
+       to the gate events feed — the log line quotes the submitted prompt,
+       the feed row deliberately does not (see `_arm_bypass`)
      - tells the user (systemMessage) that the bypass is live and expires
        unused after 30 minutes (_config.BYPASS_TTL_SECONDS)
    The bypass is later CONSUMED (deleted — single-use) by require-plan.py's
@@ -82,6 +83,15 @@ def _gc_state(state_dir, now=None):
 
 
 # --- arming the bypass ----------------------------------------------------------
+# The `reason` a `bypass.armed` row carries, with the keyword substituted in. A
+# named constant rather than an inline literal for one reason: it is a PUBLISHED
+# sentence, the panel paints it and a case pins it byte for byte, so the sentence
+# and the pin have to be able to point at one definition. `%s` is the configured
+# `bypassKeyword`, which is a value the project chose and the panel's Settings
+# card already shows - unlike the prompt it appeared in.
+ARMED_REASON = "single-use bypass armed by keyword %s"
+
+
 def _arm_bypass(state_dir, logs_dir, session_id,
                 keyword, prompt):
     """Arm the single-use plan-first bypass; returns the systemMessage line.
@@ -90,7 +100,40 @@ def _arm_bypass(state_dir, logs_dir, session_id,
     carries `armedAtEpoch` as EPOCH SECONDS -- require-plan compares clock to
     clock, with no %z ISO parsing to get wrong -- and both the log line and the
     message say the bypass expires unused after 30 minutes, because a fact that
-    changes what the keyword means belongs where the keyword is used."""
+    changes what the keyword means belongs where the keyword is used.
+
+    THE PROMPT'S WORDING NEVER REACHES A SURFACE ANYTHING PAINTS (F161). The
+    keyword is typed in the same sentence as whatever the person was actually
+    doing, so a snippet of the prompt is a sentence a human wrote about their
+    own work - and this function used to copy one into the gate events feed,
+    whose `reason` the panel's gate card paints in its WHY column and a
+    committed screenshot renders. That is the last of this release's three
+    writers into that feed, and the one that differs in KIND: an interpolated
+    path could be respelled against a known root by `_config.redact_paths` and
+    a command could become a digest, but a sentence a person typed has no root
+    to resolve it against and no digest anyone could check against a candidate.
+    There is nothing to redact here, only something not to write.
+
+    WHAT THE ROW NEEDS IS THE FACT AND THE KEYWORD, which is what it now
+    carries: `bypass.armed`, the session, and the configured word that armed
+    it. That answers everything the card asks - who opted out, and by which
+    keyword - and it is the shape require-plan already writes one row later
+    ("single-use bypass consumed").
+
+    THE SLOT'S `reason` IS GONE RATHER THAN REWRITTEN, because nothing ever
+    read it: require-plan and `_panel_runstate` both open the slot for
+    `armedAtEpoch` alone. A field no reader wants, holding the one string that
+    must not be published, is 1.3.0's `actor.host` one directory over.
+
+    AND THE WORDING STAYS IN `plan-bypass.log`, WHICH IS NOT A LOOPHOLE. That
+    file is the only sink here nothing renders: the panel reads the events feed
+    beside it and never this log, no command prints it, and `ensure_local_dir`
+    drops a `*` .gitignore in the directory it lives in. Dropping the phrasing
+    from every sink would leave an operator with no way to see what they had
+    actually asked for when they armed an opt-out, and the systemMessage below
+    does not carry it either - it names the keyword, not the sentence. The
+    distinction that decides this is not which directory a file sits in but
+    whether anything paints it."""
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
     snippet = " ".join(prompt.split())[:120]
     minutes = _config.BYPASS_TTL_SECONDS // 60
@@ -98,13 +141,13 @@ def _arm_bypass(state_dir, logs_dir, session_id,
     _config.ensure_local_dir(logs_dir)
     with open(state_dir / ("plan-bypass-%s.json" % session_id), "w",
               encoding="utf-8") as fh:
-        json.dump({"ts": ts, "reason": snippet,
-                   "armedAtEpoch": int(time.time())}, fh)
+        json.dump({"ts": ts, "armedAtEpoch": int(time.time())}, fh)
     with open(logs_dir / "plan-bypass.log", "a", encoding="utf-8") as fh:
         fh.write("%s session=%s bypass armed (single-use, expires unused "
                  "after %d minutes): %s\n" % (ts, session_id, minutes, snippet))
     _config.append_gate_event(logs_dir, {
-        "event": "bypass.armed", "reason": snippet, "sessionId": session_id})
+        "event": "bypass.armed", "reason": ARMED_REASON % keyword,
+        "sessionId": session_id})
     return ("[audit] Plan-first bypass ARMED (%s): the next non-trivial edit "
             "in this session proceeds without a manifest task (single-use, "
             "logged, expires in %d minutes if unused)." % (keyword, minutes))

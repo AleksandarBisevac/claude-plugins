@@ -20,6 +20,56 @@
 let PROPBUSY = false;
 
 /**
+ * The phase a proposal reserves and how big it is, as ONE string.
+ *
+ * `_proposals.reserved_cell` in JavaScript, down to the parentheses and the dash.
+ * F93 was this cell existing in three spellings; the Python side was reduced to
+ * one and THIS FILE WAS THE FOURTH AND FIFTH — the card composed it with ` · `
+ * and the confirm dialog with ` (…)`, and the dialog hand-rolled the plural as
+ * `+(n===1?'':'s')`, which is the exact convention `shared/plural.js` exists to
+ * replace. Two spellings of one cell is how a reader comparing this tab against
+ * `/audit:propose list` decides the two are describing different work.
+ *
+ * `hasPayload` is the basis for the dash, never a truthy `phaseId` — Python's
+ * reason, and it holds here for the same one: a legacy free-form entry reserves
+ * nothing, and printing a phase id for it would invent one.
+ *
+ * @param {{hasPayload: boolean, phaseId: ?string, taskCount: number}} row - a
+ *   `_proposals.proposal_rows` row, or a plan step wearing the same three keys
+ * @returns {string} `P4 (3 tasks)`, or `-` when nothing is reserved
+ */
+function propReservedCell(row) {
+  if (!row.hasPayload) return '-';
+  return row.phaseId + ' (' + plural(row.taskCount, 'task') + ')';
+}
+
+/**
+ * The words on a proposal's status badge.
+ *
+ * THREE READINGS, NOT ONE, and that is `proposal_rows`' F93 decision arriving on
+ * this surface. `status` is normalised — a MISSING status reads as `proposed` —
+ * so a badge rendered from it alone tells a record with no status that it has
+ * one, and tells a record carrying `parked` that it says `Parked`, in the same
+ * type as the three words this plugin actually writes. `label()` cannot help:
+ * it title-cases whatever it is handed, so an invented status and a real one
+ * come out looking equally official.
+ *
+ * So the vocabulary is asked first, and where the answer is no, the value is
+ * named as the thing it is. Naming it is the whole point — `/audit:propose list`
+ * is the only other surface that shows these in full, and it makes the same
+ * distinction from the same two fields.
+ *
+ * @param {{status: string, statusRaw: ?string, statusKnown: boolean}} p - one
+ *   entry of STATE.proposals
+ * @returns {string} the badge's text
+ */
+function propStatusWords(p) {
+  if (p.statusKnown) return label(p.status);
+  if (p.statusRaw == null) return label(p.status) + ' (none recorded)';
+  return p.statusRaw + ' — not a status this plugin writes';
+}
+
+/**
  * Post one proposal action and hand back the server's answer.
  * @param {object} body - {action, id, ...}
  * @returns {Promise<object>} the endpoint's `{ok, ...}` payload
@@ -62,9 +112,15 @@ async function propMaterialize(p) {
       toast(refused[0].reason);
       return;
     }
+    // `hasPayload: true` is stated rather than read off the step, and it is not
+    // a fudge: `_proposals.refusal` refuses a proposal that carries no
+    // `payload.phase`, so no plan step can exist for one. The step's OWN phase
+    // id is what goes in, because a collision renames it and the write uses the
+    // new name — the proposal's id would name a phase that is not created.
     const rows = (plan.steps || []).map((s) => cfRow(
       s.id, 'materialize', 'parked',
-      s.phaseId + ' (' + s.taskCount + ' task' + (s.taskCount === 1 ? '' : 's') + ')'
+      propReservedCell({ hasPayload: true, phaseId: s.phaseId,
+        taskCount: s.taskCount })
         + (s.renamedFrom ? ' — renamed from ' + s.renamedFrom : '')));
     const pulled = (plan.pulledIn || []).filter((x) => x !== p.id);
     const note = pulled.length
@@ -143,11 +199,20 @@ function propCard(p) {
   const head = el('summary', {},
     el('span', { class: 'mono' }, p.id),
     el('span', { class: 'propname' }, p.name || ''),
-    el('span', { class: 'st', 'data-status': p.status }, label(p.status)),
-    el('span', { class: 'mut small' },
-      p.hasPayload
-        ? (p.phaseId + ' · ' + plural(tasks.length, 'task'))
-        : 'no payload — nothing to materialize'));
+    // The colour still comes off the NORMALISED status, because a value outside
+    // the vocabulary has no colour of its own and `--st` already falls back to
+    // muted. The WORDS come off the raw reading, and the extra hook is what lets
+    // a gate find such a record without parsing the sentence.
+    el('span', { class: 'st', 'data-status': p.status,
+      'data-propstatusknown': p.statusKnown ? null : '0' },
+    propStatusWords(p)),
+    // The cell, then — only when there is nothing to reserve — the reason. The
+    // dash is what `/audit:propose list` prints in the same column, so the two
+    // surfaces agree; the sentence beside it is the room a card has and a table
+    // column has not.
+    el('span', { class: 'mut small' }, propReservedCell(p)),
+    p.hasPayload ? null
+      : el('span', { class: 'mut small' }, 'no payload — nothing to materialize'));
 
   const facts = [];
   const fact = (k, v) => { if (v) facts.push(el('div', { class: 'pf' },
@@ -157,9 +222,11 @@ function propCard(p) {
   fact('note', p.technicalNote);
   if ((p.openQuestions || []).length) fact('open questions', p.openQuestions.join(' · '));
   // The two states that carry their own history, and the reason each one is worth
-  // keeping rather than deleting.
-  if (p.status === 'dropped') fact('why declined', p.notes);
-  if (p.status === 'materialized') fact('became', p.materializedAs);
+  // keeping rather than deleting. `statusRaw` here too, and not because the two
+  // readings differ for these two words - they cannot - but because ONE reading
+  // per surface is what stops the next branch being written off the other one.
+  if (p.statusRaw === 'dropped') fact('why declined', p.notes);
+  if (p.statusRaw === 'materialized') fact('became', p.materializedAs);
   if ((p.waitsOn || []).length) fact('waits on', p.waitsOn.join(', '));
 
   const body = [el('div', { class: 'propfacts' }, ...facts)];
@@ -176,8 +243,25 @@ function propCard(p) {
 
   // Actions follow the state, and a state with no action says so instead of
   // showing dead buttons.
+  //
+  // THE TWO CLOSED STATES ARE NAMED AND EVERYTHING ELSE IS OPEN, which is
+  // `_proposals.refusal`'s own shape rather than a rearrangement of it: that
+  // function refuses `materialized` and `dropped` and nothing else, so a record
+  // carrying no status, or one carrying a word this plugin never writes, is
+  // materializable and the CLI will materialize it. Written the other way round
+  // — `proposed` first, `else` last — the catch-all swallowed both of those and
+  // told them their phase was live and this record was its history trail, which
+  // is a claim about work that was never done. Reading `statusRaw` is what keeps
+  // the two ends together: `status` normalises an absent value to `proposed`,
+  // and a surface that classifies must not classify off an invention.
   const acts = el('div', { class: 'propacts' });
-  if (p.status === 'proposed') {
+  if (p.statusRaw === 'materialized') {
+    acts.append(el('span', { class: 'mut small' },
+      'materialized — its phase is live, and this record is the history trail'));
+  } else if (p.statusRaw === 'dropped') {
+    acts.append(el('button', { class: 'btn small', 'data-proprevive': p.id,
+      type: 'button', onclick: () => propRevive(p) }, 'Revive'));
+  } else {
     if (p.hasPayload) {
       acts.append(el('button', { class: 'btn primary small',
         'data-propmat': p.id, type: 'button',
@@ -192,12 +276,6 @@ function propCard(p) {
     offState(drop, true);
     reason.addEventListener('input', () => offState(drop, !reason.value.trim()));
     acts.append(reason, drop);
-  } else if (p.status === 'dropped') {
-    acts.append(el('button', { class: 'btn small', 'data-proprevive': p.id,
-      type: 'button', onclick: () => propRevive(p) }, 'Revive'));
-  } else {
-    acts.append(el('span', { class: 'mut small' },
-      'materialized — its phase is live, and this record is the history trail'));
   }
   body.push(acts);
   return el('details', { class: 'prop', 'data-prop': p.id,
@@ -242,11 +320,25 @@ function renderProposals() {
           + 'parks the ones you decline here, rather than discarding them.'));
     return;
   }
-  const parked = props.filter((p) => p.status === 'proposed').length;
+  // `statusRaw`, not `status`, and this is the same reading `/audit:status`'s
+  // PROPOSALS block makes — deliberately, because the two print the same number
+  // about the same manifest and were free to disagree. `status` normalises an
+  // absent value to `proposed`, so counting off it made a record with no status
+  // parked HERE and legacy THERE, and neither surface said which it had done.
+  // The out-of-vocabulary records are then counted and named rather than folded
+  // into either total: a record nothing can classify is the one a reader most
+  // needs to be told about, and it is still actionable below.
+  const parked = props.filter((p) => p.statusRaw === 'proposed').length;
+  const legacy = props.filter((p) => !p.statusKnown).length;
   card.append(el('p', { class: 'blurb' },
     plural(parked, 'proposal') + ' parked of ' + plural(props.length, 'record')
     + ' — materializing writes the phase and its tasks into the plan; dropping '
-    + 'keeps the record and its reason.'));
+    + 'keeps the record and its reason.'
+    + (legacy
+      ? ' ' + plural(legacy, 'record carries', 'records carry')
+        + ' a status this plugin does not write, counted as neither parked nor '
+        + 'history; each names its own on the badge.'
+      : '')));
   props.forEach((p) => {
     const one = propCard(p);
     if (keepOpen.has(p.id)) one.open = true;

@@ -207,6 +207,136 @@ def _cases(check):
           and "'data-bypass-armed':'1'" in _over_src
           and "'data-ev':e.event||''" in _over_src
           and "No gate events yet" in _over_src)
+    # gp: the control for the endpoint that card renders the rows of (F110).
+    # `POST /api/gate-events/prune` answered with a real verdict for a release
+    # while nothing on the page named it, and `commands/logs.md` said so out
+    # loud. These are SOURCE-PROPERTY pins and are labelled as such: that the
+    # control is on this card, that it previews before it writes, and that no
+    # path from the answer is rendered. Whether the button paints and the dialog
+    # opens is a browser claim and belongs to `tools/capture-screenshots.mjs`.
+    _gp_src = _over_src[_over_src.index("No gate events yet"):
+                        _over_src.index("c.append(gcard);}")]
+    check("gp: the prune control is built onto the Plan gate card itself, past "
+          "the empty-feed branch - an empty events table is not an empty file "
+          "(an unreadable row renders nowhere), so it is not a place to hide it",
+          "gpControl()" in _gp_src
+          and "'data-gpprune':'1'" in _over_src
+          and "'data-gpctl':'1'" in _over_src)
+    check("gp: it asks for a dry run and puts THAT answer in the confirm dialog "
+          "before it posts for real - two calls, the shape /api/proposal already "
+          "uses, because a destructive button whose preview is its own effect is "
+          "not a preview",
+          "Object.assign({dryRun:true},body)" in _over_src
+          and "confirmChanges({" in _over_src
+          and _over_src.index("dryRun:true")
+          < _over_src.index("const done=await api('POST','/api/gate-events/prune',body)"))
+    check("gp: the dialog lists EVERY class the server returned, zeros included "
+          "- `_gate_feed` returns them all on purpose, and a count that appears "
+          "only when it is non-zero cannot be told from one nobody computed",
+          "Object.keys(cls).map(k=>cfRow(GPFEED,k,cls[k],0))" in _over_src)
+    check("gp: and no path out of the answer reaches the page - `path` names the "
+          "feed file under whoever ran it, the removed rows' paths are the thing "
+          "being removed, and this card is what docs/screenshots/panel-gate.png "
+          "is a committed render of",
+          "dry.path" not in _over_src and "done.path" not in _over_src
+          and "const GPFEED='plan-gate-events.jsonl';" in M.UI_HTML
+          and "/" not in "plan-gate-events.jsonl")
+
+    # gp/F162: the outcome a prune reports when it removed nothing. SOURCE-PROPERTY
+    # pins, and labelled so rather than by the behaviour they stand near: what the
+    # toast SAYS is text, and whether a reader can read it is a browser claim.
+    # `gpReach` itself is a pure function at the panel's top level, which is the
+    # shape `tools/ui-tests/` executes - the case that CALLS it with null and with
+    # zero belongs there, and this suite cannot reach it.
+    _reach_at = M.UI_HTML.index("const gpReach=")
+    _reach = M.UI_HTML[_reach_at:M.UI_HTML.index("\n/**", _reach_at)]
+    check("gp: a prune that removed nothing no longer reports the FILE as clean - "
+          "that is the one thing a prune cannot know, because a whole shell "
+          "command in an old row's `file` resolves inside the repository exactly "
+          "as a relative path does and every class reads it as belonging",
+          "every row in the feed still belongs" not in M.UI_HTML
+          and "No row breaks a rule this prune can check" in _over_src)
+    check("gp: ...and the reach is rendered beside that claim, off the answer's "
+          "own `oldestKeptDays` and never re-derived here - age is the lever that "
+          "reaches those rows, a claim about what a prune cannot see owes the "
+          "number it is aimed with, and a clock on this side would be a second "
+          "answer to a question the endpoint has already answered",
+          "gpReach(dry.oldestKeptDays)" in _over_src
+          and _over_src.count("gpReach(") == 1
+          and "Date.now()" not in _reach and "new Date" not in _reach)
+    check("gp: and an unknown reach cannot paint as a present one - `null` there "
+          "means no kept row is stamped and never zero, so the arms share no "
+          "wording and only the numeric one reaches the count formatter",
+          "Number.isFinite(days)" in _reach
+          and _reach.count("plural(") == 1
+          and "||0" not in _reach and "|| 0" not in _reach
+          and "unknown" in _reach)
+
+    # gp/F164: the OTHER half of that statement. `audit-logs.render` prints the
+    # `oldest` row and `_HISTORY` together and says so in its own docstring - the
+    # note is what a prune cannot decide, the number is the basis that makes it
+    # actionable - and the panel rendered the number alone. SOURCE-PROPERTY pins
+    # across two files: that the panel says it at all, and that it says it in the
+    # CLI's words rather than in a second set. Whether a reader can READ the hint
+    # is a browser claim and belongs to `tools/capture-screenshots.mjs`.
+    _logs = _loader.load_script("audit-logs.py", modname="audit_logs")
+    _history = " ".join(_logs._HISTORY.split())
+    _gpnote_src = M.UI_HTML[M.UI_HTML.index("const GPNOTE="):]
+    _gpnote_src = _gpnote_src[:_gpnote_src.index("';") + 2]
+    _gpnote = "".join(re.findall(r"'([^']*)'", _gpnote_src))
+    # Derived FROM the CLI constant rather than retyped here: the panel carries
+    # `_HISTORY` up to the one clause that is the CLI's alone (`oldest` is a row in
+    # a terminal render and no part of this page). An empty expectation would make
+    # `endswith` vacuous, so it is required to be non-empty in the same expression.
+    _hist_cut = ", and `oldest` above is what to aim it with."
+    _hist_run = _history[:_history.index(_hist_cut)] if _hist_cut in _history else ""
+    check("gp/F164: the panel says what a prune CANNOT decide, in audit-logs.py's "
+          "own `_HISTORY` words and not a second wording of them - one fact "
+          "rendered twice in two spellings is two facts the day one is edited: %r"
+          % (_gpnote[-60:],),
+          bool(_hist_run) and _gpnote.endswith(_hist_run + ".")
+          and _gpnote.startswith("Rows naming somewhere outside this repository"))
+    check("gp/F164: ...and its home is the prune control's own persistent hint, "
+          "beside the age box the sentence ends by naming as the lever - never "
+          "the toast, which hides in under three seconds and carries one short "
+          "line, so a paragraph there is the same defect one layer over",
+          "el('span',{class:'mut small','data-gphint':'1'},GPNOTE)" in _over_src
+          and "GPNOTE" not in _over_src[
+              _over_src.index("async function gpPrune("):
+              _over_src.index("function gpControl(")]
+          and ".ovtools [data-gphint]{flex-basis:100%}" in M.UI_HTML)
+
+    # gp/F170: ONE FIELD, ONE WORD, ON ONE CARD. That hint points at columns BY
+    # NAME - the backticked words are the keys of a row as it sits in the feed file
+    # - and the table it points at is a few pixels above it. The heading said "why"
+    # where the sentence said `reason`, so one of the two names resolved on the page
+    # and the other dead-ended. The hint is the half that cannot move: those are the
+    # on-disk keys, and the panel carries `audit-logs._HISTORY` word for word (the
+    # case above). So the heading took the field's name, which was also the better
+    # heading - it was the only question word in any table head on this page.
+    # DERIVED FROM THE CLI CONSTANT, not from a list typed here: retyping the names
+    # would make this pass on the day someone reworded the hint and forgot the card.
+    # `_hist_run` and not `_history`, because the clause the panel drops names
+    # `oldest`, which is a row in a terminal render and no column of anything.
+    # Bounded at BOTH ends of the gate card, not just its start. An open-ended
+    # slice would find the next `tableHead(` anywhere below - Ready now has one -
+    # so a gate card that lost its table would go on comparing headings, against
+    # another card's. Closed, the missing endpoint raises instead, which is the
+    # outcome to want.
+    _gate_src = _over_src[_over_src.index("id:'gatecard'"):
+                          _over_src.index("c.append(gcard);")]
+    _gate_head = _gate_src[_gate_src.index("tableHead(["):]
+    _gate_cols = re.findall(r"'([^']*)'", _gate_head[:_gate_head.index("])")])
+    _hint_fields = re.findall(r"`([a-z]+)`", _hist_run)
+    check("gp/F170: every field the prune hint names in backticks is a heading "
+          "over the table beside it - a sentence that points at a column the "
+          "reader cannot find on the card is a broken pointer, and one field "
+          "spelled two ways is how it got broken: hint %r vs headings %r"
+          % (_hint_fields, _gate_cols),
+          # Both required non-empty: an empty needle set makes the subset test
+          # true of anything, which is this case's own silent-pass shape.
+          bool(_hint_fields) and bool(_gate_cols)
+          and set(_hint_fields) <= set(_gate_cols))
 
     check("and it drops the container it emptied, so no \"usage\": {} is left behind",
           "if(par&&typeof par==='object'&&!Object.keys(par).length)" in M.UI_HTML)
@@ -773,11 +903,40 @@ def _cases(check):
           "function appliedDiff(rows,res)" in M.UI_HTML
           and "res.applied.map(key)" in M.UI_HTML
           and "'data-cfdiff':'1'" in M.UI_HTML)
-    check("the save toast says how many landed and whether it was recorded",
-          "'Saved · '+plural(n,'change')+log" in M.UI_HTML
+    # F102. A local write finishes faster than a person can see it, so a save with
+    # no sentence after it is indistinguishable from a save that did nothing - and
+    # it was reported as the question "does it save instantly, I see no loader".
+    # The count was already here; `what` was spent only on the refusal sentence,
+    # so the success one never said WHERE anything landed.
+    #
+    # Labelled as a property of the SOURCE on purpose: whether a reader sees the
+    # sentence is the browser gates' question (capture-screenshots.mjs asserts
+    # /^Saved · 1 change/ on the composition and settings saves, which is also why
+    # the prefix has to stay at the FRONT of this string). What only source can
+    # check is that one function composes all three clauses, so a sixth save
+    # surface cannot report a different way.
+    check("the save toast is built in one place from the count, the file it "
+          "landed in, and whether it was recorded",
+          "'Saved · '+plural(n,'change')+' to '+what+log" in M.UI_HTML
           # "not logged" only when a journal exists and refused: reporting the
           # absence of a feature as a failed save would cry wolf on every write.
-          and "res.journaledWhy==='failed'?' · NOT logged':''" in M.UI_HTML)
+          and "res.journaledWhy==='failed'?' · NOT logged':''" in M.UI_HTML
+          # A caller's extra clause rides THAT toast. `toast` replaces the text of
+          # one element, so a second call a statement later is the first message
+          # deleted rather than a second message shown.
+          and "+(hint?' — '+hint:''),diff?'warn':'ok');" in M.UI_HTML)
+    # ...and the card that proved it: the theme save called showWriteResult and
+    # then toasted again, so the only save surface with something more to say was
+    # the one whose result was never on screen. The window is the theme Save
+    # handler's tail; an endpoint that stops resolving RAISES here, which is the
+    # outcome to want - a slice that silently re-anchors would go on passing about
+    # a different span.
+    _thtail = M.UI_HTML[M.UI_HTML.index("showWriteResult('#look',res,rows,'the theme'"):]
+    _thtail = _thtail[:_thtail.index("'Save theme')")]
+    check("a save reports exactly once - the theme card hands its extra clause "
+          "to the same toast instead of firing a second one",
+          "toast(" not in _thtail
+          and "'reload to see the report wear it too'" in _thtail)
     check("a save re-reads from disk afterwards, and the filter survives it",
           "STATE=await api('GET','/api/state');renderComp();renderOver();" in M.UI_HTML)
     check("an unparseable buildCommands box cannot be confirmed as something else",
@@ -1118,7 +1277,7 @@ def _cases(check):
           and "el('td',{class:'phprio'},prio)" in _comp_prow
           # A task has no parent lever, so its cell is EMPTY - and empty is the
           # answer, not a missing cell.
-          and "el('td',{class:'phparent'},ap,apId,apNote)" in _comp_prow
+          and "el('td',{class:'phparent'},ap,apId,apBoard,apNote)" in _comp_prow
           and "el('td',{class:'phparent'})" in _comp_trow,
           repr((_comp_prow.count("el('td',"), _comp_trow.count("el('td',"),
                 _comp_head_cols)))
@@ -1207,6 +1366,73 @@ def _cases(check):
           # fifty copies of one sentence.
           and M.UI_HTML.count("'data-apcache'") == 1,
           repr(M.UI_HTML.count("'data-apcache'")))
+    # --- ap: and what the BOARD says, which the cell used to leave out (F101) --
+    # A PROPERTY OF THE SOURCE, and text is the right instrument for exactly one
+    # part of it: that no two board states share a rendering. The defect was two
+    # different facts painting the same pixels - a phase the board agrees with
+    # and a phase nobody has compared - so "these four strings exist and there
+    # are four of them" is the claim. What a person SEES is a browser claim and
+    # is not made here.
+    _apb_words = ["'board: #'", "'board: no work item yet'",
+                  "'board: not asked'", "'board: not reported'"]
+    check("ap10 every board state renders WORDS OF ITS OWN, counted rather than "
+          "found: the fault this line exists for is two states painting one "
+          "cell, so a branch that fell back to a neighbour's wording would be "
+          "the same defect with more code",
+          all(w in M.UI_HTML for w in _apb_words)
+          and M.UI_HTML.count("'board: ") == len(_apb_words),
+          repr((M.UI_HTML.count("'board: "),
+                [w for w in _apb_words if w not in M.UI_HTML])))
+    check("ap11 the state a gate reads and the words a person reads come from "
+          "ONE list through ONE normaliser - an attribute taken straight off "
+          "`.state` could name a state the words had already fallen back from, "
+          "and the two would disagree about the same row",
+          "const AP_BOARD=['unlinked','observed','never-asked'];" in M.UI_HTML
+          and M.UI_HTML.count("const AP_BOARD") == 1
+          and M.UI_HTML.count("AP_BOARD.includes(") == 1
+          and "const st=apBoardState(b);" in M.UI_HTML
+          and "'data-apboard':apBoardState(ph.adoParentBoard)" in M.UI_HTML
+          and M.UI_HTML.count("'data-apboard'") == 1,
+          repr((M.UI_HTML.count("const AP_BOARD"),
+                M.UI_HTML.count("AP_BOARD.includes("),
+                M.UI_HTML.count("'data-apboard'"))))
+    check("ap12 the board line is written ONCE at render and no edit path "
+          "rewrites it: a save moves the DECLARATION, and nothing typed in this "
+          "panel can move where somebody's board hangs a card - a control that "
+          "repainted it on change would be reporting an edit as an observation",
+          M.UI_HTML.count("apBoard=") == 1
+          and "apBoard" not in M.UI_HTML[M.UI_HTML.index("const apApply=()=>{"):
+                                         M.UI_HTML.index("apId.hidden=(apChoice")],
+          repr(M.UI_HTML.count("apBoard=")))
+    # A COMPUTED pin, and the only kind that can hold this: the claim is that two
+    # declarations carry the SAME width, and a literal on either side would go on
+    # passing while the other moved. `.apnote` is a block inside `td.phparent`, so
+    # in an auto-layout table its cap is what the column's max-content becomes
+    # whenever the note is the widest thing in the cell - and the rule above it
+    # measured 9rem as the whole budget this column has, at 1200px, with the table
+    # already filling its frame exactly. The note used to be capped wider, which
+    # was harmless only while its one wearer was empty until somebody typed into
+    # the control; a board line is painted on every row at first paint, and
+    # `board: #N · seen YYYY-MM-DD` is long enough to reach the old cap.
+    _apn_ctl = re.search(r"td\.phparent :is\(select,input\)\{width:([^}]+)\}",
+                         M.UI_HTML)
+    _apn_note = re.search(r"\.apnote\{[^}]*max-width:([^;}]+)[;}]", M.UI_HTML)
+    check("ap13 the note under the parent control is capped at the CONTROL's "
+          "own width, so nothing written under that control can size the column "
+          "wider than the control does. No selftest can see the overflow itself "
+          "- a layout that overflows is still a layout that parses - which is "
+          "exactly why the agreement is pinned instead",
+          bool(_apn_ctl) and bool(_apn_note)
+          and _apn_ctl.group(1).strip() == _apn_note.group(1).strip(),
+          repr((_apn_ctl and _apn_ctl.group(1), _apn_note and _apn_note.group(1))))
+    check("ap14 the lever's HELP names the second line and says it cannot be "
+          "edited, which is the one thing the cell itself cannot say: two muted "
+          "lines under one control, one of them a reason a save was refused and "
+          "the other an observation no save can move, and only the help "
+          "distinguishes them for somebody who has not read the source",
+          "board" in M.COMPOSITION_HELP["phaseAdoParent"].lower()
+          and "not editable" in M.COMPOSITION_HELP["phaseAdoParent"]
+          and "function apBoardWords(b)" in M.UI_HTML)
     # --- adf: the per-type field template on the connector card ---------------
     # A PROPERTY OF THE SOURCE, and text is the only instrument for it: that no
     # dotted-path writer is anywhere near a map whose KEYS carry dots. A browser
@@ -1253,6 +1479,37 @@ def _cases(check):
           # The tables themselves are NOT here.
           and "System.AreaPath" not in M.UI_HTML
           and "Microsoft.VSTS.TCM.ReproSteps" not in M.UI_HTML)
+    # --- asc: the connector banner's shared-claim clause (F147) ---------------
+    # PROPERTIES OF THE SOURCE, said as such. What a person SEES here is the
+    # banner's wording and its tone, and only a browser gate can judge that;
+    # what text is the right instrument for is that the clause exists once,
+    # that its fallback arm is not the agreement arm, and that the state
+    # reaches the DOM as a hook a gate can then read.
+    check("asc1 the clause is one named function and its fallback arm is the "
+          "NOT-COUNTED sentence, never the agreement one: a payload with no "
+          "`shared` in it - an older server, or a project with no manifest - "
+          "must not paint 'no work item claimed twice' over a plan nobody "
+          "counted",
+          M.UI_HTML.count("function adoSharedWords(") == 1
+          and "return 'shared claims not counted';" in M.UI_HTML
+          and "if(state==='none')return 'no work item claimed twice';"
+          in M.UI_HTML
+          and M.UI_HTML.count("'no work item claimed twice'") == 1)
+    check("asc2 the state reaches the DOM as its own attribute rather than "
+          "only as words inside a sentence, which is what lets a browser gate "
+          "assert it - and `data-adostate` still names which of the banners "
+          "this is, so a collision escalates the TONE and never renames the "
+          "state",
+          "'data-adoshared':(st.shared||{}).state||'uncounted'" in M.UI_HTML
+          and "'data-adostate':banner[0]" in M.UI_HTML
+          and "if((st.shared||{}).state==='shared')banner[1]='warn';"
+          in M.UI_HTML)
+    check("asc3 the clause is appended only on the banners that describe a "
+          "manifest CARRYING links - the other two are about a plan with "
+          "nothing on the board, where 'not counted' would blame the reader "
+          "for a fetch nobody owed",
+          "if(banner[0]==='linked'||banner[0]==='off'){" in M.UI_HTML
+          and M.UI_HTML.count("adoSharedWords(st.shared)") == 1)
     check("pri11 Plan & models reads in the report's order - active work, then "
           "what has not started, then what is closed - through the SAME segment "
           "classifier the Overview and the report use, not a second copy of it",
@@ -1377,6 +1634,115 @@ def _cases(check):
     check("pr7 a dropped proposal shows why, and a materialized one what it "
           "became - the two states that carry their own history",
           "'why declined'" in M.UI_HTML and "'became'" in M.UI_HTML)
+    # --- pr: F93's JavaScript half --------------------------------------------
+    # PROPERTIES OF THE SOURCE, every one of them, and that is why they are here
+    # rather than in tools/ui-tests/proposals-cell.test.mjs. What the two
+    # functions ANSWER is executed there, against the live Python they mirror;
+    # what nothing can execute is that there is no SECOND spelling of either -
+    # a duplicate composition passes every behavioural case, because the case
+    # calls the one function and the copy sits in a branch it never reaches.
+    _prop_js = M.UI_HTML[M.UI_HTML.index("function propReservedCell("):
+                         M.UI_HTML.index("function renderProposals(")]
+    check("pr8 the reserved cell is composed ONCE. F93 was this string existing "
+          "in three spellings on the Python side; this file held the fourth and "
+          "the fifth, and they differed in their SEPARATOR - the card joined "
+          "with a middle dot and the confirm dialog with parentheses, so the "
+          "same phase read as two different pieces of work",
+          "function propReservedCell(row)" in M.UI_HTML
+          and M.UI_HTML.count("function propReservedCell(") == 1
+          # The composition itself, counted over the tab's own source: one
+          # `phaseId + ' ('` and no surviving ` · ' + plural(` beside it.
+          and _prop_js.count("row.phaseId + ' (' + plural(") == 1
+          and _prop_js.count(".phaseId + ' · '") == 0
+          and M.UI_HTML.count("propReservedCell(") == 3,
+          repr((M.UI_HTML.count("function propReservedCell("),
+                _prop_js.count("row.phaseId + ' (' + plural("),
+                _prop_js.count(".phaseId + ' · '"),
+                M.UI_HTML.count("propReservedCell("))))
+    check("pr9 the count goes through the SHARED plural rule and no suffix of "
+          "its own survives in this tab. Source is the only instrument for it: "
+          "over every value a real row can carry the two expressions return the "
+          "same string, so no behavioural fixture separates them - which is "
+          "also why `_deps`' pluralisation needle read green over the copy that "
+          "was here, since it is spelled without spaces and this file is not",
+          _prop_js.count("plural(row.taskCount, 'task')") == 1
+          and not re.search(r"===\s*1\s*\?\s*''\s*:\s*'s'", _prop_js)
+          and not re.search(r"taskCount\s*\+\s*' task'", _prop_js),
+          repr(_prop_js.count("plural(row.taskCount, 'task')")))
+    check("pr10 the badge and the branch read `statusRaw`, never the "
+          "normalised `status`. `proposal_rows` normalises an ABSENT status to "
+          "`proposed`, so a surface that classifies off it classifies off an "
+          "invention - and the catch-all this replaces told a record carrying "
+          "an unknown word that its phase was live and this was the history "
+          "trail, which is a claim about work nobody did",
+          "function propStatusWords(p)" in M.UI_HTML
+          and "if (p.statusKnown) return label(p.status);" in M.UI_HTML
+          and "p.statusRaw === 'materialized'" in M.UI_HTML
+          and "p.statusRaw === 'dropped'" in M.UI_HTML
+          # The old readings are GONE, not merely outnumbered: either one
+          # surviving in a branch would go on classifying the same records.
+          and _prop_js.count("p.status === 'proposed'") == 0
+          and _prop_js.count("p.status === 'dropped'") == 0,
+          repr((_prop_js.count("p.status === 'proposed'"),
+                _prop_js.count("p.status === 'dropped'"))))
+    check("pr11 the parked COUNT reads `statusRaw` too, which is the reading "
+          "`/audit:status`'s PROPOSALS block makes - the two print a number "
+          "about one manifest and were free to disagree, with a record carrying "
+          "no status counted as parked on one side and as legacy on the other",
+          "props.filter((p) => p.statusRaw === 'proposed').length" in M.UI_HTML
+          and "props.filter((p) => !p.statusKnown).length" in M.UI_HTML
+          and M.UI_HTML.count("=== 'proposed').length") == 1,
+          repr(M.UI_HTML.count("=== 'proposed').length")))
+    # --- vb (F100): which build is serving this page ---------------------------
+    # THE THREE-STATE RULE IS EXECUTED, in tools/ui-tests/version-banner.test.mjs,
+    # against the real function and in both mutation directions. These pin the
+    # constructs that suite depends on and one thing it cannot see: that the
+    # banner is wired into the assembled page at all. A part on disk that nothing
+    # joins loads no code, and every case in a sandbox that reads the same part
+    # list would keep passing over it.
+    check("vb1 the staleness banner ships INSIDE the page, and the part that "
+          "carries it is joined rather than merely present on disk",
+          "function vbBanner(state)" in M.UI_HTML
+          and "function vbWords(state)" in M.UI_HTML
+          and "vbCheck().catch(" in M.UI_HTML
+          and "panel/version-banner.js" in _panel_ui._JS_PARTS)
+    check("vb2 the gate is STRICT and there is exactly one of it: `stale` "
+          "arrives as JSON, and a truthy read would raise the banner on a value "
+          "nobody here understood. `false` and `null` are two different silences "
+          "- a comparison that agreed, and one that never happened - and the "
+          "endpoint reports three states so this surface can keep them three",
+          "if (!state || state.stale !== true) return null;" in M.UI_HTML
+          and M.UI_HTML.count("state.stale") == 1,
+          repr(M.UI_HTML.count("state.stale")))
+    check("vb3 the banner asks `/api/version` and nothing else does, so the "
+          "installed half is read where it is compared rather than cached into "
+          "some other payload that would then be as old as the page",
+          # The CALL is counted, not the path: the path is written several times
+          # more in the prose above it, and a count over the bare string would be
+          # a count of how much this feature explains itself.
+          M.UI_HTML.count("api('GET', '/api/version')") == 1,
+          repr(M.UI_HTML.count("api('GET', '/api/version')")))
+    check("vb4 it wears the panel's EXISTING notice rather than a second "
+          "warning component, and `.buildstale` is placement plus the hook a "
+          "browser gate reads",
+          "el('div', { class: 'buildstale', 'data-buildstale': '1' }," in M.UI_HTML
+          and "el('div', { class: 'findings warn', role: 'status' }," in M.UI_HTML
+          and ".buildstale{" in M.UI_HTML)
+    # A COMPUTED pin, because the claim is that two rules agree and neither
+    # value is a token either could read. `.shell` measures the content column
+    # and the notice sits above it; if the shell's gutters or its centre line
+    # move, the sentence stops lining up with the thing it interrupts and
+    # nothing else would say so.
+    _vb_shell = re.search(r"\.shell\{[^}]*max-width:([^;]+);"
+                          r"[^}]*padding:[^ ]+ ([^ ]+) [^;]+;", M.UI_HTML)
+    _vb_band = re.search(r"\.buildstale\{max-width:([^;]+);[^}]*"
+                         r"padding:0 ([^}]+)\}", M.UI_HTML)
+    check("vb5 the banner's width and gutters are the shell's own, read out of "
+          "the assembled sheet rather than trusted to a comment beside them",
+          bool(_vb_shell) and bool(_vb_band)
+          and _vb_shell.group(1) == _vb_band.group(1)
+          and _vb_shell.group(2) == _vb_band.group(2),
+          repr((_vb_shell and _vb_shell.groups(), _vb_band and _vb_band.groups())))
     # --- th (F-P-6): Appearance ------------------------------------------------
     # The panel and the report share ONE token layer, and every value in it is a
     # custom property — so "change the look" is "change those values", and the

@@ -41,6 +41,8 @@ because these cases compare against those modules' own objects (`_help.payload()
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
+import io
 import json
 import os
 import sys
@@ -54,6 +56,48 @@ import _manifest_io as _mio                        # noqa: E402  (as panel-serve
 import _panel_runstate                             # noqa: E402  (the `gt` source slice only)
 
 M = _loader.load_script("panel-server.py", modname="panel_server")
+
+
+def _mentions_url(node):
+    """Does this expression reach a live panel URL without redacting it?
+
+    Subtrees under `_redact_token(...)` are safe and are not descended into.
+    `"url"` as a bare constant counts, because the pidfile hands its URL out as
+    `info.get("url")` - the string, not a name - and that is the spelling F114
+    printed raw."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "_redact_token"):
+        return False
+    if isinstance(node, ast.Name) and node.id == "url":
+        return True
+    if isinstance(node, ast.Constant) and node.value == "url":
+        return True
+    return any(_mentions_url(ch) for ch in ast.iter_child_nodes(node))
+
+
+def _raw_url_prints(source):
+    """Every `print(...)` in `source` handing out a URL it did not redact."""
+    out = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "print"):
+            out += [ast.dump(a)[:80] for a in node.args if _mentions_url(a)]
+    return out
+
+
+def _printed(fn, *args):
+    """The lines `fn` prints, as data.
+
+    Three of the panel's surfaces are `print` and a return code rather than a
+    value; F114 is a claim about what they PRINT, so the claim is made about the
+    lines themselves and not about a substring of a transcript nobody captured."""
+    buf, real = io.StringIO(), sys.stdout
+    sys.stdout = buf
+    try:
+        fn(*args)
+    finally:
+        sys.stdout = real
+    return buf.getvalue().splitlines()
 
 
 # --- cases --------------------------------------------------------------------
@@ -420,16 +464,25 @@ def _cases(check):
         pass
     check("i1 writing the pidfile ensures a targeted .claude/.gitignore rule",
           "audit-panel.json" in _gi_lines)
+    check("i1b ...and the launch log rides the same rule: F99 sends the detached "
+          "child's stderr into .claude/, so without it every panel launch would "
+          "leave an untracked file in `git status`",
+          "audit-panel.log" in _gi_lines)
+    check("i1c the note above each rule is its OWN line - git reads `#` as a "
+          "comment only at the start of one, so `name  # why` would be a pattern "
+          "matching that whole string and would ignore nothing",
+          all(not (ln and not ln.startswith("#") and "#" in ln)
+              for ln in _gi_lines))
     check("i2 the rule is targeted - nothing else in .claude is ignored",
           not any("*" == ln or "audit.config.json" in ln or "settings" in ln
                   for ln in _gi_lines))
     with open(_gi, "w", encoding="utf-8") as fh:
         fh.write("node_modules")            # pre-existing, NO trailing newline
     check("i3 appending to a newline-less .gitignore does not glue lines",
-          M._ensure_pidfile_ignored(proj)
+          M._ensure_panel_files_ignored(proj)
           and open(_gi, encoding="utf-8").read().splitlines()[0] == "node_modules")
     _n_before = open(_gi, encoding="utf-8").read().count("audit-panel.json")
-    M._ensure_pidfile_ignored(proj)
+    M._ensure_panel_files_ignored(proj)
     check("i4 re-ensuring is idempotent - no duplicate lines",
           open(_gi, encoding="utf-8").read().count("audit-panel.json")
           == _n_before == 1)
@@ -438,7 +491,221 @@ def _cases(check):
     with open(os.path.join(_proj_bad, ".claude"), "w", encoding="utf-8") as fh:
         fh.write("")                        # .claude is a FILE: rule unwritable
     check("i5 an unwritable rule reports False so callers warn instead of "
-          "claiming", M._ensure_pidfile_ignored(_proj_bad) is False)
+          "claiming", M._ensure_panel_files_ignored(_proj_bad) is False)
+    # i6 (F148): the paths the panel WRITES and the rules it writes for them are
+    # one fact, and this file used to spell it three times - `_pidfile` and
+    # `_log_path` each carried a literal of their own beside the rule table. A
+    # rename in either left `_PANEL_PRIVATE_FILES` ignoring a name nothing
+    # writes, and the newly unignored file would have been the one carrying a
+    # live session token. i1/i1b cannot see that: they assert their own literals
+    # against the .gitignore, so both stay green while the real pidfile sits
+    # outside every rule. This reads the BASENAMES OF THE REAL PATHS and compares
+    # them as a set, so a literal typed back into either function is red here
+    # rather than in somebody's git history.
+    _written = sorted(set(os.path.basename(p)
+                          for p in (M._pidfile(proj), M._log_path(proj))))
+    _ruled = sorted(row[0] for row in M._PANEL_PRIVATE_FILES)
+    check("i6 every file the panel writes into .claude/ is a file it writes an "
+          "ignore rule for, and nothing else is - %r vs %r"
+          % (_written, _ruled),
+          _written and _written == _ruled)
+
+    # --- F114: no surface prints the session token ------------------------------
+    # `--status` hid it and `--stop` printed it in full, one line apart in the
+    # same transcript. The token dies with the process, so what --stop printed
+    # was spent - but --status does not hide it because it is live, it hides it
+    # because the pidfile is gitignored on purpose and a transcript is not, and
+    # that reason applies verbatim to every other surface that reads a URL out of
+    # the pidfile. All three are driven with ONE fixture URL whose token cannot be
+    # confused with its redacted form, and the occurrences are COUNTED.
+    _tok = "rw7RdwvBNFm5FFHCOfD5UBWn"
+    _tok_info = {"pid": 61734, "port": 50391, "version": M.ASSEMBLED_VERSION,
+                 "url": "http://127.0.0.1:50391/?t=" + _tok}
+    _real_kill = os.kill
+    _surfaces = []
+    try:
+        # A no-op kill makes _pid_alive answer True on every platform and stops
+        # --stop from signalling anything real. It also keeps this case off the
+        # Windows hazard where os.kill(pid, 0) TERMINATES rather than probes.
+        os.kill = lambda pid, sig: None
+        M._write_pidfile(proj, dict(_tok_info, pid=os.getpid()))
+        _surfaces.append(("--status", M.status_lines(
+            proj, _tok_info, True, None, M.ASSEMBLED_VERSION)))
+        _surfaces.append(("--stop", M.stop_lines(proj, _tok_info, 61734, None)))
+        _surfaces.append(("open-finds-one-running",
+                          _printed(M.serve, proj, 0, False)))
+    finally:
+        os.kill = _real_kill
+        M._rm_pidfile(proj)
+    _leaks = [(name, ln) for name, lines in _surfaces for ln in lines
+              if _tok in ln]
+    check("f114 no surface that reads a URL out of the pidfile prints its "
+          "token - the pidfile is the one place it is written down: %r"
+          % (_leaks,), not _leaks)
+    # The other direction, and it is why this counts instead of asserting that a
+    # token is absent: deleting the URL from a surface hides the token too, and
+    # would leave "which panel did I just stop" with no answer at all.
+    _hidden = sum(ln.count("t=<hidden>") for _n, lines in _surfaces
+                  for ln in lines)
+    check("f114b ...and every one of them still hands out the URL, redacted "
+          "rather than dropped, so the port is still there to read: %r"
+          % (_hidden,), _hidden == len(_surfaces))
+    # The deliberate exception, COUNTED rather than assumed: --no-open has to
+    # hand the operator a URL they will paste into a browser themselves, so it
+    # prints the live one and warns on the next line. A second unredacted print
+    # appearing anywhere in this file is exactly the shape F114 was, and the
+    # count is what tells the two apart - `_redact_token` being present somewhere
+    # would not.
+    _raw_prints = _raw_url_prints(_hsrc)
+    check("f114c one print in panel-server.py hands out a live URL and it is "
+          "--no-open's, which says on its next line that the URL carries a "
+          "token: %r" % (_raw_prints,),
+          len(_raw_prints) == 1 and "avoid pasting it" in _hsrc)
+
+    # --- F99: a launch that died must leave a reason ----------------------------
+    # `/audit:panel` launched with `>/dev/null 2>&1`, so a child that died at
+    # startup left EXACTLY the trace a launch that succeeded and was then stopped
+    # leaves: no pidfile, no message, nothing on record. The defect was the
+    # silence, not the sandbox.
+    _f99 = os.path.join(tmp, "f99")
+    os.makedirs(os.path.join(_f99, ".claude"), exist_ok=True)
+    check("f99a an empty log is 'no reason on record' and not an empty reason - "
+          "those are the two states --status has to tell apart, and \"\" reads "
+          "as neither",
+          M._last_line("") is None and M._last_line("\n  \n\t\n") is None
+          and M._last_line(None) is None)
+    check("f99b the reason is the last line at the LEFT MARGIN, which for a "
+          "traceback is the exception",
+          M._last_line("Traceback (most recent call last):\n  File \"x\"\n"
+                       "PermissionError: [Errno 1] Operation not permitted\n")
+          == "PermissionError: [Errno 1] Operation not permitted")
+    # Measured live, and the tail rule got it wrong: serve()'s own port refusal
+    # is one flush ERROR line followed by indented advice, so --status reported
+    # "or omit --port ..." - the one line in that block saying nothing about what
+    # happened. The fixture is that block verbatim, so the two rules disagree on
+    # it and the case can tell which one is running.
+    _portfail = ("ERROR: cannot listen on 127.0.0.1:51777 - "
+                 "[Errno 48] Address already in use\n"
+                 "  another panel or process may already hold that port. Try:\n"
+                 "    python3 panel-server.py --project /p --status\n"
+                 "  or omit --port to let the OS pick a free one.\n")
+    check("f99b2 ...and for this server's own multi-line refusal it is the "
+          "ERROR line, not the advice under it: %r" % (M._last_line(_portfail),),
+          M._last_line(_portfail).startswith("ERROR: cannot listen")
+          and "omit --port" not in M._last_line(_portfail))
+    check("f99b3 ...falling back to the last line that says anything when every "
+          "line is indented, so a reason is never swallowed for being indented",
+          M._last_line("  first\n    second\n") == "second")
+    check("f99c no log at all -> None, so nothing is claimed about a launch that "
+          "never redirected anything here (the foreground case)",
+          M._launch_stderr(_f99) is None)
+    with open(M._log_path(_f99), "w", encoding="utf-8") as fh:
+        fh.write("nice(5) failed: operation not permitted\n"
+                 "OSError: [Errno 1] Operation not permitted\n")
+    _ls = M._launch_stderr(_f99)
+    check("f99d the reason comes back WITH the basis for reporting it - which "
+          "file, and how long ago: %r" % (_ls,),
+          (_ls or {}).get("line") == "OSError: [Errno 1] Operation not permitted"
+          and (_ls or {}).get("path") == M._log_path(_f99)
+          and isinstance((_ls or {}).get("age"), int))
+    _died = M.status_lines(_f99, None, False, _ls, M.ASSEMBLED_VERSION)
+    check("f99e --status turns 'it did not come up' into 'it did not come up "
+          "BECAUSE <reason>', which is one step to a fix instead of three: %r"
+          % (_died,),
+          any("panel not running" in ln for ln in _died)
+          and sum("Operation not permitted" in ln for ln in _died) == 1)
+    # The second direction, and it is the one that gets cut in review: a warning
+    # that always fires is as useless as one that never does. serve() empties the
+    # log once it is listening, so a panel that ran and was stopped leaves nothing
+    # here and a line naming a cause of death would be a fabrication.
+    _clean = M.status_lines(_f99, None, False, None, M.ASSEMBLED_VERSION)
+    check("f99f ...and says nothing about stderr when there is none, so a clean "
+          "stop is never reported as a crash: %r" % (_clean,),
+          len(_clean) == 1 and "stderr" not in _clean[0])
+    _gone = M.status_lines(_f99, {"pid": 2147483000, "url": "http://x"}, False,
+                           _ls, M.ASSEMBLED_VERSION)
+    check("f99g a pidfile naming a process that is not there is its own state - "
+          "the panel bound and then went away, which is not 'nothing was "
+          "started': %r" % (_gone,),
+          any("2147483000" in ln and "is gone" in ln for ln in _gone)
+          and _gone != _died)
+    check("f99h an EMPTY log is the success sentinel, which is why serve() "
+          "empties it rather than appending a 'came up fine' line: nohup's own "
+          "noise (a sandbox declining nice) would otherwise be reported as a "
+          "cause of death",
+          M._clear_launch_stderr(_f99) is True
+          and M._launch_stderr(_f99) is None
+          and M._clear_launch_stderr(os.path.join(tmp, "never-launched")) is True)
+    # F99 is a class, not an instance: there are two detached launch recipes and
+    # BOTH discarded stderr. A guard pinning only the one that was reported would
+    # let the next one in.
+    _recipes = [os.path.join(M._output.PLUGIN_ROOT, "commands", "panel.md"),
+                os.path.join(M._output.REPO_ROOT, "examples", "panel.sh")]
+    _present = [r for r in _recipes if os.path.isfile(r)]
+    _launches = []
+    for _r in _present:
+        with open(_r, encoding="utf-8") as fh:
+            _launches += [(os.path.basename(_r), ln.strip()) for ln in fh
+                          if "nohup" in ln and "--project" in ln]
+    _silent = [row for row in _launches if "audit-panel.log" not in row[1]]
+    check("f99i every detached launch recipe sends stderr to the launch log, and "
+          "each recipe file contributed a line to check - a scan that matched "
+          "nothing would report 'all clear' while pinning nothing: %r"
+          % (_launches,),
+          bool(_present)
+          and sorted(set(n for n, _l in _launches))
+          == sorted(os.path.basename(r) for r in _present)
+          and not _silent)
+
+    # --- F100: which build is serving the page ----------------------------------
+    # The panel is ephemeral with a per-project pidfile, so a relaunch after an
+    # upgrade finds the running instance and points at it - and that instance
+    # assembled its page at IMPORT, under whichever build was installed then.
+    check("f100a two different builds is stale, the same build is not - and the "
+          "second half is the mutation that makes this warning worthless, since "
+          "a notice that always fires is read as noise and then not read",
+          M._staleness("1.0.0", "1.1.0")["stale"] is True
+          and M._staleness("1.3.0", "1.3.0")["stale"] is False)
+    check("f100b a comparison missing either half is None and never False: a "
+          "pidfile written before the plugin stamped its build carries no basis "
+          "for 'you are up to date', and a default would manufacture one",
+          M._staleness(None, "1.3.0")["stale"] is None
+          and M._staleness("1.0.0", "")["stale"] is None
+          and M._staleness(None, None)["stale"] is None)
+    check("f100c ...and the line says which of those it is, naming both builds "
+          "whenever it has both",
+          "stop and relaunch" in M._build_line(M._staleness("1.0.0", "1.1.0"))
+          and "1.0.0" in M._build_line(M._staleness("1.0.0", "1.1.0"))
+          and "1.1.0" in M._build_line(M._staleness("1.0.0", "1.1.0"))
+          and "stop and relaunch" not in
+          M._build_line(M._staleness("1.3.0", "1.3.0"))
+          and "cannot tell" in M._build_line(M._staleness(None, "1.3.0")))
+    check("f100d --status on a RUNNING panel names the build it assembled from, "
+          "so an upgrade stops being invisible until somebody relaunches by "
+          "instinct",
+          any("assembled from plugin 1.0.0" in ln and "stop and relaunch" in ln
+              for ln in M.status_lines(
+                  _f99, {"pid": 1, "url": "http://x", "version": "1.0.0"},
+                  True, None, "1.1.0")))
+    check("f100e ...and says nothing of the sort when the running panel IS the "
+          "installed build",
+          not any("stop and relaunch" in ln for ln in M.status_lines(
+              _f99, {"pid": 1, "url": "http://x", "version": "1.1.0"},
+              True, None, "1.1.0")))
+    check("f100f every pidfile this plugin writes carries the build stamp, "
+          "because it is stamped by the writer and not by serve() - so --status "
+          "always has both halves of the comparison",
+          M._write_pidfile(_f99, {"pid": os.getpid(), "port": 1,
+                                  "url": "http://x"}).get("version")
+          == M.ASSEMBLED_VERSION
+          and (M._read_pidfile(_f99) or {}).get("version") == M.ASSEMBLED_VERSION)
+    check("f100g /api/version answers with that same comparison and is a READ "
+          "route only - it re-reads plugin.json per request, because an in-place "
+          "upgrade moves it under a server that is already running",
+          set(M.version_state()) == {"assembled", "installed", "stale"}
+          and M.version_state()["assembled"] == M.ASSEMBLED_VERSION
+          and 'if path == "/api/version"' in _get_src
+          and "/api/version" not in _write_src)
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

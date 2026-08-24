@@ -107,6 +107,18 @@ Either direction: the script validates the **source** first, backs the manifest 
 `<manifestPath>.bak-<UTC>`, writes atomically, then **re-validates the result and restores the
 backup on any failure**.
 
+**To `sharded`, one more refusal, and `--dry-run` hits it too.** Two phase ids that sanitise to
+the same shard FILENAME would be written to one file and the second body would silently replace
+the first — the index would still list both stubs, both pointing at the survivor, and the phase
+that was overwritten would be gone from disk. That is exit 1 with the colliding ids named, and
+the relay is *rename one of them, then run this again*, never `--force` (which overrides the
+in-progress check and not this one). **Filenames are compared without case on every platform**,
+including Linux: a split that is clean on a case-sensitive volume loses a phase the first time a
+colleague on macOS or Windows saves the plan, and a document that travels has to refuse in the
+same place everywhere. `--dry-run` refuses it as well, deliberately — a preview that listed the
+shard files and said nothing about two of them being one file would send the user into the real
+run to find out.
+
 ## 3. After — release, then report what changed on disk
 
 Release the index lock (`audit-lock.py release index --project <gitRoot>`), including on the

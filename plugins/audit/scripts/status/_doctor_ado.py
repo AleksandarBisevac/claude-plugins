@@ -13,6 +13,14 @@ Offline on purpose - a doctor that phoned ADO would be a doctor that needs
 credentials - which is why the state-map row says "advisory" out loud: real
 states live in ADO.
 
+Offline is not the same as instant, though, and one call here is neither: the
+transport probe shells out to `az`, which is a third-party CLI on the operator's
+machine. It is bounded (`AZ_PROBE_SECONDS`) and it SAYS SO on stderr before it
+waits - `announce_probe` - because everything else this module does finishes
+without a pause, so an unannounced bounded wait is indistinguishable from a hang
+for as long as the bound. The wording borrows `fetch-ado-items`' "bound %ds per
+query" rather than inventing a second way to talk about a timeout.
+
 Layer 3: it reads `_doctor_report` (layer 2) for the collector and `_ado_drift`
 (layer 2) for the link walk, and reaches nothing else. The walk used to be a
 second copy here - including the `id: true` trap - and one walk is why the
@@ -57,6 +65,49 @@ import _ado_drift as _drift  # noqa: E402  (the one link walk, and origins)
 # `audit-doctor.py` unchanged, and an alias keeps it reading the same name
 # while there is still exactly one definition of it. A case pins the identity.
 _load = _base._load
+
+# --- the transport probe's bound ------------------------------------------------
+# How long `az extension list` may take before the doctor stops waiting. Named
+# once because the notice and the call have to agree about it: a wait announced
+# as one length and cut at another is worse than an unannounced wait, and that
+# is a pair nothing would otherwise compare.
+AZ_PROBE_SECONDS = 15
+
+# What the doctor says BEFORE it waits, and the shape is borrowed rather than
+# invented: `manifest/fetch-ado-items.py` already says "bound %ds per query" of
+# the only other bounded ADO call this plugin makes, so this is the same
+# sentence one word shorter. `%d` is AZ_PROBE_SECONDS.
+PROBE_NOTICE = ("[audit] doctor: asking `az extension list` whether the "
+                "azure-devops extension is installed (bound %ds)\n")
+
+
+def announce_probe(stream=None):
+    """Say that a third-party CLI is about to be waited on, and for how long.
+
+    WHY THIS EXISTS AT ALL (F158). The bound was already here and that is the
+    important half - this diagnostic can never hang. What it could not do was
+    SAY so: `/audit:doctor` is read-only and finishes in well under a second on
+    everything else it checks, so an `az` that is slow to start turns the
+    command's wall clock into a function of somebody else's tool with nothing
+    on screen. A bounded wait nobody is told about is indistinguishable from a
+    hang for exactly as long as the bound.
+
+    STDERR, NEVER STDOUT, and that is the whole reason this is not a `rep` row.
+    `audit-doctor --json` prints one JSON document on stdout and a progress line
+    there would corrupt it; a `Report` row could not carry this anyway, since
+    every row is collected and rendered after all the checks have run - which is
+    after the wait this line is about. Flushed explicitly because the value of
+    the line is entirely in arriving BEFORE the thing it announces.
+
+    Never raises: a doctor that died writing a progress note would be a
+    read-only diagnostic broken by its own courtesy.
+    """
+    out = stream if stream is not None else sys.stderr
+    try:
+        out.write(PROBE_NOTICE % AZ_PROBE_SECONDS)
+        out.flush()
+    except Exception:
+        pass
 
 
 # --- checks: the ADO connector --------------------------------------------------
@@ -111,10 +162,13 @@ def check_ado(rep, project, manifest):
                  "MCP tools when the session has them, else it stops",
                  "install azure-cli, then: az extension add --name azure-devops")
     else:
+        # The one place this read-only command waits on somebody else's tool.
+        # Announced before the wait, never after: see `announce_probe`.
+        announce_probe()
         try:
             out = subprocess.run(["az", "extension", "list", "--output",
                                   "json"], capture_output=True, text=True,
-                                 timeout=15)
+                                 timeout=AZ_PROBE_SECONDS)
             names = [e.get("name") for e in json.loads(out.stdout or "[]")
                      if isinstance(e, dict)]
             if "azure-devops" in names:
@@ -124,6 +178,19 @@ def check_ado(rep, project, manifest):
                          "az is on PATH but the azure-devops extension is "
                          "not installed",
                          "az extension add --name azure-devops")
+        # The bound firing is its OWN row, not one more "did not answer". A
+        # slow CLI and a broken one are different facts and want different
+        # next moves, and this row is the only one whose reader has just spent
+        # the whole bound waiting - so it names the number they waited out
+        # rather than leaving it to whatever text the exception happens to
+        # carry. Ordered first: TimeoutExpired is an Exception too.
+        except subprocess.TimeoutExpired:
+            rep.warn("ado transport",
+                     "az is on PATH but `az extension list` did not answer "
+                     "within %ds - transport unverified, and the doctor "
+                     "never waits longer than that" % AZ_PROBE_SECONDS,
+                     "run `az extension list` yourself to see what it is "
+                     "waiting on")
         except Exception as exc:
             rep.warn("ado transport",
                      "az is on PATH but `az extension list` did not answer "

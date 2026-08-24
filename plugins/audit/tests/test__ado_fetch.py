@@ -31,6 +31,9 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _ado_fetch as M                             # noqa: E402
+import _ado_conventions as _conv                   # noqa: E402  (F106: the shape
+#   this module PRODUCES is graded by that one, and the cases below hand it the
+#   producer's own return value rather than a fixture that resembles it)
 
 SYNCED = "2026-08-21T18:02:00Z"
 
@@ -221,6 +224,31 @@ def _cases(check):
           "stateMap translation `sync.md` owns, and a second copy is a second "
           "answer",
           items == [{"id": 4001, "fields": {"System.State": "Active"}}])
+
+    # F106: THE PRODUCER'S OWN RETURN VALUE, handed to the guard built for
+    # exactly this false accusation. A fixture that merely resembled a fetch was
+    # what let it through - `rest_payload_reason` keyed off `rev`/`url`/`_links`/
+    # `relations`, `as_items` strips all four, and the item that HAD a parent was
+    # refused for carrying none. The row below is the live shape (work item #121,
+    # parent #101). This case is why a marker key was NOT added here: the guard
+    # keys off the absent `type` instead, so trimming another field cannot bring
+    # the false verdict back.
+    _live = M.as_items([{"id": 121,
+                         "fields": {"System.Parent": 101,
+                                    "System.WorkItemType": "Issue",
+                                    "System.Title": "Add the audit trail",
+                                    "System.Tags": "audit-plugin"}}])
+    check("af21b what THIS function returns is refused by the conformance gate "
+          "as an ungradeable shape - not a fixture resembling a fetch, the "
+          "producer's own value: %r"
+          % ((_conv.rest_payload_reason(_live[0]) or "")[:40],),
+          len(_live) == 1 and _conv.rest_payload_reason(_live[0]) is not None)
+    _ready = _conv.as_gradable_item(_live[0])
+    check("af21c ...and the translation of that same row IS gradeable, with the "
+          "parent read out of fields[\"System.Parent\"] where this SELECT puts "
+          "it - so status can still ask the question, through one door",
+          _conv.rest_payload_reason(_ready) is None
+          and _ready.get("parent") == 101 and _ready.get("type") == "Issue")
 
     gone = M.missing_ids([4001, 5120, 4890], [{"id": 4001, "fields": {}}])
     check("af22 an id asked for that no row came back for is NAMED, in the order "

@@ -17,6 +17,12 @@ Usage:
                 [--description TEXT] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ...]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>"
+                [--id P7] [--description TEXT] [--area a,b] [--gate CMD ...]
+                [--blocked-by id,id] [--review-skill NAME]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py cancel <id> --reason "<why>" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -29,9 +35,9 @@ Usage:
   no such skill exists. --tests-add and --gate repeat (one value each).
 
 Exit codes:
-  0  task written, manifest valid
-  1  refused invalid: the manifest had findings before the add (nothing
-     written), or the add itself would leave it invalid (every written file
+  0  written, manifest valid
+  1  refused invalid: the manifest had findings before the write (nothing
+     written), or the write itself would leave it invalid (every written file
      rolled back byte-for-byte); the findings are printed either way
   2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args
   3  the index lock is held by a LIVE run (audit-lock's standard message)
@@ -61,6 +67,21 @@ Design decisions, each mirroring a precedent rather than inventing one:
     RESERVED by a parked proposal is refused toward /audit:propose
     materialize (materialization is a move; hand-minting into a reserved id
     would make it a collision).
+
+  * PHASE (F58). `add-phase` is the verb `/audit:phase add` calls, and it
+    exists because nothing else in the tree appends to `phases[]` except the
+    ADO pull: `/audit:init` synthesizes a whole plan, `/audit:propose
+    materialize` MOVES a parked payload, and `add` places a task inside a phase
+    that must already be there. So a maintainer whose plan outlived its first
+    round -- the state every long-lived plan ends in -- had three options and
+    all of them were wrong: re-run init over a finished plan, pull from a
+    board, or hand-edit the index and write a shard. The phase id continues the
+    sequence through `_proposals.next_phase_id` over live AND parked ids, which
+    is the same allocation `/audit:propose materialize` uses rather than a
+    second one; `--outcome` is required for `--reason`'s reason (a phase whose
+    success cannot be stated in a line is a phase sign-off cannot address); and
+    the sharded case writes the shard the phase does not have yet plus the
+    index stub that points at it, which is the half a hand-edit forgets.
 
   * WRITE. Through _manifest_io -- never raw json for the sharded case. The
     footprint is _panel_write._write_back's: the touched phase's shard, plus
@@ -114,6 +135,10 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _proposals             # noqa: E402  (the id allocator `/audit:propose materialize`
+#                                            uses: the lowest free P<n> over live AND
+#                                            parked ids. A second one here would be a
+#                                            second answer about which ids are taken)
 import _panel_write           # noqa: E402  (one answer to "where is the manifest", the
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
@@ -128,6 +153,15 @@ _TEMPLATE_KEYS = ("id", "title", "status", "description", "files", "tests",
                   "model", "skills", "risk", "blockedBy", "dependsOn",
                   "attempts", "maxAttempts", "commit", "outcome", "startedAt",
                   "completedAt", "verifiedBy")
+
+# The same thing one level up (manifest-conventions.md -> New phase template):
+# every field a new PHASE is initialized with, in the order it is written.
+# `area` and `reviewSkill` are deliberately absent -- the conventions default
+# both to ABSENT, and writing `area: null` would make an untagged phase claim to
+# have considered the question.
+_PHASE_TEMPLATE_KEYS = ("id", "title", "status", "description",
+                        "desiredOutcome", "testGate", "blockedBy", "baseRef",
+                        "branch", "mergedAt", "review", "summary", "tasks")
 
 
 # --- flag parsing helpers ------------------------------------------------------
@@ -206,6 +240,37 @@ def _phase_label(ph):
     return "%s (%s)" % (ph.get("id"), ph.get("status"))
 
 
+def _reserving_proposal(assembled, pid):
+    """The still-parked proposal whose payload reserves `pid`, or None.
+
+    Phase AND task ids, because `_proposals.parked_ids` reserves both: an id
+    that collides with a payload's TASK id is refused with the same sentence
+    rather than minted over an id materialization would then have to rename.
+    One walk, because two verbs ask this question (`add --phase`, `add-phase
+    --id`) and two walks are two answers about which ids are spoken for."""
+    for prop in (assembled.get("proposals") or []):
+        if not isinstance(prop, dict) or prop.get("status") != "proposed":
+            continue
+        payload = prop.get("payload")
+        pphase = payload.get("phase") if isinstance(payload, dict) else None
+        if not isinstance(pphase, dict):
+            continue
+        if pphase.get("id") == pid:
+            return prop.get("id")
+        for tsk in (pphase.get("tasks") or []):
+            if isinstance(tsk, dict) and tsk.get("id") == pid:
+                return prop.get("id")
+    return None
+
+
+def _reserved_refusal(pid, prop_id):
+    """The one sentence both verbs print for an id a parked payload owns."""
+    return ("[audit-task] phase %s is RESERVED by parked proposal %s "
+            "-- run /audit:propose materialize %s first "
+            "(materialization is a move; minting into a reserved id "
+            "by hand would collide)." % (pid, prop_id, prop_id))
+
+
 def _resolve_phase(assembled, want, out):
     """The target phase dict, or an int exit code after printing why not."""
     phases = [p for p in (assembled.get("phases") or []) if isinstance(p, dict)]
@@ -215,21 +280,13 @@ def _resolve_phase(assembled, want, out):
                 if ph.get("status") == "done":
                     out("[audit-task] phase %s is done -- done phases are "
                         "immutable history. Pick an open phase, or create a "
-                        "new one via /audit:task's interactive flow." % want)
+                        "new one with /audit:phase add." % want)
                     return E_USAGE
                 return ph
-        for prop in (assembled.get("proposals") or []):
-            if not isinstance(prop, dict) or prop.get("status") != "proposed":
-                continue
-            payload = prop.get("payload")
-            pphase = payload.get("phase") if isinstance(payload, dict) else None
-            if isinstance(pphase, dict) and pphase.get("id") == want:
-                out("[audit-task] phase %s is RESERVED by parked proposal %s "
-                    "-- run /audit:propose materialize %s first "
-                    "(materialization is a move; minting into a reserved id "
-                    "by hand would collide)."
-                    % (want, prop.get("id"), prop.get("id")))
-                return E_USAGE
+        reserving = _reserving_proposal(assembled, want)
+        if reserving:
+            out(_reserved_refusal(want, reserving))
+            return E_USAGE
         out("[audit-task] no phase %s in the manifest; phases: %s"
             % (want, ", ".join(_phase_label(p) for p in phases) or "(none)"))
         return E_USAGE
@@ -286,16 +343,56 @@ _snapshot = _panel_write.snapshot
 _restore = _panel_write.restore
 
 
-def _write_paths(project, mpath, raw_index, phase_id):
-    """The files an add MAY touch, for the pre-write snapshot: the manifest
-    itself, plus the target phase's shard in the sharded layout."""
+def _shard_rel_dir(raw_index):
+    """The directory the existing shards live in, so a NEW one joins them.
+
+    Read off a stub rather than assumed to be `_mio.save_sharded`'s default: a
+    manifest split with a different `shard_rel_dir` would otherwise get its next
+    phase written into a second directory, and the index would end up pointing
+    at two layouts at once. The default is the fallback for an index that has no
+    stub to read (a sharded manifest with no phases yet)."""
+    for stub in (raw_index.get("phases") or []):
+        if isinstance(stub, dict) and isinstance(stub.get("shard"), str):
+            rel = os.path.dirname(stub["shard"])
+            if rel:
+                return rel
+    return "phases"
+
+
+def _new_stub_and_body(phase, shard_rel_dir):
+    """`(index stub, shard body)` for a phase that has neither yet.
+
+    Through `_mio.split_manifest` rather than by composing `{id, title, shard}`
+    here: that function is where the stub's key set and the shard's FILENAME are
+    decided, and a second spelling of either would be a second layout the next
+    `load_manifest` has to agree with. It is handed a one-phase manifest, so
+    what comes back is this phase's halves and nothing else."""
+    index, shards = _mio.split_manifest({"phases": [phase]}, shard_rel_dir)
+    body = shards.get(phase.get("id"))
+    return index["phases"][0], dict(body or {})
+
+
+def _write_paths(project, mpath, raw_index, phase_id, new_phase=None):
+    """The files a write MAY touch, for the pre-write snapshot: the manifest
+    itself, plus the phase's shard in the sharded layout.
+
+    `new_phase` is the phase this write CREATES, and it is passed for the
+    SNAPSHOT's sake rather than the write's: a shard that does not exist yet is
+    snapshotted as absent, which is what makes a rollback delete it. Without it
+    a refused `add-phase` would leave a shard body behind that the restored
+    index no longer points at -- a file the next reader cannot explain."""
     paths = [mpath]
-    if _mio.is_sharded(raw_index):
-        base = os.path.dirname(os.path.abspath(mpath))
-        for stub in (raw_index.get("phases") or []):
-            if isinstance(stub, dict) and stub.get("id") == phase_id \
-                    and "shard" in stub:
-                paths.append(os.path.abspath(os.path.join(base, stub["shard"])))
+    if not _mio.is_sharded(raw_index):
+        return paths
+    base = os.path.dirname(os.path.abspath(mpath))
+    for stub in (raw_index.get("phases") or []):
+        if isinstance(stub, dict) and stub.get("id") == phase_id \
+                and "shard" in stub:
+            paths.append(os.path.abspath(os.path.join(base, stub["shard"])))
+            return paths
+    if isinstance(new_phase, dict):
+        stub, _body = _new_stub_and_body(new_phase, _shard_rel_dir(raw_index))
+        paths.append(os.path.abspath(os.path.join(base, stub["shard"])))
     return paths
 
 
@@ -307,7 +404,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
     project-relative paths written (shard first, index-precedent order)."""
     if not _mio.is_sharded(raw_index):
         _panel_write._atomic_write_json(mpath, assembled)
-        return [os.path.relpath(mpath, project)]
+        return [_mio.posix_rel(mpath, project)]
     base = os.path.dirname(os.path.abspath(mpath))
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
               if isinstance(p, dict)}
@@ -318,15 +415,25 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
         if isinstance(entry, dict) and entry.get("id") == phase_id:
             stub = entry
             break
-    if stub is not None and "shard" in stub:
+    body = dict(by_pid.get(phase_id) or {})
+    new_stub = None
+    if stub is None:
+        # A phase this write CREATED (`add-phase`): neither half of it exists on
+        # disk yet. Letting it fall through to the inline branch below would find
+        # nothing to replace and set nothing dirty, so the phase would live only
+        # in the assembled dict this function was handed and the write would
+        # report success having written no phase at all.
+        new_stub, body = _new_stub_and_body(body, _shard_rel_dir(raw_index))
+        stub = new_stub
+        index_dirty = True
+    if "shard" in stub:
         spath = os.path.abspath(os.path.join(base, stub["shard"]))
         if not _panel_write._within(project, spath):
             raise ValueError("refused: shard path escapes project: %s"
                              % stub["shard"])
-        body = dict(by_pid.get(phase_id) or {})
         body.pop("shard", None)   # the stub owns the pointer, never the body
         _panel_write._atomic_write_json(spath, body)
-        written.append(os.path.relpath(spath, project))
+        written.append(_mio.posix_rel(spath, project))
     else:
         # Inline phase in a sharded index (mixed/defensive): its body lives in
         # the index itself, so the index write below must carry it.
@@ -337,33 +444,45 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
                 index_dirty = True
     if index_dirty:
         idx = dict(raw_index)
+        if new_stub is not None:
+            # Appended, never inserted: the written order IS the plan's order
+            # (`/audit:phase priority` is what says "reach for this one first"),
+            # so a new phase goes last for the same reason `/audit:init --append`
+            # continues the sequence rather than renumbering it.
+            idx["phases"] = list(raw_index.get("phases") or []) + [new_stub]
         if files_changed:
             idx["fileIndex"] = assembled.get("fileIndex") or {}
         _panel_write._atomic_write_json(mpath, idx)
-        written.append(os.path.relpath(mpath, project))
+        written.append(_mio.posix_rel(mpath, project))
     return written
 
 
 # --- the journal ---------------------------------------------------------------
-def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
-    """One `task.add` row, appended in-process via audit-journal's `append`.
+def _journal_row(project, config, mpath, action, summary, details):
+    """One journal row, appended in-process via audit-journal's `append`.
 
-    Why this script writes its own row: the journal-writes HOOK observes
+    Why this script writes its own rows: the journal-writes HOOK observes
     Edit/Write/MultiEdit/NotebookEdit TOOL calls only (hooks.json's
     PostToolUse matcher) -- a manifest written by this script through
     os.replace never passes through a tool that hook can see.
     _panel_write._journal is the precedent (the panel's saves have exactly
     the same blindness), and /audit:task move's CLI append is the row-shape
     precedent: action + target + summary + allow-listed details
-    ({taskId, phaseId} here, {fromId, toId, ...} there) -- no new shape is
-    invented. Fail-soft by the same contract: a task that WAS written must
-    never be reported as failed because the record of it could not be."""
+    ({taskId, phaseId}, {fromId, toId, ...}) -- no new shape is invented.
+    Fail-soft by the same contract: work that WAS written must never be
+    reported as failed because the record of it could not be.
+
+    ONE ROW BUILDER, not one per verb. `add` and `cancel` each carried their
+    own and the two had drifted where nothing looks: `cancel` passed the whole
+    `_viewer()` DICT as `actor.author`, and `_journal_io` normalises a non-string
+    author to None -- so every cancel row recorded no author at all, and
+    `via` defaulted to `unknown` where the add row says `cli`. Neither could
+    be seen from the row that was written; both are the reason the builder is
+    shared rather than the shape being restated a third time for `add-phase`.
+    """
     mod = _panel_write._journalmod()
     if mod is None or not hasattr(mod, "append"):
         return {"journaled": False, "journaledWhy": "unavailable"}
-    summary = "%s added to %s: %s" % (task_id, phase_id, title)
-    if healed:
-        summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
     # THE PLACEMENT RULE (F-C-2): the journal lands in a sane place INSIDE
     # the named manifest's tree -- never doubled, never outside. A project
     # with a config keeps its own answer (config=None -> audit-journal's
@@ -374,15 +493,15 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
     # config pins manifestPath to where the named manifest actually IS, and
     # the journal lands beside it (<manifest dir>/journal).
     cfg = None if config else \
-        {"manifestPath": os.path.relpath(mpath, project)}
+        {"manifestPath": _mio.posix_rel(mpath, project)}
     try:
         ok = bool(mod.append(project, {
-            "action": "task.add",
+            "action": action,
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path (n3 pins it; Windows relpath says backslash).
-            "target": os.path.relpath(mpath, project).replace(os.sep, "/"),
+            "target": _mio.posix_rel(mpath, project),
             "summary": summary,
-            "details": {"taskId": task_id, "phaseId": phase_id},
+            "details": details,
             "actor": {"author": _panel_write._viewer(project,
                                                     config).get("author"),
                       "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
@@ -391,6 +510,32 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
         ok = False
     return {"journaled": True} if ok else {"journaled": False,
                                            "journaledWhy": "failed"}
+
+
+def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
+    """The `task.add` row: what was added, where, and what the write healed."""
+    summary = "%s added to %s: %s" % (task_id, phase_id, title)
+    if healed:
+        summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
+    return _journal_row(project, config, mpath, "task.add", summary,
+                        {"taskId": task_id, "phaseId": phase_id})
+
+
+def _journal_phase_add(project, config, mpath, phase_id, title, outcome):
+    """The `phase.add` row.
+
+    The DESIRED OUTCOME rides the SUMMARY, not `details`. It belongs in the row
+    -- it is the sentence sign-off has to address, and a trail recording that a
+    phase appeared without recording what it was for answers the wrong question
+    a month later -- but `_journal_io.DETAILS_KEYS` is an allow-list and drops
+    an unlisted key in silence, so a `details.desiredOutcome` would have been a
+    field written, dropped, and believed. `details` therefore carries only the
+    allow-listed `phaseId`, which is the same join `task.add` writes."""
+    summary = "%s added: %s" % (phase_id, title)
+    if outcome:
+        summary += " -- %s" % outcome
+    return _journal_row(project, config, mpath, "phase.add", summary,
+                        {"phaseId": phase_id})
 
 
 # --- readiness (report only) ---------------------------------------------------
@@ -642,7 +787,12 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         return E_USAGE
 
     now = _utc_now()
-    cascaded = []
+    # `{"id": ..., "was": <the status it held>}` per cascaded task, not a bare
+    # id. The journal row spells the cascade as `changes`, whose entries are
+    # id/field/from/to, and `was` is the `from` -- read BEFORE `_cancel_task`
+    # overwrites it, because afterwards every one of them says `cancelled` and
+    # the fact is gone from the manifest as well as from the row.
+    cascade = []
     if kind == "task":
         _cancel_task(node, reason, now)
     else:
@@ -656,9 +806,10 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         # under a dropped phase is a task /audit:next would still offer.
         for t in (node.get("tasks") or []):
             if isinstance(t, dict) and t.get("status") not in ("done", "cancelled"):
+                cascade.append({"id": t.get("id"), "was": t.get("status")})
                 _cancel_task(t, "phase %s cancelled: %s" % (tid, reason), now)
-                cascaded.append(t.get("id"))
 
+    cascaded = _cascade_ids(cascade)
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
@@ -682,7 +833,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         return E_INVALID
 
     jres = _journal_cancel(project, config, mpath, kind, tid, phase_id,
-                           reason, cascaded)
+                           reason, cascade)
     if args.as_json:
         result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
                   "reason": reason, "at": now, "cascaded": cascaded,
@@ -692,7 +843,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         return 0
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
     if cascaded:
-        out("  also cancelled inside it: %s" % ", ".join(c for c in cascaded if c))
+        out("  also cancelled inside it: %s" % ", ".join(cascaded))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -701,35 +852,322 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     return 0
 
 
+def _cascade_ids(cascade):
+    """The ids out of a cascade, in order, skipping an entry that has none.
+
+    Spelled once because the summary sentence, the human line, the `--json`
+    block and the journal row all want the same list and had it filtered
+    inline in each place."""
+    return [c["id"] for c in cascade if c.get("id")]
+
+
 def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
-                    cascaded):
-    """One `task.cancel` / `phase.cancel` row — the same shape and the same
-    fail-soft contract as _journal_add (see its docstring for why this script
-    writes its own row at all). The REASON rides the summary: a trail that
-    records the state change and not the why answers the wrong question a
-    month later."""
-    mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append"):
-        return {"journaled": False, "journaledWhy": "unavailable"}
+                    cascade):
+    """The `task.cancel` / `phase.cancel` row: why the work stopped, and what
+    stopped with it.
+
+    THE REASON RIDES BOTH the summary and the details -- a trail that records the
+    state change and not the why answers the wrong question a month later -- and
+    that half is a decision recorded in `_journal_io.DETAILS_KEYS` beside the key
+    rather than something this writer chose.
+
+    THE CASCADE RIDES `changes`, AN EXISTING KEY RATHER THAN A NEW ONE. A phase
+    cancel closes every task still open inside it, and those ids used to be
+    handed over as `details.cascaded`, which is not on the allow-list: written,
+    dropped in silence, and believed by everything reading the document instead
+    of the row. Both repairs were available and only one of them adds vocabulary.
+    A cascaded task is a FIELD OF THE PLAN THAT MOVED -- `status`, from what it
+    held to `cancelled` -- which is exactly what a `changes` entry says, so the
+    allow-list already carries a bounded shape for it: the list capped at
+    `MAX_CHANGES` with `truncated` set when the cut happens, and every value
+    clipped to `MAX_VALUE_CHARS`. `repair-commits.py` made the same move for the
+    same reason ("`changes`, not an invented key"), and a second capped-list
+    mechanism beside that one would be a second expression of one rule that
+    every reader after it has to learn separately. The row also carries nothing
+    new: the summary already names the same ids verbatim in the same committed
+    file, and a task id names neither a machine nor a person.
+
+    `cancelledId` IS NOT WRITTEN, which is the same argument from the other end.
+    It was handed over for a phase cancel and dropped, and it was redundant the
+    whole time -- `_find_target` returns a phase as its own owning phase, so
+    `phase_id` IS the cancelled id there and the row already said it. Putting a
+    key on the allow-list to carry a string another key already carries is a
+    committed row growing for nothing, which is the direction CWE-532 lies in.
+    """
     summary = "%s cancelled: %s" % (tid, reason)
-    if cascaded:
-        summary += " (also %s)" % ", ".join(c for c in cascaded if c)
-    cfg = None if config else {"manifestPath": os.path.relpath(mpath, project)}
+    ids = _cascade_ids(cascade)
+    if ids:
+        summary += " (also %s)" % ", ".join(ids)
     details = {"phaseId": phase_id, "reason": reason}
-    details["taskId" if kind == "task" else "cancelledId"] = tid
-    if cascaded:
-        details["cascaded"] = [c for c in cascaded if c]
+    if kind == "task":
+        details["taskId"] = tid
+    if cascade:
+        details["changes"] = [{"id": c["id"], "field": "status",
+                               "from": c["was"], "to": "cancelled"}
+                              for c in cascade if c.get("id")]
+    return _journal_row(project, config, mpath, "%s.cancel" % kind, summary,
+                        details)
+
+
+# --- add-phase: one more phase in a plan that already exists ---------------------
+# F58. Everything that WROTE a phase before this verb wrote a whole plan or moved
+# one that had already been written somewhere else, so "I have a live plan and a
+# new body of work" was the one shape with no command behind it -- and it is the
+# shape every plan reaches once its first round is finished.
+
+
+def _allocate_phase_id(assembled):
+    """The lowest free `P<n>`, counting live ids AND every parked reservation.
+
+    `_proposals.next_phase_id` over `live_ids | parked_ids` -- the SAME pair
+    `/audit:propose materialize` allocates against. A second expression of "which
+    phase ids are taken" would eventually hand this verb an id materialization
+    had already promised to a payload."""
+    taken = _proposals.live_ids(assembled) | _proposals.parked_ids(assembled)
+    return _proposals.next_phase_id(taken)
+
+
+def _phase_id_refusal(assembled, raw_index, pid):
+    """Why `pid` cannot be minted, or None when it can. Nothing is written yet.
+
+    The shard-file check is not a character class: two ids that differ only in
+    something `_manifest_io` sanitises out of a shard NAME would land on one
+    file, and the second write would silently overwrite the first phase's body.
+    Comparing the path this phase WOULD take against the paths the index already
+    points at asks `_manifest_io` what it names a shard instead of restating the
+    rule here, so the two cannot drift apart."""
+    if not pid or not pid.strip():
+        return "[audit-task] --id cannot be blank"
+    for ph in (assembled.get("phases") or []):
+        if isinstance(ph, dict) and ph.get("id") == pid:
+            # The alternative offered depends on the phase's state, because
+            # `add --phase` refuses a done one: naming a path the next command
+            # would refuse is worse than naming none.
+            if ph.get("status") in ("done", "cancelled"):
+                nxt = "pick another --id (that phase is finished history)"
+            else:
+                nxt = ("pick another --id, or add a task to it with "
+                       "/audit:task add --phase %s" % (pid,))
+            return ("[audit-task] phase %s already exists (%s) -- %s"
+                    % (pid, ph.get("status"), nxt))
+    for _ph, tsk in _mio.iter_tasks(assembled):
+        if tsk.get("id") == pid:
+            return ("[audit-task] %s is already a TASK id -- a phase sharing it "
+                    "would make every reference ambiguous" % (pid,))
+    reserving = _reserving_proposal(assembled, pid)
+    if reserving:
+        return _reserved_refusal(pid, reserving)
+    if _mio.is_sharded(raw_index):
+        rel = _new_stub_and_body({"id": pid, "title": ""},
+                                 _shard_rel_dir(raw_index))[0].get("shard")
+        for stub in (raw_index.get("phases") or []):
+            if isinstance(stub, dict) and stub.get("shard") == rel:
+                return ("[audit-task] %s would be stored as %s, which phase %s "
+                        "already occupies -- two ids the shard filename cannot "
+                        "tell apart would overwrite one another"
+                        % (pid, rel, stub.get("id")))
+    return None
+
+
+def _phase_gate(args, assembled):
+    """`(testGate, basis)` -- the gate entries and the sentence that says where
+    they came from. The basis is returned rather than printed here because an
+    EMPTY gate is the answer that needs one: a phase nothing can prove done is
+    a phase sign-off signs on review alone, and the reader has to be told which
+    of the two reasons produced it."""
+    if args.gate:
+        return list(args.gate), "from --gate"
+    meta = assembled.get("meta")
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    if isinstance(build, dict):
+        keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
+        if keys:
+            return keys, "from meta.buildCommands"
+        return [], "meta.buildCommands is empty"
+    return [], "the manifest declares no meta.buildCommands"
+
+
+def _build_phase(pid, title, args, gate):
+    """The new phase, fully template-initialized -- every field from the
+    conventions' New phase template, exactly once, in _PHASE_TEMPLATE_KEYS
+    order.
+
+    `gate` arrives as an ARGUMENT rather than being derived here, because the
+    caller has to print the BASIS for it and deriving it twice is two chances
+    for the value written and the value explained to stop being the same one."""
+    phase = {
+        "id": pid,
+        "title": title,
+        "status": "pending",
+        "description": args.description or "",
+        "desiredOutcome": (args.outcome or "").strip(),
+        "testGate": gate,
+        "blockedBy": _split_csv(args.blocked_by),
+        "baseRef": None,
+        "branch": None,
+        "mergedAt": None,
+        "review": {"tool": None, "model": "sonnet", "status": "pending",
+                   "findings": []},
+        "summary": None,
+        "tasks": [],
+    }
+    areas = _split_csv(args.area)
+    if areas:
+        # A LIST only when there is more than one. The conventions spell a single
+        # tag as a bare string and `_areas` reads both, so writing a one-element
+        # list would make this command's phases the odd ones out in every diff
+        # and every hand comparison against a phase /audit:init wrote.
+        phase["area"] = areas[0] if len(areas) == 1 else areas
+    if args.review_skill:
+        phase["reviewSkill"] = args.review_skill
+    return phase
+
+
+def _locked_phase_add(args, project, config, mpath, title, out):
+    """Everything between acquire and release for `add-phase`: read, allocate,
+    append, write, validate-from-disk, roll back on findings, journal, report.
+
+    `_locked_add`'s shape deliberately, down to which refusal comes before which
+    write -- the two verbs differ in WHAT they append and in nothing else, and a
+    second discipline for the second writer is how one of them ends up leaving an
+    invalid manifest behind."""
     try:
-        ok = bool(mod.append(project, {
-            "action": "%s.cancel" % kind,
-            "target": os.path.relpath(mpath, project).replace(os.sep, "/"),
-            "summary": summary,
-            "details": details,
-            "actor": {"author": _panel_write._viewer(project, config or {})},
-        }, cfg))
-    except Exception:
-        return {"journaled": False, "journaledWhy": "failed"}
-    return {"journaled": ok, "journaledWhy": None if ok else "failed"}
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    if not isinstance(assembled, dict) or not isinstance(raw_index, dict):
+        out("[audit-task] manifest root is not an object")
+        return E_USAGE
+
+    vm = _panel_write._cores()[0]
+    pre_findings, _pre_w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing "
+            "written; fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    # ABSENT and BLANK are different answers. `--id ""` falling through to the
+    # allocator would write a phase under an id nobody asked for while reporting
+    # success, which is the no-op-on-unexpected-input shape rather than a
+    # convenience: `None` means the flag was not passed, anything else is what
+    # the human typed and is graded as such.
+    pid = (_allocate_phase_id(assembled) if args.phase_id is None
+           else args.phase_id.strip())
+    refusal = _phase_id_refusal(assembled, raw_index, pid)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+
+    gate, gate_basis = _phase_gate(args, assembled)
+    phase = _build_phase(pid, title, args, gate)
+    assembled.setdefault("phases", []).append(phase)
+
+    snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
+                                  new_phase=phase))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, pid, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    written_manifest = {}
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s"
+                              % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the phase would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_phase_add(project, config, mpath, pid, title,
+                              phase["desiredOutcome"])
+    waiting = _waiting_on(assembled, phase)
+    if args.as_json:
+        result = {"ok": True, "id": pid, "title": title, "phase": phase,
+                  "written": written, "warnings": warnings,
+                  "testGateBasis": gate_basis,
+                  "ready": not waiting, "waitingOn": waiting}
+        result.update(jres)
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] phase %s added -- %s" % (pid, title))
+    out("  outcome: %s" % phase["desiredOutcome"])
+    # The basis rides every gate line, empty or not: a phase with no gate is
+    # signed off on review alone, and "gate: none" without the reason leaves the
+    # reader unable to tell a deliberate choice from a manifest that declares no
+    # build commands.
+    out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
+    if "area" in phase:
+        out("  area: %s" % json.dumps(phase["area"]))
+    if phase.get("reviewSkill"):
+        out("  reviewSkill: %s" % phase["reviewSkill"])
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the phase.add row")
+    out("  written: %s" % ", ".join(written))
+    if waiting:
+        out("  waiting on: %s" % ", ".join(waiting))
+    out("  next: /audit:task add \"<the first task>\" --phase %s" % pid)
+    return 0
+
+
+# --- the doors ------------------------------------------------------------------
+def _under_lock(args, project, out, body):
+    """Config, manifest path, the index lock, `body`, release.
+
+    ONE copy for three verbs. The lock comes BEFORE the read: ids are allocated
+    under it, so the read-modify-write is serialized (manifest-conventions ->
+    ID allocation). What each verb checks before this point differs and stays in
+    its own door; what happens after it does not differ at all, and three copies
+    of that would be three answers to "where is the manifest"."""
+    config = _panel_write.read_config(project)
+    mpath = (os.path.abspath(args.manifest) if args.manifest
+             else _panel_write._manifest_path(project, config))
+    if not os.path.isfile(mpath):
+        out("[audit-task] manifest not found: %s -- run /audit:init first"
+            % mpath)
+        return E_USAGE
+    lock = _acquire_lock(project, config, mpath, args.takeover, out)
+    if isinstance(lock, int):
+        return lock
+    try:
+        return body(config, mpath)
+    finally:
+        _release_lock(lock)
+
+
+def cmd_phase_add(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    title = (args.title or "").strip()
+    if not title:
+        out("[audit-task] add-phase needs a non-empty title")
+        return E_USAGE
+    if not (args.outcome or "").strip():
+        # `cancel --reason`'s rule, one noun up. A phase whose success cannot be
+        # stated in a line is a phase sign-off cannot address, and the conventions
+        # put `desiredOutcome` in the new-phase template for that reason -- so the
+        # verb refuses rather than writing a phase nobody can sign off.
+        out("[audit-task] add-phase needs --outcome \"<what success looks "
+            "like>\" -- /audit:status shows it, task subagents receive it and "
+            "sign-off must address it (conventions -> New phase template)")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_phase_add(
+                           args, project, config, mpath, title, out))
 
 
 def cmd_cancel(args, out):
@@ -748,19 +1186,9 @@ def cmd_cancel(args, out):
         out("[audit-task] cancel needs --reason \"<why>\" -- cancelling without "
             "a recorded reason is the hand-edit this verb exists to replace")
         return E_USAGE
-    config = _panel_write.read_config(project)
-    mpath = (os.path.abspath(args.manifest) if args.manifest
-             else _panel_write._manifest_path(project, config))
-    if not os.path.isfile(mpath):
-        out("[audit-task] manifest not found: %s -- run /audit:init first" % mpath)
-        return E_USAGE
-    lock = _acquire_lock(project, config, mpath, args.takeover, out)
-    if isinstance(lock, int):
-        return lock
-    try:
-        return _locked_cancel(args, project, config, mpath, tid, reason, out)
-    finally:
-        _release_lock(lock)
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_cancel(
+                           args, project, config, mpath, tid, reason, out))
 
 
 def cmd_add(args, out):
@@ -772,27 +1200,14 @@ def cmd_add(args, out):
     if not title:
         out("[audit-task] add needs a non-empty title")
         return E_USAGE
-    config = _panel_write.read_config(project)
-    mpath = (os.path.abspath(args.manifest) if args.manifest
-             else _panel_write._manifest_path(project, config))
-    if not os.path.isfile(mpath):
-        out("[audit-task] manifest not found: %s -- run /audit:init first"
-            % mpath)
-        return E_USAGE
-    # The lock comes BEFORE the read: ids are allocated under it, so the
-    # read-modify-write is serialized (manifest-conventions -> ID allocation).
-    lock = _acquire_lock(project, config, mpath, args.takeover, out)
-    if isinstance(lock, int):
-        return lock
-    try:
-        return _locked_add(args, project, config, mpath, title, out)
-    finally:
-        _release_lock(lock)
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_add(
+                           args, project, config, mpath, title, out))
 
 
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
-    p.add_argument("command", choices=["add", "cancel"])
+    p.add_argument("command", choices=["add", "add-phase", "cancel"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -810,15 +1225,22 @@ def main(argv, out=print):
     p.add_argument("--gate", action="append", default=None)
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None)
+    # add-phase only. `--id` rather than a positional: the title is the
+    # positional every verb here already spends, and an OPTIONAL id read off
+    # position two would be indistinguishable from the optional `manifest`.
+    p.add_argument("--id", dest="phase_id", default=None)
+    p.add_argument("--outcome", default=None)
+    p.add_argument("--area", default=None)
+    p.add_argument("--review-skill", dest="review_skill", default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
+    doors = {"add": cmd_add, "add-phase": cmd_phase_add, "cancel": cmd_cancel}
     try:
-        return cmd_cancel(args, out) if args.command == "cancel" \
-            else cmd_add(args, out)
+        return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
         out("[audit-task] internal error: %s" % exc)
         return E_INVALID

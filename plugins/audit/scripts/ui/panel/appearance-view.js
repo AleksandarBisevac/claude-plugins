@@ -290,8 +290,13 @@ function renderAppearance(){closeCombo();
    if(!res.ok){saveOutcome(res,rows,'the theme',slot);return;}
    THEME=await api('GET','/api/theme');TDRAFT=null;TLAY=null;
    renderAppearance();
-   showWriteResult('#look',res,rows,'the theme');
-   toast('theme saved — reload to see the report wear it too');}},'Save theme');
+   // One save, one toast: this used to call showWriteResult and then toast again,
+   // and the second call overwrote the save result before it was on screen, so
+   // this was the one save surface that reported nothing (F102). Anything extra a
+   // save has to say goes to saveOutcome as its trailing clause, never to a second
+   // toast — `toast` replaces the text of ONE element.
+   showWriteResult('#look',res,rows,'the theme',
+     'reload to see the report wear it too');}},'Save theme');
  const reset=el('button',{class:'btn small','data-threset':'1',type:'button',
    onclick:async()=>{
    // The confirm rows are the change list REVERSED — from and to swapped —

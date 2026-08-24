@@ -6,6 +6,8 @@
 // skill asks for this check in writing; nothing ran it until now.
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +15,7 @@ import {
   PANEL_STRING_PLACEHOLDERS,
   panelParts,
   assemblePanelBody,
+  pyParts,
   reportParts,
   reportTags,
   assembleReportBody,
@@ -43,6 +46,17 @@ describe('every ui/ part parses', () => {
     // Every part either page is BUILT from must be a part this walk can see.
     for (const name of reportParts()) expect(parts).toContain(name);
     for (const name of panelParts()) expect(parts).toContain(name);
+  });
+
+  // THE OTHER DIRECTION, and it is the one that catches a SHORT list (F129).
+  // The clause above compares the lists against the walk, so a list that lost
+  // its tail still satisfies it - every name it still holds is on disk. The
+  // directory is the independent second opinion this needs: a part that exists
+  // and that neither page loads is either a part nobody registered or a part
+  // list that was cut short, and both used to reach a green run.
+  it('every part on disk is loaded by a surface, so no list is short', () => {
+    const loaded = new Set([...reportParts(), ...panelParts()]);
+    expect(parts.filter((n) => !loaded.has(n))).toEqual([]);
   });
 
   it.each(parts)('node --check %s', (name) => {
@@ -114,6 +128,77 @@ describe('the sandbox reads what it thinks it reads', () => {
     // part — unlike a hoisted function declaration. `F` is declared in
     // usage-model.js, late in `_panel_ui._JS_PARTS`.
     expect(fns.F.tokens).toBe(7);
+  });
+});
+
+// F129. The reader used to match `_JS_PARTS = \(([\s\S]*?)\)` over the module's
+// SOURCE, which is a second Python parser written as one regex: it ended at the
+// first closing parenthesis, so a comment inside the tuple carrying one cut the
+// list short and every browser suite silently loaded a panel missing its tail.
+// It surfaced as a function that did not exist, never as "the list was short".
+//
+// These run the SHIPPED reader against fixture modules, because a reader that can
+// only ever be pointed at the real file is a reader whose failure cannot be
+// reproduced - which is how this survived, and why the repair at the time was a
+// comment in _panel_ui.py asking authors not to type a parenthesis.
+describe('a part list is asked for, not scanned (F129)', () => {
+  const PROBE = '_probe_ui_parts';
+
+  function withModule(body, run) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-ui-parts-'));
+    try {
+      fs.writeFileSync(path.join(dir, PROBE + '.py'), body, 'utf8');
+      return run(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const read = (dir) => pyParts(PROBE, '_JS_PARTS', dir);
+
+  it('a comment carrying parentheses does not truncate the list', () => {
+    // Both names must come back. Under the regex the block ended inside
+    // `el('thead')` and only the first survived, which is the exact shape the
+    // panel shipped: shared parts present, boot part gone.
+    const names = withModule(
+      '_JS_PARTS = (\n'
+      + '    "shared/first.js",\n'
+      + "    # a note about el('thead') and (why) the order matters\n"
+      + '    "panel/last.js",\n'
+      + ')\n', read);
+    expect(names).toEqual(['shared/first.js', 'panel/last.js']);
+  });
+
+  it('...and neither does a list that is not a literal at all', () => {
+    // `_report_ui._CSS_PARTS` is already this shape - it points at a tuple
+    // declared in _ui_theme - so a reader that can only see a literal cannot be
+    // moved to the CSS side. No source scan reaches this value; the interpreter
+    // that computed it does.
+    const names = withModule(
+      '_RAW = ["panel/b.js", "panel/a.js"]\n'
+      + '_JS_PARTS = tuple(sorted(_RAW))\n', read);
+    expect(names).toEqual(['panel/a.js', 'panel/b.js']);
+  });
+
+  // THE LOUD HALF. A short list must be impossible to mistake for a complete
+  // one, so every degenerate shape raises with the attribute named rather than
+  // returning something a caller would iterate zero or wrongly.
+  it.each([
+    ['a missing attribute', '_OTHER = ("panel/a.js",)\n', '_JS_PARTS'],
+    ['an empty tuple', '_JS_PARTS = ()\n', 'empty'],
+    ['a bare string', '_JS_PARTS = "panel/a.js"\n', 'not a list'],
+    ['a non-asset entry', '_JS_PARTS = ("panel/a.js", "panel/a.css")\n', 'panel/a.css'],
+  ])('%s raises and says so', (_label, body, needle) => {
+    expect(() => withModule(body, read)).toThrow(new RegExp(needle));
+  });
+
+  // THE SECOND DIRECTION, and it looks vacuous on purpose: it is the only case
+  // that fails if the guards above become unconditional. A well-formed fixture
+  // must come back intact and raise nothing.
+  it('a well-formed list raises nothing and arrives in order', () => {
+    const names = withModule(
+      '_JS_PARTS = (\n    "shared/z.js",\n    "panel/a.js",\n)\n', read);
+    expect(names).toEqual(['shared/z.js', 'panel/a.js']);
   });
 });
 

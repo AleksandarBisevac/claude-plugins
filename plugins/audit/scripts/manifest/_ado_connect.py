@@ -116,9 +116,20 @@ def transport_verdict(has_az, extensions, has_mcp):
         return {"transport": None, "stop": "az is on PATH but `az extension "
                 "list` did not answer, so whether the azure-devops extension "
                 "is installed is unknown - which is not the same as installed",
-                "remedy": "run `az extension list` by hand and read its error; "
-                          "if the extension is missing: az extension add "
-                          "--name azure-devops",
+                # F98 CARRIED THE EVIDENCE AND THIS SENTENCE HAD NOT NOTICED.
+                # It used to send the operator off to run `az extension list`
+                # by hand and read its error - which was the only way to tell a
+                # missing tool from a sandbox refusal until the reading grew a
+                # `saw` half. The report prints that observation between this
+                # rung's basis and this remedy, so the answer is already on
+                # screen and re-running is work with a known result. Point at
+                # it instead: a remedy naming the line beats one asking for a
+                # second run of the command that produced it.
+                "remedy": "read the `saw:` line above - it carries that call's "
+                          "exit code and its stderr, which is what separates a "
+                          "sandbox refusing the call from a tool that is not "
+                          "there; if the extension is simply missing: az "
+                          "extension add --name azure-devops",
                 "basis": "`az extension list` failed or returned no JSON"}
     if "azure-devops" not in extensions:
         return {"transport": None, "stop": "az is on PATH but the azure-devops "

@@ -77,6 +77,26 @@ def _cases(check):
           "with no stop - the negative half, so t4 cannot pass on a rule that "
           "always refuses",
           ok["transport"] == M.TRANSPORT_AZ and ok["stop"] is None)
+    # F98's other half, found by the agent that fixed it. The reading grew a
+    # `saw` field carrying the exit code and the stderr, and the report prints
+    # it between this rung's basis and this remedy — so "run `az extension list`
+    # by hand and read its error" had become an instruction to re-run a command
+    # whose answer is already on screen. A remedy that names the line beats one
+    # asking for a second run of the thing that produced it.
+    check("t7 the unanswered-list remedy points at the observation the report "
+          "already prints instead of asking for the command to be re-run by "
+          "hand: %r" % (unknown["remedy"],),
+          "saw:" in unknown["remedy"] and "by hand" not in unknown["remedy"]
+          # ...and it still carries the actionable half, or a reader who CAN
+          # see the extension is missing is left with a diagnosis and no fix.
+          and "az extension add --name azure-devops" in unknown["remedy"])
+    # THE SECOND DIRECTION. A remedy that pointed at `saw:` unconditionally
+    # would pass t7 and fail here: these two rungs know their own cause exactly,
+    # so sending a reader to an observation would be the vaguer answer.
+    check("t8 ...and the rungs that DO know their cause name a command instead, "
+          "so the pointer is where the evidence is and not everywhere: %r"
+          % ([no_az["remedy"], missing["remedy"]],),
+          "saw:" not in no_az["remedy"] and "saw:" not in missing["remedy"])
     stops = [v["stop"] for v in (no_az, unknown, missing) if v["stop"]]
     check("t6 three rungs stop and each says something DIFFERENT - counted, "
           "because two rungs sharing one sentence leaves a reader following "

@@ -53,10 +53,60 @@ reason it stays, the reasons are themselves checked, and a baseline entry that n
 longer matches anything is reported -- so this cannot become a place where dead
 exemptions accumulate while the check quietly stops covering what it claims.
 
+IT TRAVELS, WHICH IS WHAT IT WAS WRITTEN FOR AND WAS NOT WIRED FOR. Every
+paragraph above reasons about OTHER repositories -- only a rule reading the
+committed file can prove nothing else writes there; a list of report names would
+be right here and wrong everywhere else -- and yet the root was `__file__`'s
+grandparent and the command took no path, so the one tree it could never be
+pointed at was the one where the leak was found (F112). `--repo <path>` is that
+path. `findings()`, `tracked_paths()` and `domain_files()` always took it.
+
+AND THE BASELINE DOES NOT TRAVEL WITH IT. Its rows name bytes in THIS project's
+hash chain and the reason each stays is a fact about THIS project, so applying
+them to another tree would clear a finding on a decision its owner never took --
+which is the failure mode of a shipped exemption table, and it would land on
+exactly the person who needs the finding. So a `--repo` naming any tree but this
+one is scanned with the table not consulted, and the closing line says so.
+
+AND IT CANNOT READ AN IMAGE, WHICH IS SAID HERE BECAUSE THE GAP IS REAL (F137).
+Every committed screenshot under `docs/screenshots/` is a picture of a rendered
+surface - the same surfaces this file scans as text - and one of them, the plan
+gate card, paints file paths that on a real project name the operator's machine.
+Nothing above reaches them: the domain is decided by a path rule or by a
+generation stamp read out of decoded UTF-8, so a `.png` never enters it and never
+could. This is NOT the narrowing two paragraphs up, which is a choice about what
+is worth reading; it is a limit of what can be read at all, and a limit nothing
+names is indistinguishable from coverage.
+
+OCR IS NOT THE REPAIR, and the honest one is upstream: the capture knows the
+strings it is about to paint, and it knows them BEFORE the shutter opens. So the
+same detector vocabulary is offered to a caller through `--scan-text`, which
+judges text handed to it on stdin rather than anything git tracks -
+`tools/capture-screenshots.mjs` pipes the paths its fixtures will render through
+it and refuses to photograph a surface that would carry machine identity into a
+committed PNG. One vocabulary, in one file, with two readers: a rule that read the
+committed bytes and a second rule that re-spelled these patterns in JavaScript
+would be two tables nothing compares.
+
+WHAT `--scan-text` DELIBERATELY IS NOT is a domain. It carries no baseline, asks
+git nothing, and makes no claim about a repository; it answers one question about
+one string for whoever asked. That is why an empty read is its own finding there
+too: a caller that piped nothing and got a clean answer would take it for a clean
+surface.
+
+A DOMAIN THAT NARROWED TO NOTHING IS ITS OWN FINDING (`domain-empty`), for the
+same reason an unreadable file is one. While the root was hard-wired this could
+not happen -- this repository always tracks a journal and a rendered report -- and
+with `--repo` it is what a mistyped path does first, so "there is nothing of ours
+committed here" had to stop printing as "every committed artifact is clean".
+
 Run it:   python3 tools/check-committed-pii.py
+          python3 tools/check-committed-pii.py --repo /path/to/a/real/project
+          echo "$SOME_PATH" | python3 tools/check-committed-pii.py --scan-text
           python3 tools/check-committed-pii.py --selftest
 Exit 0 when every committed artifact is clean, 1 naming each finding (and each
-dead baseline entry), 2 on a usage error.
+dead baseline entry, and an empty domain), 2 on a usage error. `--scan-text` reads
+stdin instead of a repository and exits 1 on a detector hit or on an empty read.
 """
 
 import io
@@ -65,6 +115,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -244,21 +295,45 @@ def domain_files(repo=None):
     return keep, bad
 
 
+def scan(repo=None):
+    """One run's whole answer: `root`, `rows`, `files`, `surfaces`, `baselined`.
+
+    ONE WALK, and the domain travels with the rows because "no findings" has two
+    very different meanings -- every committed artifact is clean, or this tree
+    holds no artifact of ours -- and only the domain tells them apart. That could
+    not happen while the root was hard-wired to this repository, which always
+    tracks both surfaces; with `--repo` it is the first thing a mistyped path
+    does, so the empty domain is a ROW rather than a footnote.
+    """
+    root = repo if repo is not None else REPO
+    keep, rows = domain_files(root)
+    rows = list(rows)
+    for rel, surface, text in keep:
+        rows.extend(scan_text(rel, text, surface))
+        if surface == "journal":
+            problem = writer_id_problem(os.path.basename(rel))
+            if problem is not None:
+                rows.append((rel, 0, "journal-writer-id", 1))
+    if not keep and not rows:
+        # NOT reported when `rows` already carries `domain-unavailable`: git
+        # having refused the question and git having answered "nothing of yours
+        # is here" are two findings, and printing both for one tree would send
+        # the reader looking for a second cause.
+        rows.append((".", 0, "domain-empty", 1))
+    return {"root": root,
+            "rows": sorted(rows),
+            "files": [rel for rel, _s, _t in keep],
+            "surfaces": sorted(set(s for _r, s, _t in keep)),
+            "baselined": baseline_applies(root)}
+
+
 def findings(repo=None):
     """[(rel, line, detector, column)] over every tracked file in the domain.
 
     Sorted, so two runs on one tree produce one order and a diff of two reports is
     the change rather than the shuffling.
     """
-    keep, out = domain_files(repo)
-    out = list(out)
-    for rel, surface, text in keep:
-        out.extend(scan_text(rel, text, surface))
-        if surface == "journal":
-            problem = writer_id_problem(os.path.basename(rel))
-            if problem is not None:
-                out.append((rel, 0, "journal-writer-id", 1))
-    return sorted(out)
+    return scan(repo)["rows"]
 
 
 # --- what is already committed, and stays -------------------------------------
@@ -279,6 +354,24 @@ BASELINE = (
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
+
+
+def baseline_applies(repo=None):
+    """Whether THIS repository's `BASELINE` may clear a finding in `repo`.
+
+    ONLY IN THE TREE THE TABLE DESCRIBES. Both rows name bytes inside one hash
+    chain and the reason each stays -- "rewriting it would break `verify()` on
+    every clone" -- is a fact about THAT chain. Carried into somebody else's
+    repository the same `(path, line, detector)` key would clear a finding on a
+    decision its owner never took, and the whole point of `--repo` is that the
+    person whose name is in those rows gets to see them. A clone or a worktree of
+    this project resolves to a different directory and is therefore scanned
+    unbaselined too, which prints two findings that are already accounted for --
+    the loud direction, chosen deliberately over a path-independent identity test
+    that would have to guess what "the same project" means.
+    """
+    root = repo if repo is not None else REPO
+    return os.path.realpath(root) == os.path.realpath(REPO)
 
 
 def baseline_index():
@@ -313,7 +406,225 @@ def render(row):
     return "%s:%d:%s (column %d)" % (rel, line, detector, col)
 
 
+# --- what a run says about itself ---------------------------------------------
+# THE SYNTHETIC DETECTORS. Neither is text a pattern matched, so neither has a
+# file and a column a reader can open - which is why they get a sentence of their
+# own rather than being left to read as a leak at line 0 of the repository root.
+SYNTHETIC = {
+    "domain-empty": ("this tree tracks no journal, no rendered report and no "
+                     "theme document of ours, so the run cleared NOTHING - "
+                     "check the path before reading anything into it"),
+    "domain-unavailable": ("git could not be asked what this tree tracks, so "
+                           "the run cleared nothing"),
+}
+
+
+def ok_line(run):
+    """The line a clean run prints, with the basis for every claim in it.
+
+    A pure function of `scan()`'s dict, so a case reads it without a fixture
+    tree. THE SURFACES ARE HALF THE CLAIM: "no findings" is worth nothing until
+    the line also says what was looked at, and the baseline clause says whether a
+    decision recorded in THIS repository was allowed to clear anything in the
+    tree that was actually scanned.
+
+    AND THE ROOT IS NOT IN IT. Written with the absolute root first, which put
+    `/Users/<name>/...` on the tool's own stdout - and on a CI runner it would
+    have put the checkout path there, which is `posix-home`'s own shape. A check
+    against CWE-532 that prints a home directory into a public log is the bug it
+    exists for, one layer out; the operator knows which tree they named, and the
+    baseline clause says all that has to be said about which one it was.
+    """
+    if run["baselined"]:
+        basis = ("; %d accounted for by BASELINE" % (len(run["rows"]),)
+                 if run["rows"] else "")
+    else:
+        basis = ("; BASELINE NOT consulted - the tree named by --repo is not the "
+                 "repository that table describes, and one project's exemptions "
+                 "do not clear another project's findings")
+    # THE WORD `TEXT` IS THE REPAIR FOR F137, and it is one word because the
+    # over-claim was one word wide. "No committed artifact carries machine
+    # identity" is false about a repository that also commits screenshots of these
+    # very surfaces, and a headline that over-claims is worse than a narrow one
+    # because the parenthetical nobody reads was carrying the whole qualification.
+    return ("OK: no committed TEXT artifact carries machine identity (%d file(s) "
+            "in the domain [%s], %d finding(s)%s). An image carries no text to "
+            "scan and is outside this domain by construction; --scan-text is how "
+            "the strings that BECOME one are judged, before the shutter."
+            % (len(run["files"]), ", ".join(run["surfaces"]) or "nothing",
+               len(run["rows"]), basis))
+
+
+# --- the same vocabulary, offered to a caller ---------------------------------
+# The label a `--scan-text` finding is rendered under. A DASH and not a path,
+# because the caller knows what it piped and this file must not print it: the
+# whole point of a stdin mode here is that the text may be the leak.
+STDIN_LABEL = "-"
+
+
+def stdin_report(text):
+    """`(exit code, [lines])` for one `--scan-text` run.
+
+    PURE, so the cases read exactly what a caller reads rather than a fixture of
+    it, and so the empty-read branch can be driven without a pipe.
+
+    NO BASELINE AND NO DOMAIN. Those are answers about a repository and this is an
+    answer about a string somebody handed over; consulting either would let a
+    decision recorded about committed bytes clear a finding about a path that is
+    about to be painted into a picture.
+
+    AN EMPTY READ IS A FINDING for the same reason `domain-empty` is one. A caller
+    that piped nothing - a variable that was not set, a command that failed
+    upstream - would otherwise receive the clean answer and photograph the surface
+    it was asking about.
+    """
+    if not text.strip():
+        return 1, ["NOTHING WAS READ: --scan-text was given no text, so it "
+                   "cleared nothing. A caller that piped an unset variable and "
+                   "read this as clean would have its answer from a run that "
+                   "looked at no characters at all."]
+    rows = scan_text(STDIN_LABEL, text, "text")
+    if rows:
+        lines = ["FOUND %s" % (render(row),) for row in sorted(rows)]
+        lines.append("The text handed to --scan-text carries machine identity. "
+                     "It is deliberately not echoed - the caller knows what it "
+                     "piped, and a check that printed the leak would be the bug "
+                     "it exists for, one layer out.")
+        return 1, lines
+    return 0, ["OK: no machine identity in the text read from stdin (%d line(s), "
+               "%d detector(s) applied)"
+               % (len(text.split("\n")), len(DETECTORS))]
+
+
 # --- selftest -----------------------------------------------------------------
+def _fixture_tree(files):
+    """A git tree that is NOT this repository, holding exactly `files`.
+
+    STAGED, NOT COMMITTED. `git ls-files` -- the one question this tool asks git
+    -- reads the index, and a commit would need a configured identity the runner
+    may not have. The caller removes the directory.
+    """
+    root = tempfile.mkdtemp(prefix="pii-fixture-")
+    for rel, text in files:
+        path = os.path.join(root, rel.replace("/", os.sep))
+        parent = os.path.dirname(path)
+        if not os.path.isdir(parent):
+            os.makedirs(parent)
+        with io.open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    for args in (["init", "-q"], ["add", "-A"]):
+        subprocess.check_call(["git", "-C", root] + args,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL)
+    return root
+
+
+def _captured(argv):
+    """`(exit code, stdout)` for one `main()` run -- the printed lines are the
+    contract a person pointing this at their own project actually reads."""
+    held, buf = sys.stdout, io.StringIO()
+    sys.stdout = buf
+    try:
+        code = main(argv)
+    finally:
+        sys.stdout = held
+    return code, buf.getvalue()
+
+
+def _foreign_cases(check):
+    """The half F112 was: the tool pointed at a tree that is not this repository.
+
+    Split out so the fixture trees are built and removed in one place, and so the
+    `finally` covers every case below rather than the first one that raises.
+    """
+    # THE PATH AND THE LINES ARE THE BASELINE'S OWN, read off the table rather
+    # than typed: that is the fixture value that tells the two implementations
+    # apart. A version applying this repository's exemptions to any tree it is
+    # given clears the first two rows and reports a foreign journal as clean -
+    # which is exactly the silent pass a shipped exemption table causes, landing
+    # on the one person who needs the finding.
+    leaky_rel = BASELINE[0][0]
+    clean_rel = os.path.join(os.path.dirname(leaky_rel),
+                             "2026-08.a1b2c3d4e5f60718.jsonl").replace(os.sep, "/")
+    host = '{"actor":{"via":"hook","host":"a-laptop.local"}}'
+    leaky = _fixture_tree([
+        (leaky_rel, host + "\n" + host + "\n"
+         + '{"details":{"command":"npm ci","cwd":"/Users/someone/src"}}' + "\n"),
+        ("README.md", "a human wrote this, and mentioned /Users/someone\n"),
+    ])
+    empty = _fixture_tree([("README.md", "nothing of ours is committed here\n")])
+    clean = _fixture_tree([(clean_rel, '{"actor":{"via":"hook"}}\n')])
+    try:
+        rows = findings(leaky)
+        seen = sorted((r[1], r[2]) for r in rows)
+        check("q13 `--repo` scans the tree it is GIVEN and reports that tree's "
+              "findings, which is the whole of F112 - the tool exists because a "
+              "user found their own name in a committed journal on a real "
+              "project, and until this flag it could only ever be run here: %r"
+              % (seen,),
+              seen == [(1, "journal-actor-host"), (2, "journal-actor-host"),
+                       (3, "journal-details-command"), (3, "posix-home")]
+              and sorted(set(r[0] for r in rows)) == [leaky_rel])
+
+        code, text = _captured(["--repo", leaky])
+        _cleared = [r for r in rows if r not in unbaselined(rows)]
+        check("q14 ...and THIS repository's BASELINE clears nothing there. The "
+              "fixture's leak sits at the table's own path and lines, so a "
+              "version that consulted the table would exit 0 over a journal "
+              "naming somebody's machine: exit %d, %d row(s) the table would "
+              "have cleared here" % (code, len(_cleared)),
+              code == 1 and len(_cleared) == 2
+              and baseline_applies(leaky) is False
+              and text.count("FOUND %s:1:journal-actor-host" % (leaky_rel,)) == 1
+              and text.count("FOUND %s:2:journal-actor-host" % (leaky_rel,)) == 1)
+
+        ecode, etext = _captured(["--repo", empty])
+        check("q15 a DOMAIN THAT NARROWED TO NOTHING is a finding and not an "
+              "all-clear - a mistyped path is the first thing `--repo` makes "
+              "possible, and 'nothing of ours is committed here' must not print "
+              "as 'every committed artifact is clean': exit %d" % (ecode,),
+              ecode == 1 and etext.count("domain-empty") == 2
+              and "NOTHING WAS CHECKED" in etext
+              and not etext.startswith("OK:"))
+
+        # THE SECOND DIRECTION, and it looks vacuous: a `domain-empty` row that
+        # fired unconditionally would satisfy q15 for ever while refusing every
+        # clean project. This is the only case that fails if it does.
+        ccode, ctext = _captured(["--repo", clean])
+        crun = scan(clean)
+        check("q16 ...while a foreign tree WITH one of our artifacts, and clean, "
+              "exits 0 and says which surface it read: %r" % (ctext.strip(),),
+              ccode == 0 and "domain-empty" not in ctext
+              and crun["surfaces"] == ["journal"] and crun["rows"] == []
+              and "[journal]" in ctext)
+
+        # THE TOOL APPLIED TO ITSELF, counted rather than eyeballed. Written with
+        # the absolute root in it first, which put a home directory on stdout -
+        # and on a runner it would be the checkout path, which is `posix-home`'s
+        # own shape. A CWE-532 check printing one into a public log is the bug it
+        # exists for, one layer out.
+        _echo = dict((name, len(scan_text("ok.md", ok_line(run), "report")))
+                     for name, run in (("this repo", scan()),
+                                       ("a foreign tree", crun)))
+        check("q17 the OK line trips NONE of this file's own detectors, on both "
+              "roots - the line CI prints and the line a `--repo` run prints: %r"
+              % (_echo,),
+              set(_echo.values()) == set([0])
+              and clean not in ok_line(crun))
+    finally:
+        # F155. Each of these is a real repository with a file STAGED into it, and
+        # staging is enough: `git add` writes a loose object and writes it
+        # read-only. On windows `os.unlink` reads that attribute off the file and
+        # raises, so `shutil.rmtree` leaves `.git/objects/**` behind - and
+        # `ignore_errors=True` leaves it behind silently. The windows leg of CI
+        # runs the sweep, the sweep runs this file's `--selftest` from a scratch
+        # directory and refuses a file that left anything in it, so this site was
+        # live rather than theoretical.
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        for root in (leaky, empty, clean):
+            remove_tree(root)
+
+
 def _cases(check):
     _user = "aleksandarbisevac"
     # ONE LEAK, EVERY SPELLING IT ARRIVES IN. A session directory reaches a
@@ -432,36 +743,157 @@ def _cases(check):
           "nobody can clear: %r vs %r" % (_torn, _mid),
           _torn == [] and [h[2] for h in _mid] == ["journal-unparseable-row"])
 
+    _foreign_cases(check)
+
+    # The command line, as a value rather than as an exit code, because `--repo`
+    # gave it three ways to be wrong where it had one: a flag whose value is
+    # missing, a word nobody recognises, and a path that is not a directory. All
+    # three exit 2, so only the returned reason tells them apart - and a `--repo`
+    # that silently swallowed the next word would scan the wrong tree and say so
+    # nowhere.
+    # The bad path is a RELATIVE name on purpose. An absolute one would put the
+    # checkout path into this case's label, and the label is printed by every
+    # sweep - on a runner that is the home directory of the build user, which is
+    # `posix-home`, in the selftest of the file that defines it.
+    #
+    # AND EACH MESSAGE IS CLASSIFIED, not merely compared with the others. Asked
+    # only whether the three differ, this case stayed green against a `--repo`
+    # with no value reported as an unrecognised argument - the two messages
+    # differ because they quote different words, so distinctness was satisfied by
+    # the wrong diagnosis. What the reader needs is the KIND.
+    # -- the vocabulary offered to a caller, which is F137's half of this file --
+    # THE FIXTURE IS A WINDOWS TEMP ROOT, and it is chosen rather than convenient:
+    # `capture-screenshots.mjs` builds its fixtures under the platform temp
+    # directory on windows, which is per-user and therefore SPELLS the user's
+    # name - and the panel paints that path into its topbar. So this is the string
+    # that would become a committed PNG, not an invented one.
+    _painted = "C:\\Users\\somebody\\AppData\\Local\\Temp\\audit-shots"
+    _code, _lines = stdin_report(_painted + "\n")
+    _echo = dict((frag, " ".join(_lines).count(frag))
+                 for frag in ("somebody", "AppData", "audit-shots"))
+    check("q19 `--scan-text` judges text a CALLER hands over, with the same "
+          "detectors and the same refusal to echo what matched - this is how the "
+          "strings that become a committed picture get checked, since no rule "
+          "here can read a PNG: exit %d, %r" % (_code, _echo),
+          _code == 1
+          and any("windows-user-path" in line for line in _lines)
+          and set(_echo.values()) == set([0]))
+
+    # THE SECOND DIRECTION, and it looks vacuous: a mode that reported something
+    # for every input would satisfy q19 for ever while refusing every capture this
+    # repository actually runs. The fixture is the POSIX scratch root the capture
+    # really uses, which is the case that must stay quiet.
+    _clean_code, _clean_lines = stdin_report("/tmp/audit-shots-501\n")
+    check("q20 ...and the scratch root a capture on this platform really builds "
+          "under trips nothing, so the guard does not refuse the run it was "
+          "written to allow: exit %d, %r" % (_clean_code, _clean_lines),
+          _clean_code == 0 and len(_clean_lines) == 1
+          and _clean_lines[0].startswith("OK:")
+          and scan_text("ok.md", _clean_lines[0], "report") == [])
+
+    _empty = stdin_report("   \n")
+    check("q21 an EMPTY read is its own finding, never a clean answer - a caller "
+          "that piped an unset variable would otherwise photograph the surface it "
+          "was asking about on the strength of a run that read no characters: %r"
+          % (_empty,),
+          _empty[0] == 1 and "NOTHING WAS READ" in _empty[1][0])
+
+    _msgs = [parse_argv(a)[1] for a in ([], ["--repo"], ["--nonsense"],
+                                        ["--repo", "no-such-directory-here"])]
+    check("q18 the command line is parsed into a value, and each wrong shape is "
+          "refused by its own KIND - a missing value, an unknown word and a path "
+          "that is no directory send the reader to three different fixes: %r"
+          % (_msgs,),
+          parse_argv([]) == (None, None)
+          and parse_argv(["--repo", REPO])[0] == REPO
+          and _msgs[1].startswith("--repo needs")
+          and _msgs[2].startswith("unexpected argument")
+          and _msgs[3].startswith("not a directory")
+          and len(set(_msgs[1:])) == 3)
+
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
     return run(_cases)
 
 
-def main():
-    if "--selftest" in sys.argv[1:]:
+USAGE = ("usage: check-committed-pii.py [--repo <path>] [--scan-text] "
+         "[--selftest]\n")
+
+
+def parse_argv(argv):
+    """`(repo, problem)` -- the one flag, or why the command line is not one.
+
+    SPLIT OUT SO THE USAGE ERRORS ARE CASES. A flag whose value is missing and a
+    flag nobody recognises both used to be "any argument at all", which was true
+    while `--selftest` was the only word this accepted; with a value to parse,
+    `--repo` swallowing the next word or nothing at all are two different wrong
+    answers and only a return value tells them apart.
+    """
+    repo, rest, i = None, [], 0
+    while i < len(argv):
+        if argv[i] == "--repo":
+            if i + 1 >= len(argv):
+                return None, "--repo needs a path"
+            repo = argv[i + 1]
+            i += 2
+            continue
+        rest.append(argv[i])
+        i += 1
+    if rest:
+        return None, "unexpected argument(s): %s" % (" ".join(rest),)
+    if repo is not None and not os.path.isdir(repo):
+        return None, "not a directory: %s" % (repo,)
+    return repo, None
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if "--selftest" in argv:
         return _selftest()
-    if len(sys.argv) > 1:
-        sys.stderr.write("usage: check-committed-pii.py [--selftest]\n")
+    # HANDLED LIKE `--selftest` AND BEFORE `parse_argv`, on purpose: it names no
+    # repository and takes no value, so threading it through the `--repo` parser
+    # would give that parser a second question to answer and `q18`'s three kinds
+    # of wrong command line a fourth that is not about a path at all.
+    if "--scan-text" in argv:
+        rest = [a for a in argv if a != "--scan-text"]
+        if rest:
+            sys.stderr.write("check-committed-pii.py: --scan-text reads stdin and "
+                             "takes nothing else: %s\n" % (" ".join(rest),))
+            sys.stderr.write(USAGE)
+            return 2
+        code, lines = stdin_report(sys.stdin.read())
+        for line in lines:
+            sys.stdout.write(line + "\n")
+        return code
+    repo, problem = parse_argv(argv)
+    if problem is not None:
+        sys.stderr.write("check-committed-pii.py: %s\n" % (problem,))
+        sys.stderr.write(USAGE)
         return 2
-    live = findings()
-    bad = unbaselined(live)
+    run = scan(repo)
+    live = run["rows"]
+    # THE TABLE IS THIS REPOSITORY'S, so in any other tree every row stands. A
+    # dead-baseline report is meaningless there for the same reason: the entries
+    # were never claims about that tree, so they cannot have gone stale in it.
+    bad = unbaselined(live) if run["baselined"] else list(live)
+    dead = dead_baseline(live) if run["baselined"] else []
     for row in bad:
         sys.stdout.write("FOUND %s\n" % render(row))
-    dead = dead_baseline(live)
     for key in dead:
         sys.stdout.write("DEAD BASELINE %s:%d:%s - it matches nothing any more, so "
                          "the exemption is describing a system that has moved on\n"
                          % key)
     if bad or dead:
-        sys.stdout.write("\nA committed artifact carries machine identity, or an "
-                         "exemption has gone stale. The matched text is "
-                         "deliberately not printed - open the file at the line "
-                         "named above.\n")
+        for name in sorted(set(r[2] for r in bad) & set(SYNTHETIC)):
+            sys.stdout.write("\nNOTHING WAS CHECKED (%s): %s\n"
+                             % (name, SYNTHETIC[name]))
+        sys.stdout.write("\nA committed artifact carries machine identity, an "
+                         "exemption has gone stale, or nothing was checked. The "
+                         "matched text is deliberately not printed - open the "
+                         "file at the line named above.\n")
         return 1
-    sys.stdout.write("OK: no committed artifact carries machine identity "
-                     "(%d finding(s), all accounted for by BASELINE)\n"
-                     % (len(live),))
+    sys.stdout.write(ok_line(run) + "\n")
     return 0
 
 
