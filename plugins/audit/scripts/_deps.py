@@ -319,6 +319,12 @@ LAYERS = (
      # lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",
      "_usage_viz", "_doctor_ado", "_doctor_hygiene",
+     # `_ado_fetch` reads the linked side of a board in ONE query per chunk, with a
+     # bound on each. It lands at L3 for one edge: it reuses `_ado_drift`'s
+     # `link_inventory` (L2) to decide WHICH ids to ask for, rather than writing a
+     # second walk that would be a second opinion about what "linked" means. Its
+     # only consumer is the `fetch-ado-items` door at L7.
+     "_ado_fetch",
      # `_panel_discovery` came down from L4 with `_help`, for the same reason and
      # by the same measurement: `_help` (now L2) and `_manifest_io` (L1) are its
      # only edges, so L3 is where the graph always put it. The move is what makes
@@ -441,6 +447,12 @@ LAYERS = (
      # card" is the normal state of a board with several teams, and a non-zero exit
      # would label it an error and be switched off within a day.
      "explain-ado-drift",
+     # `fetch-ado-items` is the door onto `_ado_fetch` (L3): every linked item read
+     # in one query per chunk instead of one call each. A GATE, unlike
+     # `explain-ado-drift` - "the board did not answer" is not a difference of
+     # opinion between two teams, it is a failure, and a payload missing the chunk
+     # that timed out reads downstream as a clean board for exactly those items.
+     "fetch-ado-items",
      # `resolve-ado-parent` is the door onto `_ado_parent`: where each item
      # would hang, and whether that place can be true. A command for the reason
      # `check-ado-item` is one - the caller is orchestrator PROSE reaching

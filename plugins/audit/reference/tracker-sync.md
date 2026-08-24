@@ -254,6 +254,71 @@ state alone and report the field skip. Note the goal is met anyway: a stock
 process reaching its done state empties Remaining Work by itself; the config key
 matters only for custom processes without the clear rule.
 
+### Reading many linked items is ONE query, not one call each (live-gate F5)
+
+`az boards work-item show` takes a **single** `--id`. A comma list is not a batch, it
+is a parse error (`invalid literal for int() with base 10: '39,40'`), so any
+instruction that names `show` while asking for a batch cannot be obeyed — the run
+loops, and every linked item pays a fresh CLI start-up. Measured against the lab
+board, that loop costs roughly half a second per item where ONE `az boards query`
+over the same ids answers for all of them in about the time of a single `show`. The
+difference is a per-ITEM constant against a per-CALL one, so it does not shrink as
+the board grows; it is the whole cost.
+
+The batch is a WIQL query, and **`az boards query` returns exactly the fields the
+`SELECT` names and no others** — a field left out comes back absent, which reads as
+*the board does not have one*. The operative list is `_ado_fetch.FIELDS`, printed by
+`fetch-ado-items.py <manifest> --dry-run`; the query below is the SHAPE, not a second
+copy of that list:
+
+```bash
+az boards query --org <org> --project <project> --only-show-errors -o json \
+  --wiql "SELECT [System.Id], [System.State], [System.Parent], [System.ChangedBy], [System.ChangedDate], [System.Tags], [System.IterationPath] FROM WorkItems WHERE [System.Id] IN (<ids>)" \
+  < /dev/null
+```
+
+Two shapes were **verified on the live board rather than assumed**, because existing
+steps already depend on them:
+
+* `System.ChangedBy` comes back as the identity OBJECT (`displayName`, `uniqueName`)
+  and `System.ChangedDate` as an ISO stamp with fractional seconds and a trailing
+  `Z` — the same shapes a plain `show` returns. That is what lets one function read a
+  WIQL row and a `show` row (`_ado_drift.changed_by`), and it is why the batch is a
+  drop-in for the per-item fetch rather than a second parser.
+* `System.Parent` comes back on the row with no `--expand relations`, and **the key
+  is ABSENT when the item has no parent — never `null`**. The parent-drift cell rests
+  on exactly that: *the board hangs it nowhere* and *we did not ask* are different
+  answers.
+
+**The ceiling is on the WIQL TEXT, not on a count of ids**, which is why an id-count
+chunk is an operating point and not the limit itself. The service refuses with:
+
+```
+VS403309: Query WIQL text length exceeded the limit. It should contain no more than 32000 characters.
+```
+
+So how many ids fit depends on how wide they are and how long the `SELECT` list is —
+a chunk sized at the boundary starts refusing the day the board's ids grow a digit.
+Re-derive the boundary for any given `SELECT` list by growing an `IN` clause until
+that error appears:
+
+```bash
+python3 - <<'PY'
+import subprocess
+SEL = "[System.Id], [System.State], [System.Parent]"      # the list you plan to send
+for n in (1000, 2000, 4000, 5000):
+    ids = ",".join(str(900000 + i) for i in range(n))
+    w = "SELECT %s FROM WorkItems WHERE [System.Id] IN (%s)" % (SEL, ids)
+    p = subprocess.run(["az", "boards", "query", "--only-show-errors", "-o", "json",
+                        "--wiql", w], capture_output=True, text=True, timeout=60)
+    print(n, len(w), "OK" if p.returncode == 0 else p.stderr.strip()[:80])
+PY
+```
+
+Padding with ids that do not exist is deliberate: an `IN` clause matches what it
+matches, so the probe measures the TEXT limit without depending on how many items a
+board happens to hold.
+
 ### Tags are read-merge-write, never wholesale (live-gate F4)
 
 `System.Tags` updates REPLACE the item's whole tag list. Every tag write

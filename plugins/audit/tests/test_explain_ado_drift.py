@@ -31,6 +31,7 @@ import tempfile
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _manifest_io as MIO                         # noqa: E402  (the sharded WRITER)
 
 M = _loader.load_script("explain-ado-drift.py", modname="explain_ado_drift")
 
@@ -56,6 +57,76 @@ OURS = {"id": 4890, "mapped": "Resolved",
         "fields": {"System.State": "Active",
                    "System.ChangedBy": {"displayName": "AleksandarB"},
                    "System.ChangedDate": "2026-08-21T17:10:00Z"}}
+
+
+# --- the two layouts ------------------------------------------------------------
+# `layout` is a CHOICE, not a version: both shapes are current, and a link means the
+# same thing in either. What differs is WHERE it sits. In the sharded layout the
+# phase stub in the index keeps `id`/`title`/`shard` and nothing else, so a phase's
+# own `ado` and every task's `ado` live in the shard BODY, while `bugs[]` stays in
+# the index. That is what separates the two implementations of this command: a bare
+# `json.load` of the index finds the bug link and none of the others, and reports the
+# rest as work items no manifest claims - which is what a real board saw.
+LAYOUT_SOURCE = {
+    "meta": {"version": 2},
+    "phases": [
+        {"id": "P1", "title": "one", "status": "in_progress",
+         "ado": {"id": 4001, "lastSyncedAt": SYNCED, "origin": "created"},
+         "tasks": [{"id": "T1.1",
+                    "ado": {"id": 5120, "lastSyncedAt": SYNCED,
+                            "origin": "created"}}]},
+        {"id": "P2", "title": "two", "status": "pending",
+         "ado": {"id": 4002, "lastSyncedAt": SYNCED, "origin": "imported"},
+         "tasks": [{"id": "T2.1",
+                    "ado": {"id": 5121, "lastSyncedAt": SYNCED,
+                            "origin": "imported"}}]},
+    ],
+    "bugs": [{"id": "BUG-7", "ado": {"id": 4890, "lastSyncedAt": SYNCED,
+                                     "origin": "imported"}}],
+}
+
+# The ids the sharded index does NOT hold, and the one it does. Named rather than
+# recounted per case, because `ed19a` checks the fixture's PREMISE against them: if
+# the writer ever started mirroring `ado` into the stub, every case below would go on
+# passing while testing nothing, and that case is what says so instead.
+SHARD_HELD_IDS = (4001, 5120, 4002, 5121)
+INDEX_HELD_ID = 4890
+
+# One fetched item per link KIND, in that order, so a row that vanishes is visible as
+# a missing kind and not merely as a smaller number. The phase was moved by somebody
+# else after our sync, the task is ours to push, the bug agrees with the board.
+LAYOUT_ITEMS = [
+    {"id": 4001, "mapped": "Active",
+     "fields": {"System.State": "Closed",
+                "System.ChangedBy": {"displayName": "Ana Kovac"},
+                "System.ChangedDate": "2026-08-21T19:40:00Z"}},
+    {"id": 5120, "mapped": "Resolved",
+     "fields": {"System.State": "Active",
+                "System.ChangedBy": {"displayName": "AleksandarB"},
+                "System.ChangedDate": "2026-08-21T17:10:00Z"}},
+    {"id": INDEX_HELD_ID, "mapped": "Active",
+     "fields": {"System.State": "Active", "System.ChangedDate": SYNCED}},
+]
+
+
+def _write_layouts(tmp):
+    """`(single-file path, sharded index path)` for ONE document stored both ways.
+
+    The sharded side is written by `_manifest_io.save_sharded` — the writer
+    `/audit:migrate` ships — and not by hand. A hand-written index would encode what
+    the author BELIEVES the layout is, and that belief is the thing under test here;
+    going through the real writer means the fixture moves whenever the layout does.
+    """
+    single_dir = os.path.join(tmp, "single")
+    sharded_dir = os.path.join(tmp, "sharded")
+    os.makedirs(single_dir)
+    os.makedirs(sharded_dir)
+    single = os.path.join(single_dir, "audit-plan.json")
+    with open(single, "w", encoding="utf-8") as fh:
+        json.dump(LAYOUT_SOURCE, fh)
+    sharded = os.path.join(sharded_dir, "audit-plan.json")
+    MIO.save_sharded(sharded, LAYOUT_SOURCE)
+    return single, sharded
 
 
 def _write(tmp, name, payload):
@@ -199,6 +270,91 @@ def _cases(check):
               "would go red if --tolerance stopped being wired through",
               code == 0
               and "0 would overwrite a change made after our last sync" in out)
+
+        # --- the sharded layout, and the single-file one agreeing with it -------
+        single, sharded = _write_layouts(tmp)
+        items = _write(tmp, "layout-items.json", LAYOUT_ITEMS)
+
+        with open(sharded, "r", encoding="utf-8") as fh:
+            index_text = fh.read()
+        check("ed19a THE FIXTURE'S PREMISE, checked rather than assumed: the "
+              "sharded INDEX holds the bug's work-item id and none of the phase "
+              "or task ones - those went into the shard bodies. If the writer "
+              "ever mirrors `ado` up into the stub, this is what says so; without "
+              "it every case below would keep passing while testing nothing: %r"
+              % ([i for i in SHARD_HELD_IDS if str(i) in index_text],),
+              str(INDEX_HELD_ID) in index_text
+              and not [i for i in SHARD_HELD_IDS if str(i) in index_text])
+
+        code, out, _err = _run([sharded, "--items", items, "--json"])
+        try:
+            sharded_payload = json.loads(out)
+        except ValueError:
+            sharded_payload = None
+        check("ed19 THE DEFECT: on the sharded layout every fetched item finds its "
+              "link, INCLUDING the phase's own and the task's, which live in a "
+              "shard file the index only points at. Counted per kind, because a "
+              "raw read of the index matches the bug alone and a bare row total "
+              "would not say which two went missing: %r"
+              % (None if sharded_payload is None
+                 else [r.get("kind") for r in sharded_payload["result"]["rows"]],),
+              code == 0 and isinstance(sharded_payload, dict)
+              and [r["kind"] for r in sharded_payload["result"]["rows"]]
+              == ["phase", "task", "bug"]
+              and sharded_payload["summary"]["unlinked"] == 0)
+        check("ed19b ...and the printed answer carries no NOT IN MANIFEST line at "
+              "all - counted, not looked for, because that line is the exact "
+              "wrong answer the raw read produced and one survivor is still wrong",
+              _run([sharded, "--items", items])[1].count("NOT IN MANIFEST:") == 0)
+        check("ed19c ...while the links nobody fetched are still named, one per "
+              "shard-held item left over. The shard walk has to find them too, and "
+              "a loader that read only the index would report nothing unfetched "
+              "because it would believe the manifest has nothing in it",
+              sorted(r["adoId"] for r in sharded_payload["result"]["unfetched"])
+              == [4002, 5121])
+
+        # THE NEGATIVE HALF OF ed19b. A "fix" that stopped emitting NOT IN MANIFEST
+        # would pass every case above and would be the same silence one step over,
+        # so the line must still fire on the sharded layout when it is TRUE.
+        stranger_only = _write(tmp, "layout-stranger.json",
+                               [{"id": 99999, "fields": {"System.State": "New"}}])
+        code, out, _err = _run([sharded, "--items", stranger_only])
+        check("ed20 a work item no sharded manifest link claims IS reported, "
+              "exactly once - the shard walk must not turn the line off, only "
+              "stop it firing on links it can now see",
+              code == 0 and out.count("NOT IN MANIFEST:") == 1
+              and "NOT IN MANIFEST: #99999" in out)
+
+        code, out, _err = _run([single, "--items", items, "--json"])
+        try:
+            single_payload = json.loads(out)
+        except ValueError:
+            single_payload = None
+        check("ed21 THE TWO LAYOUTS ARE ASSERTED TO AGREE, not assumed to: the "
+              "same document stored single-file and sharded answers identically, "
+              "rows and summary alike. Storage is a choice about files; it is not "
+              "allowed to change what is true about somebody's board",
+              code == 0 and single_payload is not None
+              and single_payload == sharded_payload)
+        check("ed21b ...and that agreement is not two empty answers agreeing - "
+              "each side matched every fetched item and left the same links "
+              "unfetched",
+              single_payload is not None
+              and single_payload["summary"]["total"] == len(LAYOUT_ITEMS)
+              and single_payload["summary"]["external"] == 1
+              and single_payload["summary"]["localAhead"] == 1)
+
+        # A shard that will not open. Exit 2 and NOTHING on stdout: a table missing
+        # a phase is the raw read's answer arrived at one layer down, and it reads
+        # as a clean board for the half that was silently dropped.
+        os.remove(os.path.join(tmp, "sharded", "phases", "P2.json"))
+        code, out, err = _run([sharded, "--items", items])
+        check("ed22 a shard that cannot be read is exit 2 naming THAT file, with "
+              "no table at all - never a drift answer about the phases that "
+              "happened to load: %r" % (err.strip()[-70:],),
+              code == 2 and out == ""
+              and err.startswith("ERROR: cannot read/parse manifest")
+              and "P2.json" in err)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
