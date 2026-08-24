@@ -529,14 +529,29 @@ the CLI uses, so the two cannot disagree. The banner at the top is computed from
 | *Configured, but no item has ever synced* | Everything below is configuration, not evidence — run `/audit:sync push`. |
 | *Linked: N tasks · M bugs · K phases* | What the file proves, with the newest sync stamp. |
 
-**Not every key has a control.** The card builds the controls listed in
-`plugins/audit/scripts/ui/panel/ado-connector.js`, and `conventions`, `fields`,
-`parentWorkItem` and the two `parents` caches are not among them — those are edited in
-the manifest. They are **carried through a save untouched** rather than dropped,
+The card also holds **`meta.ado.fields`** — the per-work-item-type template merged into
+a create payload before the conformance gate grades it. Type, field and literal value
+per row; a value that spells a number exactly is stored as one, so an estimate stays an
+estimate. What a template may *not* name (a field the connector already maps, or one ADO
+reports read-only) is decided by the manifest validator when you save, not by a second
+list in the browser.
+
+**Not every key has a control.** `conventions` and the two `parents` caches are edited in
+the manifest, not here. They are **carried through a save untouched** rather than dropped,
 because the card's draft is a deep copy of the saved block
 (`ADRAFT=saved===null?null:JSON.parse(JSON.stringify(saved))`) and only the paths a
-control owns are ever written. `phases[].adoParent` is not `meta.ado` at all, and the
-card never sees it.
+control owns are ever written.
+
+**`phases[].adoParent` is not on this card, and that is deliberate.** `PUT /api/ado`
+replaces `meta.ado` and nothing else, so a per-phase control here would describe a write
+its own Save cannot make. The card holds the **fallback** (`parentWorkItem`); each
+phase's own answer is a column in the Composition table — *use the fallback* (naming
+what that currently resolves to), any candidate `/audit:sync parents` last cached,
+*none — uncategorised on purpose* (the explicit `null`, which hangs the phase under
+nothing even when the fallback is set), or an id typed by hand. A line under the table
+says whether a candidate list has ever been fetched, when, and how it was scoped —
+because a board with no parent-shaped items and a board nobody has asked are different
+answers that would otherwise both arrive as an empty menu.
 
 ## CI / headless
 

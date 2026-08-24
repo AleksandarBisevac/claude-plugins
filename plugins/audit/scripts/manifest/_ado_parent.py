@@ -117,6 +117,48 @@ PARENT_SOURCE = ("item", "phase", "meta", "none")
 # declared it or a pull observed it.
 KNOWN_PARENT = ("id", "type", "title", "url", "source", "observedAt")
 
+# THE SPELLING A WRITER USES FOR "NO DECLARATION AT ALL", which JSON has no other
+# way to say. The three states above are stored as absent, null and an object; a
+# PATCH key is either present or missing, so a writer able to send only null or an
+# object could reach two of them and would have to spell the third by pruning -
+# and pruning is what null already means everywhere else in this panel. That would
+# turn "hangs under nothing" back into "use the fallback", which is the opposite
+# answer.
+#
+# It lives here, beside the vocabulary it completes, for the reason the module
+# docstring gives about everything else in this file: the panel writes it, the
+# panel's change rows read it and the browser spells it back, and a second
+# expression of "no declaration" would be a second answer to where work belongs.
+#
+# It is an OBJECT carrying a key `declaration_findings` refuses, so it can never
+# be mistaken for a declaration: a writer that forgets to translate it gets a
+# refusal naming the missing id, never a parent invented out of the marker.
+_USE_FALLBACK_KEY = "useFallback"
+
+
+def use_fallback():
+    """A FRESH marker object each call, never one shared instance.
+
+    A module-level dict would be handed to every caller and one caller's edit
+    would become every later reader's marker - the defect this repo has already
+    shipped once, when a resolved policy handed back the engine's own lists.
+    """
+    return {_USE_FALLBACK_KEY: True}
+
+
+def is_use_fallback(value):
+    """Is `value` the marker, and nothing else?
+
+    Strict on both halves. `{"useFallback": 1}` is not it, because `1 == True` in
+    Python and a truthy read here would accept a JSON document that says
+    something else; and a marker carrying any other key is a declaration
+    somebody wrote, which belongs in front of `declaration_findings` rather than
+    silently deleting their key.
+    """
+    return (isinstance(value, dict) and len(value) == 1
+            and value.get(_USE_FALLBACK_KEY) is True)
+
+
 # How a declaration got there. Absent/null is an honest third answer -
 # unrecorded - and is never backfilled with a guess, the rule `adoLink.origin`
 # already follows for the same reason: putting a provenance on somebody else's

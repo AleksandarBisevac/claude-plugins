@@ -47,6 +47,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _ado_parent as _adop                        # noqa: E402  (the no-declaration marker)
 import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_write imports it)
 import _panel_state                                # noqa: E402  (as _panel_write imports it)
@@ -583,6 +584,34 @@ def _cases(check):
               and len([f for f in _badf.get("findings") or [] if "readOnly" in f]) == 1
               and (M._read_json(_om)["meta"].get("ado") or {}).get("fields")
               == _tpl)
+        # THE DOTTED ROW IS THE RIGHT ROW, and this case is what makes that a
+        # decision rather than an accident. An ADO reference name carries dots,
+        # so one template leaf flattens to `ado.fields.<type>.<reference name>`
+        # - a path with more segments than the object has levels. It is left
+        # exactly so: the row's `field` is a PATH into the file and nothing ever
+        # splits it back, while shortening it to the last segment would print a
+        # `Custom.Severity` and a `Microsoft.VSTS.Common.Severity` identically -
+        # two manifest keys, one row, which is the collision `_ado_fields._norm`
+        # exists to refuse. The hazard dots really do carry is in `setPath` /
+        # `delPath`, which DO split, and the answer there is not to use them.
+        _resd = M.write_ado(_oproj, {"ado": {
+            "organization": "o", "project": "p",
+            "fields": {"Task": {"Microsoft.VSTS.Common.Activity": "Deployment",
+                                "Microsoft.VSTS.Scheduling.OriginalEstimate": 4}}}})
+        check("adf1 a template key carrying dots flattens to ONE row per LEAF, "
+              "keeping the reference name whole - a row per dotted segment "
+              "would describe a document that does not exist: %r"
+              % (sorted(r["field"] for r in _resd.get("applied") or []),),
+              _resd["ok"]
+              and sorted(r["field"] for r in _resd.get("applied") or [])
+              == ["ado.fields.Task.Microsoft.VSTS.Common.Activity",
+                  "ado.fields.Task.Microsoft.VSTS.Scheduling.OriginalEstimate"])
+        check("adf2 ...and the key round-trips unshredded, with its value's "
+              "TYPE intact: an estimate that came back as the string \"4\" "
+              "would be refused by a board that requires a number",
+              (M._read_json(_om)["meta"].get("ado") or {}).get("fields")
+              == {"Task": {"Microsoft.VSTS.Common.Activity": "Deployment",
+                           "Microsoft.VSTS.Scheduling.OriginalEstimate": 4}})
     finally:
         _shutil.rmtree(_oproj, ignore_errors=True)
 
@@ -1292,6 +1321,87 @@ def _cases(check):
         check("pp12 `priority` is in the phase write allow-list, so this whole "
               "block is exercising a field a patch may legally name",
               "priority" in M._PHASE_KEYS, repr(M._PHASE_KEYS))
+
+        # --- the asymmetry, asserted in ONE place --------------------------
+        # `priority: null` PRUNES the key and `adoParent: null` STORES it, and
+        # the two sit in one case on purpose: they are the same spelling in the
+        # same patch section meaning opposite things, and a reader who met them
+        # a hundred lines apart would reasonably assume the second was a bug.
+        # The reason is that null is a VALUE for adoParent - "hangs under
+        # nothing, even when the fallback is set" - so pruning it would silently
+        # restore the fallback, which is the exact override the field exists to
+        # undo. Priority has no such meaning: an absent priority IS
+        # unprioritised, so there is nothing for a stored null to say.
+        _ap_res = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoParent": None, "priority": 4}}})
+        _ap_res2 = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"priority": None}}})
+        with open(_pp_mpath, encoding="utf-8") as _fh:
+            _ap_idx = json.load(_fh)
+        _ap_shard = os.path.join(_pp_proj, "docs", "audit", "phases", "P1.json")
+        with open(_ap_shard, encoding="utf-8") as _fh:
+            _ap_body = json.load(_fh)
+        check("pp13 THE ASYMMETRY: `adoParent: null` is STORED (null is the "
+              "answer 'hangs under nothing') while `priority: null` still "
+              "PRUNES (an absent priority is how a phase says unprioritised) - "
+              "one case, because the difference is deliberate: %r"
+              % (_ap_body.get("adoParent", "<<missing>>"),),
+              _ap_res["ok"] and _ap_res2["ok"]
+              and "adoParent" in _ap_body and _ap_body["adoParent"] is None
+              and "priority" not in _ap_idx["phases"][0])
+        _ap_res3 = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoParent": {"id": 41,
+                                                       "type": "Feature",
+                                                       "source": "declared"}}}})
+        check("pp14 ...and the row for that store is not a no-op: an ABSENT "
+              "declaration reads as the use-fallback marker on the `from` side, "
+              "so 'use the fallback -> nowhere' is a change the dialog shows "
+              "rather than a null that looks like it was already there: %r"
+              % (_ap_res["applied"],),
+              {"target": "P1", "field": "adoParent",
+               "from": _adop.use_fallback(), "to": None} in _ap_res["applied"])
+        with open(_ap_shard, encoding="utf-8") as _fh:
+            _ap_body3 = json.load(_fh)
+        check("pp15 a declaration is stored whole - the BASIS travels with the "
+              "id, because a stored bare number is the plugin's guess about a "
+              "board it never looked at: %r" % (_ap_body3.get("adoParent"),),
+              _ap_res3["ok"]
+              and _ap_body3["adoParent"] == {"id": 41, "type": "Feature",
+                                             "source": "declared"})
+        _ap_clear = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoParent": _adop.use_fallback()}}})
+        with open(_ap_shard, encoding="utf-8") as _fh:
+            _ap_body4 = json.load(_fh)
+        check("pp16 the use-fallback marker DELETES the key, which is the one "
+              "of the three states JSON cannot spell in a patch any other way",
+              _ap_clear["ok"] and "adoParent" not in _ap_body4,
+              repr(_ap_body4.get("adoParent", "<<absent>>")))
+        for _apbad, _apwhy in (({"id": "41"}, "a string id"),
+                               ({"id": 0}, "a zero id"),
+                               ({"type": "Feature"}, "no id at all"),
+                               (7, "a bare number")):
+            _apr = M.apply_composition(
+                _pp_proj, {"phases": {"P1": {"adoParent": _apbad}}})
+            check("pp17 %s is refused with the SHAPE CHECK'S own words rather "
+                  "than written and left for the validator to find later: %r"
+                  % (_apwhy, _apr.get("findings")),
+                  not _apr["ok"]
+                  # `refused: ` is the prefix `apply_composition` puts on an
+                  # APPLIER's refusal, and the manifest validator's own findings
+                  # do not carry it. Without this clause the case passed with
+                  # the shape check deleted, because the validator refuses these
+                  # too - a case that could not tell "named at the door" from
+                  # "found in the wall of findings afterwards", which is the
+                  # whole difference the applier exists to make.
+                  and _apr["findings"][0].startswith("refused: ")
+                  and any("adoParent" in f for f in _apr["findings"]))
+        with open(_ap_shard, encoding="utf-8") as _fh:
+            check("pp18 ...and none of those four refusals wrote anything: the "
+                  "phase still holds the declaration pp16 cleared",
+                  "adoParent" not in json.load(_fh))
+        check("pp19 `adoParent` is in the phase write allow-list, so this whole "
+              "block is exercising a field a patch may legally name",
+              "adoParent" in M._PHASE_KEYS, repr(M._PHASE_KEYS))
     finally:
         _sh2.rmtree(_pp_tmp, ignore_errors=True)
 

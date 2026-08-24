@@ -1346,6 +1346,8 @@ export async function assertCompositionColumns(page, { note, fail, tabTo }) {
         phaseStatusCol: uniq(phases, (r) => colOf(r, 'span.st')),
         revCol: uniq(phases, (r) => colOf(r, '[data-revmodel]')),
         prioCol: uniq(phases, (r) => colOf(r, '[data-priority]')),
+        parentCol: uniq(phases, (r) => colOf(r, '[data-adoparent]')),
+        taskParentCol: uniq(tasks, (r) => colOf(r, '[data-adoparent]')),
         taskIdCol: uniq(tasks, (r) => colOfClass(r, 'tid')),
         taskTitleCol: uniq(tasks, (r) => colOfClass(r, 'ttitle')),
         taskStatusCol: uniq(tasks, (r) => colOf(r, 'span.st')),
@@ -1390,12 +1392,21 @@ export async function assertCompositionColumns(page, { note, fail, tabTo }) {
   const b = got.before, a = got.after;
   const one = (list) => (list.length === 1 ? list[0] : null);
   // The vacuity guard first: every clause below narrows this set, and a table
-  // with no rows satisfies "every phase row has five cells" trivially.
-  if (b.cols !== 5 || !b.phaseRows || !b.taskRows
+  // with no rows satisfies "every phase row has one cell per heading" trivially.
+  //
+  // A FLOOR AND NOT AN EQUALITY. It used to read `!== 5`, which was a second
+  // opinion about how wide this table is — kept in a file that then derives
+  // every index below from the HEADINGS it reads, so the literal was the one
+  // part that could not survive a column being added, and it did not. What the
+  // clauses below actually need is the id/title/status trio plus the two
+  // columns they name, which is what this floor says.
+  const NEED_COLS = 5;
+  if (b.cols < NEED_COLS || !b.phaseRows || !b.taskRows
       || !got.injected.phase || !got.injected.task) {
-    fail(`comp columns: the fixture renders ${b.cols} heading(s), ${b.phaseRows} `
-       + `phase row(s) and ${b.taskRows} task row(s) (injected `
-       + `${JSON.stringify(got.injected)}) — too little to be checking anything`);
+    fail(`comp columns: the fixture renders ${b.cols} heading(s) (${NEED_COLS} `
+       + `needed), ${b.phaseRows} phase row(s) and ${b.taskRows} task row(s) `
+       + `(injected ${JSON.stringify(got.injected)}) — too little to be `
+       + `checking anything`);
     return;
   }
   const wantModel = b.headings.findIndex((h) => h.startsWith('model'));
@@ -1438,6 +1449,25 @@ export async function assertCompositionColumns(page, { note, fail, tabTo }) {
   } else {
     note(`comp columns: a phase's review model is in the "model" column (${revCol}) `
        + `and its priority in the shared one (${prioCol})`);
+  }
+  // (2b) the ADO-parent column, which is the one column holding a PHASE lever and
+  // nothing else. A task's cell there must be EMPTY rather than missing: a row
+  // one cell short under a six-column head shifts every cell after it into the
+  // wrong column, and both rows still look plausible. `-1` is exactly that empty
+  // cell — the control is not in the row at all — so it is what this asserts,
+  // and a task row that lost the cell would report the phase's index or -2.
+  const wantParent = b.headings.findIndex((h) => h.startsWith('ADO parent'));
+  const parentCol = one(b.parentCol);
+  if (wantParent < 0) {
+    note('comp columns: no "ADO parent" heading on this build — nothing to check');
+  } else if (parentCol !== wantParent || one(b.taskParentCol) !== -1) {
+    fail(`comp columns: a phase's ADO parent sits in cell `
+       + `${JSON.stringify(b.parentCol)} against a heading at ${wantParent}, and `
+       + `task rows report ${JSON.stringify(b.taskParentCol)} where -1 (an empty `
+       + `cell, no control) is the only correct answer`);
+  } else {
+    note(`comp columns: a phase's ADO parent is in the column headed for it `
+       + `(${parentCol}), and every task row carries that cell empty`);
   }
   // ...and the three columns it shares with a task row are the SAME three, or the
   // header still describes only half the table.

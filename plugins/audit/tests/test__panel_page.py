@@ -47,6 +47,7 @@ import _loader                                     # noqa: E402  (as _panel_page
 import _panel_settings                             # noqa: E402  (as _panel_page imports it)
 import _panel_ui                                   # noqa: E402  (the raw template, uncached)
 import _ui_theme as _theme                         # noqa: E402  (as _panel_page imports it)
+import _ado_parent as _adop                        # noqa: E402  (the marker, in the other language)
 import _panel_page as M                            # noqa: E402
 
 
@@ -996,11 +997,14 @@ def _cases(check):
     # appears in several components that have nothing to do with this one.
     _comp_css = M.UI_HTML[M.UI_HTML.index("/* composition: filter toolbar"):
                           M.UI_HTML.index(".comp .combo{flex:")]
-    check("pri9 ALL FOUR editable fields of this table get their box shape from "
-          "one rule, and each column its width from ONE declaration - three were "
-          "sized by hand and the fourth not at all, which is how a 41px skills "
-          "box and a 37px priority menu ended up beside a 30px model box",
-          "td.tmodel input,td.tskills input,td.phprio select{"
+    check("pri9 EVERY editable field of this table gets its box shape from one "
+          "rule, and each column its width from ONE declaration - they were "
+          "sized by hand or not at all, which is how a 41px skills box and a "
+          "37px priority menu ended up beside a 30px model box. Counted per "
+          "column rather than to a total, so adding a column extends the list "
+          "here instead of quietly loosening it",
+          "td.tmodel input,td.tskills input,td.phprio select,"
+          "td.phparent :is(select,input){"
           in M.UI_HTML
           # Counted, not merely present. A `not in` on `td.phprio select{width:`
           # reads like the negative to write here and is worthless: the shared
@@ -1009,12 +1013,19 @@ def _cases(check):
           # forbid and could never fail. These count the structure instead.
           and M.UI_HTML.count("td.tmodel input{width:") == 1
           and M.UI_HTML.count("td.phprio select{width:") == 1
-          # ...and counted over the TABLE'S OWN BLOCK as well, because the two
+          # The parent column's menu and its number box are ALTERNATIVES in one
+          # cell, never a pair, so they share the column's single declaration -
+          # which is why this is one selector and not two.
+          and M.UI_HTML.count("td.phparent :is(select,input){width:") == 1
+          # ...and counted over the TABLE'S OWN BLOCK as well, because the
           # clauses above only forbid a second rule with the same selector. A
           # second width under a different selector is how the pair drifted
-          # before, and it would be written here, next to the first.
+          # before, and it would be written here, next to the first. The block
+          # holds exactly the per-column declarations named above and nothing
+          # else, which is what these three totals say.
           and _comp_css.count("input{width:") == 1
           and _comp_css.count("select{width:") == 1
+          and _comp_css.count(":is(select,input){width:") == 1
           # The parameter is GONE, not merely unused: a stranded custom property
           # is a second opinion about a width nothing reads.
           and "--comp-ctl-w" not in M.UI_HTML)
@@ -1033,6 +1044,60 @@ def _cases(check):
     # widths. What is left here is the source property that browser check cannot
     # state - that there is ONE builder per row type and each emits one cell per
     # heading, so a sixth cell cannot appear in one row type alone.
+    def _split_top(src):
+        """`src` split on the commas at nesting depth zero, quote-aware.
+
+        `src.split(",")` would cut inside every one of these entries - each is an
+        object holding a `flabel(...)` call holding its own object - and would
+        report a column count that grows with how ornate a heading is.
+
+        NOT comment-aware, unlike `_ir_call` below, and that is a decision: a
+        `//` comment inside the head array would read as an extra column here
+        and this case would say so out loud, which is the direction a miscount
+        should fail in. The remedy is to write the comment above the call, where
+        the page already keeps it.
+        """
+        _out, _start, _d, _q, _k = [], 0, 0, "", 0
+        while _k < len(src):
+            _c = src[_k]
+            if _q:
+                if _c == "\\":
+                    _k += 2
+                    continue
+                if _c == _q:
+                    _q = ""
+            elif _c in "'\"`":
+                _q = _c
+            elif _c in "([{":
+                _d += 1
+            elif _c in ")]}":
+                _d -= 1
+            elif _c == "," and _d == 0:
+                _out.append(src[_start:_k].strip())
+                _start = _k + 1
+            _k += 1
+        _tail = src[_start:].strip()
+        if _tail:
+            _out.append(_tail)
+        return _out
+
+    # The head, read out of the page rather than counted here: a number written
+    # in this file would be a second statement of how wide the table is, free to
+    # agree with neither builder. `tableHead([` takes one entry per column, and
+    # the entries are separated at depth 1 of that array.
+    _comp_head_src = M.UI_HTML[M.UI_HTML.index("tableHead(['id','title','status'"):]
+    _comp_head_cols = _split_top(_comp_head_src[
+        _comp_head_src.index("[") + 1:_comp_head_src.index("]),tbody")])
+    check("pri10a the head is read off the page, and it is the id/title/status "
+          "trio plus one entry per editable column - the number this file "
+          "compares both row builders against, so nothing here holds a second "
+          "opinion about how wide the table is: %d column(s)"
+          % (len(_comp_head_cols),),
+          len(_comp_head_cols) >= 4
+          and _comp_head_cols[:3] == ["'id'", "'title'", "'status'"]
+          and len([c for c in _comp_head_cols if "flabel(" in c])
+          == len(_comp_head_cols) - 3,
+          repr(_comp_head_cols))
     _comp_prow = M.UI_HTML[M.UI_HTML.index("const pr=el('tr',{class:'phase'"):
                            M.UI_HTML.index("pr.onclick=")]
     _comp_trow = M.UI_HTML[M.UI_HTML.index("const tr=el('tr',{class:'task'"):
@@ -1040,14 +1105,23 @@ def _cases(check):
     check("pri10 both row builders emit one cell per heading, and nothing in "
           "this table spans - a phase row that SPANS the grid does not sit in "
           "it, which is how its two controls came to be under 'model' and "
-          "'skills' by arithmetic rather than by belonging to them",
-          _comp_prow.count("el('td',") == 5
-          and _comp_trow.count("el('td',") == 5
+          "'skills' by arithmetic rather than by belonging to them. The two "
+          "counts are compared to EACH OTHER as well as to the head, because "
+          "the failure a sixth column invites is one builder gaining a cell and "
+          "the other not - which shifts every cell after it into the wrong "
+          "column while both rows still look plausible",
+          _comp_prow.count("el('td',") == _comp_trow.count("el('td',")
+          == len(_comp_head_cols)
           and "colspan" not in _comp_prow
           and "colspan" not in _comp_trow
           and "el('td',{class:'tmodel'},revCombo)" in _comp_prow
-          and "el('td',{class:'phprio'},prio)" in _comp_prow,
-          repr((_comp_prow.count("el('td',"), _comp_trow.count("el('td',"))))
+          and "el('td',{class:'phprio'},prio)" in _comp_prow
+          # A task has no parent lever, so its cell is EMPTY - and empty is the
+          # answer, not a missing cell.
+          and "el('td',{class:'phparent'},ap,apId,apNote)" in _comp_prow
+          and "el('td',{class:'phparent'})" in _comp_trow,
+          repr((_comp_prow.count("el('td',"), _comp_trow.count("el('td',"),
+                _comp_head_cols)))
     # The head names the column, and column five holds two levers that can never
     # appear in the same row - so "skills" alone described half the table. The
     # cell INDEX is a browser claim (assertCompositionColumns); the words are
@@ -1060,6 +1134,125 @@ def _cases(check):
     # would be free to disagree with the Overview and the report about a status,
     # and the disagreement would show as a phase that is editable on one screen
     # and frozen on another.
+    # --- ap: where a phase hangs on the board (phases[].adoParent) -------------
+    # THE CONTROL IS IN THE PHASE ROW AND NOT ON THE CONNECTOR CARD, and that is
+    # a fact about what each save can write rather than a layout preference:
+    # `PUT /api/ado` replaces `meta.ado` and nothing else, so a per-phase edit
+    # offered there would be a card describing a write it cannot make. The card
+    # holds the FALLBACK id; the row holds the phase's own answer.
+    check("ap1 the phase row carries an adoParent SELECT whose four kinds of "
+          "option are the three stored states plus a typed id - the cached list "
+          "is a convenience, so naming an id by hand can never stop being "
+          "possible",
+          "'data-adoparent':ph.id||''" in M.UI_HTML
+          and "['fallback','use the fallback — '+apFallbackWords(c.fallback)]"
+          in M.UI_HTML
+          and "['none','none — uncategorised on purpose']" in M.UI_HTML
+          and "['other','other id…']" in M.UI_HTML
+          and "...(c.candidates||[]).map(x=>[String(x.id),apCandidateLabel(x)])"
+          in M.UI_HTML)
+    check("ap2 THE ONE VALUE WRITTEN IN TWO LANGUAGES: the marker the browser "
+          "sends for 'no declaration' IS `_ado_parent`'s own key. A comment "
+          "claiming the two agree is a comment; this is the check",
+          "function apUseFallback(){return{%s:true};}" % (_adop._USE_FALLBACK_KEY,)
+          in M.UI_HTML
+          and "v.%s===true" % (_adop._USE_FALLBACK_KEY,) in M.UI_HTML,
+          repr(_adop._USE_FALLBACK_KEY))
+    check("ap3 the fallback option NAMES what it resolves to, and says so "
+          "outright when nothing is set - an option that read the same either "
+          "way would ask the reader to remember a number kept on another card",
+          "return (fb&&fb.id!=null)?('#'+fb.id)" in M.UI_HTML
+          and "'nothing is set (meta.ado.parentWorkItem is empty)'" in M.UI_HTML)
+    check("ap4 an id the cache does not carry still SHOWS as that id: the "
+          "choice degrades to 'other' with the box filled, because a parent "
+          "named before the last fetch must not read as 'use the fallback'",
+          "return (candidates||[]).some(c=>c.id===id)?String(id):'other';"
+          in M.UI_HTML
+          and "apId.hidden=(apChoice!=='other');" in M.UI_HTML)
+    check("ap5 an UNFINISHED edit is said out loud rather than written as "
+          "nothing: 'other id…' with an empty box drops the key AND paints the "
+          "reason, which is the difference between a control that declines and "
+          "one that silently does nothing",
+          "if(out.write)pp.adoParent=out.value;else delete pp.adoParent;"
+          in M.UI_HTML
+          and "apNote.textContent=out.why;" in M.UI_HTML
+          and "nothing is saved for '" in M.UI_HTML)
+    check("ap6 a CANDIDATE pick carries the cache's basis and its moment, and a "
+          "TYPED id carries neither - nobody looked at a typed id, and a stamp "
+          "saying otherwise would be provenance invented for somebody else's "
+          "record",
+          "return{write:true,value:{id:n,source:'declared'},why:''};" in M.UI_HTML
+          and "if((cache||{}).fetchedAt)d.observedAt=cache.fetchedAt;" in M.UI_HTML)
+    check("ap7 the confirm dialog computes an adoParent row against the value "
+          "the payload carries - the marker for an absent declaration, never "
+          "undefined - so this side and the server's echo compute one `from`",
+          "if(('adoParent' in pv)&&!cfSame(p.adoParent,pv.adoParent))"
+          in M.UI_HTML)
+    check("ap8 ...and the dialog renders the two values that would otherwise "
+          "read as 'not set': null is the DECLARED nowhere and the marker is "
+          "the absence of a declaration, and those are the two answers that "
+          "differ most",
+          "'none — uncategorised on purpose (null)'" in M.UI_HTML
+          and "'use the fallback (meta.ado.parentWorkItem)'" in M.UI_HTML)
+    # WHICH OF THE TWO EMPTIES, once, from the server. "nobody has fetched a
+    # list" and "this board has no parent-shaped item" both reach a picker as
+    # zero options, and the defect is rendering them the same - a filter
+    # narrowed to nothing reading as all-clear.
+    check("ap9 the candidate cache's state is painted with the SERVER's own "
+          "sentence and carries the state as an attribute, so a browser gate "
+          "can read which of the three it is without parsing prose",
+          "'data-apcache':(comp.adoParents||{}).cache||'absent'" in M.UI_HTML
+          and "(comp.adoParents||{}).basis||''" in M.UI_HTML
+          # ONE copy: the legend's whole reason is that a per-phase sentence is
+          # fifty copies of one sentence.
+          and M.UI_HTML.count("'data-apcache'") == 1,
+          repr(M.UI_HTML.count("'data-apcache'")))
+    # --- adf: the per-type field template on the connector card ---------------
+    # A PROPERTY OF THE SOURCE, and text is the only instrument for it: that no
+    # dotted-path writer is anywhere near a map whose KEYS carry dots. A browser
+    # gate cannot state this - it can only find the day somebody's
+    # `Microsoft.VSTS.Common.Activity` came back as four nested levels.
+    # The script block, taken here rather than borrowed from a case further down:
+    # a case that reaches forward for a name is a case whose order is load-bearing
+    # in a file where nothing else's is.
+    _adf_script = re.search(r"<script>([\s\S]*?)</script>", M.UI_HTML)
+    _adf_js = _adf_script.group(1) if _adf_script else ""
+    _adf_paths = sorted(set(re.findall(r"\b(?:set|del)Path\([^,]{1,40},\s*'([^']+)'",
+                                       _adf_js)))
+    _adf_bad = [q for q in _adf_paths
+                if q.split(".")[0] in ("fields", "identityMap")]
+    check("adf3 no setPath/delPath call names `fields` or `identityMap`: both "
+          "split on dots, and both of those maps have keys that CONTAIN them - "
+          "an ADO reference name and an email address. %d dotted path(s) read "
+          "on this page, offenders %r" % (len(_adf_paths), _adf_bad),
+          _adf_js != "" and len(_adf_paths) >= 5 and not _adf_bad,
+          repr(_adf_paths[:6]))
+    check("adf4 ...and the template editor writes through the direct-edit "
+          "helpers instead, which is what makes that a mechanism rather than a "
+          "habit somebody has to remember",
+          "adoFieldSet(A().fields=A().fields||{},t,n,adoFieldValue(v));"
+          in M.UI_HTML
+          and "adoFieldDrop(A().fields||{},wit,name);" in M.UI_HTML
+          and "fields[wit][name]=value;" in M.UI_HTML)
+    check("adf5 removing the last field of a type PRUNES the type: an empty "
+          "template is a validator warning ('it supplies nothing, remove the "
+          "key'), so a card that left one behind would make a removal complain "
+          "about the removal",
+          "if(!Object.keys(t).length)delete fields[wit];" in M.UI_HTML)
+    check("adf6 a stored value is printed as a LITERAL, not as text: `4` and "
+          "`\"4\"` are different values to a board that requires a number, and "
+          "a row showing both as 4 would hide the one decision this editor "
+          "makes",
+          "el('span',{class:'mono'},JSON.stringify(tpl[name]))" in M.UI_HTML)
+    check("adf7 what a template may NOT name is left to `_ado_fields`, which "
+          "holds both tables - a copy in the browser would be a second list "
+          "free to disagree with the one the save is graded against. The card "
+          "says where the answer comes from and lets the save name the field",
+          "'data-fdnote':'1'" in M.UI_HTML
+          and "refused when the manifest is validated" in M.UI_HTML
+          # The tables themselves are NOT here.
+          and "System.AreaPath" not in M.UI_HTML
+          and "Microsoft.VSTS.TCM.ReproSteps" not in M.UI_HTML)
     check("pri11 Plan & models reads in the report's order - active work, then "
           "what has not started, then what is closed - through the SAME segment "
           "classifier the Overview and the report use, not a second copy of it",
@@ -2912,19 +3105,38 @@ def _cases(check):
     def _ir_call(js, i):
         """One el(...) call's source, from its '(' to the matching ')'.
 
-        Quote-aware, unlike the brace walk above it: a ')' inside a string
-        literal ('(/audit:review)' is one of them, three lines from a table)
-        would otherwise close the call early and hide everything after it.
+        Quote-aware AND comment-aware, and the second half was learned the way
+        the first was - by being wrong. A ')' inside a string literal
+        ('(/audit:review)' is one of them, three lines from a table) closes the
+        call early and hides everything after it. So does an APOSTROPHE inside a
+        `//` comment: "a task model and a phase's review model" is written above
+        this very table, and that lone quote opened a string that ran on to the
+        next quote character in the CODE, after which every paren was counted
+        inside-out. The census then reported the composition table as headerless
+        with its `tableHead(` in plain sight - which is the loud direction; the
+        same defect is equally able to hide a table that really has no header,
+        and nothing would have said so.
         """
         _depth, _j, _quote = 0, i, ""
         while _j < len(js):
             _ch = js[_j]
+            _nxt = js[_j + 1:_j + 2]
             if _quote:
                 if _ch == "\\":
                     _j += 2
                     continue
                 if _ch == _quote:
                     _quote = ""
+            elif _ch == "/" and _nxt == "/":
+                # To end of line. Checked AFTER the quote branch, so a `//` that
+                # is really inside a string (a url) is still string content.
+                _nl = js.find("\n", _j)
+                _j = len(js) if _nl == -1 else _nl
+                continue
+            elif _ch == "/" and _nxt == "*":
+                _end = js.find("*/", _j + 2)
+                _j = len(js) if _end == -1 else _end + 2
+                continue
             elif _ch in "'\"":
                 _quote = _ch
             elif _ch == "(":
@@ -2953,6 +3165,38 @@ def _cases(check):
     # this set, and a slice that found nothing would report a tab with no
     # headerless table on it. Counted, not merely found - "regtbl adosm" alone
     # would pass an `in` while the other two had drifted out of the slice.
+    # THE SCANNER, DRIVEN OVER FIXTURES BOTH WAYS, because a census that
+    # over-reports gets its subject "fixed" and one that under-reports reports a
+    # clean tab it never read. The dirty fixtures are the two shapes that really
+    # do end a call - a ')' outside any string, and one hidden behind an
+    # apostrophe the scanner must NOT treat as a quote - and the clean ones are
+    # the shapes it must read straight through.
+    _IR_THROUGH = (
+        # An apostrophe in a comment: the shape that shipped this defect.
+        "(el('table',{},\n // a phase's review model\n tableHead(['a'])))",
+        # A ')' inside a string literal, which is what the quote half is for.
+        "(el('table',{},'(/audit:review)',tableHead(['a'])))",
+        # A block comment carrying an unbalanced paren.
+        "(el('table',{},/* count( */ tableHead(['a'])))",
+        # A `//` inside a STRING is not a comment, and eating the rest of the
+        # line there would swallow the header that follows it.
+        "(el('table',{},'https://x',tableHead(['a'])))",
+    )
+    _ir_missed = [t for t in _IR_THROUGH if "tableHead(" not in _ir_call(t, 0)]
+    _ir_short = [t for t in _IR_THROUGH if _ir_call(t, 0) != t]
+    check("ir0a the call reader walks THROUGH a comment, a quoted ')' and a "
+          "quoted '//' to the real end of the call: %d/%d fixture(s) lost their "
+          "header %r, %d closed early %r"
+          % (len(_ir_missed), len(_IR_THROUGH), _ir_missed,
+             len(_ir_short), _ir_short),
+          not _ir_missed and not _ir_short)
+    check("ir0b ...and it still STOPS at the first real close, so a header "
+          "belonging to the NEXT call is never read as this one's - which is "
+          "how a reader that simply ran to the end of the file would pass "
+          "every fixture above while asserting nothing",
+          _ir_call("(el('table',{}))+el('x',{},tableHead(['a']))", 0)
+          == "(el('table',{}))"
+          and "tableHead(" not in _ir_call("(el('table',{}))+tableHead(['a'])", 0))
     check("ir0 the census reads the Composition tab out of the assembled page - "
           "%d table builder(s) between renderComp and renderAdoCard: %r"
           % (len(_ir_tables), _ir_classes),

@@ -89,13 +89,34 @@ td.tskills{min-width:15rem}
    they take the same rule and the same width by construction rather than by two
    declarations agreeing. The priority menu is the only one that still needs its
    own width - it holds a single digit. */
-td.tmodel input,td.tskills input,td.phprio select{
+td.tmodel input,td.tskills input,td.phprio select,td.phparent :is(select,input){
  height:1.875rem;padding:var(--sp-0) var(--sp-1);font-size:.78rem}
 td.tmodel input{width:6.5rem}
 /* The menu's widest option is an em dash, which needs about 58px of box. It used
    to be a wrapper-level parameter shared with the review box; the column decides
    it now, and the review box is not a special case any more. */
 td.phprio select{width:4rem}
+/* The ADO-parent column, and both of its controls take ONE width: the menu and
+   the number box are alternatives in the same cell, never a pair, so a second
+   declaration here would be two opinions about one column. Wider than its
+   neighbours because its options carry a type and a title beside the id - a
+   bare number is the one thing a parent picker must not show, since the
+   hierarchy check grades a link by the parent's TYPE.
+   The box is revealed by the "other id…" option, and the rule is stated rather
+   than left to the UA sheet: the shape rule above gives these controls a
+   `height`, and a height on a `display:none` element is harmless only while
+   nothing later sets `display` back. */
+td.phparent :is(select,input){width:12rem}
+td.phparent input[hidden]{display:none}
+/* The unfinished-edit note sits UNDER the control it is about, on its own line,
+   because it appears and disappears as the menu changes and a note that
+   reflowed the row beside it would move the control out from under the cursor. */
+.apnote{display:block;margin-top:var(--sp-0);max-width:12rem}
+/* Which of the three candidate-cache states is in force, once, under the
+   table's reference line. `absent` and `empty` are DIFFERENT answers and the
+   sentence says which; the attribute is the hook a browser gate reads, so the
+   state is checkable without parsing the sentence. */
+.apcache{display:block;margin:0 0 var(--sp-1);text-align:right}
 /* A closed phase reads as a record rather than a form. The cue is on the CONTROLS
    only — the row's own text keeps full contrast, because the point is to go on
    reading a done phase easily, not to grey out its title. `cursor:not-allowed`

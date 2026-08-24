@@ -14,6 +14,36 @@
  * @property {number|null} priority - the tier as `_priority.tier_of` reads it, so
  *   a value the run does not honour never reaches a control. null is
  *   unprioritised, which is a class of its own rather than tier 0
+ * @property {object|null} adoParent - the phase's own declaration in ONE value
+ *   with three shapes: the use-fallback marker for an absent key, `null` for
+ *   "hangs under nothing on purpose", or `{id, type, title, url, source,
+ *   observedAt}`. The server spells absent with the marker rather than leaving
+ *   the key off, because `undefined` would be a fourth thing meaning "the
+ *   server did not say"
+ * @property {{id: number|null, source: string, basis: string}} adoParentResolved -
+ *   what the phase hangs under RIGHT NOW, from `_ado_parent.resolve` - which is
+ *   not the same question as what it declares: an absent declaration resolves to
+ *   the fallback and an unusable one resolves to nothing
+ */
+
+/**
+ * The two things the parent control needs that are not per-phase: what the
+ * fallback resolves to, and whatever `/audit:sync parents` last cached.
+ *
+ * @typedef {object} AdoParents
+ * @property {{id: number|null, source: string}} fallback - resolved, never read
+ *   off `parentWorkItem` a second time
+ * @property {Array<{id: number, type: ?string, title: ?string, state: ?string, url: ?string}>} candidates -
+ *   cached evidence and never an authority: an id missing from it is not a wrong
+ *   parent, only one created since the fetch
+ * @property {string|null} fetchedAt - when the cache was written; null when
+ *   there is no cache or it recorded no moment
+ * @property {'absent'|'empty'|'items'} cache - which of the two empties this is.
+ *   "nobody looked" and "the board had none in scope" are different answers and
+ *   a menu that rendered both as zero options would say the second
+ * @property {string} basis - the sentence for that state, built server-side so
+ *   there is one wording rather than one per surface
+ * @property {string} refresh - the command that re-derives the cache
  */
 
 /**
@@ -101,6 +131,148 @@ function prioMax(){
  for(const v of [cfg.maxTier,def.maxTier])
   if(typeof v==='number'&&Number.isInteger(v)&&v>=1)return v;
  return 9;}
+
+// ---------- where a phase hangs on the board (ap) ----------
+// The per-phase half of `phases[].adoParent`. The connector CARD cannot hold
+// this control: `PUT /api/ado` writes `meta.ado` and nothing else, so a card
+// offering a per-phase edit would be describing a save it cannot make. What the
+// card holds is the FALLBACK id; what this holds is the phase's own answer.
+//
+// Everything below is a pure function of the payload, on purpose: the option
+// list, the choice a stored declaration maps to and the patch value a choice
+// maps back to are the parts that can be wrong without looking wrong, so they
+// are reachable from tools/ui-tests/ado-panel.test.mjs rather than asserted as
+// source text. The DOM work stays in the row builder.
+
+/**
+ * The marker that spells "no declaration at all" in a patch.
+ *
+ * A FRESH object each call, mirroring `_ado_parent.use_fallback()` — one shared
+ * instance would be handed to every row and one row's edit would become every
+ * later row's marker. The key is the one value written in two languages here,
+ * and a case pins this literal against `_ado_parent._USE_FALLBACK_KEY`.
+ *
+ * @returns {{useFallback: true}} a new marker
+ */
+function apUseFallback(){return{useFallback:true};}
+/**
+ * Is `v` the marker, and nothing else?
+ *
+ * Strict on both halves, as the Python is: `{useFallback:1}` is not it, and a
+ * marker carrying any other key is a declaration somebody wrote.
+ *
+ * @param {*} v - a value off the payload or off a patch
+ * @returns {boolean} true only for the marker itself
+ */
+function apIsFallback(v){return !!v&&typeof v==='object'&&!Array.isArray(v)
+ &&Object.keys(v).length===1&&v.useFallback===true;}
+/**
+ * What the fallback resolves to, in words, for the option that offers it.
+ *
+ * NAMING IT IS THE POINT. "use the fallback" alone asks the reader to remember
+ * a number that lives on another card; with the id in the option they can see
+ * what choosing it does. When nothing is set that is also an answer and it is
+ * said outright, rather than left as an option that looks the same either way.
+ *
+ * @param {{id: (number|null)}} fb - `adoParents.fallback`
+ * @returns {string} the words after the dash
+ */
+function apFallbackWords(fb){
+ return (fb&&fb.id!=null)?('#'+fb.id)
+  :'nothing is set (meta.ado.parentWorkItem is empty)';}
+/**
+ * One cached candidate as an option label.
+ *
+ * The type is in it because the hierarchy check grades a link BY TYPE, so a
+ * reader choosing between a Feature and an Epic is choosing between two
+ * different verdicts. A candidate that recorded neither type nor title says so
+ * instead of showing a bare number that could be anything.
+ *
+ * @param {{id: number, type: ?string, title: ?string}} c - a cached candidate
+ * @returns {string} the option's label
+ */
+function apCandidateLabel(c){
+ const bits=[c.type,c.title].filter(Boolean);
+ return '#'+c.id+(bits.length?(' · '+bits.join(' · ')):' · nothing recorded but the id');}
+/**
+ * Which option a stored declaration selects.
+ *
+ * An id the cache does not carry lands on "other" WITH THE BOX FILLED, which is
+ * the degrade this needs: the cache is a convenience, so a parent named before
+ * the last fetch — or after it — must still show as the parent it is rather
+ * than silently reading as "use the fallback".
+ *
+ * @param {*} decl - the row's `adoParent`
+ * @param {Array<{id: number}>} candidates - the cached list
+ * @returns {string} an option value: 'fallback', 'none', 'other' or an id
+ */
+function apChoiceOf(decl,candidates){
+ if(apIsFallback(decl))return 'fallback';
+ if(decl===null||decl===undefined)return 'none';
+ const id=(typeof decl==='object'&&!Array.isArray(decl))?decl.id:null;
+ if(typeof id!=='number'||!Number.isInteger(id)||id<1)return 'other';
+ return (candidates||[]).some(c=>c.id===id)?String(id):'other';}
+/**
+ * The patch value one choice stands for — or the reason there is none.
+ *
+ * `write:false` carries the sentence saying what is missing, because the one
+ * thing a control must not do is quietly write nothing: "other id…" chosen with
+ * an empty box is an unfinished edit, and a save that silently skipped it would
+ * report success for a change nobody made.
+ *
+ * A candidate pick carries the CACHE'S OWN BASIS — the type, the title, the url
+ * and the moment they were observed — while a typed id carries none of it. That
+ * asymmetry is the honest one: nobody looked at a typed id, and a stamp saying
+ * otherwise would be provenance invented for somebody else's record.
+ *
+ * @param {string} choice - the select's value
+ * @param {AdoParents} cache - the payload's `adoParents` block
+ * @param {string} typed - the number box's raw text
+ * @returns {{write: boolean, value: *, why: string}} `value` is only meaningful
+ *   when `write` is true
+ */
+function apPatchValue(choice,cache,typed){
+ if(choice==='fallback')return{write:true,value:apUseFallback(),why:''};
+ if(choice==='none')return{write:true,value:null,why:''};
+ if(choice==='other'){
+  // Through `typedNumber`, which is the same rule the field-template box uses:
+  // a bare Number() would read '4e2' as work item 400 and '0x10' as 16, and
+  // would hang the phase under an id nobody typed without saying anything.
+  const n=typedNumber(typed);
+  if(n===null||!Number.isInteger(n)||n<1)
+   return{write:false,value:undefined,
+    why:'type a work item id (a positive whole number) — nothing is saved for '
+     +'this phase until you do'};
+  return{write:true,value:{id:n,source:'declared'},why:''};}
+ const c=((cache||{}).candidates||[]).find(x=>String(x.id)===choice);
+ if(!c)return{write:false,value:undefined,
+  why:'that candidate is no longer in the cached list — re-run '
+   +((cache||{}).refresh||'/audit:sync parents')+' or name the id directly'};
+ const d={id:c.id,source:'declared'};
+ if(c.type)d.type=c.type;
+ if(c.title)d.title=c.title;
+ if(c.url)d.url=c.url;
+ if((cache||{}).fetchedAt)d.observedAt=cache.fetchedAt;
+ return{write:true,value:d,why:''};}
+/**
+ * The option list, in the order the menu shows it.
+ *
+ * The fixed three always exist — falling through, hanging under nothing, and
+ * naming an id by hand — because each is a real answer whether or not anything
+ * was ever cached. The candidates sit between them, and WITH NO CACHE THERE ARE
+ * SIMPLY NONE: the menu never renders "no candidates cached" and "this board
+ * has no Features" as the same empty group, because neither is an option at
+ * all. Which of the two it is, is said once in the line under the table.
+ *
+ * @param {AdoParents} cache - the payload's `adoParents` block
+ * @returns {Array<[string, string]>} [value, label] pairs for `fillOptions`
+ */
+function apOptions(cache){
+ const c=cache||{};
+ return [['fallback','use the fallback — '+apFallbackWords(c.fallback)],
+   ...(c.candidates||[]).map(x=>[String(x.id),apCandidateLabel(x)]),
+   ['none','none — uncategorised on purpose'],
+   ['other','other id…']];}
 
 function modelItems(){
  if(MITEMS)return MITEMS;
@@ -479,6 +651,12 @@ function renderComp(){closeCombo();
      {comp:'phaseReviewModel',label:'Phase review model'}),
    flabel('priority',MDESC.phasePriority,
      {comp:'phasePriority',label:'Phase priority'})));
+ // The sixth column holds a PHASE lever and nothing else, so its ⓘ names that
+ // lever rather than a task one - which is why that heading carries its own
+ // reference instead of joining the legend above the table. It is written HERE,
+ // outside the head array: a comma inside that array is how a column is
+ // separated from the next one, so a comment in there reads as a seventh column
+ // to anything counting them.
  tcard.append(el('div',{class:'comptblwrap'},el('table',{class:'comp'},
    // The two editable columns carry the reference for the whole column. A ⓘ per
    // row would be a thousand of them saying one thing.
@@ -490,7 +668,16 @@ function renderComp(){closeCombo();
    tableHead(['id','title','status',
      {label:flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})},
      {label:flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',
-       label:'Task skills'})}]),tbody)));
+       label:'Task skills'})},
+     {label:flabel('ADO parent',MDESC.phaseAdoParent,{comp:'phaseAdoParent',
+       label:'Phase ADO parent'})}]),tbody)));
+ // WHICH OF THE THREE CACHE STATES THIS IS, once, under the table's own
+ // reference line. Once and not per row for the reason the legend exists: fifty
+ // copies of one sentence is what the phase levers were moved out of the rows to
+ // stop. The sentence itself is the SERVER'S - `_panel_composition` builds it,
+ // so the panel and anything else that reports the cache say the same thing.
+ tcard.append(el('div',{class:'mut small apcache','data-apcache':(comp.adoParents||{}).cache||'absent'},
+   (comp.adoParents||{}).basis||''));
 
  const open=COMPF.open;
  const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
@@ -554,6 +741,41 @@ function renderComp(){closeCombo();
   // Same STOP as the review combo: the phase row toggles on click, and choosing
   // a tier must not also collapse the phase under the menu.
   prio.onclick=e=>e.stopPropagation();
+  // ap: where THIS phase hangs on the board. One <select> over the three answers
+  // plus whatever was cached, and a number box for the fourth case the cache can
+  // never cover - an id created since the fetch, or a board nobody has fetched
+  // at all. The box is revealed by the "other id…" option rather than shown
+  // beside it, so the common row stays one control wide.
+  const apc=comp.adoParents||{fallback:{id:null,source:'none'},candidates:[],
+    cache:'absent',basis:'',refresh:'/audit:sync parents'};
+  const apChoice=apChoiceOf(ph.adoParent,apc.candidates);
+  const apDecl=(ph.adoParent&&typeof ph.adoParent==='object'
+    &&!apIsFallback(ph.adoParent))?ph.adoParent:null;
+  const apNote=el('span',{class:'mut small apnote'});
+  const apId=el('input',{type:'number',min:'1',step:'1',
+    'data-adoparentid':ph.id||'',placeholder:'work item id',
+    'aria-label':'ADO parent work item id for phase '+(ph.id||''),
+    value:(apDecl&&apDecl.id!=null)?String(apDecl.id):''});
+  // The RESOLUTION, not the declaration: what this phase hangs under right now,
+  // in `resolve`'s own words. It is supplementary — the control's accessible
+  // name is its aria-label and does not depend on this — and it is the one place
+  // a reader can see that an absent declaration is already doing something.
+  const ap=fillOptions(el('select',{'data-adoparent':ph.id||'',
+    'aria-label':'ADO parent for phase '+(ph.id||''),
+    title:(ph.adoParentResolved||{}).basis||null}),apOptions(apc),apChoice);
+  const apApply=()=>{
+   apId.hidden=(ap.value!=='other');
+   const out=apPatchValue(ap.value,apc,apId.value);
+   // An unfinished edit says so rather than saving nothing quietly: the key is
+   // dropped from the patch AND the reason is painted next to the control.
+   if(out.write)pp.adoParent=out.value;else delete pp.adoParent;
+   apNote.textContent=out.why;
+   // Only registered once it carries something. An empty phase entry would make
+   // `_touched_phase_ids` name this phase and rewrite a shard nobody edited.
+   if(Object.keys(pp).length)patch.phases[ph.id]=pp;};
+  apId.hidden=(apChoice!=='other');
+  ap.onchange=apApply;apId.oninput=apApply;
+  ap.onclick=e=>e.stopPropagation();apId.onclick=e=>e.stopPropagation();
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
     rev.value=name;setRev(name);close();});
   // The STOP moved from the input to its combo WRAPPER: the phase row toggles
@@ -601,7 +823,8 @@ function renderComp(){closeCombo();
     // placeholder, and both carry an aria-label that folds in the phase id, so
     // the accessible name never depended on the words removed.
     el('td',{class:'tmodel'},revCombo),
-    el('td',{class:'phprio'},prio));
+    el('td',{class:'phprio'},prio),
+    el('td',{class:'phparent'},ap,apId,apNote));
   // The row still TOGGLES when it is frozen — a closed phase is the one you most
   // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
@@ -631,7 +854,13 @@ function renderComp(){closeCombo();
    // readable underneath it.
    tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle'},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
-     el('td',{class:'tmodel'},modelCombo),el('td',{class:'tskills'},chips));
+     el('td',{class:'tmodel'},modelCombo),el('td',{class:'tskills'},chips),
+     // ONE CELL PER HEADING, in both builders. A task has no parent lever of its
+     // own — under `phaseWorkItems` its parent IS the work item of its phase,
+     // and with that off it is a manifest edit this table does not offer — so
+     // the cell is empty rather than absent: a row with five cells under a six
+     // column head shifts every cell after it into the wrong column.
+     el('td',{class:'phparent'}));
    // EITHER closes a task row. The phase, because an unfinished task inside a
    // cancelled phase is never going to run; and the task's own status, because a
    // done task has already run and the model and skills on it are the record of

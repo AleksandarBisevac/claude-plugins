@@ -78,7 +78,12 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # panel's boundary does not move. What legality means is NOT decided here - the
 # write path asks `_priority.tier_one_holder()`, the same function
 # `set-priority.py` asks, so the UI cannot promise a write the CLI refuses.
-_PHASE_KEYS = ("reviewModel", "priority")
+# `adoParent` joins them for the same reason and with ONE difference that the
+# write path spells out: it is the only key here whose `null` is a VALUE rather
+# than a clear, so it is stored and never pruned. What a legal declaration is
+# comes from `_ado_parent.declaration_findings`, the function the manifest
+# validator asks - the panel cannot promise a parent the CLI would refuse.
+_PHASE_KEYS = ("reviewModel", "priority", "adoParent")
 _TASK_KEYS = ("model", "skills")
 
 
@@ -262,6 +267,15 @@ COMPOSITION_HELP = {
                      "Tier 1 is unique; higher tiers are shared. No priority means "
                      "unprioritised - the phase sorts after every pinned one and "
                      "keeps its written position. Display order never changes.",
+    "phaseAdoParent": "The board work item THIS phase hangs under, overriding "
+                      "meta.ado.parentWorkItem for it. Three answers, and they "
+                      "differ: leave it on the fallback, name a parent (the "
+                      "menu offers whatever /audit:sync parents last cached, "
+                      "and any id can be typed), or say 'none' - which hangs "
+                      "the phase under nothing even when the fallback is set, "
+                      "and is a declaration rather than an oversight. A parent "
+                      "is applied at CREATE only: changing it here does not "
+                      "re-parent an item that is already on the board.",
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
                   "for this task.",
@@ -292,10 +306,11 @@ COMPOSITION_HELP = {
                "tags. With neither, sprint pull refuses to import blind.",
     "adoIdentityMap": "Ledger identity (git email/name) → ADO identity (email/UPN). "
                       "Advisory: push proposes assignees, pull labels reporters.",
-    # No control on the card yet - the help text ships ahead of it so the drawer
-    # can answer the key the CLI already reads. `meta.ado` is saved wholesale
-    # from a deep copy of the file, so a template written by hand survives every
-    # save this card makes.
+    # The template editor edits the draft object DIRECTLY, never through
+    # setPath/delPath: an ADO reference name carries dots, and a dotted-path
+    # writer would shred `Microsoft.VSTS.Common.Activity` into four levels.
+    # `meta.ado` is still saved wholesale from a deep copy of the file, so a
+    # template written by hand survives every save this card makes.
     "adoFields": "Extra fields this project supplies per work item type, merged into "
                  "the create payload before the conformance gate grades it - what "
                  "gets an item past a board that requires an Activity or an estimate. "

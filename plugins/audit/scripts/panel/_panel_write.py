@@ -93,6 +93,7 @@ import _panel_state           # noqa: E402  (the read side this write path reads
 # edge pointed upward and `_deps.layer_violations()` said so by name.
 import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
 import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
+import _ado_parent            # noqa: E402  (where ONE item hangs; the no-declaration marker)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
 #                                            the SAME function set-priority.py asks)
 
@@ -639,6 +640,20 @@ def _composition_changes(manifest, patch):
             if was != now:
                 rows.append({"target": pid, "field": _priority.FIELD,
                              "from": was, "to": now})
+        if _ado_parent.FIELD in (pv or {}):
+            # `from` is the MARKER when the phase declares nothing, never None:
+            # null is a value here, so a `from` of None would render
+            # "use the fallback -> nowhere" as "not set -> not set" and the one
+            # row a reader most needs to see would be the row that looks like a
+            # no-op. `_ado_parent_of`'s rule, spelled where the row is built
+            # because `_panel_composition` is a layer-mate this file may not
+            # import.
+            was = (ph[_ado_parent.FIELD] if _ado_parent.FIELD in ph
+                   else _ado_parent.use_fallback())
+            now = pv[_ado_parent.FIELD]
+            if was != now:
+                rows.append({"target": pid, "field": _ado_parent.FIELD,
+                             "from": was, "to": now})
     # `_mio.tasks_by_id` drops a task carrying no id, where this index used to key
     # it under `None`. Nothing reachable changes: the keys looked up here come out
     # of a JSON object, so they are always strings and could never BE `None` --
@@ -1067,6 +1082,49 @@ def _apply_priority(manifest, phase, value):
     return None
 
 
+def _apply_ado_parent(manifest, phase, value):
+    """Set, clear or delete one phase's `adoParent`. None, or a refusal string.
+
+    THREE STORED STATES AND THREE PATCH SPELLINGS, and the middle one is the
+    whole reason this is not `_apply_priority` with a different field name:
+
+      the use-fallback marker -> DELETE the key (fall through to
+                                 meta.ado.parentWorkItem)
+      null                    -> STORE null (hangs under nothing, on purpose)
+      an object               -> STORE it, once the shape check has passed
+
+    `null` IS THE ASYMMETRY. Every other nullable field in this patch section
+    treats null as the clear, and here it is a value: pruning it would put the
+    phase back under `meta.ado.parentWorkItem`, which is the exact override
+    `adoParent` exists to undo, and it would do it silently - the panel would
+    report a saved change that means the opposite of what was chosen. The pair
+    is asserted in ONE case in `test__panel_write.py` so the difference reads as
+    deliberate rather than as something discovered.
+
+    THE SHAPE COMES FROM `_ado_parent.declaration_findings`, which is what
+    `validate-manifest.py` asks - `_apply_priority`'s arrangement exactly. The
+    validator runs again afterwards and would catch a bad declaration anyway;
+    what refusing here buys is the message that names the field, instead of a
+    wall of manifest findings about a document the operator did not type.
+
+    `manifest` is unused and stays in the signature because every applier in
+    this file takes it: `_apply_priority` needs the OTHER phases to answer its
+    question, and a sibling that dropped the argument would read as if this rule
+    were local when what makes it local is a fact about the rule, not about the
+    call.
+    """
+    if _ado_parent.is_use_fallback(value):
+        phase.pop(_ado_parent.FIELD, None)
+        return None
+    where = "phase %s" % (phase.get("id"),)
+    findings, _warnings = _ado_parent.declaration_findings(
+        {"id": phase.get("id"), _ado_parent.FIELD: value}, where)
+    if findings:
+        return "; ".join(findings)
+    phase[_ado_parent.FIELD] = value
+    return None
+
+
 def apply_composition_patch(manifest, patch):
     """Apply an allow-listed composition patch to `manifest` in place.
     Returns None on success or an error string. Never touches structure."""
@@ -1090,6 +1148,10 @@ def apply_composition_patch(manifest, patch):
             rev["model"] = pv["reviewModel"]
         if _priority.FIELD in (pv or {}):
             err = _apply_priority(manifest, ph, pv[_priority.FIELD])
+            if err:
+                return err
+        if _ado_parent.FIELD in (pv or {}):
+            err = _apply_ado_parent(manifest, ph, pv[_ado_parent.FIELD])
             if err:
                 return err
     # Same index as `_composition_changes` reads, from the same owner, so the

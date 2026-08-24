@@ -17,6 +17,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
+import _ado_parent as _adop                    # noqa: E402  (the marker + resolve)
 import _panel_composition as M      # noqa: E402
 
 
@@ -140,6 +141,133 @@ def _cases(check):
           "still wins lastSyncedAt",
           _as5["linked"] == {"tasks": 1, "bugs": 0, "phases": 2}
           and _as5["lastSyncedAt"] == "2026-08-09T00:00:00Z")
+
+    # --- connector v2: where ONE phase hangs, as the panel payload carries it ---
+    # THE THREE STORED STATES REACH THE CONTROL AS THREE VALUES. Absent is an
+    # answer ("use the fallback"), null is a different answer ("hangs under
+    # nothing on purpose"), and a declaration is a third - so the payload spells
+    # absent with `_ado_parent`'s own marker rather than leaving the key off and
+    # asking the browser to guess which of the two it was looking at.
+    _ap_ado = {"organization": "o", "parentWorkItem": 41,
+               "parentCandidates": {
+                   "items": [{"id": 41, "type": "Feature", "title": "Checkout",
+                              "state": "Active", "url": "https://x/41"},
+                             {"id": "junk"}],
+                   "fetchedAt": "2026-08-20T00:00:00Z",
+                   "basis": "WIQL over Feature, Epic scoped to Area\\Web"}}
+    _apv = M._composition_view({
+        "meta": {"ado": _ap_ado},
+        "phases": [{"id": "P1", "title": "declared", "status": "pending",
+                    "adoParent": {"id": 55, "type": "Feature",
+                                  "title": "Payments"}},
+                   {"id": "P2", "title": "nowhere", "status": "pending",
+                    "adoParent": None},
+                   {"id": "P3", "title": "silent", "status": "pending"}]})
+    _ap_rows = dict((r["id"], r) for r in _apv["phases"])
+    check("ap1 a declared adoParent reaches the phase row VERBATIM - the basis "
+          "travels with the id, because a control that offered only the number "
+          "would drop what makes the number checkable",
+          _ap_rows["P1"]["adoParent"] == {"id": 55, "type": "Feature",
+                                          "title": "Payments"},
+          repr(_ap_rows["P1"].get("adoParent")))
+    check("ap2 an explicit null reaches the row AS null, and an ABSENT key "
+          "reaches it as the use-fallback marker - two different answers, and "
+          "a payload that spelled both `null` would make the control unable to "
+          "tell them apart",
+          _ap_rows["P2"]["adoParent"] is None
+          and _ap_rows["P3"]["adoParent"] == _adop.use_fallback(),
+          repr((_ap_rows["P2"].get("adoParent"),
+                _ap_rows["P3"].get("adoParent"))))
+    check("ap3 every phase row carries the RESOLUTION beside the declaration, "
+          "and it comes from `_ado_parent.resolve` - the one function every "
+          "other surface asks, so the panel cannot hold a second opinion about "
+          "where a phase hangs",
+          # .get throughout: the mutation these cases are for DROPS a key, and
+          # a KeyError would abort the suite and take every later case's output
+          # with it instead of naming the one thing that broke.
+          _ap_rows["P1"]["adoParentResolved"].get("id") == 55
+          and _ap_rows["P1"]["adoParentResolved"].get("source") == "item"
+          and _ap_rows["P2"]["adoParentResolved"].get("id") is None
+          and _ap_rows["P2"]["adoParentResolved"].get("source") == "item"
+          and _ap_rows["P3"]["adoParentResolved"].get("id") == 41
+          and _ap_rows["P3"]["adoParentResolved"].get("source") == "meta"
+          and _adop.resolve({"id": "P3"}, _ap_ado)["basis"]
+          == _ap_rows["P3"]["adoParentResolved"].get("basis"),
+          repr(_ap_rows["P3"].get("adoParentResolved")))
+    check("ap4 ...and the resolution is the WHOLE answer or none of it: the "
+          "basis rides along, because an id with no sentence behind it is the "
+          "claim without the thing that makes it checkable",
+          sorted(_ap_rows["P1"]["adoParentResolved"]) == ["basis", "id",
+                                                          "source"],
+          repr(sorted(_ap_rows["P1"]["adoParentResolved"])))
+    _app = _apv["adoParents"]
+    # THE INPUTS THAT TELL THE TWO IMPLEMENTATIONS APART. On a usable integer a
+    # re-read of `parentWorkItem` gives the same answer `resolve` does, so a
+    # case built only on that would pass either way - it was written that way
+    # first and a mutation survived it. `resolve` refuses a non-positive or
+    # non-integer id (`_positive_id`, which refuses bool before int) and reports
+    # source `none`; a re-read hands the junk straight to the control and calls
+    # it `meta`.
+    _app_junk = [M._composition_view({"meta": {"ado": {"parentWorkItem": _bad}},
+                                      "phases": []})["adoParents"]["fallback"]
+                 for _bad in ("41", 0, -3, True, None)]
+    _app_off = M._composition_view({"meta": {}, "phases": []})["adoParents"]
+    check("ap5 the fallback the control has to NAME comes from `resolve`, never "
+          "from a second read of parentWorkItem - so an id the resolver refuses "
+          "is offered to nobody, and 'no connector at all' reports source none "
+          "rather than a meta fallback of None: %r" % (_app_junk,),
+          _app["fallback"] == {"id": 41, "source": "meta"}
+          and _app_junk == [{"id": None, "source": "none"}] * len(_app_junk)
+          and _app_off["fallback"] == {"id": None, "source": "none"},
+          repr((_app, _app_off["fallback"])))
+    check("ap6 the cached candidates ride the same payload, junk id dropped, "
+          "with the fetch's own moment and the query that scoped it - a cache "
+          "with no moment cannot be aged and one with no basis has to be "
+          "trusted rather than checked",
+          [c["id"] for c in _app["candidates"]] == [41]
+          and _app["candidates"][0]["title"] == "Checkout"
+          and _app["fetchedAt"] == "2026-08-20T00:00:00Z"
+          and _app["cache"] == "items"
+          and ("Scoped by: WIQL over Feature, Epic scoped to Area\\Web."
+               in _app["basis"]),
+          repr(_app))
+    _app_absent = M._composition_view({"meta": {"ado": {"organization": "o"}},
+                                       "phases": []})["adoParents"]
+    _app_empty = M._composition_view({
+        "meta": {"ado": {"organization": "o",
+                         "parentCandidates": {
+                             "items": [],
+                             "fetchedAt": "2026-08-20T00:00:00Z",
+                             "basis": "WIQL over Feature scoped to Area\\Web"}}},
+        "phases": []})["adoParents"]
+    check("ap7 AN ABSENT CACHE IS NOT AN EMPTY ONE. Nobody has asked this board "
+          "yet; a bare empty list would say the board has no parent-shaped item "
+          "on it, which is the filter-narrowed-to-nothing reading as all-clear. "
+          "So the state is named and the sentence says which it is",
+          _app_absent["cache"] == "absent"
+          and _app_absent["candidates"] == []
+          and _app_absent["fetchedAt"] is None
+          and "nobody has asked" in _app_absent["basis"]
+          and _app_absent["refresh"] == "/audit:sync parents",
+          repr(_app_absent))
+    check("ap8 ...and an EMPTY cache says the other thing: somebody looked, at "
+          "a moment, with a query that is named - so an empty list can be told "
+          "from an unfiltered one, which is the whole reason the fetch writes a "
+          "basis",
+          _app_empty["cache"] == "empty"
+          and _app_empty["fetchedAt"] == "2026-08-20T00:00:00Z"
+          and "Area\\Web" in _app_empty["basis"]
+          and _app_absent["basis"] != _app_empty["basis"],
+          repr(_app_empty))
+    check("ap9 a cache the manifest carries with NO basis says so rather than "
+          "printing an empty sentence - a basis that is missing is the thing to "
+          "say, never a default to fill the gap with",
+          "no basis" in M._composition_view({
+              "meta": {"ado": {"parentCandidates": {"items": []}}},
+              "phases": []})["adoParents"]["basis"],
+          repr(M._composition_view({
+              "meta": {"ado": {"parentCandidates": {"items": []}}},
+              "phases": []})["adoParents"]["basis"]))
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.

@@ -485,6 +485,33 @@ const tableHead=cols=>el('thead',{},el('tr',{},cols.map(c=>
  * @param {*} cur - the chosen value, compared strictly, as each site compared it
  * @returns {HTMLSelectElement} `sel`, so a builder can return the call
  */
+/**
+ * The number a box's text spells, or null when it does not spell one.
+ *
+ * A ROUND TRIP, NOT A PARSE, and that is the whole content of this function.
+ * `Number()` is far more generous than anyone typing into a box: `'0x10'` is
+ * 16, `'1e3'` is 1000, `'4e2'` is 400 and `' 4 '` is 4 — so a bare `Number()`
+ * stores a value nobody wrote, and stores it silently. Only a spelling that
+ * comes back identical is taken as that number, which is what leaves `007`,
+ * `1.0.0` and `4e2` the strings a reader plainly typed.
+ *
+ * `null` is the ONE answer for "not a number", distinct from `0` and from
+ * `NaN`, both of which are values a caller may legitimately be holding.
+ *
+ * Two callers today and one rule: the ADO parent id box (which then asks for a
+ * positive integer) and the field-template value box (which keeps a number as a
+ * number so a board requiring one is satisfied). It lives here rather than
+ * beside either of them because a second copy would be a second answer about
+ * what `4e2` means.
+ *
+ * @param {*} text - what a box holds; trimmed here so no caller has to
+ * @returns {number|null} the number, or null when the text is not exactly one
+ */
+const typedNumber=text=>{
+ const t=String(text==null?'':text).trim();
+ if(t==='')return null;
+ const n=Number(t);
+ return (Number.isFinite(n)&&String(n)===t)?n:null;};
 const fillOptions=(sel,pairs,cur)=>{
  pairs.forEach(([v,t])=>{const o=el('option',{value:v},t);
   if(cur===v)o.selected=true;sel.append(o);});
