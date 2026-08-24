@@ -355,6 +355,19 @@ def _make_handler(project, token):
                     self._json(400, {"ok": False,
                                      "findings": ["bad JSON: %s" % exc]}); return
                 self._json(200, _panel_write.proposal_action(project, body)); return
+            if path == "/api/gate-events/prune":
+                # POST rather than PUT: a prune is an ACTION over a feed, not a
+                # replacement of a resource the client is holding - the same
+                # reason /api/proposal is one. The Plan gate card renders these
+                # rows, so this is the endpoint behind the control that belongs
+                # on that card.
+                try:
+                    body = self._body()
+                except Exception as exc:
+                    self._json(400, {"ok": False,
+                                     "findings": ["bad JSON: %s" % exc]}); return
+                self._json(200,
+                           _panel_write.prune_gate_events(project, body)); return
             self._json(404, {"error": "not found"})
 
     return Handler

@@ -155,6 +155,8 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_trail.py                # has anything run here: hook state, usage ledger, journal chain
           _doctor_completions.py          # the task.complete receipts against the plan, git and the ledger
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
+          _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
+          audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -260,6 +262,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
+  _gate_feed -> _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
@@ -309,7 +312,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _areas, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
+  _panel_write -> _ado_parent, _areas, _gate_feed, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
@@ -317,6 +320,7 @@ L7:
   audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
+  audit-logs -> _gate_feed, _output
   audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _status_facts, _ui_theme
   audit-task -> _manifest_io, _output, _panel_write
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
@@ -1813,6 +1817,51 @@ run had crashed. `check_local_artifacts` (v0.35) catches what the self-ignoring 
 cannot reach: the ledger, stateDir, logsDir or panel pidfile committed BEFORE the markers
 existed. The journal is deliberately not in that list — it is the opposite kind of artifact
 and must stay tracked, which is the reverse warning `_doctor_trail` carries. Layer 3.
+
+### `plugins/audit/scripts/status/_gate_feed.py`
+The plan-gate events feed (`<logsDir>/plan-gate-events.jsonl`) as something that can be
+CLEANED, not only appended to. `hooks/_config.append_gate_event` writes it and the panel's
+Plan gate card reads the tail; nothing in between could remove a row, so a user who wanted
+rows naming a scratch directory outside their repository gone had to hand-write Python
+against a file this plugin both produces and displays.
+
+`classify()` splits raw lines into what stays and what goes, in named classes — a `file`
+resolving outside the repository (`hooks/_config.within_root`, the same containment question
+require-plan and remind-tdd ask), a line that is not a JSON object, and, **only when a caller
+names a threshold**, a row past that age. There is no default age and that is the decision:
+the feed already self-trims by size, and "old" is not the same claim as "does not belong".
+A row is scored in the first class it falls into, so the class counts add up to the removed
+total, and every class is reported including the ones at zero.
+
+`feed_path()` is the blast radius, and it is CONSTRUCTED rather than checked after the fact:
+the writer's own `logs_dir()` + `GATE_EVENTS_FILE`, so no argument can widen it. Its one
+refusal is a feed that is a symlink out of its own directory — the gate appends *through*
+the link while `atomic_write_text` ends in `os.replace`, so a prune would swap the link for
+a file and silently redirect the feed. That test is an EQUALITY between resolved directories
+rather than `within_root`, because the two questions fail in opposite directions: a gate that
+cannot resolve a path must answer *inside*, and a writer that cannot must not proceed.
+
+`prune()` is the whole action, and both doors run it — `audit-logs.py` and the panel's
+`POST /api/gate-events/prune`. It writes nothing when nothing was removed, so a prune that
+changes nothing leaves the mtime alone. Layer 2 (it reaches `_loader` and `_usage_core`, both
+layer 1). `--selftest`.
+
+### `plugins/audit/scripts/status/audit-logs.py`
+`/audit:logs` — argument parsing, the render and the exit code over `_gate_feed`. It is its
+own entry point rather than `/audit:doctor --prune-events`, which is what was asked for, and
+the argument is in the file's own docstring: the doctor is read-only by construction and
+three surfaces promise it, but the decisive part is the shape — `--prune-events` would have
+to skip `diagnose()` entirely, and a flag that skips the whole body of a command is a
+different command wearing that command's name. The doctor's exit code is a health verdict
+with nowhere to put a prune's outcome.
+
+The name is the boundary: everything reachable lives under `logsDir`, and the journal is
+deliberately out of reach because it is the tamper-evident trail. **Both counts print at
+every value including zero**, `state` separates a feed nobody has written from an empty one,
+and removed rows are counted by class and never echoed — printing an out-of-repository path
+to explain that it was removed writes it back into the transcript the prune was clearing.
+The verb is mandatory: a bare invocation must not prune. Exit 0 the prune ran, 1 it could
+not, 2 a usage error. Layer 7. `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called

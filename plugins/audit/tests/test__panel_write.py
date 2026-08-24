@@ -1192,6 +1192,85 @@ def _cases(check):
           and "\"opus\"" not in M._fmt_change({"target": "t", "field": "model",
                                              "from": "a", "to": "opus"}))
 
+    # --- the Plan gate card's prune (POST /api/gate-events/prune) --------------
+    # ONE RULE, TWO DOORS. What is proven here is that the panel adds no rule of
+    # its own: the same `_gate_feed.prune` the command runs, over the project's
+    # OWN config, with the endpoint's contract on top (an object body, a threshold
+    # that can be read). The classification itself has its cases in
+    # `test__gate_feed.py` and is deliberately not restated here.
+    import shutil as _sh1
+    import tempfile as _tf1
+    _gf_tmp = _tf1.mkdtemp(prefix="panel-write-gatefeed-")
+    _gf_out = _tf1.mkdtemp(prefix="panel-write-outside-")
+    try:
+        import _gate_feed as _gf
+        _gf_proj = os.path.join(_gf_tmp, "proj")
+        _gf_logs = os.path.join(_gf_proj, ".claude", "logs")
+        os.makedirs(_gf_logs, exist_ok=True)
+        _gf_in = json.dumps({"ts": "2026-08-20T10:00:00Z", "event": "deny",
+                             "file": "src/app.ts"}, sort_keys=True,
+                            separators=(",", ":"))
+        _gf_bad = json.dumps({"ts": "2026-08-20T10:00:01Z", "event": "deny",
+                              "file": os.path.join(_gf_out, "probe.py")},
+                             sort_keys=True, separators=(",", ":"))
+        _gf_feed = os.path.join(_gf_logs, "plan-gate-events.jsonl")
+
+        def _seed_feed():
+            with open(_gf_feed, "w", encoding="utf-8") as _fh1:
+                _fh1.write(_gf_in + "\n" + _gf_bad + "\n")
+
+        _seed_feed()
+        _gf_dry = M.prune_gate_events(_gf_proj, {"dryRun": True})
+        with open(_gf_feed, "r", encoding="utf-8") as _fh1:
+            _gf_after_dry = _fh1.read()
+        check("gp1 a dryRun POST returns the counts the confirm dialog needs and "
+              "writes nothing - the out-of-repository row is still in the file "
+              "once afterwards: %r" % (_gf_dry,),
+              _gf_dry["ok"] is True and _gf_dry["removed"] == 1
+              and _gf_dry["kept"] == 1 and _gf_dry["wrote"] is False
+              and _gf_after_dry.count(_gf_out) == 1)
+
+        _gf_real = M.prune_gate_events(_gf_proj, {})
+        with open(_gf_feed, "r", encoding="utf-8") as _fh1:
+            _gf_after = _fh1.read()
+        check("gp2 ...and the real POST removes exactly that row, leaving the "
+              "in-repository one - counted on both sides, so a prune that "
+              "emptied the feed would fail here rather than look clean: %r"
+              % (_gf_real,),
+              _gf_real["wrote"] is True and _gf_real["removed"] == 1
+              and _gf_after.count(_gf_out) == 0
+              and _gf_after == _gf_in + "\n")
+
+        _gf_bad_days = M.prune_gate_events(_gf_proj, {"olderThanDays": 0})
+        _gf_bad_type = M.prune_gate_events(_gf_proj, {"olderThanDays": "30"})
+        _gf_bool = M.prune_gate_events(_gf_proj, {"olderThanDays": True})
+        check("gp3 a threshold that cannot be read is REFUSED rather than "
+              "coerced or ignored - it is the one input here that decides how "
+              "much history goes, and `True` is refused too because bool is an "
+              "int in Python and would silently mean one day: %r"
+              % ([_gf_bad_days, _gf_bad_type, _gf_bool],),
+              [r["ok"] for r in (_gf_bad_days, _gf_bad_type, _gf_bool)]
+              == [False, False, False]
+              and all(len(r["findings"]) == 1
+                      for r in (_gf_bad_days, _gf_bad_type, _gf_bool)))
+        _gf_ok_days = M.prune_gate_events(_gf_proj, {"olderThanDays": 1})
+        check("gp4 ...while a whole number of days at least 1 is accepted, which "
+              "is what says gp3 refuses the VALUE and not the key: %r"
+              % (_gf_ok_days,),
+              _gf_ok_days["ok"] is True and _gf_ok_days["olderThanDays"] == 1)
+
+        _seed_feed()
+        _gf_direct = _gf.prune(_gf_proj, M.read_config(_gf_proj), dry_run=True)
+        _seed_feed()
+        _gf_endpoint = M.prune_gate_events(_gf_proj, {"dryRun": True})
+        check("gp5 the endpoint IS the rule: the same project through "
+              "`_gate_feed.prune` directly answers identically, so the panel "
+              "holds no second opinion about what a prune removes: %r"
+              % ((_gf_direct, _gf_endpoint),), _gf_direct == _gf_endpoint)
+    finally:
+        _sh1.rmtree(_gf_tmp, ignore_errors=True)
+        _sh1.rmtree(_gf_out, ignore_errors=True)
+
     # --- isolation cases (P12.4): the moved boundary stays real -----------------
     _src = _harness.module_source(M)
     _imports = [l for l in _src.split("\n")

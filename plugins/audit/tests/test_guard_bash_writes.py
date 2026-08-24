@@ -174,6 +174,56 @@ def _cases(check):
     _expect("b2 dirty tool-edited file is silent", "silent",
           payload("Bash", sid=s), dirty=["src/tool.ts"])
 
+    # (sc) THE EDIT BRANCH ONLY EVER SPEAKS ABOUT THE WATCHED TREE. An Edit to a
+    # file outside it used to be appended to `toolEdited` under the `..`-escaped
+    # spelling `rel_path` hands back for anything out of tree — a rel that can
+    # never equal a `git status` line, so no verdict below ever read it. This
+    # plugin references only the consuming repository, so a path with no answer
+    # here is not recorded at all rather than recorded uselessly.
+    #
+    # The pair is deliberate: `sc1`/`sc2` are the out-of-tree half, `sc3` the
+    # in-tree twin over the same session, and `sc4` proves the removal cost no
+    # behaviour. sc2 counts OCCURRENCES in the state file rather than asserting
+    # absence, because "not retained on disk" is the claim and a substring that
+    # went from one to nought is the only thing that says it.
+    outside = Path(tempfile.mkdtemp(prefix="bash-writes-outside-"))
+    outside_file = outside / "probe.py"
+    outside_rel = _config.rel_path(str(tmp), str(outside_file))
+    s = "bw-sc"
+    seed(s)
+    # In-tree first, so the state file exists and holds content: an out-of-tree
+    # Edit as the session's FIRST act writes no file at all, and "the path is
+    # absent from a file that is not there" would be green against both versions.
+    M.decide(payload("Edit", sid=s, file_path=str(tmp / "src" / "inside.ts")),
+             cfg=cfg, state_dir=sd)
+    _sc_ok, _sc_got = _harness.attempt(
+        M.decide, payload("Edit", sid=s, file_path=str(outside_file)),
+        cfg=cfg, state_dir=sd)
+    _sc_verdict, _sc_detail = _sc_got if _sc_ok else ("EXC", str(_sc_got))
+    check("sc1 an Edit to a file OUTSIDE the watched tree is silent, and the "
+          "reason names the SCOPE rather than the path - a hook that reports "
+          "out-of-tree work by quoting the path has displayed the one thing it "
+          "is not allowed to keep: %r" % ((_sc_verdict, _sc_detail),),
+          _sc_verdict == "silent" and _sc_detail.count(outside_rel) == 0
+          and _sc_detail.count(str(outside_file)) == 0)
+    _sc_state = (sd / ("bash-writes-%s.json" % s)).read_text(encoding="utf-8")
+    check("sc2 ...and nothing about it is retained on disk: the escaped rel "
+          "occurs 0 times in the session's state file, which held it once "
+          "before: %r" % (outside_rel,),
+          _sc_state.count(outside_rel) == 0)
+    check("sc3 ...while the in-tree file edited by the SAME session in the SAME "
+          "state file is still recorded exactly once - the negative above is a "
+          "scope test, not the edit branch being switched off: %r" % (_sc_state,),
+          _sc_state.count("src/inside.ts") == 1)
+    _sc_ok2, _sc_got2 = _harness.attempt(
+        M.decide, payload("Bash", sid=s), cfg=cfg, state_dir=sd,
+        dirty=["src/after-scope.ts"])
+    check("sc4 ...and the next Bash pass warns exactly as it would have without "
+          "the out-of-tree Edit, which is what says the removed record carried "
+          "no decision: %r" % (_sc_got2,),
+          _sc_ok2 and _sc_got2[0] == "warn"
+          and _sc_got2[1].count("src/after-scope.ts") == 1)
+
     # (c) exempt / non-source / manifest / lock → silent
     s = "bw-c"
     for _sid in (s, "bw-c2", "bw-c3", "bw-c4"):

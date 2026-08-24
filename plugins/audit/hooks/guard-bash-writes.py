@@ -7,7 +7,8 @@ heredocs piped into interpreters, obfuscated redirects, etc.).
 
 Two branches by tool_name:
   Edit/Write/MultiEdit/NotebookEdit → RECORD the file as tool-edited (those
-      files went through guard-edits + require-plan already).
+      files went through guard-edits + require-plan already) — unless it lands
+      outside the watched tree, which is silent and records nothing.
   Bash → if the command is PROVABLY READ-ONLY, absorb whatever appeared and
       attribute nothing (F-P-24: with a second agent in the same checkout, "new
       to me" stopped meaning "written by this call", and a `git ls-files | grep`
@@ -47,7 +48,10 @@ State: <stateDir>/bash-writes-<session_id>.json
   `otherTrees` is the ONLY key here that is not a repo-relative path, and the
   difference is load-bearing: every rel in this file is a path in the ONE tree
   this guard watches, which is what lets a sibling session's rels be read as
-  claims about the same files. `otherTrees` names trees that were declined, so
+  claims about the same files. That is now ENFORCED at the edit branch rather
+  than assumed of it (`_config.within_root`): an Edit outside the tree used to
+  land in `toolEdited` wearing relpath's `../..` escape, where no `git status`
+  line could ever equal it. `otherTrees` names trees that were declined, so
   it is a list of absolute directories and never a claim about a file.
   `baselined` marks that the session's FIRST Bash pass has seeded seenDirty
   with the tree's pre-existing dirt (silently) — only dirt appearing after
@@ -664,6 +668,25 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         fp = ti.get("file_path", "") or ti.get("notebook_path", "")
         if not fp:
             return ("silent", "no file_path")
+        # OUT OF THE WATCHED TREE IS NOT A FILE THIS GUARD HAS AN OPINION ABOUT.
+        # `rel_path` is os.path.relpath, so a target outside the project comes
+        # back as `../../../private/tmp/probe.py`, and appending THAT to
+        # `toolEdited` recorded a path no verdict below can ever read: every rel
+        # in this state file is matched against a `git status` line from the
+        # watched tree, and an escaped rel matches none of them (4e81429 named
+        # it and left it, as dead state with no output behind it).
+        #
+        # It goes anyway, because dead is not the standard: this plugin manages
+        # and references only the consuming repository, so a path outside it is
+        # not kept in memory, not written to disk, and not quoted back in the
+        # verdict's reason. The test before `rel_path` rather than after is the
+        # same rule one step earlier - the escaped spelling is never built.
+        #
+        # `within_root` is _config's, shared with require-plan / remind-tdd /
+        # guard-secrets-read, so "inside this repository" has one answer across
+        # the hooks SECURITY.md promises will agree.
+        if not _config.within_root(root, fp):
+            return ("silent", "outside the watched tree")
         rel = _config.rel_path(root, fp)
         if rel not in state["toolEdited"]:
             state["toolEdited"].append(rel)
