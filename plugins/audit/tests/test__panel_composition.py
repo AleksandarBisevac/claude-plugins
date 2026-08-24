@@ -347,6 +347,98 @@ def _cases(check):
     finally:
         shutil.rmtree(_aproj, ignore_errors=True)
 
+    # --- the ADO card's connection evidence (what /audit:sync connect proved) ---
+    def _conn(ado):
+        return M._ado_connection({"meta": {"ado": ado}})
+
+    _CONN = {"process": "Scrum", "pbiType": "Product Backlog Item",
+             "stateMapNeeded": True, "authPath": "stored",
+             "fetchedAt": "2026-08-24T09:00:00Z"}
+    _ac_absent = _conn({"organization": "o"})
+    _ac_needs = _conn({"connection": dict(_CONN)})
+    _ac_ok = _conn({"connection": dict(_CONN),
+                    "stateMap": {"task": {"done": "Done"}}})
+    _ac_unknown = _conn({"connection": dict(_CONN, process=None,
+                                            stateMapNeeded=None)})
+    _ac_states = [_ac_absent["state"], _ac_needs["state"], _ac_ok["state"],
+                  _ac_unknown["state"]]
+    check("ac1 the four ways of knowing something about this board are four "
+          "NAMED states, all different - 'never probed', 'probed but the "
+          "process is undecidable', 'probed and this board needs a stateMap' "
+          "and 'probed, nothing outstanding' are four answers, and a card that "
+          "rendered any two alike would say one while meaning the other: %r"
+          % (_ac_states,),
+          _ac_states == ["absent", "needs-map", "ok", "unknown"]
+          and len(set(_ac_states)) == 4)
+    _ac_bare = _conn({"connection": {"process": None}})
+    check("ac2 ...and their four sentences are all different too, since the "
+          "state name never reaches the operator - the sentence does. The "
+          "fourth is measured against a block carrying NO moment and NO auth "
+          "path, so it is as data-poor as an unprobed board: a version that "
+          "collapsed 'never probed' into 'probed, undecidable' would print "
+          "one sentence for both, and an earlier form of this case stayed "
+          "green through exactly that mutation because its fixture differed "
+          "in the data rather than in the branch",
+          len(set(r["basis"] for r in (_ac_absent, _ac_needs, _ac_ok,
+                                       _ac_unknown))) == 4
+          and _ac_bare["state"] == "unknown"
+          and _ac_bare["basis"] != _ac_absent["basis"]
+          and _ac_bare["basis"].count("access was proven") == 1
+          and _ac_absent["basis"].count("access was proven") == 0)
+    check("ac3 an unprobed board says the CONNECTOR may still be working and "
+          "that what is missing is the evidence - the card must not read an "
+          "absent cache as a broken connection, which is the same 'a filter "
+          "narrowed to nothing is not all-clear' rule the candidate cache "
+          "keeps: %r" % (_ac_absent["basis"][:60],),
+          _ac_absent["fetchedAt"] is None
+          and _ac_absent["basis"].count("never been probed") == 1
+          and _ac_absent["basis"].count("evidence, not the") == 1)
+    check("ac4 the needs-map state names the process AND says what will "
+          "actually go wrong - a card that only said 'Scrum' leaves the reader "
+          "to know the shipped defaults are Agile's",
+          _ac_needs["process"] == "Scrum"
+          and _ac_needs["basis"].count("stateMap") == 1
+          and _ac_needs["basis"].count("refused its state") == 1
+          and _ac_ok["basis"].count("refused its state") == 0)
+    check("ac5 every state carries the command that re-derives it, so a stale "
+          "block can be refreshed rather than believed",
+          all(r["refresh"] == "/audit:sync connect"
+              for r in (_ac_absent, _ac_needs, _ac_ok, _ac_unknown)))
+    check("ac6 the AUTH PATH rides along and is a word naming a MECHANISM - "
+          "the panel is a shared screen, and the only useful fact about a 401 "
+          "six weeks from now is which KIND of credential lapsed, never whose",
+          _ac_ok["authPath"] == "stored"
+          and _ac_ok["basis"].count("'stored' auth path") == 1
+          and _conn({"connection": dict(_CONN, authPath=None),
+                     "stateMap": {}})["basis"].count("not recorded") == 1)
+    check("ac7 a probed-but-undecidable board keeps the moment and the auth "
+          "path while reporting no process - the stamp is worth keeping on its "
+          "own, and inventing a process from it would be the guess this whole "
+          "block exists to avoid. The SENTENCE is asserted beside the fields, "
+          "because the fields alone survive a collapse into the settled state "
+          "untouched: an earlier form of this case stayed green while the card "
+          "read 'this board runs the None process'",
+          _ac_unknown["process"] is None
+          and _ac_unknown["fetchedAt"] == "2026-08-24T09:00:00Z"
+          and _ac_unknown["authPath"] == "stored"
+          and _ac_unknown["state"] == "unknown"
+          and _ac_unknown["basis"].count("could not be told") == 1
+          and _ac_unknown["basis"].count("this board runs") == 0
+          and _ac_ok["basis"].count("this board runs") == 1)
+    check("ac8 a fetchedAt of the wrong TYPE degrades to 'no recorded moment' "
+          "rather than being printed as a timestamp - the panel renders what "
+          "the manifest holds, and a number formatted as a date is a lie the "
+          "card would tell confidently",
+          _conn({"connection": dict(_CONN, fetchedAt=1755000000),
+                 "stateMap": {}})["fetchedAt"] is None)
+    check("ac9 the block rides /api/state's composition payload, beside the "
+          "other two ADO blocks - without that the panel cannot show any of "
+          "this, however well the derivation works",
+          "adoConnection" in M._composition_view(
+              {"meta": {"ado": {"connection": dict(_CONN)}}, "phases": []})
+          and M._composition_view({"phases": []})["adoConnection"]["state"]
+          == "absent")
+
     shutil.rmtree(tmp, ignore_errors=True)
 
 

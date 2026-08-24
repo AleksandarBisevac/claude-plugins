@@ -183,6 +183,52 @@ def _cases(check):
           "a did-you-mean warning about itself",
           {"hierarchy", "parentCandidates"} <= M.KNOWN_ADO)
 
+    # --- meta.ado.connection: the third cache, written by /audit:sync connect ---
+    _GOOD_CONN = {"process": "Scrum", "pbiType": "Product Backlog Item",
+                  "stateMapNeeded": False, "authPath": "stored",
+                  "fetchedAt": "2026-08-24T00:00:00Z",
+                  "basis": "read-only work-item query proved access"}
+    check("ma38 a well-formed connection block is silent, and an ABSENT one is "
+          "too - a connector configured before connect existed still works, so "
+          "the block only ever ADDS a reading of a later failure",
+          M.check_ado_meta({"connection": dict(_GOOD_CONN)}) == ([], [])
+          and M.check_ado_meta({"organization": "o"}) == ([], []))
+    for _bad, _why in ((7, "a number where the object goes"),
+                       ({"process": 3}, "a non-string process"),
+                       ({"authPath": ["stored"]}, "a non-string authPath"),
+                       ({"stateMapNeeded": "yes"}, "a stringy stateMapNeeded"),
+                       ({"fetchedAt": 1755000000}, "an epoch fetchedAt")):
+        _f, _w = M.check_ado_meta({"connection": _bad})
+        check("ma39 connection with %s is a finding, not a shrug - every "
+              "surface that prints this block would misread it: %r"
+              % (_why, _f), len(_f) == 1)
+    _f, _w = M.check_ado_meta({"connection": dict(_GOOD_CONN, Process="Scrum")})
+    check("ma40 an unknown key inside connection is a did-you-mean WARNING and "
+          "not a finding, the same line this file draws at every other level: "
+          "%r" % (_w,),
+          _f == [] and len(_w) == 1 and "connection" in _w[0])
+    _f_need, _w_need = M.check_ado_meta({"connection": dict(_GOOD_CONN,
+                                                           stateMapNeeded=True)})
+    check("ma41 a connection recording that this board NEEDS a stateMap, on a "
+          "config that has none, draws exactly one warning naming the process "
+          "and the moment - the probe already answered the question the "
+          "shipped Agile defaults get wrong, so staying silent would waste the "
+          "one piece of evidence in the file: %r" % (_w_need,),
+          _f_need == [] and len(_w_need) == 1
+          and "stateMap" in _w_need[0] and "Scrum" in _w_need[0])
+    _f_ok, _w_ok = M.check_ado_meta({"connection": dict(_GOOD_CONN,
+                                                       stateMapNeeded=True),
+                                     "stateMap": {"task": {"done": "Done"}}})
+    check("ma42 ...and with the map actually set the warning is gone - the "
+          "paired negative, so ma41 cannot be passing on a rule that warns "
+          "whenever the block is present at all",
+          (_f_ok, _w_ok) == ([], []))
+    check("ma43 a null connection is silent and is NOT the same as a "
+          "malformed one: explicit null says 'connect ran and recorded "
+          "nothing', which the shape check must not turn into a finding",
+          M.check_ado_meta({"connection": None}) == ([], [])
+          and "connection" in M.KNOWN_ADO)
+
 
 def _selftest():
     return _harness.run(_cases)

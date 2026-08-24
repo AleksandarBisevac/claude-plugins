@@ -164,7 +164,16 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
              # never shipped: the same payload's bugsBehavior puts a Bug in a
              # different place on the next board), `parentCandidates` is a
              # picker's convenience and never an authority.
-             "hierarchy", "parentCandidates"}
+             "hierarchy", "parentCandidates",
+             # U-CONNECT: the third cache, written by `/audit:sync connect` and
+             # the same EVIDENCE shape as the two above - what a read-only probe
+             # proved about this board, and when. It holds the auth PATH in
+             # effect (never a credential, and never a name that could be one),
+             # because that is the only thing that makes a later 401 readable:
+             # a stored PAT that worked on a named day and stops is an expired
+             # token rather than a broken configuration. No expiry DATE, since
+             # neither transport can be asked for one.
+             "connection"}
 # Keys inside meta.branch (the naming convention). Enumerated for the same reason
 # meta.ado is: a typo like `slugMaxLen` or `defaulttype` would otherwise be a
 # convention that silently never applies.
@@ -499,6 +508,7 @@ INLINE_ANCHORS = (
     "meta.ado.pull",
     "meta.ado.hierarchy",
     "meta.ado.parentCandidates",
+    "meta.ado.connection",
 )
 
 

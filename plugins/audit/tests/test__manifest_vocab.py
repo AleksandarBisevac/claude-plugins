@@ -421,7 +421,16 @@ def _cases(check):
                              "basis": "captured for this case"},
                "parentCandidates": {"items": [{"id": 41}],
                                     "fetchedAt": "2026-08-24T00:00:00Z",
-                                    "basis": "captured for this case"}}
+                                    "basis": "captured for this case"},
+               # `stateMapNeeded` is FALSE here on purpose: a true one draws the
+               # contradiction warning against the absent `stateMap`, and this
+               # case counts warnings. That warning has its own case in
+               # test__manifest_ado.py rather than being smuggled in as a
+               # fixture side effect nobody named.
+               "connection": {"process": "Agile", "pbiType": "User Story",
+                              "stateMapNeeded": False, "authPath": "signin",
+                              "fetchedAt": "2026-08-24T00:00:00Z",
+                              "basis": "captured for this case"}}
     _unreached = []
     for _lvl in M.INLINE_ANCHORS:
         _cfg = dict((k, dict(v)) for k, v in _ado_ok.items())

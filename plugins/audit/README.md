@@ -216,7 +216,8 @@ page behind it, read against the form rather than instead of it. All of it is
   choice) and calls `scripts/manifest/audit-task.py` for the write itself.
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit:run`.
-- **`/audit:sync`** — mirror bugs/tasks into **Azure DevOps work items** (`push`), import
+- **`/audit:sync`** — set the connector up on a board for the first time (`connect`), mirror
+  bugs/tasks into **Azure DevOps work items** (`push`), import
   assigned ADO bugs (`pull`), cache the board's backlog levels and parent candidates
   (`parents`), or diff link state (`status`). Explicit, idempotent, one
   direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
@@ -439,7 +440,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>" \| priority <phaseId> <tier> \| priority <phaseId> --clear` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. `priority` says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused by name, or forced, in which case the first in manifest order wins); `--clear` unpins. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
-| `/audit:sync` | `push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| parents \| status` | Sync the manifest with Azure DevOps work items — `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `parents` caches the board's backlog levels and the parent-shaped items on it (read-only against ADO; it writes two `meta.ado` caches and no work item), `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
+| `/audit:sync` | `connect \| push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| parents \| status` | Sync the manifest with Azure DevOps work items — `connect` is the guided, read-only path to a first working connector (transport, which auth path is actually in effect, a Work-Items probe that proves access without creating anything, and the board's process template), writing `meta.ado` only at the end and only after you confirm; `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `parents` caches the board's backlog levels and the parent-shaped items on it (read-only against ADO; it writes two `meta.ado` caches and no work item), `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
 **`/audit:panel` sub-commands** — bare `/audit:panel` opens it (prints the
 `http://127.0.0.1:<port>/…` URL and opens your browser), `/audit:panel stop` stops it,
@@ -1268,6 +1269,7 @@ untouched):
 | `parentWorkItem` | the **existing** work item audit work hangs under — a Feature or Epic already on the team's backlog. The manifest-wide **fallback**: a phase declaring its own `adoParent` wins. Absent/null = a free-standing branch nobody planning from that board will see. Not in the panel card |
 | `conventions` | what an item must look like to **belong** on this board — `requiredFields`, `descriptionMustContain`, `tagVocabulary`, `requireParent`. A property of the BOARD: absent means there is no standard to meet, not that the check failed. Graded by `scripts/manifest/_ado_conventions.py`, the same code each CREATE is run through. Not in the panel card |
 | `fields` | `{work item type: {ADO field: literal}}` — what this project **supplies** to a governed board, merged into the create payload *before* `conventions` grades it. A field the connector already maps, or one ADO reports read-only, is refused at validation (`scripts/manifest/_ado_fields.py`). Not in the panel card |
+| `connection` | **cache written by `/audit:sync connect`**, never by hand: what a read-only probe proved about this board — the process template, the phase-level type, whether `stateMap` is needed, which auth PATH was in effect (a word naming a mechanism, never a token), plus `fetchedAt` and `basis`. Absent = never probed, which is not a defect. No expiry date: neither transport can be asked for one, and a date nothing can supply would read as "does not expire" |
 | `hierarchy` · `parentCandidates` | **caches written by `/audit:sync parents`**, never by hand: this project's backlog type ranks, and the parent-shaped items on the board at the moment of the fetch. Each carries a `fetchedAt` and a `basis`. Absent = never fetched, so every parent link reports `not verified` and the create proceeds |
 
 One more key is not `meta.ado` at all: **`phases[].adoParent`** — where THIS phase
@@ -1292,6 +1294,17 @@ reverse-maps a known assignee into `reportedBy`'s ledger form (existing rows are
 rewritten), `status` shows mapped/unmapped coverage. The validator checks shape only and
 warns on duplicate values.
 
+- `/audit:sync connect` — the guided path to a first working connector, and read-only until
+  its last step. It checks the transport (MCP tools, else `az` + the `azure-devops`
+  extension), reports **which auth path is in effect for this organization** — a stored PAT
+  is per-organization, and when several paths are present it says so instead of
+  picking one, because a board command that succeeds proves the *organization* is reachable
+  and never which identity reached it — proves access with one **Work Items** query (the only
+  scope this connector needs: `Work Items → Read & write`), and reads that same query for the
+  board's **process template**, which decides `types.pbi` and whether `stateMap` is needed.
+  It writes `meta.ado` and nothing else, only after you confirm, and never a token.
+  `meta.ado.connection` keeps what it proved and when — including which auth path, which is
+  what turns a later 401 into an expired token rather than a broken configuration.
 - `/audit:sync push [bugs|tasks|all] [--task <id> | --phase <id>]` — create/update work
   items (PBIs per phase when `phaseWorkItems`); shows the plan and asks before the first
   write; write-back `ado: {id, url, lastSyncedAt}` per item makes re-runs converge.

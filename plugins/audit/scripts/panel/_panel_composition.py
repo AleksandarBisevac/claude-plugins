@@ -302,6 +302,93 @@ def _candidate_cache(ado):
             % (len(rows), when, how, _PARENT_REFRESH))
 
 
+# The command that re-derives the connection evidence. Spelled once, beside
+# `_PARENT_REFRESH` and for the same reason.
+_CONNECT_REFRESH = "/audit:sync connect"
+
+
+def _ado_connection(manifest):
+    """What `/audit:sync connect` PROVED about this board, for the ADO card.
+
+    THE CARD CANNOT RUN CONNECT AND MUST NOT PRETEND OTHERWISE. `connect`
+    authenticates, and the panel authenticates nothing - so this is the same
+    kind of block `_candidate_cache` is: manifest evidence, read-only, with the
+    moment and the basis kept, and the command that re-derives it named in
+    every state.
+
+    WHY THE CARD SHOWED NOTHING ABOUT THIS BEFORE. `meta.ado.stateMap` is the
+    single most likely first-push failure - the shipped defaults name Agile
+    states, and a Scrum board refuses them - and the card let you edit the map
+    while saying nothing about which process the board runs. The probe knows.
+    So the `needs-map` state exists to put that answer where the control is,
+    rather than in a terminal the person editing this card never saw.
+
+    Four named states, because the ways of knowing nothing are not one way:
+      absent     - connect has never run here.
+      unknown    - it ran and could not tell which process (empty project, no
+                   phase-level item yet, or two of them).
+      needs-map  - it ran, this board is not Agile, and `stateMap` is not set.
+      ok         - it ran, and nothing about the process is outstanding.
+    """
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
+    block = ado.get("connection")
+    if not isinstance(block, dict):
+        return {"state": "absent", "process": None, "pbiType": None,
+                "authPath": None, "fetchedAt": None,
+                "basis": "this board has never been probed: nobody has run %s "
+                         "here, so which process it runs - and therefore "
+                         "whether stateMap is needed - is unknown rather than "
+                         "settled. The connector may still be configured and "
+                         "working; what is missing is the evidence, not the "
+                         "connection." % (_CONNECT_REFRESH,),
+                "refresh": _CONNECT_REFRESH}
+    process = block.get("process")
+    process = process if isinstance(process, str) and process else None
+    pbi = block.get("pbiType")
+    pbi = pbi if isinstance(pbi, str) and pbi else None
+    auth = block.get("authPath")
+    auth = auth if isinstance(auth, str) and auth else None
+    fetched = block.get("fetchedAt")
+    fetched = fetched if isinstance(fetched, str) and fetched else None
+    when = ((" probed %s" % (fetched,)) if fetched
+            else " probed at no recorded moment")
+    # The auth PATH, never a credential and never a who: the card is a shared
+    # screen, and the only useful fact here is which KIND of credential a later
+    # 401 would be about.
+    via = ((" Access was proven through the %r auth path." % (auth,)) if auth
+           else " Which auth path answered was not recorded.")
+    if process is None:
+        return {"state": "unknown", "process": None, "pbiType": None,
+                "authPath": auth, "fetchedAt": fetched,
+                "basis": "access was proven,%s, but the process template could "
+                         "not be told from this board - an empty project, one "
+                         "carrying no phase-level item yet, or a customised "
+                         "one carrying two.%s Until it is known, the shipped "
+                         "stateMap defaults name Agile states and nothing here "
+                         "says whether that fits. Re-run %s once the board has "
+                         "a phase-level item on it."
+                         % (when, via, _CONNECT_REFRESH),
+                "refresh": _CONNECT_REFRESH}
+    if block.get("stateMapNeeded") is True and ado.get("stateMap") is None:
+        return {"state": "needs-map", "process": process, "pbiType": pbi,
+                "authPath": auth, "fetchedAt": fetched,
+                "basis": "this board runs the %s process,%s, and stateMap is "
+                         "not set. The built-in defaults name Agile states, so "
+                         "a task reaching done will be refused its state - set "
+                         "the map below.%s"
+                         % (process, when, via),
+                "refresh": _CONNECT_REFRESH}
+    return {"state": "ok", "process": process, "pbiType": pbi,
+            "authPath": auth, "fetchedAt": fetched,
+            "basis": "this board runs the %s process,%s; phase items are %s.%s "
+                     "Cached evidence, so re-run %s after the board's process "
+                     "or your credential changes."
+                     % (process, when, ("%r" % (pbi,)) if pbi else "unrecorded",
+                        via, _CONNECT_REFRESH),
+            "refresh": _CONNECT_REFRESH}
+
+
 def _ado_parents(manifest):
     """What the per-phase parent control needs, each half with its basis.
 
@@ -393,6 +480,7 @@ def _composition_view(manifest):
         "areaSkills": area_skills,
         "adoStatus": _ado_status(manifest),
         "adoParents": _ado_parents(manifest),
+        "adoConnection": _ado_connection(manifest),
         "branchInfo": _branch_info(manifest),
         "phases": phases_out, "tasks": tasks_out,
     }

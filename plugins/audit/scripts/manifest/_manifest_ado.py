@@ -233,6 +233,67 @@ def _check_parent_candidates(ado, findings, warnings):
                                 "(%d bad: %r)" % (len(bad), bad[:2]))
 
 
+def _check_connection(ado, findings, warnings):
+    """`meta.ado.connection` — what a read-only probe PROVED, and when.
+
+    WRITTEN BY `/audit:sync connect`, NEVER BY HAND, and absent is not a
+    defect: a connector configured before this command existed is a connector
+    that works, and the block only ever adds a reading of a later failure.
+
+    IT HOLDS AN AUTH PATH AND NEVER A CREDENTIAL. `authPath` is one of a
+    handful of words naming HOW the machine authenticated - not who, not with
+    what - because the useful fact about a 401 six weeks from now is which
+    kind of credential lapsed. A string here that looked like a token would be
+    a defect in the writer; the shape check cannot see that, so the schema and
+    this docstring are where the rule is stated and `connect` is where it is
+    kept.
+
+    AND IT DELIBERATELY CARRIES NO EXPIRY DATE. Neither transport can be asked
+    for one - a PAT's expiry needs the token itself or an organization-admin
+    scope this connector never requests - and a key holding a date nothing can
+    supply would be printed as `null` by every surface and read as "does not
+    expire" by every reader.
+    """
+    if "connection" not in ado:
+        return
+    block = ado.get("connection")
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        findings.append("meta.ado.connection: must be an object {process, "
+                        "pbiType, stateMapNeeded, authPath, fetchedAt, basis} "
+                        "or null (absent = connect never ran, which is an "
+                        "answer), got %s" % type(block).__name__)
+        return
+    _unknown_keys(block, {"process", "pbiType", "stateMapNeeded", "authPath",
+                          "fetchedAt", "basis"}, "meta.ado.connection",
+                  warnings)
+    _check_evidence_stamp(block, "meta.ado.connection", findings)
+    for key in ("process", "pbiType", "authPath"):
+        val = block.get(key)
+        if key in block and val is not None and not isinstance(val, str):
+            findings.append("meta.ado.connection.%s: must be a string or null "
+                            "(null = the probe could not tell, which is a "
+                            "recorded answer), got %s"
+                            % (key, type(val).__name__))
+    smn = block.get("stateMapNeeded")
+    if "stateMapNeeded" in block and smn is not None and not isinstance(smn, bool):
+        findings.append("meta.ado.connection.stateMapNeeded: must be true, "
+                        "false or null (null = the process was not detected, "
+                        "so the question has no answer yet), got %r" % (smn,))
+    # A recorded REQUIREMENT the config then does not meet is the one thing
+    # this block can contradict, and it is a warning rather than a finding for
+    # the file's standing reason: the real states live in ADO, so a stateMap
+    # written by hand for a process this cache predates is not wrong here.
+    if smn is True and ado.get("stateMap") is None:
+        warnings.append("meta.ado.connection records that this board needs a "
+                        "stateMap (process %r, probed %s) and meta.ado.stateMap "
+                        "is not set - the built-in defaults name Agile states, "
+                        "so a task reaching done will be refused its state"
+                        % (block.get("process"), block.get("fetchedAt")
+                           or "at no recorded moment"))
+
+
 # --- the connector config --------------------------------------------------------
 def _conventions_contradictions(ado):
     """Where `conventions` and the rest of `meta.ado` disagree. Returns warnings.
@@ -476,6 +537,7 @@ def check_ado_meta(ado):
 
     _check_hierarchy(ado, f, w)
     _check_parent_candidates(ado, f, w)
+    _check_connection(ado, f, w)
 
     # `conventions` is graded by `_ado_conventions`, not here. Same reason this
     # module reads `_manifest_vocab`'s words rather than its own: the panel's

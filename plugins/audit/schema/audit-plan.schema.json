@@ -645,6 +645,58 @@
                   "description": "One sentence naming the query these came from, so a reader can tell an empty list from an unfiltered one."
                 }
               }
+            },
+            "connection": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "CACHED EVIDENCE, written by /audit:sync connect and never by hand: what a read-only work-item probe PROVED about this board, and when. ABSENT = connect never ran, which is an answer and not a defect — a connector configured before this command existed still works, and this block only ever adds a READING of a later failure. It stores no credential and no expiry date: neither transport can be asked when a credential expires (a PAT's expiry needs the token itself or an organization-admin scope this connector never requests), and a key holding a date nothing can supply would be printed as null by every surface and read as 'does not expire' by every reader. What it stores instead is which auth PATH was in effect the last time access was proven, because that is what makes a 401 six weeks from now readable: a stored PAT that worked on a named day and stopped is an expired token, not a broken configuration.",
+              "properties": {
+                "process": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The process template the board runs, read off its phase-level work item type: Scrum (Product Backlog Item), Agile (User Story), CMMI (Requirement) or Basic (Issue). null = not detected, which happens on an empty project, on one carrying no phase-level item yet, and on a customised board carrying two — three different answers, none of them a failure and none of them a guess."
+                },
+                "pbiType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The phase-level work item type the detected process names, i.e. what meta.ado.types.pbi was proposed as. Recorded because the type is the DISCRIMINATOR the detection used — the states are only corroboration, since a state with no item in it does not appear in a query over items."
+                },
+                "stateMapNeeded": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Whether this board needs meta.ado.stateMap. The built-in defaults name Agile-process states, so every other process needs a map and a Scrum board without one has its done-state write refused. null = the process was not detected, so the question has no answer yet — which is not the same as false."
+                },
+                "authPath": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "WHICH KIND of credential was in effect when access was proven — 'env' (the PAT environment variable was set), 'stored' (az devops login holds a PAT for this organization), 'signin' (the Azure identity az account show reports). NEVER a credential, never a user name, never a token: this is a word naming a mechanism. null = more than one path was present at once and nothing observable from outside said which one answered, or the transport was MCP and the identity is the server's."
+                },
+                "fetchedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "ISO timestamp of the probe. Evidence with no moment is evidence nobody can age — and here it is also the half that makes authPath useful, since 'this worked on that day' is what turns a later 401 into an expiry."
+                },
+                "basis": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "One sentence naming the query that proved access and what it showed, so a stale cache can be checked rather than believed. Re-derive with /audit:sync connect."
+                }
+              }
             }
           }
         },

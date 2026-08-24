@@ -1,6 +1,6 @@
 ---
-description: 'Sync the audit manifest with Azure DevOps work items — push manifest bugs/tasks/phases to ADO (board states, sprint stamp, Remaining Work, comments), pull assigned ADO bugs or sprint items into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
-argument-hint: 'push [bugs|tasks|all] [--task <id> | --phase <id>] | pull [bugs|sprint] | parents | status'
+description: 'Sync the audit manifest with Azure DevOps work items — set the connector up for the first time (connect: verify the transport, report which auth path is in effect, prove access read-only, detect the board's process), push manifest bugs/tasks/phases to ADO (board states, sprint stamp, Remaining Work, comments), pull assigned ADO bugs or sprint items into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
+argument-hint: 'connect | push [bugs|tasks|all] [--task <id> | --phase <id>] | pull [bugs|sprint] | parents | status'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__azure-devops__wit_*, mcp__azure-devops__work
 ---
 
@@ -13,8 +13,12 @@ The orchestrator additionally **echoes** already-linked items on status transiti
 (update-only — see `orchestrator.md` → "ADO echo"); this command is the reconciler that
 heals whatever the echo missed.
 
-**`$ARGUMENTS`**: first token is the subcommand — `push`, `pull`, `parents` or
-`status`. Unknown/empty → print usage and stop.
+**`$ARGUMENTS`**: first token is the subcommand — `connect`, `push`, `pull`, `parents`
+or `status`. Unknown/empty → print usage and stop.
+
+**`connect` is the one that runs before `meta.ado` exists**, so Preflight 2 below does
+not apply to it: it is how the block gets written. Every other subcommand still stops
+without one.
 
 ## 0. Preflight
 
@@ -22,7 +26,10 @@ heals whatever the echo missed.
    `${CLAUDE_PLUGIN_ROOT}/reference/tracker-sync.md` (the shared contract + the ADO
    binding: field reference names, state fallback, parent links, iteration resolution).
    Resolve and read the manifest. Missing → stop, point to `/audit:init`.
-2. **`meta.ado` must exist** — else stop and print the setup snippet:
+2. **`meta.ado` must exist** — else stop and point at **`/audit:sync connect`**, which
+   verifies the transport, reports which auth path is in effect, proves access with a
+   read-only query and detects the board's process before writing the block. Print the
+   snippet too, for anyone who would rather write it by hand:
    ```json
    "ado": { "organization": "<org>", "project": "<project>",
             "areaPath": null, "iterationPath": null,
@@ -102,6 +109,121 @@ only: nothing in this command gates, refuses or assigns on the map by itself —
 PROPOSES, pull LABELS, status DISPLAYS, and an absent/null/empty map degrades every
 flow below to exactly today's behavior. ADO identities compare **case-insensitively**
 wherever this command matches them (ADO's directory does).
+
+## Subcommand: `connect`
+
+**The guided path to a first working connector.** Everything below is READ-ONLY except
+step 5, which writes to the manifest and to nothing else. It creates no work item,
+updates none, and touches no credential: auth belongs to `az` / the MCP server, and
+after `az devops login` the credential already lives in the CLI's own store, so there is
+nothing here to capture. **Never ask for, echo, copy or store a token** — the secret
+guard blocks it anyway, and this command has no reason to want one.
+
+It exists because the first thing that used to PROVE access was a `push`, which is also
+the first thing that can CREATE items on somebody's real board.
+
+**Do not re-derive any rung here.** `ado-connect.py` owns them, it prints the report
+verbatim, and a second copy in prose is a second answer:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/ado-connect.py" \
+  <manifest> [--transport mcp] [--org <org> --project <project>] [--probe <file.json>] [--json]
+```
+
+Exit 0 = the ladder got as far as it can — with `--probe`, a plan to confirm. **Exit 1 = a
+rung stopped it**: print what it said and stop, do not go on to a board call or a write.
+Exit 2 is unreadable input, and is never read as a pass.
+
+### 1. Transport, and 2. identity — one call, no arguments beyond the manifest
+
+Run it with no `--probe`. It reports the transport it found and stops on its own rung when
+there is none (`az extension add --name azure-devops`, or install azure-cli). Pass
+`--transport mcp` when this session carries the `mcp__azure-devops__*` tools — then a
+missing `az` is not a stop, and the identity is the MCP server's, which the command says
+rather than guessing at.
+
+**What rung 2 is for, and the trap it removes.** It reports which auth path is in effect
+*for this organization*, from three things that are not secrets: whether
+`AZURE_DEVOPS_EXT_PAT` is SET (never its value), the Azure sign-in `az account show`
+prints, and the organizations `az devops login` has stored a PAT for. Stored credentials
+are **per-organization** — measured: on one machine `uptimize` resolved through a stored
+PAT while `test-audit-lab` resolved through the Azure sign-in, at the same moment.
+
+When more than one path is present, **it says so and picks none**, because nothing
+observable from outside says which one `az` answered with. The sentence that holds either
+way is the one this rung exists for and the one to repeat to the user: **a board command
+that succeeds proves the ORGANIZATION is reachable, never which identity reached it.**
+
+It also states the **PAT scope this connector needs, and nothing else: Work Items → Read &
+write.**
+
+### 3. and 4. The probe, which is one query read two ways
+
+The command prints the exact query. Make it — through `az`, or through the MCP tools if
+that is your transport — then hand back an envelope, **the same shape whether it worked or
+not**:
+
+```json
+{"exitCode": 0, "stderr": "", "rows": [ ...the query's JSON... ]}
+```
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/ado-connect.py" <manifest> --probe <envelope.json>
+```
+
+It is a **Work Items** query deliberately: that is the only scope this connector needs and
+the only one a careful person will have granted, so probing with `az devops project list`
+would report a false failure on a PAT scoped exactly right.
+
+**Two failure texts, and the one that misleads.** A project name with a typo in it answers
+"The project specified is not found in hierarchy" — the credential worked. A *nonexistent
+organization* answers **"you need to run the login command"**, identically to a real
+credential failure (measured). The command grades that text as one verdict naming both
+readings; do not turn it into "log in again" on your own.
+
+The same rows answer rung 4. The **type** is the discriminator, not the states: measured on
+the lab's Agile board, `User Story` was present while the Task states in use were only
+`New` and `Closed`, because nothing was sitting in `Active` or `Resolved`. So observed
+states are corroboration and never proof, and the report says which of the two each line
+is. From the process it proposes `types` (`.pbi`, `.bug`, `.task`) and says **whether
+`stateMap` is needed** — the built-in defaults name **Agile** states, so a Scrum board must
+set one or a task reaching done is refused its state.
+
+An **empty project**, a board with **no phase-level item yet**, and a customised board
+carrying **two** are three different "not detected" answers, none of them a failure and
+none of them a reason to guess: `types` is then simply not proposed.
+
+### 5. The write — the only step that writes, and it asks first
+
+Print the plan the command produced (`N to set, M to change, K already right`), then
+**confirm via AskUserQuestion before writing** — this turns on an outward-facing connector.
+Then, under the concurrency lock, apply it to `meta.ado`:
+
+- `organization`, `project`, `enabled: true`, and `types` when a process was detected;
+- **`connection`** — the evidence block the command hands back under `--json`
+  (`data.connection`): `{process, pbiType, stateMapNeeded, authPath, fetchedAt, basis}`.
+  Same shape as the two caches `parents` writes, and the panel's ADO card reads it.
+
+Revalidate with `validate-manifest.py` after the write, as every mutating command does.
+
+**A `CHANGE` row is offered and never taken silently.** Running `connect` against a manifest
+somebody already configured re-probes and reports; the value already in the file may be the
+one a person chose against this command's advice, so each difference is a question, not an
+edit.
+
+**Credential expiry is not recorded, and that is the answer rather than a gap.** Neither
+transport can be asked for it — a PAT's expiry needs the token itself or an
+organization-admin scope this connector never requests, and the Azure sign-in's access
+token expires hourly and renews itself. What `connection` records instead is which auth
+path was in effect *and when access was last proven*, which is what turns a 401 six weeks
+from now into "that PAT expired" rather than "the configuration is broken". Say that;
+do not invent a field.
+
+### 6. Hand off
+
+`/audit:sync status` to see the connector's own report of what is linked, and
+**`/audit:sync parents`** next when this board is a tree — it caches the backlog levels and
+the parent-shaped items, without which every parent link reports `not verified`.
 
 ## Subcommand: `push [bugs|tasks|all]` (default `bugs`)
 
@@ -496,6 +618,12 @@ Read-only, no ADO writes, no manifest writes.
 
 ## Non-goals (say no when asked)
 
+- **No credential handling in `connect`, ever** — no prompting for a token, no writing one
+  anywhere, no echoing one, and no expiry DATE invented to fill a field neither transport
+  can supply. `connect` verifies and records WHICH BOARD and which auth PATH; auth itself
+  belongs to `az` / the MCP server.
+- No `connect` write beyond the manifest, and none at all before its confirm: it creates no
+  work item, updates none, and a rung that stops leaves `meta.ado` exactly as it was.
 - No two-way merge in one run — one direction per invocation keeps conflicts human-visible.
 - No deletion of ADO work items, ever. Closing happens via state mapping.
 - No syncing of `deferred` — and `proposals` sync only in the ONE direction `pull
