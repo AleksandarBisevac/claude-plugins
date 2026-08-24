@@ -461,6 +461,42 @@ def _cases(check):
           len([x for x in _lines if "NOT VERIFIED" in x]) == 2
           and "2 not verified" in _lines[-3])
 
+    # --- the marker a WRITER needs, because JSON has no third value ------------
+    # Absent, null and an object are three stored states; a patch key is either
+    # present or not, so a panel that could only send `null` or an object could
+    # reach two of the three and would have to spell the third by pruning - which
+    # is exactly the answer null already means here. These cases hold the marker
+    # apart from a real declaration in both directions.
+    check("uf1 use_fallback() hands back a FRESH object each call, so a caller "
+          "that edits one cannot reach the next - the shape is named once here "
+          "and owned by nobody",
+          M.use_fallback() == M.use_fallback()
+          and M.use_fallback() is not M.use_fallback())
+    _uf = M.use_fallback()
+    _uf["id"] = 41
+    check("uf2 ...and the edit above did not travel: the next call is clean",
+          "id" not in M.use_fallback(), repr(M.use_fallback()))
+    _uf_f, _uf_w = M.declaration_findings({"id": "P1", M.FIELD: M.use_fallback()},
+                                          "phase P1")
+    check("uf3 the marker is REFUSED as a declaration, so a writer that forgets "
+          "to translate it gets a refusal and never a parent named after it: %r"
+          % (_uf_f,),
+          len(_uf_f) == 1 and "requires an 'id'" in _uf_f[0])
+    check("uf4 is_use_fallback is strict about BOTH halves - a truthy 1 is not "
+          "True, and a marker carrying anything else is a declaration somebody "
+          "wrote, not an instruction",
+          M.is_use_fallback(M.use_fallback())
+          and not M.is_use_fallback({"useFallback": 1})
+          and not M.is_use_fallback({"useFallback": True, "id": 41})
+          and not M.is_use_fallback(None)
+          and not M.is_use_fallback({"id": 41}))
+    check("uf5 ...and resolve() never SEES one: the marker is a patch spelling, "
+          "so an item still carrying it resolves as the unusable declaration it "
+          "is rather than silently as the fallback it was meant to become",
+          M.resolve({"id": "P1", M.FIELD: M.use_fallback()},
+                    {"parentWorkItem": 41})["id"] is None)
+
+
 
 def _selftest():
     return _harness.run(_cases)

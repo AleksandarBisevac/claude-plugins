@@ -242,7 +242,14 @@ function compChanges(patch){
   // stored value — so the dialog reads the SAME `from` the echo will, and a
   // phase carrying a value nobody honours shows as unpinned on both sides.
   if(('priority' in pv)&&!cfSame(p.priority,pv.priority))
-   rows.push(cfRow(pid,'priority',p.priority,pv.priority));});
+   rows.push(cfRow(pid,'priority',p.priority,pv.priority));
+  // `adoParent`'s `from` is whatever the payload carries, which is the marker
+  // for an absent declaration and never `undefined` — the server computes its
+  // `from` the same way. Without that, "use the fallback → none" would be
+  // `null → null` on this side and a real row on the server's, and the mismatch
+  // check would fire on an edit that is perfectly fine.
+  if(('adoParent' in pv)&&!cfSame(p.adoParent,pv.adoParent))
+   rows.push(cfRow(pid,'adoParent',p.adoParent,pv.adoParent));});
  const byT={};(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
  Object.keys(patch.tasks||{}).sort().forEach(tid=>{
   const t=byT[tid],tv=patch.tasks[tid]||{};
@@ -663,6 +670,16 @@ function cfVal(v,cls,field){
  const none=v===null||v===undefined;
  if(none&&field==='skills')
   return el('span',{class:'cfv '+cls},'none — opted out (null)');
+ // Same rule, second field, and the reason is stronger here: on an `adoParent`
+ // row null is not "not set" but the opposite of it — the phase hangs under
+ // nothing EVEN WHEN the fallback is set — and the marker is not a value at all
+ // but the absence of a declaration. Rendering either as "not set" would make
+ // the two answers that differ most read identically.
+ if(none&&field==='adoParent')
+  return el('span',{class:'cfv '+cls},'none — uncategorised on purpose (null)');
+ if(field==='adoParent'&&apIsFallback(v))
+  return el('span',{class:'cfv '+cls+' unset'},
+    'use the fallback (meta.ado.parentWorkItem)');
  const empty=none||v===''||(Array.isArray(v)&&!v.length);
  return el('span',{class:'cfv '+cls+(empty?' unset':'')},
    none?'not set'

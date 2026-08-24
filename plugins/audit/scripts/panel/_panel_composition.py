@@ -41,6 +41,7 @@ import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR 
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _branch                # noqa: E402  (the naming convention, one expansion path)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
+import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -173,6 +174,13 @@ def _ado_status(manifest):
             "linked": linked, "lastSyncedAt": last[0]}
 
 
+# --- where a phase hangs on the board, as the Composition table shows it --------
+# The command that re-derives the candidate cache, spelled once: it appears in
+# every state's sentence below, and three copies of a command name is three
+# commands the day one of them is renamed.
+_PARENT_REFRESH = "/audit:sync parents"
+
+
 # --- the branch-naming convention, as the Composition card shows it -------------
 def _branch_info(manifest):
     """The naming convention as it CURRENTLY resolves, plus a worked example.
@@ -216,8 +224,114 @@ def _branch_info(manifest):
     }
 
 
+def _ado_parent_of(phase):
+    """One phase's declaration, with ABSENT spelled as the marker.
+
+    The three stored states are absent, null and an object, and the panel has to
+    offer all three. A payload that simply left the key off would hand the
+    browser `undefined` for absent and `null` for the declared nowhere - and
+    `undefined` reads as "the server did not say", which is a fourth thing. So
+    absent is spelled with `_ado_parent`'s own marker, the same object the patch
+    sends back for it, and the browser reads one value with three shapes.
+    """
+    if _ado_parent.FIELD in phase:
+        return phase.get(_ado_parent.FIELD)
+    return _ado_parent.use_fallback()
+
+
+def _candidate_row(item):
+    """One cached candidate, or None when it carries no usable id.
+
+    Int-only, `bool` refused first - the shape `_manifest_ado` grades and the
+    same guard `_ado_status` applies to a link id, so junk in the cache cannot
+    put an option in a menu that would be refused the moment it was saved.
+    """
+    if not isinstance(item, dict):
+        return None
+    wid = item.get("id")
+    if isinstance(wid, bool) or not isinstance(wid, int) or wid <= 0:
+        return None
+    return {"id": wid, "type": item.get("type"), "title": item.get("title"),
+            "state": item.get("state"), "url": item.get("url")}
+
+
+def _candidate_cache(ado):
+    """(state, rows, fetchedAt, basis) for `meta.ado.parentCandidates`.
+
+    THE TWO EMPTIES ARE DIFFERENT ANSWERS AND THIS IS WHERE THEY SEPARATE.
+    "nobody has fetched a list" and "the board had no parent-shaped item in
+    scope" both reach a picker as zero options, and a menu that renders them
+    identically says the second while meaning the first - a filter narrowed to
+    nothing reading as all-clear. So the state is NAMED and each name carries
+    the sentence that makes it checkable: the moment somebody looked, and the
+    query that scoped the look.
+
+    The manifest's own `basis` is quoted rather than paraphrased, and its
+    ABSENCE is reported rather than papered over: a cache with no basis has to
+    be trusted instead of checked, and saying so is the only honest option.
+    """
+    block = ado.get("parentCandidates")
+    if not isinstance(block, dict):
+        return ("absent", [], None,
+                "no candidate list has been cached: nobody has asked this board "
+                "yet, which is not the same answer as a board carrying no "
+                "parent-shaped work item. Run %s to fetch one; until then a "
+                "parent is named by typing its id." % (_PARENT_REFRESH,))
+    rows = [r for r in [_candidate_row(x)
+                        for x in (block.get("items") or [])] if r]
+    fetched = block.get("fetchedAt")
+    fetched = fetched if isinstance(fetched, str) and fetched else None
+    declared = block.get("basis")
+    declared = declared if isinstance(declared, str) and declared.strip() else None
+    when = (" fetched %s" % (fetched,)) if fetched else " fetched at no recorded moment"
+    # The stop is put back rather than assumed: the manifest's `basis` is
+    # somebody else's sentence and may or may not carry one, and the clause that
+    # follows it is a new sentence either way.
+    how = ((" Scoped by: %s." % (declared.rstrip("."),)) if declared else
+           (" The fetch recorded no basis, so how it was scoped is unknown - an "
+            "empty list here cannot be told from a narrowed one."))
+    if not rows:
+        return ("empty", rows, fetched,
+                "the cached candidate list is empty:%s, this board carried no "
+                "parent-shaped work item in scope.%s Re-run %s to look again."
+                % (when, how, _PARENT_REFRESH))
+    return ("items", rows, fetched,
+            "%d cached candidate(s),%s.%s Cached evidence and never an "
+            "authority: an id missing from this list is not a wrong parent, "
+            "only one created since the fetch. Re-run %s to refresh it."
+            % (len(rows), when, how, _PARENT_REFRESH))
+
+
+def _ado_parents(manifest):
+    """What the per-phase parent control needs, each half with its basis.
+
+    `fallback` carries the ID AND THE SOURCE and deliberately not the sentence:
+    `resolve` phrases its basis around the item it was asked about, and this
+    call has no item - it asks the fallback question with an empty one. The
+    sentence that names a phase is on that phase's own row, where it is true.
+    Nothing here re-reads `parentWorkItem`: a second read would be a second
+    opinion about where work hangs, which is what `resolve` exists to prevent.
+    """
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
+    fallback = _ado_parent.resolve({}, ado)
+    state, rows, fetched, basis = _candidate_cache(ado)
+    return {"fallback": {"id": fallback["id"], "source": fallback["source"]},
+            "candidates": rows, "fetchedAt": fetched,
+            "cache": state, "basis": basis, "refresh": _PARENT_REFRESH}
+
+
+def _resolved_parent(phase, ado):
+    """`{id, source, basis}` for one phase - `resolve`'s answer, minus what a
+    row cannot use. The declaration is already on the row and the warnings are
+    the push plan's, so what is left is the answer and the sentence behind it."""
+    res = _ado_parent.resolve(phase, ado)
+    return {"id": res["id"], "source": res["source"], "basis": res["basis"]}
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
+    ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
     phases_out, tasks_out = [], []
     # `phases_out` and `tasks_out` are separate flat lists, so splitting the old
     # nested walk in two changes neither one's order: the phase rows stay in
@@ -234,7 +348,17 @@ def _composition_view(manifest):
                            # a value that is not a positive integer orders nothing,
                            # and a control showing it as a tier would offer to keep
                            # a pin the run does not honour.
-                           "priority": _priority.tier_of(ph)})
+                           "priority": _priority.tier_of(ph),
+                           # Both halves, because neither is the other. The
+                           # DECLARATION is what a control edits and what a save
+                           # sends back; the RESOLUTION is what the phase
+                           # actually hangs under right now, which for an absent
+                           # declaration is the fallback and for an unusable one
+                           # is nothing at all. A control showing only the first
+                           # would let a reader edit a field without seeing what
+                           # it currently does.
+                           "adoParent": _ado_parent_of(ph),
+                           "adoParentResolved": _resolved_parent(ph, ado)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),
@@ -268,6 +392,7 @@ def _composition_view(manifest):
                  "ado": meta.get("ado")},
         "areaSkills": area_skills,
         "adoStatus": _ado_status(manifest),
+        "adoParents": _ado_parents(manifest),
         "branchInfo": _branch_info(manifest),
         "phases": phases_out, "tasks": tasks_out,
     }

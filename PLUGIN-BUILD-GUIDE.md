@@ -288,7 +288,7 @@ L4:
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _output, _status_facts
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _areas, _branch, _manifest_io, _output, _panel_paths, _priority
+  _panel_composition -> _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _locks, _output, _panel_paths
@@ -306,7 +306,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _areas, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
+  _panel_write -> _ado_parent, _areas, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:

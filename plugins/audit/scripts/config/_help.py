@@ -116,6 +116,7 @@ COMPOSITION_PATHS = {
     "branchSlugMax": "meta.branch.slugMaxLength",
     "phaseReviewModel": "phases[].review.model",
     "phasePriority": "phases[].priority",
+    "phaseAdoParent": "phases[].adoParent",
     "taskModel": "phases[].tasks[].model",
     "taskSkills": "phases[].tasks[].skills",
     # The ADO connector card (PUT /api/ado):

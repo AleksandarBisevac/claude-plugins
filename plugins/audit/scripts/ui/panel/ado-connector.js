@@ -36,6 +36,73 @@ function adoRows(was,now){
  if(!rows.length&&!cfSame(was,now))rows.push(cfRow('meta','ado',was,now));
  return rows;}
 /**
+ * One typed template value, as the literal ADO will be sent.
+ *
+ * A BOX GIVES TEXT AND THE BOARD WANTS A TYPE. `OriginalEstimate` has to arrive
+ * as a number and `Activity` as a string, and the manifest stores whichever it
+ * is told — so the box has to decide, and the decision has to be one a reader
+ * can predict from what they typed.
+ *
+ * The number half is `typedNumber`'s round trip, shared with the ADO parent id
+ * box rather than spelled twice — the two are one question ("does this text
+ * spell that number?") and two answers to it would disagree about `4e2` on some
+ * afternoon. What is decided HERE is only what to do when the answer is no: the
+ * text stands as the string it plainly is, which keeps a version like `1.0.0`
+ * and a padded id like `007` intact.
+ *
+ * @param {string} text - exactly what was typed, already trimmed
+ * @returns {string|number|boolean} the literal to store
+ */
+function adoFieldValue(text){
+ if(text==='true')return true;
+ if(text==='false')return false;
+ const n=typedNumber(text);
+ return n===null?text:n;}
+/**
+ * One field added to a per-type template, WITHOUT going through a dotted path.
+ *
+ * THIS IS THE WHOLE REASON IT IS A FUNCTION. `setPath`/`delPath` split on dots,
+ * and an ADO reference name is full of them —
+ * `Microsoft.VSTS.Common.Activity` is ONE key, and a dotted writer would file it
+ * as four nested levels, producing a `meta.ado.fields` the validator refuses and
+ * the board never sees. `identityMap` avoids the same shredder for the same
+ * reason (email addresses carry dots) and the two are the only editors on this
+ * card that touch their keys directly.
+ *
+ * Mutates `fields` in place and returns it, as `identityMap`'s editor does: this
+ * is the draft, and a copy would leave the card editing something the Save never
+ * reads.
+ *
+ * @param {Object<string, Object<string, *>>} fields - the draft's `fields` map
+ * @param {string} wit - the work item type name, matched exactly as
+ *   `_ado_fields.template_for` matches it
+ * @param {string} name - the ADO field, reference or display spelling
+ * @param {string|number|boolean} value - the literal
+ * @returns {Object<string, Object<string, *>>} `fields`
+ */
+function adoFieldSet(fields,wit,name,value){
+ fields[wit]=fields[wit]||{};
+ fields[wit][name]=value;
+ return fields;}
+/**
+ * One field removed, pruning a type that has none left.
+ *
+ * Pruning matters because an empty template is a WARNING from the validator —
+ * "it supplies nothing, remove the key" — so a card that left `{"Task": {}}`
+ * behind would make removing the last field print a complaint about the removal.
+ *
+ * @param {Object<string, Object<string, *>>} fields - the draft's `fields` map
+ * @param {string} wit - the work item type name
+ * @param {string} name - the ADO field, spelled as it is stored
+ * @returns {Object<string, Object<string, *>>} `fields`, possibly emptied
+ */
+function adoFieldDrop(fields,wit,name){
+ const t=fields[wit];
+ if(!t)return fields;
+ delete t[name];
+ if(!Object.keys(t).length)delete fields[wit];
+ return fields;}
+/**
  * The connector draft every control on this card edits.
  *
  * Null is a VALUE here and not an absence: it means "no connector in the
@@ -298,6 +365,58 @@ function renderAdoCard(c){
  imDraw();
  card.append(el('div',{class:'f'},flabel('Identity map (ledger → ADO)',
    MDESC.adoIdentityMap),imWrap));
+ // --- fields: the per-type template, edited DIRECTLY for identityMap's reason
+ // and a sharper version of it — an ADO reference name IS dotted, so a dotted
+ // writer would shred `Microsoft.VSTS.Common.Activity` into four levels every
+ // single time rather than only on the keys that happen to carry a dot.
+ const fdWrap=el('div',{});
+ const fdDraw=()=>{fdWrap.textContent='';
+  const f=(ADRAFT&&ADRAFT.fields&&typeof ADRAFT.fields==='object'
+    &&!Array.isArray(ADRAFT.fields))?ADRAFT.fields:{};
+  Object.keys(f).forEach(wit=>{
+   const tpl=(f[wit]&&typeof f[wit]==='object')?f[wit]:{};
+   Object.keys(tpl).forEach(name=>fdWrap.append(el('div',
+     {class:'row','data-fdrow':wit+' '+name},
+     el('span',{class:'badge'},wit),
+     el('span',{class:'mono'},name),el('span',{class:'cfarr'},'→'),
+     // JSON.stringify and not String(): `4` and `\"4\"` are different literals
+     // to a board that requires a number, and a row printing both as 4 would
+     // hide the one thing this editor has to decide.
+     el('span',{class:'mono'},JSON.stringify(tpl[name])),
+     el('button',{class:'btn small',type:'button',
+       'aria-label':'remove '+wit+' '+name,
+       onclick:()=>{adoFieldDrop(A().fields||{},wit,name);
+        if(ADRAFT.fields&&!Object.keys(ADRAFT.fields).length)delete ADRAFT.fields;
+        pruneTop();fdDraw();}},'×'))));});
+  // No visible words beside these three, so the placeholders are the name — and
+  // they have to survive the first keystroke, which is what the aria-labels are
+  // for. Same shape as the identity pair above it.
+  const fti=el('input',{placeholder:'work item type (Task, Bug…)',
+      'aria-label':'work item type this template is for'}),
+    fni=el('input',{placeholder:'ADO field (Activity or Microsoft.VSTS.Common.Activity)',
+      'aria-label':'ADO field reference or display name'}),
+    fvi=el('input',{placeholder:'literal value',
+      'aria-label':'literal value written to that field'});
+  fdWrap.append(el('div',{class:'row'},fti,fni,fvi,
+    el('button',{class:'btn small',type:'button','data-fdadd':'1',
+      onclick:()=>{const t=fti.value.trim(),n=fni.value.trim(),v=fvi.value.trim();
+       if(!t||!n||!v)return;
+       adoFieldSet(A().fields=A().fields||{},t,n,adoFieldValue(v));
+       fti.value='';fni.value='';fvi.value='';fdDraw();}},'add')));
+  // WHAT IS LEGAL IS NOT DECIDED HERE. `_ado_fields` holds both tables — the
+  // fields the connector itself maps and the fields ADO reports read-only — and
+  // a copy of either in the browser would be a second list free to disagree with
+  // the one the save is graded against. So the card says where the answer comes
+  // from and lets the save name the field.
+  fdWrap.append(el('div',{class:'mut small','data-fdnote':'1'},
+    'Literals only — no substitutions: a value that looks like a placeholder is '
+    +'written to the board as those characters. A field the connector already '
+    +'maps (title, state, area, iteration, tags) or one ADO reports as '
+    +'read-only is refused when the manifest is validated, and the save names '
+    +'which.'));};
+ fdDraw();
+ card.append(el('div',{class:'f'},flabel('Field template (work item type → field → value)',
+   MDESC.adoFields),fdWrap));
  // --- save / discard. EDITS.ado feeds beforeunload and the disk-refresh
  // dirtiness check; the buttons listen on the CARD directly — re-registering
  // the comp view's shared updater from here would abort the composition
