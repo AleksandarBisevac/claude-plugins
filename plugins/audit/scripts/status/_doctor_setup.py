@@ -57,6 +57,7 @@ import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 3 - imported, not loaded)
 import _status_facts  # noqa: E402  (rollup/readiness/gate facts, at layer 2)
 import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -448,7 +449,11 @@ def check_manifest(rep, project, cfg):
                % (manifest_rel, n_phases, n_tasks,
                   ", %d parked proposal(s)" % n_parked if n_parked else "",
                   ", %d legacy proposal(s)" % n_legacy if n_legacy else ""))
-    for w in warnings[:5]:
+    # Grouped BEFORE the cut, and the order matters: nineteen advisories that
+    # differ only in the task they name used to fill this window on their own, so
+    # the five rows the doctor has room for said one thing five times and every
+    # other warning fell off the end unseen.
+    for w in _wg.collapse(warnings, manifest)[:5]:
         rep.warn("manifest", w)
 
     _check_shards(rep, path, manifest, mio)

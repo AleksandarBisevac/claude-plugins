@@ -66,6 +66,7 @@ _output.install_path()
 import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
 import _manifest_io as _mio  # noqa: E402  (to resolve --all before the rule runs)
 import _proposals  # noqa: E402  (the rule this command is a front end for)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 USAGE = (
     "usage:\n"
@@ -281,7 +282,12 @@ def main(argv):
     else:
         for line in lines:
             print(line)
-        for line in (payload.get("warnings") or []):
+        # No manifest to hand: `_proposals.run` revalidated the document it
+        # wrote and returned the lines, not the dict. So a group here names its
+        # items rather than their phases, which is the honest degradation -
+        # re-reading the file to guess at a nicer sentence would be a second
+        # read of a document this command has already finished with.
+        for line in _wg.collapse(payload.get("warnings") or []):
             print("WARNING: %s" % (line,))
     return 0
 

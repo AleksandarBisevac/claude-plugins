@@ -15,7 +15,12 @@ Output classes:
              combinations); exit stays 0 when there are only warnings.
 
 Usage:
-  python3 validate-manifest.py <manifest-path>
+  python3 validate-manifest.py <manifest-path> [--verbose]
+
+`--verbose` prints one line per warning. The default groups the warnings that
+differ only in the item they name (`_warning_groups`), because a rule that fires
+once per task buried a priority warning nobody read on a real plan; every elided
+line names this flag, so nothing is out of reach.
 
 Exit codes: 0 = valid (warnings allowed) · 1 = findings · 2 = usage error or
 unreadable/unparseable file.
@@ -51,6 +56,7 @@ _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_rules  # noqa: E402  (the rules this command is a front end for)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 # ONE name, and the restraint is the point. Re-exporting the rules' internals here
 # would put their whole surface back on an entry point, which is the shape the
@@ -63,13 +69,16 @@ validate = _manifest_rules.validate
 
 # --- cli ------------------------------------------------------------------------
 def main(argv):
-    if len(argv) != 1:
-        sys.stderr.write("usage: validate-manifest.py <manifest-path>\n")
+    verbose = "--verbose" in argv
+    paths = [a for a in argv if a != "--verbose"]
+    if len(paths) != 1:
+        sys.stderr.write("usage: validate-manifest.py <manifest-path> "
+                         "[--verbose]\n")
         return 2
     try:
-        manifest = _mio.load_manifest(argv[0])
+        manifest = _mio.load_manifest(paths[0])
     except Exception as exc:
-        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (argv[0], exc))
+        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (paths[0], exc))
         return 2
 
     try:
@@ -88,20 +97,30 @@ def main(argv):
         "INDEX-ONLY field (the stub carries it so the order is computable "
         "without opening a shard); this copy was ignored"
         % (pid or "?", field)
-        for pid, field in _mio.index_only_in_bodies(argv[0])]
+        for pid, field in _mio.index_only_in_bodies(paths[0])]
 
-    for line in warnings:
+    # `hint` is this command's own spelling of the flag, because on its own
+    # output "validate-manifest.py --verbose" would be telling the reader to run
+    # what they just ran. The other four commands take the default.
+    for line in _wg.collapse(warnings, manifest, verbose=verbose,
+                             hint="--verbose"):
         print("WARNING: " + line)
 
+    # FINDINGS ARE NOT COLLAPSED, and the refusal is deliberate: a finding stops
+    # the command, every one of them has to be fixed, and the count already has a
+    # line below that prints it. See `_warning_groups`'s docstring.
     if findings:
         for line in findings:
             print("FINDING: " + line)
-        print("\nINVALID: %d finding(s) in %s" % (len(findings), argv[0]))
+        print("\nINVALID: %d finding(s) in %s" % (len(findings), paths[0]))
         return 1
 
     n_tasks = sum(len(p.get("tasks") or []) for p in manifest.get("phases", []) if isinstance(p, dict))
+    # `len(warnings)` and not the number of LINES above it: the count is a fact
+    # about the document, the lines are a rendering of it, and the two are meant
+    # to differ. A collapsed line names its own members, so the two agree aloud.
     print("OK: %s valid (%d phases, %d tasks, %d bugs%s)"
-          % (argv[0], len(manifest.get("phases", [])), n_tasks,
+          % (paths[0], len(manifest.get("phases", [])), n_tasks,
              len(manifest.get("bugs") or []),
              ", %d warning(s)" % len(warnings) if warnings else ""))
     return 0

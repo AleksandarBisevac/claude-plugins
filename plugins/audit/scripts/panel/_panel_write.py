@@ -94,6 +94,7 @@ import _panel_state           # noqa: E402  (the read side this write path reads
 import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
 import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs; the no-declaration marker)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
 #                                            the SAME function set-priority.py asks)
 
@@ -1347,6 +1348,12 @@ def apply_composition(project, patch):
     # judged is the document written.
     healed = _heal_phase_status(assembled) if applied else []
     findings, warnings = vm.validate(assembled)
+    # The browser joins these into ONE sentence with a separator (`core.js`
+    # renderResult), so a rule that fires once per task arrives there as a
+    # paragraph saying one thing nineteen times - the panel's own comment about
+    # `staleNote` says why that reads as nineteen problems. `findings` is left
+    # alone: it refuses the save, and a refusal is read item by item.
+    warnings = _wg.collapse(warnings, assembled)
     if findings:
         return {"ok": False, "findings": findings, "warnings": warnings}
     if not applied:

@@ -93,6 +93,7 @@ import _panel_write           # noqa: E402  (the byte-shape writer, the validato
 #                                            snapshot/rollback pair and the journal
 #                                            module -- reached by identity, so this
 #                                            command and audit-task.py cannot drift)
+import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -325,7 +326,10 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
         out("  note: %s is pinned at %d, above priority.maxTier %d -- nothing is "
             "clamped, it simply sorts after every tier at or under the maximum"
             % (pid, t, _max_tier(config)))
-    for line in warnings:
+    # Grouped for the reason `_warning_groups` records - and it matters most
+    # HERE, because the warning this command's reader is looking for is the
+    # priority one, and a per-task advisory is exactly what used to bury it.
+    for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the phase.priority row")
