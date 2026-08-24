@@ -708,7 +708,8 @@ making `set-priority.py --force` roll back the write it was explicitly asked to 
 disagreement about *order* must not stop the pipeline; it must not be silent either.
 
 ### `plugins/audit/scripts/manifest/set-priority.py`
-The door onto `_priority`, and the writer behind `/audit:task priority`.
+The door onto `_priority`, and the writer behind `/audit:phase priority` (and behind
+`/audit:task priority`, its legacy spelling — one writer, two names).
 `set-priority.py <manifest> <phaseId> <tier>` pins a phase, `--clear` unpins it, `--force` writes a
 second holder of tier 1 anyway. It writes **one file, the index** — in the sharded layout the stub,
 in the single-file layout the manifest itself — under the index lock, revalidates from disk, rolls

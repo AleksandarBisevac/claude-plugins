@@ -201,6 +201,51 @@ def _fixture_tree(tmp, command_line, hook_line=None):
     return tmp
 
 
+# --- reading the plugin's own command documents --------------------------------
+# The phase-verb cases below judge REAL product prose rather than a fixture: the
+# rule they hold is a rule about `plugins/audit/commands/`, and a fixture would
+# encode the assumption instead of the documents.
+def _product_doc(rel):
+    """A file under `plugins/audit/`, as text. Unreadable comes back EMPTY, which
+    every case below fails on - a document that could not be opened must not be
+    indistinguishable from one that satisfies the rule."""
+    path = os.path.join(M.REPO_ROOT, M.PLUGIN_REL.replace("/", os.sep),
+                        *rel.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _frontmatter(text, key):
+    """One `key: value` line out of a command document's frontmatter, unquoted."""
+    hit = re.search(r"^%s:\s*(.+)$" % re.escape(key), text, re.M)
+    if hit is None:
+        return ""
+    val = hit.group(1).strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+        val = val[1:-1]
+    return val
+
+
+def _md_section(text, heading_prefix):
+    """The lines from the first `## ` heading starting with `heading_prefix` up to
+    the next `## `. `""` when nothing matches, for `_product_doc`'s reason."""
+    out, taking = [], False
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            if taking:
+                break
+            taking = line.startswith(heading_prefix)
+            if not taking:
+                continue
+        if taking:
+            out.append(line)
+    return "\n".join(out)
+
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     """Nothing else in the tree stats a referenced script path, so this is the gate."""
@@ -1992,6 +2037,159 @@ def _cases(check):
               M.command_flag_drift(_tmp_ref)["checked"] == 1)
     finally:
         shutil.rmtree(_tmp_ref, ignore_errors=True)
+
+    # --- the phase verbs: two spellings, one writer ----------------------------
+    # WHY HERE. `tools/affected.py` routes an edit under `plugins/audit/commands/`
+    # to this suite and to `test__deps.py`, and to nothing else. A pin on a command
+    # document parked beside its script's own suite would therefore not run on the
+    # change that breaks it, and this suite already owns the README-versus-command
+    # relation above.
+    #
+    # THE RULE THESE HOLD. A verb that mutates a PHASE is spelled under
+    # `/audit:phase`. `/audit:task priority` and `/audit:task cancel <phaseId>`
+    # still work and are documented as the legacy spellings - `commands/migrate.md`
+    # is the shape being copied - and neither command file carries a second copy of
+    # the other's procedure. The defect: `phase.priority` is the field the schema
+    # has and `task.priority` is a field it does not, so a command named `task`
+    # taking a phase id taught the command list the opposite of the truth.
+    _PH = _product_doc("commands/phase.md")
+    _TK = _product_doc("commands/task.md")
+    _PRD = _product_doc("README.md")
+    _SP_BASE = "set-priority.py"
+    _AT_BASE = "audit-task.py"
+
+    _ph_hint = _frontmatter(_PH, "argument-hint")
+    _ph_alts = [a.strip() for a in _ph_hint.split("|")]
+    _ph_verbs = sorted(set(a.split()[0] for a in _ph_alts[1:] if a.split()))
+    check("pv1 /audit:phase's argument-hint still opens with the BARE run form: a "
+          "first alternative beginning with a word would mean running a phase now "
+          "needs a verb, which is the one thing adding subcommands must not "
+          "change: %r" % (_ph_alts[:1],),
+          len(_ph_alts) >= 2 and _ph_alts[0].startswith("<phaseId>")
+          and "--dry-run" in _ph_alts[0])
+    # The pair for pv1. A reserved token spelled `<something>` could not be told
+    # from a phase id by any rule at all, which is the failure mode of dispatching
+    # on a first token.
+    check("pv1b ...and every later alternative opens with a literal lowercase "
+          "word, never a placeholder: %r" % (_ph_verbs,),
+          _ph_verbs != [] and all(re.match(r"^[a-z]+$", w) for w in _ph_verbs))
+
+    _ph_dispatch = _md_section(_PH, "## 0.")
+    check("pv2 the dispatch section names every reserved token the hint declares, "
+          "and the set is DERIVED from the hint rather than typed a second time - "
+          "two lists of reserved words is how one of them stops being reserved: "
+          "%r" % (_ph_verbs,),
+          _ph_verbs != []
+          and all(("`%s`" % w) in _ph_dispatch for w in _ph_verbs))
+    # COUNTED BOTH WAYS, which presence cannot do: a verb advertised in the hint
+    # with no section is unreachable, and a section no hint declares is a verb
+    # nobody can find. Duplicate headings are rejected too, since `set()` on the
+    # left would otherwise hide a second copy of one on the right.
+    _ph_subs = re.findall(r"^## Subcommand: `([a-z]+)", _PH, re.M)
+    # The emptiness guard is not decoration: two empty lists compare equal, so a
+    # document this stopped being able to read would satisfy the comparison while
+    # checking nothing at all - and it did, on the first run of this block.
+    check("pv3 one section per reserved token, counted from both documents' own "
+          "words: hint %r vs headings %r" % (_ph_verbs, _ph_subs),
+          _ph_subs != [] and _ph_verbs == sorted(_ph_subs)
+          and len(_ph_subs) == len(set(_ph_subs)))
+
+    check("pv4 the priority procedure sits in ONE command file - /audit:phase "
+          "names the writer, /audit:task names it not at all (%d vs %d). Two "
+          "command files with two copies of one invocation is what "
+          "`commands/propose.md` states the rule against."
+          % (_PH.count(_SP_BASE), _TK.count(_SP_BASE)),
+          _PH.count(_SP_BASE) > 0 and _TK.count(_SP_BASE) == 0)
+
+    # THE SAME ARGUMENTS, and read off the writer's own parser rather than a list
+    # kept here. A flag documented on the command side only is the half that
+    # silently does nothing, which is exactly what a second spelling risks.
+    _sp_src = ""
+    try:
+        with open(os.path.join(M.REPO_ROOT,
+                               M.PLUGIN_REL.replace("/", os.sep),
+                               "scripts", "manifest", _SP_BASE),
+                  "r", encoding="utf-8") as _fh:
+            _sp_src = _fh.read()
+    except (OSError, UnicodeDecodeError):
+        _sp_src = ""
+    _sp_flags = set(re.findall(r'add_argument\(\s*"(--[a-z][a-z-]*)"', _sp_src))
+    _ph_pri = _md_section(_PH, "## Subcommand: `priority")
+    _pri_flags = set(re.findall(r"--[a-z][a-z-]*", _ph_pri))
+    _pri_unknown = sorted(_pri_flags - _sp_flags)
+    check("pv5 every flag the new spelling documents is one the writer's parser "
+          "declares - both spellings must reach the script with the same "
+          "arguments: unknown %r, parser %r"
+          % (_pri_unknown, sorted(_sp_flags)),
+          _sp_flags != set() and _pri_flags != set() and _pri_unknown == [])
+
+    _tk_pri = _md_section(_TK, "## Subcommand: `priority")
+    check("pv6 the legacy spelling is documented AS legacy and hands the reader "
+          "the new one: `commands/migrate.md`'s shape, applied to a subcommand",
+          "legacy" in _tk_pri.lower()
+          and _tk_pri.count("/audit:phase priority") > 0)
+    # THE SECOND DIRECTION, and it looks vacuous on purpose. The wrong fix here is
+    # not "the alias stops working" but "the alias nags": a warning on a spelling
+    # that still works teaches people to skip warnings, which is how a real refusal
+    # gets missed later. `commands/migrate.md` emits none either.
+    check("pv7 ...and it does not nag - the alias runs, says the new name once and "
+          "gets on with it",
+          _tk_pri != ""
+          and _tk_pri.lower().count("warn") == 0
+          and _tk_pri.lower().count("deprecat") == 0)
+
+    _ph_run = _md_section(_PH, "## Run a phase")
+    _ph_steps = re.findall(r"^\d+\. ", _ph_run, re.M)
+    check("pv8 the bare run form is untouched: its numbered steps, its dry-run "
+          "branch, the branch resolver and the sign-off are all still in it "
+          "(steps found: %r)" % (_ph_steps,),
+          len(_ph_steps) == 5 and "--dry-run" in _ph_run
+          and "resolve-branch.py" in _ph_run and "Phase sign-off" in _ph_run)
+    # The pair for pv8, and the one that fails if a verb leaks downward: a run
+    # procedure naming either writer would mean `/audit:phase P2` could mutate the
+    # plan before executing anything in it.
+    check("pv9 ...and the run procedure names neither writer",
+          _ph_run != "" and _ph_run.count(_SP_BASE) == 0
+          and _ph_run.count(_AT_BASE) == 0)
+
+    _ph_cancel = _md_section(_PH, "## Subcommand: `cancel")
+    _tk_cancel = _md_section(_TK, "## Subcommand: `cancel")
+    check("pv10 cancellation is described once, in the file that owns its writer: "
+          "the phase spelling routes to `commands/task.md` and restates nothing "
+          "of what the script writes, which the task spelling still carries",
+          _ph_cancel.count("commands/task.md") > 0
+          and _ph_cancel.count("outcome.descriptive") == 0
+          and _tk_cancel.count("outcome.descriptive") > 0)
+    check("pv11 ...and the phase spelling REFUSES a task id, naming the spelling "
+          "that takes one - a command called `phase` mutating a task is the same "
+          "noun/verb mismatch this change removes. The needle is the TASK-ID form: "
+          "the section names the other spelling twice, once for each id shape, so "
+          "a bare `/audit:task cancel` cannot tell the narrowing from the legacy "
+          "note beneath it",
+          _ph_cancel.count("/audit:task cancel <taskId>") == 1
+          and "refuse" in _ph_cancel.lower())
+
+    # The args cell is read with `_CMD_ROW`, the module's own rule for where a cell
+    # ends, rather than a second regex here - `cf3` is the case that exists because
+    # the naive reading truncated half these cells at an escaped pipe.
+    _prd_args = dict((m.group(1), m.group(2)) for m in M._CMD_ROW.finditer(_PRD))
+
+    def _cell_verbs(cell):
+        """The verbs a README args cell declares, parsed the way the command's own
+        `argument-hint` is parsed - so the two are compared as SETS. Asking whether
+        a word appears somewhere in the row instead passes on a row that merely
+        mentions the verb while declaring something else."""
+        alts = [a.strip().strip("`").strip() for a in cell.split("\\|")]
+        return sorted(set(a.split()[0] for a in alts[1:] if a.split()))
+
+    check("pv12 the README's `/audit:phase` row DECLARES the same verbs the command "
+          "does - the command table is where a reader learns a PHASE is the thing "
+          "with a priority, which is the reading the old spelling inverted: row %r "
+          "vs hint %r" % (_cell_verbs(_prd_args.get("phase", "")), _ph_verbs),
+          _ph_verbs != [] and _cell_verbs(_prd_args.get("phase", "")) == _ph_verbs)
+    check("pv13 ...and the `/audit:task` row sends new work to the phase spelling "
+          "instead of teaching the old one",
+          _PRD.count("`/audit:phase priority <phaseId> <tier\\|--clear>`") > 0)
 
 
 def _selftest():

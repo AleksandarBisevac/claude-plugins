@@ -127,7 +127,7 @@ dependency — a pinned phase whose `blockedBy` is unsatisfied is skipped, and
 - **Absent means unprioritised** — not tier 0, not a middle tier. Such a phase sorts after
   every pinned one and keeps its written position among its peers, so a manifest with no
   `priority` anywhere runs exactly as it always did.
-- **Never hand-write it.** `/audit:task priority <phaseId> <tier|--clear>` takes the index
+- **Never hand-write it.** `/audit:phase priority <phaseId> <tier|--clear>` takes the index
   lock, revalidates and journals a `phase.priority` row; hand-editing loses all three.
 - **Index-only in the sharded layout.** It belongs on the index stub — which already carries
   `status`, so the order is computable without opening a shard, and one writer under one lock

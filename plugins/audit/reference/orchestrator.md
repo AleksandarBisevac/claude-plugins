@@ -186,7 +186,7 @@ its peers, so a plan carrying no `priority` runs exactly as this rule describes.
 unready task ready and never skips a dependency: a pinned phase whose `blockedBy` is unsatisfied
 is **skipped**, and `/audit:status` prints the note that says so and names the task running
 instead. Read it, never repair it — a pinned phase that depends on unfinished work is a
-contradiction to REPORT (`/audit:task priority` is what changes it). In the sharded layout the
+contradiction to REPORT (`/audit:phase priority` is what changes it). In the sharded layout the
 field lives on the **index stub** only; a copy in a shard body is ignored, and the validator says
 it was.
 

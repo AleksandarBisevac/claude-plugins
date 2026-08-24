@@ -456,7 +456,7 @@ LAYERS = (
      # Bash, and a `python3 -c` naming a source path is the shape
      # `guard-secrets-read` refuses (F20/F22).
      "verify-invariants",
-     # `set-priority` is the writer behind `/audit:task priority`: one integer on
+     # `set-priority` is the writer behind `/audit:phase priority`: one integer on
      # the index stub, under the index lock, revalidated. A command rather than a
      # prose instruction because the rule it enforces (tier 1 is unique, and a
      # refusal must NAME the current holder) is the same rule the panel's write

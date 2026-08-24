@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-set-priority.py -- the writer behind `/audit:task priority`: pin a phase, or unpin it.
+set-priority.py -- the writer behind `/audit:phase priority`: pin a phase, or unpin it.
+(`/audit:task priority` is the legacy spelling of the same verb and reaches this same
+script with the same arguments -- two names, one writer.)
 
 Execution order was implicit in the array, so the only way to say "this phase
 first" was to MOVE the phase -- a structural edit of the whole file, and in the
