@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [1.1.0] - 2026-08-24
 
 **A parent per phase, because one integer was the plugin overriding a product owner.**
 `meta.ado.parentWorkItem` is a single work item id for the whole manifest, so every phase
