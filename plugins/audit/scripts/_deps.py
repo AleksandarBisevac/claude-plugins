@@ -202,7 +202,16 @@ LAYERS = (
      # ARGUMENTS, which is also why it owns its own unknown-key loop:
      # `_manifest_vocab` is a layer-MATE, so borrowing that one is the sideways
      # edge this lint refuses, and a case pins the two answers equal.
-     "_ado_parent"),
+     "_ado_parent",
+     # `_ado_connect` is every decision `/audit:sync connect` makes on the way
+     # to a first working connector: which transport, which auth path, what a
+     # read-only probe proved, and which process the board runs. At the floor
+     # for the reason the three modules above it are - it reaches nothing but
+     # `_output`, because the machine, the manifest and the probe all arrive as
+     # ARGUMENTS. That is not tidiness: it is the only shape in which the
+     # STOPPING rungs are reachable from a test, since every one of them
+     # describes a machine that has no `az`, no credential or no board.
+     "_ado_connect"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
@@ -425,6 +434,7 @@ LAYERS = (
      # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
      # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
      "check-ado-item",
+     "ado-connect",
      # `explain-ado-drift` is the same shape one question over: it carries
      # `_ado_drift` (L2) to `/audit:sync`'s status table and push plan. NOT a gate
      # though - it exits 0 whatever the answer, because "somebody else moved this

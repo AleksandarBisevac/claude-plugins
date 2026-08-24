@@ -76,6 +76,15 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **That an enum gains no members.** A new task status, a new gate name or a new
   branch type is additive, and code that switches exhaustively over one of them
   should have a default arm.
+- **The CONTENTS of a cache block the plugin writes for itself.**
+  `meta.ado.hierarchy`, `meta.ado.parentCandidates` and `meta.ado.connection` are
+  cached *evidence*, re-derived by the `/audit:sync` subcommand that owns each one —
+  so the block may gain fields, and a value inside it (which auth path answered, how
+  a `basis` sentence is phrased) may be spelled differently in a later release. The
+  promise that holds is the one every cache here already states about itself: each
+  carries a `fetchedAt` and a `basis`, and deleting the block is always safe, because
+  absent means "never fetched" and every reader is written to that. Do not build a
+  tool on a cache's interior; re-run the command that writes it.
 
 ## 2. The config keys — `.claude/audit.config.json`
 

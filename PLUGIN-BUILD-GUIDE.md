@@ -94,6 +94,8 @@ claude-plugins/                           # this repo (personal, public)
           _ado_parent.py                  # where ONE item hangs on the board, and whether that place can be true
           resolve-ado-parent.py           # the door onto it: resolve, check the hierarchy, refuse a link nothing can build
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
+          _ado_connect.py                 # every decision /audit:sync connect makes: transport, auth path, probe, process
+          ado-connect.py                  # the door onto it: the read-only ladder to a first working connector
           _ado_drift.py                   # who wrote a linked work item last, and whether pushing overwrites them
           explain-ado-drift.py            # the door onto it: the status table's third reading, and push's plan line
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
@@ -232,6 +234,7 @@ L0:
   _output
 
 L1:
+  _ado_connect -> _output
   _ado_conventions -> _output
   _ado_fields -> _output
   _ado_parent -> _output
@@ -310,6 +313,7 @@ L6:
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage
 
 L7:
+  ado-connect -> _ado_connect, _output
   audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
@@ -1356,6 +1360,80 @@ the validator enforces it rather than trusting this command's prose to have aske
 back to `proposed` and leaves the reason as history: a revived proposal that forgot it was
 ever declined has lost the only thing the archive was for. A materialized proposal cannot be
 dropped, because its phase is live and the record is the history trail.
+
+### `plugins/audit/scripts/manifest/_ado_connect.py`
+Every decision `/audit:sync connect` makes on the way to a first working connector (layer 1).
+Four rungs, each with its own stop: which **transport** is available, which **auth path** is
+in effect for this organization, what a read-only **probe** proved, and which **process** the
+board runs.
+
+**Why the feature exists.** The connector was the first thing a new person on a team touched
+and the only part with no guided path — install the extension, authenticate, work out which
+auth path is actually in effect, hand-write `meta.ado`, and only then discover whether any of
+it worked, because the first thing that *proved* access was a `push`, which is also the first
+thing that can CREATE items on somebody's real board.
+
+**Everything arrives as an argument**, which is what puts it at the floor beside `_ado_parent`
+and `_ado_conventions`. That is not tidiness: it is the only shape in which the *stopping*
+rungs are reachable from a test, since each of them describes a machine that has no `az`, no
+credential or no board.
+
+**Credentials are counted, never read.** Rung 2 answers "which path" from three things that
+are not secrets — whether an environment variable is SET (never its value), the Azure sign-in
+`az account show` prints, and the list of organizations `az devops login` has stored a PAT for,
+which is a file of organization URLs with no token in it. The plugin's own `guard-secrets-read`
+hook exists to block the other move.
+
+**And where it cannot tell, it says so.** Two auth paths can be present at once — measured on
+the machine this was written on, where one organization resolved through a stored PAT and
+another through the Azure sign-in at the same moment — and nothing observable from outside says
+which one answered. So more than one present path is reported as ambiguous *by name* rather
+than resolved by a precedence rule this module cannot verify. The fact that holds either way is
+the trap the rung exists for: a board command that succeeds proves the ORGANIZATION is
+reachable, never which identity reached it.
+
+**The type is the discriminator, not the states**, and that came from measuring both lab
+boards rather than reading the process documentation. The Agile board carried `User Story`
+with only `New` and `Closed` in use, because no item was sitting in `Active` or `Resolved` —
+so observed states are evidence and never proof, and every message built on them says which
+of the two it is. `types` is a per-process table for the same reason: Basic has no `Bug` type
+at all, so a proposal built from "Bug unless we saw otherwise" would configure a connector
+that cannot file a bug.
+
+**No expiry date, deliberately.** Neither transport can be asked when a credential expires — a
+PAT's expiry needs the token itself or an organization-admin scope this connector never
+requests — and a key holding a date nothing can supply would be printed as `null` by every
+surface and read as "does not expire" by every reader. What `meta.ado.connection` records
+instead is which auth PATH was in effect the last time access was proven, which is what turns
+a later 401 into an expired token rather than a broken configuration.
+
+### `plugins/audit/scripts/manifest/ado-connect.py`
+The door onto `_ado_connect` (layer 7), the same shape `check-ado-item.py` has over
+`_ado_conventions` and for the same two reasons: a `python3 -c` one-liner naming a source path
+is what `guard-secrets-read` refuses, and the rule belongs somewhere it can be tested.
+
+**Read-only, and the write is somebody else's.** Every rung reports; nothing here edits the
+manifest. Step 5 is a *plan* — set / keep / change, per key — that the orchestrator confirms
+through `AskUserQuestion` and applies itself, then revalidates. A `change` row is offered and
+never taken: the value already in the file may be the one a person chose against this
+command's advice.
+
+**The board call is the caller's.** `az` is never run against a board here, because the
+session may be holding MCP tools this file could never call. Rung 3 grades an ENVELOPE the
+caller writes after making the call it chose — `{exitCode, stderr, rows}`, one shape for
+success and failure both, which is also what makes the failure branch reachable from a test.
+
+**Two measured error shapes, and the one that misleads.** `az boards query` against a project
+that does not exist says "The project specified is not found in hierarchy" — the credential
+worked, the name is wrong. Against an organization that does not exist it says *"you need to
+run the login command"*, identically to a genuine credential failure. So that text is graded
+as one verdict naming both readings; telling somebody to log in again when their organization
+name has a typo in it is the kind of wrong answer that costs an afternoon.
+
+**`observe()` is the only part that touches the machine** — a PATH lookup, an extension list,
+a sign-in read and a file of organization URLs — and it is separated from `report()` for the
+testability reason above. Its suite pins that seam, so stubbing it cannot quietly become a way
+of testing a path production never takes.
 
 ### `plugins/audit/scripts/manifest/check-ado-item.py`
 The gate `/audit:sync push` runs an item through **before** it creates it (layer 7).

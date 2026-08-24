@@ -38,16 +38,33 @@ journal (`ado.link` row); routine `lastSyncedAt` bumps deliberately are not.
 2. **Auth is never the plugin's.** Credentials live in `az login` or the
    `AZURE_DEVOPS_EXT_PAT` environment variable. Nothing is ever written into the
    manifest or config — the secrets guard blocks it anyway. For a PAT, the minimal
-   scope is **Work Items (Read & Write)** plus **Project and Team (Read)** (the latter
-   for sprint resolution).
+   scope is **Work Items (Read & Write)**; add **Project and Team (Read)** only if you
+   use sprint resolution (`meta.ado.sprint`). `connect` probes inside the Work Items
+   scope alone for that reason — a probe that reached for the second one would report a
+   false failure on a PAT scoped exactly right for everything this connector does.
 
-3. `/audit:doctor` verifies the setup offline: transport present, switches in effect,
-   what the links prove. Run it first when anything looks wrong.
+3. **`/audit:sync connect` is the guided version of all of the above**, and it is the
+   right first command on a new board: it verifies each of these in order and stops on
+   whichever one is not true, instead of leaving you to find out at the first `push`.
+
+4. `/audit:doctor` verifies the setup offline: transport present, switches in effect,
+   what the links prove. Run it when anything looks wrong afterwards — it reads the
+   manifest and never phones the board, which is exactly the half `connect` cannot be.
 
 ## Five-minute start
 
-Add the minimal block to your manifest's `meta` (or open `/audit:panel` → Composition
-tab → **Azure DevOps connector** card, which edits the same block with validation):
+```
+/audit:sync connect
+```
+
+**That is the whole of it**, and every step before the last is read-only: it finds the
+transport, tells you which auth path is actually in effect, proves access with one
+Work-Items query, reads that same query for the board's process, and only then asks
+before writing `meta.ado`. The next section is what it does and why each rung is there.
+
+Prefer to write the block yourself? Add the minimal shape to your manifest's `meta` (or
+open `/audit:panel` → Composition tab → **Azure DevOps connector** card, which edits the
+same block with validation):
 
 ```json
 "ado": {
@@ -75,6 +92,127 @@ nothing is written until you confirm. After the run, every pushed item carries i
 
 From that moment the **echo** keeps those cards current as the orchestrator works
 (see below), and `/audit:sync status` shows any drift.
+
+## `connect`, rung by rung
+
+It exists because of one asymmetry: **the first thing that used to prove access was a
+`push`, which is also the first thing that can CREATE items on somebody’s real board.**
+So `connect` is four read-only questions and one write, in that order, and any rung can
+stop the run with its own message.
+
+### 1. Transport
+
+MCP `azure-devops` tools if this session has them; otherwise `az` plus its `azure-devops`
+extension; otherwise it stops with `az extension add --name azure-devops` (or the
+install-azure-cli line, which is a different rung and a different message).
+
+An extension list that *did not answer* is its own stop, and deliberately not read as
+"installed". Unknown is not present, and treating it as present would send the run on to
+a board call whose failure names the wrong cause.
+
+### 2. Which auth path is in effect — not which one exists
+
+This is the rung that repays reading. It reports three facts, none of them a secret:
+
+| fact | how it is observed |
+|---|---|
+| the `AZURE_DEVOPS_EXT_PAT` variable is set | membership in the environment — **never its value** |
+| you are signed in to Azure as *X* | `az account show` (which prints no token) |
+| `az devops login` holds a PAT **for this organization** | `~/.azure/azuredevops/organization_list`, a file of organization URLs |
+
+**A stored PAT is per-organization.** Measured on one machine: `uptimize` resolved through
+a stored PAT while `test-audit-lab` resolved through the Azure sign-in — at the same
+moment, in the same shell. So "am I logged in?" has no answer until you say *to what*.
+
+**When more than one path is present, `connect` says so and picks none.** Nothing
+observable from outside says which one `az` answered with, and a precedence rule the
+command cannot verify would be a confident wrong answer. What holds either way is the
+sentence worth keeping: **a board command that succeeds proves the ORGANIZATION is
+reachable, never which identity reached it.**
+
+The scope this connector needs is **Work Items → Read & write**, and nothing else.
+
+### 3. A probe that proves access without creating anything
+
+One WIQL over `<org>/<project>`. Work Items scope on purpose: it is the only scope this
+connector needs and the only one a careful person will have granted, so probing with
+`az devops project list` would report a false failure on a PAT scoped exactly right.
+
+Two failure texts, and one of them misleads:
+
+| what `az` says | what it means |
+|---|---|
+| `The project specified is not found in hierarchy` | the credential worked; the **project name** is wrong |
+| `you need to run the login command` | either the identity cannot reach this organization **or the organization name is wrong** — a nonexistent organization produces this text identically, so it does not say which |
+
+`connect` grades the second as one verdict naming both readings, because "log in again"
+is the wrong advice half the time it would be given.
+
+An **exit 0 with no rows** is still a pass: an empty project proves access exactly as a
+full one does.
+
+### 4. Process detection — the same query, read again
+
+The rows carry each item’s type and state, and **the type is the discriminator**:
+
+| the board carries | process | `types.pbi` | `stateMap` |
+|---|---|---|---|
+| `Product Backlog Item` | Scrum | `Product Backlog Item` | **required** |
+| `User Story` | Agile | `User Story` | not needed |
+| `Requirement` | CMMI | `Requirement` | **required** |
+| `Issue` | Basic | `Issue` (and `types.bug` too) | **required** |
+
+**Not the states**, and that came from measuring rather than from the process
+documentation: on the lab’s Agile board, `User Story` was present while the Task states
+in use were only `New` and `Closed`, because nothing was sitting in `Active` or
+`Resolved`. Observed states are a subset of defined states forever — a state with no item
+in it does not appear in a query over items — so `connect` prints them as corroboration
+and says which of the two each line is.
+
+The built-in `stateMap` defaults name **Agile** states, so every other process needs a
+map or a task reaching done is refused its state. This rung is what turns that from a
+first-push surprise into a line you read before the first push.
+
+**Three ways it detects nothing, and they are three answers.** An empty project; a board
+with no phase-level item on it yet; a customised board carrying two phase-level types.
+None is a failure, none is a reason to guess, and in all three `types` is simply not
+proposed.
+
+### 5. The write — the only step that writes
+
+`organization`, `project`, `enabled`, `types` when a process was detected, and
+`connection` (below). Confirmed first, applied under the concurrency lock, revalidated
+after. **Run it against a manifest that is already configured** and it re-probes and
+reports: each difference is an offered `CHANGE`, never an edit, because the value already
+in the file may be the one somebody chose against this command’s advice.
+
+### What `connect` records, and the one thing it will not invent
+
+```json
+"connection": {
+  "process": "Scrum",
+  "pbiType": "Product Backlog Item",
+  "stateMapNeeded": true,
+  "authPath": "stored",
+  "fetchedAt": "2026-08-24T09:12:00Z",
+  "basis": "read-only work-item query over contoso/web-shop proved access; ..."
+}
+```
+
+Same evidence shape as the two caches `/audit:sync parents` writes — a moment and a basis,
+so it can be aged and checked rather than trusted. The panel’s ADO card reads it.
+
+**There is no expiry date, and its absence is the answer.** Neither transport can be asked
+when a credential expires: a PAT’s expiry needs the token itself or an organization-admin
+scope this connector never requests, and the Azure sign-in’s access token expires hourly
+and renews itself — printing *that* as "credential expiry" would be worse than printing
+nothing. A field holding a date nothing can supply would be rendered as `null` by every
+surface and read as "does not expire" by every reader.
+
+What is recorded instead is **which auth path was in effect and when access was last
+proven**, which is what gives a later failure a class: a stored PAT that worked on a named
+day and stops is an expired token, not a broken configuration — and everyone’s expires on
+their own schedule.
 
 ## Configuration reference
 
@@ -529,6 +667,23 @@ the CLI uses, so the two cannot disagree. The banner at the top is computed from
 | *Configured, but no item has ever synced* | Everything below is configuration, not evidence — run `/audit:sync push`. |
 | *Linked: N tasks · M bugs · K phases* | What the file proves, with the newest sync stamp. |
 
+**What `connect` discovered rides the same payload.** The panel authenticates nothing, so
+it cannot *run* `connect` — but it can show what `connect` proved, from `meta.ado.connection`
+and by the same manifest-evidence-only rule as the banner above. Four named states, because
+the ways of knowing nothing are not one way:
+
+| State | Meaning |
+|---|---|
+| *never probed* | Nobody has run `/audit:sync connect` here. The connector may still be configured and working — what is missing is the evidence, not the connection. |
+| *probed, process undecidable* | Access was proven, but the board carries no phase-level item yet (or two). The shipped `stateMap` defaults name Agile states and nothing says whether that fits. |
+| *needs a stateMap* | This board runs a non-Agile process and `stateMap` is not set — a task reaching done will be refused its state. Set the map on this same card. |
+| *probed, nothing outstanding* | Process, phase-level type, the auth path that answered, and when. |
+
+Every state carries the moment, the basis and `/audit:sync connect` as the command that
+re-derives it. The auth path is a **word naming a mechanism** (`stored`, `env`, `signin`) —
+never a token and never a person: the panel is a shared screen, and the only useful fact
+about a 401 six weeks from now is which *kind* of credential lapsed.
+
 The card also holds **`meta.ado.fields`** — the per-work-item-type template merged into
 a create payload before the conformance gate grades it. Type, field and literal value
 per row; a value that spells a number exactly is stored as one, so an estimate stays an
@@ -536,8 +691,8 @@ estimate. What a template may *not* name (a field the connector already maps, or
 reports read-only) is decided by the manifest validator when you save, not by a second
 list in the browser.
 
-**Not every key has a control.** `conventions` and the two `parents` caches are edited in
-the manifest, not here. They are **carried through a save untouched** rather than dropped,
+**Not every key has a control.** `conventions`, the two `parents` caches and `connection`
+are edited in the manifest (or written by the command that owns them), not here. They are **carried through a save untouched** rather than dropped,
 because the card's draft is a deep copy of the saved block
 (`ADRAFT=saved===null?null:JSON.parse(JSON.stringify(saved))`) and only the paths a
 control owns are ever written.
@@ -562,7 +717,10 @@ the validate → gate → report pipeline it slots into. Scope the PAT to Work I
 
 ## Troubleshooting
 
-Start with `/audit:doctor` — the connector has four rows there:
+**On a board that has never worked, start with `/audit:sync connect`** — it stops on the
+first rung that is not true and says which one, which is the question `doctor` cannot
+answer because `doctor` deliberately never phones the board. On a board that *used* to
+work, start with `doctor` — the connector has four rows there:
 
 | Row | What it tells you |
 |---|---|
@@ -573,6 +731,15 @@ Start with `/audit:doctor` — the connector has four rows there:
 
 Common symptoms:
 
+- **`you need to run the login command`** → this text does **not** mean "not logged in".
+  An organization that does not exist produces it identically, so read it as *az could
+  not authenticate to this organization* and check the organization name before touching
+  any credential. `/audit:sync connect` grades it as exactly that.
+- **A `push` or `pull` that worked for weeks starts returning 401** → look at
+  `meta.ado.connection.authPath` and `fetchedAt`. `stored` or `env` on a day access was
+  proven, failing now, is an **expired token** rather than a broken configuration —
+  and everyone's expires on their own schedule, so a teammate's working setup proves
+  nothing about yours. There is no expiry date to read: see *What `connect` records*.
 - **`state '<X>' rejected`** in a push/echo report → the target process does not
   define that state for that type — remember phase items (PBI/User Story) have a
   different vocabulary than tasks (`stateMap.phase`). List the type's states in ADO
