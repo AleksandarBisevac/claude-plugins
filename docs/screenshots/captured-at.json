@@ -3,151 +3,151 @@
   "images": {
     "areas.png": {
       "sha256": "f755b8112a440ba392f0f1483fc0fe2fdca13f275503ef9bfdfd956b8830082d",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "authors.png": {
       "sha256": "e01457b745e06e5e951c5b0fc20912246147c2e04c5f464f8ca1ccfd5cb37e85",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "dark.png": {
-      "sha256": "b1e40b6c5bb0e9c028deac292efb2483522ab79f3dd606731f6f34b17440a37e",
-      "version": "1.2.0",
+      "sha256": "fb51d2f4df49af01fbf36143e136116216f4acd5518886f61959c9a68a84725f",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "expanded.png": {
       "sha256": "1a34b470ae9bda5d248f52f98dcf602afa715cef7d459a154573964a50b90b7f",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "filtered.png": {
-      "sha256": "6a15603715772b69da6184a080327eb17073ff6b35595b03436ebb61268e6f97",
-      "version": "1.2.0",
+      "sha256": "f0fbed310d6accb8cb36077d5b6e76745b1f06af203ba6f08a17fa8f6d843bb0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "filters.png": {
       "sha256": "889d1f027026e30fcc1c8664828828e7d9d895d704ae2eec2368c88135d6102f",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "mobile.png": {
       "sha256": "9cf04a9dbae86ca4e9e2e16aada47ec73d1ae89011dda68ded6d5b46906b551b",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "overview.png": {
-      "sha256": "c5b0e3012932e4bb717b25513021898ca4d782d4ed324fe0b848baf6aeeb7e74",
-      "version": "1.2.0",
+      "sha256": "28675c68a6390e31e6fc42045612e00b87f84658d1c12ca7ec36c5f6dc269c7f",
+      "version": "1.3.0",
       "surface": "report",
       "uiDigest": "13ee0404e3a3fecdbf3013970a6c54e12df593a65b526438c59a4405b76cca2c"
     },
     "panel-appearance.png": {
-      "sha256": "c5b225e429951c69b8146536158a368ec99a40ce255f974bff271f24a6129937",
-      "version": "1.2.0",
+      "sha256": "63fb48d5f38699794d0ff40b38f31e5ebaa7eb88cb4310af39bd4c22329a98cd",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-blocks.png": {
-      "sha256": "e608559eaa4d542d06f3227c26aebe6beeeb8d4df5caa2371660cd6744a718de",
-      "version": "1.2.0",
+      "sha256": "d1dab8a884022780071ee0fad1546cfdf1692d53d515334b2212276e3c9027ff",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-composition-expanded.png": {
-      "sha256": "8efe86649f4cbf3ac1e29207c836228112171f2098af91c8bc3c011bdead93bb",
-      "version": "1.2.0",
+      "sha256": "82ef7b19b4c633bb20813edabc7fdbe287f877fdddd2762c933c44d83811f48a",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-composition.png": {
-      "sha256": "b3069b3bbaa7f02860ceb3c69da8df780925300b3bae1ce03141becf10af0b42",
-      "version": "1.2.0",
+      "sha256": "2f942400e2a0ca2d73ba4a093e24be3634b4081701efa08c9e492eabc52811cc",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-confirm.png": {
-      "sha256": "7d609d532b9f650d2b308135435066acc906c8a879a146f70cb4f20d4dac8720",
-      "version": "1.2.0",
+      "sha256": "c135f4ae4b0aed32c1769c790587cd2addc61aadff920709afa1d53058b1eda9",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-dark.png": {
-      "sha256": "7bd0fd90d597592c8ce15b6f9a92d8ded56270787c40b829de786464176eaccf",
-      "version": "1.2.0",
+      "sha256": "9140c10f61f52ef167c7f195f8612e56c7b854b485a619d756c84d01f82b8d68",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-gate.png": {
-      "sha256": "6bc2a481e62f1853af496b4ac9d254bb709e2d2a83115b89115332d420990ce7",
-      "version": "1.2.0",
+      "sha256": "9e348915af927ebbe3ad7ebc8f8c0c9e7d1aa2b88e0e52762ef8acd6e6cfdf8e",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-guards.png": {
-      "sha256": "e5e89025d3950e73a52600ac05c83df972d018b446de90e32140a0c59b794be2",
-      "version": "1.2.0",
+      "sha256": "3d4f65ad4f7be6996981de6a0ccb375d00f9c68cc71117d6ab98bab9f0bfc8c2",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-help.png": {
-      "sha256": "d0d0f8390b181ae1e3f46c59a5c44a7bc02600a5856b458b0de5b27e72f49f9e",
-      "version": "1.2.0",
+      "sha256": "a0e06adacc4f7325b126204c0fc9ed9552c3f59320eba44bc6bf40cef1bd3cfc",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-mobile.png": {
       "sha256": "a794371a16e8fb13330314a31e20cceed7ff841d500a30f9bf6cc0d817a3b7de",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-monthly.png": {
-      "sha256": "511a4dac937fadc15ba0d1d1ba3797200c50009ba0129773f00670a7593a4c43",
-      "version": "1.2.0",
+      "sha256": "ee6c5bfee9402a512b1249fe043cdbb3981414b333df03dbe3fdcb3ee8fede96",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-overview.png": {
-      "sha256": "3361ecaeb1392c403224616269b755eea67bf868e2bb4b856a8abdf2deda1a88",
-      "version": "1.2.0",
+      "sha256": "fee171080dcfef0fea9ce6452430f6f44dd7a0313fdcfce47d87f989bdea7011",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-person.png": {
-      "sha256": "0c7265070728b9e8b13bd19171469830209b5be4ea96a587094697eb66418c58",
-      "version": "1.2.0",
+      "sha256": "3b9e3843f77a4391c1927ea1065abd81dc9a32fd5764f617a64d4224bf807a8c",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-policy-expanded.png": {
       "sha256": "cdfdb7b6a98cd175ae7671a0b2add8d984c98a5aec7378ee1c3f220a22645210",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-policy.png": {
-      "sha256": "58c1926fc75cee211c393c86e984a44bce40b912d30335cde940c092d3459f16",
-      "version": "1.2.0",
+      "sha256": "c8c1f9b550e378fe955dc24233d1135fa2257edeac23350806658555b8afbd0b",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-proposals.png": {
-      "sha256": "86d1e18a6192fe4ed65c590fe2c30d6a098028cf902ae8b8b40963ae377ddaad",
-      "version": "1.2.0",
+      "sha256": "6c43456950bb4a2f2bc39d9b19a132eae53b16246a387ef0760df9e943b6f1ee",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     },
     "panel-usage.png": {
-      "sha256": "40057f1f4cce89bad83ac9fc6b2ff1804e4eedf50ede4cbd992d462112a023a4",
-      "version": "1.2.0",
+      "sha256": "faf7c4b1779a2deeec7e48a18a16a9e394c6acc62f3730c7c4e866ac9e0c222d",
+      "version": "1.3.0",
       "surface": "panel",
       "uiDigest": "acd9c3328697feb6185cd43284cc7618ff10aac57c9c03b767e24e68baac31a8"
     }

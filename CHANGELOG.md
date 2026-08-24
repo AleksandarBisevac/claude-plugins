@@ -4,6 +4,67 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.3.0] - 2026-08-24
+
+**A user found their own username and directory layout inside a committed journal
+row.** The journal is committed on purpose — it is the tamper-evident audit trail,
+and the doctor warns when it is *not* committed — so this was not a stray log but a
+designed artifact carrying machine identity into a repository that may go to a
+client. [CWE-532](https://cwe.mitre.org/data/definitions/532.html) names "full path
+names, and system information" among what must not be logged.
+
+**The command text is no longer stored.** A row now carries the command's digest,
+its byte length, and its program name; `command` is off the details allow-list, so
+no writer — hook, panel, task command or the journal CLI — can put command text in a
+row. This is the shape OWASP calls data minimisation: the leak channel is closed by
+construction rather than by filtering.
+
+**Filtering was tried first and it failed as a class, not in detail.** Substituting
+known strings and their transforms — the mechanism `-ffile-prefix-map` and
+`BUILD_PATH_PREFIX_MAP` use for build paths — was measured against adversarial
+input. A username of `tmp` matched inside the placeholder the previous replacement
+had just written; `al` turned `npm install` into `npm inst<user>l`; `root` rewrote
+`chown root:staff`; a container with `HOME=/` turned `ls /usr/bin` into nonsense;
+and a path belonging to a *different* project kept its whole layout because the repo
+token never fired. A rewriter that under-redacts does it in silence, which is worse
+than not having one. So transform knowledge went into **detectors**, which may
+over-flag for a human to read, and out of the rewriting path entirely.
+
+**What is answered structurally, is answered structurally.** `cwd` becomes
+repo-relative, or the literal `<outside-repo>` — a containment question with both
+ends of the map known, immune to how long a username is. It refuses a non-string
+input rather than coercing one: a canonicalised list is not an absolute path, so it
+would have joined onto the repo root and come back looking repo-relative with the
+home directory still in it. An absolute in-repo `target` collapses to relative; an
+out-of-repo one is deliberately left alone, because it is the drift map's key and
+collapsing it would make two files collide on one entry.
+
+**`actor.host` is gone rather than hashed.** Nothing read it — not `verify`, not the
+report, not the panel, not the doctor. A field nobody reads does not need a digest,
+it needs to not exist; and an unsalted hash of a hostname drawn from a naming scheme
+would have looked like protection while being guessable in seconds.
+
+**The one line that could never have been fixed later** is the journal file's own
+name. Without a session id the writer id fell back to the machine's hostname, and
+the chain is seeded from that basename — so a committed file name cannot be
+corrected without breaking verification on every clone. It now uses a token minted
+once and kept in the self-ignoring state directory, derived from nothing
+identifying, and it is minted only when there is no session id.
+
+**`tools/check-committed-pii.py` reads what git tracks**, over journals, themes and
+rendered reports, and reports `path:line:detector` — never the matched text, because
+a check that echoes a leak into a CI log is the same bug one layer out. A file it
+cannot read is a finding rather than a skip. It arrives red on this repository's own
+two pre-existing rows, and those sit in a baseline with a reason that is itself
+checked and that must still match something, so the forward-only decision is
+recorded in the open instead of being hidden by narrowing a detector.
+
+**Old rows keep verifying.** The row hash sorts its keys, so a file may interleave
+rows written before and after this change with no migration and no version bump —
+the details version names "carries a details block", and a block with different keys
+inside is still that. Reading is untouched: a reader that helpfully redacted would
+break the hash and make verification a liar.
+
 ## [1.2.0] - 2026-08-24
 
 **Every entry here was found by running 1.1.0 against a real board.** None came from a
