@@ -221,6 +221,12 @@ run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
 run "committed artifacts match a fresh render" python3 tools/check-rendered-artifacts.py
+# The other question about the same files, and the only one that reads the BYTES
+# GIT TRACKS rather than the code that wrote them: a committed journal row once
+# carried a user's home directory into a repository that ships to clients. Fixing
+# the writer proves the writer was fixed; only reading the committed file proves
+# nothing else writes there and no older artifact is still shipping.
+run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
 # CI HAS RUN THIS ALL ALONG AND THIS FILE DID NOT. It replays the plan gate refusing
 # an unplanned edit and asserts the deny still names the file and the way out, so a
 # reworded gate would have shipped a GIF of something the product no longer does.

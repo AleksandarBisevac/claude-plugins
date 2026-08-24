@@ -58,7 +58,8 @@ every file it can read.
 cost an extra step and a refusal the human sees. Evidence: a Bash
 call carrying `dangerouslyDisableSandbox` — the documented per-call escape hatch,
 which switches off the only layer that *can* contain a read — appends a
-`bash.unsandboxed` row to the journal, with the command and the cwd. That stops
+`bash.unsandboxed` row to the journal: a **digest** of the command, its byte
+length, its program name, and the cwd relative to the repo. That stops
 nothing; `PostToolUse` is after the fact. It makes the bypass **countable**, which
 is the same bargain the audit trail strikes below: a smoke detector, not a vault.
 
@@ -226,8 +227,9 @@ panel's own saves). Each row carries who, when, what changed, a hash of the
 document the write left behind, and the hash of the row before it.
 
 One row is not about the plan at all: a Bash call carrying
-`dangerouslyDisableSandbox` appends `bash.unsandboxed` with the command and the
-cwd. It is here because the same property is what makes it worth having — an
+`dangerouslyDisableSandbox` appends `bash.unsandboxed` with a **digest** of the
+command, its byte length, its program name, and the cwd relative to the repo.
+It is here because the same property is what makes it worth having — an
 event nobody can prevent is at least one nobody can quietly deny, and this is
 the file that makes denial expensive. Ordinary sandboxed Bash calls are not
 recorded; the flag is what is read, so the journal cannot decay into a shell log.
@@ -252,13 +254,36 @@ point:
   reach an edit-tool matcher, so no row says what they changed — they surface
   instead as out-of-band drift, and `guard-bash-writes` reports a shell write
   *into the journal directory* after the fact. (A `bash.unsandboxed` row records
-  that an unsandboxed command RAN, never what it wrote.) Anything written while
+  that an unsandboxed command RAN — and not even the command itself, only a
+  digest of it; never what it wrote.) Anything written while
   the plugin is disabled is invisible for the same reason every other guard is:
   the user's own switch outranks it.
 - **What it records.** The same shape as the ledger's dimensions — the change
   itself (`P1.2 · model · sonnet -> opus`), the resolved author under
-  `usage.authorMode`, the session id, the host, and hashes. Never file contents,
-  never prompt text.
+  `usage.authorMode`, the session id, and hashes. Never file contents, never
+  prompt text, and — since the row below — never a command, a machine path or a
+  host name.
+- **What it deliberately does NOT record, because the journal is committed.**
+  A user found their own user name and their whole directory layout inside a
+  committed row ([CWE-532](https://cwe.mitre.org/data/definitions/532.html)),
+  which named a person's computer in a repository that goes to clients. Three
+  changes, all at the one boundary every writer passes through: a command is
+  stored as an unsalted SHA-256 digest, its UTF-8 byte length and its program
+  name — never its text; a `cwd` is stored relative to the repository, or as
+  `<outside-repo>` when it is not inside one; and `actor.host` is not stored at
+  all, because nothing ever read it. The digest exists so a claimed command can
+  be *checked* — hash your candidate and compare — which is exactly why it is
+  unsalted, and a salt this project could ship would be published with it. So a
+  short command drawn from the obvious vocabulary is recoverable by someone
+  willing to enumerate that vocabulary; what is never written down is the part
+  that identifies a person: the paths, the host names, the arguments. That is
+  data minimisation and friction, not anonymisation.
+
+  Existing history is left alone — rewriting a committed row would break
+  `verify` on every clone, since the hash covers those exact bytes.
+  `tools/check-committed-pii.py` reads what git tracks and fails the build on a
+  committed artifact that carries machine identity, with the rows that predate
+  the change declared in its `BASELINE` with a reason.
 - Hand edits to the journal are refused by `guard-edits.py`. `journal.enabled:
   false` turns the whole thing off.
 

@@ -687,6 +687,17 @@ jobs:
           # runs is exactly the asymmetry it exists to report.
           # Its own cases run inside the selftest job's sweep, which covers tools/.
           python tools/gate-parity.py
+      - name: No committed artifact carries machine identity
+        run: |
+          # Ubuntu only, beside gate-parity, and for the same reason: it compares
+          # FILES in the repository, so running it per-OS would assert the same
+          # thing three times. It reads what `git ls-files` tracks - journal rows,
+          # rendered reports, theme documents - because a rule that reads the
+          # WRITER can only prove the writer was fixed. It never prints what it
+          # matched: a CI log on a public repository is public, and echoing the
+          # leak here would be the same bug one layer out.
+          # Its own cases run inside the selftest job's sweep, which covers tools/.
+          python tools/check-committed-pii.py
       - name: hook import budget
         run: |
           # Ubuntu only, and deliberately NOT a timing check: the wall clock of a

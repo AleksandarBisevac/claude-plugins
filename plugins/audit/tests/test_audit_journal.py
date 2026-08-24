@@ -130,11 +130,17 @@ def _cases(check):
         check("b3 the row carries the contract's fields and nothing invented",
               set(r0) == {"v", "ts", "actor", "action", "target", "summary",
                           "stateHash", "prev", "hash"}, repr(sorted(r0)))
-        check("b4 the actor keeps who, how and where",
+        # It used to end `and bool(r0["actor"]["host"])`, and that field is gone:
+        # it was written on every row and read by nothing, while naming the
+        # machine of whoever ran the plugin in a file this plugin tells people to
+        # commit. Rewritten rather than deleted, so the suite still says what the
+        # actor is - and the negative arm is what would catch it coming back.
+        check("b4 the actor keeps who and how, and no longer says WHERE - a "
+              "machine name nobody read is a field to delete, not one to hash",
               r0["actor"]["author"] == "dev@example.com"
               and r0["actor"]["via"] == "panel"
               and r0["actor"]["sessionId"] == "s-one"
-              and bool(r0["actor"]["host"]))
+              and "host" not in r0["actor"], repr(sorted(r0["actor"])))
         check("b5 the first row's prev is derived from the FILE NAME, so a file "
               "cannot be renamed into another writer's slot and still verify",
               r0["prev"] == M.genesis_prev(os.path.basename(files[0])))

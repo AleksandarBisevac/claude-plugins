@@ -168,6 +168,7 @@ npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 python3 tools/check-rendered-artifacts.py  # the committed artifacts, byte for byte
+python3 tools/check-committed-pii.py       # ...and that none of them names a machine
 python3 tools/capture-demo-gif.py --check  # the demo GIF's preconditions
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 node tools/capture-screenshots.mjs --check

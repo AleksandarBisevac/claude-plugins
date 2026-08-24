@@ -52,6 +52,28 @@ So the threat it addresses is the realistic one: a quiet edit, an accidental
 truncation, an out-of-band write nobody meant to hide. It is a smoke detector,
 not a vault. SECURITY.md says the same thing in the same words.
 
+WHAT A ROW MAY NOT CARRY. Because the trail is COMMITTED on purpose -- the doctor
+warns when it is not -- every row is a file that ships, and a row carrying a
+user's home directory put machine identity into a repository that goes to clients
+(CWE-532). So a command is stored as a digest, a byte length and a program name;
+a cwd is stored relative to the repo or not at all; and `actor.host` is not
+stored, because nothing ever read it: `verify()` does not, no surface renders it,
+and `actor.sessionId` already carries the per-session identity it was decorating.
+A field with a reader has a redaction question; a field with none has a deletion
+answer. See the `redaction` section below for why substituting known strings was
+measured and rejected.
+
+THE CEILING ON `commandSha256`, which is the one digest here that is not a chain
+link. It is UNSALTED, deliberately and unavoidably: unsalted is what makes it
+useful -- "was it this command?" is answered by hashing your candidate -- and a
+salt this repository could ship would be published with it, while a salt kept per
+machine would be readable by the same user it hid things from. So a SHORT command
+drawn from the obvious vocabulary is recoverable by anyone willing to enumerate
+that vocabulary. What this does buy is that a command's ARGUMENTS -- paths, host
+names, tokens, the parts that identify a person -- are never written down at all.
+That is friction and data minimisation, not anonymisation, and it must not be
+sold as the second.
+
 FILE LAYOUT
     <journal dir>/<YYYY-MM>.<writerId>.jsonl        (default <manifest dir>/journal)
 
@@ -68,7 +90,7 @@ BASENAME and the hash chain survives only untouched bytes. Every reader
 exactly one level deep, never a recursive walk.
 
 ROW
-    {"v", "ts", "actor": {"author", "sessionId", "via", "host"},
+    {"v", "ts", "actor": {"author", "sessionId", "via"},
      "action", "target", "summary", "stateHash", "prev", "hash"}
 
 `hash` is sha256 over the canonical JSON of the row WITHOUT `hash`. `prev` is the
@@ -90,7 +112,6 @@ import errno
 import hashlib
 import json
 import os
-import platform
 import re
 import sys
 import time
@@ -122,15 +143,24 @@ ROW_VERSION = 1
 # not of the file: the hash covers whatever fields are present, so v1 and v2 rows
 # interleave in one file with no migration and no flag day.
 DETAILS_VERSION = 2
-# `command`/`cwd` (P0-S) are the first keys here that describe something the plugin
-# did NOT do. Every other key names a field of the plan that moved; these two name a
-# Bash run that went around the harness sandbox, which no guard can prevent and
-# which was previously invisible to every surface. They are clipped by the same
-# MAX_VALUE_CHARS as any other value -- a command is evidence, not a payload, and a
-# row that carried a whole script would be a log.
+# The command keys (P0-S) are the ones here that describe something the plugin did
+# NOT do. Every other key names a field of the plan that moved; these name a Bash run
+# that went around the harness sandbox, which no guard can prevent and which was
+# previously invisible to every surface. They are clipped by the same
+# MAX_VALUE_CHARS as any other value -- a value is evidence, not a payload, and a row
+# that carried a whole script would be a log.
+#
+# `command` IS NOT ON THIS LIST, and its absence IS the fix rather than an omission.
+# A committed row carried a shell assignment whose value was the user's home spelled
+# as a directory name, which is CWE-532 in a file that is committed on purpose. An
+# allow-list is the only place that closes such a channel BY CONSTRUCTION: with
+# `command` off it, no writer -- this hook, the panel, `audit-task.py`, or
+# `audit-journal.py --details` -- can put command text in a row, and no writer has to
+# remember to filter. `command_facts()` supplies what replaces it.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
-                "toPhase", "truncated", "command", "cwd")
+                "toPhase", "truncated", "commandSha256", "commandBytes",
+                "program", "cwd")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
@@ -250,16 +280,97 @@ def file_hash(path):
 
 
 # --- writer identity ----------------------------------------------------------
-def writer_id(actor):
-    """A file-name-safe id for the writer -- its session, else host+pid.
+def has_session(actor):
+    """Whether `writer_id` will take the session path.
+
+    ONE PREDICATE, ONE HOME. `_append` needs the answer before `writer_id` does,
+    to avoid minting and PERSISTING a token for a writer that will never use one
+    -- and asking it twice, in two spellings, is how the two come to disagree
+    about which writer is which and a month's rows land in two files."""
+    actor = actor if isinstance(actor, dict) else {}
+    return bool(str(actor.get("sessionId") or "").strip())
+
+
+WRITER_TOKEN_FILE = "writer-token.json"
+_TOKEN_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+def writer_token(project, config=None):
+    """This checkout's stable, unguessable id for a writer with no session, or
+    None when nothing could be stored.
+
+    WHAT IT REPLACES AND WHY THAT MATTERED MOST. The fallback below used to be
+    `platform.node()`, which put a laptop's name in the committed FILE NAME --
+    and `genesis_prev()` seeds the chain from exactly those bytes, so unlike
+    every other field a name committed there can never be corrected afterwards
+    without breaking `verify()` on every clone that already holds the file. It
+    is the one leak in this module with no repair path, which is why it gets
+    persistent state rather than the cheapest possible constant.
+
+    RANDOM, NOT DERIVED. Anything derived from the machine -- a hash of the host
+    name, of the MAC, of the home directory -- is only as private as the input's
+    search space, and those spaces are small enough to enumerate. Random bytes
+    have no input to guess, and the id is not required to MEAN anything: its
+    whole job is to be different from another checkout's.
+
+    Persisted under `stateDir`, which `ensure_local_dir` makes self-ignoring on
+    creation, so the token is gitignored without a consumer having to know it
+    exists. Not named for a session, so the state GC (which matches session
+    prefixes) leaves it alone -- a token that expired would fragment one month's
+    trail into a new file each time.
+
+    Returns None rather than a substitute when the token cannot be read OR
+    written: the caller falls back to the pid, and a journal that cannot name
+    its writer must still be written."""
+    mod = _config_mod()
+    if mod is None:
+        return None
+    try:
+        state = mod.state_dir(mod.Path(project), config or {})
+        path = os.path.join(str(state), WRITER_TOKEN_FILE)
+    except Exception:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            held = json.load(fh)
+        if isinstance(held, dict) and _TOKEN_RE.match(str(held.get("token") or "")):
+            return str(held["token"])
+    except Exception:
+        pass
+    minted = os.urandom(8).hex()
+    try:
+        mod.ensure_local_dir(state)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"token": minted}, fh)
+    except Exception:
+        # NOT `return minted`. An unpersisted token is a NEW writer id on the
+        # next process, so a month's rows would scatter across files that each
+        # look like a different machine -- which is worse than the pid form the
+        # caller falls back to, and looks identical to it until somebody counts
+        # the files.
+        return None
+    return minted
+
+
+def writer_id(actor, fallback=None):
+    """A file-name-safe id for the writer -- its session, else `fallback`, else
+    this process's pid.
 
     Sanitised and truncated because it goes into a PATH: a session id is supplied
     by the caller, and a caller that can write `../../etc/passwd` into a file name
-    can write outside the journal directory."""
+    can write outside the journal directory.
+
+    NO I/O HERE, which is why the token arrives as an argument: this is called to
+    NAME a file and it is called from a test with a literal, so reaching for
+    persistent state inside it would make every case that names a writer depend
+    on a directory being writable. `_append` resolves the token; `writer_token`
+    explains what it is. The sessionId path is untouched -- a session id is
+    already opaque, and the byte-for-byte identity of that path has a case."""
     actor = actor if isinstance(actor, dict) else {}
-    raw = str(actor.get("sessionId") or "").strip()
-    if not raw:
-        raw = "%s-%d" % (platform.node() or "host", os.getpid())
+    if has_session(actor):
+        raw = str(actor.get("sessionId")).strip()
+    else:
+        raw = str(fallback or "").strip() or ("writer-%d" % os.getpid())
     # Strip once BEFORE the slice (so leading rubbish does not spend the 24-char
     # budget) and once AFTER it (F-F2: a real UUID is 8-4-4-4-12, so the slice
     # ends exactly on its fourth dash, and a writer id with a trailing `-` or `.`
@@ -273,8 +384,9 @@ def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
 
-def file_for(directory, ts, actor):
-    return os.path.join(directory, "%s.%s.jsonl" % (month_of(ts), writer_id(actor)))
+def file_for(directory, ts, actor, fallback=None):
+    return os.path.join(directory, "%s.%s.jsonl"
+                        % (month_of(ts), writer_id(actor, fallback=fallback)))
 
 
 # --- reading ------------------------------------------------------------------
@@ -383,6 +495,111 @@ def _release(lock):
         pass
 
 
+# --- redaction: what a committed row is allowed to say -------------------------
+# EVERYTHING IN THIS SECTION RUNS BEFORE `row_hash()`, and that is not a detail of
+# the ordering -- it is the only window there is. A row cannot be corrected after it
+# is written without breaking the chain for every clone that already holds the file,
+# so a field that leaks is a field that leaks permanently.
+#
+# THE OBVIOUS DESIGN IS OUT, and it was measured rather than waved away. Substituting
+# known strings -- the user name, $HOME, $TMPDIR -- into placeholders is the shape
+# build tooling uses for reproducible paths, and every input domain reachable here
+# breaks it: a path belonging to ANOTHER project keeps its whole layout, because the
+# repo prefix never fires; a user named `tmp` turns `/tmp/build` into nonsense,
+# because a sequential rewriter rescans its own output; a user named `al` turns
+# `npm install` into `npm inst<user>l`, because substring matching has no token
+# boundary; a container with `HOME=/` rewrites every separator in the string.
+#
+# So the rule is: answer a STRUCTURAL question structurally -- a path either is
+# inside this repo or is not, and both ends of that map are known -- refuse to store
+# what has no structural answer, and leave transform knowledge (dash-joined, `%2F`,
+# backslash) to the DETECTOR in `tools/check-committed-pii.py`. A detector may
+# over-flag, because a human reads it; a rewriter that under-redacts says nothing at
+# all, and the thing it missed is already committed.
+
+OUTSIDE_TOKEN = "<outside-repo>"
+UNNAMED_PROGRAM = "(unnamed)"
+# A program name and nothing that could be a path or an assignment. The row that
+# started this begins with a shell assignment whose value is an absolute path, so a
+# naive "first token" summary would have put the entire leaking path into the one
+# field meant to be safe. `=` and `/` are excluded for that reason, not for tidiness.
+_PROGRAM_RE = re.compile(r"^[A-Za-z0-9._+-]{1,32}$")
+
+
+def program_token(command):
+    """The first token of `command` when it is plainly a program name, else
+    `UNNAMED_PROGRAM`.
+
+    Fails toward the safe constant, the same direction `panel-server._redact_token`
+    fails in: anything the shape does not recognise is replaced rather than passed
+    through, because the inputs that do not look like a program name are exactly the
+    ones carrying something else."""
+    text = command if isinstance(command, str) else str(command or "")
+    head = text.strip().split(None, 1)[:1]
+    if head and _PROGRAM_RE.match(head[0]):
+        return head[0]
+    return UNNAMED_PROGRAM
+
+
+def command_facts(command):
+    """What a row may say about a command it is no longer allowed to store.
+
+    The digest is over the command AS RECEIVED and never over the clipped form: a
+    digest of a truncated command answers a different question from the one a reader
+    believes they are asking, and afterwards the two are indistinguishable. The byte
+    length is the UTF-8 length for the same reason -- it is what was hashed."""
+    text = command if isinstance(command, str) else str(command or "")
+    raw = text.encode("utf-8")
+    return {"commandSha256": hashlib.sha256(raw).hexdigest(),
+            "commandBytes": len(raw),
+            "program": program_token(text)}
+
+
+def repo_relative_or_token(project, path):
+    """`path` as a repo-relative posix path, `"."` at the root, else `OUTSIDE_TOKEN`.
+
+    DELIBERATELY NOT `hooks/_config.within_root()`, which asks the same question and
+    documents the OPPOSITE failure direction: it answers True for input it cannot
+    resolve, because for a gate "I could not tell" must leave the gate where it
+    already was. Here that same answer would write a raw home directory into a
+    committed file, so every unresolvable, empty or outside case lands on the token.
+    Same question, opposite failure direction, on purpose -- this is a note against
+    somebody later noticing the resemblance and deduplicating the two back together.
+
+    NEVER `os.path.relpath`: across Windows drives it RAISES, and a redactor that
+    raises hands its caller an exception where a token was wanted. A prefix
+    comparison over resolved absolute paths has no such edge.
+
+    Case is compared EXACTLY, which is the other place the direction shows: on a
+    case-insensitive volume a differently-spelled inside path is called outside and
+    the row loses information, where a case-insensitive compare would have to slice
+    the root off a path it only approximately matched.
+    """
+    if not project or not isinstance(path, str):
+        # A NON-STRING IS THE TOKEN, and this is not defensive typing. `_clip`
+        # spells a list or a dict canonically, so a redactor that accepted one
+        # would be handed `["/Users/..."]` -- a string that is not absolute, which
+        # joins onto the repo root and comes back looking repo-relative with the
+        # home directory still inside it. The type is the only thing that tells
+        # those apart, and only before something stringifies it.
+        return OUTSIDE_TOKEN
+    try:
+        root = os.path.realpath(str(project))
+        raw = path.replace("\\", "/")
+        if not raw:
+            return OUTSIDE_TOKEN
+        full = os.path.realpath(raw if os.path.isabs(raw)
+                                else os.path.join(root, raw))
+    except Exception:
+        return OUTSIDE_TOKEN
+    root = root.rstrip(os.sep) or root
+    if full == root:
+        return "."
+    if not full.startswith(root + os.sep):
+        return OUTSIDE_TOKEN
+    return full[len(root) + 1:].replace(os.sep, "/")
+
+
 # --- details (row v2) ---------------------------------------------------------
 def _clip(value):
     """One details value, bounded. Strings are truncated to MAX_VALUE_CHARS;
@@ -398,7 +615,7 @@ def _clip(value):
         return None
 
 
-def normalise_details(details):
+def normalise_details(details, project=None):
     """The v2 `details` block: allow-listed keys only, every value bounded, the
     whole block capped. Returns None when there is nothing worth keeping -- the
     row then stays v1, which is what lets old and new rows share a file.
@@ -406,7 +623,12 @@ def normalise_details(details):
     An unknown key is DROPPED rather than chained in: the hash covers whatever is
     in the row, so an inventive writer would otherwise decide the format for
     every reader that comes after it -- the same rule _normalise applies to the
-    row itself."""
+    row itself.
+
+    `project` is what turns `cwd` from a machine path into a repo-relative one.
+    Without it there is no map, and no map means the token: a caller that cannot
+    say where the repo is does not thereby earn the right to have the raw path
+    written down."""
     if not isinstance(details, dict):
         return None
     out = {}
@@ -429,8 +651,21 @@ def normalise_details(details):
         elif key == "truncated":
             if val is True:
                 out["truncated"] = True
+        elif key == "cwd":
+            # REDACT, THEN BOUND, and never the other way round. A clip at
+            # MAX_VALUE_CHARS landing mid-path leaves a prefix of somebody's home
+            # directory: still enough to identify them, no longer enough to match
+            # any rule that would have caught it. Both orderings look correct in
+            # review, which is why the ordering has a case of its own.
+            out["cwd"] = _clip(repo_relative_or_token(project, val))
         else:
             out[key] = _clip(val)
+    if "command" in details:
+        # `command` is no longer in DETAILS_KEYS, so the loop above dropped it;
+        # these are what a row carries in its place. Derived from the value AS
+        # GIVEN -- the loop never saw it, so the digest is of the whole command
+        # rather than of what a clip would have left.
+        out.update(command_facts(details["command"]))
     if not out:
         return None
     try:
@@ -444,12 +679,37 @@ def normalise_details(details):
 
 
 # --- appending ----------------------------------------------------------------
-def _normalise(entry):
+def _normalised_target(target, project):
+    """`target`, with an absolute INSIDE-repo spelling collapsed to repo-relative.
+
+    Safe here because `_append` hashes the target's bytes afterwards and both
+    spellings resolve to one file, so `stateHash` is unchanged by the rewrite.
+
+    AN ABSOLUTE OUTSIDE-REPO TARGET IS LEFT ALONE, deliberately and against the
+    instinct: it is `verify()`'s drift-map KEY and `file_hash()`'s argument, so
+    collapsing it to a constant would make two different files share one key and
+    invent drift between them. A leak this reader can see beats a wrong answer it
+    cannot, and `tools/check-committed-pii.py` reports the case instead.
+    """
+    text = str(target or "").strip()
+    if not (project and os.path.isabs(text)):
+        return text
+    rel = repo_relative_or_token(project, text)
+    return text if rel == OUTSIDE_TOKEN else rel
+
+
+def _normalise(entry, project=None):
     """The caller supplies the news; this file owns the shape.
 
     A writer passing an inventive key would otherwise decide the format, and the
     hash covers whatever is in the row -- so an unknown key would be chained in and
-    every reader would have to cope with it."""
+    every reader would have to cope with it.
+
+    It also owns what the row is allowed to SAY, which is the same argument one
+    level down: a writer that could put a machine path in a committed row would be
+    deciding the privacy of every repository this plugin ships into. `project` is
+    what makes the path questions answerable; without it the redaction still
+    happens, it just cannot resolve anything and says so."""
     entry = entry if isinstance(entry, dict) else {}
     actor = entry.get("actor")
     actor = dict(actor) if isinstance(actor, dict) else {}
@@ -462,14 +722,22 @@ def _normalise(entry):
             else None,
             "sessionId": str(actor.get("sessionId")) if actor.get("sessionId")
             else None,
+            # NO `host`. It was written on every row and read by nothing -- not
+            # by `verify()`, not by the report, not by the panel, not by the
+            # doctor -- while naming the machine of whoever ran the plugin, in a
+            # file that is committed on purpose. A digest was the reflex and it
+            # was the wrong answer twice over: it keeps a field nobody wants, and
+            # an unsalted hash of a name from a vendor's default scheme is
+            # enumerable in seconds, so it would have read as protection while
+            # providing nearly none. A supplied `host` is dropped like any other
+            # key this shape does not know.
             "via": str(actor.get("via") or "unknown"),
-            "host": str(actor.get("host") or platform.node() or "unknown"),
         },
         "action": str(entry.get("action") or "").strip(),
-        "target": str(entry.get("target") or "").strip(),
+        "target": _normalised_target(entry.get("target"), project),
         "summary": str(entry.get("summary") or ""),
     }
-    details = normalise_details(entry.get("details"))
+    details = normalise_details(entry.get("details"), project=project)
     if details is not None:
         row["v"] = DETAILS_VERSION
         row["details"] = details
@@ -484,10 +752,14 @@ def _append(project, entry, config=None):
     config = load_config(project) if config is None else config
     if not enabled(config):
         raise IOError("journal disabled (journal.enabled false)")
-    row = _normalise(entry)
+    row = _normalise(entry, project=project)
     directory = journal_dir(project, config)
     os.makedirs(directory, exist_ok=True)
-    path = file_for(directory, row["ts"], row["actor"])
+    # The token is resolved ONLY when there is no session id, so an ordinary
+    # append neither reads nor creates state it will not use.
+    path = file_for(directory, row["ts"], row["actor"],
+                    fallback=None if has_session(row["actor"])
+                    else writer_token(project, config))
 
     # The state the write produced, so a later change with no row to explain it is
     # visible. Resolved against the project, since `target` is repo-relative.

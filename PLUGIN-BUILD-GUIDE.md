@@ -609,8 +609,11 @@ like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-e
 append + verify).
 
 Also PostToolUse on **Bash**, for one event that is not about the plan: a call carrying
-`dangerouslyDisableSandbox` appends `bash.unsandboxed` with the command and the cwd
-(`command`/`cwd` are `_journal_io.DETAILS_KEYS` entries, clipped like any other value). The
+`dangerouslyDisableSandbox` appends `bash.unsandboxed` with a DIGEST of the command, its
+byte length, its program name and the cwd relative to the repo (`commandSha256`,
+`commandBytes`, `program` and `cwd` are `_journal_io.DETAILS_KEYS` entries; `command` is
+deliberately NOT one, which is what closes that channel by construction — the journal is
+committed on purpose, so command text in a row is CWE-532 in a file that ships). The
 flag — not the tool name — is what is read, and it is read **before** the repo root or the
 config, so an ordinary Bash call leaves this hook having touched nothing and the journal
 cannot decay into a shell log. It prevents nothing: PostToolUse is after the fact, and the

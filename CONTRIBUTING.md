@@ -128,6 +128,16 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 python3 tools/check-rendered-artifacts.py
 python3 tools/capture-demo-gif.py --check
 
+# the same committed files, asked the other question: does any of them carry the
+# identity of the machine that made it? A user found their own user name and their
+# whole directory layout in a committed journal row (CWE-532), and the journal is
+# committed ON PURPOSE. `_journal_io` closed the channel by construction; this reads
+# the bytes GIT TRACKS, which is the only thing that can prove no other writer, no
+# older artifact and no hand edit put it back. It never prints what it matched - a
+# CI log on a public repo is public - and what is already committed and cannot be
+# rewritten sits in its `BASELINE` with a reason that is itself checked.
+python3 tools/check-committed-pii.py
+
 # the browser gates. NOTHING ELSE can prove the report paints and stays interactive,
 # or that the panel's controls do what their labels say: a selftest asserts what the
 # CSS SAYS. The panel leg is the long one.

@@ -13,11 +13,19 @@ THE ONE EXCEPTION, and why it earns the exception (P0-S). A Bash call carrying
 `dangerouslyDisableSandbox: true` runs with the only layer that can actually
 CONTAIN a read switched off, and until P0-S no part of this plugin saw it -- a
 live session read a secret through direnv that way and left no deny, no gate
-message and no row. `bash.unsandboxed` records the command and the cwd. It
-prevents nothing (PostToolUse is after the fact) and it is not meant to: it turns
-an invisible event into tamper-evident history, which is what this file is for.
-An ordinary sandboxed Bash call is still nobody's business here, and the flag --
-not the tool name -- is what is read, so the journal cannot decay into a shell log.
+message and no row. `bash.unsandboxed` records a DIGEST of the command, its byte
+length, its program name, and the cwd relative to the repo. It prevents nothing
+(PostToolUse is after the fact) and it is not meant to: it turns an invisible
+event into tamper-evident history, which is what this file is for. An ordinary
+sandboxed Bash call is still nobody's business here, and the flag -- not the tool
+name -- is what is read, so the journal cannot decay into a shell log.
+
+THIS HOOK STILL PASSES THE RAW COMMAND, and that is the design rather than an
+oversight. The journal is committed on purpose, so command text in a row is
+CWE-532 in a file that ships; the redaction therefore lives at the ONE boundary
+every writer goes through -- `_journal_io.normalise_details`, before the hash --
+so the panel, `audit-task.py` and the CLI are covered by the same implementation
+and no second hook has to grow `hashlib` on the critical path of every tool call.
 
 THE TWO PASSES. Edit fragments are not parseable JSON, so a field-level diff can
 only come from remembering the file as it stood BEFORE the write. The Pre pass
