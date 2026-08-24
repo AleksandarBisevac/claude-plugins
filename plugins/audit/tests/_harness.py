@@ -70,6 +70,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import json
 import os
 import re
 import sys
@@ -235,6 +236,32 @@ def between(text, start, end):
                          "every `not in` case over it would pass vacuously"
                          % (end, start, _only_in_docstring(text, offset, end)))
     return body[i + len(start):j]
+
+
+# --- a needle spelled the way the haystack spells it ---------------------------
+def in_json(text):
+    """`text` as a JSON string spells it - the needle for counting a path in JSON.
+
+    Cases in more than one suite counted a temp-directory path in a feed file with
+    `feed_text.count(str(tmpdir))`. On POSIX that is one string looked for in a
+    copy of itself. On Windows `str(tmpdir)` is `C:\\Users\\RUNNER~1\\...`, the
+    encoder doubles every separator on the way in, and the needle is nowhere in
+    the haystack - so the `== 1` halves went red on the windows runner and the
+    `== 0` halves went GREEN by describing an empty room. The vacuous half is the
+    worse one: a check that cannot fail is not a check, and it had been on that
+    runner for as long as the red one.
+
+    `json.dumps(text)[1:-1]` is the encoder itself with its quotes taken off, so
+    the needle is BY CONSTRUCTION what the writer put in the file rather than a
+    second opinion about escaping. For text holding none of the characters JSON
+    escapes - every POSIX path these suites build - it returns `text` unchanged,
+    so an assertion it feeds is the assertion it always was.
+
+    Only for haystacks that are JSON. A path quoted in PROSE - a hook's reason, a
+    rendered report - is spelled natively there, and `str(path)` is already the
+    right needle for it.
+    """
+    return json.dumps(text)[1:-1]
 
 
 # --- two cases wearing one name -----------------------------------------------
@@ -685,6 +712,27 @@ def _cases(check):
           "prose or eat the first line of code",
           _prose[_module_body_offset(_prose):].startswith("def target"),
           repr(_prose[_module_body_offset(_prose):][:20]))
+
+    # -- in_json(): the needle for a path counted inside JSON -------------------
+    # THE WINDOWS SPELLING IS BUILT HERE RATHER THAN TAKEN FROM tempfile, so this
+    # runs on every platform: what broke was the ENCODING of a separator, and a
+    # literal reproduces that on macOS exactly as the runner does on Windows.
+    _posix_p = "/var/folders/d1/T/gate-feed-outside-abc/probe.py"
+    check("j1 a path with nothing for JSON to escape comes back unchanged, so "
+          "every assertion this feeds on POSIX is the assertion it already was",
+          in_json(_posix_p) == _posix_p)
+    _win_p = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\gate-feed-outside-abc"
+    _row = json.dumps({"event": "deny", "file": _win_p + "\\probe.py"},
+                      sort_keys=True, separators=(",", ":"))
+    check("j2 ...and the windows spelling is found in what the ENCODER actually "
+          "wrote, exactly once - driven through json.dumps rather than compared "
+          "to a hand-written expectation, which would agree with a wrong needle "
+          "forever: %r" % (_row,),
+          _row.count(in_json(_win_p)) == 1)
+    check("j3 ...where the RAW spelling occurs 0 times, which is the half the "
+          "broken cases were leaning on: `feed.count(str(tmpdir)) == 0` passed "
+          "on the windows runner by looking for something no encoder can emit",
+          _row.count(_win_p) == 0 and in_json(_win_p) != _win_p)
 
 
 def _selftest():

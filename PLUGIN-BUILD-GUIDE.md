@@ -2420,6 +2420,20 @@ route, and `_panel_state`'s `--name-only` **security** slice widened from 3,747 
 still "found" the flag. `between()` raises on either marker, and `run()` reports the escape as a
 named failing case.
 
+**`in_json(text)`** is the needle for counting a path inside a haystack that is JSON. Suites
+count an out-of-repository path in a feed file to prove a prune removed it, and
+`feed.count(str(tmpdir))` is one string looked for in a copy of itself on POSIX — while on the
+windows runner `str(tmpdir)` holds separators the encoder doubled on the way in, so the `== 1`
+half goes red and the paired `== 0` half goes **green by describing an empty room**. The vacuous
+half is the worse one, and it had been on that runner for as long as the red one. `in_json` is
+`json.dumps` with its quotes taken off, so the needle is by construction what the writer put in
+the file; for a path holding nothing JSON escapes it returns the text unchanged, which is why
+every assertion it feeds is the assertion it already was. Only for JSON haystacks — a path
+quoted in **prose** (a hook's reason, a rendered report) is spelled natively there, and
+`str(path)` is already right for it. `test__gate_feed.py`'s `gf25` pins the difference on every
+platform, with a fixture whose out-of-repository path carries a backslash, so the choice of
+needle is no longer something only a windows leg can falsify.
+
 **Every suite also inherits one rule it did not write.** `run()` is the only place that has
 seen every label a suite produced, so it is where they are checked for being two cases wearing
 one name: an id claimed from more than one `check()` call site, and a whole label printed twice.

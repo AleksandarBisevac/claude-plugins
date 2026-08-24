@@ -63,6 +63,14 @@ def _cases_body(check, tmp, outside):
     outside_row = _row(event="deny", file=str(outside / "probe.py"),
                        reason="not covered")
     second_inside = _row(event="warn", file="src/other.ts", reason="advisory")
+    # THE FEED IS JSON, so a path counted IN it is counted in the spelling the
+    # encoder wrote. `str(outside)` is that spelling on POSIX and is not on
+    # windows, where a separator arrives doubled - which took gf17's `== 1` half
+    # red and left its `== 0` half green over a needle no encoder can emit.
+    # `_harness.in_json` is json.dumps with the quotes off, so the two halves are
+    # asking about bytes that are really there. The reason strings below stay on
+    # `str(outside)`: prose quotes a path natively.
+    outside_json = _harness.in_json(str(outside))
 
     # ---------------------------------------------------------- classification
     # gf1/gf2 are one fixture and one substitution: the SECOND row is the only
@@ -202,13 +210,19 @@ def _cases_body(check, tmp, outside):
         # instead of reporting this case red - which is how gf15 below and every
         # case after it would silently stop being run.
         reason = (res["findings"] or [""])[0]
+        # `str(slogs)` and not the literal `.claude/logs`: the reason renders a
+        # path the OS spelled, and on the windows runner that is `\.claude\logs`
+        # - a POSIX separator in the needle made this case red for the one thing
+        # it was not asking about. Naming the fixture's own directory is the
+        # STRONGER form as well as the portable one: the literal was satisfied by
+        # any project's logsDir, this is satisfied only by THIS one's.
         check("gf14 ...and the reason names logsDir and NOT the resolved "
               "destination, which occurs 0 times in it - a refusal that quotes "
               "the outside path has published the thing it refused to touch: "
               "%r" % (res["findings"],),
               reason.count(str(elsewhere)) == 0
               and reason.count(str(outside)) == 0
-              and reason.count(".claude/logs") == 1)
+              and reason.count(str(slogs)) == 1)
         check("gf15 ...and a refusal still carries both counts, at zero, "
               "beside every class - a caller must never tell 'nothing was "
               "removed' from 'the counts were not computed' by which keys "
@@ -238,8 +252,8 @@ def _cases_body(check, tmp, outside):
           "afterwards where it occurred once before: %r" % (real,),
           real["wrote"] is True and real["removed"] == 1
           and kept_text == inside_row + "\n" + second_inside + "\n"
-          and kept_text.count(str(outside)) == 0
-          and raw_before.decode("utf-8").count(str(outside)) == 1)
+          and kept_text.count(outside_json) == 0
+          and raw_before.decode("utf-8").count(outside_json) == 1)
     check("gf18 ...and nothing else in logsDir was touched: the sibling "
           "`plan-bypass.log` is byte-identical, which is what says the blast "
           "radius is one file and not one directory",
@@ -311,7 +325,31 @@ def _cases_body(check, tmp, outside):
           movedres["removed"] == 1
           and (moved / _config.GATE_EVENTS_FILE).read_bytes() == b""
           and default_place.read_text(encoding="utf-8").count(
-              str(outside)) == 1)
+              outside_json) == 1)
+
+    # gf25: THE SPELLING THE FEED ITSELF IMPOSES, pinned on every platform.
+    # gf17/gf24 above count an out-of-repository path in feed BYTES, and on POSIX
+    # `str(path)` and `_harness.in_json(str(path))` are the same string - so the
+    # needle being wrong is invisible here and shows up only on the windows
+    # runner, which is exactly how it shipped: the `== 1` half went red there and
+    # the `== 0` half passed by looking for something no encoder can emit. The
+    # `file` field carries whatever the gate was handed, and on windows that is a
+    # native path, so a row holding a BACKSLASH is the ordinary case there and a
+    # legal one here. Counted both ways over one fixture: the escaped spelling is
+    # in the file, the raw spelling is not, and the row still goes.
+    bp = Path(tempfile.mkdtemp(prefix="gate-feed-escape-", dir=str(tmp)))
+    backslashed = str(outside) + "\\weird" + os.sep + "probe.py"
+    bfeed = _write_feed(bp, [inside_row, _row(event="deny", file=backslashed)])
+    braw = bfeed.read_text(encoding="utf-8")
+    bres = M.prune(str(bp))
+    check("gf25 a row naming an out-of-repository path that JSON must ESCAPE is "
+          "removed like any other, and the feed held it in the encoder's "
+          "spelling and not in the raw one - which is the difference a POSIX-only "
+          "run cannot see: %r" % (braw,),
+          bres["removed"] == 1 and bres["kept"] == 1
+          and braw.count(_harness.in_json(backslashed)) == 1
+          and braw.count(backslashed) == 0
+          and bfeed.read_text(encoding="utf-8") == inside_row + "\n")
 
 
 def _selftest():

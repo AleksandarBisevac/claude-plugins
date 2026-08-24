@@ -348,7 +348,31 @@ _TEE_CLAUSE = re.compile(r"\btee\b([^|&;\n]*)", re.IGNORECASE)
 _SED_INPLACE_CLAUSE = re.compile(
     r"\bsed\b[^|&;\n]*?\s(?:-i|--in-place)\b[^|&;\n]*", re.IGNORECASE
 )
-_PATHY_TOKEN = re.compile(r"[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
+#
+# A DRIVE-ABSOLUTE PATH IS ONE TOKEN, and the first alternative is only there
+# because it was not. The redirect and `tee` branches take their target whole -
+# `[^\s|&;<>]+` and a whitespace split both carry `C:\out\probe.ts` intact - so
+# `within_root` gets the path the command named and answers OUTSIDE. This
+# pattern's class holds no drive designator and no backslash, so the same path
+# arrived here as `probe.ts`: a bare basename, which is relative, which is
+# unconditionally inside the repository. One file, one command, and the verdict
+# depended on which write form spelled it - while SECURITY.md promises "the same
+# file gets the same verdict whether it is edited through a tool or through `sed
+# -i`". Forward slashes lost only the drive (`C:/out/probe.ts` -> `/out/probe.ts`)
+# and pathlib then re-attached the ROOT's drive, so a repo on `D:` judged a `C:`
+# path to be its own. Fail-closed either way - the wrong answer is a deny - but a
+# deny nobody can act on is the route-around class, which is what the `xs` cases
+# in the suite exist to close.
+#
+# The drive form is a separate alternative rather than `\\` added to the class:
+# adding it there makes `sed -i 's/foo\.ts/bar/' README.md` match `s/foo\.ts` and
+# report a write to a file the command only mentions. `(?<!\w)` keeps `http://`
+# out of the drive branch, so a URL inside a sed script tokenises exactly as it
+# did. Checked against both spellings and the POSIX corpus: nothing but a
+# drive-absolute path changes.
+_PATHY_TOKEN = re.compile(
+    r"(?<!\w)[A-Za-z]:[\\/][\w@~/\\.+-]*\.[A-Za-z][A-Za-z0-9]{0,9}"
+    r"|[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
 
 # --- Rule #2: the environment itself -------------------------------------------
 # P0-S: `printenv` USED TO BE ANCHORED to the start of a clause, so any wrapper in

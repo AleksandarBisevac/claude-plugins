@@ -731,30 +731,69 @@ def _cases(check):
     # a scratch file under the system temp directory came back as
     # `../../../private/tmp/probe.py`, matched no exempt glob, was covered by no
     # in_progress task, and denied.
+    #
+    # THE IDS ARE `xs`, NOT `x`: `x1`/`x2` were already taken by the extra-pattern
+    # pair above, and both families reach `check()` through `_expect`, so
+    # `label_faults()` - which attributes by CALL SITE - saw one site and said
+    # nothing. A red windows leg reporting "x1" then named two cases in one file.
     import shutil as _sh_x
     tmp_x = Path(tempfile.mkdtemp(prefix="guard-secrets-outside-"))
     try:
         _out_x = str(tmp_x / "probe.py")
-        _expect("x1 a shell write into a file OUTSIDE the repository is "
+        # xs0 IS THE PRECONDITION THE OTHERS ALL READ, and it is here because it
+        # was false on windows for as long as this block existed. The `sed -i`
+        # branch extracts its targets with `_PATHY_TOKEN`, whose class held no
+        # drive designator: `C:\...\probe.py` reached `within_root` as `probe.py`,
+        # a bare basename, which is relative and therefore INSIDE the repository -
+        # so xs1 blocked, xs2 named the wrong file and xs3 found the wrong first
+        # hit. Asserting the extraction rather than only the verdict is what makes
+        # a future truncation red HERE instead of three cases away, and it is the
+        # native spelling on purpose: whatever this OS calls an absolute path is
+        # what the guard has to carry to the containment test whole.
+        check("xs0 the whole absolute path reaches the containment test - the "
+              "sed branch's extraction carries it as ONE token, which is the "
+              "precondition every case below reads: %r"
+              % (M._shell_write_targets("sed -i 's/a/b/' %s" % _out_x),),
+              M._shell_write_targets("sed -i 's/a/b/' %s" % _out_x) == [_out_x])
+        _expect("xs1 a shell write into a file OUTSIDE the repository is "
                 "allowed - the shell-write twin of require-plan's r1",
                 "allow", bash("sed -i 's/a/b/' %s" % _out_x),
                 use_cfg=cfg_enforced)
-        _expect("x2 ...and an in-repo source file is still refused on the same "
-                "tier, so x1 is not this branch quietly switching off",
+        _expect("xs2 ...and an in-repo source file is still refused on the same "
+                "tier, so xs1 is not this branch quietly switching off",
                 "block", bash("sed -i 's/a/b/' src/app.ts"),
                 use_cfg=cfg_enforced)
-        check("x3 the hit function itself is the thing that changed: it names "
+        check("xs3 the hit function itself is the thing that changed: it names "
               "the in-repo path and declines to name the out-of-repo one, "
-              "which is what x1/x2 read downstream",
+              "which is what xs1/xs2 read downstream",
               M._source_write_hit("sed -i 's/a/b/' %s" % _out_x, str(tmp),
                                   cfg_enforced) is None
               and M._source_write_hit("sed -i 's/a/b/' src/app.ts", str(tmp),
                                       cfg_enforced) == "src/app.ts")
-        check("x4 a command writing BOTH keeps the in-repo finding - declining "
+        check("xs4 a command writing BOTH keeps the in-repo finding - declining "
               "the out-of-scope target must skip that target, never abandon "
               "the scan",
               M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_x,
                                   str(tmp), cfg_enforced) == "src/app.ts")
+        # xs5/xs6 REPRODUCE THE WINDOWS SPELLINGS ON EVERY PLATFORM, because what
+        # broke was the TOKENISER and a tokeniser has no platform. Only the
+        # extraction is asserted - `within_root` is os.path.realpath's caller and
+        # answers about this machine's filesystem, so the verdict for a `C:` path
+        # is a question only the windows runner can settle. Both halves matter:
+        # the backslash form used to collapse to a basename, and the forward-slash
+        # form used to lose its drive to pathlib's re-attachment of the root's.
+        check("xs5 a windows drive-absolute target survives extraction whole, in "
+              "both spellings a shell can carry - what broke was a regex over "
+              "command TEXT, so it goes red here rather than only on the runner",
+              M._shell_write_targets(
+                  "sed -i 's/a/b/' C:\\out\\probe.ts") == ["C:\\out\\probe.ts"]
+              and M._shell_write_targets(
+                  "sed -i 's/a/b/' C:/out/probe.ts") == ["C:/out/probe.ts"])
+        check("xs6 ...and a POSIX clause tokenises exactly as it did: an escaped "
+              "dot inside the sed SCRIPT is not a write target, which is what a "
+              "backslash added to the character class would have made it",
+              M._shell_write_targets(
+                  "sed -i 's/foo\\.ts/bar/' README.md") == ["README.md"])
     finally:
         _sh_x.rmtree(tmp_x, ignore_errors=True)
 

@@ -102,11 +102,22 @@ def _cases_body(check, tmp, outside):
     before = (echo_proj / ".claude" / "logs"
               / "plan-gate-events.jsonl").read_text(encoding="utf-8")
     echoed = M.render(_gate_feed.prune(str(echo_proj)), str(echo_proj))
+    # TWO HAYSTACKS, TWO SPELLINGS, and using one needle for both was the bug.
+    # The feed is JSON, so the path is there in the encoder's spelling
+    # (`_harness.in_json`); the render is prose, so it would be there natively.
+    # On POSIX those are the same string and this case is unchanged; on windows
+    # the `== 1` half was looking for a spelling no encoder emits, and the `== 0`
+    # half passed by looking for the same absent thing. The render is now counted
+    # BOTH ways: a render that echoed a raw feed line carries the JSON spelling,
+    # one that echoed a parsed `file` field carries the native one, and neither
+    # may appear.
     check("al5 the removed path occurs 0 times in the render, where it occurred "
           "once in the feed - a prune that prints what it deleted writes the "
           "out-of-repository path straight back into the transcript:\n%s"
           % echoed,
-          before.count(str(outside)) == 1 and echoed.count(str(outside)) == 0)
+          before.count(_harness.in_json(str(outside))) == 1
+          and echoed.count(str(outside)) == 0
+          and echoed.count(_harness.in_json(str(outside))) == 0)
     check("al6 ...and the COUNT is there instead, so the reader is told what "
           "went without being shown it - the class is the report, not the row",
           echoed.count("outside this repository 1") == 1)

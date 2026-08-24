@@ -1214,6 +1214,12 @@ def _cases(check):
                               "file": os.path.join(_gf_out, "probe.py")},
                              sort_keys=True, separators=(",", ":"))
         _gf_feed = os.path.join(_gf_logs, "plan-gate-events.jsonl")
+        # The feed holds JSON, so the out-of-repository path is in it in the
+        # ENCODER's spelling. `_gf_out` is that spelling on POSIX and is not on
+        # windows, where every separator arrives doubled - gp1's `== 1` half went
+        # red there and gp2's `== 0` half went green over a needle no encoder can
+        # emit, which is the worse of the two.
+        _gf_out_json = _harness.in_json(_gf_out)
 
         def _seed_feed():
             with open(_gf_feed, "w", encoding="utf-8") as _fh1:
@@ -1228,7 +1234,7 @@ def _cases(check):
               "once afterwards: %r" % (_gf_dry,),
               _gf_dry["ok"] is True and _gf_dry["removed"] == 1
               and _gf_dry["kept"] == 1 and _gf_dry["wrote"] is False
-              and _gf_after_dry.count(_gf_out) == 1)
+              and _gf_after_dry.count(_gf_out_json) == 1)
 
         _gf_real = M.prune_gate_events(_gf_proj, {})
         with open(_gf_feed, "r", encoding="utf-8") as _fh1:
@@ -1238,7 +1244,7 @@ def _cases(check):
               "emptied the feed would fail here rather than look clean: %r"
               % (_gf_real,),
               _gf_real["wrote"] is True and _gf_real["removed"] == 1
-              and _gf_after.count(_gf_out) == 0
+              and _gf_after.count(_gf_out_json) == 0
               and _gf_after == _gf_in + "\n")
 
         _gf_bad_days = M.prune_gate_events(_gf_proj, {"olderThanDays": 0})
