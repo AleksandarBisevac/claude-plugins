@@ -106,7 +106,14 @@ td.phprio select{width:4rem}
    than left to the UA sheet: the shape rule above gives these controls a
    `height`, and a height on a `display:none` element is harmless only while
    nothing later sets `display` back. */
-td.phparent :is(select,input){width:12rem}
+/* 9rem, not 12: at 1200px the table measured 837px inside an 837px frame BEFORE
+   this column's content grew, so a sixth control at 12rem put it 26px over and
+   the frame scrolled sideways. The width is capped rather than fitted to the
+   longest option on purpose - an option like `#77 · Epic · <long title>` would
+   otherwise size the whole column, and the full text is on the control's title
+   anyway. Caught by `comp columns` in the browser gate; no selftest can see it,
+   because a layout that overflows is still a layout that parses. */
+td.phparent :is(select,input){width:9rem}
 td.phparent input[hidden]{display:none}
 /* The unfinished-edit note sits UNDER the control it is about, on its own line,
    because it appears and disappears as the menu changes and a note that

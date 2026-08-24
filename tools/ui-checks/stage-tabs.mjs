@@ -1456,10 +1456,18 @@ export async function assertCompositionColumns(page, { note, fail, tabTo }) {
   // wrong column, and both rows still look plausible. `-1` is exactly that empty
   // cell — the control is not in the row at all — so it is what this asserts,
   // and a task row that lost the cell would report the phase's index or -2.
-  const wantParent = b.headings.findIndex((h) => h.startsWith('ADO parent'));
+  // LOWERCASE, because `headings` is collected lowercased a hundred lines up and
+  // the two needles beside this one ('model', 'skills') already are. This one was
+  // written 'ADO parent' and therefore never matched — which did not fail, it fell
+  // into a branch that printed "nothing to check" and moved on. The column is
+  // UNCONDITIONAL, so there is no build without the heading and a missing one is a
+  // defect rather than a reason to skip: the absent branch fails now.
+  const wantParent = b.headings.findIndex((h) => h.startsWith('ado parent'));
   const parentCol = one(b.parentCol);
   if (wantParent < 0) {
-    note('comp columns: no "ADO parent" heading on this build — nothing to check');
+    fail('comp columns: no "ADO parent" heading found — the column is '
+       + `unconditional, so this is a defect, not an absence. Headings read: `
+       + `${JSON.stringify(b.headings)}`);
   } else if (parentCol !== wantParent || one(b.taskParentCol) !== -1) {
     fail(`comp columns: a phase's ADO parent sits in cell `
        + `${JSON.stringify(b.parentCol)} against a heading at ${wantParent}, and `
