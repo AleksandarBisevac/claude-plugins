@@ -79,5 +79,10 @@ This command is **read-only**: it takes no lock, writes nothing, and never execu
 `meta.buildCommands` entry (it resolves the program each one names and reports whether that
 program exists). It is safe to run mid-phase, and safe to run in CI.
 
+**That is why cleaning up is a different command.** `/audit:logs prune` removes rows from
+`<logsDir>/plan-gate-events.jsonl` — the feed the plan gate writes and the panel's Plan gate
+card shows — and it writes, so it is not a flag here. If a user asks to clean that file,
+point them there rather than reaching for this command.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
-`/audit:usage`, `/audit:layout`.
+`/audit:usage`, `/audit:layout`, `/audit:logs`.

@@ -129,6 +129,12 @@ def _cases(check):
           "saves through it, mirroring /api/areas; its read side rides "
           "composition.adoStatus in /api/state",
           'if path == "/api/ado"' in _write_src and "/api/ado" not in _get_src)
+    check("POST /api/gate-events/prune is a write route and only a write - the "
+          "Plan gate card RENDERS those rows out of /api/runstatus, and a prune "
+          "reachable by a GET would be a mutation a page could trigger by being "
+          "loaded",
+          'if path == "/api/gate-events/prune"' in _write_src
+          and "/api/gate-events/prune" not in _get_src)
     check("...and it serves _help.payload() rather than a second assembly of the "
           "same thing", _help_pay == _help.payload())
     _hcfg = _help_pay["fields"]["config"]

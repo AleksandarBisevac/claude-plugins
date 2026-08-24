@@ -270,7 +270,16 @@ LAYERS = (
      # wrapper being SHARED is what `_borrowed_wrapper_names` was written for:
      # without it the twelve runtime loads spelled in those six files would be a
      # dozen edges nothing could see.
-     "_doctor_report"),
+     "_doctor_report",
+     # `_gate_feed` is the plan-gate events feed's prune rule: which rows no
+     # longer belong, and the one file that may be rewritten. It reaches
+     # `_loader` (for `hooks/_config`, which a script may not import) and
+     # `_usage_core` (for `parse_ts`), both L1, and nothing else. It sits at the
+     # floor for the reason `_priority` and `_branch` do: BOTH doors need the
+     # same answer - `audit-logs.py` at L7 and `_panel_write` at L6 - and a
+     # second expression of "which rows no longer belong" would be a second
+     # opinion about what the panel's Plan gate card is showing.
+     "_gate_feed"),
     # The usage metering stack is a three-link chain, `_usage_core` -> the four
     # analytics passes -> `usage_ledger`, so it needs three layers under its lowest
     # consumer. That consumer
@@ -433,6 +442,11 @@ LAYERS = (
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
+     # `audit-logs` is `/audit:logs`: argument parsing, the render and the exit
+     # code over `_gate_feed` (L2). It is an entry point rather than a flag on
+     # `audit-doctor` beside it because the doctor is read-only by construction
+     # and a prune is a write - see this file's own docstring for the shape.
+     "audit-logs",
      # `check-ado-item` is the gate `/audit:sync push` runs an item through
      # before creating it. A command rather than a helper because the caller is
      # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a

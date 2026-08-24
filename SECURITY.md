@@ -142,7 +142,12 @@ throttle on a tree it does not govern, which silenced the next reminder that was
 This is the same posture `guard-bash-writes` already takes toward a command that ran in
 another tree, and the practical consequence is the same: a session whose project directory
 is one checkout does not gate edits into a *different* one, and opening the session in the
-tree being edited is what restores coverage.
+tree being edited is what restores coverage. That guard's *edit* branch asks the same
+question now, and it is a retention rule rather than a gate: an out-of-tree Edit used to be
+appended to its per-session `toolEdited` list under relpath's `../..` spelling, where no
+`git status` line from the watched tree could ever equal it. Nothing read it and nothing
+printed it, so there was no verdict to fix — the record went because a path outside the
+consuming repository is not this plugin's to keep, on disk or in memory.
 
 ### The one denial that is not about the plan (0.27.0)
 

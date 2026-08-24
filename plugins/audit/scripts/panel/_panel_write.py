@@ -96,6 +96,8 @@ import _locks                 # noqa: E402  (take and give back the index lock, 
 import _ado_parent            # noqa: E402  (where ONE item hangs; the no-declaration marker)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
 #                                            the SAME function set-priority.py asks)
+import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
+#                                            the SAME rule /audit:logs prune runs)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -420,6 +422,41 @@ def write_ado(project, body):
     if res.get("ok"):
         res["warnings"] = list(res.get("warnings") or []) + warnings
     return res
+
+
+def prune_gate_events(project, body):
+    """`POST /api/gate-events/prune` - clean the feed the Plan gate card renders.
+
+    THE CARD IS WHERE THE ROWS ARE SHOWN, SO THE CONTROL BELONGS THERE. `_gate_feed`
+    is the rule and `audit-logs.py` is the other door onto it; the panel adds no
+    rule of its own, exactly as `proposal_action` adds none - the classification,
+    the one file it may rewrite and the refusal all happen in the place that has
+    cases for them, so the button and the command cannot disagree about what a
+    prune removes.
+
+    `{"dryRun": true}` is the confirm dialog's half: the same counts, nothing
+    written. The client is expected to call it first and show what a prune WOULD
+    take, which is the shape the proposal tab already uses.
+
+    NO INDEX LOCK AND NO JOURNAL ROW, and both are decisions. The lock guards the
+    manifest, and this touches no part of it. The journal is the manifest's
+    tamper-evident trail; this feed is telemetry by its writer's own words
+    (`append_gate_event`), so a row in the hash chain for a telemetry prune would
+    put something in the evidence that the evidence does not cover.
+    """
+    if not isinstance(body, dict):
+        return _not_a_json_object()
+    older = body.get("olderThanDays")
+    if older is not None and (isinstance(older, bool)
+                              or not isinstance(older, int) or older < 1):
+        # Refused rather than coerced or ignored: a threshold nobody can read is
+        # the one input here that decides how much history goes.
+        return {"ok": False,
+                "findings": ["olderThanDays must be a whole number of days, at "
+                             "least 1 (got %r)" % (older,)]}
+    return _gate_feed.prune(project, read_config(project),
+                            older_than_days=older,
+                            dry_run=bool(body.get("dryRun")))
 
 
 # --- write locking ---------------------------------------------------------------
