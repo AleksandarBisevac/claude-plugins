@@ -1,5 +1,5 @@
 ---
-description: 'Sync the audit manifest with Azure DevOps work items — set the connector up for the first time (connect: verify the transport, report which auth path is in effect, prove access read-only, detect the board's process), push manifest bugs/tasks/phases to ADO (board states, sprint stamp, Remaining Work, comments), pull assigned ADO bugs or sprint items into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
+description: 'Sync the audit manifest with Azure DevOps work items — set the connector up for the first time (connect: verify the transport, report which auth path is in effect, prove access read-only, detect the board''s process), push manifest bugs/tasks/phases to ADO (board states, sprint stamp, Remaining Work, comments), pull assigned ADO bugs or sprint items into the manifest, or show link status. Explicit, idempotent, one direction per invocation; configured via meta.ado.'
 argument-hint: 'connect | push [bugs|tasks|all] [--task <id> | --phase <id>] | pull [bugs|sprint] | parents | status'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__azure-devops__wit_*, mcp__azure-devops__work
 ---
