@@ -796,7 +796,14 @@ def _executed_text(cmd):
 
 
 def _clauses(cmd):
-    """Split a shell command into clauses on `;`, `|`, `&` OUTSIDE quotes (F-B-1).
+    """Split a shell command into clauses on `;`, `|`, `&`, NEWLINE, outside quotes.
+
+    F209 added the newline, which is the separator a multi-line Bash block is
+    actually written with -- and its absence was this function's own documented
+    defect surviving in the one spelling nobody had tried. Measured: the two
+    lines below deny together and neither denies alone, while the same two joined
+    with `;` are allowed. The evidence was being taken from two different
+    commands and applied to the block as a whole.
 
     The inline-eval heuristics must judge each clause on its own facts:
     `x.py --selftest >/tmp/out; python3 -c "json.load(open('a.json'))"` is a
@@ -811,7 +818,21 @@ def _clauses(cmd):
     — the split can only narrow multi-clause false positives, never widen what
     one clause may do. Separators inside `$( )` are an accepted imprecision:
     full shell parsing is out of scope here (see the header's trade-off note),
-    and each fragment is still judged by the same regexes."""
+    and each fragment is still judged by the same regexes.
+
+    A LINE CONTINUATION IS NOT A SEPARATOR and needs no special case: the
+    backslash branch above already consumes the character after it, so one
+    ending a line eats its own newline and the two lines stay one clause.
+    (Spelled without the character itself: in a non-raw docstring it would
+    open an invalid escape sequence, which is a SyntaxWarning -- and the
+    warning machinery pulls `warnings`, `linecache` and `tokenize` into a
+    hook that must import fast, which is how `bench-hooks --gate` found it.)
+    A newline inside quotes is likewise held together by the quote tracking, which
+    is why the transport shape -- an interpreter invocation and a repo path both
+    inside ONE quoted argument handed to another program -- is still refused.
+    That one cannot be fixed by splitting: it needs knowing the text is an
+    argument rather than a program, which is real shell parsing. Stated here
+    rather than left to be rediscovered."""
     parts, buf, quote = [], [], None
     i, n = 0, len(cmd)
     while i < n:
@@ -832,7 +853,7 @@ def _clauses(cmd):
         elif ch in ("'", '"'):
             quote = ch
             buf.append(ch)
-        elif ch in (";", "|", "&"):
+        elif ch in (";", "|", "&", "\n", "\r"):
             if "".join(buf).strip():
                 parts.append("".join(buf))
             buf = []

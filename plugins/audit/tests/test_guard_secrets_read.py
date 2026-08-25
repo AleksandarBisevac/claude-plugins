@@ -335,6 +335,72 @@ def _cases(check):
           bash('echo x >/tmp/o; '
                'python3 -c "open(\'src/foo/gen3.ts\',\'w\').write(\'x\')"'))
 
+    # (s26a+) F209: THE SEPARATOR A MULTI-LINE BLOCK IS ACTUALLY WRITTEN WITH.
+    # `_clauses` split on `;`, `|` and `&` and not on a newline, so every
+    # multi-line Bash block was judged as ONE clause -- the eval marker taken
+    # from one line, the write target from another, and the two paired without
+    # ever having come from the same command. This is F-B-1's own defect
+    # surviving in the spelling nobody tried, and it was measured by minimizing
+    # a refusal the operator hit while investigating a different report.
+    _f209_bare = "open('plugins/audit/tmp.json','w').write('x')"
+    _f209_eval = ('run "python3 -c ' + chr(92) + '"open('
+                  "'/tmp/out/probe2.json','w').write('x')" + chr(92) + '""')
+    _expect("s26a a bare line naming a repo path is not a write on its own",
+          "allow", bash(_f209_bare))
+    _expect("s26b ...an inline eval writing OUTSIDE the repo is not one either",
+          "allow", bash(_f209_eval))
+    _expect("s26c ...and the two on SEPARATE LINES stay allowed - THE FAULT: "
+          "each half is innocent and the block was denied for owning both",
+          "allow", bash(_f209_bare + chr(10) + _f209_eval))
+    _expect("s26d ...in either order, because a scanner reading the whole text "
+          "has no order", "allow",
+          bash(_f209_eval + chr(10) + _f209_bare))
+    _expect("s26e ...and the `;` spelling of the same pair was ALREADY allowed, "
+          "which is what named the newline as the missing separator", "allow",
+          bash(_f209_bare + " ; " + _f209_eval))
+    # THE PAIRED POSITIVES. A splitter that split too eagerly would pass every
+    # case above and stop guarding anything, so both directions are pinned.
+    _expect("s26f a genuine eval-write on a LINE OF ITS OWN still denies - the "
+          "newline narrows which clause is judged, never what a clause may do",
+          "block",
+          bash("echo start" + chr(10)
+               + 'python3 -c "open(' + "'src/foo/gen9.ts','w'" + ').write('
+               + "'x'" + ')"' + chr(10) + "echo done"))
+    # s26g-s26j ASSERT ON `_clauses` DIRECTLY, and the first draft of s26g is why.
+    # It asserted `block` end to end and claimed the verdict came from the line
+    # continuation holding two lines together -- and with the continuation branch
+    # DELETED the payload still read `block`, because another rule denies it. The
+    # case named a cause it never touched. A splitter is a pure function over
+    # text, so it is asserted as one; routing the claim through six other rules
+    # is exactly what let it go unchecked.
+    check("s26g a NEWLINE outside quotes separates clauses - the whole of F209, "
+          "asserted where it lives rather than through a verdict six rules can "
+          "also produce",
+          M._clauses("echo a" + chr(10) + "echo b") == ["echo a", "echo b"],
+          repr(M._clauses("echo a" + chr(10) + "echo b")))
+    _s26_cont = "python3 -c " + chr(92) + chr(10) + "  'x'"
+    check("s26h ...a LINE CONTINUATION is not one: the backslash branch consumes "
+          "its own newline, so the halves stay ONE clause and no special case is "
+          "needed for it",
+          M._clauses(_s26_cont) == [_s26_cont], repr(M._clauses(_s26_cont)))
+    _s26_qnl = 'run "a' + chr(10) + 'b"'
+    check("s26i ...and a newline INSIDE quotes does not split either, which is "
+          "why the transport shape is still refused and is written down as a "
+          "limit rather than left to be rediscovered",
+          M._clauses(_s26_qnl) == [_s26_qnl], repr(M._clauses(_s26_qnl)))
+    # THE INPUT HAS A SEPARATOR BEFORE THE QUOTE OPENS, and that is the whole
+    # design of the case. Written first without one, it passed with the fail-safe
+    # DELETED: an unbalanced quote sends every remaining character into the buffer
+    # through the `if quote:` branch, so a single-clause input comes back whole
+    # either way and the case was testing the quote tracking instead. The two
+    # answers differ only once an earlier clause has already been split off.
+    _s26_unb = 'echo a' + chr(10) + 'echo "b'
+    check("s26j unbalanced quoting returns the WHOLE command as ONE clause, "
+          "discarding the split already made - the fail-safe the newline must "
+          "not have weakened, since a looser split is the one way this narrowing "
+          "could widen what a single clause may do",
+          M._clauses(_s26_unb) == [_s26_unb], repr(M._clauses(_s26_unb)))
+
     # (s27+) F-P-7: the eval-write backstop matched a WRITE CALL and a SOURCE
     # PATH anywhere in the same clause, never checking that the two were the
     # same thing. `>` inside the code (a comparison, or a redirect to /tmp) fed
