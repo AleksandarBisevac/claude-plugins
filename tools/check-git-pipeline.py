@@ -538,7 +538,9 @@ def check_journal_anchor_fires(fx):
     findings = [ln for ln in out.splitlines() if ln.startswith("FINDING:")]
     anchored = [ln for ln in findings if "committed past changed" in ln]
     ok = code == 1 and len(findings) == 1 and len(anchored) == 1
-    return ok, "exit %r, %d finding(s): %r" % (code, len(findings), findings[:2])
+    return ok, ("exit %r, %d finding(s): %s"
+                % (code, len(findings),
+                   _output.some_of(findings, render=repr)))
 
 
 def check_meter_wiring(fx):

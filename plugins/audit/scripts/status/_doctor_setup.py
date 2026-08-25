@@ -430,8 +430,8 @@ def check_manifest(rep, project, cfg):
     n_tasks = sum(1 for _ in mio.iter_tasks(manifest))
     if findings:
         rep.finding("manifest",
-                    "%d validator finding(s): %s" % (len(findings),
-                                                     "; ".join(findings[:3])),
+                    "%d validator finding(s): %s"
+                    % (len(findings), _output.some_of(findings, sep="; ")),
                     "fix them before running a phase - the report renders an "
                     "INVALID MANIFEST banner until they are gone")
     else:
@@ -570,9 +570,10 @@ def check_submodules(rep, project, cfg, manifest, git_root):
     if conflicts:
         rep.finding("submodules",
                     "%d task file(s) live inside a submodule, which the parent repo "
-                    "cannot stage: %s" % (len(conflicts),
-                                          ", ".join("%s -> %s" % (c[0], c[1])
-                                                    for c in conflicts[:3])),
+                    "cannot stage: %s"
+                    % (len(conflicts),
+                       _output.some_of(["%s -> %s" % (c[0], c[1])
+                                        for c in conflicts])),
                     "point meta.gitRoot at the submodule to audit it directly, or "
                     "drop those files from the task(s)")
     else:

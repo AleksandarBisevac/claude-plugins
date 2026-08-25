@@ -415,7 +415,9 @@ def validate_registry(areas, where="meta.areas"):
                 bad = [s for s in skills if not isinstance(s, str) or not s.strip()]
                 if bad:
                     findings.append("%s.skills: every entry must be a non-empty skill "
-                                    "name (%d bad: %r)" % (awhere, len(bad), bad[:3]))
+                                    "name (%d bad: %s)"
+                                    % (awhere, len(bad),
+                                       _output.some_of(bad, render=repr)))
         owner = entry.get("owner")
         if "owner" in entry:
             # Type only. Whether this identity has ever appeared in the ledger is

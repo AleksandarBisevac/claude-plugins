@@ -271,7 +271,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         rep.warn("journal",
                  "%d row(s) in %s chain cleanly, with %d warning(s): %s"
                  % (res.get("rows", 0), where, len(res["warnings"]),
-                    "; ".join(res["warnings"][:2])),
+                    _output.some_of(res["warnings"], sep="; ")),
                  "out-of-band drift is a document that changed with no row to "
                  "explain it - a git checkout, a script, or a shell write")
         return

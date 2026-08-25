@@ -87,16 +87,18 @@ def check_areas(rep, project, cfg, manifest, manifest_rel):
     if missing:
         rep.warn("areas",
                  "%d registered area(s) point at a directory that is not there: %s"
-                 % (len(missing), ", ".join("%s -> %s" % (t, r)
-                                            for t, r in missing[:3])),
+                 % (len(missing),
+                    _output.some_of(["%s -> %s" % (t, r)
+                                     for t, r in missing])),
                  "fix meta.areas[<tag>].root, or drop the area - roots are "
                  "relative to the project directory, like task.files")
     unreg = ar.unregistered_tags(manifest)
     if unreg:
         rep.warn("areas",
                  "%d phase tag(s) have no registry entry: %s"
-                 % (len(unreg), ", ".join("%s uses %r" % (p, t)
-                                          for p, t in unreg[:3])),
+                 % (len(unreg),
+                    _output.some_of(["%s uses %r" % (p, t)
+                                     for p, t in unreg])),
                  "add them to meta.areas, or fix the typo - an unregistered tag "
                  "still groups, but resolves to no reviewer and no skills")
     if not missing and not unreg:
@@ -139,7 +141,7 @@ def check_areas(rep, project, cfg, manifest, manifest_rel):
         rep.warn("areas",
                  "%d area owner(s) never appear in the ledger's author "
                  "column: %s - never seen yet?"
-                 % (len(unseen), ", ".join(unseen[:3])),
+                 % (len(unseen), _output.some_of(unseen)),
                  "is this the identity git config reports for them? owners "
                  "join the ledger by usage.authorMode (git user.email under "
                  "'email', user.name under 'name') - written any other way, "
@@ -209,7 +211,7 @@ def check_policy(rep, project, cfg, cfg_mod, manifest, _discover=None):
     if refused:
         rep.warn("policy",
                  "%d capability reference(s) in the manifest would be refused: %s"
-                 % (len(refused), "; ".join(refused[:3])),
+                 % (len(refused), _output.some_of(refused, sep="; ")),
                  "allow them in policy, or change what the plan asks for - a denied "
                  "review skill fails at phase sign-off, not before")
 
@@ -243,7 +245,7 @@ def check_policy(rep, project, cfg, cfg_mod, manifest, _discover=None):
                  "%d pattern(s) match nothing installed here: %s - a typo, a "
                  "removed tool, or a tool a teammate has; a pattern that names "
                  "nothing decides nothing"
-                 % (len(dead), "; ".join(dead[:3])),
+                 % (len(dead), _output.some_of(dead, sep="; ")),
                  "fix the name if it is a typo, or leave it if it is real "
                  "elsewhere - this is THIS machine's inventory, so a hint and "
                  "never a gate")

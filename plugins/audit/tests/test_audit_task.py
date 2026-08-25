@@ -1097,6 +1097,63 @@ def _cases(check):
               "which is the assertion rather than the exit code",
               code == 2 and _sc_after == _sc_before)
 
+        # ---- (sn) F208: the verb was unusable on the task it exists for ------
+        # `tests` used to be materialized unconditionally, so `scope --files`
+        # alone left `tests: {}` behind - and an ABSENT `tests` is legal while
+        # one present without a `mode` is not (`_manifest_phases.py`). The
+        # rollback held, so nothing was ever corrupted; the verb simply could
+        # not run. Measured live on the F189 case itself: an imported task whose
+        # description says "scope files/tests before running" has no `tests`
+        # key, and the refusal read `tests.mode None not in [...]`, which
+        # describes the manifest for a defect in the writer.
+        sn_proj, sn_mp = mk("p-scope-notests", base_manifest())
+        os.makedirs(os.path.join(sn_proj, "src"), exist_ok=True)
+        with open(os.path.join(sn_proj, "src", "b.ts"), "w") as _fh:
+            _fh.write("x\n")
+        _snm = _mio.read_json(sn_mp)
+        for _snp in _snm["phases"]:
+            for _snt in _snp["tasks"]:
+                if _snt["id"] == "P2.3":
+                    _snt.pop("tests", None)
+        with open(sn_mp, "w") as _fh:
+            json.dump(_snm, _fh, indent=2)
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts",
+                         "--project-dir", sn_proj])
+        _snt = task_in(sn_mp, "P2.3")
+        check("sn1 scope succeeds on a task with NO tests key, and leaves it "
+              "without one - the field is not this call's business and an empty "
+              "object is the one shape the schema refuses: %r"
+              % ((code, _snt.get("files"), "tests" in _snt),),
+              code == 0 and _snt.get("files") == ["src/b.ts"]
+              and "tests" not in _snt)
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts", "--gate",
+                         "lint", "--project-dir", sn_proj])
+        check("sn2 ...while --gate ALONE on such a task is refused BEFORE the "
+              "write, naming the flag that resolves it - writing would build a "
+              "`tests` without a `mode`, and defaulting one would have this verb "
+              "invent a grading nobody chose: %r" % (txt[:110],),
+              code == 2 and "has no `tests` object" in txt
+              and "--tests-mode" in txt
+              and "tests" not in task_in(sn_mp, "P2.3"))
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts", "--tests-mode",
+                         "gate-only", "--gate", "lint", "--project-dir",
+                         sn_proj])
+        _snt = task_in(sn_mp, "P2.3")
+        check("sn3 ...and the two together DO write, which is the paired "
+              "positive: a refusal that also blocked the spelling it recommends "
+              "would just be the old bug behind a better sentence: %r"
+              % (_snt.get("tests"),),
+              code == 0 and (_snt.get("tests") or {}).get("mode") == "gate-only"
+              and (_snt.get("tests") or {}).get("gate") == ["lint"])
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts", "--gate",
+                         "true", "--project-dir", sn_proj])
+        check("sn4 ...after which --gate alone is accepted, because the object "
+              "now exists - the refusal is about the MISSING object and not "
+              "about the flag: %r" % (txt[:80],),
+              code == 0
+              and (task_in(sn_mp, "P2.3").get("tests") or {}).get("gate")
+              == ["true"])
+
         # ---- (rt) F190: a plan can be CORRECTED, not only created ------------
         # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
         # until `retarget` that choice was unreachable, and one wrong choice made
@@ -1695,6 +1752,49 @@ def _cases(check):
               sf_handoff(sf_add_txt, "P2.4") != ""
               and sf_handoff(sf_add_txt, "P2.4")
               == sf_handoff(sf_scope_txt, "P2.3"))
+
+        # ---- (qg) F207: add-phase reaches the EMPTY gate ---------------------
+        # The THIRD verb of one shape. `--gate-clear` sits on the shared parser, so
+        # argparse accepted it here while `_phase_gate` never looked - the new
+        # phase inherited `meta.buildCommands` and the caller was told the call
+        # worked. `scope` was F196 and `add` was F201; the check that exists
+        # because of those two did not cover the verb where it happened again,
+        # which is why `_AT_WRITERS` gained a row with the fix.
+        qg_proj, qg_mp = mk("p-phasegate", base_manifest())
+        code, txt = run(["add-phase", "Docs only", "--outcome", "shipped",
+                         "--gate-clear", "--project-dir", qg_proj])
+        _qgp = [p for p in _mio.load_manifest(qg_mp)["phases"]
+                if p.get("title") == "Docs only"]
+        check("qg1 --gate-clear reaches the EMPTY gate on a NEW phase, so a plan "
+              "whose remaining work nothing here can grade does not inherit a "
+              "gate it cannot pass: %r" % ([p.get("testGate") for p in _qgp],),
+              code == 0 and len(_qgp) == 1 and _qgp[0].get("testGate") == [])
+        check("qg2 ...and the report names the FLAG as the basis, not a sentence "
+              "about the manifest - 'nothing here can prove it' and 'the caller "
+              "said not to' are different answers and only one of them is a "
+              "choice: %r" % (txt[-90:],),
+              "--gate-clear" in txt)
+        # THE PAIRED NEGATIVE. A resolver that simply stopped reading
+        # `meta.buildCommands` would pass qg1 exactly as the repair does.
+        code, txt = run(["add-phase", "Inherits", "--outcome", "o",
+                         "--project-dir", qg_proj])
+        _qgi = [p for p in _mio.load_manifest(qg_mp)["phases"]
+                if p.get("title") == "Inherits"]
+        check("qg3 a phase with NEITHER flag still inherits meta.buildCommands - "
+              "the clear is a choice a caller makes, not a new default: %r"
+              % ([p.get("testGate") for p in _qgi],),
+              code == 0 and _qgi and _qgi[0].get("testGate") == ["test"])
+        _qg_before = _mio.load_manifest(qg_mp)
+        code, txt = run(["add-phase", "Both", "--outcome", "o",
+                         "--gate", "test", "--gate-clear",
+                         "--project-dir", qg_proj])
+        check("qg4 --gate with --gate-clear is REFUSED and writes nothing - the "
+              "worse half, since before the fix it exited 0 and wrote the gate. "
+              "The refusal is the same sentence the other three verbs spend, so "
+              "four copies of one rule cannot drift apart: %r" % (txt[:80],),
+              code == 2 and "opposite things" in txt
+              and len(_mio.load_manifest(qg_mp)["phases"])
+              == len(_qg_before["phases"]))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

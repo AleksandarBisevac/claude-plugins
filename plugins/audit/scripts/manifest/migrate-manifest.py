@@ -92,6 +92,13 @@ import _manifest_io as _mio  # noqa: E402
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
 
 
+# A budget of its own, because `_output.EVIDENCE_BUDGET` is sized for a line a
+# doctor or a validator prints INSIDE a sentence, and this one is a refusal printed
+# as an indented block with one finding per line. The reader is being told to go and
+# fix them, so the list is the whole point of the message rather than an aside in it.
+_MIGRATE_FINDING_BUDGET = 1200
+
+
 # --- migration ------------------------------------------------------------------
 def _load_validator():
     """The manifest rules. A plain module now, not a `_loader.load_script` of
@@ -307,7 +314,8 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
                    "%s:\n  - %s" % (len(findings),
                    " (or pass --renumber for duplicate BUG- ids)"
                    if any("duplicate" in f.lower() and "BUG-" in f for f in findings) else "",
-                   "\n  - ".join(findings[:8])))
+                   _output.some_of(findings, budget=_MIGRATE_FINDING_BUDGET,
+                                   sep="\n  - ")))
 
     blocked = _in_progress_phases(manifest)
     if blocked and not force:

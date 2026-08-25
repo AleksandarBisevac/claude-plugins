@@ -141,6 +141,47 @@ def _cases(check):
               and "P9.9" in _detail(rep, "completions")
               and "outside the pipeline" in _detail(rep, "completions"))
 
+        # ------------------------------------------------------ F205, and dc8 is
+        # why it shipped: one unrecorded task cannot tell a full list from a
+        # bounded one, so every fixture above this line passed against a line that
+        # counted the whole set and named a prefix of it. These two sit here
+        # rather than at the end of the file because they are dc8 with the set
+        # made big enough to lie.
+        four = ["P12.2", "P12.3", "P12.10", "P12.14"]
+        mf = _manifest([_task(t, completedAt="2026-05-01T00:00:00Z")
+                        for t in four])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        detail = _detail(rep, "completions")
+        check("dc23 four done tasks inside the era with no record are counted as "
+              "four and NAMED as four - the count was always right, so it is the "
+              "last id that decides whether the sentence supports it. Every arm "
+              "reading this set is asserted, because the record arm was repaired "
+              "while the two beside it went on truncating: %r" % (detail,),
+              "4 task(s) marked done with no completion record" in detail
+              and detail.count("P12.14") == 3
+              and all(t in detail for t in four)
+              and "more" not in detail)
+
+        many = ["P12.%09d" % (n,) for n in range(12)]
+        mf = _manifest([_task(t, completedAt="2026-05-01T00:00:00Z")
+                        for t in many])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        record_row = [r["detail"] for r in rep.rows
+                      if "no completion record" in r["detail"]][0]
+        body = record_row.split("no completion record: ")[1].split(" -- ")[0]
+        head, _sep, tail = body.rpartition(" and ")
+        listed = [x for x in head.split(", ") if x]
+        check("dc24 ...and a set too long for one line says how many it did not "
+              "show, so the number in front of the list and the list agree about "
+              "how much of the set the reader is looking at. Read back off the "
+              "sentence: a version that truncated and stayed quiet leaves no tail "
+              "to read, and one that always appends a tail gets dc23: %r"
+              % (record_row,),
+              tail.split()[0].isdigit()
+              and len(listed) + int(tail.split()[0]) == len(many))
+
         mf = _manifest([_task("P1.1", completedAt="2026-05-01T00:00:00Z")])
         rep = base.Report()
         M.check_completions(rep, tmp, {}, mf, mrel, None)

@@ -110,7 +110,9 @@ def _check_required_fields(block, findings):
         bad = [x for x in fields if not isinstance(x, str) or not x.strip()]
         if bad:
             findings.append("%s: every entry must be a non-empty field reference "
-                            "name (%d bad: %r)" % (where, len(bad), bad[:3]))
+                            "name (%d bad: %s)"
+                            % (where, len(bad),
+                               _output.some_of(bad, render=repr)))
 
 
 def _check_description_markers(block, findings):
@@ -129,7 +131,9 @@ def _check_description_markers(block, findings):
         bad = [x for x in markers if not isinstance(x, str) or not x.strip()]
         if bad:
             findings.append("%s: every marker must be a non-empty string "
-                            "(%d bad: %r)" % (where, len(bad), bad[:3]))
+                            "(%d bad: %s)"
+                            % (where, len(bad),
+                               _output.some_of(bad, render=repr)))
 
 
 def _check_tag_vocabulary(block, findings, warnings):
@@ -164,7 +168,9 @@ def _check_tag_vocabulary(block, findings, warnings):
         bad = [x for x in values if not isinstance(x, str) or not x.strip()]
         if bad:
             findings.append("%s: every allowed value must be a non-empty string "
-                            "(%d bad: %r)" % (where, len(bad), bad[:3]))
+                            "(%d bad: %s)"
+                            % (where, len(bad),
+                               _output.some_of(bad, render=repr)))
         # An OPEN axis with values listed beside the `*`: the enumeration is
         # dead, and dead configuration is this module's warning case. Not a
         # finding - the board is admitting everything, which is legal and

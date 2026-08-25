@@ -149,8 +149,8 @@ def invariants_block(manifest, manifest_path):
 def _invariant_detail(summary):
     """What `GATE FAILED: invariant-breach (...)` says after the name."""
     found = invariant_breaches(summary) or []
-    return "%d breach(es): %s%s" % (len(found), "; ".join(found[:2]),
-                                    "" if len(found) <= 2 else " ...")
+    return "%d breach(es): %s" % (len(found),
+                                  _output.some_of(found, sep="; "))
 
 
 def _budget_detail(summary, threshold_pct):

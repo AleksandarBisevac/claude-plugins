@@ -18,7 +18,8 @@ Usage:
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>"
-                [--id P7] [--description TEXT] [--area a,b] [--gate CMD ...]
+                [--id P7] [--description TEXT] [--area a,b]
+                [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>" [manifest]
@@ -1108,6 +1109,25 @@ def _phase_gate(args, assembled):
     EMPTY gate is the answer that needs one: a phase nothing can prove done is
     a phase sign-off signs on review alone, and the reader has to be told which
     of the two reasons produced it."""
+    # F207. `--gate-clear` reaches the EMPTY gate here too, and this was the third
+    # verb of the same shape after F196 (`scope`) and F201 (`add`): the flag is
+    # defined on the global parser, so argparse accepted it and this resolver
+    # never looked -- the new phase inherited `meta.buildCommands` while the caller
+    # was told the call succeeded. Measured: `--gate-clear` alone wrote `["lint"]`.
+    #
+    # Its basis is the FLAG rather than a sentence about the manifest, because that
+    # is what makes it a different answer from the two empty cases below: those say
+    # nothing here CAN prove the phase done, this says the caller decided nothing
+    # should.
+    # F207. `--gate-clear` was advertised on this verb, accepted by the shared
+    # parser and then never read here, so it silently left the gate at its
+    # default -- the third verb of that exact shape after `scope` (F196) and
+    # `add` (F201). Spelled `args.gate_clear` rather than `getattr(args, ...)`:
+    # the flag is `store_true` on the shared parser, so the attribute always
+    # exists and the defensive form only hides a real `AttributeError` if the
+    # parser ever stops declaring it.
+    if args.gate_clear:
+        return [], "from --gate-clear"
     if args.gate:
         return list(args.gate), "from --gate"
     meta = assembled.get("meta")
@@ -1182,6 +1202,16 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         for line in pre_findings:
             out("FINDING: " + line)
         return E_INVALID
+
+    # F207, and the reason this arrived only now: while `--gate-clear` was inert
+    # here, refusing the pair would have reported a conflict between a flag that
+    # works and a flag that does nothing -- theatre. The clear is live above, so
+    # the pair is a real contradiction and gets the same sentence, in the same
+    # position, as `add`, `scope` and `retarget`.
+    contradiction = _gate_contradiction(args)
+    if contradiction:
+        out(contradiction)
+        return E_USAGE
 
     # ABSENT and BLANK are different answers. `--id ""` falling through to the
     # allocator would write a phase under an id nobody asked for while reporting
@@ -1442,9 +1472,34 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "files",
                             "from": was_files, "to": files})
         node["files"] = files
+    # F208. THE `tests` OBJECT IS MATERIALIZED ONLY IF SOMETHING WRITES INTO IT.
+    # It used to be created unconditionally, so `scope --files` alone left
+    # `tests: {}` behind -- and an ABSENT `tests` is legal while one present
+    # without a `mode` is not (`_manifest_phases.py`). The rollback held, so no
+    # manifest was ever corrupted; what broke was the verb, on exactly the task
+    # it was written for. Measured live: a `pull sprint` import whose own
+    # description says "scope files/tests before running" carries no `tests`
+    # key, and every `scope` against it was refused with
+    # `tests.mode None not in [...]` -- a message about the manifest for a
+    # defect in the writer, which is the half that makes it hard to read.
+    tests_writes = (args.tests_mode is not None or bool(args.tests_add)
+                    or bool(args.gate) or args.gate_clear)
     tests = node.get("tests")
-    if not isinstance(tests, dict):
-        tests = node["tests"] = {}
+    tests = dict(tests) if isinstance(tests, dict) else None
+    if tests_writes and tests is None and args.tests_mode is None:
+        # Refused BEFORE the write and named as the flag it is, because the two
+        # alternatives are worse: writing produces the same invalid object one
+        # step later, and defaulting the mode the way `_build_task` does would
+        # have this verb invent a grading nobody chose -- on a task somebody is
+        # scoping precisely because its testing was never decided.
+        out("[audit-task] %s has no `tests` object, so --tests-add / --gate / "
+            "--gate-clear cannot be applied on their own: the result would be a "
+            "`tests` without a `mode`, which the schema refuses. Pass "
+            "--tests-mode tdd|regression|gate-only in the same call to say how "
+            "this task is graded." % (tid,))
+        return E_USAGE
+    if tests is None:
+        tests = {}
     if args.tests_mode is not None:
         if tests.get("mode") != args.tests_mode:
             changes.append({"id": tid, "field": "tests.mode",
@@ -1465,6 +1520,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "tests.gate",
                             "from": was_gate, "to": now_gate})
         tests["gate"] = now_gate
+    # Assigned back exactly once, and only when a branch above ran: `tests` is a
+    # COPY, so the branches cannot leave a half-object on the node by accident.
+    if tests_writes:
+        node["tests"] = tests
     if args.description:
         was_desc = node.get("description") or ""
         if was_desc != args.description:

@@ -181,8 +181,9 @@ def _check_hierarchy(ado, findings, warnings):
                    if isinstance(v, bool) or not isinstance(v, int)]
             if bad:
                 findings.append("meta.ado.hierarchy.levels: every rank must be "
-                                "an integer (%d bad: %r)"
-                                % (len(bad), sorted(bad)[:3]))
+                                "an integer (%d bad: %s)"
+                                % (len(bad),
+                                   _output.some_of(sorted(bad), render=repr)))
             if not levels:
                 # An empty ladder ranks nothing, so every link reports `not
                 # verified` while the block LOOKS like a fetched answer. That
@@ -230,7 +231,8 @@ def _check_parent_candidates(ado, findings, warnings):
             if bad:
                 findings.append("meta.ado.parentCandidates.items: every "
                                 "candidate needs an integer work item id "
-                                "(%d bad: %r)" % (len(bad), bad[:2]))
+                                "(%d bad: %s)"
+                                % (len(bad), _output.some_of(bad, render=repr)))
 
 
 def _check_connection(ado, findings, warnings):
@@ -517,8 +519,9 @@ def check_ado_meta(ado):
                            if not isinstance(t, str) or not t.strip()]
                     if bad:
                         f.append("meta.ado.pull.tags: every tag must be a "
-                                 "non-empty string (%d bad: %r)"
-                                 % (len(bad), bad[:3]))
+                                 "non-empty string (%d bad: %s)"
+                                 % (len(bad),
+                                    _output.some_of(bad, render=repr)))
 
     # `parentWorkItem`: the EXISTING item audit work hangs under. Without it the
     # connector always builds its own branch, which on a board that already has a

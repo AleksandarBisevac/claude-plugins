@@ -387,6 +387,118 @@ def _cases(check):
           "when somebody adds the next copy: %r" % (M.redundant_constants(),),
           M.redundant_constants() == [])
 
+    # ---------------------------------------- a count whose evidence was truncated
+    # F205: the doctor told a live client repo that four tasks were marked done
+    # with no completion record and then named three. The renderer first, then the
+    # lint that keeps the shape from coming back.
+    fits = M.some_of(["P12.2", "P12.3", "P12.10", "P12.14"])
+    check("te1 a list inside the budget is rendered whole, with NO tail. THE "
+          "SECOND-DIRECTION CASE for the whole family, and it is meant to read "
+          "as vacuous: it is the only one that fails if the tail becomes "
+          "unconditional, and the last id is the one the doctor used to drop: %r"
+          % (fits,),
+          fits == "P12.2, P12.3, P12.10, P12.14" and "more" not in fits)
+
+    long_ids = ["P205.%09d" % (n,) for n in range(12)]
+    over = M.some_of(long_ids)
+    head, _sep, tail = over.rpartition(" and ")
+    shown = [x for x in head.split(", ") if x]
+    hidden = int(tail.split()[0]) if tail.split()[0].isdigit() else -1
+    check("te2 ...and one that does NOT fit says how many it left out, exactly. "
+          "Read back off the rendering rather than compared with a number spelled "
+          "here: shown plus hidden has to be the whole set, which is the property "
+          "F205 broke and a hard-coded expectation would only restate: %r -> "
+          "%d shown + %d hidden of %d"
+          % (over, len(shown), hidden, len(long_ids)),
+          hidden > 0 and len(shown) + hidden == len(long_ids)
+          and all(i in over for i in shown))
+
+    huge = M.some_of(["z" * (M.EVIDENCE_BUDGET * 2), "b", "c"])
+    check("te3 the FIRST element is shown however long it is, and the rest are "
+          "counted - a budget that can drop everything turns a finding into a "
+          "bare number, which is the same defect one step further along: %r"
+          % (huge[-24:],),
+          huge.startswith("z" * 10) and huge.endswith(" and 2 more"))
+
+    check("te4 `render=repr` reproduces each item's repr, so the sites that used "
+          "to hand a bounded list to `%%r` lost nothing but the brackets - and an "
+          "empty set renders empty rather than as a lone tail: %r / %r"
+          % (M.some_of(["a", ""], render=repr), M.some_of([])),
+          M.some_of(["a", ""], render=repr) == "'a', ''" and M.some_of([]) == "")
+
+    tev = tempfile.mkdtemp(prefix="audit-output-tev-")
+    try:
+        def _wt(rel, text):
+            with open(os.path.join(tev, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        # THE DEFECT: the count is the whole set, the slice is a prefix, and the
+        # sentence says nothing about the difference.
+        _wt("defect.py", 'def r(a):\n'
+                         '    return "%d thing(s): %s" % (len(a), ", ".join(a[:3]))\n')
+        # A bounded slice with NO count beside it. Still a truncation, and still
+        # not this defect: nothing in the line is untrue.
+        _wt("nocount.py", 'def r(a):\n'
+                          '    return "thing(s): %s" % (", ".join(a[:3]),)\n')
+        # A count beside a slice of something ELSE - an abbreviated SHA, which is
+        # the shape sitting next to F205 in the file it was found in.
+        _wt("other.py", 'def r(a, sha):\n'
+                        '    return "%d thing(s): %s" % (len(a), sha[:12])\n')
+        # The remainder stated, literal cap: `hooks/meter-usage.py`'s spelling,
+        # written before `some_of()` existed and correct without it.
+        _wt("says.py", 'def r(a):\n'
+                       '    return "%d thing(s): %s%s" % (\n'
+                       '        len(a), ", ".join(a[:3]),\n'
+                       '        " +%d" % (len(a) - 3) if len(a) > 3 else "")\n')
+        # ...and with a cap held in a VARIABLE: `_warning_groups`'s spelling.
+        _wt("varcap.py", 'def r(a, limit):\n'
+                         '    return "%s, +%d more" % (", ".join(a[:limit]),\n'
+                         '                             len(a) - limit)\n')
+        # The same variable cap with the remainder NOT stated.
+        _wt("varsilent.py", 'def r(a, limit):\n'
+                            '    return "%d thing(s): %s" % (len(a),\n'
+                            '                                ", ".join(a[:limit]))\n')
+        # The slice applied to a WRAPPED collection, which is how three of F205's
+        # siblings were written.
+        _wt("inner.py", 'def r(a):\n'
+                        '    return "%d thing(s): %r" % (len(a), sorted(a)[:3])\n')
+
+        hits = M.truncated_evidence_violations((tev,))
+        named = dict((n, l) for n, l, _w3 in hits)
+        check("te5 the defect is reported, by file and by the line the SLICE is "
+              "on - the count is usually a line or two above it, and the slice is "
+              "the half that needs changing: %r" % (sorted(named.items()),),
+              named.get("defect.py") == 2)
+        check("te6 a bounded slice with NO count beside it is silent. Nothing in "
+              "that line is untrue, and a rule firing on it would fire on most "
+              "of the truncations in this tree",
+              "nocount.py" not in named)
+        check("te7 a count beside a slice of a DIFFERENT thing is silent - an "
+              "abbreviated SHA is width, not evidence dropped from the set being "
+              "counted, and the two sit in adjacent lines of the file F205 was "
+              "found in", "other.py" not in named)
+        check("te8 the remainder STATED is silent, in both spellings - a literal "
+              "cap and one held in a variable. Read structurally: the tail phrase "
+              "differs at those two sites, so a rule looking for the words would "
+              "convict one of them for complying: %r"
+              % (sorted(named),),
+              "says.py" not in named and "varcap.py" not in named)
+        check("te9 ...while the SAME variable cap with no remainder IS reported, "
+              "which is what makes te8 a claim about the remainder rather than "
+              "about literal caps: %r" % (named.get("varsilent.py"),),
+              "varsilent.py" in named)
+        check("te10 a slice of a WRAPPED collection is still a slice of it - "
+              "`sorted(a)[:3]` beside `len(a)`. A key built from the outermost "
+              "expression alone walks past this, and it is how three of F205's "
+              "siblings were spelled", "inner.py" in named)
+    finally:
+        shutil.rmtree(tev, ignore_errors=True)
+
+    check("te11 ...and the real tree carries none of the shape. This is the case "
+          "that goes red the next time somebody prints a count over evidence they "
+          "cut: %r" % (M.truncated_evidence_violations(),),
+          M.truncated_evidence_violations() == [])
+
     # ------------------------------------------------------- selftest coverage
     # Fixture trees first, because NO defect class exists in the real tree any more
     # and a classifier only ever seen returning empty lists is a classifier that

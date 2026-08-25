@@ -96,8 +96,9 @@ def _check_commit_trail(rep, manifest, git_root):
         rep.finding("commit trail",
                     "%d recorded commit(s) exist but NO ref reaches them: %s"
                     % (len(trail["unreachable"]),
-                       ", ".join("%s (%s)" % (t, s[:12])
-                                 for _p, t, s in trail["unreachable"][:3])),
+                       _output.some_of(["%s (%s)" % (t, s[:12])
+                                        for _p, t, s
+                                        in trail["unreachable"]])),
                     "history was rewritten. The objects are still here until git "
                     "gc runs, so RESTORING A BRANCH onto them puts the trail back "
                     "-- do that before `repair-commits.py --apply`, which only "
@@ -191,7 +192,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                     "%d task(s) marked done with no completion record: %s -- "
                     "the manifest was edited outside the pipeline or a record "
                     "was removed"
-                    % (len(missing), ", ".join(str(x) for x in missing[:3])),
+                    % (len(missing), _output.some_of(missing)),
                     "run `audit-journal.py show` to see what WAS recorded; to "
                     "repair the trail, reopen the task and re-run it via "
                     "/audit:run")
@@ -207,7 +208,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     if no_sha:
         rep.warn("completions",
                  "%d done task(s) carry no commit SHA: %s"
-                 % (len(no_sha), ", ".join(no_sha[:3])),
+                 % (len(no_sha), _output.some_of(no_sha)),
                  "the orchestrator writes task.commit after each task commit; "
                  "a missing one usually means an interrupted run "
                  "(/audit:resume re-commits)")
@@ -239,7 +240,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     if unspent:
         rep.warn("completions",
                  "%d completion-era done task(s) have no usage-ledger rows: %s"
-                 % (len(unspent), ", ".join(unspent[:3])),
+                 % (len(unspent), _output.some_of(unspent)),
                  "the ledger is re-derivable from Claude Code's own read-only "
                  "transcripts: /audit:usage --backfill")
 

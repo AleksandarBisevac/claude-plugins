@@ -117,8 +117,9 @@ def _check_area_tag(phase, pwhere, findings):
         return
     bad = [a for a in area if not isinstance(a, str) or not a.strip()]
     if bad:
-        findings.append("%s: every area tag must be a non-empty string (%d bad: %r)"
-                        % (pwhere, len(bad), bad[:3]))
+        findings.append("%s: every area tag must be a non-empty string (%d bad: %s)"
+                        % (pwhere, len(bad),
+                           _output.some_of(bad, render=repr)))
 
 
 def _check_areas(manifest):
@@ -272,7 +273,8 @@ def _walk_phases(phases):
                 f.append("%s: status 'done' but %d task(s) are not finished (%s) "
                          "— a phase is done only after ALL its tasks are done "
                          "or cancelled (sign-off)"
-                         % (pwhere, len(not_done), ", ".join(not_done[:6])))
+                         % (pwhere, len(not_done),
+                            _output.some_of(not_done)))
         for ti, task in enumerate(_safe_list(tasks_val)):
             if not isinstance(task, dict):
                 f.append("%s tasks[%d]: not an object" % (pwhere, ti))

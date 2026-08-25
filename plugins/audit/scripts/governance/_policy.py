@@ -573,7 +573,8 @@ def _check_list(value, where, present, findings):
     bad = [v for v in value if not isinstance(v, str) or not v.strip()]
     if bad:
         findings.append("%s: every entry must be a non-empty name pattern "
-                        "(%d bad: %r)" % (where, len(bad), bad[:3]))
+                        "(%d bad: %s)"
+                        % (where, len(bad), _output.some_of(bad, render=repr)))
 
 
 # --- tool -> capability mapping -----------------------------------------------

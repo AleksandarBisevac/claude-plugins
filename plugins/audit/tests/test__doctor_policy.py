@@ -292,11 +292,21 @@ def _cases(check):
                 "skills": {"default": "deny",
                            "allow": ["nope-a", "nope-b", "nope-c", "nope-d"]}}
         rep = policy(dead)
-        check("dp22 patterns matching nothing installed here are COUNTED in full "
-              "and quoted in part - four dead, three named: %r"
+        # F205, ON THE SURFACE THAT PINNED THE DEFECT. This asserted that four
+        # dead patterns were counted and THREE were named, so the truncation had
+        # a case defending it - which is how a count that was always right kept
+        # a basis that did not support it. Counted rather than found, because a
+        # renderer naming one pattern twice would satisfy a presence assertion,
+        # and the LAST name is asserted by itself: it is the one the old slice
+        # dropped, and a version that shows a bounded prefix passes every
+        # assertion above this line.
+        check("dp22 patterns matching nothing installed here are counted AND "
+              "named in full - the number and the list are the same set, so the "
+              "reader can act on the last of them: %r"
               % (_detail(rep, "policy"),),
               "4 pattern(s) match nothing installed here" in _detail(rep, "policy")
-              and _detail(rep, "policy").count("policy.skills.allow") == 3)
+              and _detail(rep, "policy").count("policy.skills.allow") == 4
+              and "nope-d" in _detail(rep, "policy"))
 
         rep = policy(dead, inventory={"skills": [], "agents": [], "mcp": []})
         check("dp23 ...and an inventory that found NOTHING AT ALL says nothing. "

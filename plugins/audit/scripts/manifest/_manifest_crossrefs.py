@@ -332,8 +332,8 @@ def _require_parent_warnings(ado, rows):
             "`adoParent`, set meta.ado.parentWorkItem as the fallback, or drop "
             "requireParent."
             % (len(homeless),
-               ", ".join("%s %s" % (r["kind"], r["id"] or "?")
-                         for r in homeless[:6]))]
+               _output.some_of(["%s %s" % (r["kind"], r["id"] or "?")
+                                for r in homeless]))]
 
 
 def _bug_parent_warnings(ado, bugs):
@@ -376,7 +376,7 @@ def _bug_parent_warnings(ado, bugs):
             "meta.ado.parentWorkItem is the AUDIT's own branch and does not "
             "reach a bug. Their creates are no longer refused over it - parent "
             "those cards by hand once they exist, or drop requireParent."
-            % (len(pending), ", ".join(str(x) for x in pending[:6]))]
+            % (len(pending), _output.some_of(pending))]
 
 
 def _linked(item):

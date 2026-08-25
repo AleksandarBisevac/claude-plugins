@@ -23,7 +23,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, some_of            # noqa: E402
 import _warning_groups as M                        # noqa: E402
 import _manifest_rules                             # noqa: E402
 
@@ -105,7 +105,8 @@ def _cases(check):
     check("wg2 ...and they render as ONE line naming the count and the four "
           "phases in document order - counted, not looked for, because a "
           "renderer that emitted the group AND the members would satisfy a "
-          "presence assertion: %d line(s), %r" % (len(got), got[:1]),
+          "presence assertion: %d line(s), %s"
+          % (len(got), some_of(got, render=repr)),
           len(got) == 1 and got[0] == want)
 
     # THE SECOND DIRECTION, and it is meant to read as vacuous. A collapse that

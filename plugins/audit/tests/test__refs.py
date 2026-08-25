@@ -27,6 +27,7 @@ and the rule did not.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -2283,6 +2284,22 @@ def _cases(check):
     _tk_flags = dict((a.split()[0], set(re.findall(r"--[a-z][a-z-]*", a)))
                      for a in _tk_alts if a.split())
 
+    # F207. THE HINTS OF BOTH DOCS, because the verb where this class recurred a
+    # third time lives in the other one. `_tk_flags` is `commands/task.md`'s, and
+    # `pf1` skipped any verb absent from it -- so `add-phase` was outside the check
+    # that exists BECAUSE of `scope` (F196) and `add` (F201). Measured: a row added
+    # to `_AT_WRITERS` for it stayed green with the flag's read DELETED, which is a
+    # check asserting nothing.
+    #
+    # `phase.md` spells the command verb `add` while the script spells it
+    # `add-phase`, so the two names are mapped rather than assumed equal - and the
+    # map is here, once, instead of a second table.
+    _ph_hint = _frontmatter(_PH, "argument-hint")
+    _ph_flags = dict((a.strip().split()[0],
+                      set(re.findall(r"--[a-z][a-z-]*", a)))
+                     for a in _ph_hint.split("|") if a.strip().split())
+    _SCRIPT_VERB = {"add-phase": ("phase", "add")}
+
     check("tk1 every alternative in /audit:task's hint opens with a literal "
           "lowercase verb - the parse below splits on the bar, so an enumerated "
           "VALUE written with one (`--tests-mode tdd|regression`) would turn half "
@@ -2290,6 +2307,13 @@ def _cases(check):
           % (_tk_verbs,),
           _tk_verbs != []
           and all(re.match(r"^[a-z]+$", v) for v in _tk_verbs))
+    # F210 IS WHY THIS STILL READS ONE DOC. Widening it to `commands/phase.md`
+    # was written, run, and reverted in the same session: it works, and what it
+    # found on its first run is that `phase.md`'s `add` hint advertises three
+    # flags against a usage block naming several more - F198's defect in the
+    # second command doc. Repairing that rewrites a user-facing hint for six
+    # verbs, so it is its own change; `_ph_flags` and `_SCRIPT_VERB` are parsed
+    # above and used by `pf1`, and F210 carries the widening with them.
     _tk_shared = sorted(set(_tk_flags) & set(_at_usage))
     _tk_off = dict((v, (sorted(_tk_flags[v]), sorted(_at_usage[v])))
                    for v in _tk_shared if _tk_flags[v] != _at_usage[v])
@@ -2352,7 +2376,14 @@ def _cases(check):
     # payload, and there is no mechanical link from the subcommand STRING to those
     # names - so they are named, and `pf2` fails if a name stops resolving rather
     # than letting a missing function read as a verb with nothing to check.
+    # F207 put `add-phase` in this table. It was the third verb to accept
+    # `--gate-clear` off the global parser and ignore it, after `scope` (F196) and
+    # `add` (F201) -- the check that exists BECAUSE of those two did not cover the
+    # verb where it happened again. `_phase_gate` is listed as a writer because it
+    # is where the flag is read, the way `_build_task` is for `add`.
     _AT_WRITERS = {"add": ("cmd_add", "_locked_add", "_build_task"),
+                   "add-phase": ("cmd_phase_add", "_locked_phase_add",
+                                 "_phase_gate"),
                    "scope": ("cmd_scope", "_locked_scope"),
                    "cancel": ("cmd_cancel", "_locked_cancel", "_cancel_task")}
 
@@ -2377,17 +2408,71 @@ def _cases(check):
         end = rest.find("\ndef ")
         return rest if end < 0 else rest[:end]
 
+    def _at_reads(src, name):
+        """The `args.<attr>` a top-level function actually READS, off the AST.
+
+        Not a text search of the function body, and F207 is why. `pf1` searched
+        for the literal `args.<dest>` in the writer's SOURCE, so a line of prose
+        naming the dest satisfied it -- the comment explaining this very repair
+        contained `args.gate_clear`, and with the read DELETED the check stayed
+        green on the comment alone. A docstring, a `%r` in a message or a
+        commented-out line all count as a read to a grep and none of them is
+        one. The AST cannot be fooled by any of the three.
+        """
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            return None                      # pf2 turns this into a failure
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name != name:
+                continue
+            found = set()
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Attribute)
+                        and isinstance(sub.value, ast.Name)
+                        and sub.value.id == "args"):
+                    found.add(sub.attr)
+                # `getattr(args, "x")` IS a read, and counting only the dotted
+                # spelling would fail a writer that reads defensively. Which
+                # spelling to prefer is a style question and belongs to
+                # `house_style_violations()`, not here: this case asks whether
+                # the flag is read at all.
+                elif (isinstance(sub, ast.Call)
+                        and isinstance(sub.func, ast.Name)
+                        and sub.func.id == "getattr"
+                        and len(sub.args) >= 2
+                        and isinstance(sub.args[0], ast.Name)
+                        and sub.args[0].id == "args"
+                        and isinstance(sub.args[1], ast.Constant)
+                        and isinstance(sub.args[1].value, str)):
+                    # `ast.Constant`, not `ast.Str`: 3.8 already produces the
+                    # former and 3.12 REMOVED the latter, so the deprecated
+                    # alias is the one spelling that fails at both ends of this
+                    # repo's supported range. It read green here only because
+                    # no source in the tree takes this branch - the red-first
+                    # probe for the defensive spelling is what runs it.
+                    found.add(sub.args[1].value)
+            return found
+        return None                          # the name no longer resolves
+
     _at_dest = _at_dests(_at_src)
     _pf_found = dict((v, [n for n in names if _fn_body(_at_src, n)])
                      for v, names in _AT_WRITERS.items())
     _pf_unread = []
     for _pfv in sorted(_AT_WRITERS):
-        if _pfv not in _tk_flags:
+        if _pfv in _SCRIPT_VERB:
+            _doc, _cmdverb = _SCRIPT_VERB[_pfv]
+            _pf_flags = _ph_flags.get(_cmdverb)
+        else:
+            _pf_flags = _tk_flags.get(_pfv)
+        if not _pf_flags:
             continue
-        _pf_src = "".join(_fn_body(_at_src, n) for n in _AT_WRITERS[_pfv])
-        for _pff in sorted(_tk_flags[_pfv]):
+        _pf_read = set()
+        for _pfn in _AT_WRITERS[_pfv]:
+            _pf_read |= (_at_reads(_at_src, _pfn) or set())
+        for _pff in sorted(_pf_flags):
             _pfd = _at_dest.get(_pff)
-            if _pfd and ("args.%s" % _pfd) not in _pf_src:
+            if _pfd and _pfd not in _pf_read:
                 _pf_unread.append((_pfv, _pff))
     # WHAT IT CANNOT SEE, measured by mutation rather than reasoned about: a dest
     # named in the verb's REFUSAL and then never applied still satisfies this, and
@@ -2403,13 +2488,19 @@ def _cases(check):
     # THE VACUITY GUARD, and it is the half that matters: an empty flag set, a
     # `dest` map that failed to parse, or a writer name that no longer resolves all
     # make the loop above green over nothing.
-    _pf_checked = sorted(set(f for v in _AT_WRITERS if v in _tk_flags
-                             for f in _tk_flags[v]))
-    check("pf2 ...over a flag set and a writer table that both actually resolved - "
+    _pf_checked = sorted(set(
+        f for v in _AT_WRITERS
+        for f in ((_ph_flags.get(_SCRIPT_VERB[v][1]) if v in _SCRIPT_VERB
+                   else _tk_flags.get(v)) or ())))
+    _pf_resolved = sorted((v, n) for v in _AT_WRITERS for n in _AT_WRITERS[v]
+                          if _at_reads(_at_src, n) is None)
+    check("pf2 ...over a flag set and a writer table that both actually resolved, "
+          "AND over an AST every writer could be found in - "
           "a renamed function or an unparsed dest map would leave pf1 green over "
           "nothing at all: %r"
           % ((len(_pf_checked), sorted(_pf_found.items())),),
           _pf_checked != [] and "--gate-clear" in _pf_checked
+          and _pf_resolved == []
           and all(list(_pf_found[v]) == list(_AT_WRITERS[v])
                   for v in _AT_WRITERS)
           and _at_dest.get("--gate-clear") == "gate_clear"

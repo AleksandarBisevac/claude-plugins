@@ -141,6 +141,55 @@ def safe_stdio():
                 pass
 
 
+# --- naming a bounded set without hiding the rest -------------------------------
+# ONE renderer for every "N things: a, b, c" line this plugin prints, and F205 is
+# why it is one. `_doctor_completions` told a live client repo that four tasks were
+# marked done with no completion record and then named three of them. The COUNT was
+# right - it always was, which is why nothing caught it - and the EVIDENCE was the
+# truncated half, so the fourth name did not exist as far as that line was
+# concerned. Every site with that shape carried its own hand-picked cap, so there
+# was no one place to repair it and no way to keep the repair honest.
+#
+# THE BUDGET IS IN CHARACTERS, NOT ELEMENTS, and that is what let the caps collapse
+# into one fact. The caps they came from disagreed because their elements do: a task
+# id is short and a malformed manifest entry's repr is not, so an element count says
+# nothing about how long the line comes out. A character budget says the thing every
+# one of those caps was reaching for.
+#
+# THE FIRST ELEMENT IS ALWAYS SHOWN, however long it is. A budget that can drop
+# everything turns a finding into a bare number, which is the same defect one step
+# further along.
+EVIDENCE_BUDGET = 160
+
+
+def some_of(items, budget=None, sep=", ", render=None):
+    """`items` rendered until `budget` is spent, then how many are NOT shown.
+
+    Never silently short. The tail says how many were left out whenever anything
+    was, so a count printed in front of this list and the list itself cannot
+    disagree about how much of the set the reader is looking at — which is the
+    only thing F205's reader needed and could not get.
+
+    `render` is how one item becomes text: `repr` for the sites that used to hand
+    a bounded list straight to `%r`, `str` otherwise.
+    """
+    show = render if render is not None else str
+    limit = budget if budget is not None else EVIDENCE_BUDGET
+    seq = list(items)
+    shown, used = [], 0
+    for item in seq:
+        text = show(item)
+        cost = len(text) + (len(sep) if shown else 0)
+        if shown and used + cost > limit:
+            break
+        shown.append(text)
+        used += cost
+    left = len(seq) - len(shown)
+    if left > 0:
+        return "%s and %d more" % (sep.join(shown), left)
+    return sep.join(shown)
+
+
 # --- finding the files to check ------------------------------------------------
 # The directory prefix `test__loader.py` writes its depth probes into. A PREFIX,
 # so `_loader_probe_a` and `_loader_probe_b` are one fact rather than two.
@@ -1193,6 +1242,137 @@ def redundant_constants(dirs=None):
                                    "%s = %r is never read here and is already "
                                    "declared in %s" % (const_name, value, elsewhere)))
     return violations
+
+
+# --- a count whose own evidence was truncated ----------------------------------
+# F205's shape, and the reason it needed a lint of its own rather than an extension
+# of either prose scan. Those two read a number that nothing prints; here the number
+# IS printed, from a live source, and it is the EVIDENCE BESIDE IT that was cut. The
+# claim stayed true the whole time, which is exactly why no existing check could see
+# the defect and why the repair had to be mechanical: the same shape had been written
+# by hand at sites across the tree, each with its own cap, and a sweep done once by
+# hand would have grown a new instance the next time somebody printed a count.
+_TRUNCATED_EVIDENCE = ("a count of the whole set beside a bounded slice of it, and "
+                       "nothing in the same sentence says what was left out - "
+                       "render the list through _output.some_of()")
+
+
+def _mod_operands(node):
+    """The values a `%` format consumes: a tuple's elements, or the single value."""
+    if isinstance(node.right, ast.Tuple):
+        return list(node.right.elts)
+    return [node.right]
+
+
+def _len_keys(expr):
+    """`{collection: lineno}` for every `len(X)` reached anywhere inside `expr`."""
+    found = {}
+    for node in ast.walk(expr):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id == "len" and len(node.args) == 1:
+            found.setdefault(ast.dump(node.args[0]), node.lineno)
+    return found
+
+
+def _prefix_slice_keys(expr):
+    """`{collection: lineno}` for every bounded `X[:n]` reached inside `expr`.
+
+    Keyed by every name the SLICED EXPRESSION mentions and not only by the whole
+    of it, because `sorted(bad)[:3]` is still a bounded slice of `bad` — one of
+    the spellings F205's siblings were written in, and the one a key built from
+    the outermost expression alone walks straight past.
+
+    The upper bound may be any expression, not just a literal. A cap held in a
+    variable is the same cap, and the site that first proved that is the one
+    already doing this correctly: `_warning_groups` slices to a `limit` argument
+    and then states the remainder, so a rule reading only literals would have
+    credited it for nothing and missed every sibling written that way.
+    """
+    found = {}
+    for node in ast.walk(expr):
+        if not isinstance(node, ast.Subscript):
+            continue
+        window = node.slice
+        if not isinstance(window, ast.Slice) or window.upper is None \
+                or window.lower is not None or window.step is not None:
+            continue
+        for inner in ast.walk(node.value):
+            if isinstance(inner, (ast.Name, ast.Attribute, ast.Subscript)):
+                found.setdefault(ast.dump(inner), node.lineno)
+    return found
+
+
+def _remainder_keys(expr):
+    """The collections whose UNSHOWN part `expr` states, as `len(X) - <anything>`.
+
+    STRUCTURAL RATHER THAN A SEARCH FOR THE WORDS. The tail phrase belongs to
+    `some_of()` and to the two hand-written sites that predate it, and they do not
+    agree on it — a lint reading for `and N more` would pin one wording and call
+    the others defects, while this reads the only thing they have in common: the
+    remainder is computed from the same count.
+    """
+    stated = set()
+    for node in ast.walk(expr):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub):
+            stated.update(_len_keys(node.left))
+    return stated
+
+
+def truncated_evidence_violations(dirs=None):
+    """(filename, line, what) for a count whose evidence was silently truncated.
+
+    THE SHAPE, in one sentence: inside one `%` format, `len(X)` is interpolated,
+    a bounded prefix slice of X is interpolated, and nothing in that same format
+    states the remainder. All three halves are load-bearing:
+
+    - **the count** — a bounded slice with no count beside it claims nothing, so
+      `", ".join(drift[:3])` is a line this must stay quiet about. It is still a
+      truncation, and a reader may still want the rest; it is not this defect,
+      because nothing in it is untrue.
+    - **the same collection** — `s[:12]` beside `len(trail["missing"])` is a SHA
+      abbreviated for width, not evidence dropped from the set being counted.
+    - **the remainder unstated** — `len(X) - n` anywhere in the same format is
+      the repair, and `hooks/meter-usage.py` was written that way before this
+      existed. A hook may not import `scripts/`, so it cannot reach `some_of()`
+      and never will; reading the property rather than the wording is what keeps
+      it correct instead of exempt.
+
+    WHAT IT CANNOT SEE, in the same direction every scan in this file errs: a
+    count and a slice that reach one sentence through two different format
+    strings, a cap applied by a counting loop or by `islice` rather than by a
+    slice, a truncated mapping, and any file outside `dirs` — `tools/` is not in
+    the default, because the path to that directory already has two private homes
+    and adding a third to widen a scope is a decision of its own. So a clean
+    result means "none of this shape here", not "no truncated evidence".
+    """
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR)
+    violations = []
+    for d in dirs:
+        for name, path in lint_py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                # house_style_violations already reports an unparseable file by
+                # name; saying it twice adds noise, not information.
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.BinOp) \
+                        or not isinstance(node.op, ast.Mod):
+                    continue
+                if not (isinstance(node.left, ast.Constant)
+                        and isinstance(node.left.value, str)):
+                    continue
+                counted, sliced, stated = {}, {}, set()
+                for operand in _mod_operands(node):
+                    counted.update(_len_keys(operand))
+                    sliced.update(_prefix_slice_keys(operand))
+                    stated.update(_remainder_keys(operand))
+                for key in sorted(counted):
+                    if key in sliced and key not in stated:
+                        violations.append((name, sliced[key],
+                                           _TRUNCATED_EVIDENCE))
+    return sorted(violations)
 
 
 # --- selftest coverage --------------------------------------------------------

@@ -187,6 +187,18 @@ def _doc_claim_payload(count):
     return "\nThe tree carries all %s of them.\n" % (count,)
 
 
+# BUILT FROM THE SLICE UP, so both rows are one sentence with one difference. The
+# body is a literal rather than a formatted string on purpose: written with `%` it
+# would be a live instance of the shape inside the prover, which is the lint's own
+# needle planted in a tree the lint walks - the mistake the two prose payloads above
+# were rewritten to stop making.
+def _truncated_payload(sliced):
+    """A probe whose one sentence counts a whole set and shows `sliced` of it."""
+    return ('\n\ndef _probe_truncated(items):\n'
+            '    return "%d thing(s): %s" % (len(items),\n'
+            '                                ", ".join(' + sliced + '))\n')
+
+
 # (lint, file, kind, anchor, payload, suite, expected case label)
 # --- naming the case a row is about -------------------------------------------
 # A row's last field names the case whose failure IS the proof, and there are two
@@ -312,6 +324,16 @@ TABLE = (
   "                self._json(200, discover(project)); return\n",
   '            if path == "/api/probe-uncalled":\n'
   "                self._json(200, {}); return\n", DEP, "pr1"),
+ # F205: a count printed over evidence that was cut. TWO ROWS FOR ONE LINT, the
+ # way the house-style and prose-number pairs are two, and for the same reason -
+ # the second spelling is one an arm of the rule could silently stop reading. The
+ # first plants the slice on the collection itself; the second wraps it, which is
+ # how three of F205's own siblings were written and is the arm that reads the
+ # names a sliced EXPRESSION mentions rather than only the whole of it.
+ ("truncated_evidence_violations", S + "_fmt.py", "after", INSTALL,
+  _truncated_payload("items[:3]"), OUT, "te11"),
+ ("truncated_evidence_violations", S + "_fmt.py", "after", INSTALL,
+  _truncated_payload("sorted(items)[:3]"), OUT, "te11"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
   _doc_claim_payload(12), DEP, "dpn0"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
@@ -635,6 +657,37 @@ ALLOW = (
  # given day is the second hatch, and this is the row that fails if it closes.
  ("prose_number_claims", S + "_output.py", "replace",
   "        if _looks_historical(scope):", "        if False:", OUT, "pn4"),
+ # F205'S TWO NARROWINGS, EACH REMOVED. Both are the F116 shape - a guard that
+ # convicts the very thing the house rule tells people to write - and both have
+ # legitimate input in the real tree, which is what makes the rows mean something.
+ #
+ # The remainder clause first: `len(X) - n` in the same sentence IS the repair, so
+ # a rule that stops crediting it reports `hooks/meter-usage.py` and
+ # `_warning_groups.py` - the two sites that were already correct before
+ # `some_of()` existed, one of which is a hook and can never reach it.
+ ("truncated_evidence_violations", S + "_output.py", "replace",
+  "                    if key in sliced and key not in stated:",
+  "                    if key in sliced:", OUT, "te8"),
+ # ...and the same-collection clause, which is F149's shape: the narrowing lives
+ # in TWO statements, because the line that REPORTS is keyed by the same property
+ # the line above it tests. Widening only the test leaves `sliced[key]` looking up
+ # a key it just stopped requiring, so the function RAISES and the suite dies
+ # before the named case runs - a mutation that proves nothing while reporting a
+ # guard proven. Measured, not assumed: written the short way first, this row came
+ # back `LABEL GONE` with a KeyError. So the anchor is the block.
+ #
+ # WEAKENED, IT CONVICTS THE REPAIRED FUNCTION FOR THE LINE BESIDE THE ONE IT
+ # REPAIRED. A count beside a slice of something ELSE is a SHA abbreviated for
+ # width, and in `_doctor_completions._check_commit_trail` that pair sits inside
+ # one sentence - which is `te7`'s fixture, copied from it.
+ ("truncated_evidence_violations", S + "_output.py", "replace",
+  "                    if key in sliced and key not in stated:\n"
+  "                        violations.append((name, sliced[key],\n"
+  "                                           _TRUNCATED_EVIDENCE))\n",
+  "                    if sliced and key not in stated:\n"
+  "                        violations.append((name, min(sliced.values()),\n"
+  "                                           _TRUNCATED_EVIDENCE))\n",
+  OUT, "te7"),
  # A file may import a sibling in a LOWER layer. Flag every edge and the legal
  # downward import - the shape most of this tree is built from - is a violation.
  ("layer_violations", S + "_deps.py", "replace",
