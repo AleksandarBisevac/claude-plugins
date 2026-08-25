@@ -198,6 +198,104 @@ def _cases(check):
               "unaskable tree carries its own limit",
               "git could not describe the tree" in "\n".join(lines))
 
+    # --- F204: did the run touch anything the work declares? --------------
+    # The third way a gate says nothing, after doing too much and doing nothing.
+    # Measured live: a UI vitest suite, two files, nine tests, all green, against
+    # a diff that was a one-value edit to a JSON manifest. Exit 0, a real
+    # NON-ZERO count, and no relationship between what ran and what changed --
+    # which is why `ranTotal` could not catch it and needed a fact of its own.
+    #
+    # REPORTED, NEVER REFUSED, and that was the operator's decision taken with
+    # both options named. The overlap comes from paths a runner HAPPENS to print,
+    # so it is a heuristic; a heuristic that refuses manufactures false refusals,
+    # and the exit code deliberately does not read it.
+    def _vitest_green(_project, _command):
+        return 0, ("\u2713 tools/ui-tests/panel.test.js (5 tests)\n"
+                   "\u2713 tools/ui-tests/report.test.js (4 tests)\n"
+                   "Test Files  2 passed (2)\n")
+
+    res = M.run_gate(tmp, [("test", "npx vitest run")], runner=_vitest_green,
+                     owns=["docs/audit/audit-plan.json"])
+    check("cv1 THE FAULT: a gate that RAN, passed, and named nothing the work "
+          "owns is reported as exactly that - the count is non-zero, so the "
+          "zero-check rule cannot see it: %r"
+          % ((res["overlap"], res["coverageBasis"]),),
+          res["failed"] == [] and res["overlap"] == []
+          and "the runner named" in res["coverageBasis"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("cv2 ...printed with its basis, and NOT refused - exit stays 0, "
+          "because refusing on a heuristic would make this script decide what a "
+          "gate may be, which its own header declines: %r" % (text[-160:],),
+          code == M.E_OK and "NO OVERLAP WITH THIS WORK" in text
+          and "the runner named" in text)
+    # THE PAIRED POSITIVE, and it is the half that matters: a renderer that
+    # printed the warning unconditionally would pass cv1 and cv2 exactly as the
+    # repair does.
+    res = M.run_gate(tmp, [("test", "npx vitest run")], runner=_vitest_green,
+                     owns=["tools/ui-tests/panel.test.js", "docs/plan.json"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("cv3 a run that DOES name a declared file says so instead, and names "
+          "which - the warning is conditional, which a warning printed on every "
+          "run would not be: %r" % ((res["overlap"], text[-120:]),),
+          code == M.E_OK
+          and res["overlap"] == ["tools/ui-tests/panel.test.js"]
+          and "NO OVERLAP" not in text and "coverage: 1 declared file" in text)
+
+    def _no_paths(_project, _command):
+        return 0, "OK\n9 tests passed\n"
+
+    res = M.run_gate(tmp, [("test", "make check")], runner=_no_paths,
+                     owns=["docs/audit/audit-plan.json"])
+    lines = []
+    M.render(res, out=lines.append)
+    check("cv4 a runner that prints NO paths yields not-knowable, never 'no "
+          "overlap' - `_porcelain`'s rule one question over, and the difference "
+          "between a measurement and a claim: %r" % (res["coverageBasis"],),
+          res["overlap"] is None
+          and "not knowable from its output" in "\n".join(lines)
+          and "NO OVERLAP" not in "\n".join(lines))
+    res = M.run_gate(tmp, [("test", "npx vitest run")], runner=_vitest_green,
+                     owns=[])
+    check("cv5 ...and work declaring no files is the same answer for the other "
+          "reason, said as itself: there is nothing to relate a run TO, which is "
+          "not the same as a run that covered nothing: %r"
+          % (res["coverageBasis"],),
+          res["overlap"] is None and "declares no files" in res["coverageBasis"])
+    check("cv6 `files_named` reads a path out of runner prose and leaves the "
+          "words alone - a grammar that swallowed `Passed` or `2` would make "
+          "every run overlap everything: %r"
+          % (sorted(M.files_named("Passed\n  src/a.ts:12 ok\n2 files\n") or []),),
+          M.files_named("Passed 9 tests ok") is None
+          and "src/a.ts" in (M.files_named("  src/a.ts:12 ok") or set()))
+
+    # --- what the manifest says the work owns -----------------------------
+    check("cv7 the phase's declaration is the UNION of its tasks' files, "
+          "de-duplicated - the phase gate is this script's actual call site, so "
+          "asking only about a named task would be a flag with no caller: %r"
+          % (M.owned_files(man, "P1"),),
+          M.owned_files(man, "P1") == ([], None))
+    _cvman = {"meta": {"version": 2},
+              "phases": [{"id": "PA", "title": "a", "status": "in_progress",
+                          "testGate": [], "tasks": [
+                              {"id": "PA.1", "files": ["x.ts", "shared.ts"]},
+                              {"id": "PA.2", "files": ["y.ts", "shared.ts"]}]}]}
+    check("cv8 ...in manifest order and without a repeat, which is what makes "
+          "the printed count a basis rather than a number: %r"
+          % (M.owned_files(_cvman, "PA"),),
+          M.owned_files(_cvman, "PA") == (["x.ts", "shared.ts", "y.ts"], None))
+    check("cv9 ...and --task narrows it to that task alone",
+          M.owned_files(_cvman, "PA", "PA.2") == (["y.ts", "shared.ts"], None))
+    _cvnone, _cverr = M.owned_files(_cvman, "PA", "PA.9")
+    check("cv10 ...while an unknown task is an ERROR rather than an empty "
+          "declaration - 'this task owns nothing' and 'there is no such task' "
+          "are two different answers, exactly as rg3 draws it for a phase: %r"
+          % (_cverr,),
+          _cvnone is None and "no task" in (_cverr or ""))
+
     # --- the empty gate is a designed state, not a pass -------------------
     mpath = os.path.join(tmp, "audit-plan.json")
     import json

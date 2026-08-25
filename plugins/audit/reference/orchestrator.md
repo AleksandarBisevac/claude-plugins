@@ -420,6 +420,17 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    task's own markdown files it then SKIPPED every hook on a Python-only config and the task
    went to `done` on a gate that verified nothing.
 
+   **`NO OVERLAP WITH THIS WORK` is a REPORT, not a refusal (F204).** The third way a gate
+   says nothing, after doing too much and doing nothing: it ran, it passed, and none of the
+   paths it printed is a file the phase's tasks declare. Measured live — a UI suite, two files,
+   nine tests, all green, against a diff that was a one-value edit to a JSON manifest. The
+   check count cannot see that, because the count was real. **Read the line before signing
+   off** and decide whether this gate can grade this work; the exit code deliberately does not
+   read it, because the overlap comes from paths a runner happens to print and a heuristic that
+   refuses manufactures false refusals. Where the runner prints no paths the line says the
+   question is not knowable from its output, which is not the same answer and is never spelled
+   like it. `--task <taskId>` narrows the question to one task.
+
    **`GATE MUTATED THE TREE` refuses the commit step regardless of the gate's exit code.** Do
    not commit on that run: the diff carries work no task owns and no review saw. Revert those
    files, then either use the read-only spelling of the check (`--check` not `--write`,

@@ -128,7 +128,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-journal.py                # the CLI over it: append/verify/show/archive
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
-          run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran
+          run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles

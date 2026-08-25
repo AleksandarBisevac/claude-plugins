@@ -34,11 +34,25 @@ depending on the model remembering holds until a session forgets, a harness runs
 a different orchestrator, or somebody adds a gate by hand next year. The bracket
 lives in code so the gate cannot be run without it.
 
-WHAT IT DOES NOT DO. It does not narrow the gate to the task's files. That is a
-change to what a per-task gate MEANS, it would alter behaviour for every manifest
-already written, and it is a decision rather than a repair -- so the refusal names
-the option and leaves the choice to a human. What this guarantees is that neither
-outcome is silent.
+  * DID IT TOUCH WHAT THE TASK OWNS? F204, and the third shape of the same
+    design. Measured live: a UI vitest suite, two files, nine tests, all green,
+    against a diff that was a one-value edit to a JSON manifest. Exit 0, a real
+    non-zero count, and no relationship between what ran and what changed. The
+    count above exists so a ZERO cannot pass for green; a non-zero count that
+    overlaps the diff nowhere is the same false verdict with better cover. The
+    paths the runner prints are intersected with the `files` the work under test
+    declares -- the phase's tasks, or one task with `--task` -- and the answer is
+    STATED.
+
+WHAT IT DOES NOT DO. It does not narrow the gate to the task's files, and the
+overlap above does not refuse -- it reports. That distinction is the whole of
+F204's decision. Narrowing changes what a per-task gate MEANS for every manifest
+already written; and the overlap is derived from paths a runner HAPPENS to print,
+which is a heuristic, and a heuristic that refuses manufactures false refusals in
+a guard people would then learn to route around. Where the runner prints no paths
+at all the answer is "not knowable from this output" and never "no overlap" --
+the same rule the check count follows, for the same reason. What this guarantees
+is that no outcome is silent.
 
 Exit codes:
   0  every command passed, the tree is unchanged, and at least one check ran
@@ -48,6 +62,7 @@ Exit codes:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -126,6 +141,76 @@ def ran_count(command, text):
     return ran
 
 
+# --- did it touch what the task owns ------------------------------------------
+# Paths as a runner prints them. Deliberately not a general path grammar: a token
+# is a candidate only if it carries a `/` or a dot-extension, which is what keeps
+# `Passed`, `9 tests` and a hook's name out of the set. Over-matching here is
+# harmless (a spurious path can only ADD overlap, and overlap is reported rather
+# than enforced) but under-matching is not, which is why the empty result is
+# reported as NOT KNOWABLE rather than as "nothing overlapped".
+_PATHISH = re.compile(r"[A-Za-z0-9_.@/\\-]*[/][A-Za-z0-9_.@/\\-]*"
+                      r"|[A-Za-z0-9_@-]+\.[A-Za-z][A-Za-z0-9]{0,8}")
+
+
+def files_named(text):
+    """The paths a runner's output mentions, POSIX-spelled, or None if it names none.
+
+    None is NOT an empty set, for `_porcelain`'s reason one function over: a
+    runner that prints no paths has told us nothing about coverage, and rendering
+    that as "none of them names a file this task owns" would be the false claim
+    this whole file exists to prevent.
+    """
+    found = set()
+    for raw in _PATHISH.findall(text or ""):
+        tok = raw.strip().strip(":,;\"'()[]").replace("\\", "/")
+        if tok and not tok.endswith("/"):
+            found.add(tok.lstrip("./"))
+    return found or None
+
+
+def coverage(task_files, named):
+    """`(overlap, basis)` -- which of the task's files the run actually named."""
+    owned = [f for f in (task_files or []) if isinstance(f, str) and f.strip()]
+    if not owned:
+        return None, ("the work under test declares no files, so there is "
+                      "nothing to relate a run to")
+    if named is None:
+        return None, ("this runner printed no file paths, so coverage is not "
+                      "knowable from its output")
+    hits = sorted(f for f in owned
+                  if any(n == f or n.endswith("/" + f) or f.endswith("/" + n)
+                         for n in named))
+    return hits, ("the runner named %d path(s); the work under test declares "
+                  "%d file(s)" % (len(named), len(owned)))
+
+
+def owned_files(manifest, phase_id, task_id=None):
+    """`(files, error)` -- what the work under test declares it owns.
+
+    Computed for the PHASE by default and not only for a named task, because the
+    phase gate is the call site this script actually has: `orchestrator.md` runs
+    it as `<manifestPath> <phaseId>` at sign-off. A `--task` that nothing invokes
+    would be a capability with no caller, which is a fact nobody reads.
+    """
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict) or phase.get("id") != phase_id:
+            continue
+        tasks = [t for t in (phase.get("tasks") or []) if isinstance(t, dict)]
+        if task_id is None:
+            seen, union = set(), []
+            for task in tasks:
+                for f in (task.get("files") or []):
+                    if f not in seen:
+                        seen.add(f)
+                        union.append(f)
+            return union, None
+        for task in tasks:
+            if task.get("id") == task_id:
+                return list(task.get("files") or []), None
+        return None, "no task %r in phase %r" % (task_id, phase_id)
+    return None, "no phase %r in this manifest" % (phase_id,)
+
+
 def gate_of(manifest, phase_id):
     """`(commands, error)` -- `[(name, command)]` for one phase's resolved gate.
 
@@ -157,7 +242,7 @@ def _shell(project, command):
     return out.returncode, out.stdout.decode("utf-8", "replace")
 
 
-def run_gate(project, commands, runner=None):
+def run_gate(project, commands, runner=None, owns=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -166,9 +251,10 @@ def run_gate(project, commands, runner=None):
     """
     runner = runner or _shell
     before = _porcelain(project)
-    steps = []
+    steps, texts = [], []
     for name, command in commands:
         code, text = runner(project, command)
+        texts.append(text or "")
         steps.append({"name": name, "command": command, "exit": code,
                       "ran": ran_count(command, text)})
     after = _porcelain(project)
@@ -179,8 +265,11 @@ def run_gate(project, commands, runner=None):
         mutated = sorted(after - before)
         basis = "git described the tree before and after"
     counts = [s["ran"] for s in steps if s["ran"] is not None]
+    named = files_named("".join(texts)) if texts else None
+    overlap, cbasis = coverage(owns, named)
     return {"steps": steps, "mutated": mutated, "treeBasis": basis,
             "ranTotal": sum(counts) if counts else None,
+            "overlap": overlap, "coverageBasis": cbasis,
             "failed": [s["name"] for s in steps if s["exit"] != 0]}
 
 
@@ -214,6 +303,22 @@ def render(res, out=print):
         code = E_FAIL
     if res["treeBasis"].startswith("git could not"):
         out("  basis: %s" % res["treeBasis"])
+    # F204. SAID, NEVER ENFORCED, and said in three distinguishable ways: the
+    # overlap is empty, the overlap is real, or the question could not be asked.
+    # The third is not the first -- see `coverage`.
+    if res.get("overlap") is None:
+        if res.get("coverageBasis"):
+            out("  coverage: %s" % res["coverageBasis"])
+    elif not res["overlap"]:
+        out("NO OVERLAP WITH THIS WORK: the gate ran, and none of the paths it "
+            "printed is a file this task owns. That is not a failure and is not "
+            "refused here - it is the third way a gate says nothing, after doing "
+            "too much and doing nothing. Decide whether this gate can grade this "
+            "work before signing it off.")
+        out("  basis: %s" % res["coverageBasis"])
+    else:
+        out("  coverage: %d declared file(s) named by the run: %s"
+            % (len(res["overlap"]), ", ".join(res["overlap"])))
     if code == E_OK:
         out("GATE GREEN: %s, tree unchanged%s"
             % (", ".join(s["name"] for s in res["steps"]) or "no commands",
@@ -228,6 +333,10 @@ def main(argv, out=print):
     p.add_argument("phase")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--json", action="store_true", dest="as_json")
+    # NARROWS the coverage question to one task. Without it the question is asked
+    # of the PHASE, which is where this script is invoked from - the live F204
+    # incident was a task-level gate, but a flag with no caller states nothing.
+    p.add_argument("--task", dest="task", default=None)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
@@ -250,9 +359,16 @@ def main(argv, out=print):
         out("[run-test-gate] %s declares an EMPTY gate: nothing here can prove it "
             "done, so sign-off rests on review alone" % (args.phase,))
         return E_OK
-    res = run_gate(project, commands)
+    owns, terr = owned_files(manifest, args.phase, args.task)
+    if terr:
+        out("[run-test-gate] %s" % terr)
+        return E_ASK
+    res = run_gate(project, commands, owns=owns)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
+        # The overlap is absent from this expression ON PURPOSE: it is reported,
+        # not enforced, and a machine reader that wants to act on it has the
+        # field. Folding it in here would make the decision this entry declined.
         return E_FAIL if (res["failed"] or res["mutated"]
                           or res["ranTotal"] == 0) else E_OK
     out("[run-test-gate] %s: %d command(s)" % (args.phase, len(commands)))
