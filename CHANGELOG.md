@@ -4,6 +4,51 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.7.0] - 2026-08-26
+
+**A minor rather than a patch, by this repo's own table**: the test-gate runner gains a flag and a new
+line of output, which is new behaviour and not only fixes.
+
+**A gate can run, pass, and cover nothing that changed.** `run-test-gate.py` already caught a gate
+that did too much (it rewrote files the task did not own and reported `Passed` *because* it had) and a
+gate that did nothing (every hook skipped, exit 0, zero checks). This is the third shape and the exit
+code separated it from neither: a UI suite ran, passed, and reported a real non-zero count — against a
+diff that was a one-value edit to a JSON manifest. The count exists so that a zero cannot pass for
+green; a non-zero count overlapping the change nowhere is the same false verdict with better cover.
+The runner's output is now related to the `files` the work under test declares, and the answer is
+**stated**: no overlap, real overlap with the files named, or the question could not be asked. Asked of
+the phase by default — that is where the script is invoked from — and `--task <taskId>` narrows it.
+
+**It reports and does not refuse**, which was a deliberate decision rather than a shortcut. Refusing
+would decide what a gate is allowed to be, which this script declines to do for itself elsewhere, and
+it would refuse on a heuristic: the overlap comes from paths a runner happens to print, and a guard
+that refuses on a guess teaches people to route around it. Where the runner prints no paths the line
+says the question is not knowable from its output — never that nothing overlapped.
+
+**The secret guard convicted a whole Bash block on evidence from two different commands inside it.**
+`guard-secrets-read` split a command into clauses on `;`, `|` and `&` — and not on a newline. So a
+multi-line block was judged as one clause: an inline-eval marker on one line paired with a write to a
+repo path on another, neither of which is a violation alone. Reduced to two lines where each half is
+allowed by itself, the pair is refused, and the same pair joined with `;` was allowed all along —
+which is what named the missing separator. Newlines are separators now. A line continuation still is
+not one, and neither is a newline inside quotes, so the remaining shape — an interpreter invocation
+and a repo path inside one quoted argument handed to another program — is still refused and is
+written down as a limit rather than left to be found again.
+
+**Two of that fix's own new cases were asserting nothing**, and only mutation found it: one credited a
+code branch that, when deleted, changed no verdict, and the other asserted a fail-safe whose result
+was produced by a different mechanism entirely. Both now assert on the splitter directly. A third
+thing turned up the same way — a backslash in a docstring opened an invalid escape sequence, whose
+`SyntaxWarning` pulled `warnings`, `linecache` and `tokenize` into a hook that must import fast. The
+hook import budget caught it; the cached bytecode then hid it from the re-measure.
+
+**`/audit:phase`'s hint now names what its verbs accept.** The same defect 1.6.0 fixed for
+`/audit:task`, in the document that fix did not touch: `add` advertised two flags against a script
+accepting eight, so an operator reading the hint could not discover the rest. The check that holds a
+hint and its script to the same set reads **both** command documents now, and it found something on
+its first run — the writer table it shares with another case had no row for the function that writes
+those fields, so the check had been quiet over the gap rather than reporting one.
+
 ## [1.6.0] - 2026-08-25
 
 **A minor rather than a patch, by this repo's own table**: `/audit:phase add` gains a flag it did not
