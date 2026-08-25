@@ -135,6 +135,10 @@ none of them is the place to start.
 **Getting it running**
 
 - [QUICKSTART](QUICKSTART.md) — install → first audited task → first report. One page.
+- [**Handbook**](https://aleksandarbisevac.github.io/claude-plugins/handbook.html) — the
+  operating guide, hosted: the model, running phases, shaping the plan, the ADO connector,
+  the panel, what the trail records, and a command reference. Written against the plugin
+  rather than any one repository, so it is the page to send a teammate
 - [Plugin README](plugins/audit/README.md) — the deep reference, once it is running:
   every command, every config key, the control panel, token usage, the audit trail
 
