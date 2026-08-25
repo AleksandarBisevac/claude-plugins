@@ -4,6 +4,63 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.6.0] - 2026-08-25
+
+**A minor rather than a patch, by this repo's own table**: `/audit:phase add` gains a flag it did not
+have, which is new behaviour and not only a fix.
+
+**A flag three verbs accepted and ignored.** `/audit:phase add --gate-clear` was taken by the shared
+parser, never read by the code that decides the new phase's gate, and the phase inherited
+`meta.buildCommands` while the caller was told the call had worked. That is the third verb of the
+exact same shape, after `task scope` and `task add` in 1.5.0. The flag is now read, the contradictory
+pair `--gate X --gate-clear` is refused rather than silently resolved, and the argument hint, the
+script's usage block and the README signature all carry it.
+
+**The check that should have caught it was asserting nothing.** It skipped any verb absent from
+`commands/task.md`, so a `commands/phase.md` verb sat outside the very check that exists because of
+the first two instances — and it then searched the writer's SOURCE TEXT for the flag's attribute,
+which the comment explaining the repair satisfies. With the read deleted outright, the case stayed
+green on prose about it. It now reads both command documents and walks the AST, so a docstring, a
+`%r` inside a message and a commented-out line no longer read as a use. `getattr(args, "…")` counts
+as a read too: without that a writer reading defensively would be convicted, and how to spell a read
+is a style question that belongs to the style lint.
+
+**A verb that could not run on the task it was written for.** `task scope` created the `tests` object
+whether or not anything was going to be put in it, so `--files` on its own left an empty one behind —
+and an absent `tests` is legal while one present without a `mode` is the single shape the schema
+refuses. Nothing was ever corrupted, because the write rolled back; the verb simply exited non-zero.
+The task this bites is exactly the one `scope` was added for: an imported sprint task whose own
+description says *scope files/tests before running* carries no `tests` key at all. It is now created
+only when something populates it, and a tests flag on a task without the object is refused **before**
+the write, naming the flag that resolves it — rather than inventing a grading nobody chose on a task
+being scoped precisely because its testing was never decided.
+
+**`/audit:doctor` counted its evidence and then cut it.** A finding named some of the tasks it had
+just counted, and the reader had no way to learn which name was dropped — the count was true the
+whole time, which is why no existing check could see it and why reviewing the count is not a
+regression test. The same run carried it twice more, in the no-SHA and ledger-coverage arms of one
+function. The sweep behind this release found it across the tree, with hand-picked caps that differ
+per site because their elements differ in WIDTH — which is what a character budget expresses and an
+element count cannot. One shared renderer replaces all of them: a realistic set is named in full, a
+pathological one still truncates with the exact remainder stated, and the first element is always
+shown, because a budget that can drop everything turns a finding into a bare number. Count the sites
+it now covers with:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.truncated_evidence_violations()))"
+```
+
+**A test was defending that bug.** One case asserted the truncated form as correct — four dead, three
+named — which is how the shape survived review. Rewritten to assert every name is present and that
+the dropped one specifically is reachable.
+
+**New lint.** Inside one `%` format: `len(X)` interpolated, a bounded prefix slice of X interpolated,
+and nothing in that format stating the remainder. The remainder is read structurally rather than by
+grepping for the words *and N more*, because the sites that were already correct spell their tail
+differently and one of them is a hook that can never import the shared renderer — a wording rule
+would have convicted a compliant site. Its blind spots are documented in the function and every one
+of them under-counts.
+
 ## [1.5.0] - 2026-08-25
 
 **A minor, not a patch, by this repo's own table**: it carries new behaviour, not only fixes. And the
