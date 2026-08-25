@@ -217,9 +217,12 @@ FIELD_HELP = {
     "journal.enabled":
         "Record every write to the plan and to this config in an append-only, "
         "hash-chained journal: who, when, what changed, and the state it left "
-        "behind. Panel saves and edit-tool writes are recorded; shell writes cannot "
-        "be, and show up instead as a document that changed with no row to explain "
-        "it. Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an "
+        "behind. Panel saves are recorded, and so is every write to the plan "
+        "whichever tool made it - a shell command inside a Bash call included, "
+        "which the hook catches by comparing the file's digest with the one it "
+        "last recorded. A write by something that is not a tool call at all still "
+        "shows up as a document that changed with no row to explain it. "
+        "Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an "
         "edited, deleted or reordered row, but nothing here can stop someone "
         "rewriting the whole file.",
     "journal.dir":

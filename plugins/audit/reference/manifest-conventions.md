@@ -282,3 +282,20 @@ append them by hand; two writers means duplicate rows and a doctor that can no l
 trust the count. `task.move` is written by `/audit:task move` via the journal CLI.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);
 spend is joined from the ledger by `taskId`.
+
+**How they come to exist, and why the tool that wrote the manifest is not part of the
+answer.** The hook keeps a pre-image of each recorded path in a per-(session, target)
+slot: a PreToolUse pass snapshots it before an edit-tool write, and the PostToolUse pass
+diffs old against new, emits the rows above, then **refreshes the slot** to the state it
+just recorded. That refresh is what makes the derivation tool-agnostic — the baseline is
+the manifest as of the last journal row, so the next change is diffable whatever made it.
+The PostToolUse pass therefore also runs on `Bash`, where it has no `file_path` to read
+and instead compares each recorded path's digest against its slot.
+
+Two limits are stated rather than discovered. A path with **no slot at all** has no
+baseline, so that pass claims nothing and seeds one instead — a row asserting a change it
+cannot see would be a claim with no basis, in the one file that exists to be trusted; the
+seed is what makes the session's next write derivable. And a path that **did** move with
+no parseable pre-image gets the generic row plus an explicit statement, in `details.reason`
+and in the summary, that the completion records were not derived — so a gap in the trail
+reads as a gap instead of as a write that moved nothing.

@@ -76,6 +76,24 @@ With Bash/Glob/Grep — never reading secrets:
    run from the **project dir**, so when `meta.gitRoot` is not `.` **prefix each with `cd <gitRoot> && `**
    (e.g. `"lint": "cd test && npx nx run-many -t lint"`). This keeps each gate self-contained and
    independent of the caller's CWD.
+
+   **A GATE MUST NOT WRITE, and a detected command cannot be assumed read-only (F193).** These
+   are read off the repo, which is a real strength and also means the candidate may be
+   fix-in-place. Measured: `lint` was drafted as `pre-commit run --all-files`; `isort` and
+   `black` rewrote five source files and reported `Passed` *because* they had, and a
+   documentation task would have carried +33/−62 of backend reformatting into its commit.
+
+   So for each candidate, **prefer the read-only spelling where one exists** and say which you
+   chose: `prettier --check` over `--write`, `ruff check` over `ruff --fix`, `black --check`
+   over `black`. Where a candidate may write and has no read-only twin — `pre-commit run`
+   without `--files`, anything carrying `--fix`, `--write`, `--in-place` — **note that beside it
+   in the proposal** so the human approving the manifest is approving a gate that may mutate,
+   not discovering it later. A gate is a measurement; one with side effects has answered a
+   different question than the one asked.
+
+   `run-test-gate.py` catches it at run time regardless — but a gate the operator was never
+   told about is a surprise the first time a phase signs off, and this is the cheaper place to
+   say it.
 4. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
 
 ### 3.5 Workspace detection (monorepo areas)

@@ -388,10 +388,30 @@ def validate_registry(areas, where="meta.areas"):
                             % (awhere, type(rs).__name__))
         skills = entry.get("skills")
         if "skills" in entry:
-            if not isinstance(skills, list):
-                findings.append("%s.skills: must be an array of skill names, got %s"
+            # F203. `null` IS LEGAL HERE and this branch was the only reader that
+            # said otherwise. The schema permits it and documents WHY -- "allowed
+            # for symmetry with task.skills and EQUIVALENT to []: the area is
+            # itself the fallback, so there is nothing beneath it for a null to
+            # stop" -- and `resolve_skills` already treats the two identically,
+            # measured. So the schema, the resolver and this validator were three
+            # readers of one rule with one of them out of step, and CI runs both
+            # the schema (ajv) and this: a manifest carrying it passed one gate and
+            # failed the other.
+            #
+            # The intended shape is two lines up, on `reviewSkill`: `is not None
+            # and not isinstance(...)`. This branch simply omitted the first half.
+            # Narrowing the SCHEMA instead would have removed a published spelling,
+            # which COMPATIBILITY.md makes a major release - for a value nothing
+            # ships and no reader needed changed.
+            if skills is not None and not isinstance(skills, list):
+                findings.append("%s.skills: must be an array of skill names or "
+                                "null, got %s"
                                 % (awhere, type(skills).__name__))
-            else:
+            elif isinstance(skills, list):
+                # `elif isinstance`, not `else`: with `None` now legal above, a
+                # bare `else` iterates it and the VALIDATOR crashes - which is
+                # worse than the finding this repair removed. Caught by driving
+                # the validator rather than by reading the branch.
                 bad = [s for s in skills if not isinstance(s, str) or not s.strip()]
                 if bad:
                     findings.append("%s.skills: every entry must be a non-empty skill "

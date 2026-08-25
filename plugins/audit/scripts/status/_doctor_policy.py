@@ -345,6 +345,108 @@ def check_branch_naming(rep, project, manifest, git_root):
                      % (parent, dev))
 
 
+def check_plan_skills(rep, project, manifest, _discover=None):
+    """Do the skills this plan NAMES resolve on this machine?
+
+    F195. `meta.reviewSkill`, `meta.areas[*].skills` and `task.skills` name skills
+    by string and nothing verified any of them. Measured live: a manifest carried
+    `meta.reviewSkill: "code-review-and-quality"` - a hand-placed SKILL.md in
+    `~/.claude/skills/`, in no marketplace, so no command can install it. On the
+    machine that wrote the manifest it resolves; on a teammate's checkout it does
+    not, and phase sign-off would run with no reviewer. `doctor` printed nineteen
+    OK rows and never mentioned it.
+
+    THE INCONSISTENCY IS THE FINDING, not the missing check. `check_build_commands`
+    already grades exactly this class one dependency over - "runner not on PATH
+    here: lint (pre-commit) - that gate cannot run on this machine". A gate whose
+    runner is absent and a reviewer whose skill is absent are the same shape: a
+    manifest-declared, machine-local dependency the plan cannot satisfy here. One
+    got a warning naming the runner; the other got silence.
+
+    WARNING, NEVER A FINDING, for the reason spelled out beside the runner row: a
+    skill absent on THIS machine is not a defect in the repo, and calling it one
+    would fail a build over a correct observation.
+
+    AND AN UNSCANNABLE INVENTORY IS SAID, NOT PASSED. A scan that raised, or one
+    that found nothing at all, cannot answer the question - a working scan always
+    sees audit's own plugin tree, so an empty inventory means the scanner is
+    broken. Reporting that as "every skill resolves" is the house rule's own
+    counter-example: when the basis is missing, that is the thing to say.
+
+    The name checked is the EFFECTIVE one, resolved through `_areas` exactly as
+    `check_policy` resolves it, so an area default is judged as it will apply.
+    """
+    if not manifest:
+        return
+    ar = _load("_areas", "_areas.py")
+    wanted = []
+    seen = set()
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        pid = phase.get("id") or "?"
+        skill, _basis = ar.resolve_review_skill(manifest, phase)
+        if skill:
+            wanted.append(("%s review skill" % pid, skill))
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict):
+                continue
+            for name in ar.resolve_skills(manifest, phase, task):
+                wanted.append(("%s skill" % (task.get("id") or pid), name))
+    # One row per NAME, not per reference: a review skill inherited by nineteen
+    # phases is one thing to install, and nineteen identical lines is the wall
+    # `_warning_groups` exists to stop.
+    named = []
+    for where, name in wanted:
+        if name not in seen:
+            seen.add(name)
+            named.append((where, name))
+    if not named:
+        rep.ok("skills", "the plan names no skills, so there is nothing to "
+                         "resolve here")
+        return
+
+    try:
+        scan = _discover or _load("_panel_discovery",
+                                  "_panel_discovery.py").discover
+        found = scan(project)
+    except Exception as exc:
+        rep.warn("skills",
+                 "could not scan for skills (%s), so whether the %d name(s) this "
+                 "plan uses resolve here is UNKNOWN - not confirmed"
+                 % (exc, len(named)),
+                 "run `audit-status.py <manifest> --json --discovery` to see what "
+                 "this machine can find")
+        return
+    have = set()
+    if isinstance(found, dict):
+        for entry in (found.get("skills") or []):
+            if isinstance(entry, dict) and entry.get("name"):
+                have.add(entry["name"])
+    if not have:
+        rep.warn("skills",
+                 "the skill inventory came back EMPTY, which a working scan "
+                 "never is - audit ships its own skills - so whether the %d "
+                 "name(s) this plan uses resolve here is UNKNOWN"
+                 % (len(named),),
+                 "run `audit-status.py <manifest> --json --discovery`; an empty "
+                 "inventory is a broken scan, not a machine with no skills")
+        return
+    missing = ["%r (%s)" % (name, where) for where, name in named
+               if name not in have]
+    if missing:
+        rep.warn("skills",
+                 "named by the plan but not resolvable here: %s"
+                 % ", ".join(missing),
+                 "install or place the skill if you intend to run phases here; a "
+                 "review skill that does not resolve means sign-off runs with no "
+                 "reviewer")
+    else:
+        rep.ok("skills",
+               "all %d skill(s) the plan names resolve on this machine"
+               % len(named))
+
+
 def check_build_commands(rep, project, manifest):
     """Do the runners named in meta.buildCommands exist?
 

@@ -15,7 +15,7 @@ Usage:
                 [--skills a,b | --skills null] [--model m] [--files f1,f2]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT] [--tests-mode tdd|regression|gate-only]
-                [--tests-add TEXT ...] [--gate CMD ...]
+                [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>"
                 [--id P7] [--description TEXT] [--area a,b] [--gate CMD ...]
@@ -23,9 +23,10 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py scope <taskId> [manifest] --files f1,f2
+  audit-task.py scope <taskId> [manifest] [--files f1,f2]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
-                [--gate CMD ...] [--description TEXT]
+                [--gate CMD ... | --gate-clear] [--description TEXT]
+                [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
                 [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT]
@@ -40,6 +41,12 @@ Usage:
   means "unconsidered" and is written as [] (the area default stays in
   force). A skill literally named "null" cannot be spelled from this flag;
   no such skill exists. --tests-add and --gate repeat (one value each).
+  --risk, --blocked-by and --depends-on reach `scope` as well as `add`
+  (F199): the same three fields `_build_task` sets at creation, correctable
+  afterwards under the same pending-and-never-attempted guard. They need no
+  `--clear` twin -- `--blocked-by ""` empties the field, because a comma
+  list of IDS has no value that reads as content the way `--gate ""` reads
+  as an empty COMMAND, and `retarget --area ""` already draws that line.
 
 Exit codes:
   0  written, manifest valid
@@ -190,6 +197,71 @@ def _parse_skills(val):
     if val.strip() == "null":
         return None
     return _split_csv(val)
+
+
+# --- the refusals and report lines more than one verb spends ------------------
+# Not a "helpers" pile: each of these exists because TWO call sites would
+# otherwise spell one fact, and the file already carries a note about what that
+# costs (`_journal_row`: two verbs, two drifted copies, neither visible from the
+# row that was written).
+def _gate_contradiction(args):
+    """The refusal line for `--gate` with `--gate-clear`, or None.
+
+    ONE SENTENCE, THREE VERBS. `add`, `scope` and `retarget` all take both flags
+    off the same global parser and the rule is one rule about one field: two
+    answers to one question, and guessing which the caller meant is how a task
+    ends up gated on a command nobody asked for. `scope` and `retarget` each
+    carried their own copy of the sentence; `add` needed a third when it learned
+    to read the flag (F201), and three copies of a refusal is how one of them
+    eventually stops matching the other two.
+
+    Every caller asks it in the SAME POSITION -- under the lock, after the target
+    has been resolved and before anything is mutated -- so the order a caller
+    meets its refusals in does not depend on which verb it typed.
+    """
+    if args.gate and args.gate_clear:
+        return ("[audit-task] --gate and --gate-clear say opposite things about "
+                "the same field -- pass one")
+    return None
+
+
+def _model_floor(risk):
+    """The model `add` derives for a task at `risk` when the caller names none.
+
+    ONE HOME for the escalation rule (`commands/task.md`: sonnet is the floor for
+    all fix work, `risk: high` escalates to opus unless the caller chose). It is
+    a function rather than an inline conditional because `scope --risk` has to be
+    able to SAY that it did not re-apply it, and two spellings of "high means
+    opus" would be two answers about what a rescoped task runs on.
+    """
+    return "opus" if risk == "high" else "sonnet"
+
+
+def _empty_task_gate_note(now):
+    """What an empty `tests.gate` MEANS, said once for the two verbs that reach it.
+
+    `reference/orchestrator.md` has the executor run `task.tests.gate` and phase
+    sign-off run `phase.testGate`, so an emptied task gate is not an ungraded
+    task -- and silence over a designed state reads as breakage, which is why
+    both verbs say it. The tense is the ONLY difference between the call sites:
+    `scope` reports a change and `add` reports the state a creation arrived in.
+    The explanation after it is one fact and is not spelled twice.
+    """
+    return ("  the gate is %sEMPTY: this task runs no gate command of its own, "
+            "and the phase's testGate at sign-off is what still grades it"
+            % ("now " if now else "",))
+
+
+def _readiness_lines(waiting, tid):
+    """The sentences `add` and `scope` both print about whether a task can run now.
+
+    Shared because the `/audit:run <id>` handoff is a spelling a reader COPIES,
+    and a second copy of it is the shape this repo's own cautionary tale is about
+    (one formatter, three implementations, two of them disagreeing).
+    """
+    if waiting:
+        return ["  waiting on: %s" % ", ".join(waiting)]
+    return ["  ready now -- /audit:run %s" % tid]
 
 
 # --- project resolution --------------------------------------------------------
@@ -604,10 +676,20 @@ def _build_task(task_id, title, args, phase):
     risk = args.risk or "low"
     # sonnet is the floor for all fix work; risk high escalates to opus unless
     # the caller chose explicitly (commands/task.md's long-standing rule).
-    model = args.model or ("opus" if risk == "high" else "sonnet")
+    model = args.model or _model_floor(risk)
     mode = args.tests_mode or "gate-only"
     if args.gate:
         gate = list(args.gate)
+    elif args.gate_clear:
+        # F201. The flag is defined globally, so argparse ACCEPTED it here and
+        # nothing read it: `add --gate-clear` reported success and wrote the
+        # phase's `testGate` anyway. A flag accepted and ignored is the defect
+        # F196 was one verb over -- the operator is told the call succeeded and
+        # the value they asked for is not there. The empty gate is a designed
+        # state (`_phase_gate`, and `scope --gate-clear` for a task that already
+        # exists); creation is where the COPY of the phase gate is made, so it is
+        # the one place a task could not be given the state without a rescope.
+        gate = []
     else:
         gate = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
     return {
@@ -668,6 +750,14 @@ def _locked_add(args, project, config, mpath, title, out):
         return phase
     phase_id = phase.get("id")
 
+    # F201: `add` reads `--gate-clear` now, so it owes the same refusal the other
+    # two verbs give -- asked HERE, in their position: after the target is
+    # resolved and before the first mutation.
+    contradiction = _gate_contradiction(args)
+    if contradiction:
+        out(contradiction)
+        return E_USAGE
+
     task_id = _allocate_id(assembled, phase_id)
     task = _build_task(task_id, title, args, phase)
     missing = [f for f in task["files"]
@@ -722,6 +812,15 @@ def _locked_add(args, project, config, mpath, title, out):
     out("  tests.mode %s  model %s  risk %s  skills %s"
         % (task["tests"]["mode"], task["model"], task["risk"],
            json.dumps(task["skills"])))
+    if not task["tests"]["gate"]:
+        # `scope`'s and `retarget`'s rule at the third write site: an empty gate is
+        # a designed state and silence over it reads as breakage. It is printed off
+        # the STATE here rather than off a change, because a creation has no prior
+        # state to have moved from - and it fires whether the empty gate came from
+        # `--gate-clear` or was inherited from a phase that has none, since a
+        # reader of the report cares which state the task is in and not which
+        # route reached it.
+        out(_empty_task_gate_note(False))
     if task["files"]:
         out("  files: %d (fileIndex updated)" % len(task["files"]))
     for fpath in missing:
@@ -737,10 +836,8 @@ def _locked_add(args, project, config, mpath, title, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.add row")
     out("  written: %s" % ", ".join(written))
-    if waiting:
-        out("  waiting on: %s" % ", ".join(waiting))
-    else:
-        out("  ready now -- /audit:run %s" % task_id)
+    for line in _readiness_lines(waiting, task_id):
+        out(line)
     return 0
 
 
@@ -1225,6 +1322,45 @@ def _locked_scope(args, project, config, mpath, tid, out):
     PENDING ONLY. A task that has started or finished has a scope its attempts
     were judged against, and rewriting that retroactively changes what the gate
     allowed while the work was done. `cancel`'s rule, for `cancel`'s reason.
+
+    THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO (F196), for a reason that is NOT
+    `retarget`'s. That verb appends to `testGate`, so the append itself left the
+    empty gate unspellable; this one REPLACES `tests.gate` outright. The gap is
+    in the values: no `--gate` VALUE says "none" - `--gate ""` writes a gate
+    holding an empty command, which is a gate that cannot run rather than the
+    absence of one. Measured live: a phase retargeted to `testGate: []` because
+    nothing in this repo could grade its remaining work left its pending tasks
+    holding the `["lint"]` they had inherited at creation, and the only routes to
+    the state the phase had just reached were a rescope mid-run or the hand edit
+    `commands/task.md` forbids.
+
+    RISK, BLOCKEDBY AND DEPENDSON REACH IT TOO (F199), and they were the three
+    fields of the new-task template that NOTHING could correct: `add` sets them,
+    the panel's composition card reaches `model` and `skills` instead, and this
+    verb reached the other five. Measured live: a task filed
+    `--depends-on P0.3,P0.4` against tasks parked behind a missing environment,
+    where shipping the describable half meant removing one id -- and the only
+    route was `cancel` plus a fresh `add`, losing the id, the journal continuity
+    and the description somebody wrote. `risk` is the sharpest of the three: it
+    feeds the executor's model floor and whether a commit needs confirmation, it
+    is a judgement made BEFORE the work was looked at, and it is the one field
+    here where being wrong has a consequence at run time.
+
+    NO `--depends-on-clear` FAMILY, and the asymmetry with `--gate-clear` is the
+    reason rather than an oversight. `--gate` takes COMMANDS, where `""` is a
+    legal-if-useless value and so cannot double as "none"; `--blocked-by` and
+    `--depends-on` take a comma list of IDS, where no id is the empty string, so
+    `--blocked-by ""` says exactly one thing. `retarget --area ""` already draws
+    that line for a CSV field and reads it with `is not None`, which is what the
+    guard above does. `risk` needs no clear either: the template always carries
+    one and the schema's `null` is for historical tasks, not for a live task
+    somebody just re-judged.
+
+    IT DOES NOT RE-DERIVE `model`. `_build_task` floors the model off risk at
+    creation, so a rescope to `high` leaves a task at sonnet -- which the report
+    SAYS, because `model` belongs to `/audit:panel` and `add --model`, and a
+    second writer of it here would journal a change the caller did not ask for
+    while silently overruling one they had.
     """
     try:
         raw_index = _mio.read_json(mpath)
@@ -1263,20 +1399,49 @@ def _locked_scope(args, project, config, mpath, tid, out):
             % (tid, node.get("attempts")))
         return E_USAGE
 
+    contradiction = _gate_contradiction(args)
+    if contradiction:
+        out(contradiction)
+        return E_USAGE
     files = _split_csv(args.files)
+    # `is None` for the two ID-LIST flags and not truthiness, because an EMPTY
+    # value of either is an instruction rather than an absence: `--depends-on ""`
+    # is how the field is emptied, which is `retarget --area ""`'s spelling and
+    # the reason F199 needed no `--depends-on-clear` twin.
     if not files and args.tests_mode is None and not args.tests_add \
-            and not args.gate and not args.description:
+            and not args.gate and not args.gate_clear and not args.description \
+            and args.risk is None and args.blocked_by is None \
+            and args.depends_on is None:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
-            "--tests-add / --gate / --description) -- a scope call that changes "
-            "nothing is a lock taken for no reason")
+            "--tests-add / --gate / --gate-clear / --description / --risk / "
+            "--blocked-by / --depends-on) -- a scope call that changes nothing "
+            "is a lock taken for no reason")
         return E_USAGE
 
     was_files = list(node.get("files") or [])
+    # F197. READ BEFORE ANY WRITE, and that ordering IS the repair rather than a
+    # tidier spelling: the `tests.add` and `tests.gate` branches below write the
+    # field first and append the journal row second, so reading it inside the
+    # branch would read back the value just written and record `from == to`. Both
+    # rows used to carry a literal `None`, which made a verifying, genuine row
+    # attest a prior state the task never had - `was_files` and `was_desc` were
+    # already right, which is how the two got missed.
+    prior_tests = node.get("tests")
+    prior_tests = prior_tests if isinstance(prior_tests, dict) else {}
+    was_gate = list(prior_tests.get("gate") or [])
+    was_add = list(prior_tests.get("add") or [])
     changes = []
     if files:
+        # F202. F197's class one field over, and not named by that entry: the row
+        # went in under a bare `if files:`, so re-scoping to the list the task
+        # already held printed and journaled `files: [...] -> [...]`. The chain
+        # verifies and the row attests a change that never happened, which is what
+        # a reader counting "who changed this task's scope, and when" counts. The
+        # three sibling fields below already compared; this is that comparison.
+        if was_files != files:
+            changes.append({"id": tid, "field": "files",
+                            "from": was_files, "to": files})
         node["files"] = files
-        changes.append({"id": tid, "field": "files",
-                        "from": was_files, "to": files})
     tests = node.get("tests")
     if not isinstance(tests, dict):
         tests = node["tests"] = {}
@@ -1289,19 +1454,43 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # disagree about what `expectRedFirst` means.
         tests["expectRedFirst"] = args.tests_mode == "tdd"
     if args.tests_add:
-        tests["add"] = list(args.tests_add)
-        changes.append({"id": tid, "field": "tests.add",
-                        "from": None, "to": list(args.tests_add)})
-    if args.gate:
-        tests["gate"] = list(args.gate)
-        changes.append({"id": tid, "field": "tests.gate",
-                        "from": None, "to": list(args.gate)})
+        now_add = list(args.tests_add)
+        if was_add != now_add:
+            changes.append({"id": tid, "field": "tests.add",
+                            "from": was_add, "to": now_add})
+        tests["add"] = now_add
+    if args.gate or args.gate_clear:
+        now_gate = [] if args.gate_clear else list(args.gate)
+        if was_gate != now_gate:
+            changes.append({"id": tid, "field": "tests.gate",
+                            "from": was_gate, "to": now_gate})
+        tests["gate"] = now_gate
     if args.description:
         was_desc = node.get("description") or ""
         if was_desc != args.description:
             changes.append({"id": tid, "field": "description",
                             "from": was_desc, "to": args.description})
         node["description"] = args.description
+    if args.risk is not None:
+        was_risk = node.get("risk")
+        if was_risk != args.risk:
+            changes.append({"id": tid, "field": "risk",
+                            "from": was_risk, "to": args.risk})
+        node["risk"] = args.risk
+    # ONE LOOP FOR THE TWO REF LISTS. They are the same field twice over -- a
+    # comma list of ids, replaced outright, empty spelled by an empty value -- and
+    # two blocks of it is how the pair would come to disagree about whether an
+    # empty value means "empty it" or "leave it".
+    for raw_refs, field in ((args.blocked_by, "blockedBy"),
+                            (args.depends_on, "dependsOn")):
+        if raw_refs is None:
+            continue
+        was_refs = list(node.get(field) or [])
+        now_refs = _split_csv(raw_refs)
+        if was_refs != now_refs:
+            changes.append({"id": tid, "field": field,
+                            "from": was_refs, "to": now_refs})
+        node[field] = now_refs
     if not changes:
         out("[audit-task] %s already reads that way -- nothing written" % (tid,))
         return 0
@@ -1320,6 +1509,15 @@ def _locked_scope(args, project, config, mpath, tid, out):
         entry = fidx.setdefault(fpath, [])
         if tid not in entry:
             entry.append(tid)
+
+    # F197's adjacent half. The report line below used to print unconditionally,
+    # including when `--files` was absent and the re-derivation was a no-op over
+    # an unchanged list - read live it said work had been dropped when none had.
+    # These two ARE the derivation's outcome: `fidx` gains a row for every path
+    # in `claimed` and loses this task from every path in `released`, so empty
+    # both ways is an index the loop above rewrote byte for byte.
+    released = [f for f in was_files if f not in (node.get("files") or [])]
+    claimed = [f for f in (node.get("files") or []) if f not in was_files]
 
     missing = [f for f in (node.get("files") or [])
                if not os.path.exists(os.path.join(project, f))]
@@ -1344,10 +1542,15 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_INVALID
 
     jres = _journal_scope(project, config, mpath, tid, phase_id, changes)
+    # F199's payoff, and the reason it is computed unconditionally: the live case
+    # was a task parked behind a `dependsOn` id, rescoped precisely so it could
+    # run. "Can it run now" is the question that call was asking.
+    waiting = _waiting_on(assembled, node)
     if args.as_json:
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
-                  "filesNotOnDisk": missing, "warnings": warnings}
+                  "filesNotOnDisk": missing, "warnings": warnings,
+                  "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
@@ -1355,9 +1558,42 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
-    out("  fileIndex re-derived (files this task no longer claims are released)")
+    if (node.get("tests") or {}).get("gate") == [] \
+            and any(row["field"] == "tests.gate" for row in changes):
+        # `retarget`'s empty-gate line, and the MEANING differs so the sentence
+        # does: `reference/orchestrator.md` has the executor run `task.tests.gate`
+        # and phase sign-off run `phase.testGate`, so an emptied task gate means
+        # this task runs none of its own and the phase's is what still grades it.
+        # Silence would leave a designed state to read as breakage.
+        out(_empty_task_gate_note(True))
+    if released:
+        out("  fileIndex re-derived -- released by this task: %s"
+            % ", ".join(released))
+    elif claimed:
+        out("  fileIndex re-derived -- now claimed by this task: %s"
+            % ", ".join(claimed))
     for fpath in missing:
         out("  note: not on disk (a new file?): %s" % fpath)
+    risk_rows = [row for row in changes if row["field"] == "risk"]
+    if risk_rows and node.get("model") != _model_floor(risk_rows[0]["to"]):
+        # THE BASIS FOR A NON-CHANGE. `add` derives the model from risk when the
+        # caller names none, so a rescope that moves risk and leaves the model
+        # where it is diverges from a documented rule -- and silence there would
+        # let an operator who raised risk to high believe the executor had been
+        # escalated with it. Printed only when the two actually disagree: a
+        # rescope whose risk implies the model already on the task has nothing to
+        # explain.
+        out("  the model stays %s -- `add` derives it from risk at creation "
+            "(risk %s would derive %s) and scope does not, because `model` is "
+            "the field /audit:panel and `add --model` own"
+            % (node.get("model"), risk_rows[0]["to"],
+               _model_floor(risk_rows[0]["to"])))
+    if any(row["field"] in ("blockedBy", "dependsOn") for row in changes):
+        # Only when a REF field moved. Readiness is what those two fields decide,
+        # and printing it after a call that touched neither would be a claim about
+        # something this call did not look at.
+        for line in _readiness_lines(waiting, tid):
+            out(line)
     for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
         out("WARNING: " + line)
     if not jres.get("journaled"):
@@ -1416,11 +1652,9 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "attested" % (pid, node.get("status")))
         return E_USAGE
 
-    if args.gate and args.gate_clear:
-        # Two answers to one question, and guessing which the caller meant is how
-        # a phase ends up with a gate nobody asked for. The whole fault.
-        out("[audit-task] --gate and --gate-clear say opposite things about the "
-            "same field -- pass one")
+    contradiction = _gate_contradiction(args)
+    if contradiction:
+        out(contradiction)
         return E_USAGE
     if not (args.gate or args.gate_clear or args.area is not None
             or args.outcome or args.description):
@@ -1597,9 +1831,13 @@ def main(argv, out=print):
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
-    # retarget only. `--gate` APPENDS, so without an explicit clear there is
-    # no spelling for the empty gate - which `_phase_gate` documents as a
-    # designed state and is exactly what a wrongly-guessed gate needs.
+    # `retarget` AND `scope`, and the two need it for different reasons that
+    # reach the same state. On a phase `--gate` APPENDS, so without an explicit
+    # clear there is no spelling for the empty gate at all; on a task `--gate`
+    # replaces, and the gap is that no VALUE of it spells "none" - `--gate ""`
+    # writes a gate holding an empty command, which is a gate that cannot run
+    # rather than the absence of one. `_phase_gate` documents the empty gate as
+    # a designed state, and it is what a wrongly-guessed gate needs.
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
     p.add_argument("--project-dir", dest="project_dir", default=None)

@@ -246,6 +246,50 @@ def _cases(check):
           "the ledger whether the identity exists; that is the doctor's question",
           not f and not w, repr((f, w)))
 
+    # --- F203: `skills: null` on an AREA -------------------------------------
+    # THREE READERS OF ONE RULE, one of them out of step. The schema permits null
+    # and documents why -- "allowed for symmetry with task.skills and EQUIVALENT
+    # to []: the area is itself the fallback, so there is nothing beneath it for a
+    # null to stop" -- and `resolve_skills` already treats the two identically.
+    # This validator refused it, and CI runs BOTH the schema (ajv) and this: a
+    # manifest carrying it passed one gate and failed the other. Found by a live
+    # run that hit the refusal and then mis-cited the convention doc to explain
+    # it, which is what a rule with two answers does to a reader.
+    #
+    # The intended shape was two lines up all along: `owner` and `reviewSkill`
+    # both write `is not None and not isinstance(...)`. This branch omitted the
+    # first half.
+    f, w = M.validate_registry({"api": {"root": "a", "skills": None}})
+    check("o12 an explicit null skills list is legal and quiet, exactly as the "
+          "schema publishes it - narrowing the SCHEMA instead would have removed "
+          "a documented spelling, which COMPATIBILITY.md makes a MAJOR release: "
+          "%r" % ((f, w),),
+          not f and not w)
+    check("o13 ...and null RESOLVES the way the schema says it does, contributing "
+          "nothing - the validator accepting it would be worth little if the "
+          "resolver disagreed, and this is the pair that says they do not",
+          M.resolve_skills(
+              {"meta": {"areas": {"a": {"skills": None}}}},
+              {"id": "P1", "area": "a"}, {"id": "P1.1", "skills": ["own"]})
+          == M.resolve_skills(
+              {"meta": {"areas": {"a": {"skills": []}}}},
+              {"id": "P1", "area": "a"}, {"id": "P1.1", "skills": ["own"]}))
+    # THE REGRESSION MY OWN REPAIR NEARLY SHIPPED. Letting null past the type
+    # check sent it into the per-entry loop, which iterated it and raised
+    # TypeError - a validator that CRASHES, which is worse than the finding the
+    # repair removed. Caught by driving the validator, not by reading the branch.
+    f, w = M.validate_registry({"api": {"root": "a", "skills": [1, ""]}})
+    check("o14 a malformed skills ENTRY is still a finding, so the null path did "
+          "not disable the per-entry check on its way through - the branch is "
+          "`elif isinstance(...)` and not a bare `else` for exactly this reason: "
+          "%r" % (f,),
+          len(f) == 1 and "skills" in f[0] and "non-empty" in f[0])
+    f, w = M.validate_registry({"api": {"root": "a", "skills": "conv"}})
+    check("o15 ...and a non-list, non-null skills value is STILL refused, naming "
+          "both legal spellings - the paired negative, since a check that simply "
+          "stopped refusing would pass o12 exactly as the repair does: %r" % (f,),
+          len(f) == 1 and "skills" in f[0] and "null" in f[0])
+
     # --- (n) declared non-string reviewSkill values (v0.36 A5) -------------------
     # The validator flags `reviewSkill: 3` as a finding; resolution must not hand
     # the raw junk to display surfaces meanwhile — it reached the panel as the

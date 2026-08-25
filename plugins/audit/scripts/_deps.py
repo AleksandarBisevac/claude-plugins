@@ -516,6 +516,13 @@ LAYERS = (
      # Bash, and a `python3 -c` naming a source path is the shape
      # `guard-secrets-read` refuses (F20/F22).
      "verify-invariants",
+     # `run-test-gate` (F193) is the same shape one step earlier: a door the
+     # orchestrator PROSE reaches through Bash, doing the thing prose cannot be
+     # trusted to remember. It brackets a phase's gate with a working-tree
+     # snapshot and reads how many checks actually ran, because a gate that
+     # rewrote five files and a gate that skipped every hook were both exit 0 and
+     # neither was distinguishable from a verdict.
+     "run-test-gate",
      # `set-priority` is the writer behind `/audit:phase priority`: one integer on
      # the index stub, under the index lock, revalidated. A command rather than a
      # prose instruction because the rule it enforces (tier 1 is unique, and a

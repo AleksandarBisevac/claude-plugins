@@ -361,8 +361,9 @@ report, because `git switch -c` is about to fail anyway.
           describes. One file per writer per month, so parallel phases never conflict on it. If
           `journal.enabled` is false there is nothing there and nothing to stage.
         - **Completion rows are hook-emitted.** The `journal-writes` hook derives `task.complete`,
-          `task.commit` and `phase.signoff` rows from your manifest edits — NEVER append those
-          actions by hand (two writers means duplicate rows and a doctor that cannot trust the count).
+          `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
+          a shell command inside a `Bash` call included — NEVER append those actions by hand (two
+          writers means duplicate rows and a doctor that cannot trust the count).
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
@@ -404,8 +405,30 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
    general-purpose subagent with the same rules if the agent type is unavailable. **If the resolved review skill is
    null**, skip this step — tests are the signer.
-2. **`testGateGreen`** — run the full `phase.testGate` (run `meta.nodePreamble` first, un-piped, if set). All commands
-   must pass **after** any review-driven changes. Tests are the final signer. Surface manual items as human action items.
+2. **`testGateGreen`** — run the gate **through the script**, not by hand:
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> <phaseId>
+   ```
+   (run `meta.nodePreamble` first, un-piped, if set). All commands must pass **after** any
+   review-driven changes. Tests are the final signer. Surface manual items as human action items.
+
+   **It brackets the gate, and that is why it is a script (F193).** A gate is a MEASUREMENT.
+   Exit 1 means one of three things and the output says which: a command failed, the gate
+   **changed the working tree**, or **nothing actually ran**. Both of the last two were exit 0
+   before this existed — a `pre-commit run --all-files` gate on a docs task rewrote five backend
+   files and reported `Passed` *because* `isort` and `black` are fix-in-place; narrowed to the
+   task's own markdown files it then SKIPPED every hook on a Python-only config and the task
+   went to `done` on a gate that verified nothing.
+
+   **`GATE MUTATED THE TREE` refuses the commit step regardless of the gate's exit code.** Do
+   not commit on that run: the diff carries work no task owns and no review saw. Revert those
+   files, then either use the read-only spelling of the check (`--check` not `--write`,
+   `ruff check` not `ruff --fix`) or `/audit:phase retarget <phaseId> --gate <read-only entry>`.
+
+   **`NO CHECK RAN` is not green.** A gate that skipped everything and a gate that verified
+   everything are the same exit code; only the count separates them, and only runners that
+   report one can be counted — where the count is unknowable the script says so rather than
+   filling it in.
 3. **`invariantsChecked`** — run, from the project directory and **before** the branch is deleted in
    step 5e (deleting it takes with it the reflog this reads):
    ```

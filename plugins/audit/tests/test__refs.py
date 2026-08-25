@@ -2015,6 +2015,20 @@ def _cases(check):
     # THE NEEDLE MUST REACH THE FOURTH DOC, and a flag-only one did not: `bug
     # close` records "a one-line `notes` justification" and names no flag, so the
     # census read three docs and treated the fourth as having nothing to discharge.
+    # A MENTION IS NOT A STATEMENT, and this is the case that says so. The needle
+    # started as the bare words and `commands/task.md` then grew an ordinary
+    # cross-reference in prose - useful writing, not a rule being stated - which
+    # alone discharged the check: deleting the real directive left the file
+    # passing, and the mutation harness is what found it. Counted against the
+    # DIRECTIVE, so a doc that only points at the rule elsewhere still owes it.
+    check("vb4 the pointer is the BOLDED directive, so a doc that merely mentions "
+          "the rule in prose has not stated it - the count-do-not-merely-find "
+          "trap, caught here by a mutation rather than by reading: %r"
+          % (M.VERBATIM_POINTER,),
+          M.VERBATIM_POINTER.startswith("**")
+          and M.VERBATIM_POINTER.endswith("**")
+          and "words go in VERBATIM" in M.VERBATIM_POINTER)
+
     check("vb3 the census reaches a doc that gathers the text WITHOUT naming a "
           "flag - counted, because a needle that quietly covered three of four "
           "would report a clean sheet over the one it could not see: %r"
@@ -2220,6 +2234,186 @@ def _cases(check):
     check("pv13 ...and the `/audit:task` row sends new work to the phase spelling "
           "instead of teaching the old one",
           _PRD.count("`/audit:phase priority <phaseId> <tier\\|--clear>`") > 0)
+
+    # --- F198: the hint is the only view a caller gets of the interface --------
+    # Measured live: an operator holding a whole task specification - files, gate,
+    # risk, tests-mode, description - asked whether to paste it as the command,
+    # because the hint advertised `--phase` and nothing else while the script took
+    # eleven write flags for `add`. Five tasks were about to be created through
+    # rounds of `AskUserQuestion` each, and every question that did not need
+    # asking is another chance to PARAPHRASE a value the caller had already
+    # decided, which is the defect F191 fixed for `--reason`.
+    #
+    # DERIVED FROM THE SCRIPT'S OWN USAGE BLOCK, never a list kept here - `pv5`'s
+    # rule, applied per verb. The flags common to EVERY verb are the global ones
+    # by construction, so nothing has to be declared global by hand and a new
+    # global does not have to be added in two places.
+    _at_src = ""
+    try:
+        with open(os.path.join(M.REPO_ROOT,
+                               M.PLUGIN_REL.replace("/", os.sep),
+                               "scripts", "manifest", _AT_BASE),
+                  "r", encoding="utf-8") as _fh:
+            _at_src = _fh.read()
+    except (OSError, UnicodeDecodeError):
+        _at_src = ""
+    _at_parser = set(re.findall(r'add_argument\(\s*"(--[a-z][a-z-]*)"', _at_src))
+
+    def _usage_flags(src):
+        """`(per_verb, common)` off `audit-task.py`'s own `Usage:` block. A line
+        opening with the script name and a WORD starts a verb; a continuation line
+        keeps it; `--selftest` opens with neither and ends attribution, which is
+        what keeps the prose under the block out of every verb's set."""
+        block = src.split("Usage:", 1)[-1].split("Exit codes:", 1)[0]
+        per, verb = {}, None
+        for line in block.splitlines():
+            head = line.strip().split()
+            if head[:1] == [_AT_BASE]:
+                verb = head[1] if len(head) > 1 and head[1][:1].isalpha() else None
+            if verb:
+                per.setdefault(verb, set()).update(
+                    re.findall(r"--[a-z][a-z-]*", line))
+        common = set.intersection(*per.values()) if per else set()
+        return dict((v, f - common) for v, f in per.items()), common
+
+    _at_usage, _at_common = _usage_flags(_at_src)
+    _tk_hint = _frontmatter(_TK, "argument-hint")
+    _tk_alts = [a.strip() for a in _tk_hint.split("|")]
+    _tk_verbs = [a.split()[0] for a in _tk_alts if a.split()]
+    _tk_flags = dict((a.split()[0], set(re.findall(r"--[a-z][a-z-]*", a)))
+                     for a in _tk_alts if a.split())
+
+    check("tk1 every alternative in /audit:task's hint opens with a literal "
+          "lowercase verb - the parse below splits on the bar, so an enumerated "
+          "VALUE written with one (`--tests-mode tdd|regression`) would turn half "
+          "a flag list into a verb nobody can run and read as compliance: %r"
+          % (_tk_verbs,),
+          _tk_verbs != []
+          and all(re.match(r"^[a-z]+$", v) for v in _tk_verbs))
+    _tk_shared = sorted(set(_tk_flags) & set(_at_usage))
+    _tk_off = dict((v, (sorted(_tk_flags[v]), sorted(_at_usage[v])))
+                   for v in _tk_shared if _tk_flags[v] != _at_usage[v])
+    check("tk2 for every verb both the hint and the writer's usage block name, "
+          "the flags are the SAME SET - equality rather than a subset, because "
+          "the fault ran in one direction (a hint advertising `--phase` against a "
+          "verb taking eleven) and a flag the script later drops would rot in the "
+          "other: %r" % (_tk_off,),
+          _tk_shared != [] and _tk_off == {})
+    # THE VACUITY GUARD, and it is not decoration: `_tk_off == {}` is also what an
+    # intersection that had gone EMPTY returns, which is how a renamed verb on
+    # either side would leave this line green over nothing.
+    check("tk3 ...and the intersection is the three verbs the script owns, with "
+          "`move` on the hint side alone because it is an Edit procedure rather "
+          "than a script call - counted, so a rename on either side is a finding "
+          "rather than a silent skip: %r" % ((_tk_shared, sorted(_tk_flags)),),
+          _tk_shared == ["add", "cancel", "scope"]
+          and "move" in _tk_flags and "move" not in _at_usage)
+    _tk_unknown = sorted(set(f for v in _tk_shared for f in _tk_flags[v])
+                         - _at_parser)
+    check("tk4 every flag the hint declares for a SCRIPT verb is one argparse "
+          "defines - a hint is typed by hand, and a flag the parser does not "
+          "know is a command the operator types and gets a usage error for: "
+          "unknown %r" % (_tk_unknown,),
+          _at_parser != set() and _tk_unknown == [])
+    _tk_desc = _frontmatter(_TK, "description")
+    check("tk5 the frontmatter no longer calls `add` interactive - the dialogue is "
+          "the FALLBACK for arguments the caller did not supply, not the verb's "
+          "nature, and a description that says otherwise is what stopped a caller "
+          "from passing values it had already decided: %r" % (_tk_desc[:120],),
+          _tk_desc != "" and "(interactive)" not in _tk_desc
+          and "flag" in _tk_desc)
+    # THE SECOND DIRECTION for tk5. The wrong over-correction is to delete the
+    # dialogue: the command must still ask for what the caller left out, and a
+    # document that dropped that would satisfy the line above.
+    # THE SECOND DIRECTION for tk5, and it is looked for in the `add` SECTION
+    # rather than in the file: the intro carries its own copy of the phrase, so a
+    # document that deleted the instruction from the procedure would still satisfy
+    # a presence check over the whole text. It did, on the first red-first run.
+    _tk_add = _md_section(_TK, "## Subcommand: `add")
+    check("tk6 ...and the PROCEDURE still says it asks only for what is missing - "
+          "the wrong over-correction is to delete the dialogue rather than demote "
+          "it, and a caller who supplies nothing must still be asked",
+          "ask only for what's missing" in _tk_add
+          and "the dialogue is the fallback" in _TK.lower())
+
+    # --- F196 / F201: a flag ADVERTISED for a verb the verb never reads --------
+    # `tk4` above proves every advertised flag is one argparse defines, and that is
+    # not the same question. Every flag on this parser is GLOBAL, so argparse
+    # accepts `add --gate-clear` and `scope --gate-clear` alike whether or not the
+    # verb's own writer looks at it - which is how the same defect shipped twice:
+    # `scope --gate-clear` exited 0 and left the gate where it was (F196), and
+    # `add --gate-clear` reported success and wrote the phase's testGate (F201).
+    # Both were found by RUNNING the command, and nothing in the tree could see
+    # them. A whole-file search for `args.gate_clear` would not have: the string was
+    # in the file, in the other verb.
+    #
+    # THE VERB-TO-WRITER TABLE IS DECLARED, and it is the one hand-kept thing here.
+    # A verb's flags are read across its door and the function that builds its
+    # payload, and there is no mechanical link from the subcommand STRING to those
+    # names - so they are named, and `pf2` fails if a name stops resolving rather
+    # than letting a missing function read as a verb with nothing to check.
+    _AT_WRITERS = {"add": ("cmd_add", "_locked_add", "_build_task"),
+                   "scope": ("cmd_scope", "_locked_scope"),
+                   "cancel": ("cmd_cancel", "_locked_cancel", "_cancel_task")}
+
+    def _at_dests(src):
+        """`{flag: dest}` off the parser - argparse's own rule, plus the explicit
+        `dest=` where the file spells one."""
+        out = {}
+        for flag, dest in re.findall(
+                r'add_argument\(\s*"(--[a-z][a-z-]*)"(?:,\s*dest="([a-z_]+)")?',
+                src):
+            out[flag] = dest or flag[2:].replace("-", "_")
+        return out
+
+    def _fn_body(src, name):
+        """`def name(` down to the next top-level `def` - the slice the fault
+        entries' own `sed` takes, and `""` when the name is not there."""
+        head = "\ndef %s(" % (name,)
+        at = src.find(head)
+        if at < 0:
+            return ""
+        rest = src[at + 1:]
+        end = rest.find("\ndef ")
+        return rest if end < 0 else rest[:end]
+
+    _at_dest = _at_dests(_at_src)
+    _pf_found = dict((v, [n for n in names if _fn_body(_at_src, n)])
+                     for v, names in _AT_WRITERS.items())
+    _pf_unread = []
+    for _pfv in sorted(_AT_WRITERS):
+        if _pfv not in _tk_flags:
+            continue
+        _pf_src = "".join(_fn_body(_at_src, n) for n in _AT_WRITERS[_pfv])
+        for _pff in sorted(_tk_flags[_pfv]):
+            _pfd = _at_dest.get(_pff)
+            if _pfd and ("args.%s" % _pfd) not in _pf_src:
+                _pf_unread.append((_pfv, _pff))
+    # WHAT IT CANNOT SEE, measured by mutation rather than reasoned about: a dest
+    # named in the verb's REFUSAL and then never applied still satisfies this, and
+    # deleting the write while leaving the guard was tried and left it green. It
+    # catches the shape both faults actually had - a dest absent from the verb
+    # entirely - and the cases in `test_audit_task.py` are what cover the other.
+    check("pf1 every flag the hint advertises FOR A VERB is one that verb's own "
+          "writer reads - the parser is global, so argparse accepts a flag the "
+          "verb ignores and reports success without it, which is F196 and F201 "
+          "twice over and is invisible to a whole-file search for the dest: "
+          "unread %r" % (_pf_unread,),
+          _pf_unread == [])
+    # THE VACUITY GUARD, and it is the half that matters: an empty flag set, a
+    # `dest` map that failed to parse, or a writer name that no longer resolves all
+    # make the loop above green over nothing.
+    _pf_checked = sorted(set(f for v in _AT_WRITERS if v in _tk_flags
+                             for f in _tk_flags[v]))
+    check("pf2 ...over a flag set and a writer table that both actually resolved - "
+          "a renamed function or an unparsed dest map would leave pf1 green over "
+          "nothing at all: %r"
+          % ((len(_pf_checked), sorted(_pf_found.items())),),
+          _pf_checked != [] and "--gate-clear" in _pf_checked
+          and all(list(_pf_found[v]) == list(_AT_WRITERS[v])
+                  for v in _AT_WRITERS)
+          and _at_dest.get("--gate-clear") == "gate_clear"
+          and _at_dest.get("--blocked-by") == "blocked_by")
 
 
 def _selftest():

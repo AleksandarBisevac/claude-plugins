@@ -333,6 +333,64 @@ def _cases(check):
               "only an unconditional version passes both: %r"
               % (_detail(rep, "policy"),),
               "would be refused" not in _detail(rep, "policy"))
+
+        # --- F195: the skills the plan NAMES, against this machine -------------
+        # `check_build_commands` already grades this class one dependency over -
+        # "runner not on PATH here ... that gate cannot run on this machine". A
+        # gate whose runner is absent and a reviewer whose skill is absent are the
+        # same shape, and one of them got silence. Measured live on a manifest
+        # naming a hand-placed SKILL.md that exists in no marketplace.
+        def _skills(mf, inv):
+            r = base.Report()
+            M.check_plan_skills(r, tmp, mf, _discover=lambda _p, home=None: inv)
+            return r
+        mfs = _manifest()
+        mfs["meta"]["reviewSkill"] = "code-review-and-quality"
+        rep = _skills(mfs, {"skills": [{"name": "writing-python"}]})
+        check("dp27 a skill the plan names and this machine cannot find is "
+              "WARNED about, naming the skill AND where the plan names it - a "
+              "review skill that does not resolve means sign-off runs with no "
+              "reviewer: %r" % (_detail(rep, "skills"),),
+              "'code-review-and-quality'" in _detail(rep, "skills")
+              and "P1 review skill" in _detail(rep, "skills")
+              and all(r["level"] != "finding" for r in rep.rows))
+        rep = _skills(mfs, {"skills": [{"name": "writing-python"},
+                                       {"name": "code-review-and-quality"}]})
+        check("dp28 ...and a plan whose every name resolves says so instead. THE "
+              "OTHER DIRECTION: the same plan, a different machine, so an "
+              "unconditional row fails one of the two: %r"
+              % (_detail(rep, "skills"),),
+              "not resolvable here" not in _detail(rep, "skills")
+              and "resolve on this machine" in _detail(rep, "skills"))
+        # A SCAN THAT CANNOT ANSWER MUST NOT READ AS AGREEMENT. Two ways it fails
+        # and both are said, because "every skill resolves" over a broken scan is
+        # exactly the claim-without-a-basis this repo's rule forbids.
+        rep = _skills(mfs, {"skills": []})
+        check("dp29 an EMPTY inventory is reported as unknown, never as clean - a "
+              "working scan always sees audit's own skills, so empty means the "
+              "scanner is broken: %r" % (_detail(rep, "skills"),),
+              "UNKNOWN" in _detail(rep, "skills")
+              and "resolve on this machine" not in _detail(rep, "skills"))
+        rep = base.Report()
+        M.check_plan_skills(
+            rep, tmp, mfs,
+            _discover=lambda _p, home=None: (_ for _ in ()).throw(OSError("x")))
+        check("dp30 ...and a scan that RAISES says the same thing rather than "
+              "nothing: silence here would be indistinguishable from a plan that "
+              "names no skills: %r" % (_detail(rep, "skills"),),
+              "UNKNOWN" in _detail(rep, "skills"))
+        # One row per NAME, not per reference: a review skill inherited by every
+        # phase is one thing to install.
+        mfd = _manifest()
+        mfd["meta"]["reviewSkill"] = "ghost"
+        mfd["phases"].append({"id": "P2", "title": "two", "status": "pending",
+                              "tasks": [], "blockedBy": [], "testGate": []})
+        rep = _skills(mfd, {"skills": [{"name": "writing-python"}]})
+        check("dp31 a name the whole plan inherits is reported ONCE, not once per "
+              "phase - nineteen identical lines is the wall `_warning_groups` "
+              "exists to stop: %r" % (_detail(rep, "skills"),),
+              _detail(rep, "skills").count("'ghost'") == 1)
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

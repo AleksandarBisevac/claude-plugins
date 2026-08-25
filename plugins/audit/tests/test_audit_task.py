@@ -44,7 +44,11 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # three-state), x (fileIndex), r (validator rollback), k (lock), y (layout:
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
 # n (named-manifest project resolution), c (cancel), p (add-phase: the F58
-# verb, both layouts), w (the _waiting_on index), u (usage errors).
+# verb, both layouts), w (the _waiting_on index), u (usage errors), sc (scope,
+# the F189 verb), rt (retarget, the F190 verb), gc (F196: the empty gate a task
+# could not reach), jf (F197: the prior state the trail attests), ag (F201: the
+# empty gate at CREATION), fn (F202: the files row for a change that did not
+# happen), sf (F199: the three task fields `scope` did not reach).
 def _cases(check):
     import contextlib
     import shutil
@@ -1164,6 +1168,533 @@ def _cases(check):
               "still carries an outcome judged under its old scope: %r"
               % (txt[:90],),
               code == 2 and "already been attempted" in txt)
+
+        # ---- (gc) F196: the empty gate a task could not reach ----------------
+        # `/audit:phase retarget` took `--gate-clear` in the release that gave
+        # `scope` its `--gate`, and `scope` did not take the clear - so a phase
+        # could say "nothing here can prove this" and a task could not. THE
+        # REASON DIFFERS FROM `retarget`'s, which is why the same flag needed its
+        # own justification: that verb APPENDS to `testGate`, so the append is
+        # what left the empty gate unspellable, while this one REPLACES
+        # `tests.gate` outright. The gap here is in the values - no `--gate`
+        # VALUE says "none". Measured live: a phase retargeted to `testGate: []`
+        # left its pending tasks holding the `["lint"]` inherited at creation,
+        # and the only routes to the phase's own new state were a rescope mid-run
+        # or the hand edit `commands/task.md` forbids.
+        gcm = base_manifest()
+        # THE FIXTURE VALUES ARE THE CASE, here and in the (jf) group below. A
+        # gate and an add list that are both non-empty AND different from what
+        # these calls write are what tells three implementations apart: the
+        # literal `None` the rows used to carry, a `from` read back AFTER the
+        # write (which equals `to`), and the true prior value.
+        gcm["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False,
+            "add": ["the case the import came with"], "gate": ["lint"]}
+        gc_proj, gc_mp = mk("gc-gate", gcm)
+
+        def gc_gate():
+            return ((task_in(gc_mp, "P2.3") or {}).get("tests") or {}).get("gate")
+
+        code, txt = run(["scope", "P2.3", "--gate", "pytest -q", "--gate-clear",
+                         "--project-dir", gc_proj])
+        check("gc1 --gate with --gate-clear is refused and the gate is untouched "
+              "- two answers about one field, and guessing which was meant is how "
+              "a task ends up gated on a command nobody asked for: %r"
+              % ((code, gc_gate()),),
+              code == 2 and "opposite things" in txt and gc_gate() == ["lint"])
+        code, txt = run(["scope", "P2.3", "--project-dir", gc_proj])
+        check("gc2 ...and the refusal for a call with no flags NAMES "
+              "--gate-clear among what scope takes - the flag is only worth "
+              "having if it is reachable, and a caller told \"needs --files\" "
+              "learns nothing about it: %r" % (txt[:120],),
+              code == 2 and "--gate-clear" in txt)
+        # THE PAIRED NEGATIVE for gc1. A guard that refused on EITHER flag rather
+        # than on both would make the ordinary call unusable, and no case above
+        # would notice, because both of them pass the pair.
+        code, txt = run(["scope", "P2.3", "--gate", "pytest -q",
+                         "--project-dir", gc_proj])
+        check("gc3 --gate alone still replaces the gate and says nothing about an "
+              "empty one - the refusal is about the PAIR, not about either flag: "
+              "%r" % ((code, gc_gate()),),
+              code == 0 and gc_gate() == ["pytest -q"] and "now EMPTY" not in txt)
+        code, txt = run(["scope", "P2.3", "--gate-clear",
+                         "--project-dir", gc_proj])
+        check("gc4 --gate-clear alone reaches the EMPTY gate - the state a phase "
+              "could reach and a task could not - and the report SAYS what it "
+              "means, because silence over a designed state reads as breakage: %r"
+              % ((gc_gate(), txt[-100:]),),
+              code == 0 and gc_gate() == [] and "now EMPTY" in txt)
+        with open(gc_mp, "rb") as _fh:
+            _gc_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--gate-clear",
+                         "--project-dir", gc_proj])
+        with open(gc_mp, "rb") as _fh:
+            _gc_after = _fh.read()
+        check("gc5 clearing an already-empty gate writes nothing and says so - "
+              "byte identity is the assertion rather than the exit code, because "
+              "a writer that recorded the row anyway would journal a change from "
+              "[] to []: %r" % (txt[:80],),
+              code == 0 and "already reads that way" in txt
+              and _gc_after == _gc_before)
+        # THE SECOND DIRECTION for gc4's line: it reports a CHANGE, not a state,
+        # so a scope that does not touch the gate must not announce it. A note
+        # printed off the state alone would fire on every call after the clear.
+        code, txt = run(["scope", "P2.3", "--files", "src/gc.ts",
+                         "--project-dir", gc_proj])
+        check("gc6 ...and a scope that leaves the gate alone does not announce "
+              "the empty one, however empty it is: %r" % (txt[:100],),
+              code == 0 and "now EMPTY" not in txt)
+        code, txt = run(["scope", "P2.3", "--gate", "",
+                         "--project-dir", gc_proj])
+        check("gc7 `--gate \"\"` writes a gate holding an empty COMMAND, not the "
+              "absence of one - the fixture that says why the clear had to be a "
+              "flag rather than a value of the flag it clears: %r" % (gc_gate(),),
+              code == 0 and gc_gate() == [""])
+
+        # ---- (jf) F197: what the trail says the prior state was --------------
+        # `_locked_scope` builds the journal's `changes` list. Three fields read
+        # the value they replace; `tests.add` and `tests.gate` wrote a literal
+        # `None`. Measured live: a row said the gate went from nothing to a
+        # command when it went from `["lint"]`. The chain verifies, the row is
+        # genuine, and it is wrong about the prior state - so the surface built to
+        # answer "what was this gated on before, and who changed it" gave a false
+        # answer. Same class as F191 and F184: integrity guaranteed, content not
+        # true.
+        jfm = base_manifest()
+        jfm["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False,
+            "add": ["the case the import came with"], "gate": ["lint"]}
+        jf_proj, jf_mp = mk("jf-from", jfm)
+        code, txt = run(["scope", "P2.3", "--gate", "pytest -q",
+                         "--tests-add", "the case the fix owes",
+                         "--project-dir", jf_proj])
+        jfmod = _panel_write._journalmod()
+        jf_rows = [r for r in (jfmod.read_all(jf_proj) if jfmod else [])
+                   if r.get("action") == "task.scope"]
+        jf_changes = ((jf_rows[0].get("details") or {}).get("changes")
+                      if jf_rows else [])
+        jf_from = dict((r.get("field"), r.get("from")) for r in jf_changes)
+
+        def jf_val(raw):
+            """One stored `from`/`to`, DECODED rather than compared as text.
+            `_journal_io._clip` spells a structured value canonically, so the row
+            holds JSON text and restating that spelling here would pin the
+            journal's separators instead of the claim. The literal this fault
+            wrote was a bare `None`, which is not text at all - hence the
+            TypeError arm rather than a `json.loads` on faith."""
+            try:
+                return json.loads(raw)
+            except (TypeError, ValueError):
+                return raw
+
+        check("jf1 the journaled row's `from` for tests.gate decodes to what the "
+              "manifest HELD - this field IS the answer a reader gets when they "
+              "ask what the task was gated on before, so a literal there is a "
+              "false answer from the surface built to give the true one: %r"
+              % (jf_from,),
+              code == 0 and len(jf_rows) == 1
+              and jf_val(jf_from.get("tests.gate")) == ["lint"])
+        check("jf2 ...and tests.add likewise, read off the row ON DISK rather "
+              "than the --json echo, because the trail is what the fault was "
+              "about: %r" % (jf_changes,),
+              jf_val(jf_from.get("tests.add")) == ["the case the import came with"])
+        check("jf3 no row in the trail has `from` equal to `to` - the OTHER wrong "
+              "fix is to read the field inside the branch, which reads back the "
+              "value just written; asserted over every row, so a third field "
+              "acquiring the shape is caught here rather than in a later live "
+              "run: %r" % (jf_changes,),
+              jf_changes != []
+              and [r for r in jf_changes if r.get("from") == r.get("to")] == [])
+        # THE PAIRED NEGATIVE for jf3, which is vacuously true over no rows at
+        # all: the comparison this fix adds could suppress every row instead of
+        # only the unchanged ones.
+        check("jf4 ...and both fields the call moved ARE in it, counted rather "
+              "than found: %r" % (sorted(jf_from),),
+              sorted(jf_from) == ["tests.add", "tests.gate"])
+        os.makedirs(os.path.join(jf_proj, "src"), exist_ok=True)
+        for _jff in ("d.ts", "e.ts"):
+            with open(os.path.join(jf_proj, "src", _jff), "w") as _fh:
+                _fh.write("x\n")
+        code, txt = run(["scope", "P2.3", "--files", "src/d.ts",
+                         "--project-dir", jf_proj])
+        check("jf5 a scope that only ADDS files says so instead of claiming a "
+              "release - the line names the direction the derivation actually "
+              "went: %r" % (txt[:140],),
+              code == 0 and "now claimed by this task: src/d.ts" in txt
+              and "released by this task" not in txt)
+        code, txt = run(["scope", "P2.3", "--tests-mode", "regression",
+                         "--project-dir", jf_proj])
+        check("jf6 ...and a call that never passed --files prints no fileIndex "
+              "line at all: unconditional, it told the reader that files this "
+              "task no longer claims had been released when the list had not "
+              "moved: %r" % (txt[:140],),
+              code == 0 and "fileIndex re-derived" not in txt)
+        code, txt = run(["scope", "P2.3", "--files", "src/e.ts",
+                         "--project-dir", jf_proj])
+        _jf_idx = (_mio.load_manifest(jf_mp).get("fileIndex") or {})
+        check("jf7 ...and a real release NAMES the path let go, which is the "
+              "claim the old line made on every call, with the index agreeing: "
+              "%r" % ((txt[:140], _jf_idx),),
+              code == 0 and "released by this task: src/d.ts" in txt
+              and "src/d.ts" not in _jf_idx
+              and _jf_idx.get("src/e.ts") == ["P2.3"])
+
+        # ---- (ag) F201: the empty gate at CREATION ---------------------------
+        # F196's exact shape one verb over. `--gate-clear` is defined GLOBALLY on
+        # the parser, so argparse accepted `add --gate-clear`, `_build_task` never
+        # read it, and the new task inherited the phase's `testGate`. A flag
+        # accepted and ignored tells the operator the call succeeded while the
+        # value they asked for is not there - and creation is where the COPY of the
+        # phase gate is made, so it is the one place a task could not be GIVEN the
+        # empty gate rather than rescoped into it a moment later.
+        agm = base_manifest()
+        # A real `tests` block on the pending task, so ag8's `scope --gate-clear`
+        # has a gate to empty rather than a `tests` object to invent.
+        agm["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False,
+            "add": [], "gate": ["test"]}
+        ag_proj, ag_mp = mk("ag-add-gate", agm)
+        code, txt = run(["add", "Markdown only", "--phase", "P2", "--gate-clear",
+                         "--project-dir", ag_proj])
+        ag_state_txt = txt
+        _ag = task_in(ag_mp, "P2.4") or {}
+        check("ag1 `add --gate-clear` writes the EMPTY gate instead of the phase's "
+              "testGate - the fixture phase is gated on `test`, so inheriting and "
+              "clearing produce DIFFERENT values and a flag that is read cannot "
+              "pass as a flag that is ignored: %r"
+              % ((code, (_ag.get("tests") or {}).get("gate")),),
+              code == 0 and (_ag.get("tests") or {}).get("gate") == [])
+        check("ag2 ...and the report SAYS the gate is empty, because a designed "
+              "state met in silence reads as breakage - `scope` and `retarget` "
+              "both say it and this was the third write site: %r" % (txt[:200],),
+              "the gate is EMPTY" in txt
+              and "phase's testGate at sign-off" in txt)
+        # THE PAIRED NEGATIVE for ag1, and it is the one that fails if the fix
+        # became unconditional: a gate resolved to `[]` for every add would satisfy
+        # ag1 forever while deleting the inheritance the template is built on.
+        code, txt = run(["add", "Ordinary work", "--phase", "P2",
+                         "--project-dir", ag_proj])
+        _agi = task_in(ag_mp, "P2.5") or {}
+        check("ag3 SECOND-DIRECTION CASE: an add with NO gate flag still inherits "
+              "the phase's testGate, and says nothing about an empty gate - the "
+              "wrong fix is a clear that fires on every add: %r"
+              % ((_agi.get("tests") or {}).get("gate"),),
+              code == 0 and (_agi.get("tests") or {}).get("gate") == ["test"]
+              and "the gate is EMPTY" not in txt)
+        code, txt = run(["add", "Explicit gate", "--phase", "P2",
+                         "--gate", "pytest -q", "--project-dir", ag_proj])
+        _agg = task_in(ag_mp, "P2.6") or {}
+        # NOT about the branch ORDER, which was this case's first claim and was
+        # untestable: `_gate_contradiction` refuses the pair, so `--gate` and
+        # `--gate-clear` can never both be set and no ordering of the two arms is
+        # reachable. Reordering them left the whole suite green, which is what the
+        # mutation said and reading did not. What it pins is that the VALUE arm
+        # still exists at all - remove it and a named gate silently becomes the
+        # phase's.
+        check("ag4 an explicit --gate still wins over the phase's testGate - the "
+              "new arm was added beside it, and a caller who names a gate must "
+              "not get the inherited one: %r"
+              % ((_agg.get("tests") or {}).get("gate"),),
+              code == 0 and (_agg.get("tests") or {}).get("gate") == ["pytest -q"])
+        with open(ag_mp, "rb") as _fh:
+            _ag_before = _fh.read()
+        code, ag_add_txt = run(["add", "Contradiction", "--phase", "P2",
+                                "--gate", "pytest -q", "--gate-clear",
+                                "--project-dir", ag_proj])
+        with open(ag_mp, "rb") as _fh:
+            _ag_after = _fh.read()
+        check("ag5 --gate with --gate-clear is refused on `add` too, and NO id was "
+              "minted - byte identity is the assertion rather than the exit code, "
+              "because an allocated id is history even when the write is refused: "
+              "%r" % (ag_add_txt[:80],),
+              code == 2 and "opposite things" in ag_add_txt
+              and _ag_after == _ag_before)
+        code, ag_scope_txt = run(["scope", "P2.3", "--gate", "x", "--gate-clear",
+                                  "--project-dir", ag_proj])
+        code, ag_rt_txt = run(["retarget", "P3", "--gate", "x", "--gate-clear",
+                               "--project-dir", ag_proj])
+        check("ag6 ...and the three verbs print the SAME refusal, compared as text "
+              "from three live runs rather than trusted: it is one rule about one "
+              "field, `add` needed the third copy, and three copies is how one of "
+              "them stops matching the others: %r"
+              % (sorted(set([ag_add_txt, ag_scope_txt, ag_rt_txt])),),
+              ag_add_txt != "" and ag_add_txt == ag_scope_txt == ag_rt_txt)
+        code, txt = run(["add", "Into an ungated phase", "--phase", "P3",
+                         "--project-dir", ag_proj])
+        _agp = task_in(ag_mp, "P3.1") or {}
+        check("ag7 the line is printed off the STATE, so a task inheriting an "
+              "already-empty phase gate says it too - a creation has no prior "
+              "value to have moved from, and a reader cares which state the task "
+              "is in rather than which route reached it: %r"
+              % ((_agp.get("tests") or {}).get("gate"),),
+              code == 0 and (_agp.get("tests") or {}).get("gate") == []
+              and "the gate is EMPTY" in txt)
+        code, ag_moved_txt = run(["scope", "P2.3", "--gate-clear",
+                                  "--project-dir", ag_proj])
+
+        def ag_gate_note(text):
+            """The EMPTY line with the tense removed - what the two verbs share."""
+            for line in text.splitlines():
+                if "EMPTY" in line:
+                    return line.replace("is now EMPTY", "is EMPTY")
+            return ""
+
+        check("ag8 ...and the EXPLANATION after the marker is the same in both "
+              "verbs, compared across two live runs with the tense masked - the "
+              "tense is the only thing that differs (`add` reports a state, "
+              "`scope` a change) and what an empty task gate MEANS is one fact: "
+              "%r" % ((ag_gate_note(ag_state_txt),
+                       ag_gate_note(ag_moved_txt)),),
+              code == 0 and ag_gate_note(ag_state_txt) != ""
+              and ag_gate_note(ag_state_txt) == ag_gate_note(ag_moved_txt))
+
+        # ---- (fn) F202: a row for a change that did not happen ---------------
+        # F197's class one field over and not named by that entry: the `files` row
+        # went in under a bare `if files:`, so re-scoping to the list the task
+        # already held printed and journaled `files: [...] -> [...]`. Milder than
+        # F197 (the `from` is true, so nobody is misled about the prior state) and
+        # still a hash-chained row attesting a change that never occurred, which is
+        # exactly what a reader counting "who changed this task's scope, and when"
+        # counts. The three sibling fields already compared.
+        fnm = base_manifest()
+        # A real `tests` block, because a `--files`-only scope over a task that has
+        # none writes `tests: {}` and the validator refuses that - a different
+        # question from the one this group asks.
+        fnm["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False,
+            "add": [], "gate": ["test"]}
+        fn_proj, fn_mp = mk("fn-noop", fnm)
+        os.makedirs(os.path.join(fn_proj, "src"), exist_ok=True)
+        for _fnf in ("f.ts", "g.ts"):
+            with open(os.path.join(fn_proj, "src", _fnf), "w") as _fh:
+                _fh.write("x\n")
+        fnmod = _panel_write._journalmod()
+
+        def fn_rows():
+            """Every `task.scope` row in the trail - COUNTED, because the fault was
+            a row existing rather than a value being wrong."""
+            return [r for r in (fnmod.read_all(fn_proj) if fnmod else [])
+                    if r.get("action") == "task.scope"]
+
+        code, txt = run(["scope", "P2.3", "--files", "src/f.ts",
+                         "--project-dir", fn_proj])
+        _fn_scoped = len(fn_rows())
+        with open(fn_mp, "rb") as _fh:
+            _fn_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--files", "src/f.ts",
+                         "--project-dir", fn_proj])
+        with open(fn_mp, "rb") as _fh:
+            _fn_after = _fh.read()
+        check("fn1 re-scoping to the list the task ALREADY holds journals no row "
+              "and writes no byte - the trail is the assertion, because the fault "
+              "was a verifying, genuine row attesting a change that never "
+              "happened: %r" % ((code, len(fn_rows()), txt[:70]),),
+              code == 0 and len(fn_rows()) == _fn_scoped
+              and _fn_after == _fn_before
+              and "already reads that way" in txt)
+        # THE PAIRED NEGATIVE. The comparison could have been written to drop the
+        # files row ALTOGETHER, which fn1 cannot tell from the fix.
+        code, txt = run(["scope", "P2.3", "--files", "src/g.ts",
+                         "--project-dir", fn_proj])
+        _fn_moved = [r for r in fn_rows()
+                     if any(c.get("field") == "files"
+                            for c in ((r.get("details") or {}).get("changes") or []))]
+        check("fn2 SECOND-DIRECTION CASE: a files list that REALLY moved still "
+              "journals its row, carrying the list it replaced - the wrong fix is "
+              "to stop recording `files` at all, which fn1 alone would call green: "
+              "%r" % (len(_fn_moved),),
+              code == 0 and len(_fn_moved) == 2)
+        # THE SHARPEST ONE: `files` unchanged while another field moves. A fix that
+        # returned early on an unchanged files list would lose the other field.
+        code, txt = run(["scope", "P2.3", "--files", "src/g.ts",
+                         "--tests-mode", "tdd", "--project-dir", fn_proj])
+        _fn_last = ((fn_rows()[-1].get("details") or {}).get("changes")
+                    if fn_rows() else [])
+        check("fn3 an unchanged --files alongside a field that DID move writes the "
+              "mover and only the mover - the fields are compared one at a time, "
+              "not the call skipped: %r"
+              % (sorted(c.get("field") for c in _fn_last),),
+              code == 0 and sorted(c.get("field") for c in _fn_last)
+              == ["tests.mode"])
+        check("fn4 ...and the task really did take that field, so the row is not "
+              "the only evidence: %r"
+              % ((task_in(fn_mp, "P2.3") or {}).get("tests"),),
+              ((task_in(fn_mp, "P2.3") or {}).get("tests") or {}).get("mode")
+              == "tdd")
+
+        # ---- (sf) F199: the three fields `scope` did not reach ---------------
+        # `_build_task` initializes eleven fields. `scope` reached five, the panel's
+        # composition card reaches `model` and `skills`, and `risk`, `blockedBy` and
+        # `dependsOn` were reachable by NOTHING once set. Measured live: a task filed
+        # `--depends-on P0.3,P0.4` against tasks parked behind an environment nobody
+        # had created, where shipping its describable half meant removing one id -
+        # and the only route was `cancel` plus a fresh `add`, losing the id, the
+        # journal continuity and the description somebody wrote.
+        sfm = base_manifest()
+        # THE FIXTURE VALUES ARE THE CASE. `risk` and `model` are spelled out rather
+        # than left absent, because `low`/`sonnet` is what the model note has to be
+        # able to compare against - a task with no model at all cannot tell "stayed
+        # where it was" from "was never set".
+        sfm["phases"][1]["tasks"][1].update({
+            "description": "imported", "files": [],
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]},
+            "model": "sonnet", "skills": [], "risk": "low",
+            "blockedBy": [], "dependsOn": ["P2.2"], "attempts": 0})
+        # A PENDING sibling to wait on: the validator resolves `dependsOn` against
+        # TASKS, so a phase id there is a finding rather than a dependency.
+        sfm["phases"][1]["tasks"].insert(1, {"id": "P2.2", "title": "blocker",
+                                             "status": "pending"})
+        sf_proj, sf_mp = mk("sf-fields", sfm)
+        code, txt = run(["scope", "P2.3", "--project-dir", sf_proj])
+        check("sf1 the refusal for a call with no flags NAMES all three - a field "
+              "reachable only by reading the source is the fault this closes, so "
+              "the message a caller actually meets has to carry them: %r"
+              % (txt[:200],),
+              code == 2 and "--risk" in txt and "--blocked-by" in txt
+              and "--depends-on" in txt)
+        code, txt = run(["scope", "P2.3", "--risk", "high",
+                         "--project-dir", sf_proj])
+        _sft = task_in(sf_mp, "P2.3") or {}
+        check("sf2 --risk moves the field that feeds the executor's model floor "
+              "and the commit confirmation - the one field here where being wrong "
+              "has a consequence at RUN time, and it is judged before the work was "
+              "looked at: %r" % ((code, _sft.get("risk")),),
+              code == 0 and _sft.get("risk") == "high")
+        check("sf3 ...and the model is NOT re-derived, with the report saying so "
+              "and naming what creation WOULD have derived - silence would let an "
+              "operator who raised risk believe the executor was escalated with "
+              "it, and rewriting `model` here would overrule /audit:panel: %r"
+              % (txt[-190:],),
+              _sft.get("model") == "sonnet"
+              and "the model stays sonnet" in txt and "would derive opus" in txt)
+        # THE SECOND DIRECTION for sf3: the note is printed off a DISAGREEMENT, so a
+        # risk change whose implied model is already on the task must stay silent. A
+        # note printed on every risk change would satisfy sf3 forever.
+        code, txt = run(["scope", "P2.3", "--risk", "med",
+                         "--project-dir", sf_proj])
+        check("sf4 SECOND-DIRECTION CASE: a risk change whose derived model is the "
+              "one the task already carries says nothing about the model at all: "
+              "%r" % (txt[:120],),
+              code == 0 and "the model stays" not in txt)
+        code, txt = run(["scope", "P2.3", "--risk", "med",
+                         "--project-dir", sf_proj])
+        check("sf5 re-passing the risk the task already holds writes nothing and "
+              "says so - F202's comparison at the new field, so the fix did not "
+              "arrive carrying the bug it was fixing: %r" % (txt[:70],),
+              code == 0 and "already reads that way" in txt)
+        code, txt = run(["scope", "P2.3", "--depends-on", "",
+                         "--project-dir", sf_proj])
+        _sft = task_in(sf_mp, "P2.3") or {}
+        check("sf6 an EMPTY --depends-on empties the field - the spelling that "
+              "makes a `--depends-on-clear` unnecessary, because a comma list of "
+              "IDS has no value that reads as content the way `--gate \"\"` "
+              "reads as an empty COMMAND: %r"
+              % ((code, _sft.get("dependsOn")),),
+              code == 0 and _sft.get("dependsOn") == [])
+        check("sf7 ...and the call reports that the task can run NOW, which is the "
+              "question a caller removing a blocking id is asking: %r"
+              % (txt[-70:],),
+              "ready now -- /audit:run P2.3" in txt)
+        code, txt = run(["scope", "P2.3", "--depends-on", "P2.2",
+                         "--project-dir", sf_proj])
+        _sfrows = [r for r in (fnmod.read_all(sf_proj) if fnmod else [])
+                   if r.get("action") == "task.scope"]
+        _sffrom = dict((c.get("field"), c.get("from"))
+                       for c in ((_sfrows[-1].get("details") or {}).get("changes")
+                                 if _sfrows else []))
+        # `jf_val` (the jf group's decoder) rather than a bare `json.loads`: the
+        # stored `from` is canonical JSON TEXT, and a mutation that stops writing
+        # the row leaves `None` there - which must fail this case, not kill the
+        # body before the cases below it run.
+        check("sf8 --depends-on replaces the list and the row carries the list it "
+              "replaced, decoded rather than compared as text - the trail's `from` "
+              "is what F197 was about and a new field must not arrive with a "
+              "literal in it: %r" % (_sffrom,),
+              code == 0 and jf_val(_sffrom.get("dependsOn")) == []
+              and "waiting on: P2.2" in txt)
+        code, txt = run(["scope", "P2.3", "--blocked-by", "P2.1",
+                         "--project-dir", sf_proj])
+        _sft = task_in(sf_mp, "P2.3") or {}
+        check("sf9 --blocked-by lands the same way through the same loop - the two "
+              "ref lists are one field twice over, and two blocks of it is how the "
+              "pair comes to disagree about what an empty value means: %r"
+              % (_sft.get("blockedBy"),),
+              code == 0 and _sft.get("blockedBy") == ["P2.1"])
+        with open(sf_mp, "rb") as _fh:
+            _sf_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--blocked-by", "NOPE.9",
+                         "--project-dir", sf_proj])
+        with open(sf_mp, "rb") as _fh:
+            _sf_after = _fh.read()
+        check("sf10 a ref that resolves to nothing is refused by the VALIDATOR and "
+              "every written file rolled back - the guard is the revalidate this "
+              "verb already ran, not a second copy of ref resolution here: %r"
+              % ((code, txt[-90:]),),
+              code == M.E_INVALID and _sf_after == _sf_before
+              and "does not resolve" in txt)
+        # THE SECOND DIRECTION for sf7: readiness is printed only when a REF field
+        # moved, so a call that touched neither must not claim anything about it. A
+        # line printed off the state alone would fire on every scope.
+        code, txt = run(["scope", "P2.3", "--tests-mode", "regression",
+                         "--project-dir", sf_proj])
+        check("sf11 SECOND-DIRECTION CASE: a scope that moved neither ref field "
+              "prints no readiness line - it is an answer about the two fields "
+              "this call did not look at: %r" % (txt[:120],),
+              code == 0 and "ready now" not in txt and "waiting on" not in txt)
+        code, txt = run(["scope", "P2.3", "--risk", "low", "--json",
+                         "--project-dir", sf_proj])
+        try:
+            _sfj = json.loads(txt)
+        except ValueError:
+            # A MUTATION MUST MAKE THE CASE FAIL, NOT THE SUITE RAISE. A refused
+            # call prints a sentence rather than a JSON block, and letting that
+            # reach `json.loads` bare stopped the body dead - every case after
+            # this point then reported nothing at all, which is the failure mode
+            # that looks like coverage. Found by mutating, not by reading.
+            _sfj = {}
+        check("sf12 --json carries the readiness even on a call the human report "
+              "stays quiet about - this one moved only `risk`, so the report says "
+              "nothing about the ref fields while the machine surface, which does "
+              "not read, keeps the answer: %r"
+              % ((_sfj.get("ready"), _sfj.get("waitingOn")),),
+              _sfj.get("ready") is False and _sfj.get("waitingOn") == ["P2.2"]
+              and [r["field"] for r in _sfj.get("changes") or []] == ["risk"])
+        # THE PENDING GUARD IS THE WHOLE CALL, not a per-field rule: F190's reason
+        # (an attempt was judged under the old scope) covers the new fields
+        # identically, which is what the entry asked for.
+        sfa_proj, sfa_mp = mk("sf-attempted", sfm)
+        _sfa = _mio.load_manifest(sfa_mp)
+        _sfa["phases"][1]["tasks"][2]["attempts"] = 2
+        _panel_write._atomic_write_json(sfa_mp, _sfa)
+        code, txt = run(["scope", "P2.3", "--risk", "high",
+                         "--project-dir", sfa_proj])
+        check("sf13 the never-attempted guard covers the new fields too - the "
+              "reason it exists (an outcome judged under the old scope) is the "
+              "same reason for risk and the ref lists: %r" % (txt[:90],),
+              code == 2 and "already been attempted" in txt)
+        # ONE SENTENCE, TWO VERBS. The `/audit:run` handoff is a spelling a reader
+        # COPIES, and comparing it across two live runs is what goes red if either
+        # call site re-spells it.
+        code, sf_add_txt = run(["add", "Ready at birth", "--phase", "P2",
+                                "--project-dir", sf_proj])
+
+        def sf_handoff(text, tid):
+            for line in text.splitlines():
+                if "/audit:run" in line:
+                    return line.replace(tid, "<id>")
+            return ""
+
+        code, sf_scope_txt = run(["scope", "P2.3", "--depends-on", "",
+                                  "--project-dir", sf_proj])
+        check("sf14 the readiness sentence `scope` prints is the one `add` prints, "
+              "compared across two live runs with the id masked - one home for a "
+              "handoff a reader copies: %r"
+              % ((sf_handoff(sf_add_txt, "P2.4"),
+                  sf_handoff(sf_scope_txt, "P2.3")),),
+              sf_handoff(sf_add_txt, "P2.4") != ""
+              and sf_handoff(sf_add_txt, "P2.4")
+              == sf_handoff(sf_scope_txt, "P2.3"))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

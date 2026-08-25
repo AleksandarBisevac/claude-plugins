@@ -1,16 +1,28 @@
 ---
-description: Add a tracked task to the audit manifest (interactive), move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] | scope <taskId> --files a,b | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # /audit:task — add a task to the manifest, move one between phases, or close one
 
-**`$ARGUMENTS`**: subcommand `add` followed by a quoted title, optional `--phase <id>`;
+**`$ARGUMENTS`**: subcommand `add` followed by a quoted title and any of the
+flags in the `argument-hint` above;
+or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
 or subcommand `priority`, the legacy spelling covered at the end of this file.
 Unknown/empty subcommand → print usage and stop.
+
+**The flags ARE the interface; the dialogue is the fallback.** Every answer the
+`add` and `scope` sections gather is a flag on `scripts/manifest/audit-task.py`, so a
+caller who already holds the specification passes it and is asked nothing — step 2's
+*ask only for what's missing* is what happens to whatever is left. The hint above used
+to advertise `--phase` alone, and what that cost was measured live: an operator holding
+files, gate, risk, tests-mode and description was taken through a round of
+`AskUserQuestion` per value, and every question that did not need asking is another
+chance to **paraphrase** a value the caller had already decided — the defect `--reason`
+had (see *The operator's words go in VERBATIM* below).
 
 **`priority` is deliberately absent from the `argument-hint` above** while remaining a
 working subcommand. The hint is what a reader is offered when they type the command, and
@@ -63,7 +75,14 @@ per add is the class of error the script exists to delete.
      behavior-preserving / `gate-only` for mechanical — the script sets
      `expectRedFirst` true iff tdd), `--tests-add "<desc>"` (repeatable, one test
      description each), `--gate "<entry>"` (repeatable; default: the phase's
-     `testGate`).
+     `testGate`), `--gate-clear` for the **empty** gate — the state a phase can
+     be created in and `scope --gate-clear` can move a task to, which `add`
+     accepted and silently ignored until it read the flag, so a new task whose
+     work nothing here can grade inherited the phase's gate and had to be
+     rescoped straight afterwards. It refuses alongside `--gate`, as `scope` and
+     `/audit:phase retarget` do; a task created with no gate is **reported** as
+     such rather than in silence, and the phase's `testGate` at sign-off is what
+     still grades it.
    - `--model` (default `sonnet` — the floor for all fix work; the script escalates
      `risk: high` to `opus` when no model is passed; do NOT use `haiku` for
      audit-fix work), `--risk` (`low`/`med`/`high`).
@@ -156,12 +175,58 @@ Readiness treats a cancelled blocker as settled, so a plan never deadlocks on wo
 will do — a task that was waiting on the cancelled one becomes ready, and is worth a look
 before it runs.
 
-## Subcommand: `scope <taskId> --files a,b`
+## Subcommand: `scope <taskId> [--files a,b]`
 
-Give a **pending** task the files it touches, and optionally its tests and its
-description: `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
-(repeatable), `--gate CMD` (repeatable), `--description TEXT`. Runs `scripts/manifest/audit-task.py scope` — the same
-lock, the same revalidate-or-roll-back, the same journal row shape as `add`.
+Give a **pending** task the files it touches, and optionally its tests, its
+description and the three fields that decide how and when it runs:
+`--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
+(repeatable), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`,
+`--risk low|med|high`, `--blocked-by ids`, `--depends-on ids`. Runs `scripts/manifest/audit-task.py scope` — the same
+lock, the same revalidate-or-roll-back, the same journal row shape as `add`. At least
+one of them is required; a call that would change nothing is refused.
+
+**`--risk` / `--blocked-by` / `--depends-on` are the fields nothing could
+correct.** `add` sets them, the panel's composition card reaches `model` and
+`skills` instead, and every other field of the template already had a route here.
+Measured live: a task filed `--depends-on P0.3,P0.4` against tasks parked behind
+an environment nobody had created — shipping the describable half of it meant
+removing one id, and the only route was `cancel` plus a fresh `add`, losing the
+id, the journal continuity and the description somebody had written. `risk` is
+the sharpest of the three: it feeds the executor's model floor and whether a
+commit needs human confirmation, and it is a judgement made *before* the work was
+looked at.
+
+**Empty is a value, not a clear flag.** `--blocked-by ""` and `--depends-on ""`
+empty those fields, because a comma list of **ids** has no value that reads as
+content — unlike `--gate ""`, which writes a gate holding an empty command. That
+is the line `/audit:phase retarget --area ""` already draws for a CSV field, and
+it is why there is no `--depends-on-clear`.
+
+**It does not re-derive `model`.** The escalation from `risk: high` to `opus`
+happens at creation, when no `--model` was passed; a rescope to `high` leaves the
+model where it is and **says so**, because `model` belongs to `/audit:panel` and
+`add --model`, and a second writer of it here would journal a change the caller
+never asked for while overruling one they had. Pass `--model` on `add`, or set it
+in the panel.
+
+**A call that moved `blockedBy` or `dependsOn` reports readiness** — `waiting on:`
+or the `/audit:run <taskId>` handoff, the same two sentences `add` prints. That
+is the question such a call is asking, and a `--blocked-by` or `--depends-on` id
+that resolves to nothing is a validator finding: exit 1, every written file rolled
+back.
+
+**`--gate-clear` is how a task reaches the EMPTY gate**, and it is here for a reason
+that is not `/audit:phase retarget`'s. That verb *appends* to `testGate`, so the append
+itself left the empty gate unspellable; `scope` **replaces** `tests.gate` outright, and
+the gap is in the values — no `--gate` value says *none*, because `--gate ""` writes a
+gate holding an empty command, which is a gate that cannot run rather than the absence
+of one. It refuses alongside `--gate` exactly as `retarget` does. Measured live: a phase
+retargeted to `testGate: []` (nothing in that repo could grade markdown and config) left
+its pending tasks holding the `["lint"]` they had inherited at creation, and the only
+routes to the state the phase had just reached were a rescope mid-run or the hand edit
+this file forbids. An emptied gate is reported as such rather than in silence — the
+task then runs no gate command of its own, and the phase's `testGate` at sign-off is
+what still grades it.
 
 **Why the verb exists.** `/audit:sync pull sprint` imports tasks with `files: []` and
 tells the reader to scope them before running. Nothing could: `add` creates, `cancel`

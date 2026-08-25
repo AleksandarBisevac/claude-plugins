@@ -57,7 +57,7 @@ claude-plugins/                           # this repo (personal, public)
         layout.md                         # /audit:layout — pick the manifest layout, either direction
         migrate.md                        # /audit:migrate — legacy spelling of `/audit:layout sharded`
         init.md                           # /audit:init — multi-agent manifest generation
-        task.md                           # /audit:task — interactive task creation
+        task.md                           # /audit:task — add/scope/move/cancel a task, answers as flags
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
         sync.md                           # /audit:sync — Azure DevOps work-item sync
       agents/
@@ -128,6 +128,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-journal.py                # the CLI over it: append/verify/show/archive
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
+          run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -343,6 +344,7 @@ L7:
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
+  run-test-gate -> _manifest_io, _output
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
@@ -421,7 +423,7 @@ Maps events → scripts, every entry running through
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
 - PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
-- PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (only for a run carrying `dangerouslyDisableSandbox`; both **open**)
+- PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (the `dangerouslyDisableSandbox` row **and** the digest sweep that catches a manifest written by a shell command; both **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
@@ -601,7 +603,7 @@ stream — that ordering is the whole mechanism). Throttled (once per file + glo
 All tunables under config `tddReminder`. `--selftest`.
 
 ### `plugins/audit/hooks/journal-writes.py` (v0.29.0)
-PostToolUse (Edit|Write|MultiEdit|NotebookEdit) recorder: every edit-tool write to the
+PostToolUse (Edit|Write|MultiEdit|NotebookEdit **and Bash**) recorder: every write to the
 manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
 audit trail via `scripts/governance/audit-journal.py`. NO stdout at all — a recorder that talks turns
 every manifest edit into transcript — and every failure is silent, because a journal that
@@ -609,6 +611,25 @@ cannot be written must not break the write it was recording. A hook rather than 
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
 like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
+
+**The two passes, and why the tool is not part of the question (F194).** Edit fragments are
+not parseable JSON, so a field-level diff can only come from remembering the file as it
+stood before the write. The PreToolUse pass snapshots each recorded path into a
+per-(session, target) slot under `stateDir`; the PostToolUse pass reads that slot, diffs old
+against new by id over the state fields, emits the derived `task.complete` / `task.commit` /
+`phase.signoff` rows, and then **refreshes the slot** to the state it just recorded. The
+refresh is the whole repair: the derivation used to hang off a slot only an edit-tool Pre
+pass ever wrote, so a session that wrote the manifest through `python3 -c` in a Bash call
+left a chain that verified perfectly over a history with none of those rows in it — the
+worst combination available, and the same dependency a hook was chosen over a prompt to
+avoid, one layer down. Refreshed, the baseline is the manifest as of the last row in the
+journal, so the Bash pass can ask the FILE instead of the payload: for each recorded path —
+the index, the shards beside it, the config — is the digest still the one the slot
+remembers? The Pre pass **stays**, because the slot is keyed per session and without it the
+first write of every session would have no baseline. Two limits are stated in the row rather
+than left to be discovered: a path with no slot at all is seeded and claimed nothing about,
+and a path that moved with no parseable pre-image carries `DERIVATION_MISSED` in its summary
+and in `details.reason`.
 
 Also PostToolUse on **Bash**, for one event that is not about the plan: a call carrying
 `dangerouslyDisableSandbox` appends `bash.unsandboxed` with a DIGEST of the command, its
@@ -2096,6 +2117,35 @@ one breach, 2 usage error or unreadable manifest — and a missing basis is deli
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
 `/audit:status --gate --fail-on invariant-breach`.
+
+### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
+Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).
+
+**Did the gate change the tree?** `git status --porcelain` before and after. A gate is a
+MEASUREMENT; one with side effects has answered a different question than the one asked, and
+a commit built on it carries work no task owns and no review saw. Any difference prints
+`GATE MUTATED THE TREE: <files>` and refuses **regardless of the gate's own exit code**.
+Measured live: a docs task's `pre-commit run --all-files` rewrote five backend source files —
+`isort` and `black` are fix-in-place and reported `Passed` *because* they had.
+
+**Did anything actually run?** Runners that report their own step count are read and the count
+printed; zero is `NO CHECK RAN`, which is not the word green. The same live run, narrowed to
+the task's two markdown files, SKIPPED every hook on a Python-only config: exit 0, nothing
+verified, task done. One design, both failure modes, and the exit code separated neither from
+a verdict. A runner that does not report a count yields `None`, printed as not-knowable —
+guessing zero would refuse a passing gate and guessing one would bless a skipped one.
+
+Exit 0 passed / 1 a command failed, or the tree moved, or nothing ran / 2 could not be asked.
+An **empty** gate exits 0 and is reported as itself, never as green: `audit-task.py:_phase_gate`
+documents it as a designed state, and printing green would claim a measurement nobody made.
+Git that cannot describe the tree is `UNKNOWN` and says so rather than reading as clean.
+
+A script and not an instruction in `reference/orchestrator.md` for the reason
+`journal-writes.py` gives against a prompt: a rule that depends on the model remembering holds
+until a session forgets, a harness runs a different orchestrator, or somebody adds a gate by
+hand next year. It does NOT narrow the gate to the task's files — that changes what a per-task
+gate means for every manifest already written, so the refusal names the option and a human
+decides.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'

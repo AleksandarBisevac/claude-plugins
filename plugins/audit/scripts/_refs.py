@@ -722,10 +722,20 @@ _FLAG = re.compile(r"--[a-z][a-z0-9-]*")
 # having nothing to discharge.
 VERBATIM_FLAGS = ("--reason", "justification")
 
-# The sentence that discharges it. One spelling, because the rule itself lives in
+# The sentence that discharges it, and it is the BOLDED DIRECTIVE rather than the
+# words. One spelling, because the rule itself lives in
 # `reference/manifest-conventions.md` and this is the pointer at it -- two full
 # copies of the argument is how one of them stops being true.
-VERBATIM_POINTER = "words go in VERBATIM"
+#
+# WHY THE BOLD IS PART OF THE NEEDLE. The first version matched the bare words
+# anywhere in the file, and `commands/task.md` then grew an ordinary
+# cross-reference in prose - "(see *The operator's words go in VERBATIM* below)"
+# - which is useful writing and not a rule being stated. That mention alone
+# discharged the check, and the mutation harness caught it: deleting the real
+# directive left the file passing. A MENTION IS NOT A STATEMENT, which is the
+# same count-do-not-merely-find trap `test__refs.tk6` was rewritten for in the
+# same release.
+VERBATIM_POINTER = "**The operator's words go in VERBATIM**"
 
 # ...and the section the pointer names, so a pointer at a heading that has been
 # renamed away is caught rather than read as compliance.

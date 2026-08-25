@@ -215,9 +215,10 @@ page behind it, read against the form rather than instead of it. All of it is
 - **`/audit:propose`** — the parked-phase lifecycle: `list` what init parked,
   `materialize` a proposal into a live phase (a move, not a re-synthesis), `drop` one
   with a recorded reason.
-- **`/audit:task`** — add a tracked task: the command gathers answers (including a skills
-  step fed by `audit-status --json --discovery`, with the explicit `null — none applies`
-  choice) and calls `scripts/manifest/audit-task.py` for the write itself.
+- **`/audit:task`** — add a tracked task: every answer is a flag the caller may pass, and
+  the command asks only for what is missing (including a skills step fed by
+  `audit-status --json --discovery`, with the explicit `null — none applies` choice)
+  before `scripts/manifest/audit-task.py` does the write itself.
 - **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
   task** (the repro test must fail before the fix) executed by `/audit:run`.
 - **`/audit:sync`** — set the connector up on a board for the first time (`connect`), mirror
@@ -295,9 +296,10 @@ page behind it, read against the form rather than instead of it. All of it is
     journal and lock classes are not graded — they carry their own evidence.
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
-  - `journal-writes.py` (PreToolUse + PostToolUse: edits) — appends one hash-chained
-    row to the **audit trail** for every edit-tool write to the manifest or to
-    `.claude/audit.config.json`: who, when, what, and the state it left behind. The
+  - `journal-writes.py` (PreToolUse: edits — PostToolUse: edits + Bash) — appends one
+    hash-chained row to the **audit trail** for every write to the manifest or to
+    `.claude/audit.config.json`, **whatever tool made it**: who, when, what, and the
+    state it left behind. The
     Pre pass caches the file's pre-image so the Post pass can record a **field-level
     diff** (`P2.3: status in_progress->done, completedAt set`) and emit the
     **completion records** (`task.complete`, `task.commit`, `phase.signoff`) —
@@ -365,7 +367,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool |
 | A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits | graded on evidence: no manifest → observe, a manifest with nothing running → warn, a phase `in_progress` → **deny**. `planGate` pins one tier by hand |
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
-| Every edit-tool write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows | `journal-writes.py` — Pre + PostToolUse edits | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them |
+| Every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call included | `journal-writes.py` — PreToolUse edits, PostToolUse edits + `Bash` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
 | A shell write that no tool edit and no `in_progress` task accounts for is reported — **where a plan exists**, and **in the one tree the guard watches**, graded on the same evidence as the plan gate | `guard-bash-writes.py` — PostToolUse `Bash` + edits | non-blocking `additionalContext`. PostToolUse cannot undo the write — the model is told, in-band, that it sidestepped the gate. With no manifest the class is silent: "no task covers this" is true of every file, so it carries nothing. `enforce`/`planGate` restores it. A command that ran in a **different working tree** is told so instead of being blamed for the watched tree's dirt — to guard a worktree, open its own session there (`/audit:worktree` prints the command) |
 | Source changed with no test touched this session | `remind-tdd.py` — PostToolUse edits | non-blocking nudge, throttled and manifest-aware |
@@ -443,7 +445,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:logs` | `prune [--older-than DAYS] [--dry-run] [--json]` | Prune the local feeds this plugin writes under `logsDir` — today `<logsDir>/plan-gate-events.jsonl`, the file the plan gate appends to and the panel's **Plan gate** card renders. `prune` drops the rows that no longer belong: a `file` that resolves **outside this repository** (the plugin manages and references only the consuming repo), and a line that is not a JSON object (the panel's reader already discards those, so they occupy the file while showing up nowhere). `--older-than DAYS` adds an age pass and is **off unless given** — the feed already self-trims by size, and an old verdict is still a true record of this repo, so a default would be a number with no basis. Both counts print, including at zero, and removed rows are counted by class and never echoed. `--dry-run` reports the identical counts and writes nothing. **This one writes**: the verb is mandatory, and the blast radius is the one file — the journal is deliberately out of reach. |
 | `/audit:guide` | `<question about the audit plugin>` | Answer a question about the plugin itself — what a config key does, how the plan gate grades, what the journal can and cannot prove — from the plugin's own README, reference docs, schemas and `SECURITY.md`, with a citation for every claim. Read-only and cheap; it changes nothing. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
-| `/audit:task` | `add "<title>" [--phase <id>] \| scope <taskId> --files a,b \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — the command gathers answers (including a skills step with the explicit `null — none applies` choice) and calls `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. **`scope`** gives a **pending** task its `files` — and optionally `--tests-mode` / `--tests-add` / `--gate` — through the same lock, revalidate-or-roll-back and journal row as `add`, **re-deriving** `fileIndex` rather than appending to it so files the task no longer claims are released. It exists because `/audit:sync pull sprint` imports tasks with `files: []` and told the reader to scope them, while no verb could: the only route was the hand edit this command replaces, and `fileIndex` is what the plan gate matches an edit against — so an unscoped phase ran with its central guard inert. A started task is refused, because its scope is what its attempts were judged against. **`priority` moved.** `/audit:phase priority <phaseId> <tier\|--clear>` is the spelling — the field is `phase.priority` and no task has one — and `/audit:task priority` still works as the legacy spelling of it. `/audit:task cancel <phaseId>` likewise still closes a whole phase; `/audit:phase cancel` is where that is spelled now. |
+| `/audit:task` | `add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] \| scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — every answer is a flag the caller may pass, and the command asks only for what is missing (including a skills step with the explicit `null — none applies` choice) before calling `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. **`scope`** gives a **pending** task its `files` — and optionally `--tests-mode` / `--tests-add` / `--gate` / `--gate-clear` — through the same lock, revalidate-or-roll-back and journal row as `add`, **re-deriving** `fileIndex` rather than appending to it so files the task no longer claims are released. It exists because `/audit:sync pull sprint` imports tasks with `files: []` and told the reader to scope them, while no verb could: the only route was the hand edit this command replaces, and `fileIndex` is what the plan gate matches an edit against — so an unscoped phase ran with its central guard inert. A started task is refused, because its scope is what its attempts were judged against. `--gate-clear` is the only spelling for the EMPTY gate a task can reach — `--gate ""` writes a gate holding an empty command, which is a gate that cannot run rather than the absence of one — and it refuses alongside `--gate` for the reason `/audit:phase retarget` does. **`add` takes it too**: creation is where the copy of the phase's gate is made, and until `add` read the flag it accepted it and wrote the phase's gate anyway, so a new task nothing in the repo could grade had to be rescoped the moment it existed. **`scope` also reaches `--risk`, `--blocked-by` and `--depends-on`** — the fields of the new-task template that nothing could correct once set, since the panel's composition card reaches `model` and `skills` instead. A task parked behind a `dependsOn` id could only be freed by `cancel` plus a fresh `add`, losing the id, the journal continuity and the description somebody wrote; `risk` is the sharpest of them, because it feeds the executor's model floor and whether a commit needs human confirmation and it is judged before the work is looked at. An empty value of either id list empties the field — a comma list of ids has no value that reads as content, which is why they need no `--clear` twin — and a call that moved either one reports whether the task is ready now. The `model` is deliberately NOT re-derived from a new risk, and the report says so: that field belongs to `/audit:panel` and `add --model`. **`priority` moved.** `/audit:phase priority <phaseId> <tier\|--clear>` is the spelling — the field is `phase.priority` and no task has one — and `/audit:task priority` still works as the legacy spelling of it. `/audit:task cancel <phaseId>` likewise still closes a whole phase; `/audit:phase cancel` is where that is spelled now. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `connect \| push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| parents \| status` | Sync the manifest with Azure DevOps work items — `connect` is the guided, read-only path to a first working connector (transport, which auth path is actually in effect, a Work-Items probe that proves access without creating anything, and the board's process template), writing `meta.ado` only at the end and only after you confirm; `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `parents` caches the board's backlog levels and the parent-shaped items on it (read-only against ADO; it writes two `meta.ado` caches and no work item), `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
 
@@ -639,8 +641,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.1/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.1/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.5.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.5.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -1199,8 +1201,14 @@ is loud rather than silent. It is a smoke detector wired to three alarms, not a 
 The **completion records** are journal rows the `journal-writes` hook derives from the
 manifest diff — `task.complete` (a task's status moved to done), `task.commit` (its commit
 moved null → SHA), `phase.signoff` (a phase moved to done) — plus `task.move`, written by
-`/audit:task move` when a task is renumbered into another phase. The hook is the only writer
-of the first three; never append them by hand (two writers means duplicate rows). Tokens are
+`/audit:task move` when a task is renumbered into another phase. The hook derives them from
+a pre-image it refreshes after every row it writes, so **which tool wrote the manifest is
+not part of the answer**: a shell command inside a `Bash` call is recorded like an edit. Two
+limits are said out loud rather than left to be found — a path the hook has no pre-image for
+yet is seeded and claimed nothing about, and a path that moved with no parseable pre-image
+gets a row that states that the completion records were not derived from it. The hook is the
+only writer of the first three; never append them by hand (two writers means duplicate
+rows). Tokens are
 deliberately not in these rows — metering lands on Stop/SessionEnd, so any number written at
 completion time would be wrong; the ledger is the anchor for spend.
 
@@ -1530,7 +1538,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.4.1/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.5.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

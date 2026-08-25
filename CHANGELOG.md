@@ -4,6 +4,56 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.5.0] - 2026-08-25
+
+**A minor, not a patch, by this repo's own table**: it carries new behaviour, not only fixes. And the
+entry that matters most was found by the plugin running against a real project, not by reading it.
+
+**The journal recorded nothing when a session wrote through Bash.** `journal-writes.py` derived
+`task.complete`, `task.commit` and `phase.signoff` from a pre-image cached by a hook registered only
+on the edit tools, so a session using shell writes lost those rows — and the chain still verified,
+which is the worst pairing: tamper-evidence intact over a history missing the events it exists to
+record. Measured on a live plan, most of its finished tasks carried no completion row at all. The
+pre-image is now kept by the Post pass rather than owned by the Pre pass, so it is refreshed after
+every recorded row and any writer's next change can be diffed against it whatever tool made it.
+Deriving the rows from the chain instead — the obvious idea — was checked and rejected: `stateHash`
+is a one-way digest, so it proves a file changed and cannot yield the content a diff needs. Where no
+baseline exists the pass **seeds and says nothing**, because a row claiming a write it cannot
+establish would be fabricated evidence in the one file whose job is to be trustworthy.
+
+**A test gate rewrote five files that the task did not own.** `pre-commit run --all-files` as a docs
+task's gate: `isort` and `black` are fix-in-place and reported `Passed` *because* they had rewritten
+the tree. Then the same gate, narrowed to that task's markdown files, skipped every hook on a
+Python-only config — exit 0, nothing verified. One design, both failure modes, and the exit code
+separated neither from a real verdict. New `run-test-gate.py` brackets every gate with a working-tree
+snapshot and refuses the commit step on any difference regardless of the gate's exit code, and reads
+how many checks actually ran. `/audit:init` now prefers a read-only spelling and flags a candidate
+that may write.
+
+**A plan can be corrected, and correcting it no longer lies about what changed.** `/audit:task scope`
+reaches `files`, tests, description, `risk`, `blockedBy` and `dependsOn`; `/audit:phase retarget`
+reaches a phase's gate, area, outcome and description; `--gate-clear` reaches the EMPTY gate that an
+import had made unreachable, on `add` as well as the other verbs. The journal rows those writes leave
+now carry the true prior value — two fields wrote a literal `null`, so the trail attested a state that
+was never there, and a third journalled a row for a change that had not happened.
+
+**`doctor` grades the skills a plan names.** It already said "runner not on PATH here: that gate
+cannot run on this machine" and said nothing about a review skill that does not resolve — the same
+shape of machine-local dependency, one warned and one silent. A scan that fails, or an inventory that
+comes back empty, is reported as unknown rather than as clean.
+
+**The operator's own words reach the journal unchanged**, with the rule in one place and a lint that
+fails the build if a command asking a human for such text does not say so. **`status` explains a
+total that cannot be reached** — `cancelled` was computed, printed by the HTML report and withheld by
+the terminal, so a phase read `0/5` over four runnable tasks with nothing saying why; all three
+surfaces that print such a total now carry it.
+
+**Also:** the manifest validator accepts `area.skills: null`, which the schema has always documented
+and the resolver has always honoured — the validator was the only reader out of step, and CI ran both
+of them. `/audit:task`'s `argument-hint` advertises the flags its script actually takes, and a new
+check asserts that every flag a verb advertises is read by that verb's own writer — the parser is
+global, so argparse accepts a flag a verb ignores.
+
 ## [1.4.1] - 2026-08-25
 
 **A patch release, and the two entries a user feels are both about a guard that was quietly not

@@ -135,6 +135,7 @@ check_submodules = _setup.check_submodules
 check_areas = _policy_checks.check_areas
 check_policy = _policy_checks.check_policy
 check_build_commands = _policy_checks.check_build_commands
+check_plan_skills = _policy_checks.check_plan_skills
 check_branch_naming = _policy_checks.check_branch_naming
 _leading_executable = _policy_checks._leading_executable
 
@@ -168,7 +169,27 @@ def diagnose(project, deep=False):
     check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel)
     check_submodules(rep, project, cfg, manifest, git_root)
     check_areas(rep, project, cfg, manifest, manifest_rel)
-    check_policy(rep, project, cfg, cfg_mod, manifest)
+    # ONE discovery scan for the two checks that need one. `check_policy`'s own
+    # docstring sets that rule ("One discovery scan per run, batched across
+    # kinds"), and F195 added a second reader of the same inventory - so the scan
+    # is memoised here rather than each check calling it. Both take `_discover` as
+    # a seam their selftests already use, so the sharing costs neither of them
+    # their testability.
+    _scanned = {}
+
+    def _scan_once(proj, home=None):
+        key = (proj, home)
+        if key not in _scanned:
+            mod = _policy_checks._load("_panel_discovery", "_panel_discovery.py")
+            _scanned[key] = mod.discover(proj, home=home)
+        return _scanned[key]
+
+    check_policy(rep, project, cfg, cfg_mod, manifest, _discover=_scan_once)
+    # F195: the skills the plan NAMES, against what this machine can find. Beside
+    # `check_build_commands` on purpose - a runner that is not installed and a
+    # reviewer that is not installed are the same claim, and they now read as a
+    # pair instead of one warning and one silence.
+    check_plan_skills(rep, project, manifest, _discover=_scan_once)
     check_build_commands(rep, project, manifest)
     check_branch_naming(rep, project, manifest, git_root)
     check_ado(rep, project, manifest)

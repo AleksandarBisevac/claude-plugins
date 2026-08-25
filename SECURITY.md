@@ -220,8 +220,9 @@ straight answer:
 
 ## The audit trail: tamper-evident, not tamper-proof
 
-Since 0.29.0 every edit-tool write to the manifest or to
-`.claude/audit.config.json` appends a row to an append-only, hash-chained journal
+Since 0.29.0 every write to the manifest or to
+`.claude/audit.config.json` — whichever tool made it, a shell command inside a
+`Bash` call included — appends a row to an append-only, hash-chained journal
 (`scripts/governance/audit-journal.py`, written by the `journal-writes` hook and by the
 panel's own saves). Each row carries who, when, what changed, a hash of the
 document the write left behind, and the hash of the row before it.
