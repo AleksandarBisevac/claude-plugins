@@ -2294,10 +2294,12 @@ def _cases(check):
     # `phase.md` spells the command verb `add` while the script spells it
     # `add-phase`, so the two names are mapped rather than assumed equal - and the
     # map is here, once, instead of a second table.
-    _ph_hint = _frontmatter(_PH, "argument-hint")
-    _ph_flags = dict((a.strip().split()[0],
-                      set(re.findall(r"--[a-z][a-z-]*", a)))
-                     for a in _ph_hint.split("|") if a.strip().split())
+    # DERIVED FROM `_ph_alts`, which `pv1`/`pv1b` above already parsed and
+    # guarded. The first draft re-read the frontmatter here, which is one
+    # document parsed twice in one function -- two sources for one fact, and the
+    # copy would have been the one to rot.
+    _ph_flags = dict((a.split()[0], set(re.findall(r"--[a-z][a-z-]*", a)))
+                     for a in _ph_alts if a.split())
     _SCRIPT_VERB = {"add-phase": ("phase", "add")}
 
     check("tk1 every alternative in /audit:task's hint opens with a literal "
@@ -2307,32 +2309,47 @@ def _cases(check):
           % (_tk_verbs,),
           _tk_verbs != []
           and all(re.match(r"^[a-z]+$", v) for v in _tk_verbs))
-    # F210 IS WHY THIS STILL READS ONE DOC. Widening it to `commands/phase.md`
-    # was written, run, and reverted in the same session: it works, and what it
-    # found on its first run is that `phase.md`'s `add` hint advertises three
-    # flags against a usage block naming several more - F198's defect in the
-    # second command doc. Repairing that rewrites a user-facing hint for six
-    # verbs, so it is its own change; `_ph_flags` and `_SCRIPT_VERB` are parsed
-    # above and used by `pf1`, and F210 carries the widening with them.
-    _tk_shared = sorted(set(_tk_flags) & set(_at_usage))
-    _tk_off = dict((v, (sorted(_tk_flags[v]), sorted(_at_usage[v])))
-                   for v in _tk_shared if _tk_flags[v] != _at_usage[v])
+    # F210. BOTH COMMAND DOCS, because reading one of them was the defect twice.
+    # `tk2` compared `commands/task.md` against the usage block and nothing
+    # compared `commands/phase.md`, so that hint advertised three flags for `add`
+    # against a usage block naming eight - F198's defect surviving in the
+    # document F198 did not touch. `phase.md` spells the verb `add` while the
+    # script spells it `add-phase`, so the two are MAPPED, in the same one place
+    # `pf1` maps them.
+    _tk_all = dict(_tk_flags)
+    for _tkv in sorted(_SCRIPT_VERB):
+        _tkcmd = _SCRIPT_VERB[_tkv][1]
+        if _ph_flags.get(_tkcmd):
+            _tk_all[_tkv] = _ph_flags[_tkcmd]
+    _tk_shared = sorted(set(_tk_all) & set(_at_usage))
+    _tk_off = dict((v, (sorted(_tk_all[v]), sorted(_at_usage[v])))
+                   for v in _tk_shared if _tk_all[v] != _at_usage[v])
     check("tk2 for every verb both the hint and the writer's usage block name, "
           "the flags are the SAME SET - equality rather than a subset, because "
           "the fault ran in one direction (a hint advertising `--phase` against a "
           "verb taking eleven) and a flag the script later drops would rot in the "
-          "other: %r" % (_tk_off,),
-          _tk_shared != [] and _tk_off == {})
+          "other. Read over BOTH command docs, so a phase verb is not outside "
+          "the check that exists for a task verb: %r" % (_tk_off,),
+          _tk_shared != [] and _tk_off == {}
+          # The vacuity half OF THE WIDENING, which the count below cannot give:
+          # if the verb map stopped resolving, the loop above would silently
+          # compare `task.md` alone and this line would read exactly as it does.
+          and all(v in _tk_shared for v in _SCRIPT_VERB))
     # THE VACUITY GUARD, and it is not decoration: `_tk_off == {}` is also what an
     # intersection that had gone EMPTY returns, which is how a renamed verb on
     # either side would leave this line green over nothing.
-    check("tk3 ...and the intersection is the three verbs the script owns, with "
-          "`move` on the hint side alone because it is an Edit procedure rather "
-          "than a script call - counted, so a rename on either side is a finding "
-          "rather than a silent skip: %r" % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "cancel", "scope"]
+    check("tk3 ...and the intersection is the four verbs the script owns across "
+          "the two docs, with `move` on the hint side alone because it is an "
+          "Edit procedure rather than a script call - counted, so a rename on "
+          "either side is a finding rather than a silent skip: %r"
+          % ((_tk_shared, sorted(_tk_flags)),),
+          _tk_shared == ["add", "add-phase", "cancel", "scope"]
           and "move" in _tk_flags and "move" not in _at_usage)
-    _tk_unknown = sorted(set(f for v in _tk_shared for f in _tk_flags[v])
+    # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
+    # the other document, and indexing it here raised `KeyError` the first time
+    # the widening ran - which is worth a comment because the traceback pointed
+    # at this line and the cause was six lines up.
+    _tk_unknown = sorted(set(f for v in _tk_shared for f in _tk_all[v])
                          - _at_parser)
     check("tk4 every flag the hint declares for a SCRIPT verb is one argparse "
           "defines - a hint is typed by hand, and a flag the parser does not "
@@ -2382,8 +2399,14 @@ def _cases(check):
     # verb where it happened again. `_phase_gate` is listed as a writer because it
     # is where the flag is read, the way `_build_task` is for `add`.
     _AT_WRITERS = {"add": ("cmd_add", "_locked_add", "_build_task"),
+                   # `_build_phase` is `add`'s `_build_task` one verb over, and
+                   # it was MISSING here until F210 widened the hint that names
+                   # its flags. Nothing was wrong with the code: the row was
+                   # incomplete, and the check went quiet over the gap rather
+                   # than reporting one - which is what a writer table costs when
+                   # it is maintained by hand and read by only one case.
                    "add-phase": ("cmd_phase_add", "_locked_phase_add",
-                                 "_phase_gate"),
+                                 "_phase_gate", "_build_phase"),
                    "scope": ("cmd_scope", "_locked_scope"),
                    "cancel": ("cmd_cancel", "_locked_cancel", "_cancel_task")}
 
