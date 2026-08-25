@@ -162,10 +162,10 @@ def _rel(path, root):
     `git show` listing that can never contain it.
     """
     try:
-        rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+        rel = _output.posix_rel(os.path.abspath(path),
+                                os.path.abspath(root))
     except Exception:
         return None
-    rel = rel.replace(os.sep, "/")
     if rel == ".." or rel.startswith("../"):
         return None
     return rel
@@ -499,7 +499,7 @@ def _recorded_states(project, phase_file_abs):
     this function exists to make countable.
     """
     try:
-        rel = os.path.relpath(phase_file_abs, project).replace(os.sep, "/")
+        rel = _output.posix_rel(phase_file_abs, project)
     except Exception:
         return []
     try:

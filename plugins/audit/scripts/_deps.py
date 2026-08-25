@@ -1762,10 +1762,9 @@ def ui_asset_names(ui_dir):
     errors = []
     names = []
     for base, _dirs, files in os.walk(ui_dir, onerror=errors.append):
-        rel = os.path.relpath(base, ui_dir)
+        rel = _output.posix_rel(base, ui_dir)
         for f in files:
-            names.append(f if rel == os.curdir
-                         else (rel.replace(os.sep, "/") + "/" + f))
+            names.append(f if rel == os.curdir else (rel + "/" + f))
     if errors:
         raise errors[0]
     return sorted(names)
@@ -1986,30 +1985,24 @@ SHARED_CONCERNS = (
      "constant of its own under a different name. The panel's day-number helpers "
      "(dnum, dayIso) stayed in panel/core.js, where they have one reader - "
      "dayIso replacing three identical local copies."),
-    ("which mode the page is painting", None,
+    ("which mode the page is painting", "shared/theme.js",
      r"re:(?:function|const|let|var)\s+"
-     r"(?:isDark|isDarkMode|darkNow|inDarkMode)\s*[=(]", 2,
-     "NOT EXTRACTED, AND THE ROW SAYS SO RATHER THAN WAITING FOR THE "
-     "EXTRACTION. `isDark` is written once in `panel/core.js` and once in "
-     "`report/page-state.js`, the skill has named it as known duplication for "
-     "releases, and the register could not see it - which is the same failure "
-     "the caret-restore row records one file over: a comment saying 'one rule, "
-     "two places' was written when it was true and nothing counted it "
-     "afterwards. THE CAP IS TODAY'S COUNT, so the pair may not become a "
-     "trio, and it is not zero because zero would demand the extraction in a "
-     "change that is not allowed to touch `ui/`. THE TWO COPIES ALREADY "
-     "DISAGREE, which is what makes it a row and not a note: the report guards "
-     "`window.matchMedia` before calling it and the panel does not, so the "
-     "panel throws where the report returns light, and the copies differ on "
-     "the one line neither author would think to compare. THE HOME WHEN IT "
-     "GOES is `shared/theme.js` - both surfaces read the same `data-theme` "
-     "attribute with the same precedence, so this is the promotion rule's "
-     "second reader, and the wiring is the four steps the UI skill lists. THE "
-     "NEEDLE IS THE DECLARATION AND NOT THE CALL, because every surface calls "
-     "it and an extraction keeps the calls; a rename is covered by the "
-     "spellings listed and, past those, by `sc2` reporting a needle that "
-     "matches nothing anywhere - which for an unextracted row is the shape a "
-     "typo takes."),
+     r"(?:isDark|isDarkMode|darkNow|inDarkMode)\s*[=(]", 0,
+     "EXTRACTED, and the row is worth reading for what it looked like first: it "
+     "stood here with a cap of TWO and a home of None, saying in its own words "
+     "that the pair may not become a trio and that zero would demand an "
+     "extraction the change writing it was not allowed to make. That is an "
+     "honest row and it is also how duplication becomes permanent - a cap set "
+     "to today's count is satisfied forever by changing nothing. It named "
+     "`shared/theme.js` as the home when it went, and that is where it went. "
+     "THE TWO COPIES REALLY HAD DISAGREED, which is what made it a row and not "
+     "a note: the report guarded `window.matchMedia` before calling it and the "
+     "panel did not, so the panel threw where the report returned light, on the "
+     "one line neither author would think to compare. The guarded reading is "
+     "the one kept. THE NEEDLE IS THE DECLARATION AND NOT THE CALL, because "
+     "every surface calls it and the extraction keeps the calls; a rename is "
+     "covered by the spellings listed and, past those, by `sc2` reporting a "
+     "needle that matches nothing anywhere."),
     ("phase execution order", None,
      r"re:priority\s*(?:===?\s*(?:null|undefined)\s*\)?\s*\?\s*[^'\"\s]"
      r"|\|\|\s*0|\?\?)", 0,

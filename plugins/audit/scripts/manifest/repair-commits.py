@@ -158,7 +158,26 @@ def apply_repair(mpath, manifest, ans):
     """Clear under the lock, revalidate before saving, journal each cleared row."""
     project = project_of(mpath)
     lost = [(r["phaseId"], r["taskId"], r["commit"]) for r in ans["lost"]]
-    handle = _locks.acquire(project, LOCK_NAME, note="repair:commits")
+    # F188. THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE
+    # WERE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
+    # which is never true of an int - so the release never ran and every write left
+    # the index lock on disk, and the code was never read, so a refused acquire
+    # fell into the write below and changed the manifest with no lock held. The
+    # The refusal is `_locks`' own sentence and NOT its terminal lines: those name
+    # the host a live pid runs on, which has no business in a returned payload.
+    # A project with NO lock scheme is the third answer, and it is not a
+    # refusal: `acquire` says `E_ERR` both for "not a git repository" and for
+    # a real failure, and refusing on every non-zero code refused every write
+    # in a non-git project - which the panel handles by falling back to a
+    # working-tree lockfile and proceeding. Asked before acquiring, where the
+    # answer is unambiguous.
+    code = None
+    if _locks.available(project):
+        code = _locks.acquire(project, LOCK_NAME,
+                              note="repair:commits",
+                              out=lambda *_a, **_k: None)
+        if not _locks.held(code):
+            return False, _locks.refusal(code, LOCK_NAME)
     try:
         manifest, cleared = _commit_trail.clear(manifest, lost)
         findings, _warnings = _rules.validate(manifest)
@@ -173,7 +192,7 @@ def apply_repair(mpath, manifest, ans):
         else:
             _mio.atomic_write_json(mpath, manifest)
     finally:
-        if isinstance(handle, dict):
+        if _locks.held(code):
             _locks.release(project, LOCK_NAME, out=lambda *_a, **_k: None)
 
     # The record. Fail-soft by the journal's own contract: a repair that

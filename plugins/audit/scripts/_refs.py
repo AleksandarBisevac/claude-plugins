@@ -245,8 +245,8 @@ def _surface_files(surface_root, surface, mode):
         for name in sorted(filenames):
             if not name.endswith(exts):
                 continue
-            rel = os.path.relpath(os.path.join(root, name), surface_root)
-            found.append(rel.replace(os.sep, "/"))
+            found.append(_output.posix_rel(os.path.join(root, name),
+                                           surface_root))
     found.sort()
     return found
 
@@ -358,8 +358,8 @@ def _py_index(repo_root, rel_root=None):
         for name in sorted(filenames):
             if not name.endswith(".py"):
                 continue
-            rel = os.path.relpath(os.path.join(root, name), repo_root)
-            index.setdefault(name, []).append(rel.replace(os.sep, "/"))
+            index.setdefault(name, []).append(
+                _output.posix_rel(os.path.join(root, name), repo_root))
     return index
 
 
@@ -702,6 +702,80 @@ def absolute_reach_violations(repo_root=None):
 _CMD_ROW = re.compile(r"^\|\s*`/audit:([a-z-]+)`\s*\|((?:\\\||[^|])*)\|",
                       re.MULTILINE)
 _FLAG = re.compile(r"--[a-z][a-z0-9-]*")
+
+
+# F191. THE FLAGS THAT CARRY A HUMAN'S OWN WORDS into the manifest and the
+# hash-chained journal. A command doc that asks for one of these and does not say
+# the text goes through UNCHANGED is a doc that lets a paraphrase be recorded --
+# and the journal then proves the integrity of a sentence its subject never wrote.
+# Measured live: the operator said "Tracked in ADO only, not executed here" and
+# what was written was "tracked on the board only; this work is not executed
+# through the audit pipeline".
+#
+# Matched on the FLAG rather than on a doc list, so a new command that gathers a
+# reason is covered the day it is written rather than the day somebody remembers
+# this rule. `--note` is `/audit:layout`'s, which composes its own value from the
+# direction it was given and asks the operator for nothing - so the needle is what
+# a HUMAN answers, which is a flag in three of the four cases and the WORD in the
+# fourth: `/audit:bug close` records "a one-line `notes` justification" and names
+# no flag at all, so a flag-only needle checked three docs and read the fourth as
+# having nothing to discharge.
+VERBATIM_FLAGS = ("--reason", "justification")
+
+# The sentence that discharges it. One spelling, because the rule itself lives in
+# `reference/manifest-conventions.md` and this is the pointer at it -- two full
+# copies of the argument is how one of them stops being true.
+VERBATIM_POINTER = "words go in VERBATIM"
+
+# ...and the section the pointer names, so a pointer at a heading that has been
+# renamed away is caught rather than read as compliance.
+VERBATIM_RULE_DOC = "reference/manifest-conventions.md"
+VERBATIM_RULE_HEADING = "## The operator's words go in unchanged"
+
+
+def verbatim_rule_drift(repo_root=None):
+    """{"missing": [command, ...], "checked": n, "ruleDoc": bool} -- docs that ask
+    a human for text bound for the journal without saying it goes in unchanged.
+
+    Subset, like `command_flag_drift`: the pointer has to be present, and where it
+    sits inside the file is the author's business. `ruleDoc` is the other half --
+    a pointer at a heading nobody kept is a pointer at nothing, and every doc
+    would still pass.
+    """
+    root = repo_root or REPO_ROOT
+    cdir = os.path.join(root, PLUGIN_REL, "commands")
+    out, checked = [], 0
+    try:
+        names = sorted(os.listdir(cdir))
+    except OSError as exc:
+        return {"missing": ["<unlistable: %s>" % (exc,)], "checked": -1,
+                "ruleDoc": False}
+    for name in names:
+        if not name.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(cdir, name), "r",
+                      encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        # The body only: a flag inside `argument-hint` is a DECLARATION, and a
+        # command that merely accepts `--reason` passed on the command line asks
+        # the operator for nothing.
+        body = text.split("---", 2)[-1]
+        if not any(flag in body for flag in VERBATIM_FLAGS):
+            continue
+        checked += 1
+        if VERBATIM_POINTER not in body:
+            out.append(name[:-3])
+    rule_ok = False
+    try:
+        with open(os.path.join(root, PLUGIN_REL, VERBATIM_RULE_DOC),
+                  "r", encoding="utf-8", errors="replace") as fh:
+            rule_ok = VERBATIM_RULE_HEADING in fh.read()
+    except OSError:
+        rule_ok = False
+    return {"missing": out, "checked": checked, "ruleDoc": rule_ok}
 
 
 def command_flag_drift(repo_root=None):

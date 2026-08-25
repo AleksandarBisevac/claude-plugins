@@ -67,4 +67,6 @@ Default filter: everything NOT `fixed`/`wontfix`. `list all` shows everything;
    `/audit:run` / `/audit:phase` first).
 2. Set `status` to `wontfix` (default) — or `fixed` only if the human explicitly says
    it was fixed outside the pipeline — and record a one-line `notes` justification.
+
+   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
 3. Revalidate and report.

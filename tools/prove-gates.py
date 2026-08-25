@@ -356,6 +356,17 @@ TABLE = (
  # mutation reddens the version-pin family, of which `p1` is one.
  ("command_flag_drift", "plugins/audit/commands/status.md", "suffix",
   r"^argument-hint:", " [--probe-flag]", REF, "cf1"),
+ # F191. The pointer that says a human's own words go in unchanged. Removed from
+ # ONE doc, because that is the shape the fault had: three commands said nothing
+ # and the fourth's silence was the one that got a paraphrase into the chain.
+ ("verbatim_rule_drift", "plugins/audit/commands/task.md", "replace",
+  "**The operator's words go in VERBATIM**", "**A note about the reason**",
+  REF, "vb1"),
+ # ...and the heading those pointers name. A pointer at a section nobody kept
+ # reads as compliance while naming nothing, so the rule doc is its own row.
+ ("verbatim_rule_drift", "plugins/audit/reference/manifest-conventions.md",
+  "replace", "## The operator's words go in unchanged",
+  "## Operator text", REF, "vb2"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -738,6 +749,13 @@ ALLOW = (
  ("command_flag_drift", S + "_refs.py", "replace",
   "        row_flags = set(_FLAG.findall(rows[cmd]))",
   "        row_flags = set()", REF, "cf1"),
+ # The needle narrowed back to a flag. `bug close` names none - it asks for "a
+ # one-line `notes` justification" - so a flag-only census read three docs and
+ # treated the fourth as having nothing to discharge, which is a clean sheet over
+ # the one thing it could not see.
+ ("verbatim_rule_drift", S + "_refs.py", "replace",
+  'VERBATIM_FLAGS = ("--reason", "justification")',
+  'VERBATIM_FLAGS = ("--reason",)', REF, "vb3"),
  # The published vocabulary, minus one key the plugin really does publish. `cv1`
  # is the live-tree assertion over three surfaces written for three readers, and
  # this is what makes it a claim rather than a habit.

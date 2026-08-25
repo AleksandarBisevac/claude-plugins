@@ -764,6 +764,19 @@ def _composition_changes(manifest, patch):
             if was != now:
                 rows.append({"target": pid, "field": _ado_parent.FIELD,
                              "from": was, "to": now})
+        if "area" in (pv or {}):
+            # BOTH SIDES THROUGH `areas_of`, so the row compares what is in force
+            # with what would be, in one spelling. Compared as the resolved TAG
+            # LIST and not as the stored value: `"api"` and `["api"]` are the same
+            # tagging, and a row saying `api -> ['api']` is a change the reader
+            # cannot act on. The `to` side is rendered the way it will be STORED,
+            # which is the string for one tag - the shape `audit-task` writes.
+            was = _areas.areas_of(ph.get("area"))
+            tags = _areas.areas_of(pv["area"])
+            if was != tags:
+                rows.append({"target": pid, "field": "area",
+                             "from": (was[0] if len(was) == 1 else was) or None,
+                             "to": (tags[0] if len(tags) == 1 else tags) or None})
     # `_mio.tasks_by_id` drops a task carrying no id, where this index used to key
     # it under `None`. Nothing reachable changes: the keys looked up here come out
     # of a JSON object, so they are always strings and could never BE `None` --
@@ -940,7 +953,7 @@ def write_config(project, obj):
         return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
                 "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged",
-                "path": _mio.posix_rel(path, project)}
+                "path": _output.posix_rel(path, project)}
     # The config decides where the manifest is and which guards run; writing it
     # under a running phase is the same class of surprise as writing the manifest.
     lock = _acquire_write_lock(project, current, None)
@@ -951,7 +964,7 @@ def write_config(project, obj):
     finally:
         _release_write_lock(lock)
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
-           "path": _mio.posix_rel(path, project)}
+           "path": _output.posix_rel(path, project)}
     # `current`, not the config just written: the actor is resolved under the mode
     # that was in force when they made the change, not one this same save may have
     # altered.
@@ -976,7 +989,7 @@ def theme_state(project):
                    for k, t, names in _theme.THEME_GROUPS],
         "single": sorted(_theme.THEME_SINGLE),
         "source": info["source"],
-        "path": (_mio.posix_rel(info["path"], project)
+        "path": (_output.posix_rel(info["path"], project)
                  if info.get("path") else None),
         "name": info["name"],
         "error": info["error"],
@@ -1159,7 +1172,7 @@ def write_theme(project, body):
     back, err = _theme.load_theme_file(path)
     if err:
         return {"ok": False, "findings": ["written but not readable back: %s" % err]}
-    written = [_mio.posix_rel(path, project)]
+    written = [_output.posix_rel(path, project)]
     if save_as:
         cfg = dict(read_config(project))
         ui = dict(cfg.get("ui") or {})
@@ -1300,6 +1313,30 @@ def apply_composition_patch(manifest, patch):
             err = _apply_ado_parent(manifest, ph, pv[_ado_parent.FIELD])
             if err:
                 return err
+        # F187. THE OTHER HALF OF `meta.areas`. The registry has had an editor
+        # since areas existed, and no phase could be put IN an area afterwards -
+        # `audit-task add-phase --area` writes it at creation and nothing wrote it
+        # again. A registry you can curate while nothing can be assigned to it is
+        # half a feature, and the half that is missing is the one every rollup,
+        # every per-area total and every doctor area check reads.
+        #
+        # Written through `_areas.areas_of`, which is the resolution every other
+        # surface already shares: it trims, drops empties and DEDUPES, and it is
+        # what decides that `["api","api"]` is one tag. A second normalisation
+        # here is how one phase comes to count twice in a per-area total.
+        if "area" in (pv or {}):
+            tags = _areas.areas_of(pv["area"])
+            if not tags:
+                # An emptied box is "no area", spelled by REMOVING the key: an
+                # empty string or an empty list would both validate and both read
+                # as "tagged with nothing", which is a different claim from
+                # untagged and the one the area fallback treats as considered.
+                ph.pop("area", None)
+            else:
+                # One tag stays a STRING, as `audit-task` writes it: the manifest
+                # carries both shapes and a list of one would be a needless
+                # difference between two writers of the same field.
+                ph["area"] = tags[0] if len(tags) == 1 else tags
     # Same index as `_composition_changes` reads, from the same owner, so the
     # dialog's preview and the write cannot disagree about which task a patch key
     # names. An id-less task is not addressable here and never was: a JSON patch
@@ -1362,7 +1399,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
     """
     if not _mio.is_sharded(raw_index):
         _atomic_write_json(mpath, assembled)
-        return [_mio.posix_rel(mpath, project)]
+        return [_output.posix_rel(mpath, project)]
 
     base = os.path.dirname(os.path.abspath(mpath))
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
@@ -1403,7 +1440,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
         for k in _mio.INDEX_ONLY_FIELDS:
             body.pop(k, None)
         _atomic_write_json(spath, body)
-        written.append(_mio.posix_rel(spath, project))
+        written.append(_output.posix_rel(spath, project))
 
     # The INDEX is written for `meta`, and for any index-only field a phase patch
     # touched. Those two are separate reasons and both are needed: a priority
@@ -1421,7 +1458,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
             idx["phases"] = [_index_only_stub(entry, by_pid)
                              for entry in (raw_index.get("phases") or [])]
         _atomic_write_json(mpath, idx)
-        written.append(_mio.posix_rel(mpath, project))
+        written.append(_output.posix_rel(mpath, project))
     return written
 
 
@@ -1508,7 +1545,7 @@ def apply_composition(project, patch):
         return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
                 "healed": [], "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged", "written": [],
-                "path": _mio.posix_rel(mpath, project),
+                "path": _output.posix_rel(mpath, project),
                 "layout": "sharded" if _mio.is_sharded(raw_index) else "single"}
 
     touched = _touched_phase_ids(assembled, patch)
@@ -1532,7 +1569,7 @@ def apply_composition(project, patch):
         _release_write_lock(lock)
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
            "healed": healed,
-           "path": _mio.posix_rel(mpath, project),
+           "path": _output.posix_rel(mpath, project),
            "layout": "sharded" if sharded else "single",
            "written": written}
     out.update(_journal(project, config, "composition.write",

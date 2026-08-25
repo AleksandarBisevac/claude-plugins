@@ -818,6 +818,36 @@ def _structural_entry(row, edges, by_item):
                      row.get("id") or "?", own, named), severity)
 
 
+def _rank_gap(child, child_rank, parent_kind, parent_rank):
+    """Which side of this link has no backlog rank, and why -- one phrase.
+
+    FOUR ANSWERS, NOT TWO, AND THE OLD PHRASE HAD TWO. A rank is missing either
+    because the row carries no type at all or because the type it carries is not
+    in the fetched levels, and that is true of the CHILD and of the PARENT
+    independently. The sentence keyed on whether a type NAME was None, which
+    collapsed those four onto two words -- so a link whose child was ranked and
+    whose parent had no type read "its own type has no rank", naming the one side
+    the check had just verified. Measured in all four directions, not reasoned.
+
+    BOTH SIDES ARE NAMED WHEN BOTH ARE MISSING. Reporting one of two gaps as if it
+    were the gap is how a reader fixes the named half and gets the same warning
+    back with no visible change.
+    """
+    parts = []
+    if child_rank is None:
+        parts.append("the row records no type of its own"
+                     if not isinstance(child, str) or not child
+                     else "its own type %r has no rank in meta.ado.hierarchy"
+                     % (child,))
+    if parent_rank is None:
+        parts.append("the parent's type is not recorded"
+                     if not isinstance(parent_kind, str) or not parent_kind
+                     else "the parent's type %r has no rank in "
+                     "meta.ado.hierarchy" % (parent_kind,))
+    # Never empty by construction: the caller only asks when one rank is None.
+    return " and ".join(parts)
+
+
 def _level_entry(row, levels):
     """Tier B for one row: (kind, entry). `kind` is one of the three answers."""
     child, parent_kind = row.get("type"), row.get("parentType")
@@ -832,15 +862,13 @@ def _level_entry(row, levels):
     child_rank = levels.get(child) if isinstance(child, str) else None
     parent_rank = levels.get(parent_kind) if isinstance(parent_kind, str) else None
     if child_rank is None or parent_rank is None:
-        unranked = child if child_rank is None else parent_kind
         return ("unverified",
                 _entry("B0", "B", row,
-                       "%s %s hangs under #%d and %s has no rank in "
-                       "meta.ado.hierarchy — not verified"
+                       "%s %s hangs under #%d and %s — not verified"
                        % (row.get("kind"), row.get("id") or "?",
                           row.get("parent"),
-                          ("its own type" if unranked is None
-                           else "type %r" % (unranked,)))))
+                          _rank_gap(child, child_rank,
+                                    parent_kind, parent_rank))))
     if parent_rank < child_rank:
         return ("refusal",
                 _entry("B1", "B", row,

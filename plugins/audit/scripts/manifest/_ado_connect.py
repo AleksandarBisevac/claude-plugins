@@ -522,8 +522,15 @@ def connect_plan(existing_ado, proposal):
     counts = {ACTION_SET: 0, ACTION_KEEP: 0, ACTION_CHANGE: 0}
     for row in rows:
         counts[row["action"]] += 1
+    # `configured` is about meta.ado; `evidence` is about meta.ado.connection, and
+    # they are NOT the same question. A manifest configured by hand, or by a
+    # version before the evidence block existed, has the first and not the second
+    # - so a line about replacing "the last run's" evidence keyed on `configured`
+    # claims a previous moment that was never recorded. One claim, one basis.
+    prior = have.get("connection")
     return {"rows": rows, "counts": counts,
             "configured": bool(have),
+            "evidence": prior if isinstance(prior, dict) else None,
             "writes": counts[ACTION_SET] + counts[ACTION_CHANGE]}
 
 

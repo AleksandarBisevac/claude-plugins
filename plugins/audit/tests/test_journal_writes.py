@@ -41,6 +41,7 @@ import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
 import _fmt                                        # noqa: E402  (the plural rule this hook must copy)
@@ -679,7 +680,7 @@ def _cases(check):
                     if f.startswith("bash-writes-plugin-")]
                    if os.path.isdir(_wsd) else [])
         _wjfiles = jmod.journal_files(jmod.journal_dir(wproj, cfg))
-        _wjrels = [os.path.relpath(p, wproj).replace(os.sep, "/")
+        _wjrels = [_output.posix_rel(p, wproj)
                    for p in _wjfiles]
         _wslot = (os.path.join(_wsd, _wsides[0]) if _wsides else None)
         try:

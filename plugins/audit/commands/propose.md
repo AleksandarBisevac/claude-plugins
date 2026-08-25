@@ -101,6 +101,8 @@ why the work was declined. So the reason is required, and the validator enforces
 rather than trusting this file to have asked.
 
 1. Ask for the one-line reason if `$ARGUMENTS` did not carry one.
+
+   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
 2. ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/materialize-proposal.py" \
      <manifestPath> drop <PROP-id> --reason "<why>"

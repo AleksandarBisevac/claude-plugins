@@ -218,14 +218,18 @@ function renderAdoCard(c){
   const i=el('input',{id:tid,value:getPath(ADRAFT||{},path)??'',placeholder:ph||''});
   i.oninput=()=>{const v=i.value.trim();
    if(v)setPath(A(),path,v);else if(ADRAFT)delPath(ADRAFT,path);pruneTop();};
-  return el('span',{class:'f'},flabel(lbl,help,null,tid),i);};
+  // The setting this control belongs to, taken from the path it WRITES to, so
+  // the declaration and the write can never name two different keys.
+  return el('span',{class:'f','data-adosetting':path.split('.')[0]},
+    flabel(lbl,help,null,tid),i);};
  // absent = ON for these three; the checkbox writes false or deletes the key.
  const onoff=(key,lbl,help)=>{
   const cb=el('input',{type:'checkbox',id:'ado-'+key});
   cb.checked=!ADRAFT||ADRAFT[key]!==false;
   cb.onchange=()=>{if(cb.checked){if(ADRAFT)delete ADRAFT[key];}
    else A()[key]=false;pruneTop();};
-  return el('span',{class:'f cbf'},cb,flabel(lbl,help,null,'ado-'+key));};
+  return el('span',{class:'f cbf','data-adosetting':key.split('.')[0]},
+    cb,flabel(lbl,help,null,'ado-'+key));};
  card.append(el('div',{class:'row'},
    onoff('enabled','Connector enabled',MDESC.adoEnabled),
    onoff('echo','Echo on task/phase transitions',MDESC.adoEcho),
@@ -260,7 +264,8 @@ function renderAdoCard(c){
    txt('types.task','Task','Task type'),
    txt('types.pbi','auto-detect at first phase push','Phase (PBI) type',
      MDESC.adoTypes),
-   el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),
+   el('span',{class:'f','data-adosetting':'tag'},
+     flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),
      el('span',{class:'inl'},tagIn,
        el('label',{class:'inl',for:'ado-tag-none'},tagNone,'no tag')))));
  // --- stateMap: one fixed row per manifest status. Empty box = the built-in
@@ -312,7 +317,8 @@ function renderAdoCard(c){
   // table; a visible header row would print those three words three times on
   // one card. display:none would take the header out of the accessibility
   // tree, which is the one thing it must not do.
-  return el('div',{class:'f'},flabel(kind+' states',MDESC.adoStateMap),
+  return el('div',{class:'f','data-adosetting':'stateMap'},
+    flabel(kind+' states',MDESC.adoStateMap),
     el('table',{class:'regtbl adosm'},
       tableHead(['manifest status','ADO state','never move'].map(h=>
         ({attrs:{scope:'col'},label:el('span',{class:'vh'},h)}))),tb));};
@@ -337,10 +343,11 @@ function renderAdoCard(c){
   cb.checked=!!getPath(ADRAFT||{},'comments.'+key);
   cb.onchange=()=>{if(cb.checked)setPath(A(),'comments.'+key,true);
    else if(ADRAFT)delPath(ADRAFT,'comments.'+key);pruneTop();};
-  return el('span',{class:'f cbf'},cb,flabel(lbl,MDESC.adoComments,null,cid));};
+  return el('span',{class:'f cbf','data-adosetting':'comments'},
+    cb,flabel(lbl,MDESC.adoComments,null,cid));};
  card.append(el('div',{class:'row'},
-   el('span',{class:'f'},flabel('Remaining Work on done',
-     MDESC.adoRemainingWork,null,'ado-rw'),
+   el('span',{class:'f','data-adosetting':'onComplete'},
+     flabel('Remaining Work on done',MDESC.adoRemainingWork,null,'ado-rw'),
      el('span',{class:'inl'},rw,el('label',{class:'inl',for:'ado-rw-never'},rwNever,
        "don't touch"))),
    cflag('onBlocked','Comment when blocked'),
@@ -365,11 +372,80 @@ function renderAdoCard(c){
     else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…',null,
    'Pull tags: add a tag');
  card.append(el('div',{class:'row'},
-   el('span',{class:'f'},flabel('Sprint team (current iteration)',
-     MDESC.adoSprint,null,'ado-sprint.team'),team),
+   el('span',{class:'f','data-adosetting':'sprint'},
+     flabel('Sprint team (current iteration)',MDESC.adoSprint,null,
+       'ado-sprint.team'),team),
    txt('pull.areaPath','falls back to Area path','Pull area path',
      MDESC.adoPull),
-   el('span',{class:'f'},flabel('Pull tags',MDESC.adoPull),tags)));
+   el('span',{class:'f','data-adosetting':'pull'},
+     flabel('Pull tags',MDESC.adoPull),tags)));
+ // --- F187: the two settings that had no control at all. `requireParent` is a
+ // gate that refuses every create with nowhere to hang, `parentWorkItem` is the
+ // manifest-wide answer to "where", and `tagVocabulary` decides which tags an
+ // item may carry — all three were preconditions a reader could satisfy only by
+ // editing the manifest by hand, which is a gate people switch off instead.
+ //
+ // The parent is an INTEGER and typed as one: a work item id that arrived as a
+ // string validates nowhere, and coercing silently would hide a paste of a URL.
+ const pwCur=ADRAFT?ADRAFT.parentWorkItem:undefined;
+ const pw=el('input',{id:'ado-parentWorkItem',type:'number',min:'1',step:'1',
+   value:typeof pwCur==='number'?String(pwCur):'',placeholder:'e.g. 101',
+   // The placeholder is an EXAMPLE and vanishes on the first keystroke, so it
+   // cannot be this box's name - `fl1` is the rule and it caught this one.
+   'aria-label':'parent work item id'});
+ pw.oninput=()=>{const v=pw.value.trim();
+  if(v===''){if(ADRAFT)delete ADRAFT.parentWorkItem;}
+  // Number('') is 0 and Number('12a') is NaN; neither is an id. An unparseable
+  // box leaves the key ALONE rather than writing a number the board cannot have.
+  else{const n=Number(v);if(Number.isInteger(n)&&n>0)A().parentWorkItem=n;}
+  pruneTop();};
+ const reqP=el('input',{type:'checkbox',id:'ado-conventions.requireParent'});
+ reqP.checked=!!getPath(ADRAFT||{},'conventions.requireParent');
+ reqP.onchange=()=>{if(reqP.checked)setPath(A(),'conventions.requireParent',true);
+  else if(ADRAFT)delPath(ADRAFT,'conventions.requireParent');pruneTop();};
+ card.append(el('div',{class:'row'},
+   el('span',{class:'f','data-adosetting':'parentWorkItem'},
+     flabel('Parent work item',MDESC.adoParentWorkItem,null,
+       'ado-parentWorkItem'),pw),
+   el('span',{class:'f cbf','data-adosetting':'conventions'},
+     reqP,flabel('Require a parent',MDESC.adoRequireParent,null,
+       'ado-conventions.requireParent'))));
+ // --- tagVocabulary: prefix → allowed values. Edited as a PAIR list like
+ // identityMap and for the same reason — a prefix is a key and a dotted-path
+ // writer would split one carrying a dot. The value cell is a comma list, and
+ // `*` alone is the open axis (`release:2026-08` without a monthly edit).
+ const tvWrap=el('div',{});
+ const tvGet=()=>getPath(ADRAFT||{},'tagVocabulary')
+   ||((ADRAFT||{}).conventions||{}).tagVocabulary||{};
+ const tvSet=m=>{const c=A().conventions=A().conventions||{};
+  if(Object.keys(m).length)c.tagVocabulary=m;else delete c.tagVocabulary;
+  if(!Object.keys(c).length)delete ADRAFT.conventions;pruneTop();};
+ const tvDraw=()=>{tvWrap.textContent='';
+  const m=((ADRAFT||{}).conventions||{}).tagVocabulary||{};
+  Object.keys(m).forEach(k=>{
+   const vals=Array.isArray(m[k])?m[k]:[];
+   const open=vals.length===1&&String(vals[0]).trim()==='*';
+   tvWrap.append(el('div',{class:'row','data-tvrow':k},
+     el('span',{class:'mono'},k+':'),
+     el('span',{class:'mono'},open?'any value (open axis)':vals.join(', ')||'(none)'),
+     el('button',{class:'btn small',type:'button','aria-label':'remove '+k,
+       onclick:()=>{const c=((ADRAFT||{}).conventions||{}).tagVocabulary||{};
+        const next={};Object.keys(c).forEach(x=>{if(x!==k)next[x]=c[x];});
+        tvSet(next);tvDraw();}},'×')));});
+  const pi=el('input',{placeholder:'prefix (or * for bare tags)',
+      'aria-label':'tag prefix, or * for bare tags'}),
+    vi=el('input',{placeholder:'values, comma separated — or * for any',
+      'aria-label':'allowed values, comma separated, or * for any'});
+  const add=()=>{const k=pi.value.trim();if(!k)return;
+   const vals=vi.value.split(',').map(x=>x.trim()).filter(Boolean);
+   const cur=((ADRAFT||{}).conventions||{}).tagVocabulary||{};
+   const next={};Object.keys(cur).forEach(x=>{next[x]=cur[x];});
+   next[k]=vals;tvSet(next);pi.value='';vi.value='';tvDraw();};
+  tvWrap.append(el('div',{class:'row'},pi,vi,
+    el('button',{class:'btn small',type:'button',onclick:add},'add')));};
+ tvDraw();
+ card.append(el('div',{class:'f','data-adosetting':'conventions'},
+   flabel('Tag vocabulary',MDESC.adoTagVocabulary),tvWrap));
  // --- identityMap: a pair editor, edited directly — NEVER through delPath,
  // whose dotted paths would split the ledger keys (emails carry dots).
  const imWrap=el('div',{});
@@ -401,8 +477,8 @@ function renderAdoCard(c){
        if(!k||!v)return;const o=A();o.identityMap=o.identityMap||{};
        o.identityMap[k]=v;ki.value='';vi.value='';imDraw();}},'add')));};
  imDraw();
- card.append(el('div',{class:'f'},flabel('Identity map (ledger → ADO)',
-   MDESC.adoIdentityMap),imWrap));
+ card.append(el('div',{class:'f','data-adosetting':'identityMap'},
+   flabel('Identity map (ledger → ADO)',MDESC.adoIdentityMap),imWrap));
  // --- fields: the per-type template, edited DIRECTLY for identityMap's reason
  // and a sharper version of it — an ADO reference name IS dotted, so a dotted
  // writer would shred `Microsoft.VSTS.Common.Activity` into four levels every
@@ -453,8 +529,9 @@ function renderAdoCard(c){
     +'read-only is refused when the manifest is validated, and the save names '
     +'which.'));};
  fdDraw();
- card.append(el('div',{class:'f'},flabel('Field template (work item type → field → value)',
-   MDESC.adoFields),fdWrap));
+ card.append(el('div',{class:'f','data-adosetting':'fields'},
+   flabel('Field template (work item type → field → value)',
+     MDESC.adoFields),fdWrap));
  // --- save / discard. EDITS.ado feeds beforeunload and the disk-refresh
  // dirtiness check; the buttons listen on the CARD directly — re-registering
  // the comp view's shared updater from here would abort the composition

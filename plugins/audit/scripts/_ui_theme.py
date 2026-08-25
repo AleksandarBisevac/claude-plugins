@@ -847,8 +847,8 @@ def list_themes(project, home=None):
             if not fn.endswith(".json"):
                 continue
             out.append({"name": os.path.splitext(fn)[0],
-                        "path": os.path.relpath(os.path.join(base, fn),
-                                                project or "."),
+                        "path": _output.posix_rel(os.path.join(base, fn),
+                                                  project or "."),
                         "builtin": False})
     return out
 
@@ -1029,6 +1029,7 @@ UI_ASSETS = (
     "shared/download.js",
     "shared/plural.js",
     "shared/storage.js",
+    "shared/theme.js",
 )
 
 
@@ -1048,7 +1049,7 @@ def declared_asset_drift(directory=None):
         # by default, yielding nothing and raising nothing, so a missing tree
         # would come back as "no assets" and read as agreement.
         for base, _dirs, files in os.walk(root, onerror=walk_errors.append):
-            rel = os.path.relpath(base, root)
+            rel = _output.posix_rel(base, root)
             for f in files:
                 # Assets only. A directory may also carry documentation, which
                 # is never assembled into a page and must not read as an

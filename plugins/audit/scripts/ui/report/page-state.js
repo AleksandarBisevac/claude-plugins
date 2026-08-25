@@ -50,21 +50,9 @@
   const themeBtn = document.getElementById('audit-theme');
   const THEME_KEY = 'audit-report-theme';
 
-  /**
-   * Whether the reader's OS asks for a dark UI.
-   * @returns {boolean} false when the browser cannot answer the question
-   */
-  const prefersDark = () =>
-    Boolean(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
-
-  /**
-   * The theme actually in force: an explicit data-theme wins, else the OS.
-   * @returns {boolean} true when the page renders dark
-   */
-  const isDark = () => {
-    const t = root.getAttribute('data-theme');
-    return t ? t === 'dark' : prefersDark();
-  };
+  // `isDark()` is `shared/theme.js`'s, concatenated ahead of this part. This
+  // surface owned the guarded reading of `matchMedia` and the panel owned an
+  // unguarded one; the shared part keeps this one, for the reasons written there.
 
   /**
    * Put the glyph for the theme the toggle would switch TO on the button.

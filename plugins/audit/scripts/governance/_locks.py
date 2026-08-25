@@ -247,6 +247,70 @@ def _write_lock(path, info):
 # hidden dependency is not a retired one. Both are functions here, `audit-lock.py`
 # wraps them for the CLI, and every caller that needs to acquire says so in an
 # import that the layer lint can read.
+def held(code):
+    """True when an `acquire` return value means the lock IS held.
+
+    F188. `acquire` returns an INT on every path - 0 held, `E_ERR` / `E_USAGE` /
+    `E_LIVE` / `E_STALE` otherwise - and two callers tested it with
+    `isinstance(handle, dict)`, which is never true of an int. Both defects follow
+    from that one misreading and the `try/finally` around it made the first look
+    handled: the release never ran, so every proposal write left the index lock on
+    disk; and the status was never read, so a refused acquire fell straight into
+    the write and changed the manifest with NO LOCK HELD - the exact case the lock
+    exists for.
+
+    Published as a function rather than left as `code == 0` at each call site
+    because what went wrong was a caller inventing its own reading of this
+    contract. There is one reading now and it lives with the contract.
+    """
+    return code == 0
+
+
+def available(project):
+    """True when this project has a lock scheme at all.
+
+    THE THIRD ANSWER, and leaving it out re-broke the panel. `acquire` returns
+    `E_ERR` both for "not a git repository" - where there is no lock to take and
+    never was - and for a real failure creating the directory. A caller that
+    refuses to write on every non-zero code therefore refuses in a project with no
+    `.git`, which is a case the panel has a documented fallback for: it drops to a
+    working-tree lockfile and proceeds under the weaker guarantee.
+
+    So the question is asked BEFORE acquiring, where it has an unambiguous answer,
+    rather than inferred afterwards from a code that means two things. Found by the
+    browser gate: the F188 repair, correct for a contended lock, made every
+    proposal write in a non-git fixture refuse.
+    """
+    return bool(lock_dir(project))
+
+
+def refusal(code, name):
+    """One line for a caller that could not take `name`, safe to put in a payload.
+
+    THE TERMINAL LINES ARE NOT THIS. `acquire` writes a verdict plus indented
+    detail through `out`, and that detail names the HOST the live pid runs on and,
+    on two paths, an absolute project directory. Those lines are for a terminal
+    the operator is already sitting at. A caller that hands them to a structured
+    `findings` list publishes them: the panel paints proposal findings, so the
+    first draft of the F188 repair moved a hostname onto an HTTP response - the
+    same class of leak the machine-identity release existed to close.
+
+    So the caller gets a sentence with no host and no path, and the detail stays
+    where it was already going. `/audit:lock status` is the door for "who holds
+    it", and it names itself here rather than leaving the reader to look.
+    """
+    if code == E_LIVE:
+        return ("the %s lock is held by a live run -- wait for it, or ask its "
+                "owner; `audit-lock.py status` says who and since when" % (name,))
+    if code == E_STALE:
+        return ("the %s lock is STALE -- its run is gone. Confirm that, then "
+                "retake it with --takeover" % (name,))
+    if code == E_USAGE:
+        return "the %s lock was asked for by a name it does not have" % (name,)
+    return ("the %s lock could not be taken (exit %s) -- run `audit-lock.py "
+            "status` for the reason" % (name, code))
+
+
 def acquire(project, name, note=None, takeover=False, session=None, pid=None,
             out=print):
     ld = lock_dir(project)

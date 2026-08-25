@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest (interactive), move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] | scope <taskId> --files a,b | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -111,6 +111,8 @@ per add is the class of error the script exists to delete.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 
+**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
+
 Close a task — or a whole phase — that will **not** be done. The feature was dropped, the
 approach was abandoned, the phase ends with whatever landed. This is not failure and it is
 not `done`: `cancelled` is the second TERMINAL state (the phase/task twin of a bug's
@@ -153,6 +155,38 @@ back** on findings.
 Readiness treats a cancelled blocker as settled, so a plan never deadlocks on work nobody
 will do — a task that was waiting on the cancelled one becomes ready, and is worth a look
 before it runs.
+
+## Subcommand: `scope <taskId> --files a,b`
+
+Give a **pending** task the files it touches, and optionally its tests and its
+description: `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
+(repeatable), `--gate CMD` (repeatable), `--description TEXT`. Runs `scripts/manifest/audit-task.py scope` — the same
+lock, the same revalidate-or-roll-back, the same journal row shape as `add`.
+
+**Why the verb exists.** `/audit:sync pull sprint` imports tasks with `files: []` and
+tells the reader to scope them before running. Nothing could: `add` creates, `cancel`
+closes, `move` relocates, and the panel's composition card reaches `skills` and `model`
+but not `files`. The only way to obey that instruction was the hand edit this file
+forbids for adds — for the reason that applies here too.
+
+**And the cost was not tidiness.** `files` is what `fileIndex` is built from, and
+`fileIndex` is what the plan gate matches an edit against. An unscoped phase ran with
+its central guard **inert** — not failing, because it had nothing to match.
+
+**PENDING only, and the refusal says why**: a task that has started has a scope its
+attempts were already judged against, and rewriting that changes retroactively what the
+gate allowed while the work was done. `cancel`'s rule, for `cancel`'s reason. **Status is
+not the whole test** — a task that ran, failed and was put back to `pending` still carries
+`attempts` and an `outcome` describing work judged under the old scope, so a non-zero
+`attempts` is refused too, pointing at `cancel` plus a fresh `add`.
+
+**The fileIndex is re-derived, not appended to.** A scope call takes files away as well
+as adding them, and an index that only grew would keep matching edits to a scope the task
+no longer claims.
+
+Refuses, each naming the reason: a phase id (it takes a task), an id that is not in the
+manifest, a task that is not pending, and a call that would change nothing — a lock taken
+for no reason is worth saying out loud.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

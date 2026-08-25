@@ -23,6 +23,13 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py scope <taskId> [manifest] --files f1,f2
+                [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
+                [--gate CMD ...] [--description TEXT]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py retarget <phaseId> [manifest]
+                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT]
+                [--description TEXT] [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -135,6 +142,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _areas                 # noqa: E402  (areas_of: the one area resolution every surface shares)
 import _proposals             # noqa: E402  (the id allocator `/audit:propose materialize`
 #                                            uses: the lowest free P<n> over live AND
 #                                            parked ids. A second one here would be a
@@ -404,7 +412,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
     project-relative paths written (shard first, index-precedent order)."""
     if not _mio.is_sharded(raw_index):
         _panel_write._atomic_write_json(mpath, assembled)
-        return [_mio.posix_rel(mpath, project)]
+        return [_output.posix_rel(mpath, project)]
     base = os.path.dirname(os.path.abspath(mpath))
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
               if isinstance(p, dict)}
@@ -433,7 +441,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
                              % stub["shard"])
         body.pop("shard", None)   # the stub owns the pointer, never the body
         _panel_write._atomic_write_json(spath, body)
-        written.append(_mio.posix_rel(spath, project))
+        written.append(_output.posix_rel(spath, project))
     else:
         # Inline phase in a sharded index (mixed/defensive): its body lives in
         # the index itself, so the index write below must carry it.
@@ -453,7 +461,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
         if files_changed:
             idx["fileIndex"] = assembled.get("fileIndex") or {}
         _panel_write._atomic_write_json(mpath, idx)
-        written.append(_mio.posix_rel(mpath, project))
+        written.append(_output.posix_rel(mpath, project))
     return written
 
 
@@ -493,13 +501,13 @@ def _journal_row(project, config, mpath, action, summary, details):
     # config pins manifestPath to where the named manifest actually IS, and
     # the journal lands beside it (<manifest dir>/journal).
     cfg = None if config else \
-        {"manifestPath": _mio.posix_rel(mpath, project)}
+        {"manifestPath": _output.posix_rel(mpath, project)}
     try:
         ok = bool(mod.append(project, {
             "action": action,
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path (n3 pins it; Windows relpath says backslash).
-            "target": _mio.posix_rel(mpath, project),
+            "target": _output.posix_rel(mpath, project),
             "summary": summary,
             "details": details,
             "actor": {"author": _panel_write._viewer(project,
@@ -519,6 +527,34 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
         summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
     return _journal_row(project, config, mpath, "task.add", summary,
                         {"taskId": task_id, "phaseId": phase_id})
+
+
+def _journal_scope(project, config, mpath, task_id, phase_id, changes):
+    """The `task.scope` row: which fields moved, and to what.
+
+    `changes` is the allow-listed shape `_journal_io.DETAILS_KEYS` already
+    carries - id/field/from/to per row - so the cascade spelling every other
+    writer here uses is the one this reuses rather than inventing a `files` key
+    the allow-list would drop in silence. `_journal_phase_add`'s note says what
+    that costs: a field written, dropped, and believed.
+    """
+    fields = ", ".join(row["field"] for row in changes)
+    summary = "%s scoped in %s: %s" % (task_id, phase_id, fields)
+    return _journal_row(project, config, mpath, "task.scope", summary,
+                        {"taskId": task_id, "phaseId": phase_id,
+                         "changes": changes})
+
+
+def _journal_retarget(project, config, mpath, phase_id, changes):
+    """The `phase.retarget` row: which of the phase's fields moved, and to what.
+
+    `changes` again, for `_journal_scope`'s reason - the allow-list carries that
+    shape and would drop an invented `testGate` key in silence.
+    """
+    fields = ", ".join(row["field"] for row in changes)
+    return _journal_row(project, config, mpath, "phase.retarget",
+                        "%s retargeted: %s" % (phase_id, fields),
+                        {"phaseId": phase_id, "changes": changes})
 
 
 def _journal_phase_add(project, config, mpath, phase_id, title, outcome):
@@ -1170,6 +1206,342 @@ def cmd_phase_add(args, out):
                            args, project, config, mpath, title, out))
 
 
+def _locked_scope(args, project, config, mpath, tid, out):
+    """Give an unscoped task its `files` (and optionally its tests), under lock.
+
+    F189. `pull sprint` imports tasks with `files: []` and a description telling
+    the reader to "scope files/tests before running" -- and no verb could. `add`
+    creates, `cancel` closes, `move` relocates, `priority` ranks a phase; none of
+    them edits a task, and the panel's composition card reaches `skills` and
+    `model` but not `files`. So the plugin's own instruction could be obeyed only
+    by the hand edit `commands/task.md` forbids for adds, for the reason that
+    applies here too.
+
+    THE COST WAS NOT TIDINESS. `files` is what `fileIndex` is built from and
+    `fileIndex` is what the plan gate matches an edit against, so an imported
+    phase ran with its central guard inert -- not failing, because it had nothing
+    to match. Measured live before this existed.
+
+    PENDING ONLY. A task that has started or finished has a scope its attempts
+    were judged against, and rewriting that retroactively changes what the gate
+    allowed while the work was done. `cancel`'s rule, for `cancel`'s reason.
+    """
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    kind, node, phase = _find_target(assembled, tid)
+    if kind != "task":
+        out("[audit-task] scope takes a TASK id; %r is %s"
+            % (tid, "not in this manifest" if kind is None else "a " + kind))
+        return E_USAGE
+    if node.get("status") != "pending":
+        out("[audit-task] %s is %s -- scope only rewrites a PENDING task, "
+            "because a started one has a scope its attempts were judged against"
+            % (tid, node.get("status")))
+        return E_USAGE
+    # F190. STATUS IS NOT THE WHOLE TEST. A task that ran, failed and was put back
+    # to `pending` still carries `attempts` and an `outcome` describing work judged
+    # under its OLD scope, so rescoping it silently would make the journal's own
+    # record of that attempt describe a scope that no longer exists.
+    if (node.get("attempts") or 0) > 0:
+        out("[audit-task] %s has already been attempted (%s) -- its outcome "
+            "describes work judged under the current scope, so rescoping it "
+            "would make that record describe something else. Cancel it and add "
+            "the work again if the scope was wrong."
+            % (tid, node.get("attempts")))
+        return E_USAGE
+
+    files = _split_csv(args.files)
+    if not files and args.tests_mode is None and not args.tests_add \
+            and not args.gate and not args.description:
+        out("[audit-task] scope needs --files (and may take --tests-mode / "
+            "--tests-add / --gate / --description) -- a scope call that changes "
+            "nothing is a lock taken for no reason")
+        return E_USAGE
+
+    was_files = list(node.get("files") or [])
+    changes = []
+    if files:
+        node["files"] = files
+        changes.append({"id": tid, "field": "files",
+                        "from": was_files, "to": files})
+    tests = node.get("tests")
+    if not isinstance(tests, dict):
+        tests = node["tests"] = {}
+    if args.tests_mode is not None:
+        if tests.get("mode") != args.tests_mode:
+            changes.append({"id": tid, "field": "tests.mode",
+                            "from": tests.get("mode"), "to": args.tests_mode})
+        tests["mode"] = args.tests_mode
+        # The same derivation `_build_task` makes, so the two writers cannot
+        # disagree about what `expectRedFirst` means.
+        tests["expectRedFirst"] = args.tests_mode == "tdd"
+    if args.tests_add:
+        tests["add"] = list(args.tests_add)
+        changes.append({"id": tid, "field": "tests.add",
+                        "from": None, "to": list(args.tests_add)})
+    if args.gate:
+        tests["gate"] = list(args.gate)
+        changes.append({"id": tid, "field": "tests.gate",
+                        "from": None, "to": list(args.gate)})
+    if args.description:
+        was_desc = node.get("description") or ""
+        if was_desc != args.description:
+            changes.append({"id": tid, "field": "description",
+                            "from": was_desc, "to": args.description})
+        node["description"] = args.description
+    if not changes:
+        out("[audit-task] %s already reads that way -- nothing written" % (tid,))
+        return 0
+
+    # THE WHOLE POINT, and it is a re-derivation rather than an append: the task
+    # is losing files as well as gaining them, and an index that only ever grew
+    # would keep matching edits to a scope the task no longer claims.
+    fidx = assembled.setdefault("fileIndex", {})
+    for fpath in was_files:
+        entry = fidx.get(fpath)
+        if isinstance(entry, list) and tid in entry:
+            entry.remove(tid)
+            if not entry:
+                del fidx[fpath]
+    for fpath in (node.get("files") or []):
+        entry = fidx.setdefault(fpath, [])
+        if tid not in entry:
+            entry.append(tid)
+
+    missing = [f for f in (node.get("files") or [])
+               if not os.path.exists(os.path.join(project, f))]
+    phase_id = phase.get("id")
+    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, True)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the scope would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_scope(project, config, mpath, tid, phase_id, changes)
+    if args.as_json:
+        result = {"ok": True, "id": tid, "phase": phase_id,
+                  "changes": changes, "written": written,
+                  "filesNotOnDisk": missing, "warnings": warnings}
+        result.update(jres)
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s scoped in %s" % (tid, phase_id))
+    for row in changes:
+        out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
+                                json.dumps(row["to"])))
+    out("  fileIndex re-derived (files this task no longer claims are released)")
+    for fpath in missing:
+        out("  note: not on disk (a new file?): %s" % fpath)
+    for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
+        out("WARNING: " + line)
+    if not jres.get("journaled"):
+        out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+    return 0
+
+
+def _locked_retarget(args, project, config, mpath, pid, out):
+    """Correct a phase's gate, area, outcome or description, under lock.
+
+    F190, and it is the half `scope` does not reach. `pull sprint` and `init`
+    synthesize a phase and choose its `testGate`; from that moment the choice is
+    unreachable, and one wrong choice is enough to make the phase unable to pass
+    its own sign-off. Measured live: an imported phase got `testGate: ["lint"]`,
+    `lint` on that repo is `pre-commit run --all-files`, and the phase's tasks
+    touched only JSON and Markdown. Every route out was outside the plugin - a
+    forbidden hand edit, a `buildCommands` value that is a shell hack, or
+    installing a third-party tool to satisfy a gate the plugin itself picked.
+
+    THE EMPTY GATE IS THE POINT OF `--gate-clear`. `_phase_gate` already returns
+    `[]` with a basis and its docstring says why: a phase nothing can prove done
+    is a phase sign-off signs on review alone. That is a designed state, it
+    validates clean, and `/audit:phase add --gate` can reach it for a NEW phase.
+    An imported phase could not, which is what made a guessed gate a trap rather
+    than a default: `--gate` appends, so without an explicit clear there is no
+    spelling for "there is nothing here that can prove this".
+
+    NOT PAST `in_progress`. A done or cancelled phase has a sign-off that was
+    given against the gate it had; moving the gate afterwards would rewrite what
+    that sign-off attested. A running phase may still be corrected - that is the
+    case this verb exists for.
+    """
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    kind, node, _phase = _find_target(assembled, pid)
+    if kind != "phase":
+        out("[audit-task] retarget takes a PHASE id; %r is %s"
+            % (pid, "not in this manifest" if kind is None else "a " + kind))
+        return E_USAGE
+    if node.get("status") in ("done", "cancelled"):
+        out("[audit-task] %s is %s -- its sign-off was given against the gate it "
+            "had, and moving that afterwards would rewrite what the sign-off "
+            "attested" % (pid, node.get("status")))
+        return E_USAGE
+
+    if args.gate and args.gate_clear:
+        # Two answers to one question, and guessing which the caller meant is how
+        # a phase ends up with a gate nobody asked for. The whole fault.
+        out("[audit-task] --gate and --gate-clear say opposite things about the "
+            "same field -- pass one")
+        return E_USAGE
+    if not (args.gate or args.gate_clear or args.area is not None
+            or args.outcome or args.description):
+        out("[audit-task] retarget needs one of --gate / --gate-clear / --area / "
+            "--outcome / --description -- a call that changes nothing is a lock "
+            "taken for no reason")
+        return E_USAGE
+
+    changes = []
+
+    def _moved(field, was, now):
+        if was != now:
+            changes.append({"id": pid, "field": field, "from": was, "to": now})
+
+    if args.gate or args.gate_clear:
+        was = list(node.get("testGate") or [])
+        now = [] if args.gate_clear else list(args.gate)
+        _moved("testGate", was, now)
+        node["testGate"] = now
+    if args.area is not None:
+        was = node.get("area")
+        # SPLIT FIRST, then resolve. `--area` is a CSV flag and
+        # `areas_of` takes a phase FIELD - handed the raw flag it reads
+        # "api,api,web" as one tag and stores it as one, which is a tag no
+        # registry has. `add-phase` splits with `_split_csv` for the same
+        # reason; `areas_of` still runs, because trimming and deduping are
+        # its job and a second copy of that here is how two surfaces come
+        # to disagree about whether ["api","api"] is one area or two.
+        tags = _areas.areas_of(_split_csv(args.area))
+        if not tags:
+            # Absent, never `null`: the conventions default `area` to absent, and
+            # `null` would make an untagged phase claim to have considered it.
+            # `_PHASE_TEMPLATE_KEYS`' own note, at the second write site.
+            if "area" in node:
+                _moved("area", was, None)
+                node.pop("area", None)
+        else:
+            now = tags[0] if len(tags) == 1 else tags
+            _moved("area", was, now)
+            node["area"] = now
+    if args.outcome:
+        _moved("desiredOutcome", node.get("desiredOutcome") or "", args.outcome)
+        node["desiredOutcome"] = args.outcome
+    if args.description:
+        _moved("description", node.get("description") or "", args.description)
+        node["description"] = args.description
+    if not changes:
+        out("[audit-task] %s already reads that way -- nothing written" % (pid,))
+        return 0
+
+    snap = _snapshot(_write_paths(project, mpath, raw_index, pid))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, pid, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the retarget would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_retarget(project, config, mpath, pid, changes)
+    if args.as_json:
+        result = {"ok": True, "id": pid, "changes": changes,
+                  "written": written, "warnings": warnings}
+        result.update(jres)
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s retargeted" % (pid,))
+    for row in changes:
+        out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
+                                json.dumps(row["to"])))
+    if node.get("testGate") == [] and any(r["field"] == "testGate"
+                                          for r in changes):
+        # The empty gate is a designed state and the reader is told what it means
+        # rather than left to read silence as breakage - `_phase_gate`'s rule.
+        out("  the gate is now EMPTY: sign-off for this phase is review alone, "
+            "which is the designed answer when nothing here can prove it done")
+    for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
+        out("WARNING: " + line)
+    if not jres.get("journaled"):
+        out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+    return 0
+
+
+def cmd_retarget(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    pid = (args.title or "").strip()          # positional: the phase id
+    if not pid:
+        out("[audit-task] retarget needs a phase id")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_retarget(
+                           args, project, config, mpath, pid, out))
+
+
+def cmd_scope(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to scope
+    if not tid:
+        out("[audit-task] scope needs a task id")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_scope(
+                           args, project, config, mpath, tid, out))
+
+
 def cmd_cancel(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -1207,7 +1579,9 @@ def cmd_add(args, out):
 
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
-    p.add_argument("command", choices=["add", "add-phase", "cancel"])
+    p.add_argument("command",
+                   choices=["add", "add-phase", "cancel", "scope",
+                            "retarget"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -1223,6 +1597,11 @@ def main(argv, out=print):
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
+    # retarget only. `--gate` APPENDS, so without an explicit clear there is
+    # no spelling for the empty gate - which `_phase_gate` documents as a
+    # designed state and is exactly what a wrongly-guessed gate needs.
+    p.add_argument("--gate-clear", dest="gate_clear",
+                   action="store_true")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None)
     # add-phase only. `--id` rather than a positional: the title is the
@@ -1238,7 +1617,9 @@ def main(argv, out=print):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
-    doors = {"add": cmd_add, "add-phase": cmd_phase_add, "cancel": cmd_cancel}
+    doors = {"add": cmd_add, "add-phase": cmd_phase_add,
+             "cancel": cmd_cancel, "scope": cmd_scope,
+             "retarget": cmd_retarget}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

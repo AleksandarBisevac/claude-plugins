@@ -33,6 +33,7 @@ import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
 import _journal_io as M                            # noqa: E402
 
@@ -461,7 +462,7 @@ def _cases(check):
               "shape, two writers, and the guard looks in one place: %r"
               % (_held,),
               _held.get(M.PLUGIN_WRITE_KEY)
-              == [os.path.relpath(_pw1, _pwp).replace(os.sep, "/")]
+              == [_output.posix_rel(_pw1, _pwp)]
               # normpath on BOTH sides, not string equality: the hook joins the
               # config's `.claude/state` as one segment while this module goes
               # through pathlib, and on Windows those two spellings differ by a
@@ -483,7 +484,7 @@ def _cases(check):
               len(_held2.get(M.PLUGIN_WRITE_KEY) or []) == 2
               and _pw1 != _pw2
               and sorted(_held2[M.PLUGIN_WRITE_KEY])
-              == sorted(os.path.relpath(p, _pwp).replace(os.sep, "/")
+              == sorted(_output.posix_rel(p, _pwp)
                         for p in (_pw1, _pw2)))
 
         check("pw3 a writer key made of separators names NO file rather than a "

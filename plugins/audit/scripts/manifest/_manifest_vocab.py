@@ -132,6 +132,39 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "notes", "baseCommit", "workspaceRoot",
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
+# F187. WHO WRITES EACH meta.ado KEY -- a human, or a command. `KNOWN_ADO` says a
+# key is legal and says nothing about how it gets there, and that silence is the
+# gap: a precondition a gate refuses on, with no way to satisfy it but hand-editing
+# the manifest, is a gate people switch off. Splitting the set is what makes
+# "reachable" a question something can answer.
+#
+# CACHES are written by a command and only by a command: they carry a `fetchedAt`
+# and a `basis`, and a human typing one would be forging evidence. An editor for
+# them would be wrong, not missing.
+ADO_CACHES = frozenset(["connection", "hierarchy", "parentCandidates"])
+
+# The keys a PERSON sets, derived rather than typed a second time: a new key added
+# to `KNOWN_ADO` lands here automatically and has to be classified, which is the
+# whole point of a partition over a list.
+def ado_settings():
+    """The `meta.ado` keys a human is expected to set, as a sorted list."""
+    return sorted(KNOWN_ADO - ADO_CACHES)
+
+
+# Settings the panel's ADO card offers NO control for, each with the reason.
+#
+# IT IS EMPTY, AND THAT IS THE CLAIM. Measured against the card rather than
+# guessed: `identityMap` has a pair editor, `comments` a checkbox each, `fields` a
+# nested editor, `onComplete.remainingWork` a number box with a "never" twin. The
+# first draft of this table exempted all four on reasoning, and every one of the
+# four was wrong - which is why the browser check below walks the RENDERED card
+# instead of trusting a list, and why this table ships with nothing in it.
+#
+# A row here is a claim that a key is better set some other way, not a backlog
+# entry. Anything with neither a control nor a row fails the build.
+ADO_NO_CONTROL = {}
+
+
 # Keys inside meta.ado (the connector config). Enumerated since the v2 connector
 # so a typo like `identitymap` or `statemap` draws a did-you-mean warning instead
 # of silently disabling the feature it was meant to configure.

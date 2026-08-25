@@ -165,6 +165,19 @@ def _check_tag_vocabulary(block, findings, warnings):
         if bad:
             findings.append("%s: every allowed value must be a non-empty string "
                             "(%d bad: %r)" % (where, len(bad), bad[:3]))
+        # An OPEN axis with values listed beside the `*`: the enumeration is
+        # dead, and dead configuration is this module's warning case. Not a
+        # finding - the board is admitting everything, which is legal and
+        # probably meant; what it needs told is that the list under it is now
+        # decoration.
+        if _open_axis(values) and len(values) > 1:
+            warnings.append("%s admits any value (\"*\"), so the other entries "
+                            "%r are unreachable - an open axis and an "
+                            "enumeration are two different rules and only the "
+                            "first is in force"
+                            % (where, sorted(x for x in values
+                                             if isinstance(x, str)
+                                             and x.strip() != _TAG_ANY)))
         if prefix == _TAG_ANY:
             unreachable = [x for x in values
                            if isinstance(x, str) and _TAG_SEP in x]
@@ -226,6 +239,34 @@ def split_tags(raw):
     return [t.strip() for t in str(raw).split(";") if t.strip()]
 
 
+def _open_axis(allowed):
+    """True when this prefix admits ANY value -- the `*` entry, one level down.
+
+    F186. A prefix's list is a CLOSED enum, and some axes are open by nature:
+    `release:2026-08`, `sprint:24`, `ticket:41207`. Closed, those cost a manifest
+    edit per value, and until the edit lands the conformance gate exits 1 on work
+    that is otherwise fine. A board with a monthly release axis was choosing
+    between a monthly commit and switching the rule off.
+
+    WHY THIS SPELLING AND NOT THE EMPTY LIST. `{"*": []}` already means "any bare
+    tag" while `{"supplier": []}` means "no supplier value" -- an asymmetry
+    `_tag_violations` documents and COMPATIBILITY.md protects, because reading the
+    second as "any" would change the meaning of manifests already written. So the
+    open spelling had to be ADDITIVE, and adding is always free. `*` is the
+    character this vocabulary ALREADY uses for "any", at the key level; inside a
+    list it means the same word one level down, which is a vocabulary a reader can
+    guess rather than look up.
+
+    IT IS NOT A PATTERN, deliberately. `release:2026-O8` with a letter O passes an
+    open axis, and a regex spelling would have caught it -- but a regex in a
+    manifest is a language, not a value, and every surface that renders this block
+    would have to render it. An open axis is the board saying "this axis is not
+    mine to enumerate"; a board that wants the shape checked should enumerate.
+    """
+    return any(isinstance(x, str) and x.strip() == _TAG_ANY
+               for x in (allowed if isinstance(allowed, list) else []))
+
+
 def _tag_violations(tags, vocabulary):
     """Which tags this board's vocabulary does not admit.
 
@@ -260,6 +301,14 @@ def _tag_violations(tags, vocabulary):
             if prefix not in vocabulary:
                 out.append("tag %r uses prefix %r, which is not in the "
                            "vocabulary %r" % (tag, prefix, sorted(vocabulary)))
+            elif _open_axis(vocabulary[prefix]):
+                # An OPEN AXIS still needs a value: `release:` names nothing, and
+                # admitting it would make the prefix indistinguishable from a bare
+                # tag that happens to end in a colon.
+                if not value:
+                    out.append("tag %r uses the open prefix %r with no value - "
+                               "an open axis admits any value, not the absence "
+                               "of one" % (tag, prefix))
             elif value not in vocabulary[prefix]:
                 out.append("tag %r is not an allowed value for %r - allowed: %r"
                            % (tag, prefix, sorted(vocabulary[prefix])))

@@ -17,7 +17,6 @@ it lives in; every fixture is built under one `tempfile.mkdtemp()` and removed i
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
-import io
 import json
 import os
 import shutil
@@ -715,51 +714,6 @@ def _cases(check):
                                     _lsharded)[0] == "")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
-    # --- the spelling a published path carries ---------------------------------
-    # `os.path.relpath` answers in the PLATFORM's separator. Every value below is
-    # read back by something that holds the other spelling: the index stores
-    # `phases/P3.json`, the journal's chained rows are compared across machines,
-    # and the panel matches `theme_state()["path"]` against the path the theme
-    # write returned. The backslash is built from `chr(92)` rather than `os.sep`
-    # so this asks the same question on the platform where `os.sep` is already "/".
-    _bs = chr(92)
-    _joined = os.path.join("a", "b" + _bs + "P3.json")
-    check("px1 posix_rel spells a project-relative path with \"/\" whatever the "
-          "platform joined it with - the index stores that spelling, so a "
-          "reported path that does not use it names a file the manifest has "
-          "never heard of: %r" % (M.posix_rel(_joined, "a"),),
-          M.posix_rel(_joined, "a") == "b/P3.json"
-          and _bs not in M.posix_rel(_joined, "a")
-          and M.posix_rel(os.path.join("a", "b", "c.json"), "a") == "b/c.json")
-
-    # THE REASON THIS IS A CASE AND NOT A COMMENT. Two writers return the same
-    # kind of value - project-relative paths that were written - and they drifted:
-    # one journal row spelled its target with "/" while the `written` list beside
-    # it kept the platform's. Reading the SOURCE is what catches the next one; a
-    # behavioural case cannot, because on POSIX both spellings are identical and
-    # every assertion about them passes without the code being right.
-    # The SUITE is in the list, not only the two writers. Respelling the writers
-    # turned three of its expectations red on Windows and nowhere else, because
-    # each one retyped `os.path.relpath` as the value it expected back - a reader
-    # of a published path holding the spelling the writer just stopped using. A
-    # rule that binds only the producing side leaves the comparison free to drift
-    # the other way, which is the same fault with the arrow reversed.
-    _writers = ("../scripts/manifest/audit-task.py",
-                "../scripts/panel/_panel_write.py",
-                "test__panel_write.py")
-    _raw = {}
-    for _rel in _writers:
-        _src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    _rel), encoding="utf-8").read()
-        _raw[_rel.rsplit("/", 1)[-1]] = _src.count("os.path.relpath(")
-    check("px2 neither writer of a published path calls os.path.relpath "
-          "directly, NOR the suite that compares against one - a retyped "
-          "expectation is the same disagreement with the arrow reversed, and on "
-          "POSIX both spellings are one string so nothing behavioural sees it: "
-          "%r" % (_raw,),
-          set(_raw.values()) == set([0]) and len(_raw) == len(_writers))
-
 
 def _selftest():
     return _harness.run(_cases)

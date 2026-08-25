@@ -226,6 +226,34 @@ flags (`id does not follow its phase's prefix` — a warning, never a finding).
 never rewritten. New spend attributes to the new id. `movedFrom` plus the `task.move`
 row are what let a reader join the two halves.
 
+## The operator's words go in unchanged
+
+Every value a command gathers from a human and hands to a script — `--reason` on a
+cancel or a drop, a close note, a sign-off note — reaches the manifest **and the
+hash-chained journal**. Pass it through **VERBATIM**. Do not tighten it, expand it,
+smooth it, or translate it.
+
+**Why this is a rule and not a preference.** The journal's whole claim is
+tamper-evidence: rows chain, a hook fires when a shell command touches the file, and
+`audit-journal.py verify` reports the chain clean. All of that works on whatever
+sentence it is given. Paraphrase the operator and the trail then *cryptographically
+guarantees a sentence its subject never wrote* — which is worse than no record,
+because a reader has every reason to trust it.
+
+Measured, live: the operator answered **"Tracked in ADO only, not executed here"** and
+what reached the script was *"tracked on the board only; this work is not executed
+through the audit pipeline"*. Longer, smoother, and a claim about this plugin's role
+that the operator never made.
+
+`details.reason` is in `_journal_io.DETAILS_KEYS` precisely so the why is a structured
+field rather than prose a reader must parse. That is the design saying this content is
+meant to be relied on.
+
+**Context the orchestrator wants to add goes in its own clause or its own field, never
+by rewriting theirs.** And where the wording is genuinely unusable as a flag value —
+empty, or it would break the shell — **ask again**. Improving it is not an option that
+exists.
+
 ## Tamper evidence and completion records
 
 Absolute immutability of local files does not exist — the user owns the disk. The

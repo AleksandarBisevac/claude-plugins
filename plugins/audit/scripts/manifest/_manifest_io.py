@@ -68,30 +68,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 
-# --- path spelling --------------------------------------------------------------
-def posix_rel(path, start):
-    """A `start`-relative path spelled with "/" on EVERY platform.
-
-    `os.path.relpath` answers in the platform's separator, so the same phase shard
-    is `phases/P3.json` in the index that stores it and `phases\\P3.json` in the
-    line a Windows reader is shown. One file, two spellings, and the one nobody
-    can search for is the one on screen.
-
-    Every value that is PUBLISHED - reported to a human, put in `--json`, or
-    persisted - goes through here. Values used to open a file do not need it
-    (Python takes either separator); values compared against a manifest do, because
-    the manifest holds this spelling.
-
-    Backslashes are replaced UNCONDITIONALLY rather than only `os.sep`. Written as
-    `os.sep` this is the identity on POSIX, so no case here could ask it anything
-    and the body could be deleted without a single suite going red - a check that
-    can only fail on the platform nobody runs locally. The cost is a POSIX filename
-    holding a literal backslash, which is respelled in what is REPORTED and never
-    in what is opened; the same trade `_config.slashed()` already takes in `hooks/`.
-    """
-    return os.path.relpath(path, start).replace("\\", "/")
-
-
 # --- reading + assembly ---------------------------------------------------------
 def read_json(path):
     """Parse a JSON file. Raises like open()/json.load on a missing/invalid file."""

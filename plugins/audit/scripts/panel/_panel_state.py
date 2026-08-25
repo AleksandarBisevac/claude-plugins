@@ -258,7 +258,7 @@ def journal_state(project, limit=JOURNAL_PAGE):
         out["available"] = True
         out["verify"] = {k: res[k] for k in
                          ("ok", "exists", "rows", "findings", "warnings")}
-        out["dir"] = (os.path.relpath(res["dir"], project)
+        out["dir"] = (_output.posix_rel(res["dir"], project)
                       if _within(project, res["dir"]) else None)
         rows = mod.read_all(project, config)
         out["rows"] = list(reversed(rows[-limit:]))     # newest first
@@ -412,7 +412,7 @@ def build_state(project):
             proposals = _proposals_view(manifest)
     return {
         "project": project,
-        "manifestPath": os.path.relpath(mpath, project),
+        "manifestPath": _output.posix_rel(mpath, project),
         "manifestExists": exists,
         "manifestLocked": _audit_lock_held(project, config),
         "viewer": _viewer(project, config),

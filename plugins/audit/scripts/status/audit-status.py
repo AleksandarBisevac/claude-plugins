@@ -369,9 +369,14 @@ def _header_lines(manifest, summary, width=18, pt=None):
     t_done = summary["tasks"]["byStatus"].get("done", 0)
     ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
     bugs = summary["bugs"]
-    out.append("  %s  %d/%d tasks done - %d/%d phases signed off - "
+    # The same problem at the top of the page: `0/10 tasks done` over a plan
+    # whose remainder includes dropped work is a denominator nobody can reach.
+    # Read off `byStatus`, which is where the plan-wide figure already lives.
+    t_cancelled = summary["tasks"]["byStatus"].get("cancelled", 0)
+    out.append("  %s  %d/%d tasks done%s - %d/%d phases signed off - "
                "%d open bug(s) - %d ready now"
                % (_fmt.fmt_bar(t_done, t_total, width), t_done, t_total,
+                  (" (%d cancelled)" % t_cancelled) if t_cancelled else "",
                   ph_done, len(summary["phases"]), bugs["open"],
                   len(summary["ready"])))
     if not summary["valid"]:
@@ -461,6 +466,18 @@ def _phase_table_lines(manifest, summary, only_phase=None):
             pe.get("id") or "?", _clip(pe.get("title") or "", 26),
             _theme.label(pe.get("status")) or "?",
             _fmt.fmt_bar(pdone, ptotal, 12), pdone, ptotal)
+        # F192. THE DENOMINATOR NEEDS ITS SENTENCE. `cancelled` is counted
+        # separately and never folded into `done` - `rollup`'s comment is right
+        # that a bar reading 5/5 for three landed tasks and two dropped ones would
+        # be a lie in the one direction that matters. But `0/5` over four runnable
+        # tasks is a total that can never be reached, and the report already prints
+        # the count while this surface withheld it: one plan, two surfaces, and
+        # only one of them told the reader which facts they needed.
+        #
+        # NON-ZERO ONLY, and that is the one case where silence and zero say the
+        # same thing. `(0 cancelled)` on every phase is noise.
+        if pe.get("cancelled"):
+            head += "  (%d cancelled)" % pe["cancelled"]
         # The badge, off the rollup's already-resolved tier rather than the raw
         # field: an invalid `priority` orders nothing, and a badge rendered from
         # the raw value would advertise a pin the run does not honour. The table
@@ -664,12 +681,13 @@ def _area_lines(summary, pt=None):
     phases = [p for p in (summary.get("phases") or []) if isinstance(p, dict)]
     untagged = [p for p in phases if not p.get("area")]
     rows = [(tag, g.get("phases", 0), g.get("done", 0), g.get("total", 0),
-             g.get("owner"))
+             g.get("owner"), g.get("cancelled", 0))
             for tag, g in sorted(areas.items())]
     if untagged:
         rows.append(("untagged", len(untagged),
                      sum(p.get("done", 0) for p in untagged),
-                     sum(p.get("total", 0) for p in untagged), None))
+                     sum(p.get("total", 0) for p in untagged), None,
+                     sum(p.get("cancelled", 0) for p in untagged)))
     # The cross-cutting blind spot (v0.37 B3), said HERE and said ONCE. The
     # surface was a choice among three: the VALIDATOR would print a line per
     # untagged phase (a wall on a plan where untagged is common and perfectly
@@ -683,9 +701,10 @@ def _area_lines(summary, pt=None):
                         % (len(areas), len(phases) - len(untagged),
                            len(phases)), "header")]
     w = max(len(r[0]) for r in rows)
-    for tag, n_ph, done, total, owner in rows:
-        line = ("    %-*s  %2d phase(s)  %s %d/%d tasks"
-                % (w, tag, n_ph, _fmt.fmt_bar(done, total, 12), done, total))
+    for tag, n_ph, done, total, owner, cancelled in rows:
+        line = ("    %-*s  %2d phase(s)  %s %d/%d tasks%s"
+                % (w, tag, n_ph, _fmt.fmt_bar(done, total, 12), done, total,
+                   (" (%d cancelled)" % cancelled) if cancelled else ""))
         if owner:
             # The advisory owner, from the same rollup --json ships - the
             # person to coordinate with, never an assignee.

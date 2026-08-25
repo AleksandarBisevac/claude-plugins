@@ -195,13 +195,13 @@ def _journal_row(project, config, mpath, phase_id, was, now):
     summary = "%s priority %s -> %s" % (
         phase_id, "none" if was is None else was,
         "none" if now is None else now)
-    cfg = None if config else {"manifestPath": os.path.relpath(mpath, project)}
+    cfg = None if config else {"manifestPath": _output.posix_rel(mpath, project)}
     try:
         ok = bool(mod.append(project, {
             "action": "phase.priority",
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path.
-            "target": os.path.relpath(mpath, project).replace(os.sep, "/"),
+            "target": _output.posix_rel(mpath, project),
             "summary": summary,
             "details": {"phaseId": phase_id, "from": was, "to": now},
             "actor": {"author": _panel_write._viewer(project,
@@ -271,7 +271,7 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
         # a value into a document nobody reads back.
         out("[set-priority] phase %s is not in the index at %s -- priority is an "
             "INDEX-ONLY field, so there is nowhere here to write it"
-            % (phase_id, os.path.relpath(mpath, project)))
+            % (phase_id, _output.posix_rel(mpath, project)))
         return E_USAGE
     was, now = applied
     if was == now:
@@ -304,7 +304,7 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
         return E_INVALID
 
     jres = _journal_row(project, config, mpath, phase_id, was, now)
-    written = [os.path.relpath(mpath, project)]
+    written = [_output.posix_rel(mpath, project)]
     # ADVISORY, and computed from the manifest as it now stands rather than from
     # the tier alone -- a note about a value nothing clamps has to name the value
     # that made it true.

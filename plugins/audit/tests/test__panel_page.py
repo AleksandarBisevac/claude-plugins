@@ -3975,19 +3975,56 @@ def _cases(check):
     # wrappers are <span> now and each field is reached by `for` - so this table no
     # longer has two kinds of entry in it, and `fw0` above is the check that stops
     # a third from being written.
+    # --- F187: the two settings that had no control, and the declaration that
+    # --- makes their absence measurable ---------------------------------------
+    # SOURCE PROPERTIES ONLY. That the controls exist and save is proven by the
+    # browser (`capture-screenshots --only panel` walks `[data-adosetting]` against
+    # `_manifest_vocab.ado_settings()`); what a browser cannot prove is that the
+    # declaration is DERIVED from the path each control writes to rather than typed
+    # beside it, which is the thing that would rot.
+    check("f187a the parent work item is typed as a number and refuses a value "
+          "that is not a positive integer - a work item id pasted as a URL must "
+          "leave the key alone rather than write NaN or 0",
+          "id:'ado-parentWorkItem',type:'number'" in M.UI_HTML
+          and "Number.isInteger(n)&&n>0" in M.UI_HTML
+          and "'aria-label':'parent work item id'" in M.UI_HTML)
+    check("f187b the tag vocabulary editor writes through `conventions` and "
+          "prunes it when empty, so an emptied editor leaves no hollow block "
+          "behind for the validator to warn about",
+          "c.tagVocabulary=m;else delete c.tagVocabulary" in M.UI_HTML
+          and "if(!Object.keys(c).length)delete ADRAFT.conventions" in M.UI_HTML)
+    check("f187c ...and it renders an open axis as words rather than as `*`, "
+          "which is the one value a reader would otherwise take for a literal tag",
+          "any value (open axis)" in M.UI_HTML
+          and "vals.length===1&&String(vals[0]).trim()==='*'" in M.UI_HTML)
+    check("f187d every control declares the setting it belongs to, and the two "
+          "shared helpers DERIVE that from the path they write to - a hand-typed "
+          "attribute is a second vocabulary, and the check that reads it walks a "
+          "rendered page precisely so no translation table exists to drift",
+          "'data-adosetting':path.split('.')[0]" in M.UI_HTML
+          and "'data-adosetting':key.split('.')[0]" in M.UI_HTML)
+
     _FL_LABELLED = {
         "placeholder:def==null?(f.placeholder||''):String(def)":
             "klabel(f.label,f.path,tip,fieldId(f.path)),inp);",
         "placeholder:'not set'":
             "klabel(lbl,p,null,fieldId(p)),inp);",
+        # F187 moved these four wrappers: each now declares the meta.ado setting
+        # it belongs to, stamped from the same path the control writes to, so the
+        # browser check that walks the card reads the page instead of a translation
+        # table. The association itself is unchanged - the <label> still wraps the
+        # box - which is why they stay exemptions rather than gaining aria-labels.
         "placeholder:ph||''":
-            "return el('span',{class:'f'},flabel(lbl,help,null,tid),i);",
+            "'data-adosetting':path.split('.')[0]},\n"
+            "    flabel(lbl,help,null,tid),i);",
         "placeholder:'audit-plugin'":
-            "el('span',{class:'f'},flabel('Provenance tag',MDESC.adoTag,null,'ado-tag'),",
+            "'data-adosetting':'tag'},\n     flabel('Provenance tag',MDESC.adoTag,",
         "placeholder:'not written'":
-            "el('span',{class:'f'},flabel('Remaining Work on done',",
+            "'data-adosetting':'onComplete'},\n"
+            "     flabel('Remaining Work on done',",
         "placeholder:'empty = static iteration path'":
-            "el('span',{class:'f'},flabel('Sprint team (current iteration)',",
+            "'data-adosetting':'sprint'},\n"
+            "     flabel('Sprint team (current iteration)',",
     }
 
     _fl_all = _fl_fields(_ts_script.group(1) if _ts_script else "")

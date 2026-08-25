@@ -83,7 +83,19 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # than a clear, so it is stored and never pruned. What a legal declaration is
 # comes from `_ado_parent.declaration_findings`, the function the manifest
 # validator asks - the panel cannot promise a parent the CLI would refuse.
-_PHASE_KEYS = ("reviewModel", "priority", "adoParent")
+# F187: `area` joins under the SAME criterion, spelled above - it is composition
+# and not structural CRUD. It names no id, moves no dependency and creates
+# nothing; it is a tag the status rollup, the per-area totals and the doctor's
+# area check read, which is exactly the class `priority` is in. And legality comes
+# from `_areas.areas_of`, the resolution every other surface already shares, so
+# the panel cannot store a shape the CLI would spell differently.
+#
+# WHAT MADE IT A GAP RATHER THAN A CHOICE: `meta.areas` has had an editor since
+# areas existed, and `audit-task add-phase --area` writes a phase's tag at
+# CREATION. Nothing wrote it afterwards. A registry you can curate while nothing
+# can be assigned to it is half a feature, and the missing half is the one every
+# reader of an area total depends on.
+_PHASE_KEYS = ("reviewModel", "priority", "adoParent", "area")
 _TASK_KEYS = ("model", "skills")
 
 
@@ -316,6 +328,21 @@ COMPOSITION_HELP = {
     # writer would shred `Microsoft.VSTS.Common.Activity` into four levels.
     # `meta.ado` is still saved wholesale from a deep copy of the file, so a
     # template written by hand survives every save this card makes.
+    # F187. BOTH OF THESE WERE PRECONDITIONS WITH NO PATH. `requireParent` refuses
+    # every create that has nowhere to hang, and the manifest-wide answer to
+    # "where" is `parentWorkItem` - so a board with the gate on and the fallback
+    # unset was a refusal a reader could only clear by hand-editing the manifest.
+    "adoParentWorkItem": "The EXISTING work item audit phases hang under when a "
+                         "phase names no parent of its own - so the work lands "
+                         "inside a team's backlog rather than beside it. A phase's "
+                         "own `adoParent` wins over this.",
+    "adoRequireParent": "Refuse to create any item with no parent. On a governed "
+                        "board this is the board's rule; leave it off and an "
+                        "orphan is created without comment.",
+    "adoTagVocabulary": "Which tags may appear, as prefix → allowed values. `*` as "
+                        "a KEY allows bare tags; `*` as the only VALUE makes that "
+                        "prefix an open axis, for `release:2026-08` and anything "
+                        "else nobody can enumerate in advance.",
     "adoFields": "Extra fields this project supplies per work item type, merged into "
                  "the create payload before the conformance gate grades it - what "
                  "gets an item past a board that requires an Activity or an estimate. "

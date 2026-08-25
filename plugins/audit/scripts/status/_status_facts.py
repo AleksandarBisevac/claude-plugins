@@ -357,10 +357,17 @@ def rollup(manifest, findings, warnings, usage=None):
     areas = {}
     for e in phase_entries:
         for a in e["area"]:
-            g = areas.setdefault(a, {"phases": 0, "done": 0, "total": 0})
+            g = areas.setdefault(a, {"phases": 0, "done": 0, "total": 0,
+                                     "cancelled": 0})
             g["phases"] += 1
             g["done"] += e["done"]
             g["total"] += e["total"]
+            # F192, at the THIRD site. The per-phase count and the plan-wide one
+            # both explain a total that cannot be reached; this rollup carries the
+            # same `done/total` and had no count to explain it with, so closing
+            # only the two the report named would have left the third saying the
+            # same unreachable thing.
+            g["cancelled"] += e["cancelled"]
     # The advisory owner (v0.34 D3), only for areas that DECLARE the key - no
     # key means no claim, and an explicit null is carried as null ("nobody"),
     # the same distinction _areas.owner_of draws.

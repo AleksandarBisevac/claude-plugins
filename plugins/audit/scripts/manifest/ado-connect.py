@@ -380,10 +380,40 @@ def report(manifest, facts, envelope, organization, project, now):
     # `fetchedAt` is what re-probing produces - so counting it would make the
     # "already right" figure permanently one short, and printing it inside a
     # plan that says "0 to set" would be a line contradicting the line above it.
-    lines.append("  restamp (not counted above) meta.ado.connection = "
-                 "<process, pbiType, stateMapNeeded, authPath, fetchedAt, "
-                 "basis> - this run's evidence replaces the last run's, "
-                 "because a moment that is not now is the wrong moment")
+    # F184. TWO CLAIMS, AND EACH ONE CARRIES THE BASIS THAT MAKES IT TRUE. This
+    # line said "replaces the last run's" unconditionally, so a FIRST connect
+    # announced it was overwriting evidence that had never been recorded - and
+    # that reading is what a confirm's decline option is composed from, which is
+    # how it went on to promise an older moment of proven access that does not
+    # exist. `plan["evidence"]` is the prior block itself or None: the claim about
+    # replacing is made only when there is something to replace, and it names
+    # WHEN, because that is the whole value of the field.
+    prior = plan.get("evidence")
+    prior_at = (prior or {}).get("fetchedAt")
+    if prior_at:
+        lines.append("  restamp (not counted above) meta.ado.connection = "
+                     "<process, pbiType, stateMapNeeded, authPath, fetchedAt, "
+                     "basis> - this run's evidence replaces the evidence stamped "
+                     "%s, because a moment that is not now is the wrong moment"
+                     % (prior_at,))
+    else:
+        lines.append("  stamp (not counted above) meta.ado.connection = "
+                     "<process, pbiType, stateMapNeeded, authPath, fetchedAt, "
+                     "basis> - the FIRST evidence for this connection; nothing "
+                     "here is being replaced, because nothing was recorded")
+    # THE DECLINE CONSEQUENCE IS PRINTED, NOT COMPOSED. `commands/sync.md` sends
+    # the plan block into a confirm, and the option that declines needs a sentence
+    # too - which was being written from the restamp line above and inherited its
+    # false premise. A reader deciding not to write is owed the same standard of
+    # claim as one deciding to.
+    if prior_at:
+        lines.append("  decline - nothing is written and meta.ado.connection "
+                     "keeps the evidence stamped %s, which is then the last "
+                     "moment access was proven" % (prior_at,))
+    else:
+        lines.append("  decline - nothing is written and there is no earlier "
+                     "evidence to fall back on: this connection stays unproven "
+                     "until a run of this command is applied")
     lines.append("")
     lines.append("This command wrote nothing. Confirm the plan, apply it to "
                  "the manifest, revalidate with validate-manifest.py, then "

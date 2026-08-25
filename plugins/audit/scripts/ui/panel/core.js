@@ -166,17 +166,9 @@ const root=document.documentElement, TK='audit-panel-theme';
 // throw outright where it is blocked: a panel that cannot remember the choice
 // must still open in the default one.
 const s=storageGet(TK);if(s)root.setAttribute('data-theme',s);
-/**
- * Whether the panel is painting dark right now.
- *
- * An explicit choice on the root element wins; with no choice at all the OS
- * preference decides. Only 'dark' counts as an explicit dark — any other value
- * present means light, so a stray or future value cannot read as dark by
- * accident.
- *
- * @returns {boolean} true when the dark palette is in force
- */
-const isDark=()=>{const t=root.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme:dark)').matches;};
+// `isDark()` is `shared/theme.js`'s, concatenated ahead of this part. The panel
+// carried its own for as long as the report carried another, and the two differed
+// on whether `matchMedia` is guarded — see that file.
 /**
  * Put the mode the button would switch TO on its face — a sun while dark is on,
  * a moon while it is not — because a control should say what pressing it does.

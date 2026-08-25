@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] | add "<title>" --outcome "<what success is>" | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
+argument-hint: '<phaseId> [--dry-run] | add "<title>" --outcome "<what success is>" | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -11,7 +11,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 
 ## 0. Which verb — read off `$ARGUMENTS`, before the manifest is
 
-The FIRST token decides, and the reserved words are `add`, `priority` and `cancel`.
+The FIRST token decides, and the reserved words are `add`, `retarget`, `priority` and `cancel`.
 **Any other first token is a phase id**, and the command is the run form below — the
 shape this command has always had, unchanged.
 
@@ -137,6 +137,41 @@ the refusals above. `3` the index lock is held by a live run — stop; do not ta
 **Then hand off**: `/audit:task add "<the first task>" --phase <newId>`, which the report
 already prints, and `/audit:status` to see the phase in the plan.
 
+## Subcommand: `retarget <phaseId>`
+
+Correct a phase that already exists: `--gate <entry>` (repeatable) or `--gate-clear`,
+`--area a,b`, `--outcome TEXT`, `--description TEXT`. Runs
+`scripts/manifest/audit-task.py retarget` — same lock, same revalidate-or-roll-back,
+same journal shape as `add`.
+
+**Why a verb and not a flag on `add`.** The values already exist and are wrong.
+`/audit:init` and `/audit:sync pull sprint` synthesize a phase and choose its
+`testGate`; from that moment the choice was unreachable, and one wrong choice is enough
+to make a phase unable to pass its own sign-off. Measured: an imported phase was given
+`testGate: ["lint"]` because a build key existed, `lint` on that repo runs a Python
+pre-commit suite, and the phase's tasks touched only JSON and Markdown. Every route out
+was outside the plugin — a hand edit the plugin forbids, a `buildCommands` value that is
+a shell hack, or installing a third-party tool to satisfy a gate the plugin itself
+picked.
+
+**`--gate-clear` is the point, not a convenience.** `--gate` appends, so without an
+explicit clear there is no spelling for the EMPTY gate — and the empty gate is a
+designed state, not a hole: `audit-task.py:_phase_gate` returns it with a basis, and its
+docstring says why it needs one, because *a phase nothing can prove done is a phase
+sign-off signs on review alone*. `/audit:phase add --gate` could already reach it for a
+NEW phase. An imported one could not, which is what turned a guessed gate into a trap.
+The report says so when the gate ends up empty, rather than leaving silence to be read
+as breakage.
+
+**Not a done or cancelled phase.** Its sign-off was given against the gate it had, and
+moving that afterwards rewrites what the sign-off attested. A phase that is `pending` or
+`in_progress` is exactly the case this verb is for.
+
+`--gate` and `--gate-clear` together are refused: two answers about one field, and
+guessing which was meant is the fault this closes. `--area` with an empty value REMOVES
+the key rather than writing `null`, because the conventions default it to absent and a
+`null` would make an untagged phase claim to have considered the question.
+
 ## Subcommand: `priority <phaseId> <tier>` (or `priority <phaseId> --clear`)
 
 Say which phase the pipeline should reach for first. Until this verb the order was implicit
@@ -187,6 +222,8 @@ this. It is documented in `${CLAUDE_PLUGIN_ROOT}/commands/task.md`; new work say
 `/audit:phase priority`, because the field is `phase.priority` and no task has one.
 
 ## Subcommand: `cancel <phaseId> --reason "<why>"`
+
+**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
 
 Close a phase that will **not** be done — the feature was dropped, the approach was
 abandoned, the phase ends with whatever landed. Not failure and not `done`: `cancelled`

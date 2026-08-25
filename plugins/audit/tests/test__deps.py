@@ -1104,6 +1104,15 @@ def _cases(check):
         # declaration was chosen over it because a surface may legitimately grow
         # a second OS query (a listener that repaints on an OS switch) and a row
         # that fires on innocent code is a row someone switches off.
+        #
+        # THE EXTRACTION HAPPENED and that decision was re-opened on the way, then
+        # closed again the same way: a `prefers-color-scheme` row was written,
+        # and this comment is what withdrew it. The stated cost has not changed -
+        # a surface may still legitimately grow a second OS query - so the trigger
+        # has not fired, and a second row would have forbidden code nobody has
+        # written yet for the sake of a copy that no longer exists. The miss
+        # sample below is now `shared/theme.js`'s own line, which is excluded as
+        # the home; it stays here because what it proves is unchanged.
         "which mode the page is painting": (
             ("const isDark=()=>root.getAttribute('data-theme')==='dark';",
              "const isDark = () => { return t ? t === 'dark' : p(); };",

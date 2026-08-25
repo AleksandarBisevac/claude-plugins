@@ -202,6 +202,54 @@ def _cases(check):
     check("ac49 ...and admitted for a good one under both, so a bare-tag list "
           "did not narrow the prefixed rule either: %r" % (_both,),
           _both == [[], []])
+    # --- F186: the open axis ---------------------------------------------------
+    # A prefix's list is a CLOSED enum, and some axes are open by nature -
+    # `release:2026-08`, `sprint:24`, `ticket:41207`. Closed, each new value costs
+    # a manifest edit, and until it lands the conformance gate refuses work that
+    # is otherwise fine. `["*"]` is the open spelling, ADDITIVE because the empty
+    # list already means two different things at the two levels and changing that
+    # would rewrite manifests people have written.
+    _open = {"tagVocabulary": {"release": ["*"], "supplier": ["databridge"]}}
+    _open_hits = [M.conformance_violations(
+                      _task(fields={"System.Tags": tag}), _open)
+                  for tag in ("release:2026-08", "release:2027-01",
+                              "release:anything at all")]
+    check("ac74 an open axis admits any value, so a monthly release tag needs no "
+          "monthly manifest edit - which is the rule people were switching off "
+          "instead of maintaining: %r" % (_open_hits,),
+          _open_hits == [[], [], []])
+    _open_empty = M.conformance_violations(
+        _task(fields={"System.Tags": "release:"}), _open)
+    check("ac75 ...but an EMPTY value is still refused, and named as that: an "
+          "open axis admits any value, not the absence of one - without this the "
+          "prefix is indistinguishable from a bare tag ending in a colon: %r"
+          % (_open_empty,),
+          len(_open_empty) == 1
+          and "open prefix" in _open_empty[0]
+          and "no value" in _open_empty[0])
+    _closed_still = M.conformance_violations(
+        _task(fields={"System.Tags": "supplier:other"}), _open)
+    check("ac76 ...and a CLOSED prefix in the same vocabulary still enumerates - "
+          "the paired negative, since a check that had simply stopped grading "
+          "prefixes would pass ac51 exactly as the feature does: %r"
+          % (_closed_still,),
+          len(_closed_still) == 1 and "allowed" in _closed_still[0])
+    _dead = M.check_conventions_config(
+        {"tagVocabulary": {"release": ["*", "2026-07"]}})
+    check("ac77 an enumeration listed beside the `*` is WARNED about, not "
+          "refused - the board is admitting everything, which is legal and "
+          "probably meant; what needs saying is that the list under it is now "
+          "decoration: %r" % (_dead,),
+          _dead[0] == []
+          and len(_dead[1]) == 1
+          and "unreachable" in _dead[1][0]
+          and "2026-07" in _dead[1][0])
+    check("ac78 ...and a `*` alone draws no warning, so the open spelling is not "
+          "nagged at every validation: %r"
+          % (M.check_conventions_config({"tagVocabulary": {"release": ["*"]}}),),
+          M.check_conventions_config(
+              {"tagVocabulary": {"release": ["*"]}}) == ([], []))
+
     # `;` is the field's own separator and the round-trip leaves spaces behind.
     check("ac13 tags split on ';' with surrounding space ignored, which is what "
           "System.Tags round-trips to",

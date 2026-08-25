@@ -4,6 +4,57 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.4.1] - 2026-08-25
+
+**A patch release, and the two entries a user feels are both about a guard that was quietly not
+guarding.** Everything here was found the same way 1.4.0 was — by running the plugin, not by
+reading it.
+
+**The index lock leaked on every proposal write, and a refused one wrote anyway.**
+`_locks.acquire` returns an integer on every path; two callers named it `handle` and tested
+`isinstance(handle, dict)`, which is never true of an int. One misreading, two defects, and the
+`try/finally` around it made the first look handled: the release never ran, so every `materialize`,
+`drop` and `revive` left the lock on disk — and the status was never read, so an acquire that was
+REFUSED fell straight into the write and changed the manifest with **no lock held**, which is the
+one case the lock exists for. Downstream, that stranded lock made a later command report a live
+holder and print a takeover warning on a machine running one session; the liveness probe was right
+and the operator was still told to wait for a run that had finished. `repair-commits` had the same
+bug. The reading now lives with the contract as `_locks.held()`, a refusal carries `_locks`' own
+sentence rather than its terminal lines (those name the host), and a project with no lock scheme is
+told apart from a lock that could not be taken.
+
+**An imported phase ran with the plan gate inert.** `/audit:sync pull sprint` writes tasks with
+`files: []` and told the reader to scope them before running — and no verb could: `add` creates,
+`cancel` closes, `move` relocates, and the panel reaches `skills` and `model` but not `files`. Since
+`files` is what `fileIndex` is built from and `fileIndex` is what the plan gate matches an edit
+against, the gate had nothing to match and so failed nothing. New `/audit:task scope`, with the
+index **re-derived** rather than appended to, so files a task no longer claims are released.
+
+**A plan can be corrected now, not only created.** `/audit:phase retarget` reaches a phase's gate,
+area, desired outcome and description. `--gate-clear` is the load-bearing half: `--gate` appends, so
+after an import there was no spelling at all for the EMPTY gate — a designed state (sign-off on
+review alone) that `/audit:phase add --gate` could already reach for a new phase. An imported phase
+given a guessed gate could not pass its own sign-off, and every route out was outside the plugin.
+`init` and `pull` now prefer the empty gate to a guess and print the basis: a guessed gate is worse
+than no gate, because no gate says so.
+
+**The operator's own words go into the journal unchanged.** The trail is tamper-evident and works on
+whatever sentence it is given, so a paraphrased `--reason` makes the chain guarantee something its
+subject never wrote. The rule lives once, in `reference/manifest-conventions.md`, and a lint fails
+the build if a command that asks a human for such text does not say so.
+
+**`status` explains a total that cannot be reached.** `cancelled` was computed, printed by the HTML
+report, and withheld by the terminal — so a phase read `0/5` over four runnable tasks with nothing
+saying why. All three surfaces carry it now, non-zero only.
+
+**Also:** the panel's ADO card gained the two settings that had no control at all (`parentWorkItem`
+and the conventions block, including a tag-vocabulary editor), and a browser check now walks the
+rendered card against the connector's own key vocabulary so a precondition cannot ship with no path
+but a hand edit. `tagVocabulary` gained an OPEN AXIS spelling (`["*"]`) for values nobody can
+enumerate ahead of time, such as `release:2026-08`. A phase can be put in an area after creation.
+`isDark()` was extracted to a shared part, one path spelling reaches every reader, and a hierarchy
+warning now names which end of a link has no rank instead of always naming the child.
+
 ## [1.4.0] - 2026-08-25
 
 **Everything here was found by running 1.3.0, not by reviewing it** — a live board, a running

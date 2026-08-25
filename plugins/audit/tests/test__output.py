@@ -1823,6 +1823,129 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+    # --- the spelling a published path carries -----------------------------------
+    # `os.path.relpath` answers in the PLATFORM's separator. Every value routed
+    # through `posix_rel` is read back by something holding the other spelling:
+    # the index stores `phases/P3.json`, the journal's chained rows are compared
+    # across machines, git takes a POSIX pathspec on every platform, and the panel
+    # matches `theme_state()["path"]` against what the theme write returned. The
+    # backslash below is `chr(92)` rather than `os.sep`, so this asks the same
+    # question on the platform where `os.sep` is already "/".
+    _bs = chr(92)
+    _joined = os.path.join("a", "b" + _bs + "P3.json")
+    check("px1 posix_rel spells a project-relative path with \"/\" whatever the "
+          "platform joined it with - the index stores that spelling, so a "
+          "reported path that does not use it names a file the manifest has "
+          "never heard of: %r" % (M.posix_rel(_joined, "a"),),
+          M.posix_rel(_joined, "a") == "b/P3.json"
+          and _bs not in M.posix_rel(_joined, "a")
+          and M.posix_rel(os.path.join("a", "b", "c.json"), "a") == "b/c.json")
+
+    # THE SWEEP, AND WHY IT IS A CASE AND NOT A GREP. Two writers returned the
+    # same kind of value and drifted: one journal row spelled its target with "/"
+    # while the `written` list beside it kept the platform's. Fixing the pair CI
+    # named left roughly twenty siblings untouched, and the list below is what
+    # turns "somebody should re-run that grep" into something that fails.
+    #
+    # It reads SOURCE. A behavioural case cannot do this: on POSIX both spellings
+    # are the same string, so every assertion about them passes without the code
+    # being right.
+    #
+    # THE SUITES ARE IN THE LIST, not only the modules. Respelling the writers
+    # turned three `test__panel_write.py` expectations red on Windows and nowhere
+    # else, because each had retyped `os.path.relpath` as the value it expected
+    # back - a reader holding the spelling the writer had just stopped using. A
+    # rule that binds only the producing side is half a rule.
+    _publishers = (
+        "../scripts/_output.py",
+        "../scripts/_refs.py",
+        "../scripts/_deps.py",
+        "../scripts/_ui_theme.py",
+        "../scripts/manifest/audit-task.py",
+        "../scripts/manifest/set-priority.py",
+        "../scripts/panel/_panel_write.py",
+        "../scripts/panel/_panel_state.py",
+        "../scripts/panel/_panel_composition.py",
+        "../scripts/status/_doctor_completions.py",
+        "../scripts/status/_doctor_trail.py",
+        "../scripts/governance/_invariants.py",
+        # THESE TWO NEVER CALLED IT AND THAT IS A DECISION, not an accident. Both
+        # say so in their own words: across Windows drives `os.path.relpath`
+        # RAISES, and a redactor or a log renderer that raises hands its caller an
+        # exception where a token or a line was wanted. They compare resolved
+        # prefixes instead. Listing them here is what stops that being
+        # "simplified" back - the value they publish is a journal row and a log
+        # path, so the cost of the raise is paid by the reader.
+        "../scripts/governance/_journal_io.py",
+        "../scripts/status/audit-logs.py",
+        # THE READERS, all of them. `test__panel_write.py` came first because CI
+        # named it; these three retyped the same idiom against the same writer and
+        # nothing was looking. The value they compare is a field of a CHAINED
+        # journal row, so a reader holding the other spelling is a reader that
+        # disagrees with the file on disk.
+        "test__panel_write.py",
+        "test__journal_io.py",
+        "test_audit_journal.py",
+        "test_journal_writes.py",
+    )
+    _here = os.path.dirname(os.path.abspath(__file__))
+    # ONE allowance, and it is the implementation. `posix_rel` is where the call
+    # belongs; a table with no exemption for its own body would be satisfied only
+    # by a helper that does not work.
+    _allowed = {"_output.py": 1}
+    _raw = {}
+    for _rel in _publishers:
+        _src = io.open(os.path.join(_here, _rel), encoding="utf-8").read()
+        # The docstring in `_output` NAMES the function it replaces, and a
+        # sentence is not a call: only lines that are not comment or prose count.
+        _calls = 0
+        for _line in _src.splitlines():
+            _stripped = _line.strip()
+            if _stripped.startswith("#") or _stripped.startswith("`"):
+                continue
+            _calls += _line.count("os.path.relpath(")
+        _raw[_rel.rsplit("/", 1)[-1]] = _calls
+    check("px2 no module that publishes a path calls os.path.relpath directly, "
+          "nor the suite that compares against one - one spelling reaches the "
+          "reader, and on POSIX nothing behavioural can tell the two apart: %r"
+          % (_raw,),
+          all(n == _allowed.get(f, 0) for f, n in _raw.items())
+          and len(_raw) == len(_publishers))
+
+
+    # --- F188: how an acquire result may be read --------------------------------
+    # `_locks.acquire` returns an INT on every path. Two callers named it `handle`
+    # and tested `isinstance(handle, dict)` - never true of an int - so their
+    # release never ran and their status was never read: every write leaked the
+    # index lock, and a REFUSED acquire fell straight into the write and changed
+    # the manifest with no lock held. One misreading, two defects, and a
+    # `try/finally` that made the first look handled.
+    #
+    # Read as SOURCE because the shape is the fault. A behavioural case per caller
+    # is worth having and two exist, but they cannot stop a THIRD caller inventing
+    # the same reading; and `isinstance(x, dict)` on an int raises nothing and
+    # returns a value, so nothing fails until a lock is contended.
+    _lk_callers = ("../scripts/manifest/_proposals.py",
+                   "../scripts/manifest/repair-commits.py",
+                   "../scripts/panel/_panel_write.py")
+    _lk_here = os.path.dirname(os.path.abspath(__file__))
+    _lk_bad = {}
+    for _rel in _lk_callers:
+        _src = io.open(os.path.join(_lk_here, _rel), encoding="utf-8").read()
+        if "_locks.acquire(" not in _src:
+            _lk_bad[_rel] = "no longer calls _locks.acquire - this list is stale"
+            continue
+        for _line in _src.splitlines():
+            _st = _line.strip()
+            if _st.startswith("#"):
+                continue
+            if "isinstance(" in _st and ("handle" in _st or "code" in _st):
+                _lk_bad[_rel] = _st[:70]
+    check("lk4 no caller reads an acquire result as anything but the integer it "
+          "is - the release and the refusal both hang off that value, and a "
+          "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
+          not _lk_bad and len(_lk_callers) == 3)
+
 
 def _selftest():
     return _harness.run(_cases)

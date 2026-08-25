@@ -310,6 +310,15 @@ block above it, and the counts a reader sizes a write by existed only inside an 
 label. A second rendering is a second answer, and here the first thing to disagree would
 be how much the operator thought they were approving.
 
+**The DECLINE consequence is printed too, and it is not yours to word.** The block ends
+with a `decline` line saying exactly what not writing costs — and on a first connect that
+is *nothing to fall back on*, because no evidence has ever been stamped. Paste it as the
+declining option's text. It used to be absent, and what filled the gap was the apply
+line's own wording: that line claimed unconditionally to replace "the last run's"
+evidence, so a first connect was offered a choice between overwriting a moment that did
+not exist and preserving it. Both halves of that question were false, and the door is now
+the only thing that answers either.
+
 Then **confirm via AskUserQuestion before writing** — this turns on an outward-facing
 connector. Then, under the concurrency lock, apply it to `meta.ado`:
 
@@ -636,8 +645,28 @@ the live plan without `/audit:propose materialize`.
    key at all when there is none,
    child tasks from the PBI's child work items (each carrying its own `ado` link
    with `origin: "imported"`, `files: []`), and a
-   description noting `imported from ADO — scope files/tests before running`. Orphan
+   description noting `imported from ADO — scope files/tests before running`,
+   which names a real verb: `/audit:task scope <taskId> --files a,b`. It did not
+   always — for a release that instruction had no executor, and an imported phase
+   ran with `fileIndex` empty and the plan gate therefore inert. Orphan
    sprint tasks (no selected parent) group under one final proposal. Revalidate.
+
+   **The synthesized phase's `testGate` comes from the manifest or is EMPTY. Never
+   a guess.** ADO says nothing about how this repo proves work done, so the only
+   honest sources are `meta.buildCommands` and nothing —
+   `audit-task.py:_phase_gate` is the rule and it returns the basis with the
+   value, including `meta.buildCommands is empty` and `the manifest declares no
+   meta.buildCommands`. Print that basis. An EMPTY gate is a designed state, not a
+   hole: sign-off then rests on review alone, and the phase says so.
+
+   This is not a style note. An imported phase was given `testGate: ["lint"]`
+   because a build key existed; `lint` on that repo runs a Python pre-commit suite
+   and the phase's tasks touched only JSON and Markdown, so the phase could not
+   pass its own sign-off — and correcting it meant a hand edit the plugin forbids,
+   a `buildCommands` value that is a shell hack, or installing a third-party tool
+   to satisfy a gate the plugin itself picked. A guessed gate is worse than no
+   gate, because no gate says so. `/audit:phase retarget <phaseId> --gate-clear`
+   is the way back if one is ever guessed again.
 6. Report + handoff: `/audit:propose list` → `materialize`.
 
 ## Subcommand: `parents`

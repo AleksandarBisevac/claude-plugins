@@ -53,6 +53,7 @@ import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
 import _journal_io                                 # noqa: E402  (k5-k8 patch target)
 
@@ -264,10 +265,20 @@ def _cases(check):
               _soft({"action": "x"}, config={"journal": {"dir": "\0bad"}},
                     project=os.path.join(tmp, "no-such-project")) is False)
         # A session id is supplied by the caller and lands in a PATH.
-        check("e5 a writer id cannot escape the journal directory",
+        # BOTH separators on BOTH platforms, built from `chr(92)` rather than
+        # `os.sep`. Written with `os.sep` this asked about "/" here and about "\"
+        # there, so a sanitiser that stripped one and not the other was green on
+        # whichever platform it was written on. `_SAFE` is a whitelist and strips
+        # both, which is what makes the pair assertable rather than aspirational.
+        _bs = chr(92)
+        check("e5 a writer id cannot escape the journal directory, and neither "
+              "separator survives it on either platform",
               M.writer_id({"sessionId": "../../etc/passwd"}) == "etc-passwd"
+              and M.writer_id({"sessionId": ".." + _bs + ".." + _bs + "etc"
+                               + _bs + "passwd"}) == "etc-passwd"
               and "/" not in M.writer_id({"sessionId": "a/b"})
-              and os.sep not in M.writer_id({"sessionId": "a" + os.sep + "b"}))
+              and _bs not in M.writer_id({"sessionId": "a" + _bs + "b"})
+              and M.writer_id({"sessionId": "a/b" + _bs + "c"}) == "a-b-c")
         check("e6 a writer with no session id still gets a stable file name",
               bool(M.writer_id({})) and M.writer_id({}) == M.writer_id({}))
         check("e7 a long session id is truncated (a file name is not unbounded)",
@@ -759,7 +770,7 @@ def _cases(check):
         os.rename(lold, lapath)
         check("l2 journal_files sees the archive/ subdirectory, live files "
               "first",
-              [os.path.relpath(p, ldir).replace(os.sep, "/")
+              [_output.posix_rel(p, ldir)
                for p in M.journal_files(ldir)]
               == [lnew_name, "archive/%s.s-old.jsonl" % old_month],
               repr(M.journal_files(ldir)))

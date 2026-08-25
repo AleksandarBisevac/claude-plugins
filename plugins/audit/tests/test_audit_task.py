@@ -1027,6 +1027,144 @@ def _cases(check):
               "them cannot die on the row: %r" % (_wbad,),
               isinstance(_wbad, list) and all(isinstance(x, str) for x in _wbad))
 
+        # ---- (sc) F189: `scope`, the verb the importer's own instruction needed
+        # `pull sprint` writes `files: []` and tells the reader to scope before
+        # running. Nothing could: `add` creates, `cancel` closes, `move`
+        # relocates, and the panel reaches `skills`/`model` but not `files`. The
+        # cost was not tidiness - `files` builds `fileIndex`, and `fileIndex` is
+        # what the plan gate matches an edit against, so an unscoped phase ran
+        # with its central guard inert rather than failing.
+        sc_proj, sc_mp = mk("p-scope", base_manifest())
+        os.makedirs(os.path.join(sc_proj, "src"), exist_ok=True)
+        for _f in ("b.ts", "c.ts"):
+            with open(os.path.join(sc_proj, "src", _f), "w") as _fh:
+                _fh.write("x\n")
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts,src/c.ts",
+                         "--tests-mode", "tdd", "--project-dir", sc_proj])
+        _sct = task_in(sc_mp, "P2.3")
+        _idx = (_mio.load_manifest(sc_mp).get("fileIndex") or {})
+        check("sc1 scope writes the files AND puts them in fileIndex - the index "
+              "is the whole point, because the plan gate matches an edit against "
+              "it and an empty one makes the gate inert rather than loud: %r"
+              % (_idx,),
+              code == 0 and _sct.get("files") == ["src/b.ts", "src/c.ts"]
+              and _idx.get("src/b.ts") == ["P2.3"]
+              and _idx.get("src/c.ts") == ["P2.3"])
+        check("sc2 ...and the tests block moves with it, with expectRedFirst "
+              "DERIVED the way `_build_task` derives it - two writers of one "
+              "field must not disagree about what tdd means: %r"
+              % (_sct.get("tests"),),
+              (_sct.get("tests") or {}).get("mode") == "tdd"
+              and (_sct.get("tests") or {}).get("expectRedFirst") is True)
+        # THE SUBTRACTION, which an append-only index would fail.
+        code, txt = run(["scope", "P2.3", "--files", "src/b.ts",
+                         "--project-dir", sc_proj])
+        _idx2 = (_mio.load_manifest(sc_mp).get("fileIndex") or {})
+        check("sc3 re-scoping RELEASES the files the task no longer claims - an "
+              "index that only ever grew would keep the gate matching edits to a "
+              "scope that is gone, and leaves other tasks' rows alone: %r"
+              % (_idx2,),
+              code == 0 and _idx2.get("src/b.ts") == ["P2.3"]
+              and "src/c.ts" not in _idx2
+              and _idx2.get("src/a.ts") == ["P2.1"])
+        code, txt = run(["scope", "P2.1", "--files", "src/b.ts",
+                         "--project-dir", sc_proj])
+        check("sc4 a task that is not pending is REFUSED, and the refusal says "
+              "why: its scope is what its attempts were judged against: %r"
+              % (txt[:90],),
+              code == 2 and "only rewrites a PENDING task" in txt)
+        code, txt = run(["scope", "P2", "--files", "src/b.ts",
+                         "--project-dir", sc_proj])
+        check("sc5 a PHASE id is refused by name - a phase silently scoping its "
+              "first task is the kind of guess this verb removes: %r"
+              % (txt[:80],),
+              code == 2 and "takes a TASK id" in txt and "is a phase" in txt)
+        code, txt = run(["scope", "P2.3", "--project-dir", sc_proj])
+        check("sc6 a call that would change nothing is refused rather than "
+              "taking the index lock for it: %r" % (txt[:80],),
+              code == 2 and "scope needs --files" in txt)
+        with open(sc_mp, "rb") as _fh:
+            _sc_before = _fh.read()
+        code, txt = run(["scope", "P9.9", "--files", "src/b.ts",
+                         "--project-dir", sc_proj])
+        with open(sc_mp, "rb") as _fh:
+            _sc_after = _fh.read()
+        check("sc7 an unknown id writes nothing - the manifest is byte identical, "
+              "which is the assertion rather than the exit code",
+              code == 2 and _sc_after == _sc_before)
+
+        # ---- (rt) F190: a plan can be CORRECTED, not only created ------------
+        # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
+        # until `retarget` that choice was unreachable, and one wrong choice made
+        # the phase unable to pass its own sign-off. `--gate` APPENDS, so the
+        # empty gate - which `_phase_gate` documents as a designed state, sign-off
+        # on review alone - had no spelling at all after import.
+        rt_proj, rt_mp = mk("p-retarget", base_manifest())
+        code, txt = run(["retarget", "P3", "--gate", "test",
+                         "--project-dir", rt_proj])
+        _rtp = _mio.load_manifest(rt_mp)["phases"][2]
+        check("rt1 retarget replaces the gate an import chose: %r"
+              % (_rtp.get("testGate"),),
+              code == 0 and _rtp.get("testGate") == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-clear",
+                         "--project-dir", rt_proj])
+        _rtp = _mio.load_manifest(rt_mp)["phases"][2]
+        check("rt2 ...and --gate-clear reaches the EMPTY gate, which `--gate` "
+              "cannot because it appends - the designed state a guessed gate "
+              "took away, and the report SAYS what it means rather than leaving "
+              "silence to read as breakage: %r" % (txt[-90:],),
+              code == 0 and _rtp.get("testGate") == []
+              and "review alone" in txt)
+        code, txt = run(["retarget", "P3", "--gate", "test", "--gate-clear",
+                         "--project-dir", rt_proj])
+        check("rt3 --gate with --gate-clear is refused - two answers about one "
+              "field, and guessing which was meant is the fault this closes: %r"
+              % (txt[:80],),
+              code == 2 and "opposite things" in txt)
+        code, txt = run(["retarget", "P3", "--area", "api,api,web",
+                         "--outcome", "shipped", "--project-dir", rt_proj])
+        _rtp = _mio.load_manifest(rt_mp)["phases"][2]
+        check("rt4 area goes through the SAME `_areas.areas_of` every surface "
+              "shares (deduped, one tag stays a string) and the outcome moves "
+              "with it: %r" % ((_rtp.get("area"), _rtp.get("desiredOutcome")),),
+              code == 0 and _rtp.get("area") == ["api", "web"]
+              and _rtp.get("desiredOutcome") == "shipped")
+        code, txt = run(["retarget", "P3", "--area", "",
+                         "--project-dir", rt_proj])
+        _rtp = _mio.load_manifest(rt_mp)["phases"][2]
+        check("rt5 ...and an emptied --area REMOVES the key rather than writing "
+              "null - the conventions default it to absent, and a null would "
+              "make an untagged phase claim to have considered the question",
+              code == 0 and "area" not in _rtp)
+        code, txt = run(["retarget", "P1", "--gate-clear",
+                         "--project-dir", rt_proj])
+        check("rt6 a DONE phase is refused: its sign-off was given against the "
+              "gate it had, and moving that rewrites what was attested: %r"
+              % (txt[:90],),
+              code == 2 and "was given against the gate it had" in txt)
+        code, txt = run(["retarget", "P2.3", "--gate-clear",
+                         "--project-dir", rt_proj])
+        check("rt7 a TASK id is refused by name - `retarget` takes a phase, and "
+              "the sibling verb for a task is `scope`: %r" % (txt[:80],),
+              code == 2 and "takes a PHASE id" in txt and "is a task" in txt)
+        code, txt = run(["retarget", "P3", "--project-dir", rt_proj])
+        check("rt8 a call that changes nothing is refused rather than taking the "
+              "index lock for it: %r" % (txt[:70],),
+              code == 2 and "retarget needs one of" in txt)
+        # F190's OTHER half of the pending rule: an attempted task keeps an
+        # outcome describing work judged under the scope it had.
+        at_proj, at_mp = mk("p-attempted", base_manifest())
+        _am = _mio.load_manifest(at_mp)
+        _am["phases"][1]["tasks"][1]["attempts"] = 1
+        _panel_write._atomic_write_json(at_mp, _am)
+        code, txt = run(["scope", "P2.3", "--files", "src/a.ts",
+                         "--project-dir", at_proj])
+        check("rt9 scope refuses a PENDING task that has already been attempted "
+              "- status alone is not the test, because a task put back to pending "
+              "still carries an outcome judged under its old scope: %r"
+              % (txt[:90],),
+              code == 2 and "already been attempted" in txt)
+
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \
                 contextlib.redirect_stderr(_null):

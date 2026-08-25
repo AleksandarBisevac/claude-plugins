@@ -424,7 +424,7 @@ not check":
 "conventions": {
   "requiredFields": { "Task": ["Microsoft.VSTS.Common.Activity"] },
   "descriptionMustContain": { "Product Backlog Item": ["Done when:"] },
-  "tagVocabulary": { "type": ["refactor", "bug"], "*": [] },
+  "tagVocabulary": { "type": ["refactor", "bug"], "release": ["*"], "*": [] },
   "requireParent": true
 }
 ```
@@ -436,6 +436,19 @@ prefix, and a vocabulary that admits only prefixed tags would otherwise refuse e
 a push creates while each block validated clean on its own. **Its list restricts like every
 other key's**: `"*": []` admits any bare tag, `"*": ["FE", "BE"]` admits only those. The
 empty list is the free-form spelling and keeps meaning that.
+
+**An axis nobody can enumerate is spelled `["*"]`.** `release:2026-08`, `sprint:24`,
+`ticket:41207` — a closed list costs a manifest edit per value, and until that edit lands
+the conformance gate refuses work that is otherwise fine, which is a rule people switch
+off rather than maintain. A prefix whose list holds `"*"` admits any value. The same
+character means the same word one level down: `"*"` as a KEY says "bare tags are allowed",
+`"*"` as a VALUE says "any value of this prefix is allowed".
+
+Two things it does not do. An empty value is still refused — `release:` names nothing, and
+an open axis admits any value rather than the absence of one. And it is not a pattern:
+`release:2026-O8` with a letter O passes, because a regex in a manifest is a language every
+surface rendering this block would have to render. An open axis is the board saying this
+axis is not its to enumerate; a board that wants the shape checked should enumerate it.
 
 `requireParent` is what makes recipe 3 compulsory rather than tidy: with it on, the
 validator names every item that resolves to no parent at all, and the gate refuses

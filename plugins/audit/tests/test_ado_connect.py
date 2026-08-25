@@ -76,7 +76,8 @@ def _plan_block(lines):
             out.append(line)
         elif not out:
             continue
-        elif line.strip().split(" ")[0] in ("set", "keep", "CHANGE", "restamp"):
+        elif line.strip().split(" ")[0] in ("set", "keep", "CHANGE", "restamp",
+                                            "stamp", "decline"):
             out.append(line)
         else:
             break
@@ -258,6 +259,19 @@ def _cases(check):
                                    "types": {"bug": "Bug", "task": "Task",
                                              "pbi": "Product Backlog Item"}}}}
     again = _run(configured, READY, OK_SCRUM)
+    # F184's SECOND FIXTURE, and its absence is why the fault lived: "already
+    # configured" here never carried a `connection` block, so no case ever ran the
+    # branch that claims to replace one. A manifest configured by hand, or by a
+    # version before the evidence block existed, is the same shape.
+    PRIOR_AT = "2026-01-02T03:04:05Z"
+    reconn = {"meta": {"ado": dict(configured["meta"]["ado"],
+                                  connection={"process": "Scrum",
+                                              "pbiType": "Product Backlog Item",
+                                              "stateMapNeeded": True,
+                                              "authPath": "stored-pat",
+                                              "fetchedAt": PRIOR_AT,
+                                              "basis": "an earlier run"})}}
+    stamped = _run(reconn, READY, OK_SCRUM)
     check("r17 run against the manifest it already wrote, the plan is four "
           "keeps and zero writes - and it says the connector is already "
           "configured rather than reporting a fresh setup",
@@ -278,22 +292,73 @@ def _cases(check):
     # evidence block is re-stamped on EVERY run by definition, so it belongs
     # outside the counts and has to say so - a plan whose rows contradict its
     # own head line is exactly the arithmetic nobody re-checks.
-    check("r18b the evidence block is a RESTAMP outside the counts, and the "
+    check("r18b the evidence block is accounted for OUTSIDE the counts, and the "
           "line says so - on the already-configured run the head line reads "
           "zero to set and no row under it claims a set",
           sum(1 for line in again["lines"]
-              if line.strip().startswith("restamp (not counted above)")) == 1
+              if "(not counted above) meta.ado.connection" in line) == 1
           and sum(1 for line in again["lines"]
                   if line.strip().startswith("set    meta.ado.")) == 0
           and sum(1 for line in again["lines"]
                   if "0 to set" in line) == 1)
-    check("r18c ...and it is restamped on the FRESH run too, so the block is "
-          "never left holding an older run's moment: the paired positive, "
-          "since a line that only appeared when configured would be a "
-          "different bug wearing the same shape",
+    check("r18c ...and the block is stamped on the FRESH run too, so it is never "
+          "left holding an older run's moment: the paired positive, since a line "
+          "that only appeared when configured would be a different bug wearing "
+          "the same shape",
           sum(1 for line in ok["lines"]
-              if line.strip().startswith("restamp (not counted above)")) == 1
+              if "(not counted above) meta.ado.connection" in line) == 1
           and ok["data"]["connection"]["fetchedAt"] == NOW)
+    # F184. WHICH OF THE TWO WORDINGS APPEARS IS THE CLAIM, and it was made
+    # unconditionally: a FIRST connect announced it was replacing evidence that
+    # had never been recorded. `plan["evidence"]` is the prior block or None, so
+    # the line about replacing is earned rather than assumed - and it names WHEN,
+    # because a moment is the whole value of that field.
+    _fresh_ev = [ln for ln in ok["lines"]
+                 if "(not counted above) meta.ado.connection" in ln]
+    _again_ev = [ln for ln in stamped["lines"]
+                 if "(not counted above) meta.ado.connection" in ln]
+    check("r18d a first connect does NOT claim to replace anything, and says why "
+          "there is nothing to replace: %r" % (_fresh_ev,),
+          ok["data"]["plan"]["evidence"] is None
+          and _fresh_ev[0].strip().startswith("stamp ")
+          and "replaces" not in _fresh_ev[0]
+          and "FIRST evidence" in _fresh_ev[0]
+          and "nothing was recorded" in _fresh_ev[0])
+    _cfg_no_ev = [ln for ln in again["lines"]
+                  if "(not counted above) meta.ado.connection" in ln]
+    check("r18d2 ...and a manifest that configures meta.ado but carries NO "
+          "evidence block takes that same first-connect branch - which is the "
+          "distinction `plan['configured']` cannot draw, and keying the claim on "
+          "it is the fault: %r" % (_cfg_no_ev,),
+          again["data"]["plan"]["configured"] is True
+          and again["data"]["plan"]["evidence"] is None
+          and _cfg_no_ev[0].strip().startswith("stamp "))
+    check("r18e ...and a run over a manifest that HAS an evidence block says it "
+          "replaces that one, by its own stamp - the paired positive, because a "
+          "line that had simply stopped claiming a replacement would pass r18d "
+          "exactly as the repair does: %r" % (_again_ev,),
+          isinstance(stamped["data"]["plan"]["evidence"], dict)
+          and _again_ev[0].strip().startswith("restamp ")
+          and "replaces the evidence stamped" in _again_ev[0]
+          and PRIOR_AT in _again_ev[0])
+    # THE CASCADE THIS CLOSES. `commands/sync.md` sends the plan into a confirm,
+    # and the option that DECLINES needs a sentence too. It was being written from
+    # the restamp line and inherited its false premise - promising a reader an
+    # older moment of proven access on the very run where none existed. The door
+    # prints both consequences now, so neither is composed.
+    _fresh_no = [ln for ln in ok["lines"] if ln.strip().startswith("decline ")]
+    _again_no = [ln for ln in stamped["lines"]
+                 if ln.strip().startswith("decline ")]
+    check("r18f declining is printed, not composed, and on a first connect it "
+          "promises no earlier evidence: %r" % (_fresh_no,),
+          len(_fresh_no) == 1
+          and "no earlier evidence" in _fresh_no[0]
+          and "stays unproven" in _fresh_no[0])
+    check("r18g ...and on a re-run it names the moment declining actually keeps - "
+          "the same fact the apply line quotes, so the two options cannot "
+          "disagree about what is at stake: %r" % (_again_no,),
+          len(_again_no) == 1 and PRIOR_AT in _again_no[0]
+          and "no earlier evidence" not in _again_no[0])
     drift = {"meta": {"ado": {"organization": "test-audit-lab",
                               "project": "audit-gate-scrum",
                               "enabled": False,
@@ -323,18 +388,18 @@ def _cases(check):
           "it - so the orchestrator pastes what it was handed instead of "
           "composing counts into an option label, which is how a confirm gate "
           "reached a real user with no plan above it: %r" % (fresh_block[:1],),
-          len(fresh_block) == len(ok["data"]["plan"]["rows"]) + 2
+          len(fresh_block) == len(ok["data"]["plan"]["rows"]) + 3
           and " to set, " in fresh_block[0]
           and " to change, " in fresh_block[0]
           and " already right." in fresh_block[0]
-          and fresh_block[-1].strip().startswith("restamp "))
+          and fresh_block[-1].strip().startswith("decline "))
     check("r21b ...and the block is whole when there is NOTHING to do - the "
           "second direction, and the run where a reader most needs the shape "
           "stated rather than inferred from a silence: %r" % (again_block[:1],),
-          len(again_block) == len(again["data"]["plan"]["rows"]) + 2
+          len(again_block) == len(again["data"]["plan"]["rows"]) + 3
           and again["data"]["plan"]["writes"] == 0
           and " to set, " in again_block[0]
-          and again_block[-1].strip().startswith("restamp "))
+          and again_block[-1].strip().startswith("decline "))
 
     # --- one message, two causes: what the door actually saw (F98) ---
     #

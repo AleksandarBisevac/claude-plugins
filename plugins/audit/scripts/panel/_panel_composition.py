@@ -705,7 +705,7 @@ def areas_state(project):
     """
     config = read_config(project)
     mpath = _manifest_path(project, config)
-    out = {"path": os.path.relpath(mpath, project) if _within(project, mpath)
+    out = {"path": _output.posix_rel(mpath, project) if _within(project, mpath)
            else None,
            "areas": {}, "tags": [], "findings": [], "warnings": []}
     if not _within(project, mpath):

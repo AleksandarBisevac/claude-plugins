@@ -4576,6 +4576,39 @@ export function armedBypassReason() {
 }
 
 /**
+ * The line count `trivialLineThreshold` defaults to, read from `_config.DEFAULTS`.
+ *
+ * THE FIXTURE CHOOSES MAGNITUDES; IT DOES NOT CHOOSE THE BAR. A gate row shows a
+ * magnitude graded against a threshold, and that threshold is a product fact with
+ * exactly one home. Typed here it was F169's shape one notch smaller: move the
+ * default and the committed PNG shows a magnitude graded against a bar no project
+ * has, with nothing going red — the number is a picture decision nowhere and a
+ * product fact everywhere.
+ *
+ * Same door `armedBypassReason` uses for the keyword beside it, and it throws for
+ * the same reason: there is no sensible number to invent.
+ * @returns {number} the default threshold, as a whole number of lines
+ */
+export function trivialLineDefault() {
+  let got;
+  try {
+    got = JSON.parse(py(['-c',
+      'import json,os,sys;'
+      + 'sys.path.insert(0,os.path.join("plugins","audit","hooks"));'
+      + 'import _config;'
+      + 'print(json.dumps(_config.DEFAULTS["trivialLineThreshold"]))']));
+  } catch (err) {
+    throw new Error('the line threshold these gate rows grade against could not '
+      + `be read out of hooks/_config.py (DEFAULTS): ${err.message}`);
+  }
+  if (!Number.isInteger(got) || got <= 0) {
+    throw new Error('trivialLineThreshold\'s default is not a whole number of '
+      + `lines, so a seeded row would grade against nothing: ${JSON.stringify(got)}`);
+  }
+  return got;
+}
+
+/**
  * Every `reason` template `require-plan.py` writes into the gate feed, by event.
  *
  * The program is here rather than in a `tools/*.py` for the reason
@@ -4868,6 +4901,59 @@ async function assertAdoCardWorks(page) {
        + `(banner 'linked', Discard dead), got ${JSON.stringify(after)}`);
   } else {
     note('ado card: Discard restored the saved card; nothing was written');
+  }
+
+  // F187. EVERY SETTING A HUMAN IS EXPECTED TO SET HAS A CONTROL ON THIS CARD,
+  // and only a rendered page can say so: the card mints its ids as `'ado-'+path`,
+  // so a source scan resolves none of them and a Python selftest sees a string.
+  //
+  // THE LIST IS DERIVED, NOT TYPED. `_manifest_vocab` partitions `KNOWN_ADO` into
+  // the caches a COMMAND writes — evidence with a `fetchedAt`, which a human
+  // typing would be forging — and the settings a PERSON writes. A new key in that
+  // vocabulary arrives here needing either a control or a row in
+  // `ADO_NO_CONTROL`, which is what stops the next precondition shipping with no
+  // path but a hand edit.
+  //
+  // Matched by PREFIX, because one setting is a group: `types` is three boxes and
+  // `stateMap` is three grids, so what is asserted is that the card carries at
+  // least one control underneath each setting rather than a box per key.
+  {
+    let want;
+    try {
+      want = JSON.parse(py(['-c',
+        'import json,os,sys;'
+        + 'sys.path.insert(0,os.path.join("plugins","audit","scripts"));'
+        + 'import _output;_output.install_path();'
+        + 'import _manifest_vocab as v;'
+        + 'print(json.dumps({"settings":v.ado_settings(),'
+        + '"exempt":sorted(v.ADO_NO_CONTROL)}))']));
+    } catch (err) {
+      fail(`ado card: could not read the connector's own key vocabulary out of `
+         + `_manifest_vocab (ado_settings): ${err.message}`);
+      want = { settings: [], exempt: [] };
+    }
+    const owed = want.settings.filter((k) => !want.exempt.includes(k));
+    // READ FROM THE CARD'S OWN DECLARATION, not from its ids. The first version of
+    // this check matched `ado-<path>` ids and reported four false gaps: the state
+    // grids mint `ado-sm-<kind>-<status>-never`, the remaining-work box is
+    // `ado-rw`, and the two pair editors put no id on their inputs at all. An
+    // alias table here would be a second vocabulary to drift; `data-adosetting`
+    // is stamped by the same helper that writes the value, from the same path.
+    const seen = await page.evaluate(() => Array.from(
+      document.querySelectorAll('#adocard [data-adosetting]'))
+      .map((n) => n.getAttribute('data-adosetting')));
+    const missing = owed.filter((k) => !seen.includes(k));
+    if (!owed.length) {
+      fail('ado card: the settings list came back empty, so this check asked '
+         + 'nothing — a partition that names no setting is not a clean sheet');
+    } else if (missing.length) {
+      fail(`ado card: settings with no control at all — a precondition whose `
+         + `only path is a hand edit is a gate people switch off: `
+         + `${JSON.stringify(missing)} (card offers ${JSON.stringify(seen)})`);
+    } else {
+      note(`ado card: every connector setting a person sets has a control `
+         + `(${owed.length} setting(s), ${want.exempt.length} exempt by name)`);
+    }
   }
 
   // The identityMap pair editor: adding a pair renders a row; a second key
@@ -6911,30 +6997,46 @@ async function main() {
       {
         const gateLogs = path.join(big, '.claude', 'logs');
         mkdirSync(gateLogs, { recursive: true });
-        // Every `reason` below is its writer's own wording (F169). What this file
-        // still chooses is the numbers, and only the numbers: a magnitude, and the
-        // bar it is graded against. Both magnitude rows quote the SAME bar on
-        // purpose — one card showing two thresholds would be a picture of two
-        // projects — and it is `trivialLineThreshold`'s default, which
-        // `_config.DEFAULTS` prints and this comment therefore does not.
+        // Every `reason` below is its writer's own wording (F169), and every row
+        // asks for it BY ITS OWN EVENT (F172). The event was written twice per
+        // row once — as the row's field, and again as the argument picking the
+        // sentence — and the only thing keeping the two in step was that the
+        // wordings happened to take different numbers of values. Exchange two
+        // rows' calls together with their arguments and every check still passed
+        // while each row carried the other's sentence. One source per row now:
+        // `reason` is derived FROM `event`, so there is no second copy to
+        // disagree with.
+        //
+        // What this file still chooses is the magnitudes. Not the bar they are
+        // graded against: that is `trivialLineThreshold`'s default and has one
+        // home, which `trivialLineDefault()` reads and this comment therefore
+        // does not print. Both magnitude rows quote the same bar on purpose — one
+        // card showing two thresholds would be a picture of two projects.
+        const BAR = trivialLineDefault();
         const seeded = [
-          ['2026-04-18T09:12:04Z', 'observe', 'src/web/mod06_02.ts', 'observe',
-            gateReason('observe', 96, 80)],
-          ['2026-04-18T09:40:31Z', 'allow.trivial', 'src/web/mod06_04.ts', 'allow',
-            gateReason('allow.trivial', 41)],
-          ['2026-04-19T10:02:47Z', 'warn', 'src/mobile/mod07_01.ts', 'warn',
-            gateReason('warn')],
-          ['2026-04-19T14:21:09Z', 'deny', 'src/mobile/mod07_03.ts', 'deny',
-            gateReason('deny', 214, 80)],
-          ['2026-04-19T14:24:52Z', 'bypass.armed', null, null,
-            armedBypassReason()],
-          ['2026-04-19T14:26:10Z', 'bypass.consumed', 'src/mobile/mod07_03.ts',
-            'allow', gateReason('bypass.consumed')],
+          { ts: '2026-04-18T09:12:04Z', event: 'observe',
+            file: 'src/web/mod06_02.ts', mode: 'observe', nums: [96, BAR] },
+          { ts: '2026-04-18T09:40:31Z', event: 'allow.trivial',
+            file: 'src/web/mod06_04.ts', mode: 'allow', nums: [41] },
+          { ts: '2026-04-19T10:02:47Z', event: 'warn',
+            file: 'src/mobile/mod07_01.ts', mode: 'warn', nums: [] },
+          { ts: '2026-04-19T14:21:09Z', event: 'deny',
+            file: 'src/mobile/mod07_03.ts', mode: 'deny', nums: [214, BAR] },
+          // The one row whose sentence comes from a different writer, so it names
+          // that writer instead of carrying numbers.
+          { ts: '2026-04-19T14:24:52Z', event: 'bypass.armed',
+            file: null, mode: null, reason: armedBypassReason() },
+          { ts: '2026-04-19T14:26:10Z', event: 'bypass.consumed',
+            file: 'src/mobile/mod07_03.ts', mode: 'allow', nums: [] },
         ];
         writeFileSync(path.join(gateLogs, 'plan-gate-events.jsonl'),
-          seeded.map(([ts, event, file, mode, reason]) => JSON.stringify(
-            { ts, event, ...(file ? { file } : {}), ...(mode ? { mode } : {}),
-              reason, sessionId: 'sess-demo' })).join('\n') + '\n');
+          seeded.map((r) => JSON.stringify(
+            { ts: r.ts, event: r.event, ...(r.file ? { file: r.file } : {}),
+              ...(r.mode ? { mode: r.mode } : {}),
+              reason: r.reason !== undefined
+                ? r.reason
+                : gateReason(r.event, ...(r.nums || [])),
+              sessionId: 'sess-demo' })).join('\n') + '\n');
         await page.evaluate(() => pollRunStatus());
         const landed = await page.waitForFunction((n) => {
           const c = document.getElementById('gatecard');

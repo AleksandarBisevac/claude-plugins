@@ -28,10 +28,18 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import glob
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import io
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _locks                                      # noqa: E402  (held/refusal: the lock contract, read once)
 import _proposals as M                             # noqa: E402
 
 NOW = "2026-08-21T12:00:00Z"
@@ -310,6 +318,84 @@ def _cases(check):
           "phase that does not exist",
           M.reserved_cell({"hasPayload": False, "phaseId": "P9",
                            "taskCount": 3}) == "-")
+
+    # --- F188: the lock is a STATUS CODE, and both things done with it were wrong
+    # `_locks.acquire` returns an int on every path. This module named it `handle`
+    # and tested it with `isinstance(..., dict)`, which is never true of an int -
+    # so the release in the `finally` never ran and every write left the index lock
+    # on disk, and the code was never read, so a refused acquire fell into the
+    # write and changed the manifest with NO LOCK HELD.
+    #
+    # BOTH CASES COUNT THE LOCK FILE AND THE BYTES, never the return value: `run()`
+    # already answered `True` while the lock leaked, so a case built on its answer
+    # is the case that was there.
+    _lk_tmp = tempfile.mkdtemp(prefix="audit-prop-lock-")
+    try:
+        subprocess.call(["git", "init", "-q", _lk_tmp])
+        os.makedirs(os.path.join(_lk_tmp, "docs", "audit"))
+        _lk_mp = os.path.join(_lk_tmp, "docs", "audit", "audit-plan.json")
+
+        def _lk_write():
+            with io.open(_lk_mp, "w", encoding="utf-8") as fh:
+                json.dump(_manifest([_prop("PROP-1", payload=_payload("P9"))]), fh)
+
+        def _lk_files():
+            return sorted(os.path.basename(x) for x in
+                          glob.glob(os.path.join(_lk_tmp, ".git",
+                                                 "audit-locks", "*")))
+        _lk_write()
+        _ok, _info = M.run(_lk_mp, "materialize", ["PROP-1"])
+        check("lk1 a SUCCESSFUL materialize leaves no lock behind - counted on "
+              "disk, because `run()` returned True while the lock leaked and a "
+              "case reading that answer would have passed: %r"
+              % (_lk_files(),),
+              _ok and _lk_files() == [])
+
+        _lk_write()
+        _lk_before = io.open(_lk_mp, "rb").read()
+        _real = _locks.acquire
+        _locks.acquire = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            _ok2, _info2 = M.run(_lk_mp, "materialize", ["PROP-1"])
+        finally:
+            _locks.acquire = _real
+        check("lk2 ...and a REFUSED acquire writes nothing - the manifest is byte "
+              "identical, which is the assertion, since the old code returned True "
+              "here after writing with no lock at all: %r"
+              % ((_ok2, _info2),),
+              _ok2 is False
+              and io.open(_lk_mp, "rb").read() == _lk_before)
+        check("lk3 ...and the refusal is `_locks`' own sentence, carrying NO host "
+              "and no absolute path - `acquire`'s terminal lines name the machine "
+              "a live pid runs on, and this payload is painted by the panel: %r"
+              % ((_info2 or {}).get("findings"),),
+              (_info2 or {}).get("findings")
+              == [_locks.refusal(_locks.E_LIVE, M.LOCK_NAME)]
+              and "pid " not in _locks.refusal(_locks.E_LIVE, M.LOCK_NAME)
+              and os.sep not in _locks.refusal(_locks.E_LIVE, M.LOCK_NAME))
+        # THE THIRD ANSWER, and leaving it out re-broke the panel. `acquire` says
+        # `E_ERR` both for "not a git repository" - no lock to take, and never was
+        # - and for a real failure, so refusing on every non-zero code refused
+        # every write in a project with no `.git`. The panel has a documented
+        # fallback for exactly that case. Caught by the browser gate, not here,
+        # which is why the case exists now.
+        _ng = tempfile.mkdtemp(prefix="audit-prop-nogit-")
+        try:
+            os.makedirs(os.path.join(_ng, "docs", "audit"))
+            _ng_mp = os.path.join(_ng, "docs", "audit", "audit-plan.json")
+            with io.open(_ng_mp, "w", encoding="utf-8") as fh:
+                json.dump(_manifest([_prop("PROP-1",
+                                           payload=_payload("P9"))]), fh)
+            _ng_ok, _ng_info = M.run(_ng_mp, "materialize", ["PROP-1"])
+            check("lk5 a project with NO lock scheme still writes - `available()` "
+                  "is asked before acquiring, where the answer is unambiguous, "
+                  "rather than inferred from a code that means two things: %r"
+                  % ((_ng_ok, (_ng_info or {}).get("message")),),
+                  _locks.available(_ng) is False and _ng_ok is True)
+        finally:
+            shutil.rmtree(_ng, ignore_errors=True)
+    finally:
+        shutil.rmtree(_lk_tmp, ignore_errors=True)
 
 
 

@@ -258,7 +258,11 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
             # that symlink is a pathspec outside the repository.
             jdir = os.path.realpath(jr.journal_dir(project))
             groot = os.path.realpath(git_root)
-            jrel = os.path.relpath(jdir, groot)
+            # A git PATHSPEC, which is POSIX-spelled on every platform: a
+            # backslash one matches nothing, `ls-tree` then prints nothing
+            # with a zero exit, and the absent-file branch below reports
+            # every task as uncommitted.
+            jrel = _output.posix_rel(jdir, groot)
             if jrel.startswith(".."):
                 raise ValueError("journal dir %s is outside the git root" % jdir)
             for t in done:

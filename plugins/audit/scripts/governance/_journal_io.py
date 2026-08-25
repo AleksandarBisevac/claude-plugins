@@ -726,9 +726,17 @@ def repo_relative_or_token(project, path):
     Same question, opposite failure direction, on purpose -- this is a note against
     somebody later noticing the resemblance and deduplicating the two back together.
 
-    NEVER `os.path.relpath`: across Windows drives it RAISES, and a redactor that
-    raises hands its caller an exception where a token was wanted. A prefix
-    comparison over resolved absolute paths has no such edge.
+    NEVER `os.path.relpath` HERE: this function takes a path from anywhere - a
+    payload, a config, another drive - and across Windows drives `relpath` RAISES,
+    so a redactor built on it hands its caller an exception where a token was
+    wanted. A prefix comparison over resolved absolute paths has no such edge.
+
+    SCOPED TO THIS FUNCTION, and it did not used to be. Written as a flat "never",
+    it read as a rule about the module and was already false one function over:
+    `verify_dir` derives a journal-relative `where` with `relpath`, legitimately,
+    because both sides come from one directory walk and cannot be on two drives.
+    A rule stated wider than it holds is the kind a later reader either obeys
+    where it costs something or disbelieves where it matters.
 
     Case is compared EXACTLY, which is the other place the direction shows: on a
     case-insensitive volume a differently-spelled inside path is called outside and
@@ -1175,7 +1183,7 @@ def verify(project, config=None):
         # live and an archived month can never read as one another in a report
         # -- while the GENESIS SEED below stays the basename, which is exactly
         # what lets a git-mv'd file keep verifying: untouched bytes, same name.
-        where = os.path.relpath(path, directory).replace(os.sep, "/")
+        where = _output.posix_rel(path, directory)
         seen_names.setdefault(name, []).append(where)
         rows, torn = read_file(path)
         entry = {"file": where, "rows": 0, "findings": [], "warnings": []}

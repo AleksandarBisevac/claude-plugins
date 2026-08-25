@@ -87,6 +87,7 @@ responsibility with nothing in this table to grow with it.
 
 | part | one responsibility |
 |---|---|
+| `theme.js` | Whether the document is painting dark: the `data-theme` attribute if one is set, else the OS. Both surfaces answered this separately and disagreed on one thing — whether `matchMedia` is guarded before it is called — which is what a second implementation is for. |
 | `dates.js` | A UTC day as an integer, and back: `DAY_MS`, `dnum`, `dayIso`. Every date helper above it is arithmetic on these, so they sit at least as high as their readers. |
 | `calendar.js` | The heatmap's calendar: which period a day falls in, how to step to the next one that holds data, and **what rows a granularity draws**. The second half is why Month shows the month's own dates rather than the seven weekday rows it once shared with Year and All. |
 | `plural.js` | A count and its noun, agreeing — including the clause where the verb agrees too. A mirror of `_fmt.plural`, held equal to it by a test that asks the live Python. |

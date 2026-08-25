@@ -632,6 +632,35 @@ def _cases(check):
           "never assumed into a refusal: %r" % (_codes(_res),),
           _codes(_res) == ([], [], [], ["B0"])
           and "Deliverable" in (_res["unverified"] or [{}])[0].get("message", ""))
+    # F185. THE PHRASE HAS TO SAY WHOSE TYPE, and it did not: a rank is missing
+    # either because a row carries no type or because its type is not in the
+    # fetched levels, independently for the child and the parent - four answers,
+    # and the sentence keyed on whether a type NAME was None, which is two. So a
+    # link whose child was ranked and whose PARENT had no type reported "its own
+    # type has no rank", naming the side the check had just verified. Asserted on
+    # the phrase builder directly, in all four directions plus both-at-once,
+    # because the message is where the reader learns which end to go and fix.
+    _gap = M._rank_gap
+    check("hp13b an unranked CHILD names the child, and an unranked PARENT names "
+          "the parent - the fault was one word answering for both: %r"
+          % ([_gap(None, None, "Feature", 1),
+              _gap("Deliverable", None, "Feature", 1),
+              _gap("PBI", 2, None, None),
+              _gap("PBI", 2, "Deliverable", None)],),
+          _gap(None, None, "Feature", 1) == "the row records no type of its own"
+          and "its own type 'Deliverable'" in _gap("Deliverable", None,
+                                                  "Feature", 1)
+          and _gap("PBI", 2, None, None) == "the parent's type is not recorded"
+          and "the parent's type 'Deliverable'" in _gap("PBI", 2,
+                                                        "Deliverable", None)
+          and "its own" not in _gap("PBI", 2, "Deliverable", None))
+    check("hp13c ...and when BOTH ends are missing both are named - reporting one "
+          "of two gaps as if it were the gap sends a reader to fix the named "
+          "half and hands them the same warning back: %r"
+          % (_gap(None, None, None, None),),
+          _gap(None, None, None, None).count(" and ") == 1
+          and "the row records no type" in _gap(None, None, None, None)
+          and "the parent's type" in _gap(None, None, None, None))
     # THE NEGATIVE. A check that became unconditional would fire here, and every
     # case above would still pass.
     _good = [_phase("P1", link=800, tasks=[_task("P1.1", link=801)])]

@@ -47,6 +47,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _ado_parent as _adop                        # noqa: E402  (the no-declaration marker)
 import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_write imports it)
@@ -395,9 +396,9 @@ def _cases(check):
               open(_p2shard, "rb").read() == _p2_before)
         check("sharded: only the touched files are reported written",
               sorted(res.get("written") or []) == sorted(
-                  [_mio.posix_rel(os.path.join(os.path.dirname(_sm),
+                  [_output.posix_rel(os.path.join(os.path.dirname(_sm),
                                                _idx["phases"][0]["shard"]), _sproj),
-                   _mio.posix_rel(_sm, _sproj)]))
+                   _output.posix_rel(_sm, _sproj)]))
         # A meta-only save used to fail with ~22 findings about phase stubs.
         res = M.apply_composition(_sproj, {"meta": {"reviewSkill": "sk2"}})
         check("sharded: a meta-only save is not blocked by findings about stubs",
@@ -471,7 +472,7 @@ def _cases(check):
               [r["field"] for r in _res.get("applied") or []] == ["areas"])
         check("areas PUT touches the INDEX only - meta lives there, and rewriting "
               "a phase shard would manufacture a conflict on a branch nobody is on",
-              _res.get("written") == [_mio.posix_rel(_am, _aproj)]
+              _res.get("written") == [_output.posix_rel(_am, _aproj)]
               and open(_ashard, "rb").read() == _ashard_before)
         _after = M._read_json(_am)["meta"]["areas"]
         check("areas PUT replaces the registry wholesale, so dropping an area is "
@@ -533,7 +534,7 @@ def _cases(check):
                                           "enabled": False}})
         check("ado PUT writes through the one composition writer, INDEX only",
               _res["ok"]
-              and _res.get("written") == [_mio.posix_rel(_om, _oproj)]
+              and _res.get("written") == [_output.posix_rel(_om, _oproj)]
               and open(_oshard, "rb").read() == _oshard_before
               and M._read_json(_om)["meta"]["ado"]["enabled"] is False)
         check("ado PUT echoes DOTTED rows, one per leaf that moved",
@@ -864,6 +865,50 @@ def _cases(check):
           == [("meta", "reviewSkill"), ("P1", "review model")])
     check("composition diff skips an unknown id (the patch refuses it a line later)",
           M._composition_changes(_cm, {"tasks": {"P9.9": {"model": "x"}}}) == [])
+
+    # --- F187: a phase can be put IN an area, not only at creation -------------
+    # `meta.areas` has had an editor since areas existed and `audit-task
+    # add-phase --area` writes a tag at CREATION; nothing wrote it afterwards. A
+    # registry you can curate while nothing can be assigned to it is half a
+    # feature, and the missing half is what every per-area total reads.
+    #
+    # Asserted through the PATCH rather than the endpoint, because the shape it
+    # stores is the claim: `audit-task` writes one tag as a STRING and several as a
+    # list, and a panel that stored a list of one would put two spellings of one
+    # fact in the same manifest.
+    def _one_phase():
+        return {"meta": {"areas": {"api": {"root": "services/api"}}},
+                "phases": [{"id": "PA", "title": "t", "status": "pending",
+                            "blockedBy": [], "testGate": [], "tasks": []}]}
+    _am1 = _one_phase()
+    _e1 = M.apply_composition_patch(_am1, {"phases": {"PA": {"area": "api"}}})
+    check("ar1 one area is stored as a STRING, the shape `audit-task` writes - "
+          "not a list of one, which would be a second spelling of one fact: %r"
+          % (_am1["phases"][0].get("area"),),
+          _e1 is None and _am1["phases"][0].get("area") == "api")
+    _am2 = _one_phase()
+    _e2 = M.apply_composition_patch(
+        _am2, {"phases": {"PA": {"area": ["api", " api ", "web"]}}})
+    check("ar2 ...several are a list, deduped and trimmed through the SAME "
+          "`_areas.areas_of` every other surface uses - a second normalisation "
+          "here is how one phase came to count twice in a per-area total: %r"
+          % (_am2["phases"][0].get("area"),),
+          _e2 is None and _am2["phases"][0].get("area") == ["api", "web"])
+    _am3 = _one_phase()
+    _am3["phases"][0]["area"] = "api"
+    _e3 = M.apply_composition_patch(_am3, {"phases": {"PA": {"area": ""}}})
+    check("ar3 ...and an emptied box REMOVES the key rather than writing an empty "
+          "one - `[]` validates and reads as 'tagged with nothing', which is a "
+          "different claim from untagged and the one the area fallback treats as "
+          "considered: %r" % (_am3["phases"][0].get("area", "<gone>"),),
+          _e3 is None and "area" not in _am3["phases"][0])
+    check("ar4 ...and the diff names it, so the confirm dialog shows the change "
+          "instead of writing it silently: %r"
+          % (M._composition_changes(_one_phase(),
+                                    {"phases": {"PA": {"area": "api"}}}),),
+          [(r["target"], r["field"]) for r in M._composition_changes(
+              _one_phase(), {"phases": {"PA": {"area": "api"}}})]
+          == [("PA", "area")])
     # The `from` side has to be the value the FORM shows. _composition_view turns a
     # missing skills key into [], so reading the raw None here would make adding a
     # skill read as `null -> [a]` on the server and `[] -> [a]` in the browser, and
@@ -1277,7 +1322,7 @@ def _cases(check):
     if _slot and os.path.isfile(_slot):
         with open(_slot, "r", encoding="utf-8") as fh:
             _claim = json.load(fh)
-    _jrel = _mio.posix_rel(
+    _jrel = _output.posix_rel(
         os.path.join(_jmod.journal_dir(proj, M.read_config(proj)), _jname), proj)
     check("a real save leaves the claim the guard reads, naming EXACTLY the file "
           "it appended to and nothing else - a claim listing more than the panel "

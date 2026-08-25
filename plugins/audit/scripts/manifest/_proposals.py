@@ -560,7 +560,27 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
                 "guess which you meant." % (pids[0], ", ".join(plan["pulledIn"]))]}
 
     project = os.path.dirname(os.path.abspath(mpath)) or "."
-    handle = _locks.acquire(project, LOCK_NAME, note="proposal:" + verb)
+    # F188. THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE
+    # WERE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
+    # which is never true of an int - so the release never ran and every write left
+    # the index lock on disk, and the code was never read, so a refused acquire
+    # fell into the write below and changed the manifest with no lock held. The
+    # The refusal is `_locks`' own sentence and NOT its terminal lines: those name
+    # the host a live pid runs on, and this payload is painted by the panel - the
+    # first draft of this repair moved a hostname onto an HTTP response.
+    # A project with NO lock scheme is the third answer, and it is not a
+    # refusal: `acquire` says `E_ERR` both for "not a git repository" and for
+    # a real failure, and refusing on every non-zero code refused every write
+    # in a non-git project - which the panel handles by falling back to a
+    # working-tree lockfile and proceeding. Asked before acquiring, where the
+    # answer is unambiguous.
+    code = None
+    if _locks.available(project):
+        code = _locks.acquire(project, LOCK_NAME,
+                              note="proposal:" + verb,
+                              out=lambda *_a, **_k: None)
+        if not _locks.held(code):
+            return False, {"findings": [_locks.refusal(code, LOCK_NAME)]}
     try:
         if verb == "materialize":
             manifest, message = apply_materialize(manifest, plan, now)
@@ -578,7 +598,7 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
                                         "was written"] + list(findings)}
         _save(mpath, manifest)
     finally:
-        if isinstance(handle, dict):
+        if _locks.held(code):
             _locks.release(project, LOCK_NAME, out=lambda *_a, **_k: None)
     return True, {"message": message, "warnings": warnings}
 

@@ -177,6 +177,51 @@ def _cases(_record):
           and s_dup["areas"]["backend"]["total"] == s_dup["phases"][0]["total"],
           repr(s_dup["areas"]))
 
+    # --- F192: the denominator's missing sentence -----------------------------
+    # `cancelled` is counted separately and never folded into `done` - `rollup`'s
+    # comment is right that a bar reading 5/5 for three landed and two dropped
+    # tasks would be a lie in the one direction that matters. But `0/5` over four
+    # runnable tasks is a total nobody can reach, and the HTML report already
+    # printed the count while this surface withheld it: one plan, two surfaces,
+    # and only one of them told the reader which facts they needed.
+    m_ca = copy.deepcopy(_fixture())
+    _ca_phase = m_ca["phases"][0]
+    _ca_phase["tasks"].append({
+        "id": "%s.90" % _ca_phase["id"], "title": "dropped", "files": [],
+        "status": "cancelled", "blockedBy": [], "dependsOn": []})
+    _txt_ca = M.render_status(m_ca, M.rollup(m_ca, [], []))
+    _ca_row = [ln for ln in _txt_ca.splitlines()
+               if ln.strip().startswith(_ca_phase["id"] + " ")]
+    check("xc1 the phase row names the cancelled count, so a total that can "
+          "never be reached says why: %r" % (_ca_row[:1],),
+          _ca_row and "(1 cancelled)" in _ca_row[0])
+    _ca_head = [ln for ln in _txt_ca.splitlines() if "tasks done" in ln]
+    check("xc2 ...and so does the plan-wide line, which had the identical "
+          "problem at the top of the page: %r" % (_ca_head[:1],),
+          _ca_head and "(1 cancelled)" in _ca_head[0])
+    # NON-ZERO ONLY, and this is the one case where silence and zero say the same
+    # thing: `(0 cancelled)` on every phase is noise, and a check that only
+    # asserted the presence above would pass a renderer that printed it always.
+    _txt_none = M.render_status(_fixture(), M.rollup(_fixture(), [], []))
+    # THE THIRD SITE, and closing only the two the report named would have left it
+    # making the same unreachable claim. The per-area rollup carries the same
+    # `done/total` and had no count to explain it with.
+    m_cax = copy.deepcopy(m_ca)
+    m_cax["meta"]["areas"] = {"backend": {"root": "src"}}
+    m_cax["phases"][0]["area"] = "backend"
+    _txt_cax = M.render_status(m_cax, M.rollup(m_cax, [], []))
+    _cax_row = [ln for ln in _txt_cax.splitlines()
+                if ln.strip().startswith("backend ")]
+    check("xc4 the BY AREA row names it as well - the reported defect was one "
+          "instance of a class, and a rollup summing the same tasks says the "
+          "same unreachable thing: %r" % (_cax_row[:1],),
+          _cax_row and "(1 cancelled)" in _cax_row[0])
+
+    check("xc3 a plan with nothing cancelled says nothing about it - the paired "
+          "negative, since asserting only the presence would pass a renderer "
+          "that printed the note unconditionally",
+          "cancelled)" not in _txt_none)
+
     # (ut) the cross-cutting blind spot (v0.37 B3): a phase with NO area tag in
     # a project that REGISTERS areas is a phase every area default (skills,
     # reviewer, owner) silently skips. ONE aggregated advisory line in BY AREA,

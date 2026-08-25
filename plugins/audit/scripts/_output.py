@@ -92,6 +92,35 @@ REPO_ROOT = os.path.dirname(os.path.dirname(PLUGIN_ROOT))
 
 
 # --- safe stdio ---------------------------------------------------------------
+def posix_rel(path, start):
+    """A `start`-relative path spelled with "/" on EVERY platform.
+
+    `os.path.relpath` answers in the platform's separator, so the same phase shard
+    is `phases/P3.json` in the index that stores it and `phases\\P3.json` in the
+    line a Windows reader is shown. One file, two spellings, and the one nobody
+    can search for is the one on screen.
+
+    Every value that is PUBLISHED - reported to a human, put in `--json`, persisted,
+    or handed to git as a pathspec - goes through here. Values used only to OPEN a
+    file do not need it, because Python takes either separator; values compared
+    against a manifest do, because the manifest holds this spelling.
+
+    IT LIVES IN THE ANCHOR BECAUSE THE CALLERS ARE IN EVERY LAYER. It began in
+    `_manifest_io`, which is layer 1 - and `_ui_theme`, which publishes a theme
+    path, is layer 1 too, so it could not reach it without a sideways import. A
+    helper the layering forbids half its callers from using is a helper half the
+    tree will hand-roll instead, which is the duplication this exists to end.
+
+    Backslashes are replaced UNCONDITIONALLY rather than only `os.sep`. Written as
+    `os.sep` this is the identity on POSIX, so no case here could ask it anything
+    and the body could be deleted without a suite going red - a check that can only
+    fail on the platform nobody runs locally. The cost is a POSIX filename holding
+    a literal backslash, which is respelled in what is REPORTED and never in what
+    is opened; the same trade `_config.slashed()` takes in `hooks/`.
+    """
+    return os.path.relpath(path, start).replace("\\", "/")
+
+
 def safe_stdio():
     """Make stdout/stderr unable to crash on a character they cannot spell.
 
@@ -144,7 +173,7 @@ def py_files(directory):
             if not fname.endswith(".py"):
                 continue
             path = os.path.join(root, fname)
-            rel = os.path.relpath(path, directory).replace(os.sep, "/")
+            rel = posix_rel(path, directory)
             found.append((rel, path))
     found.sort()
     return found
@@ -309,7 +338,7 @@ def kept_files(root, patterns, exts, drop=None):
     """
     out = []
     for base, dirs, files in os.walk(root):
-        rel_base = os.path.relpath(base, root).replace(os.sep, "/")
+        rel_base = posix_rel(base, root)
         prefix = "" if rel_base == "." else rel_base + "/"
         dirs[:] = sorted(d for d in dirs if not _is_ignored(prefix + d, patterns))
         for name in sorted(files):
@@ -421,7 +450,7 @@ def ui_surface_sources(scripts_dir=None):
     # would arrive as "no sources" and the digest over it would read as agreement.
     for dirpath, dirnames, filenames in os.walk(root, onerror=walk_errors.append):
         dirnames.sort()
-        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        rel_dir = posix_rel(dirpath, root)
         prefix = "" if rel_dir == "." else rel_dir + "/"
         for name in sorted(filenames):
             if name.startswith(".") or name.endswith(UI_DOC_EXT):
@@ -2066,7 +2095,7 @@ def covered_repo_paths(repo_root=None):
     sweep cannot skip a file this lint has not accounted for.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
-    return [os.path.relpath(os.path.join(PLUGIN_ROOT, rel), root).replace(os.sep, "/")
+    return [posix_rel(os.path.join(PLUGIN_ROOT, rel), root)
             for rel in selftest_coverage()["covered"]]
 
 

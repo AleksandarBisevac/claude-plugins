@@ -178,7 +178,7 @@ def _journal_never_committed(jr, directory):
         now = time.time()
         old = []
         for f in jr.journal_files(directory):
-            rel = os.path.relpath(f, directory).replace(os.sep, "/")
+            rel = _output.posix_rel(f, directory)
             if rel not in sets[1]:
                 continue
             try:
@@ -240,7 +240,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         rep.warn("journal", "could not read the journal: %s" % exc,
                  "run `audit-journal.py verify` by hand to see why")
         return
-    where = os.path.relpath(res.get("dir") or project, project)
+    where = _output.posix_rel(res.get("dir") or project, project)
     if not res.get("exists"):
         rep.ok("journal", "no writes recorded yet (%s does not exist)" % where)
         return

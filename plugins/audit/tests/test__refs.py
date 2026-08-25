@@ -1991,6 +1991,36 @@ def _cases(check):
     # grown --gate and --fail-on while its README row said "-", and /audit:doctor
     # had grown --deep while its row still said [--json]. A capability nobody can
     # find is the thing this repo keeps meeting.
+    # --- F191: the operator's own words, and the doc that has to say so -------
+    # The journal is tamper-evident and works on whatever sentence it is given, so
+    # a paraphrased reason makes the chain guarantee something its subject never
+    # wrote. Measured live: "Tracked in ADO only, not executed here" was recorded
+    # as "tracked on the board only; this work is not executed through the audit
+    # pipeline" - longer, smoother, and a claim about this plugin's role the
+    # operator never made.
+    #
+    # The RULE lives once, in `reference/manifest-conventions.md`; the command docs
+    # carry a pointer. This asserts both halves, because a pointer at a heading
+    # nobody kept is a pointer at nothing and every doc would still pass.
+    _vrd = M.verbatim_rule_drift()
+    check("vb1 every command doc that asks a human for text bound for the journal "
+          "says it goes in UNCHANGED - the flag is the needle, not a doc list, so "
+          "a new command that gathers a reason is covered the day it is written: "
+          "%r" % (_vrd,),
+          not _vrd["missing"] and _vrd["checked"] >= 4)
+    check("vb2 ...and the section the pointers name still exists - the other half, "
+          "since a pointer at a renamed heading reads as compliance while naming "
+          "nothing: %r" % (_vrd["ruleDoc"],),
+          _vrd["ruleDoc"] is True)
+    # THE NEEDLE MUST REACH THE FOURTH DOC, and a flag-only one did not: `bug
+    # close` records "a one-line `notes` justification" and names no flag, so the
+    # census read three docs and treated the fourth as having nothing to discharge.
+    check("vb3 the census reaches a doc that gathers the text WITHOUT naming a "
+          "flag - counted, because a needle that quietly covered three of four "
+          "would report a clean sheet over the one it could not see: %r"
+          % (sorted(M.VERBATIM_FLAGS),),
+          "justification" in M.VERBATIM_FLAGS and len(M.VERBATIM_FLAGS) >= 2)
+
     _cfd = M.command_flag_drift()
     check("cf1 the README's command table names every flag its commands declare "
           "- %d command(s) with an argument-hint and a row, missing %r"
