@@ -19,6 +19,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
+import _evidence_io as _evidence                   # noqa: E402  (where the run ledger lives, for the fixture)
 import _panel_runstate as M         # noqa: E402
 
 
@@ -164,6 +165,64 @@ def _cases(check):
     check("lv: SSE is weighed and rejected in prose where the stamp is "
           "defined, so the next person does not re-litigate it blind",
           "SSE" in (M.data_fingerprint.__doc__ or ""))
+    # --- ev: the evidence ledger is watched too ---------------------------------
+    # A gate that finishes mid-phase appends a row beside the manifest and moves
+    # a pointer in the phase shard. The shard was already stamped - but a
+    # `--reconcile` pass, and a run recorded while another session holds the
+    # phase lock, write the ROW and not the shard. Watch the manifest alone and
+    # the badge waits for a manual reload, which is the whole of what a live
+    # panel is for.
+    _evdir = _evidence.evidence_dir(proj, M.read_config(proj))
+    os.makedirs(_evdir, exist_ok=True)
+    _ev_before = M.data_fingerprint(proj, M.read_config(proj))
+    _ev_file = os.path.join(_evdir, "2026-08.w1.jsonl")
+    with open(_ev_file, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"v": 1, "runId": "r-1", "ts": "2026-08-20T10:00:00Z",
+                             "scope": "task", "taskId": "P1.1",
+                             "status": "passed"}) + "\n")
+    _ev_after = M.data_fingerprint(proj, M.read_config(proj))
+    check("ev1 a recorded run moves the stamp - the panel refetches state and "
+          "lights the badge without a reload, which is the only way a run that "
+          "finishes while somebody is watching ever reaches the screen",
+          _ev_after != _ev_before, repr((_ev_before, _ev_after)))
+    # THE HALF THAT CATCHES A STAMP THAT ALWAYS MOVES, and it is the one that
+    # looks vacuous: a fingerprint wired to the clock, to a set iteration order
+    # or to `time.time()` passes the case above every single time and would put
+    # this panel into a refetch loop against a colleague's laptop. Two calls
+    # with nothing touched, AFTER the evidence directory exists - the pre-existing
+    # stability case above was taken before this part of the stamp had anything
+    # to read.
+    check("ev2 ...and a second call with nothing touched does NOT move it, with "
+          "the evidence directory present and holding a row - the direction "
+          "that catches a stamp which changes on every poll",
+          M.data_fingerprint(proj, M.read_config(proj)) == _ev_after
+          and M.data_fingerprint(proj, M.read_config(proj)) == _ev_after)
+    # Appending to the SAME file, which is what a second run in the same month
+    # from the same writer does. Both mtime and size move, so a coarse
+    # filesystem cannot round this away.
+    with open(_ev_file, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"v": 1, "runId": "r-2", "ts": "2026-08-20T11:00:00Z",
+                             "scope": "task", "taskId": "P1.2",
+                             "status": "failed"}) + "\n")
+    check("ev3 a second row APPENDED to an existing evidence file moves it too - "
+          "a stamp that only noticed new files would miss every run after the "
+          "first in any given month",
+          M.data_fingerprint(proj, M.read_config(proj)) != _ev_after)
+    # ONE WALK FOR TWO DIRECTORIES. A second copy of the loop is a second chance
+    # for one of the two ledgers to quietly stop being watched, which is exactly
+    # the failure the stamp exists to prevent.
+    check("ev4 the newest-*.jsonl walk is written ONCE and used for both "
+          "ledgers, rather than copied - counted, because a second copy would "
+          "leave every case above green while the two could drift apart",
+          _src.count("def newest_jsonl(") == 1
+          and _src.count("newest_jsonl(") == 3
+          and "_ev.evidence_dir(project, config)" in _src,
+          repr(_src.count("newest_jsonl(")))
+    check("ev5 an unconfigured evidence directory is a STABLE sentinel and "
+          "never a raise - a project with nothing recorded must not move the "
+          "stamp on every poll",
+          M.data_fingerprint(os.path.join(tmp, "ev-nothing-here"), {})
+          == M.data_fingerprint(os.path.join(tmp, "ev-nothing-here"), {}))
 
     # --- v0.34 B3 (gt): the Plan gate block on /api/runstatus --------------------
     # Tier + why, bypass-armed, and the tail of the gate events feed - the

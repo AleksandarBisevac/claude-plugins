@@ -15,3 +15,27 @@
 .st{display:inline-block;font-size:.66rem;font-weight:600;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}
+/* ev: a recorded test run's verdict is its own vocabulary, mapped onto the same
+   --st the status pill already wears — one pill component, two vocabularies,
+   rather than a second badge grammar to keep in step. `passed` is the only green
+   here on purpose: every other word is a red, a run that answered nothing, or a
+   silence, and an evidence column full of green is exactly what this feature
+   exists to stop somebody assuming. */
+[data-evstatus="passed"]{--st:var(--ok)}
+[data-evstatus="failed"]{--st:var(--err)}
+/* Answered nothing, or answered that the record itself is wrong. Amber rather
+   than red: none of these is a failing test, and `could-not-run` in particular
+   must never be rendered as one. */
+[data-evstatus="no-checks"],[data-evstatus="timed-out"],
+[data-evstatus="could-not-run"],[data-evstatus="dangling"],
+[data-evstatus="unknown"]{--st:var(--warn)}
+/* Settled, not achieved — the bucket `cancelled` already sits in one vocabulary
+   over, and `empty-gate` joins it for the same reason: the run finished and
+   there was nothing for it to do. */
+[data-evstatus="empty-gate"],[data-evstatus="cancelled"]{--st:var(--st-cancelled)}
+/* THE TWO SILENCES ARE NOT ONE GREY BLOB. They share the quietest ink because
+   neither is a finding, and they are told apart by their WORDS and by the dashed
+   outline below: `No gate configured` is a fact about the plan and `No evidence`
+   a fact about the ledger, and a reader goes to different places for them. */
+[data-evstatus="none"],[data-evstatus="no-gate"]{--st:var(--muted)}
+.st[data-evstatus="none"]{border-style:dashed}

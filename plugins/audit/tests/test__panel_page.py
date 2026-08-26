@@ -37,10 +37,12 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
+import os
 import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT: the schema this page's words must agree with)
 from _output import safe_stdio                     # noqa: E402
 import _help                                       # noqa: E402  (topic ids + COMPOSITION_PATHS)
 import _loader                                     # noqa: E402  (as _panel_page imports it)
@@ -590,8 +592,8 @@ def _cases(check):
     check("overview: the filter state is hoisted out of the render, so the poll "
           "cannot wipe it - the VIEW and which phases are open ride it too, or "
           "a 5s badge repaint would fold every row a reader opened",
-          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{}};"
-          in M.UI_HTML
+          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{},"
+          "evOpen:{}};" in M.UI_HTML
           and M.UI_HTML.index("const OVF=") < M.UI_HTML.index("function renderOver"))
     check("overview: and the caret survives a repaint mid-search",
           "act.id==='ovq'" in M.UI_HTML and "n.setSelectionRange(caret,caret)" in M.UI_HTML)
@@ -629,12 +631,211 @@ def _cases(check):
           and "' phases match')+' outside this view" in M.UI_HTML)
     check("ov: the phase detail is the report's task columns, read-only - id, "
           "title, status, risk as coloured TEXT, commit and the completion "
-          "stamp to the minute",
+          "stamp to the minute - plus `tests`, which is what a run RECORDED "
+          "about the task and is deliberately a column of its own beside the "
+          "status the plan claims",
           "function ovDetail(" in M.UI_HTML
-          and "tableHead(['id','title','status','risk','commit','done (UTC)'])"
-          in M.UI_HTML
+          and "tableHead(['id','title','status','tests','risk','commit',"
+              "'done (UTC)'])" in M.UI_HTML
           and "class:'rk','data-risk':t.risk" in M.UI_HTML
           and ".rk[data-risk=\"high\"]{color:var(--err)}" in M.UI_HTML)
+
+    # --- ev: recorded test runs, as the Overview shows them ---------------------
+    # The slice below is bounded by the section marker and by `ovDetail`, which
+    # makes that marker load-bearing source: `_harness.between` RAISES on a
+    # marker that has moved, where a `.index()` pair would silently re-point at
+    # something else and go on passing about a different span. Every negative
+    # here is scoped to it, because "no truthy test on a three-valued field" is a
+    # claim about THIS code and would be unenforceable over the whole page.
+    _evsrc = _harness.between(M.UI_HTML, "// ---------- recorded test runs ----",
+                              "function ovDetail(p){")
+    _evwords = ["Passed", "Failed", "No checks ran", "Timed out", "Cancelled",
+                "Could not run", "Empty gate", "No evidence",
+                "No gate configured", "Pointer without evidence"]
+    _evmissing = [w for w in _evwords if ("'%s'" % w) not in _evsrc]
+    check("ev1 every badge the page can paint is spelled out, once, in one "
+          "table - ten words for seven verdicts a run may cache and the three "
+          "silences no run ever answers: %r missing" % (_evmissing,),
+          not _evmissing and "const EVWORD={" in _evsrc)
+    # THE ONE VOCABULARY WRITTEN IN TWO LANGUAGES, pinned rather than commented.
+    # A word the ledger can cache and the page has no cell for renders through
+    # the default arm, which is correct but silent; a word the page invents for a
+    # verdict the schema does not have is a badge nothing can ever produce.
+    _ev_schema_path = os.path.join(_output.PLUGIN_ROOT, "schema",
+                                   "audit-plan.schema.json")
+    with open(_ev_schema_path, encoding="utf-8") as _fh:
+        _ev_schema = json.load(_fh)
+    _ev_enum = (((_ev_schema.get("$defs") or {}).get("testEvidence") or {})
+                .get("properties", {}).get("status", {}).get("enum") or [])
+    _evword_block = _harness.between(_evsrc, "const EVWORD={", "};")
+    _ev_uncovered = [w for w in _ev_enum
+                     if ("'%s':" % w) not in _evword_block
+                     and ("%s:" % w) not in _evword_block]
+    # The three the PLAN answers rather than a run. They must NOT be schema
+    # statuses: a manifest carrying `status: "no-gate"` would be a run claiming
+    # to be a silence.
+    _ev_plan_only = [k for k in ("none", "no-gate", "dangling") if k in _ev_enum]
+    check("ev2 the badge table covers every status the SCHEMA lets a manifest "
+          "cache (%r uncovered), and the three keys the page adds are the ones "
+          "no run can report (%r wrongly in the enum) - a comment claiming two "
+          "vocabularies agree is not a check" % (_ev_uncovered, _ev_plan_only),
+          bool(_ev_enum) and not _ev_uncovered and not _ev_plan_only)
+    check("ev3 an unrecognised verdict is NAMED rather than folded into "
+          "'failed' - the schema leaves the enum open and says so, so the "
+          "default arm humanises the word it did not recognise, and a run that "
+          "cached no verdict says that instead of rendering the em dash "
+          "`label('')` gives",
+          " if(!k)return 'Verdict not recorded';" in _evsrc
+          and "hasOwnProperty.call(EVWORD,k)" in _evsrc
+          # ...and the humanised fallback is TYPE-CHECKED before it is painted.
+          # `label` reads its own table with no own-property guard, so a status
+          # word somebody typed into a manifest - `constructor`, `toString` -
+          # comes back as a function off Object.prototype. Found by calling the
+          # function in tools/ui-tests/evidence-badge.test.mjs, which no
+          # substring pin could have found.
+          and " return typeof word==='string'?word:k;}" in _evsrc
+          # The negative, spelled as the two shapes a FOLD would take rather
+          # than as the bare word: `EVORDER` legitimately lists `'failed'`, and
+          # a negative on the word alone would have been red on arrival and
+          # then loosened, which is how a check stops checking.
+          and "||'failed'" not in _evsrc
+          and ":'failed'" not in _evsrc)
+    check("ev4 `ranTotal` IS THREE-VALUED. null is 'not knowable from this "
+          "runner' and is emphatically not zero; only a positive zero earns 'no "
+          "checks ran'. The words are the gate runner's own, so the panel and "
+          "the terminal cannot describe one run two ways",
+          "const evChecks=run=>run.ranTotal==null\n"
+          " ?'check count not knowable from this runner'\n"
+          " :(run.ranTotal===0?'no checks ran'" in _evsrc
+          # The mutation this is here for: `!run.ranTotal` merges null into
+          # zero, and `run.ranTotal?` merges zero into unknown.
+          and "!run.ranTotal" not in _evsrc
+          and "run.ranTotal?" not in _evsrc
+          # ...and the MARKER answers the same question under the same
+          # condition. This clause was added because a mutation that made the
+          # marker unconditional survived every other case here: 'checks
+          # unknown' beside a run that counted twelve is the same lie in a
+          # different element.
+          and "if(run.ranTotal==null)marks.push({text:'checks unknown',"
+          in _evsrc)
+    check("ev5 ...and one step down too: a step whose runner reports no count "
+          "says so, where a step that ran and checked nothing shows its zero",
+          "s.ran==null?'not knowable':String(s.ran)" in _evsrc
+          and "s.ran||" not in _evsrc)
+    check("ev6 `treeMutated` IS THREE-VALUED: null is 'no comparison was made', "
+          "[] is a tree that was compared and is clean, a count is the finding. "
+          "A TRUTHY TEST MERGES UNKNOWN INTO CLEAN, which is the defect this "
+          "case exists for, so the null arm is FIRST and the finding arm reads "
+          "a positive number",
+          "if(run.treeMutated==null)marks.push({text:'tree unknown'" in _evsrc
+          and "else if(run.treeMutated>0)marks.push({text:'tree mutated'" in _evsrc
+          and "if(run.treeMutated)" not in _evsrc
+          and "!run.treeMutated" not in _evsrc)
+    check("ev7 ...and `coverage` the same way, where the middle value has its "
+          "own sentence: a gate that ran and named none of this work's files is "
+          "the third way a gate says nothing, not a clean bill",
+          "if(run.coverage==null)marks.push({text:'coverage unknown'" in _evsrc
+          and "else if(run.coverage===0)marks.push({text:'no overlap'" in _evsrc
+          and "if(run.coverage)" not in _evsrc
+          and "!run.coverage" not in _evsrc)
+    check("ev8 every marker carries the BASIS that produced it, falling back to "
+          "a sentence rather than to silence - 'unknown' with no reason beside "
+          "it is the shape a reader cannot act on, and the ledger already holds "
+          "all three",
+          "why:run.treeBasis||" in _evsrc and "why:run.coverageBasis||" in _evsrc
+          and "why:run.countsBasis||" in _evsrc
+          and _evsrc.count("title:m.why") == 1)
+    check("ev9 A BADGE IS THE STATUS AND THE MARKERS ARE BESIDE IT - two "
+          "elements, two classes, never one word. A gate can fail AND rewrite "
+          "the tree, and `run-test-gate.render` prints both for that reason",
+          "el('span',{class:'st','data-evstatus':s.key||'unknown',title:s.why},"
+          in _evsrc
+          and "el('span',{class:'evmk','data-evmark':m.text,title:m.why}," in _evsrc
+          # ...and `Passed` is the word alone. Nothing appends a check count to
+          # it, so the badge cannot claim a check ran.
+          and "passed:'Passed'" in _evsrc
+          # A marker needs a run that MADE the observation: the three silences
+          # carry none, and without this guard they render the contained
+          # failure sentinel instead of their own sentence.
+          and "function evMarks(run){\n if(!run)return [];" in _evsrc)
+    check("ev10 the three silences are THREE BRANCHES WITH THREE SENTENCES, "
+          "never one grey blob: no gate declared anywhere, a gate with no run "
+          "recorded, and a pointer the ledger cannot answer. The middle one "
+          "says out loud that it is not a failure",
+          "?{key:'none',run:null," in _evsrc
+          and ":{key:'no-gate',run:null," in _evsrc
+          and "if(!run)return {key:'dangling',run:null," in _evsrc
+          and "an absent record is not a failure." in _evsrc
+          and "no test gate is declared here or on the phase" in _evsrc
+          and "the evidence ledger does not hold it" in _evsrc)
+    check("ev11 ...and the dangling sentence carries its BASIS - how many "
+          "evidence files were read and how many lines could not be parsed - so "
+          "a ledger that was never written and one that could not be understood "
+          "are not the same claim, plus the verdict the plan had cached",
+          "plural((ev&&ev.files)||0,'file read','files read')" in _evsrc
+          and "plural((ev&&ev.unreadable)||0,'line unreadable',"
+              "'lines unreadable')" in _evsrc
+          and "The plan caches the verdict" in _evsrc)
+    check("ev12 a run is decoded against the column names the SERVER shipped "
+          "beside it, never against indices typed here - facts plus their "
+          "field list is the Usage tab's shape, and a hand-written index is how "
+          "a column added on one side reads as another on the other",
+          "function evRow(row,fields){" in _evsrc
+          and "(fields||[]).forEach((f,i)=>{out[f]=row[i];});" in _evsrc
+          and "evRow(((ev||{}).runs||{})[rid],(ev||{}).fields)" in _evsrc
+          and "evRow(raw,(STATE.evidence||{}).stepFields)" in _evsrc
+          # ...and null for no row at all, never {}: an empty object answers
+          # `undefined` to every three-valued read.
+          and "if(!Array.isArray(row))return null;" in _evsrc)
+    check("ev13 the feature is CONTAINED at its two doors, with a sentinel no "
+          "real verdict can produce - a badge added to a table somebody opened "
+          "for other reasons must not be able to blank the Overview, and a "
+          "failure that renders like an answer is the silent pass this repo "
+          "names",
+          _evsrc.count("catch(cause){console.error('evidence badge failed for "
+                       "'+id,cause);") == 1
+          and _evsrc.count("catch(cause){console.error('evidence roll-up "
+                           "failed',cause);") == 1
+          and _evsrc.count("class:'evfail'") == 2
+          and ".evfail{" in M.UI_HTML)
+    _evdet_src = M.UI_HTML[M.UI_HTML.index("function ovDetail(p){"):
+                           M.UI_HTML.index("function applyCardOrder(view){")]
+    check("ev14 a phase shows BOTH measurements, LABELLED APART: its own "
+          "sign-off run, and a roll-up over its tasks. One badge for the two "
+          "would claim a measurement nobody made",
+          "evLine('phase sign-off',pcell.badge)" in _evdet_src
+          and "evLine('tasks',evRollCells(tasks,ev))" in _evdet_src
+          and _evdet_src.count("evLine(") == 2
+          and "const evLine=(lbl,...parts)=>el('div',{class:'evline'," in _evsrc)
+    check("ev15 the roll-up counts the phase's OWN tasks and leads with what "
+          "needs a human - EVORDER, which is OVORDER's rule one vocabulary "
+          "over - and says so rather than showing an empty line when a phase "
+          "has none",
+          "function evTaskRoll(tasks,ev){" in _evsrc
+          and "ovRank(EVORDER,a)-ovRank(EVORDER,b)" in _evsrc
+          and "EVORDER=['failed'," in _evsrc
+          and "'no tasks to count'" in _evsrc)
+    check("ev16 which runs are OPEN rides OVF, keyed by subject id, so the 5s "
+          "poll cannot fold a run somebody opened - and it is a second map "
+          "rather than a second meaning for `open`, because the two nest",
+          "OVF.evOpen[id]=!open;renderOver();" in _evsrc
+          and "const open=!!OVF.evOpen[id];" in _evsrc
+          # find(), not index(): a name that left OVF entirely must fail THIS
+          # case rather than raise and strand every case below it.
+          and 0 <= M.UI_HTML.find("evOpen:{}")
+          < M.UI_HTML.find("function renderOver"))
+    check("ev17 a subject with no recorded run is NOT a control - there is "
+          "nothing to open, and a button onto an empty box is a promise the "
+          "page cannot keep",
+          "if(!s.run)return {badge:badge,detail:null};" in _evsrc
+          and "'aria-expanded':open?'true':'false'," in _evsrc)
+    check("ev18 the opened run prints what it answered AND the basis for what "
+          "it could not, plus one row per step - and an empty step list is "
+          "SAID, because a gate with no commands and a run whose steps nothing "
+          "recorded look identical in an empty table",
+          "'data-evbasis':pair[0]" in _evsrc
+          and "'This run recorded no steps.'" in _evsrc
+          and "tableHead(['step','exit','checks','took','outcome'])" in _evsrc)
     # TIMEZONE-PROOF, which the behavioural case in tools/ui-tests/dates.test.mjs
     # is not: it asserts that a day number is a whole number, and a
     # local-midnight parse is a whole number too on a UTC host. CI sets no TZ, so
@@ -3454,6 +3655,11 @@ def _cases(check):
         # compact. The floor is declared now instead of being a coincidence.
         "button.btn.small": ("min-width:24px", ".btn.small"),
         "button.btn.small.push": ("ok", "56.8x29.2"),
+        # The evidence badge is a control when there is a run to open, and the
+        # pill inside it is .66rem type whose padding scales with density - so
+        # the floor is DECLARED rather than measured once and hoped for, which
+        # is the same repair `.btn.small` above already took.
+        "button.evtog": ("min-height:24px", "button.evtog"),
         "button.chip.ghosted.optnone": ("ok", "86.7x29.4"),
         "button.dtopic": ("ok", "343x78.6"),
         "button.filt": ("ok", "47.6x29.2"),

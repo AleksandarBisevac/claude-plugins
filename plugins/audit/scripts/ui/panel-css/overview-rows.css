@@ -59,3 +59,40 @@ table.ovtasks td.ovt{max-width:22rem;overflow:hidden;text-overflow:ellipsis;
  .ovrow .ptitle{flex:1 1 100%}
 }
 
+/* ev: the verdict and the observations beside it. They are separate elements
+   because they are separate facts — a gate can fail AND rewrite the tree, and
+   `run-test-gate.render` prints both for that reason. */
+.evb{display:inline-flex;gap:var(--sp-0);align-items:center;flex-wrap:wrap}
+/* A marker is not a status, so it borrows no status colour. Dashed, quiet, and
+   never green: everything it can say is an absence of proof. */
+.evmk{font-size:.66rem;font-weight:600;color:var(--muted);white-space:nowrap;
+ border:1px dashed var(--border);border-radius:var(--pill);padding:0 .4em}
+/* The badge IS the control when there is a run to open. A subject with nothing
+   recorded stays a plain span, so pressability means the same thing every time. */
+/* target-size: the pill inside is .66rem type, so the box is DECLARED to 24
+   rather than left to whatever the text and the density scale happen to give —
+   the floor a measurement at one density cannot promise. */
+button.evtog{display:inline-flex;gap:var(--sp-0);align-items:center;
+ min-height:24px;background:none;border:1px solid transparent;
+ border-radius:var(--radius);padding:0 var(--sp-0);font:inherit;color:inherit;
+ cursor:pointer}
+button.evtog:hover{background:var(--surface-2)}
+button.evtog:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.evdet{margin:var(--sp-0) 0;padding:var(--sp-0) .5rem;background:var(--surface);
+ border:1px solid var(--border);border-radius:var(--radius);font-size:.76rem}
+.evdet .evbasis{color:var(--muted);margin-top:var(--sp-0)}
+table.evsteps{width:100%;border-collapse:separate;border-spacing:0;
+ font-size:.74rem;margin-top:var(--sp-0)}
+table.evsteps th{text-align:left;font-size:var(--t-label);text-transform:uppercase;
+ letter-spacing:.05em;color:var(--muted);padding:.15rem .35rem;font-weight:700}
+table.evsteps td{padding:.15rem .35rem;border-top:1px solid var(--border)}
+/* The phase's OWN sign-off run and the roll-up over its tasks, on labelled lines:
+   merging them would claim a measurement nobody made, and two unlabelled badges
+   read as one contradiction. */
+.evline{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;
+ margin:var(--sp-0) 0}
+.evline .evlbl{font-size:.7rem;font-weight:700;letter-spacing:.04em;
+ text-transform:uppercase;color:var(--muted)}
+/* The sentinel a contained failure renders. Deliberately unlike every verdict
+   above — a badge that failed to compute must not read as an answer. */
+.evfail{font-size:.7rem;font-weight:600;color:var(--warn)}

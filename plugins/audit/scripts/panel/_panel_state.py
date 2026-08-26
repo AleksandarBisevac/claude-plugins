@@ -148,6 +148,8 @@ _bugs_view = _composition._bugs_view
 _skills_of = _composition._skills_of
 _ado_status = _composition._ado_status
 _composition_view = _composition._composition_view
+_evidence_view = _composition.evidence_view
+_empty_evidence = _composition.empty_evidence
 areas_state = _composition.areas_state
 
 # NOT `_composition._proposals_view` any more. The Proposals tab and
@@ -397,6 +399,11 @@ def build_state(project):
                                             "phases": 0},
                                  "lastSyncedAt": None},
                    "phases": [], "tasks": []}
+    # THE EMPTY SHAPE COMES FROM ONE FUNCTION, never a second dict literal here:
+    # `evidence` is read only where a pointer exists, so a key spelled in one of
+    # these branches and forgotten in the other would be an `undefined` that only
+    # a project with no plan ever meets.
+    evidence = _empty_evidence()
     proposals = []
     bugs = []
     if exists:
@@ -408,6 +415,10 @@ def build_state(project):
             m_findings, m_warn = vm.validate(manifest)
             rollup = as_.rollup(manifest, m_findings, m_warn)
             composition = _composition_view(manifest)
+            # AFTER the composition and off its rows, not off the manifest: the
+            # pointers are already on those rows, and the runs worth shipping are
+            # exactly the ones they name.
+            evidence = _evidence_view(project, composition, config=config)
             bugs = _bugs_view(manifest)
             proposals = _proposals_view(manifest)
     return {
@@ -422,6 +433,7 @@ def build_state(project):
         "configWarnings": cfg_warnings,
         "manifestFindings": m_findings,
         "composition": composition,
+        "evidence": evidence,
         "proposals": proposals,
         "bugs": bugs,
         "rollup": rollup,
