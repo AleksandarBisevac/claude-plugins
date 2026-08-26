@@ -694,7 +694,23 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     });
     expect('opening one shows the row under its task', opened.isDetail && opened.visible, true);
     expect('...and the control says it is open', opened.aria, 'true');
-    expect('...in two labelled groups', opened.groups.join(','), 'meta,task details');
+    // THE GROUP COUNT IS A PROPERTY OF THE REPORT, NOT A CONSTANT, and pinning it
+    // as a literal made this line green for the wrong reason: the shipped example
+    // records no runs, so the drawer's third group was inert in the one document
+    // this gate ever opened. Driving a report that DOES carry evidence is what
+    // turned it red.
+    //
+    // NOT REWRITTEN AS "expect whatever the page showed" -- that reads the answer
+    // out of the thing under test and can only fail on ordering. Two independent
+    // claims instead: the groups that are never optional are always the first two,
+    // in that order, and any third can only be the evidence one and can only come
+    // last. A missing mandatory group, a renamed one, a stray one and a
+    // mis-ordered one each fail a different half.
+    expect('...opening in labelled groups, the two mandatory ones first',
+           opened.groups.slice(0, 2).join(','), 'meta,task details');
+    expect('...and any further group is the evidence one, last',
+           opened.groups.slice(2).join(','),
+           opened.groups.length > 2 ? 'test evidence' : '');
     if (opened.truncated.endsWith('\u2026')) {
       const stem = opened.truncated.slice(0, -1).trim();
       expect('...carrying the outcome the table had to cut short, in full',

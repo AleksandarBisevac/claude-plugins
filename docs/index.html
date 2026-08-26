@@ -538,6 +538,53 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 .rchip[data-risk="med"]{color:var(--rk-med-fg)}
 .rchip[data-risk="high"]{color:var(--rk-high-fg)}
 
+
+/* ---- the test gate's verdict, and what the run also noticed --------------
+   tv: the badge is a `.chip` and NOT a component of its own. A tinted pill
+   reporting a value is the grammar this sheet already has for that, and a second
+   one would put two kinds of "here is a value" side by side in one row. Only the
+   hue is new, and it arrives the way `data-status` already delivers one — which
+   is why these rules declare tokens and nothing else.
+   SCOPED TO THE MARK, deliberately: `data-tev` also rides the task ROW so the
+   filter can compare it in one attribute read, and an unscoped selector would
+   hand every descendant of that row a `--st` it never asked for. */
+:where(.chip,.tevn)[data-tev="passed"]{--st:var(--st-done);--st-ink:var(--st-done-ink)}
+:where(.chip,.tevn)[data-tev="failed"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
+/* Amber is "this is not a verdict", and it covers four states that are all
+   exit 0 or no exit at all: nothing ran, the run was killed, the runner never
+   started, and the plan points at a run this checkout does not hold. None of
+   them is a failing test and none of them can sign anything off. */
+:where(.chip,.tevn)[data-tev="no-checks"],
+:where(.chip,.tevn)[data-tev="timed-out"],
+:where(.chip,.tevn)[data-tev="could-not-run"],
+:where(.chip,.tevn)[data-tev="dangling"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
+:where(.chip,.tevn)[data-tev="cancelled"]{--st:var(--st-cancelled);
+  --st-ink:var(--st-cancelled-ink)}
+/* `empty-gate`, `no-evidence`, `no-gate` and any word this build does not know
+   are left to the `.chip` default, which is the pending grey. That is not an
+   omission: absence of evidence is not a colour, and tinting it would be the
+   report taking a position the plan does not support. */
+
+/* An observation is NOT a status, so it is not a pill. A gate can fail and also
+   rewrite the tree, and drawing the second as another pill beside the first
+   reads as two verdicts — which is exactly the collapse the renderer refuses. */
+.tevf{display:inline-block;margin-left:var(--sp-0);font-size:.72rem;font-weight:600;
+  letter-spacing:.02em;color:var(--muted);white-space:nowrap}
+/* Two of them are things that HAPPENED and three are things nobody could
+   establish. The first pair earns the warning ink; an unknown stays muted,
+   because "we could not look" is not a finding. */
+.tevf[data-tevf="tree-mutated"],
+.tevf[data-tevf="no-overlap"]{color:var(--st-prog-ink)}
+/* The count in a phase row's rollup: coloured text, no fill. A row already
+   carries a status pill and a progress bar, and a third filled shape on it would
+   compete with the phase's own state for the eye. */
+.tevn{color:var(--st-ink,var(--st-pending-ink));font-weight:600;white-space:nowrap}
+.tevn + .tevn{margin-left:var(--sp-1)}
+/* The phase row's two evidence marks. They are LABELLED APART in the markup —
+   "sign-off" and "tasks" — because they are two measurements, and this only has
+   to keep them from running together. */
+.ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);white-space:nowrap}
+.tevcell{line-height:1.8}
 /* ---- tables -------------------------------------------------------------- */
 .tablewrap{margin:.5rem 0 1rem}
 table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;font-size:.92rem;
@@ -606,6 +653,11 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
   padding:.6rem .75rem .7rem 2.4rem}
 .dtwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);
   gap:.5rem 2rem}
+/* tv: a third group — the test-gate record — when the plan points at any run.
+   `:where()` keeps this at the same specificity as the rule above it, so the
+   single-column rule below still wins on a narrow screen by source order alone
+   and does not need a copy of the modifier to reach it. */
+.dtwrap:where(.dt3){grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.3fr)}
 @media (max-width:52rem){.dtwrap{grid-template-columns:minmax(0,1fr)}}
 .dtcol h4{margin:0 0 .3rem;font-size:var(--t-label);text-transform:uppercase;
   letter-spacing:.08em;color:var(--muted);font-weight:700}
@@ -627,6 +679,16 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
   padding:0 .15rem 0 1.5rem;
   background:linear-gradient(90deg,transparent,var(--surface-2) 62%)}
 .dtmore{margin-top:.35rem}
+/* tv: the earlier runs, folded away. `<details>` and not a scripted panel, for
+   the reason the parked proposals below already use one — disclosure is
+   something the platform does, so the record opens with scripting off, and the
+   print sheet already forces every `details.more` open, which means the PDF
+   carries the whole run history without a line of script.
+   The Usage section's `details.more` wears a rule with a top border and a wide
+   margin, which is right for a section divider and wrong inside a drawer row.
+   Descendant-scoped so it wins wherever the two sheets end up ordered. */
+.dtcol details.more{margin-top:var(--sp-1);border-top:none;padding-top:0}
+.dtcol details.more>summary{font-size:.76rem}
 /* Parked proposals (F-P-32). `<details>` rather than a scripted row: disclosure is
    something the platform already does, so the payload opens with scripting off and
    in print, and report.js gains nothing to index. The meta rows reuse `.dt-*` from
@@ -1283,7 +1345,7 @@ details.more>summary:hover{color:var(--text)}
 }
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-26 12:34 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 1.8.0</span></p></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 4 phases · 10 tasks · 5 bugs · generated 2026-08-26 21:20 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 1.8.0</span></p></div>
 <div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div><div class="gfilters" role="group" aria-label="Global filters"><label class="gf"><span class="tbl">Author</span><select id="audit-au-select" aria-label="Scope the Usage section&#39;s per-author views to one author"><option value="">All authors</option><option value="milos@acme.example">milos@acme.example</option><option value="alex@acme.example">alex@acme.example</option><option value="sara@acme.example">sara@acme.example</option></select></label><label class="gf"><span class="tbl">Area</span><select id="audit-area-select" aria-label="Show only phases tagged with this area"><option value="">All areas</option><option value="auth">auth</option><option value="storefront">storefront</option><option value="checkout">checkout</option></select></label><label class="gf"><span class="tbl">From</span><input type="date" id="audit-gfrom" aria-label="From - start of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><label class="gf"><span class="tbl">to</span><input type="date" id="audit-gto" aria-label="to - end of the date range scoping the task table and the usage charts" min="2026-06-02" max="2026-07-21"></label><button type="button" class="btn" id="audit-gclear" hidden title="Clear the date range - back to all time">All time</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">4</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">1</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
@@ -1470,8 +1532,45 @@ claude-sonnet-5	14.07M</title></rect></svg></div></div></div><h4 class="sub">Pha
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>a1b2c3d</td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td><span class="muted">—</span></td></tr></tbody></table></div>
 <h2 id="ready">Ready now</h2><dl class="ready"><dt><code class="mono">P2.4</code> <strong>Add zod schemas for cart mutations</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P2</span> — Input validation. Cleared: depends on P2.1 (done)</dd></dl>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTI2IDEyOjM0IFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTA4LTI2IDIxOjIwIFVUQwoKPiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMi4gT2YgZml2ZSB0cmFja2VkIGJ1Z3MsIHRoZSBsb2dvdXQgc2Vzc2lvbiBsZWFrIChCVUctNCkgaXMgZml4ZWQgYW5kIHRoZSBjYXJ0IG9mZi1ieS1vbmUgKEJVRy0zKSBpcyBiZWluZyBmaXhlZCByZWQtZmlyc3Q7IG5vIGhpZ2gtc2V2ZXJpdHkgYnVncyByZW1haW4gdW5yZXNvbHZlZC4KCioqT3ZlcmFsbDoqKiA0LzEwIHRhc2tzIGRvbmUgwrcgMS80IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMSByZWFkeSBub3cKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IDlhMWYwYzIgfCAyMDI2LTA2LTAyIHwgIzE0MjEgfAp8IFAxLjIgfCBSYXRlLWxpbWl0IHRoZSBsb2dpbiBlbmRwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBiMmQ3ZTU4IHwgMjAyNi0wNi0wOSB8IOKAlCB8CgojIyBQMiDigJQgSW5wdXQgdmFsaWRhdGlvbiAoaW5fcHJvZ3Jlc3MsIDEvNCkKX0V2ZXJ5IHJlcXVlc3QgcGF5bG9hZCBhbmQgdXNlci1zdXBwbGllZCBzdHJpbmcgaXMgdmFsaWRhdGVkIG9yIGVzY2FwZWQgYmVmb3JlIGl0IHJlYWNoZXMgYnVzaW5lc3MgbG9naWMgb3IgYSB0ZW1wbGF0ZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDIuMSB8IFZhbGlkYXRlIHRoZSBjaGVja291dCBwYXlsb2FkIHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IGM0YTExYjkgfCAyMDI2LTA2LTIzIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IOKAlCB8CnwgUDIuMyB8IEVzY2FwZSBzZXJ2ZXItcmVuZGVyZWQgdGVtcGxhdGUgb3V0cHV0IHwgYmxvY2tlZCB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0xMyB8IOKAlCB8CnwgUDIuNCB8IEFkZCB6b2Qgc2NoZW1hcyBmb3IgY2FydCBtdXRhdGlvbnMgfCBwZW5kaW5nIHwgaGFpa3UgfCBsb3cgfCDigJQgfCDigJQgfCDigJQgfAoKIyMgUDMg4oCUIFBlcmZvcm1hbmNlIHBhc3MgKHBlbmRpbmcsIDAvMikKX1RoZSBjYXRhbG9nIGFuZCBwcm9kdWN0IHBhZ2VzIHJlbmRlciB3aXRob3V0IHRoZSBrbm93biByZWR1bmRhbnQgd29yayBhbmQgaGVhdnkgYWJvdmUtdGhlLWZvbGQgaW1hZ2VzLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMy4xIHwgTWVtb2l6ZSB0aGUgcHJvZHVjdC1saXN0IHNlbGVjdG9yIHwgcGVuZGluZyB8IGhhaWt1IHwgbG93IHwg4oCUIHwg4oCUIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IOKAlCB8CgojIyBCRjEg4oCUIEJ1Z2ZpeCBiYXRjaCAxIChpbl9wcm9ncmVzcywgMS8yKQpfUmVwb3J0ZWQgYnVncyBhcmUgcmVwcm9kdWNlZCByZWQtZmlyc3QgYW5kIGZpeGVkLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCRjEuMSB8IEZpeCBCVUctMzogY2FydCB0b3RhbCBvZmYtYnktb25lIHdpdGggc3RhY2tlZCBkaXNjb3VudHMgfCBpbl9wcm9ncmVzcyB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0yMCB8IOKAlCB8CnwgQkYxLjIgfCBGaXggQlVHLTQ6IGxvZ291dCBsZWF2ZXMgdGhlIHNlc3Npb24gY29va2llIHwgZG9uZSB8IG9wdXMgfCBoaWdoIHwgYTFiMmMzZCB8IDIwMjYtMDctMjEgfCDigJQgfAoKIyMgQnVncwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgc2V2ZXJpdHkgfCB0YXNrIHwgZml4ZWRJbiB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBCVUctMSB8IFByb2R1Y3QgaW1hZ2VzIDQwNCBpbnRlcm1pdHRlbnRseSBvbiBTYWZhcmkgfCBvcGVuIHwgbWVkIHwg4oCUIHwg4oCUIHwKfCBCVUctMiB8IENoZWNrb3V0IGlzIHNsb3cgb24gM0cgbW9iaWxlIHwgdHJpYWdlZCB8IGxvdyB8IOKAlCB8IOKAlCB8CnwgQlVHLTMgfCBDYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgbWVkIHwgQkYxLjEgfCDigJQgfAp8IEJVRy00IHwgTG9nb3V0IGRvZXMgbm90IGNsZWFyIHRoZSBzZXNzaW9uIGNvb2tpZSB8IGZpeGVkIHwgaGlnaCB8IEJGMS4yIHwgYTFiMmMzZCB8CnwgQlVHLTUgfCBEYXJrLW1vZGUgbGFiZWwgY29udHJhc3QgYmVsb3cgQUEgfCB3b250Zml4IHwgbG93IHwg4oCUIHwg4oCUIHwKCiMjIFJlYWR5IG5vdwoKUDIuNAoKCiMjIFVzYWdlCgoqKlRvdGFsOioqIDkzLjFNIHRva2VucyDCtyB+JDEwMy42NSBlcXVpdiDCtyA4OTkgbXNncyDCtyA0IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDk0JSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2CgojIyMgQnkgcGhhc2UKCnwgcGhhc2UgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgQkYxIHwgNTAuMU0gfCAkMzYuMTYgfCAxMTggfAp8IFAxIHwgMzAuOE0gfCAkMjguMjIgfCAyNTkgfAp8IFAyIHwgNy41TSB8ICQzMi41MyB8IDMyOCB8CnwgVW5jYXRlZ29yaXplZCB8IDQuNk0gfCAkNi43NCB8IDE5NCB8CgojIyMgQnkgbW9kZWwKCnwgbW9kZWwgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgY2xhdWRlLW9wdXMtNSB8IDUyLjRNIHwgJDYwLjgwIHwgMzU2IHwKfCBjbGF1ZGUtc29ubmV0LTUgfCAzOC4xTSB8ICQzOS4xMiB8IDQyMSB8CnwgY2xhdWRlLWhhaWt1LTQtNSB8IDIuME0gfCAkMC43NSB8IDg1IHwKfCBjbGF1ZGUtZmFibGUtNSB8IDY1NS4ySyB8ICQyLjk4IHwgMzcgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgNDcuOE0gfCAkNDguMDYgfCAyNDYgfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjUuM00gfCAkMzEuNzQgfCA0NzkgfAp8IHNhcmFAYWNtZS5leGFtcGxlIHwgMjAuME0gfCAkMjMuODUgfCAxNzQgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNiB8IDM4LjFNIHwgJDQ3LjQ3IHwgNjQwIHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDU1LjBNIHwgJDU2LjE4IHwgMjU5IHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTQlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMTglIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk1JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4OCUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxNS43NyBhY3Jvc3MgNCB0YXNrKHMpLgotICoqUHJvamVjdGlvbjoqKiBzdXBwcmVzc2VkIOKAlCBuZWVkcyA1IGNvbXBsZXRlZCB0YXNrcywgaGFzIDQuCi0gKipSZXRyaWVkIHRhc2tzOioqICQ1LjgyIGFjcm9zcyAxIHRhc2socykgKDYlIG9mIHNwZW5kKS4gTm90IHRoZSBzYW1lIGFzIHdhc3RlZCBzcGVuZCDigJQgdGhlIGxlZGdlciBidWNrZXRzIGJ5IGhvdXIsIG5vdCBieSBhdHRlbXB0LgotICoqQmxvY2tlZCB0YXNrczoqKiAkNS44MiBhY3Jvc3MgMSB0YXNrKHMpIOKAlCBzcGVuZCB3aXRoIG5vIG91dGNvbWUuCgojIyMgTW9kZWwgY29zdCB3aXRoaW4gZWFjaCByaXNrIGJhbmQKCkNvbXBhcmVkIGluc2lkZSBhIGJhbmQgb24gcHVycG9zZTogaGFyZCB3b3JrIGlzIHJvdXRlZCB0byB0aGUgc3Ryb25nZXIgbW9kZWwgZGVsaWJlcmF0ZWx5LCBzbyBhIHJhdyBzcGVuZC1wZXItdGFzayBjb21wYXJpc29uIGFjcm9zcyBiYW5kcyB3b3VsZCBmbGFnIHRoYXQgd29ya2luZyBzeXN0ZW0gYXMgYSBmYXVsdC4KCnwgcmlzayB8IG1vZGVsIHwgdGFza3MgfCBjb3N0L3Rhc2sgfCBtZWFuIGF0dGVtcHRzIHwKfC0tLXwtLS18LS0tOnwtLS06fC0tLTp8CnwgaGlnaCB8IGNsYXVkZS1vcHVzLTUgfCAzIHwgJDE2LjY5IHwgMS4wIHwKfCBtZWQgfCBjbGF1ZGUtc29ubmV0LTUgfCA0IHwgJDkuNTAgfCAxLjUgfAo=";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script type="module">
+// ---------- reading a table with a key that came from outside ----------
+/**
+ * One entry of a lookup table, read as an OWN property.
+ *
+ * A bare `TABLE[k]` walks the prototype chain, so a key that happens to name
+ * something on `Object.prototype` answers with THAT instead of with a miss, and
+ * the `||` fallback written beside the read is unreachable for exactly those
+ * names. `label('constructor')` returned a function from a helper documented to
+ * return a string; `label('toString')`, `'valueOf'`, `'hasOwnProperty'` did the
+ * same, and `'__proto__'` returned an object.
+ *
+ * The keys are not hypothetical, and both surfaces are reachable. On the panel,
+ * `testEvidence.status` is enum-constrained in the JSON Schema and restated
+ * nowhere on the Python side, so a hand-written or third-party manifest carries
+ * whatever it likes; `area` tags, `model` names and `review.status` are
+ * documented free text; and the usage tab decodes its filter dimensions
+ * straight out of the URL fragment. The REPORT is the worse case, because it
+ * needs no manifest at all: a rendered report is handed around as a CI artifact
+ * and published to a link, and `#!v=constructor` alone used to reach
+ * `VIEWS[viewMode]` with a function and throw out of the first filter pass.
+ *
+ * A miss answers `undefined` — which is what the bare read answered — so an
+ * existing `||`, `??` or `===undefined` beside the call keeps behaving exactly
+ * as it did for every key that is not an inherited property name.
+ *
+ * This guards READING a table the code wrote as a literal. A map the code
+ * BUILDS from outside keys needs `Object.create(null)` instead, because
+ * `m['__proto__']=v` on a plain object re-points the prototype rather than
+ * storing the value, and no read helper can recover what was never written. A
+ * map built that way needs no `lookup` either: with no prototype, `m[k]` is
+ * already own-or-undefined.
+ *
+ * @param {Object<string, *>} t - the table to read
+ * @param {string|number|null|undefined} k - the key, from wherever it came
+ * @returns {*} the table's own value for `k`, or undefined when it has none
+ */
+const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;
 // --- the light/dark question -------------------------------------------------
 //
 // BOTH SURFACES ASK IT AND BOTH ANSWERED IT SEPARATELY. The panel's copy and the
@@ -2073,7 +2172,7 @@ function storageDrop(key) {
    */
   const HASH = (() => {
     const h = location.hash || '';
-    if (h.indexOf('#!') !== 0) return {};
+    if (h.indexOf('#!') !== 0) return Object.create(null);
     return h.slice(2).split('&').filter(Boolean).reduce((acc, pair) => {
       const i = pair.indexOf('=');
       const k = i < 0 ? pair : pair.slice(0, i);
@@ -2082,7 +2181,11 @@ function storageDrop(key) {
       // key stays present so the control it drives is still restored.
       try { acc[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { acc[k] = ''; }
       return acc;
-    }, {});
+    // No prototype, because every key here is whatever the link said. On a plain
+    // object `acc['__proto__'] = 'dark'` is swallowed by the prototype setter
+    // rather than stored, so `#!__proto__=x` would decode to an empty hash and
+    // silently restore the LOCAL copy instead of the view the link names.
+    }, Object.create(null));
   })();
 
   const count = document.getElementById('audit-count');
@@ -2285,10 +2388,18 @@ function storageDrop(key) {
 
   // Which phases are expanded survives filtering AND a page reload.
   const STORE = 'audit-report-expanded:' + (document.title || 'report');
-  let expanded = {};
+  // No prototype, because the keys are phase ids and the schema puts no
+  // `pattern` on an id at all. On a plain object `expanded['__proto__'] = true`
+  // is swallowed, so that phase could never be opened; `expanded.constructor`
+  // reads back as a function, so that phase renders open before anyone clicks
+  // it and the first click closes it.
+  const expanded = Object.create(null);
   // The `try` is for the PARSE, not for storage: storageGet cannot throw, so a
   // refused read and a corrupt stored value no longer share one handler.
-  try { expanded = JSON.parse(storageGet(STORE)) || {}; } catch (e) {}
+  // Own keys are COPIED IN rather than the map being replaced: JSON.parse hands
+  // back a plain object, and a corrupt value hands back a string or an array,
+  // both of which used to be adopted whole by `|| {}` and then written to.
+  try { Object.assign(expanded, JSON.parse(storageGet(STORE))); } catch (e) {}
 
   /**
    * Write the expand state back to storage, ignoring a refusal.
@@ -2301,11 +2412,19 @@ function storageDrop(key) {
   // --- filter state, and the controls that write it ----------------------------
 
   let phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
-  let taskStatus = {};    // per phase: filter that phase's TASKS, by task status
+  // Keyed by phase id, so prototype-free for the reason `expanded` above is.
+  let taskStatus = Object.create(null);   // per phase: filter its TASKS by status
   let modelFilter = '';   // panel: only tasks run by this model
   let dFrom = '';         // panel: ISO dates, compared as plain strings
   let dTo = '';
   let preset = '';        // which relative-span chip is lit, if any
+  // The test gate's TWO axes, and they are independent on purpose. `tevFilter`
+  // is what a task's last recorded run SAID; `tevFlag` is what else was true
+  // about that run. A gate can fail and also rewrite the tree, so a reader
+  // hunting rewrites cannot reach them through the status axis at all, and a
+  // single combined control would need a name for every pairing of the two.
+  let tevFilter = '';     // panel: only tasks whose recorded run reached this
+  let tevFlag = '';       // panel: only tasks whose run carries this observation
 
   // Areas are a PHASE-level gate like phaseStatus, not a task narrower —
   // `data-area` lives on the phase row and tasks carry none. Multi-select,
@@ -2318,6 +2437,11 @@ function storageDrop(key) {
 
   const modelBar = document.getElementById('audit-model');
   const areaBar = document.getElementById('audit-areas');
+  // Absent on a plan that points at no recorded run: the renderer emits no chip
+  // row at all rather than an empty one, so these are null and every reader
+  // below already tolerates a missing control.
+  const tevBar = document.getElementById('audit-tev');
+  const tevFlagBar = document.getElementById('audit-tevf');
   const fromInput = document.getElementById('audit-from');
   const toInput = document.getElementById('audit-to');
   const presetBar = document.getElementById('audit-presets');
@@ -2446,10 +2570,16 @@ function storageDrop(key) {
    * @type {string} an ISO date, or '' when no task carries one
    */
   let DMAX = '';
+  // Both are keyed by `data-phase`, i.e. by a phase id out of the manifest, and
+  // both are BUILT rather than read from a literal - so the fix is a map with no
+  // prototype rather than a guarded read. On a plain object a phase called
+  // `constructor` made `TASKS[k]` answer with a function, and `.push` on it
+  // threw at load: one manifest id blanked the whole interactive layer of a
+  // report somebody opened from a link.
   /** @type {Object<string, HTMLTableRowElement[]>} phase id -> its task rows */
-  const TASKS = {};
+  const TASKS = Object.create(null);
   /** @type {Object<string, HTMLTableRowElement>} phase id -> its task-filter row */
-  const TFROW = {};
+  const TFROW = Object.create(null);
   if (grouped) {
     for (const t of grouped.querySelectorAll('tbody tr.task')) {
       const k = t.getAttribute('data-phase');
@@ -2499,7 +2629,11 @@ function storageDrop(key) {
    * @param {string} seg a phase row's segment
    * @returns {boolean} whether the current view shows that segment
    */
-  const inView = (seg) => (VIEWS[viewMode] || VIEWS.all).includes(seg);
+  // `lookup`, not `VIEWS[viewMode]`: VIEWS is a literal this file wrote, and
+  // `viewMode` is whatever the fragment said. `#!v=constructor` passed the guard
+  // in exports.js (a function is truthy), landed here, and `.includes` on
+  // Object.prototype.constructor threw out of the first filter pass.
+  const inView = (seg) => (lookup(VIEWS, viewMode) || VIEWS.all).includes(seg);
 
   // Which order the phase rows are listed in, the same shape as the view above:
   // the element, the vocabulary, the default. `plan` is the written plan, which
@@ -2523,9 +2657,15 @@ function storageDrop(key) {
    * than restated: a status the plan does not use has no row, no chip, and no
    * entry, which is the right answer for all three.
    *
+   * Prototype-free: the key is a phase STATUS, and `_seg_of` on the Python side
+   * says in as many words that an unknown vocabulary value reaches it. With a
+   * prototype, `'constructor' in STATUS_SEG` was already true, so the entry was
+   * never recorded and every phase of that status was filtered out of every
+   * view - the `in` test walks the chain exactly as the bracket read does.
+   *
    * @type {Object<string, string>}
    */
-  const STATUS_SEG = {};
+  const STATUS_SEG = Object.create(null);
   phaseRows.forEach((pr) => {
     const st = pr.getAttribute('data-status');
     if (st && !(st in STATUS_SEG)) STATUS_SEG[st] = pr.__seg;
@@ -2542,9 +2682,14 @@ function storageDrop(key) {
    * same reason `STATUS_SEG` is - the alternative is a second copy of Python's
    * segment rule, and two copies of a rule is one copy and one lie.
    *
+   * Prototype-free for the reason STATUS_SEG above is, and this one is the
+   * plainer key: an area tag is documented free text. `'constructor' in
+   * AREA_SEGS` was true, so the array was never created and `.indexOf` on the
+   * inherited function threw while the page was still loading.
+   *
    * @type {Object<string, string[]>}
    */
-  const AREA_SEGS = {};
+  const AREA_SEGS = Object.create(null);
   phaseRows.forEach((pr) => {
     (pr.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
       if (!(a in AREA_SEGS)) AREA_SEGS[a] = [];
@@ -2621,6 +2766,20 @@ function storageDrop(key) {
     // and <input type=date> hands back exactly that shape — so a range test over
     // four thousand rows costs no Date parsing at all.
     return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
+  };
+
+  /**
+   * @param {HTMLTableRowElement} t a task row
+   * @returns {boolean} whether the task's recorded run carries the selected
+   *   observation; true whenever none is selected
+   */
+  const tevFlagOk = (t) => {
+    if (!tevFlag) return true;
+    // Padded both sides before the search, so a marker name can never match
+    // inside a longer one. The renderer joins these with single spaces, which is
+    // the same rule `data-area` already uses for its list.
+    return (' ' + (t.getAttribute('data-tev-flags') || '') + ' ')
+      .indexOf(' ' + tevFlag + ' ') !== -1;
   };
 
   /**
@@ -2704,6 +2863,10 @@ function storageDrop(key) {
     // always matched whole.
     put('a', areaFilter.join(' '));
     put('m', modelFilter);
+    // Two keys, never one. The codec splits on '&' and the FIRST '=', so `tev`
+    // and `tevf` are matched whole and a link can carry either axis alone.
+    put('tev', tevFilter);
+    put('tevf', tevFlag);
     put('from', dFrom);
     put('to', dTo);
     put('au', auFilter);
@@ -2751,10 +2914,15 @@ function storageDrop(key) {
     // A phase none of whose tasks survive is not a phase that matches: keeping it
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
-    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
+    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== ''
+                  || tevFilter !== '' || tevFlag !== '';
     const anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
     let visP = 0, visT = 0, totT = 0;
+    // Plain `{}` on purpose, and the one map here that keeps its prototype:
+    // the key is `data-seg`, which Python's `_seg_of` emits from a closed
+    // set of three words. Every other map in this report is keyed by a
+    // manifest id, a status or a fragment value and is prototype-free.
     const segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach((pr) => {
       const pid = pr.getAttribute('data-phase');
@@ -2772,6 +2940,11 @@ function storageDrop(key) {
         t.__hit = (pText || tText)
                   && (!tf || t.getAttribute('data-status') === tf)
                   && (!modelFilter || t.getAttribute('data-model') === modelFilter)
+                  // Two clauses and not one: the status a run reached and the
+                  // observations it made are separate questions, so selecting a
+                  // status must not silently narrow by an observation as well.
+                  && (!tevFilter || t.getAttribute('data-tev') === tevFilter)
+                  && tevFlagOk(t)
                   && dateOk(t);
         if (t.__hit) nMatch++;
       });
@@ -2862,7 +3035,8 @@ function storageDrop(key) {
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
       const nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
-                    + (areaFilter.length ? 1 : 0);
+                    + (areaFilter.length ? 1 : 0)
+                    + (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0);
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
@@ -3067,10 +3241,14 @@ function storageDrop(key) {
    * @returns {void}
    */
   function setPhaseOrder(v) {
-    if (!ORDERS[v] || !sortSel) return;
+    // `lookup`, because "anything else is ignored" was not true of five names:
+    // `ORDERS['constructor']` is a function, so the guard passed and the table
+    // was then sorted by `+pr.getAttribute(...)` of nothing - or rather by
+    // whatever the inherited function returned, which is not a rank at all.
+    if (!lookup(ORDERS, v) || !sortSel) return;
     phaseOrder = v;
     if (sortSel.value !== v) sortSel.value = v;
-    orderPhaseBlocks(ORDERS[v]);
+    orderPhaseBlocks(lookup(ORDERS, v));
     refresh();                       // which also writes the choice to the link
   }
 
@@ -3195,6 +3373,24 @@ function storageDrop(key) {
   wireChips(modelBar, 'data-m', (val, host, attr) => {
     modelFilter = (modelFilter === val) ? '' : val;
     highlight(host, attr, modelFilter);
+    refresh();
+  });
+
+  // test-gate chips (inside the More filters panel) — what a task's last
+  // recorded run SAID.
+  wireChips(tevBar, 'data-tev', (val, host, attr) => {
+    tevFilter = (tevFilter === val) ? '' : val;
+    highlight(host, attr, tevFilter);
+    refresh();
+  });
+
+  // ...and the observation chips beside them, on their OWN axis. A gate that
+  // failed and also rewrote the tree is two facts; one control expressing only
+  // their combination would need a name for every pairing, and would leave
+  // "which gates rewrote the tree" unaskable.
+  wireChips(tevFlagBar, 'data-tevf', (val, host, attr) => {
+    tevFlag = (tevFlag === val) ? '' : val;
+    highlight(host, attr, tevFlag);
     refresh();
   });
 
@@ -4254,7 +4450,9 @@ function storageDrop(key) {
    * @returns {void}
    */
   function setView(v) {
-    if (!VIEWS[v]) return;
+    // Own-property read: see `inView` in page-state.js. This caller is the
+    // select rather than the link, but one guard on one table beats two.
+    if (!lookup(VIEWS, v)) return;
     viewMode = v;
     if (viewSel && viewSel.value !== v) viewSel.value = v;
     refresh();                       // which syncs the chips, for every caller
@@ -4727,7 +4925,11 @@ function storageDrop(key) {
     const stored = storageGet(STORE_KEY);
     if (stored) stored.split('&').forEach(restoreStoredPair);
   }
-  if (HASH.v && VIEWS[HASH.v]) {
+  // Both guards read their table as OWN properties. The fragment is the most
+  // reachable outside key this page has - no manifest and no config, just a
+  // link - and `#!v=constructor` used to pass a truthiness test on an inherited
+  // function and set `viewMode` to a name no view exists for.
+  if (HASH.v && lookup(VIEWS, HASH.v)) {
     viewMode = HASH.v;
     if (viewSel) viewSel.value = viewMode;
   }
@@ -4737,10 +4939,10 @@ function storageDrop(key) {
   // then rearrange it in front of the reader. `sortSel` gates it because a plan
   // with nothing pinned has no ranks on its rows, and a fragment can name an
   // order the page cannot honour.
-  if (HASH.so && ORDERS[HASH.so] && sortSel) {
+  if (HASH.so && lookup(ORDERS, HASH.so) && sortSel) {
     phaseOrder = HASH.so;
     sortSel.value = phaseOrder;
-    orderPhaseBlocks(ORDERS[phaseOrder]);
+    orderPhaseBlocks(lookup(ORDERS, phaseOrder));
   }
   if (q && HASH.q) q.value = HASH.q;
   if (HASH.ps) {
@@ -4750,6 +4952,14 @@ function storageDrop(key) {
   if (HASH.m) {
     modelFilter = HASH.m;
     if (modelBar) highlight(modelBar, 'data-m', modelFilter);
+  }
+  if (HASH.tev) {
+    tevFilter = HASH.tev;
+    if (tevBar) highlight(tevBar, 'data-tev', tevFilter);
+  }
+  if (HASH.tevf) {
+    tevFlag = HASH.tevf;
+    if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag);
   }
   if (HASH.a) {
     areaFilter = HASH.a.split(/\s+/).filter(Boolean);
