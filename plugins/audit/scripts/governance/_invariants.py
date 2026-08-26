@@ -109,8 +109,16 @@ NA = "not-applicable"
 # the invariants appear in `reference/orchestrator.md`'s own sections rather than
 # any notion of severity: a reader comparing the two documents should not have to
 # re-sort one of them in their head.
-CHECK_NAMES = ("commit-scope", "branch-history", "manifest-revalidated",
-               "high-risk-model", "base-ref")
+#
+# `audit-state-scope` has no section of its own to sit beside, and it is placed
+# next to `commit-scope` rather than at the end for that reason. It asks
+# `commit-scope`'s question -- what did this commit stage, and was it allowed to --
+# about a DIFFERENT commit, and the two allow-lists differ in exactly one entry
+# (the task's `files`, which one permits and the other forbids). A reader
+# comparing two commit-shaped rules needs them adjacent; separated, the difference
+# that matters reads as an omission.
+CHECK_NAMES = ("commit-scope", "audit-state-scope", "branch-history",
+               "manifest-revalidated", "high-risk-model", "base-ref")
 
 # A commit whose file list `git show --name-only` will not print. Stated as a
 # constant because the empty output it produces is indistinguishable from "this
@@ -170,6 +178,19 @@ def _rel(path, root):
     if rel == ".." or rel.startswith("../"):
         return None
     return rel
+
+
+def _under(path, rel):
+    """True when `path` IS `rel` or sits inside it.
+
+    THE SEPARATOR IS THE WHOLE FUNCTION, and it is shared rather than spelled at
+    each arm because both allow-lists below carry the same trap: written as a bare
+    `startswith`, a sibling directory called `evidence-notes/` reads as inside
+    `evidence/` and the list admits the rest of the repository one rename away.
+    A falsy `rel` is False rather than a match on everything - an unresolved
+    directory allows nothing, which is the direction that cannot invent a pass.
+    """
+    return bool(rel) and (path == rel or path.startswith(rel + "/"))
 
 
 def _git_available(git_root):
@@ -315,11 +336,7 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                 continue
             if phase_file_rel and path == phase_file_rel:
                 continue
-            if journal_rel and (path == journal_rel
-                                or path.startswith(journal_rel + "/")):
-                continue
-            if evidence_rel and (path == evidence_rel
-                                 or path.startswith(evidence_rel + "/")):
+            if _under(path, journal_rel) or _under(path, evidence_rel):
                 continue
             if index_rel and path == index_rel and index_rel != phase_file_rel:
                 breaches.append("%s: commit %s staged the manifest INDEX (%s). A "
@@ -332,6 +349,143 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                             "neither the journal nor the evidence directory"
                             % (tid, sha[:12], path))
     return result("commit-scope", COMMIT_SCOPE_BASIS, breaches, gaps, examined)
+
+
+# --- audit-state scope --------------------------------------------------------
+# The action an audit-state commit records, spelled ONCE and read from here by the
+# writer and by the reader below. The writer is `commit-audit-state.py`, an ENTRY
+# POINT: nothing may import a hyphenated command, so the constant cannot live
+# beside the code that appends the row, and this module is the lowest one both
+# halves can reach. A second spelling would not fail loudly -- the reader would
+# simply find no rows and answer `not-applicable` for ever, which is the calmest
+# word in the vocabulary sitting over a check that had stopped looking.
+ACTION_STATE_COMMITTED = "audit.state.committed"
+
+AUDIT_STATE_SCOPE_BASIS = (
+    "git show --name-only <commit> for every `%s` journal row naming this phase - "
+    "the rows are how such a commit is found at all, since nothing in the "
+    "manifest points at one - against the phase's manifest file, the journal "
+    "directory and the evidence directory. The task's `files` are deliberately "
+    "NOT on that list: this commit exists to preserve the record of a run that "
+    "failed, and the implementation it failed on must stay out of git"
+    % (ACTION_STATE_COMMITTED,))
+
+
+def audit_state_commits(project, phase_id, config=None):
+    """`(shas, unnamed, why)` - the audit-state commits this phase's trail records.
+
+    `shas is None` means nobody could look and `why` says so; that is a different
+    answer from an empty list, which means this phase has never committed audit
+    state. `unnamed` counts rows that claim such a commit and do not carry its
+    SHA - a claim whose basis is missing, which is reported rather than dropped.
+
+    FOUND THROUGH THE JOURNAL AND NOWHERE ELSE, because there is nowhere else: an
+    audit-state commit is not a `task.commit` and the manifest does not name it.
+    That is exactly why the journal being OFF has to read as no-basis below rather
+    than as nothing to check.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    if not _journal_io.enabled(config):
+        return None, 0, ("the journal is disabled here, so an audit-state commit "
+                         "leaves no row naming it and none can be found - this is "
+                         "not evidence that none was made")
+    try:
+        rows = _journal_io.read_all(project, config=config)
+    except Exception as exc:                                   # defensive
+        return None, 0, ("the journal could not be read (%s), so no audit-state "
+                         "commit could be found" % (exc,))
+    shas, unnamed = [], 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("action") or "") != ACTION_STATE_COMMITTED:
+            continue
+        details = row.get("details")
+        details = details if isinstance(details, dict) else {}
+        if str(details.get("phaseId") or "") != str(phase_id):
+            continue
+        sha = str(details.get("commit") or "")
+        if not sha:
+            unnamed += 1
+        elif sha not in shas:
+            shas.append(sha)
+    return shas, unnamed, ""
+
+
+def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
+                      journal_rel, evidence_rel=None, config=None):
+    """An audit-state commit carried the record, and none of the work.
+
+    THE ALLOW-LIST IS `commit_scope`'s MINUS ONE ENTRY, and that entry is the
+    point. A task commit may stage the task's `files`; this one may not, because
+    it is made on the path where the gate went red - so a file the task owns
+    appearing here is implementation reaching git on a run that was never signed
+    off, which is the failure the whole verb exists to make impossible.
+
+    THE INDEX KEEPS ITS OWN SENTENCE, for `commit_scope`'s reason one commit over:
+    staging the shared index is what makes two parallel phases conflict on merge,
+    and reporting it in the same words as a stray file would price the expensive
+    mistake as the cheap one.
+    """
+    breaches, gaps = [], []
+    shas, unnamed, why = audit_state_commits(project, (phase or {}).get("id"),
+                                             config=config)
+    if shas is None:
+        return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [], [why], 0)
+    if not shas and not unnamed:
+        return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [], [], 0,
+                      applies=False)
+    if unnamed:
+        gaps.append("%d journal row(s) record an audit-state commit for this "
+                    "phase without naming it, so those commits cannot be read"
+                    % (unnamed,))
+    ok, git_why = _git_available(git_root)
+    if not ok:
+        return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [],
+                      gaps + [git_why], 0)
+
+    examined = 0
+    for sha in shas:
+        code, parents = _git(git_root, ["rev-list", "--parents", "-n", "1", sha])
+        if code is None or code != 0:
+            gaps.append("the recorded audit-state commit %s does not resolve in "
+                        "this clone, so its file list cannot be read"
+                        % (sha[:12],))
+            continue
+        if len(parents.split()) > _MERGE_PARENTS:
+            gaps.append("%s is a merge commit, and `git show --name-only` prints "
+                        "no files for one - an empty list here would read as a "
+                        "commit that staged nothing" % (sha[:12],))
+            continue
+        code, out = _git(git_root, ["show", "--name-only", "--pretty=format:", sha])
+        if code is None or code != 0:
+            gaps.append("git would not print the file list of the audit-state "
+                        "commit %s" % (sha[:12],))
+            continue
+        examined += 1
+        staged = [ln.strip().replace("\\", "/")
+                  for ln in out.splitlines() if ln.strip()]
+        for path in staged:
+            if phase_file_rel and path == phase_file_rel:
+                continue
+            if _under(path, journal_rel) or _under(path, evidence_rel):
+                continue
+            if index_rel and path == index_rel and index_rel != phase_file_rel:
+                breaches.append("audit-state commit %s staged the manifest INDEX "
+                                "(%s). It carries this phase's own file and the "
+                                "two records beside it - the index is what "
+                                "parallel phases would then conflict on"
+                                % (sha[:12], index_rel))
+                continue
+            breaches.append("audit-state commit %s staged %s, which is neither "
+                            "this phase's manifest file nor anything in the "
+                            "journal or the evidence directory. An audit-state "
+                            "commit carries the RECORD of a run and never the "
+                            "work it ran on, so this is implementation reaching "
+                            "git on a run that was never signed off"
+                            % (sha[:12], path))
+    return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, breaches, gaps,
+                  examined)
 
 
 # --- branch history -----------------------------------------------------------
@@ -771,6 +925,11 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
     checks = [
         commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                      journal_rel, evidence_rel),
+        # THE SAME `evidence_rel`, resolved once above and handed to both. Two
+        # resolutions of "where does this manifest keep its evidence" is how one
+        # check comes to allow a directory the other reports.
+        audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
+                          journal_rel, evidence_rel),
         branch_history(phase, git_root),
         manifest_revalidated(phase, git_root, project, index_rel,
                              phase_file_rel, phase_file_abs),

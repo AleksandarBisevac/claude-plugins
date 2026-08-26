@@ -36,6 +36,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _invariants as M                            # noqa: E402
+import _evidence_io                                # noqa: E402
 import _journal_io                                 # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 
@@ -112,24 +113,129 @@ def _write(path, text):
         fh.write(text)
 
 
+# The audit-state fixtures, as one word each. A string rather than five booleans
+# because they are alternatives and never a combination: each names the ONE thing
+# that is different about the audit-state commit this repo carries, and a pair of
+# booleans set together would build a repository no case describes.
+#
+#   clean         the commit carries the shard, the journal and the evidence
+#   rogue         ...and a source file the task owns, which is the whole breach
+#   index         ...and the manifest INDEX, which is its own separate breach
+#   unresolvable  a row naming a commit that is not in this clone (a gap)
+#   unnamed       a row claiming a commit and not saying which (a gap)
+AUDIT_STATE_KINDS = ("clean", "rogue", "index", "unresolvable", "unnamed")
+_ABSENT_SHA = "0" * 40
+EVIDENCE_NAME = "2026-08.fixture.jsonl"
+FAILED_RUN_ID = "run-that-went-red"
+
+
+def _evidence_file(audit, status):
+    """One evidence file holding a row with `status`; returns its path.
+
+    Named in `_evidence_io`'s `<YYYY-MM>.<writerId>.jsonl` shape rather than
+    something arbitrary, so a case that asserts on the path is asserting the path
+    the product would really write.
+    """
+    directory = os.path.join(audit, "evidence")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, EVIDENCE_NAME)
+    _write(path, json.dumps(
+        {"v": 1, "runId": FAILED_RUN_ID, "ts": "2026-08-20T10:00:00Z",
+         "scope": "task", "taskId": "P1.2", "phaseId": "P1", "status": status,
+         "failed": ["test"] if status != "passed" else []}) + "\n")
+    return path
+
+
+def _state_row(root, sha):
+    """The journal row an audit-state commit anchors itself with.
+
+    Written through the REAL appender: a hand-made line would prove that a dict
+    with the right keys can be read back, which is not the claim - the claim is
+    that a row `_journal_io.append` produced is one `read_all` finds and one
+    `audit_state_commits` recognises.
+    """
+    details = {"phaseId": "P1"}
+    if sha:
+        details["commit"] = sha
+    return _journal_io.append(root, {
+        "action": M.ACTION_STATE_COMMITTED,
+        "actor": {"via": "fixture"},
+        "target": "docs/audit/evidence",
+        "summary": "audit state for P1 committed",
+        "details": details})
+
+
+def _audit_state(root, audit, index_path, kind, with_evidence=True):
+    """Give the repo an audit-state commit of `kind`, plus the row naming it.
+
+    `with_evidence` is False when the config points the evidence directory OUTSIDE
+    the repository: staging `docs/audit/evidence` anyway would build a commit
+    carrying a directory that is not this manifest's evidence at all, and the case
+    about an unreachable evidence directory would then be passing on a fixture
+    that contradicts its own config.
+    """
+    if kind == "unnamed":
+        _state_row(root, None)
+        return None
+    if kind == "unresolvable":
+        _state_row(root, _ABSENT_SHA)
+        return _ABSENT_SHA
+    staged = ["docs/audit/phases/P1.json"]
+    if with_evidence:
+        _evidence_file(audit, "failed")
+        staged.append("docs/audit/evidence")
+    if kind == "rogue":
+        # The file P1.1 owns. An audit-state commit carrying it has committed the
+        # implementation of a run that failed - which is the one thing the verb
+        # exists to make impossible, so it is the breach this fixture builds.
+        _write(os.path.join(root, "src", "a.py"), "a = 2  # the fix that failed\n")
+        staged.append("src/a.py")
+    if kind == "index":
+        index = _mio.read_json(index_path)
+        index["meta"]["title"] = "touched by the audit-state commit"
+        _write_json(index_path, index)
+        staged.append("docs/audit/audit-plan.json")
+    _git(root, "add", *staged)
+    _git(root, "commit", "-q", "-m", "audit-state(P1): fixture")
+    sha = _head(root)
+    _state_row(root, sha)
+    return sha
+
+
 def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
           stash=False, push=False, invalid_state=False, no_base_ref=False,
           drop_branch=False, forced=False, journal_rows=0, parent_branch=None,
           journal_in_commit=False, journal_real=False,
-          evidence_in_commit=False, evidence_near_miss=False):
+          evidence_in_commit=False, evidence_near_miss=False,
+          audit_state=None, evidence_outside=False, journal_off=False,
+          leave_dirty=False):
     """A repo with one finished phase, broken in exactly the way the flags say.
 
     ONE BUILDER RATHER THAN ONE PER CASE, because the clean path has to be the
     same clean path every broken case starts from. A per-case fixture drifts, and
     then a `breach` case is passing because its fixture differs somewhere nobody
     is comparing.
+
+    THE LAST FOUR ARE ALSO `test_commit_audit_state.py`'s FIXTURE, which is why
+    they are here rather than in a second builder over there. That suite drives
+    the command that MAKES an audit-state commit and this one grades the commits
+    it makes, so the two must start from one repository or the grader would be
+    reading a shape the writer never produces.
     """
     audit = os.path.join(root, "docs", "audit")
     os.makedirs(os.path.join(audit, "phases"))
     os.makedirs(os.path.join(root, "src"))
     os.makedirs(os.path.join(root, ".claude"))
-    _write_json(os.path.join(root, ".claude", "audit.config.json"),
-                {"manifestPath": "docs/audit/audit-plan.json"})
+    cfg = {"manifestPath": "docs/audit/audit-plan.json"}
+    if evidence_outside:
+        # OUTSIDE THE REPOSITORY, not merely somewhere else in it: `root` IS the
+        # git root here, so one segment up is the layout step 4c degrades for.
+        cfg["evidence"] = {"dir": "../outside-evidence"}
+        os.makedirs(os.path.join(os.path.dirname(root), "outside-evidence"),
+                    exist_ok=True)
+    if journal_off:
+        cfg["journal"] = {"enabled": False}
+    _write_json(os.path.join(root, ".claude", "audit.config.json"), cfg)
 
     index = copy.deepcopy(INDEX)
     if parent_branch is not None:
@@ -217,6 +323,21 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         shard["baseRef"] = sha1               # on the phase branch, never on main
     _write_json(shard_path, shard)
 
+    state_sha = None
+    if audit_state:
+        if audit_state not in AUDIT_STATE_KINDS:
+            raise ValueError("unknown audit_state %r - the kinds are %r"
+                             % (audit_state, AUDIT_STATE_KINDS))
+        state_sha = _audit_state(root, audit, index_path, audit_state,
+                                 with_evidence=not evidence_outside)
+    if leave_dirty:
+        # WHAT A FAILED RUN LEAVES: a red gate's evidence and the code it went red
+        # on, both uncommitted. The command under test has to carry the first and
+        # leave the second exactly where it is, so a fixture with only one of them
+        # could not tell a correct run from one that stages everything it sees.
+        _evidence_file(audit, "failed")
+        _write(os.path.join(root, "src", "a.py"), "a = 2  # the fix that failed\n")
+
     if forced:
         # Rewind and rebuild: the tip then moves to a commit the previous tip is
         # not an ancestor of, which is what a force leaves behind.
@@ -271,7 +392,8 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         _write(os.path.join(d, "2026-08-rows.jsonl"), "\n".join(rows) + "\n")
 
     return {"root": root, "manifest": index_path, "shard": shard_path,
-            "base": base, "sha1": sha1, "sha2": sha2}
+            "base": base, "sha1": sha1, "sha2": sha2, "stateSha": state_sha,
+            "audit": audit}
 
 
 class Repos(object):
@@ -430,6 +552,105 @@ def _cases(check):
         check("iv10 a phase with no recorded commit is not-applicable, which is "
               "not the same word as clean",
               scope["verdict"] == M.NA and scope["examined"] == 0)
+
+        # --- audit-state scope -------------------------------------------------
+        check("iv42 the allow-list arms are one PREFIX predicate, and its "
+              "separator is asserted in both directions here rather than "
+              "re-argued at each arm: a sibling that merely starts the same way "
+              "is outside, and an unresolved directory admits nothing instead of "
+              "everything",
+              M._under("a/b/c.json", "a/b") and M._under("a/b", "a/b")
+              and not M._under("a/bx/c.json", "a/b")
+              and not M._under("a/b/c.json", None))
+
+        plain = repos.get()
+        state = _check(_phase_answer(plain), "audit-state-scope")
+        check("iv43 a phase whose trail records no audit-state commit is "
+              "not-applicable, not clean - there is no subject here, and `clean` "
+              "would be a verdict about a commit nobody made: %r"
+              % (state["verdict"],),
+              state["verdict"] == M.NA and state["examined"] == 0
+              and state["breaches"] == [])
+
+        stated = repos.get(audit_state="clean")
+        state = _check(_phase_answer(stated), "audit-state-scope")
+        check("iv44 ...and an audit-state commit carrying the phase's shard and "
+              "the evidence beside it is examined and clean. `examined` is "
+              "asserted, so a check that stopped finding the journal row could "
+              "not pass this as a clean phase: %r"
+              % (state["verdict"],),
+              state["verdict"] == M.CLEAN and state["examined"] == 1
+              and state["breaches"] == [], state["gaps"])
+
+        rogue_state = repos.get(audit_state="rogue")
+        state = _check(_phase_answer(rogue_state), "audit-state-scope")
+        check("iv45 an audit-state commit that staged a file the task OWNS is a "
+              "breach - counted, and naming the file. This is the whole point of "
+              "the separate verb: the commit exists because the gate went red, so "
+              "the implementation it went red on must not ride along: %r"
+              % (state["breaches"],),
+              len(state["breaches"]) == 1 and "src/a.py" in state["breaches"][0]
+              and state["verdict"] == M.BREACH)
+
+        indexed_state = repos.get(audit_state="index")
+        state = _check(_phase_answer(indexed_state), "audit-state-scope")
+        check("iv46 ...and the manifest INDEX keeps its own sentence here too, "
+              "for the reason it has one in commit-scope: it is what parallel "
+              "phases conflict on, and reporting it as 'an unexpected path' would "
+              "price the expensive mistake as a stray file: %r"
+              % (state["breaches"],),
+              len(state["breaches"]) == 1 and "INDEX" in state["breaches"][0]
+              and state["verdict"] == M.BREACH)
+
+        gone = repos.get(audit_state="unresolvable")
+        state = _check(_phase_answer(gone), "audit-state-scope")
+        check("iv47 a row naming a commit this clone does not hold is a GAP and "
+              "never a breach - git could not answer, which is the absence of "
+              "evidence and not evidence of a breach: %r %r"
+              % (state["verdict"], state["gaps"]),
+              state["verdict"] == M.NO_BASIS and state["breaches"] == []
+              and len(state["gaps"]) == 1 and state["examined"] == 0)
+
+        unnamed = repos.get(audit_state="unnamed")
+        state = _check(_phase_answer(unnamed), "audit-state-scope")
+        check("iv48 ...and a row that claims an audit-state commit without saying "
+              "WHICH is its own gap. It is a claim whose basis is missing, and "
+              "dropping such a row would leave the check reporting the calm "
+              "`not-applicable` over a phase that says it committed: %r"
+              % (state["gaps"],),
+              state["verdict"] == M.NO_BASIS and state["breaches"] == []
+              and len(state["gaps"]) == 1 and state["examined"] == 0)
+
+        no_trail = repos.get(journal_off=True, audit_state=None)
+        state = _check(_phase_answer(no_trail), "audit-state-scope")
+        check("iv49 with the journal off the answer is no-basis and NOT "
+              "not-applicable: an audit-state commit announces itself in the "
+              "trail and nowhere else, so a disabled trail means nobody could "
+              "look - which is a different sentence from 'none was made': %r %r"
+              % (state["verdict"], state["gaps"]),
+              state["verdict"] == M.NO_BASIS and state["breaches"] == []
+              and len(state["gaps"]) == 1)
+
+        outside = repos.get(audit_state="clean", evidence_outside=True)
+        state = _check(_phase_answer(outside), "audit-state-scope")
+        check("iv50 an evidence directory OUTSIDE the git root leaves the check "
+              "with one fewer allow-list entry and no breach - it cannot be "
+              "committed at all, so nothing in the commit can be inside it. The "
+              "unreachability is asserted positively, so this case cannot pass on "
+              "a fixture whose evidence was inside after all: %r"
+              % (state["verdict"],),
+              M._rel(_evidence_io.evidence_dir(outside["root"]),
+                     outside["root"]) is None
+              and state["verdict"] == M.CLEAN and state["examined"] == 1
+              and state["breaches"] == [], state["gaps"])
+
+        check("iv51 the writer and the reader share ONE spelling of the action, "
+              "and the row the real appender produced is one `audit_state_commits` "
+              "finds - the pair that fails if either half invents its own name: %r"
+              % (M.ACTION_STATE_COMMITTED,),
+              M.audit_state_commits(stated["root"], "P1")[0] == [stated["stateSha"]]
+              and M.audit_state_commits(stated["root"], "P404")[0] == []
+              and M.ACTION_STATE_COMMITTED == "audit.state.committed")
 
         # --- branch history ----------------------------------------------------
         hist = _check(_phase_answer(clean), "branch-history")

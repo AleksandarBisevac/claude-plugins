@@ -129,6 +129,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-journal.py                # the CLI over it: append/verify/show/archive
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
+          commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
@@ -334,6 +335,7 @@ L7:
   audit-task -> _areas, _manifest_io, _output, _panel_write, _proposals, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
+  commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _loader, _output
@@ -2094,14 +2096,23 @@ directions. `--session`/`--pid` override the identity written into the lock for 
 The post-hoc reader of `reference/orchestrator.md` (layer 4). Both READMEs split the
 plugin's rules into what a hook ENFORCES and what the model FOLLOWS, and the second table's
 last column names, per row, what evidence would catch a breach — `post-hoc` where git, the
-shard, the journal or the ledger already holds it. This module reads that evidence, over
-five checks: a task commit staged only its own `files`, its phase's manifest file and the
-journal (`git show --name-only`); no push, no forced update and no stash touched the phase
+shard, the journal or the ledger already holds it. This module reads that evidence, check by
+check — `CHECK_NAMES` is the list and `verify-invariants.py --all` prints it: a task commit
+staged only its own `files`, its phase's manifest file and the two records beside it
+(`git show --name-only`); an **audit-state** commit staged those records and *not* the task's
+`files`, found through the journal's `audit.state.committed` rows because nothing in the
+manifest names such a commit; no push, no forced update and no stash touched the phase
 branch (the remote-tracking refs, the branch's own reflog compared pairwise for ancestry,
 and `refs/stash`); every manifest state the phase COMMITTED still validates (each commit's
 index and shards reassembled through `git show` and run back through `_manifest_rules`); a
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
+
+`audit-state-scope` sits next to `commit-scope` rather than at the end because it asks that
+check's question about a different commit, and the two allow-lists differ in exactly one
+entry — the task's `files`, which one permits and the other forbids. Its `no-basis` case is
+its own: with `journal.enabled` false there is nowhere such a commit could announce itself,
+which is *not* evidence that none was made.
 
 The verdict vocabulary is the design. `clean` / `breach` / `partial` / `no-basis` /
 `not-applicable`, with `examined` beside each — so a check that looked at nothing prints the
@@ -2205,6 +2216,45 @@ one breach, 2 usage error or unreadable manifest — and a missing basis is deli
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
 `/audit:status --gate --fail-on invariant-breach`.
+
+### `plugins/audit/scripts/governance/commit-audit-state.py`
+`commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say
+there is none.** Idempotent and safe to call unconditionally; `--project` names the directory
+holding `.claude/` and the records, `--subject` supplies the commit subject after the
+conventional prefix, `--json` prints the whole answer. Exit 0 it ran (committed, or nothing was
+uncommitted), 1 it could not, 2 usage error.
+
+**The gap it closes.** Evidence is written beside the manifest and is meant to be committed, but
+the orchestrator commits on success and only on success: a red gate leaves `in_progress` and
+step 4 says *do not commit*, an infrastructure failure STOPs without committing, and the
+sign-off commit waits for green. The gap is **narrower than "every failure"** — a task commit
+stages the evidence directory, so a run that fails at attempt one and succeeds at attempt two is
+already durable, its failure included. What is not durable is a run whose task or phase never
+subsequently commits at all.
+
+**What it stages, and what it can never stage.** The phase's manifest file (the shard when
+sharded, else the single manifest), the journal directory, the evidence directory. The task's
+`files` are not on that list and cannot be put on it — a failed task's code stays out of git,
+which is the entire point of a separate verb. Paths are staged **explicitly** (`git add --
+<path>…`, never `git add -A`) and the index is read back with `git diff --cached --name-only`
+and compared against the same allow-list **before** the commit. The index is read **before**
+staging too, so work somebody else had already staged is refused while the index is still
+exactly as it was found rather than unpicked afterwards. A directory outside `<gitRoot>` is
+degraded past and named, the sentence step 4c already writes for the journal.
+
+**Never an empty commit**, and a distinct conventional type. Nothing staged means no commit and
+a line saying so — a stream of empty commits is how a record stops being read. The type is the
+fixed literal `audit-state`, which is the only spelling a task commit cannot collide with
+(`meta.commit.type` may be anything), so `git log --grep` separates the two for ever.
+
+**It anchors itself in the trail.** After committing it appends an `audit.state.committed`
+journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such
+a commit, since it is not a `task.commit` and the manifest does not name it. That is what
+`_invariants.audit_state_scope()` reads to find these commits and grade them; the row's target
+is the **evidence directory** and deliberately not the phase's manifest file, because
+`_recorded_states()` reads every row naming that file as a *write* to it and a commit is not an
+edit. The append is fail-soft (`_journal_io.append`'s contract) and the failure is printed: a
+commit that happened must not be reported as not having happened.
 
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
 Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).
