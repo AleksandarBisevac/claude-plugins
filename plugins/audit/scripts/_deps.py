@@ -290,7 +290,17 @@ LAYERS = (
      # same answer - `audit-logs.py` at L7 and `_panel_write` at L6 - and a
      # second expression of "which rows no longer belong" would be a second
      # opinion about what the panel's Plan gate card is showing.
-     "_gate_feed"),
+     "_gate_feed",
+     # `_evidence_io` is where a test-execution record lives and what it may say.
+     # It reaches `_journal_io` (L1) for config loading, the writer id and the
+     # month, and nothing else - which is the reason it sits one layer up rather
+     # than beside it: a layer-mate may not be imported, and re-deriving "where
+     # does this manifest keep its committed record" would put the trail and the
+     # evidence in different directories the first time a repo set an unusual
+     # `manifestPath`. Its consumers are `_invariants` (L4), which has to know
+     # which staged paths a task commit is allowed to carry, and `run-test-gate`
+     # (L7), which writes the rows.
+     "_evidence_io"),
     # The usage metering stack is a three-link chain, `_usage_core` -> the four
     # analytics passes -> `usage_ledger`, so it needs three layers under its lowest
     # consumer. That consumer

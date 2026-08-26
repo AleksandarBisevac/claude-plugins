@@ -81,6 +81,7 @@ _output.install_path()
 
 import _branch  # noqa: E402  (which branch a phase forks from, and the basis for it)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable, and the git runner)
+import _evidence_io  # noqa: E402  (the test-evidence record: where it lives)
 import _journal_io  # noqa: E402  (the trail: where it lives, its rows, their stateHash)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_rules as _rules  # noqa: E402  (the validator this re-runs on old states)
@@ -248,14 +249,22 @@ def ledger_dir_for(manifest, manifest_path):
 
 # --- commit scope -------------------------------------------------------------
 COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against that task's "
-                      "`files`, its phase's manifest file and the journal "
-                      "directory - the three things orchestrator.md step 4c "
-                      "allows a task commit to stage")
+                      "`files`, its phase's manifest file, the journal directory "
+                      "and the evidence directory - the four things "
+                      "orchestrator.md step 4c allows a task commit to stage")
 
 
 def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
-                 journal_rel):
-    """A task commit staged that task's files, its phase's manifest file, the journal.
+                 journal_rel, evidence_rel=None):
+    """A task commit staged that task's files, its phase's manifest file, the two
+    records beside it.
+
+    THE EVIDENCE DIRECTORY IS ALLOWED FOR THE JOURNAL'S REASON, one noun over. A
+    task commit stages it so that the record of what ran reaches git with the
+    change it describes rather than a week later - and a failed run's record
+    reaches git at all, since the orchestrator does not commit a red gate. It
+    defaults to None so a caller that has not resolved one is told nothing about
+    evidence rather than being told there is none.
 
     THE INDEX IS ITS OWN FINDING. "Do NOT stage the index" is a separate sentence
     in step 4c and a separate failure: a task commit that carries the index is
@@ -309,6 +318,9 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
             if journal_rel and (path == journal_rel
                                 or path.startswith(journal_rel + "/")):
                 continue
+            if evidence_rel and (path == evidence_rel
+                                 or path.startswith(evidence_rel + "/")):
+                continue
             if index_rel and path == index_rel and index_rel != phase_file_rel:
                 breaches.append("%s: commit %s staged the manifest INDEX (%s). A "
                                 "task commit changes only its own phase's shard - "
@@ -316,8 +328,9 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                                 "conflict on" % (tid, sha[:12], index_rel))
                 continue
             breaches.append("%s: commit %s staged %s, which is not in the task's "
-                            "`files`, is not this phase's manifest file and is not "
-                            "in the journal" % (tid, sha[:12], path))
+                            "`files`, is not this phase's manifest file and is in "
+                            "neither the journal nor the evidence directory"
+                            % (tid, sha[:12], path))
     return result("commit-scope", COMMIT_SCOPE_BASIS, breaches, gaps, examined)
 
 
@@ -750,10 +763,14 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
         journal_rel = _rel(_journal_io.journal_dir(project), git_root)
     except Exception:
         journal_rel = None
+    try:
+        evidence_rel = _rel(_evidence_io.evidence_dir(project), git_root)
+    except Exception:
+        evidence_rel = None
 
     checks = [
         commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
-                     journal_rel),
+                     journal_rel, evidence_rel),
         branch_history(phase, git_root),
         manifest_revalidated(phase, git_root, project, index_rel,
                              phase_file_rel, phase_file_abs),

@@ -115,7 +115,8 @@ def _write(path, text):
 def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
           stash=False, push=False, invalid_state=False, no_base_ref=False,
           drop_branch=False, forced=False, journal_rows=0, parent_branch=None,
-          journal_in_commit=False, journal_real=False):
+          journal_in_commit=False, journal_real=False,
+          evidence_in_commit=False, evidence_near_miss=False):
     """A repo with one finished phase, broken in exactly the way the flags say.
 
     ONE BUILDER RATHER THAN ONE PER CASE, because the clean path has to be the
@@ -175,6 +176,16 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         os.makedirs(os.path.join(audit, "journal"), exist_ok=True)
         _write(os.path.join(audit, "journal", "2026-08-fixture.jsonl"), "{}\n")
         staged.append("docs/audit/journal/2026-08-fixture.jsonl")
+    if evidence_in_commit:
+        os.makedirs(os.path.join(audit, "evidence"), exist_ok=True)
+        _write(os.path.join(audit, "evidence", "2026-08-fixture.jsonl"), "{}\n")
+        staged.append("docs/audit/evidence/2026-08-fixture.jsonl")
+    if evidence_near_miss:
+        # A SIBLING whose name merely starts the same way. The allow-list arm is a
+        # prefix test, and a prefix test written without the separator swallows it.
+        os.makedirs(os.path.join(audit, "evidence-notes"), exist_ok=True)
+        _write(os.path.join(audit, "evidence-notes", "x.jsonl"), "{}\n")
+        staged.append("docs/audit/evidence-notes/x.jsonl")
     _git(root, "add", *staged)
     _git(root, "commit", "-q", "-m", "chore(P1.1): audit - a")
     sha1 = _head(root)
@@ -389,6 +400,24 @@ def _cases(check):
               "says to stage it, so a checker that called it unexpected would "
               "report every correct run: %r" % (scope["breaches"],),
               scope["breaches"] == [] and scope["verdict"] == M.CLEAN)
+
+        evidenced = repos.get(evidence_in_commit=True)
+        scope = _check(_phase_answer(evidenced), "commit-scope")
+        check("iv40 ...and so is the EVIDENCE directory, for the same reason one "
+              "noun over: a task commit stages it so a failed run's record "
+              "reaches git at all, and an allow-list that did not know it would "
+              "report every correct run as a breach: %r" % (scope["breaches"],),
+              scope["breaches"] == [] and scope["verdict"] == M.CLEAN)
+
+        nearby = repos.get(evidence_near_miss=True)
+        scope = _check(_phase_answer(nearby), "commit-scope")
+        check("iv41 ...and the arm is a PREFIX test, so its boundary is asserted "
+              "in the over-firing direction too: a sibling directory whose name "
+              "merely starts the same way is still a breach. Written because a "
+              "prefix test that forgets the separator passes iv40 and admits the "
+              "whole repository: %r" % (scope["breaches"],),
+              len(scope["breaches"]) == 1
+              and "docs/audit/evidence-notes/x.jsonl" in scope["breaches"][0])
 
         scope = _check(_phase_answer(clean, mutate=_fake_sha), "commit-scope")
         check("iv9 a recorded SHA git does not have is a GAP and no-basis, never "

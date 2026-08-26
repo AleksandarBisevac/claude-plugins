@@ -125,6 +125,7 @@ claude-plugins/                           # this repo (personal, public)
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
+          _evidence_io.py                 # the test-evidence record: where it lives, and what a row may say
           audit-journal.py                # the CLI over it: append/verify/show/archive
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -267,6 +268,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
+  _evidence_io -> _journal_io, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
@@ -300,7 +302,7 @@ L4:
   _doctor_policy -> _branch, _doctor_report, _output
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
-  _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -2108,6 +2110,37 @@ sign-off answers `no-basis` about its reflog instead of `clean`. What it cannot 
 the module docstring rather than left for a reader to discover: a dropped stash, a push from
 another clone, and the manifest states written between two commits, which it counts from the
 journal's `stateHash` rows instead of passing over.
+
+### `plugins/audit/scripts/governance/_evidence_io.py`
+Where a test-execution record lives, and what it is allowed to say.
+
+`run-test-gate.py` already answers the two questions an exit code cannot — did the gate change
+the tree, and did anything actually run — and then throws every answer away: it performs no disk
+I/O at all. This module is the memory it never had.
+
+**Not the journal, and the reason is the journal's own rule.** `_journal_io.DETAILS_KEYS` is an
+allow-list whose three stated tests are that a key names a FIELD OF THE PLAN that moved, that it
+is bounded, and that it exposes nothing new. An exit code, a duration and a check count fail the
+first outright — they are things the plugin *observed about the machine* — and `MAX_DETAILS_BYTES`
+would clip a multi-step run besides. So runs live here and the journal ANCHORS them by `runId`,
+which is a plan field and passes all three.
+
+**Not `<ledgerDir>` either.** That is local scratch which writes its own `.gitignore`; this is
+evidence for an audit somebody hands to a client, so it sits beside the manifest and is committed,
+exactly like the journal. The two differ in what they are for, not in where they belong.
+
+Layout is `<evidence dir>/<YYYY-MM>.<writerId>.jsonl`, default `<manifest dir>/evidence`, with
+`evidence.dir` as the override. One file per writer per month — the journal's argument and not a
+decoration: two sessions in two git worktrees append at the same time, and a single shared file
+would conflict on every merge, the one thing the sharded layout exists to avoid.
+
+`evidence_dir()` derives from `manifestPath` rather than hardcoding, so a repo that moved its plan
+does not end up with the record of it somewhere else; the resolution is deliberately the same
+shape as `journal_dir()`, because two expressions of "where does this manifest keep its committed
+record" would separate the trail from the evidence the first time a repo set an unusual path.
+`in_evidence()` is the membership question a guard asks, and its prefix test carries the separator
+— a boundary its cases assert from the outside, since a prefix test without it admits every
+sibling whose name merely starts the same way.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that
