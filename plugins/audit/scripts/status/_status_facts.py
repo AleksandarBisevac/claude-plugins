@@ -68,11 +68,21 @@ import _priority  # noqa: E402  (the ONE expression of execution order, and the 
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
-              "in-progress", "over-budget", "budget-80", "invariant-breach")
+              "in-progress", "over-budget", "budget-80", "invariant-breach",
+              "failing-tests", "no-test-evidence")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
 # --fail-on when a budget is a commitment rather than an estimate.
+#
+# NEITHER TEST-EVIDENCE CONDITION IS IN IT EITHER, and `no-test-evidence` least of
+# all: a repository that has never recorded a run carries no pointers anywhere, so
+# a default holding it would fail every build on the day the plugin was upgraded --
+# which is exactly the "adding a key changes behaviour for a config that does not
+# set it" failure COMPATIBILITY.md refuses. `failing-tests` is out one step along
+# the same road: a plan holding a red pointer somebody has already triaged would
+# start blocking merges nobody asked it to block. Both are opt-in, and moving
+# either into this tuple is a deliberate edit a case makes you make on purpose.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
@@ -303,6 +313,193 @@ effective_bug_status = _mio.effective_bug_status
 TERMINAL = _mio.TERMINAL
 
 
+# --- test evidence ---------------------------------------------------------------
+# `task.testEvidence` / `phase.testEvidence` is a POINTER at the run that last
+# exercised that subject, together with the verdict the run reached. Three
+# distinctions this whole section exists to keep, each of which some surface in this
+# tree has already got wrong once:
+#
+#   * ABSENT IS NOT FAILURE. A manifest written before the field existed, a task
+#     nobody has run, and a block somebody deleted are one single state -- "no run
+#     was recorded" -- and rendering the worst reading of that silence is the
+#     failure the schema and COMPATIBILITY.md both name by hand.
+#   * `no-checks` IS NOT A PASS. It is exit 0 over a gate that found nothing to
+#     check, which is precisely the shape a green build with no tests in it has.
+#   * THE POINTER IS NOT RESOLVED HERE. Whether this checkout's evidence ledger
+#     actually holds that `runId` is `verify-invariants.py`'s question and
+#     `/audit:doctor`'s. Nothing here opens the ledger, so nothing here may word its
+#     answer as though it had.
+#
+# WHICH WORDS CANNOT SIGN WORK OFF. `passed` is the only verdict that signs anything
+# off, and `empty-gate` -- no gate was configured at all -- is a plan's choice
+# rather than a result, so neither is below. Everything else the enum declares is:
+# `failed` ran to completion and came back red; `no-checks` is the exit-0-that-is-
+# not-a-verdict above; `timed-out` and `cancelled` were stopped rather than answered
+# (the schema pairs those two in one sentence, and splitting them here would be this
+# file inventing a distinction the record does not draw); `could-not-run` means the
+# runner never started -- no interpreter, an unreadable command -- so there is no
+# verdict at all, which is emphatically not the same claim as a failing test.
+#
+# SPELLED AS A POSITIVE SET, NEVER AS "everything except passed". The enum MAY GAIN
+# MEMBERS -- COMPATIBILITY.md declines to promise the list is closed -- and a
+# complement would fold a word this build has never heard of into `failed`, which is
+# the one reading the schema forbids by name. An unrecognised word is carried
+# through as itself (`unrecognised` in the summary below, the raw word in the CLI's
+# `tests` column) and is judged by nothing.
+NO_SIGN_OFF_EVIDENCE = frozenset({"failed", "no-checks", "timed-out", "cancelled",
+                                  "could-not-run"})
+PASSED_EVIDENCE = "passed"
+NO_GATE_EVIDENCE = "empty-gate"
+KNOWN_EVIDENCE = frozenset(NO_SIGN_OFF_EVIDENCE
+                           | {PASSED_EVIDENCE, NO_GATE_EVIDENCE})
+
+
+def evidence_status(holder):
+    """A task's or phase's `testEvidence.status`, or None when it records none.
+
+    None is "no run was recorded" and is NEVER a failure -- it is the one state a
+    pre-field manifest, an unrun task and a deleted block all share.
+
+    A block that is not an object, or one carrying no usable `status`, comes back as
+    that same silence rather than as a word. A half-written block caches no verdict,
+    and picking one for it would be this function answering a question the manifest
+    did not: the schema requires all three keys at once precisely because dropping
+    the whole block is always safe, so there is never a reason to have written half.
+    """
+    if not isinstance(holder, dict):
+        return None
+    block = holder.get("testEvidence")
+    if not isinstance(block, dict):
+        return None
+    status = block.get("status")
+    return status if isinstance(status, str) and status else None
+
+
+def evidence_rows(manifest):
+    """One row per phase and per task the plan carries, in document order.
+
+    `{"scope", "id", "status", "subjectStatus"}`. `status` is the recorded verdict,
+    None where none is recorded; `subjectStatus` is the subject's OWN workflow
+    status, which is what lets a caller ask about `done` tasks specifically without
+    walking the plan a second time.
+
+    EVERY subject is a row, including every one carrying nothing. A walk that
+    yielded only the subjects holding a pointer could not answer "which done task
+    has none", and that question is half of what this block is for.
+
+    Ids are carried as written, `None` included: a subject with no id is the
+    validator's finding to report, and dropping it here would quietly shrink a gate
+    the reader believes covers the plan.
+    """
+    if not isinstance(manifest, dict):
+        return []
+    rows = []
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        rows.append({"scope": "phase", "id": ph.get("id"),
+                     "status": evidence_status(ph),
+                     "subjectStatus": ph.get("status")})
+        for t in (ph.get("tasks") or []):
+            if not isinstance(t, dict):
+                continue
+            rows.append({"scope": "task", "id": t.get("id"),
+                         "status": evidence_status(t),
+                         "subjectStatus": t.get("status")})
+    return rows
+
+
+def test_evidence_summary(manifest):
+    """What the plan's `testEvidence` pointers SAY -- the block `rollup` carries.
+
+    ALWAYS PRESENT AND ALWAYS COMPLETE, every list included even when empty, for the
+    reason `priorityNote` is always a key: a block that appeared only when it had
+    something to report could not be told from a block nobody computed.
+
+    `failing` and `missingOnDone` are the two the gate reads, and they are
+    deliberately different questions rather than two ways to trip one condition.
+    `failing` is a RECORDED VERDICT that cannot sign work off. `missingOnDone` is a
+    SUBJECT the plan calls `done` with no pointer at all -- an ABSENCE, which is not
+    a verdict and must never be counted as one; that is why it is its own opt-in
+    condition, and why a repository that has never recorded a run trips neither.
+
+    BOTH READ BOTH SCOPES, and `missingOnDone` did not. A phase carries its own
+    pointer -- `run-test-gate.py --record` writes `phase.testEvidence` at sign-off
+    and no task pointer stands in for it -- and every other reader in this tree
+    walks phases and tasks alike: `failing` above, `_doctor_completions`'
+    pointer check, `_invariants`' `evidence-committed`. A `missingOnDone` filtered
+    to `scope == "task"` left the one subject whose sign-off this condition exists
+    to ask about answering nothing at all, while its sibling condition read that
+    same subject happily -- one vocabulary, two scopes, and nothing saying so.
+
+    `unrecognised` is the default arm the schema asks for, made visible instead of
+    silent. A status word this build does not know trips nothing here -- folding it
+    into `failed` is the reading the schema forbids -- and a consumer that wants to
+    act on one now can, without this file having guessed what it means.
+
+    NOTHING IS RESOLVED AGAINST THE LEDGER. Every row is what the manifest says
+    about itself; whether a `runId` names a run this checkout holds is asked by
+    `verify-invariants.py` and `_doctor_completions`, and answered nowhere near here.
+    """
+    rows = evidence_rows(manifest)
+    recorded = [r for r in rows if r["status"] is not None]
+    return {
+        "recorded": len(recorded),
+        "byStatus": _by_status_values([r["status"] for r in recorded]),
+        "failing": [r for r in recorded
+                    if r["status"] in NO_SIGN_OFF_EVIDENCE],
+        "unrecognised": [r for r in recorded
+                         if r["status"] not in KNOWN_EVIDENCE],
+        "missingOnDone": [r for r in rows
+                          if r["status"] is None
+                          and r["subjectStatus"] == "done"],
+    }
+
+
+# Which of the block's keys name a subject list, DERIVED from the block itself
+# over an empty plan rather than typed a second time. A subject list added to
+# `test_evidence_summary` later is legal here without an edit, and `recorded` (an
+# int) and `byStatus` (a dict) can never be written into this set by hand.
+EVIDENCE_SUBJECT_KEYS = tuple(sorted(
+    k for k, v in test_evidence_summary(None).items() if isinstance(v, list)))
+
+
+def evidence_subjects(summary, key):
+    """One of the test-evidence block's subject lists, off a rollup summary.
+
+    `[]` when the block is absent, and here that really does mean "nothing to
+    report" -- which is the OPPOSITE of `invariant_breaches` below, for the
+    opposite reason. That block is INJECTED by a command that may or may not have
+    run the checks, so its absence is "nobody looked". This one is computed by
+    `rollup` unconditionally out of the manifest it was handed, so a summary
+    without it is a caller that never built one rather than a read that failed:
+    there is no unasked question for an empty list to be hiding.
+
+    A KEY THAT NAMES NO SUBJECT LIST RAISES, which is the half `block.get(key) or
+    []` got wrong. `recorded` is an int and `byStatus` a dict, so asking for either
+    handed the caller the int or the dict back out of a function that promises a
+    list -- and only when it was TRUTHY, so an empty plan answered correctly and a
+    populated one did not, which is the shape nobody catches by trying it once.
+
+    REFUSED RATHER THAN ANSWERED `[]`, because every caller is a gate condition and
+    `[]` is the arm that reads "nothing to report": a mistyped key answered that
+    way passes a build silently, which is worse news than the leak it replaces. A
+    wrong key is a programming error, so it fails at the call with the legal set in
+    the message. A legal key whose VALUE is not a list is still `[]` -- that is a
+    hand-built summary, which is data rather than a caller, and the reasoning for
+    an absent block applies to it unchanged.
+    """
+    if key not in EVIDENCE_SUBJECT_KEYS:
+        raise ValueError(
+            "%r names no test-evidence subject list; the subject lists are %s"
+            % (key, ", ".join(EVIDENCE_SUBJECT_KEYS)))
+    block = (summary or {}).get("testEvidence")
+    if not isinstance(block, dict):
+        return []
+    value = block.get(key)
+    return value if isinstance(value, list) else []
+
+
 def rollup(manifest, findings, warnings, usage=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
@@ -395,6 +592,12 @@ def rollup(manifest, findings, warnings, usage=None):
                  "openHighSeverity": sum(
                      1 for b in open_bugs
                      if _is_high_severity(b.get("severity")))},
+        # What the plan's `testEvidence` pointers SAY, never what the ledger holds.
+        # Unconditional and whole, the same call `priorityNote` makes below: an
+        # empty `failing` list and a block nobody computed must not look alike, and
+        # the CLI, the report and the panel all read the one key rather than each
+        # walking the plan for it.
+        "testEvidence": test_evidence_summary(manifest),
         # "parked" is every entry whose status AS WRITTEN is 'proposed', payload
         # or not — `is_parked_proposal` holds the decision and says why. It used
         # to require a payload as well, which is a count of what
@@ -479,6 +682,19 @@ def evaluate_gate(summary, conditions):
                 summary, BUDGET_WARN_PCT if c == "budget-80" else 100.0):
             failed.append(c)
         elif c == "invariant-breach" and invariant_breaches(summary) is not None:
+            failed.append(c)
+        # A RECORDED verdict that cannot sign work off. Absence is not one of them
+        # and cannot reach this arm: `test_evidence_summary` only ever puts a row
+        # in `failing` when a status was actually written down.
+        elif c == "failing-tests" and evidence_subjects(summary, "failing"):
+            failed.append(c)
+        # ...and the other question entirely: a SUBJECT the plan calls done with
+        # no pointer at all, a phase as readily as a task - the same two scopes the
+        # arm above reads, because a phase's sign-off records its own run. Opt-in,
+        # and never folded into the one above - "the run was red" and "there is no
+        # run" are different news with different repairs.
+        elif c == "no-test-evidence" and evidence_subjects(summary,
+                                                           "missingOnDone"):
             failed.append(c)
     return failed
 

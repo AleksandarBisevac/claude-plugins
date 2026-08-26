@@ -14,9 +14,12 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import json
+import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT, for the schema read)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _status_facts as M                          # noqa: E402
@@ -65,7 +68,9 @@ def _cases(check):
                "_status_index", "ready_tasks", "_by_status", "_by_status_values",
                "PARKED_PROPOSAL_STATUS", "is_parked_proposal",
                "areas_of", "effective_bug_status", "TERMINAL", "rollup",
-               "unmet_refs", "evaluate_gate", "budget_breaches")
+               "unmet_refs", "evaluate_gate", "budget_breaches",
+               "NO_SIGN_OFF_EVIDENCE", "KNOWN_EVIDENCE", "evidence_status",
+               "evidence_rows", "test_evidence_summary", "evidence_subjects")
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
     check("b1 audit-status.py re-exports all %d shared names as THIS module's "
@@ -194,6 +199,263 @@ def _cases(check):
           "started phase, and a default that slow is a default somebody replaces",
           "invariant-breach" in M.CONDITIONS
           and "invariant-breach" not in M.DEFAULT_GATE)
+
+    # --- test evidence: two conditions, and what absence is allowed to mean ----
+    # EVERY CASE HERE IS ANCHORED ON A SUBJECT NAME, never on "the list is not
+    # empty" and never on "the gate returned []". A condition that matched nothing
+    # returns an empty list, which reads exactly like a clean plan, so each fixture
+    # carries a subject that MUST be named beside one that must not be.
+    def _ev_plan(tasks, phase_ev=None):
+        """A one-phase plan whose subjects carry the verdicts given.
+
+        `tasks` is `(id, task status, recorded verdict or None)`; a None verdict
+        writes NO block at all, which is the state this whole feature turns on -
+        "no run was recorded", which is not a failure.
+        """
+        rows = []
+        for tid, tstatus, verdict in tasks:
+            t = {"id": tid, "title": "t", "status": tstatus}
+            if verdict is not None:
+                t["testEvidence"] = {"runId": "R-" + tid, "status": verdict,
+                                     "at": "2026-01-01T00:00:00Z"}
+            rows.append(t)
+        ph = {"id": "PE", "title": "e", "status": "done", "tasks": rows}
+        if phase_ev is not None:
+            ph["testEvidence"] = {"runId": "R-PE", "status": phase_ev,
+                                  "at": "2026-01-01T00:00:00Z"}
+        return {"meta": {"version": 2}, "phases": [ph]}
+
+    # One call site, driven over the vocabulary itself - which is why te2 below
+    # has to exist: a loop derived from the set cannot notice the set shrinking.
+    for _word in sorted(M.NO_SIGN_OFF_EVIDENCE):
+        _ev_s = M.rollup(_ev_plan([("PE.1", "done", "passed"),
+                                   ("PE.2", "done", _word)]), [], [])
+        check("te1 `%s` cannot sign work off, so failing-tests trips and names "
+              "PE.2 - while PE.1, which passed under the same walk, is not in "
+              "the list" % (_word,),
+              M.evaluate_gate(_ev_s, ("failing-tests",)) == ["failing-tests"]
+              and [r["id"] for r in _ev_s["testEvidence"]["failing"]] == ["PE.2"],
+              repr(_ev_s["testEvidence"]["failing"]))
+    check("te2 the membership is PINNED here, so changing it is a deliberate "
+          "edit rather than a side effect - and a loop derived from the set, "
+          "like te1's, cannot notice a member being dropped",
+          sorted(M.NO_SIGN_OFF_EVIDENCE)
+          == ["cancelled", "could-not-run", "failed", "no-checks", "timed-out"]
+          and M.PASSED_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE
+          and M.NO_GATE_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE,
+          repr(sorted(M.NO_SIGN_OFF_EVIDENCE)))
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), "r",
+              encoding="utf-8") as fh:
+        _te_enum = (((json.load(fh).get("$defs") or {}).get("testEvidence") or {})
+                    .get("properties") or {}).get("status", {}).get("enum")
+    check("te3 ...and the vocabulary IS the schema's, read out of "
+          "audit-plan.schema.json rather than re-typed: the enum gaining a "
+          "member goes red here and somebody has to decide which side it falls "
+          "on, which is the whole reason the classification is a positive set "
+          "and not `everything except passed`",
+          isinstance(_te_enum, list)
+          and sorted(M.KNOWN_EVIDENCE) == sorted(_te_enum),
+          repr((sorted(M.KNOWN_EVIDENCE), _te_enum)))
+    _te_ok = M.rollup(_ev_plan([("PE.1", "done", "passed"),
+                                ("PE.2", "done", "empty-gate")]), [], [])
+    check("te4 SECOND DIRECTION: `passed` and `empty-gate` do NOT trip it - one "
+          "is the verdict that signs off, the other says no gate was configured "
+          "at all - and the walk demonstrably SAW both, which is what stops this "
+          "reading as 'the condition matched nothing'",
+          M.evaluate_gate(_te_ok, ("failing-tests",)) == []
+          and _te_ok["testEvidence"]["byStatus"] == {"passed": 1, "empty-gate": 1}
+          and _te_ok["testEvidence"]["recorded"] == 2,
+          repr(_te_ok["testEvidence"]))
+    _te_gap = M.rollup(_ev_plan([("PE.1", "done", None),
+                                 ("PE.2", "pending", None)]), [], [])
+    check("te5 ABSENT EVIDENCE IS NOT FAILURE: neither subject records a run and "
+          "failing-tests trips on nothing - the reading every manifest written "
+          "before the field existed depends on",
+          M.evaluate_gate(_te_gap, ("failing-tests",)) == []
+          and _te_gap["testEvidence"]["failing"] == []
+          and _te_gap["testEvidence"]["recorded"] == 0,
+          repr(_te_gap["testEvidence"]))
+    check("te6 ...and the SAME fixture DOES trip no-test-evidence, naming every "
+          "DONE subject - the phase and the done task, each with its scope - and "
+          "not the pending one, which is what tells 'the condition is inert' "
+          "apart from 'this plan is clean'",
+          M.evaluate_gate(_te_gap, ("no-test-evidence",)) == ["no-test-evidence"]
+          and [(r["scope"], r["id"])
+               for r in _te_gap["testEvidence"]["missingOnDone"]]
+          == [("phase", "PE"), ("task", "PE.1")],
+          repr(_te_gap["testEvidence"]["missingOnDone"]))
+    _te_covered = M.rollup(_ev_plan([("PE.1", "done", "passed"),
+                                     ("PE.2", "pending", None)],
+                                    phase_ev="passed"), [], [])
+    check("te7 SECOND DIRECTION for no-test-evidence: a done task that DOES "
+          "carry a pointer clears it, and the pending task with none never "
+          "counted - a version reading 'any task with no evidence' passes te6 "
+          "and fails here",
+          M.evaluate_gate(_te_covered, ("no-test-evidence",)) == []
+          and _te_covered["testEvidence"]["missingOnDone"] == []
+          and _te_covered["testEvidence"]["recorded"] == 2,
+          repr(_te_covered["testEvidence"]))
+    _te_new = M.rollup(_ev_plan([("PE.1", "done", "failed"),
+                                 ("PE.2", "done", "quarantined")]), [], [])
+    check("te8 a status this build does not recognise is reported as itself and "
+          "judged by nothing - NOT folded into `failed`, which is the reading "
+          "the schema forbids by name. The known red one beside it is what "
+          "proves the condition was live while the new word went unjudged",
+          [r["id"] for r in _te_new["testEvidence"]["failing"]] == ["PE.1"]
+          and [(r["id"], r["status"])
+               for r in _te_new["testEvidence"]["unrecognised"]]
+          == [("PE.2", "quarantined")],
+          repr(_te_new["testEvidence"]))
+    _te_phase = M.rollup(_ev_plan([("PE.1", "done", "passed")],
+                                  phase_ev="timed-out"), [], [])
+    check("te9 a PHASE's pointer is read too, and the row carries its SCOPE so "
+          "a reader is never left guessing which kind of subject went red",
+          M.evaluate_gate(_te_phase, ("failing-tests",)) == ["failing-tests"]
+          and [(r["scope"], r["id"])
+               for r in _te_phase["testEvidence"]["failing"]] == [("phase", "PE")],
+          repr(_te_phase["testEvidence"]["failing"]))
+    _te_junk = _ev_plan([("PE.1", "done", "failed")], phase_ev="passed")
+    _te_junk["phases"][0]["tasks"][0]["testEvidence"] = {"runId": "R", "at": "x"}
+    _te_junk["phases"][0]["tasks"].append(
+        {"id": "PE.2", "title": "t", "status": "done",
+         "testEvidence": "not an object"})
+    _te_junk_s = M.rollup(_te_junk, [], [])
+    check("te10 a half-written or non-object block reads as SILENCE and not as a "
+          "verdict: both subjects land in missingOnDone and neither in failing. "
+          "A block with no `status` caches nothing, and picking one for it would "
+          "be this module answering a question the manifest did not",
+          _te_junk_s["testEvidence"]["failing"] == []
+          and [r["id"] for r in _te_junk_s["testEvidence"]["missingOnDone"]]
+          == ["PE.1", "PE.2"], repr(_te_junk_s["testEvidence"]))
+    _te_cancelled = M.rollup(_ev_plan([("PE.1", "cancelled", None),
+                                       ("PE.2", "done", None)],
+                                      phase_ev="passed"), [], [])
+    check("te11 a CANCELLED task with no evidence is not a gap - nobody is going "
+          "to run work that was dropped - so only the done one is named. The "
+          "condition is about a claim of completion, not about every task alive",
+          [r["id"] for r in _te_cancelled["testEvidence"]["missingOnDone"]]
+          == ["PE.2"], repr(_te_cancelled["testEvidence"]["missingOnDone"]))
+    check("te12 the DEFAULT gate is spelled out WHOLE here, so moving either "
+          "condition into it is a deliberate edit that goes red first rather "
+          "than a merge that quietly starts failing other people's builds",
+          M.DEFAULT_GATE == ("invalid", "open-high-bugs", "blocked-tasks"),
+          repr(M.DEFAULT_GATE))
+    check("te13 ...and both ARE accepted by --fail-on, which is the direction "
+          "that fails if te12 is satisfied by dropping them everywhere",
+          "failing-tests" in M.CONDITIONS and "no-test-evidence" in M.CONDITIONS
+          and "failing-tests" not in M.DEFAULT_GATE
+          and "no-test-evidence" not in M.DEFAULT_GATE)
+    _te_empty = M.rollup({"meta": {"version": 2}, "phases": []}, [], [])
+    check("te14 the block is ALWAYS in the rollup and always whole, even over a "
+          "plan with no phases - an empty `failing` list and a block nobody "
+          "computed must not look alike to a consumer",
+          sorted(_te_empty["testEvidence"])
+          == ["byStatus", "failing", "missingOnDone", "recorded", "unrecognised"]
+          and _te_empty["testEvidence"]["recorded"] == 0,
+          repr(_te_empty.get("testEvidence")))
+    # THROUGH `attempt` FROM HERE DOWN: both cases are about a call NOT raising, and
+    # a raise inside a `check()` argument escapes the whole body - so the very
+    # failure they exist to catch would arrive as an unattributed traceback with
+    # these two cases never printed at all.
+    _te_ok_e, _te_e = _harness.attempt(M.evidence_subjects, {}, "failing")
+    _te_ok_n, _te_n = _harness.attempt(M.evidence_subjects, None, "missingOnDone")
+    check("te15 `evidence_subjects` over a summary carrying no block is [] and "
+          "not a raise - and here that empty really IS 'nothing to report', "
+          "because rollup computes the block unconditionally. Contrast g5, where "
+          "an absent INJECTED block means 'nobody looked' and must trip: %r"
+          % ((_te_e, _te_n),),
+          _te_ok_e and _te_e == [] and _te_ok_n and _te_n == []
+          and M.evidence_subjects(_te_new, "failing")
+          == _te_new["testEvidence"]["failing"])
+    _te_ok_r, _te_r = _harness.attempt(M.evidence_rows, "nope")
+    _te_ok_ru, _te_ru = _harness.attempt(M.rollup, "nope", [], [])
+    check("te16 a non-dict manifest is an empty block rather than an "
+          "AttributeError - the same call r5 makes for the rest of the rollup, "
+          "because a read-only surface must RENDER a broken plan: %r"
+          % ((_te_r, _te_ru if not _te_ok_ru else "<rollup ok>"),),
+          _te_ok_r and _te_r == [] and _te_ok_ru
+          and isinstance(_te_ru, dict)
+          and (_te_ru.get("testEvidence") or {}).get("recorded") == 0)
+
+    # F2. `evidence_subjects` promises a subject LIST, and `block.get(key) or []`
+    # kept that promise only for the keys that happen to hold one. `recorded` is an
+    # int and `byStatus` a dict, so a non-zero count came back AS THE INT out of a
+    # function whose every caller feeds it to `len()`, to a list comprehension and
+    # to a truth test that a gate verdict hangs off.
+    _te_int_ok, _te_int = _harness.attempt(M.evidence_subjects, _te_new,
+                                           "recorded")
+    _te_map_ok, _te_map = _harness.attempt(M.evidence_subjects, _te_new,
+                                           "byStatus")
+    check("te17 a key naming no subject list is REFUSED BY NAME rather than "
+          "answered. The block really does carry a non-zero `recorded` here, "
+          "which is the value the old read handed back: `or []` only substitutes "
+          "for a FALSY one, so the empty plan every reviewer tries looks fine and "
+          "the populated one leaks an int: %r" % ((_te_int, _te_map),),
+          _te_new["testEvidence"]["recorded"] == 2
+          and not _te_int_ok and "recorded" in _te_int
+          and not _te_map_ok and "byStatus" in _te_map)
+    check("te18 SECOND DIRECTION: every key that DOES name a subject list comes "
+          "back as that very list, and the legal set is DERIVED from the block's "
+          "own shape rather than typed a second time - so a subject list added "
+          "later is accepted without an edit here, and `recorded` cannot be "
+          "written into it by hand",
+          sorted(M.EVIDENCE_SUBJECT_KEYS)
+          == ["failing", "missingOnDone", "unrecognised"]
+          and all(M.evidence_subjects(_te_new, k) is _te_new["testEvidence"][k]
+                  for k in M.EVIDENCE_SUBJECT_KEYS)
+          and [(r["id"], r["status"])
+               for r in M.evidence_subjects(_te_new, "unrecognised")]
+          == [("PE.2", "quarantined")],
+          repr(sorted(M.EVIDENCE_SUBJECT_KEYS)))
+
+    # F3. The two conditions read the SAME scopes. `failing-tests` always read
+    # both, and a `no-test-evidence` that read only tasks was blind to exactly the
+    # sign-off it exists to ask about - `run-test-gate.py --record` points
+    # `phase.testEvidence` at the phase gate, and no task pointer stands in for it.
+    _te_ph_gap = M.rollup(_ev_plan([("PE.1", "done", "passed")]), [], [])
+    _te_ph_ok = M.rollup(_ev_plan([("PE.1", "done", "passed")],
+                                  phase_ev="passed"), [], [])
+    check("te19 a DONE PHASE with no pointer is a gap too, named with its scope. "
+          "Every task under it recorded a run, so a task-only reading exits "
+          "clean over a phase nothing signed off - the one shape this condition "
+          "was asked for",
+          M.evaluate_gate(_te_ph_gap, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and [(r["scope"], r["id"])
+               for r in _te_ph_gap["testEvidence"]["missingOnDone"]]
+          == [("phase", "PE")],
+          repr(_te_ph_gap["testEvidence"]["missingOnDone"]))
+    check("te20 SECOND DIRECTION: the same plan with the phase's own pointer in "
+          "place clears the condition, and the walk demonstrably saw BOTH "
+          "subjects - which is what stops te19 reading as 'this condition now "
+          "matches every phase'",
+          M.evaluate_gate(_te_ph_ok, ("no-test-evidence",)) == []
+          and _te_ph_ok["testEvidence"]["missingOnDone"] == []
+          and _te_ph_ok["testEvidence"]["recorded"] == 2,
+          repr(_te_ph_ok["testEvidence"]))
+    _te_hand = {"testEvidence": {"failing": "not a list",
+                                "missingOnDone": [{"scope": "task",
+                                                   "id": "PE.9"}]}}
+    check("te22 ...and a LEGAL key whose value is not a list is [] as well - a "
+          "hand-built summary is data, not a caller, so the reasoning for an "
+          "absent block applies to it unchanged. The sibling key in the same "
+          "block DOES carry a list and comes back whole, which is what stops "
+          "this reading as 'the function answers [] to everything'",
+          M.evidence_subjects(_te_hand, "failing") == []
+          and [r["id"] for r in M.evidence_subjects(_te_hand, "missingOnDone")]
+          == ["PE.9"], repr(_te_hand))
+    _te_ph_run = _ev_plan([("PE.1", "done", "passed")])
+    _te_ph_run["phases"][0]["status"] = "in_progress"
+    _te_ph_run_s = M.rollup(_te_ph_run, [], [])
+    check("te21 ...and a phase still IN PROGRESS with no pointer is not a gap "
+          "either: the condition asks about a claim of completion, which is the "
+          "same rule te11 pins for a cancelled task. The recorded count proves "
+          "the walk reached this plan at all",
+          _te_ph_run_s["testEvidence"]["missingOnDone"] == []
+          and M.evaluate_gate(_te_ph_run_s, ("no-test-evidence",)) == []
+          and _te_ph_run_s["testEvidence"]["recorded"] == 1,
+          repr(_te_ph_run_s["testEvidence"]))
 
     # --- the submodule preflight ---------------------------------------------
     check("s1 .gitmodules paths are read out of `path =` lines, whatever the "

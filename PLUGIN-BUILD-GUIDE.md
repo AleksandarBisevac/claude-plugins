@@ -1960,7 +1960,10 @@ lines, because the two are meant to differ and the collapsed line says its own s
 ### `plugins/audit/scripts/status/_status_facts.py`
 What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that
 nobody prints: `rollup`, `ready_tasks`, `unmet_refs`, `_status_index`, the submodule
-preflight (`parse_gitmodules`, `submodule_conflicts`), the high-severity vocabulary, and
+preflight (`parse_gitmodules`, `submodule_conflicts`), the high-severity vocabulary, the
+test-evidence vocabulary (`NO_SIGN_OFF_EVIDENCE`, `evidence_status`, `evidence_rows`,
+`test_evidence_summary` — which words cannot sign work off, spelled as a positive set so a
+member the enum gains later is reported rather than folded into `failed`), and
 the gate (`CONDITIONS`, `DEFAULT_GATE`, `evaluate_gate`, `budget_breaches`). Pure dict→dict
 throughout: nothing here opens a file or runs a process, which is what lets three modules
 share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-report`
@@ -1974,7 +1977,13 @@ rules from `_manifest_rules`, both by plain import. `--json` prints the machine-
 summary (phases done/total, tasks/bugs by
 status, ready-task list mirroring /audit's readiness rule); `--gate` exits 1 on tripped
 conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--fail-on`
-(also `open-bugs`, `in-progress` for release freezes). `--submodules <.gitmodules> [--git-root
+(also `open-bugs`, `in-progress` for release freezes, and `failing-tests` /
+`no-test-evidence` over the manifest's `testEvidence` pointers — both opt-in, because a
+plan that has never recorded a run must not start failing builds on upgrade, and both
+read phases as well as tasks). The human render carries the same words in a `tests`
+column, which — like the report's optional columns — is drawn only when a task in view
+has recorded a run, so an unchanged plan renders exactly as it did before.
+`--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
 .

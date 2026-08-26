@@ -1403,7 +1403,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 8,
+          _missing_ap == [] and len(M.CONDITIONS) == 10,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -1453,6 +1453,278 @@ def _cases(_record):
               and "GATE PASSED" in _e_on)
     finally:
         os.unlink(_ai_path)
+
+    # --- (ev) test evidence: the two conditions, and the column that shows them -
+    # A `testEvidence` block is a POINTER at a recorded run plus the verdict that
+    # run reached. Three distinctions every case below is built to keep, each one a
+    # defect this repository has already fixed once: `no-checks` is exit 0 and is
+    # not a pass, an ABSENT block is "no run recorded" and not a failure, and
+    # nothing here resolves `runId` against the ledger, so nothing here may be
+    # worded as though it had.
+    def _ev_manifest(rows, phase_ev=None):
+        """A one-phase plan; `rows` is `(id, task status, verdict or None)`."""
+        tasks = []
+        for tid, tstatus, verdict in rows:
+            t = {"id": tid, "title": "t", "status": tstatus}
+            if verdict is not None:
+                t["testEvidence"] = {"runId": "R-" + tid, "status": verdict,
+                                     "at": "2026-01-01T00:00:00Z"}
+            tasks.append(t)
+        ph = {"id": "PE", "title": "Evidence", "status": "done", "tasks": tasks}
+        if phase_ev is not None:
+            ph["testEvidence"] = {"runId": "R-PE", "status": phase_ev,
+                                  "at": "2026-01-01T00:00:00Z"}
+        return {"meta": {"version": 2}, "phases": [ph]}
+
+    def _ev_row(text, tid):
+        """The task's line in the phase table, found through its status MARKER.
+
+        Not a bare `tid in line`: a READY NOW row, a bug line or a `waiting on`
+        cell can all carry the same id, and picking one of those up would make
+        every cell assertion below read the wrong region."""
+        hits = [ln for ln in text.splitlines() if ("] %s " % tid) in ln]
+        return hits[0] if len(hits) == 1 else ""
+
+    def _ev_cell(text, tid):
+        """That row's `tests` cell, sliced at the column the HEADER puts it in.
+
+        POSITIONAL RATHER THAN A SEARCH, because the case that matters most is the
+        absent one, whose cell is `-` and whose row carries another `-` in the very
+        next column - a `"-" in row` test could not tell those apart.
+
+        A missing header or a missing row is `""` rather than a raise, so a column
+        that has gone away fails every cell case BY NAME instead of escaping out of
+        the first one and taking the rest of the suite's verdict with it."""
+        head = [ln for ln in text.splitlines() if "waiting on" in ln]
+        row = _ev_row(text, tid)
+        if not head or not row or "tests" not in head[0]:
+            return ""
+        return row[head[0].index("tests"):head[0].index("commit")].strip()
+
+    def _ev_head(text, pid):
+        """The phase's head line, which is where a PHASE's own verdict prints."""
+        hits = [ln for ln in text.splitlines() if ln.startswith("  %s " % pid)]
+        return hits[0] if len(hits) == 1 else ""
+
+    _ev_mixed = _ev_manifest([("PE.1", "done", "passed"),
+                              ("PE.2", "done", "no-checks"),
+                              ("PE.3", "done", None),
+                              ("PE.4", "done", "quarantined")])
+    _ev_txt = M.render_status(_ev_mixed, M.rollup(_ev_mixed, [], []))
+    check("ev1 the render grows ONE `tests` column, not one per phase - the same "
+          "header discipline s6 pins for `waiting on`",
+          _ev_txt.count("tests") == 1, str(_ev_txt.count("tests")))
+    check("ev2 the cell reproduces the RECORDED word: PE.1 `passed`, PE.2 "
+          "`no-checks`. Exit 0 is not a pass and is never shown as one, and "
+          "nothing is translated into a friendlier word: %r"
+          % ([_ev_cell(_ev_txt, t)
+              for t in ("PE.1", "PE.2", "PE.3", "PE.4")],),
+          _ev_cell(_ev_txt, "PE.1") == "passed"
+          and _ev_cell(_ev_txt, "PE.2") == "no-checks")
+    check("ev3 ABSENT is `-` and nothing else - PE.3 records no run, which is "
+          "not a failure and must not read as one",
+          _ev_cell(_ev_txt, "PE.3") == "-", repr(_ev_row(_ev_txt, "PE.3")))
+    check("ev4 a word this build does not recognise prints as ITSELF: PE.4 says "
+          "`quarantined`, because folding a new enum member into `failed` is the "
+          "one reading the schema forbids by name",
+          _ev_cell(_ev_txt, "PE.4") == "quarantined")
+    _ev_phase_txt = M.render_status(
+        _ev_manifest([("PE.1", "done", "passed")], phase_ev="timed-out"),
+        M.rollup(_ev_manifest([("PE.1", "done", "passed")],
+                              phase_ev="timed-out"), [], []))
+    check("ev5 a PHASE's own pointer reaches its head line - the gate reads it, "
+          "so a render carrying only the task column would leave a tripped build "
+          "with nothing on screen to explain it",
+          "tests timed-out" in _ev_head(_ev_phase_txt, "PE"),
+          repr(_ev_head(_ev_phase_txt, "PE")))
+    check("ev6 SECOND DIRECTION: a phase recording nothing gets NO clause, so a "
+          "plan that has never run a gate pays a header and nothing else - and "
+          "the head line was really found, so this is not vacuous over ''",
+          "tests" not in _ev_head(_ev_txt, "PE") and _ev_head(_ev_txt, "PE") != "",
+          repr(_ev_head(_ev_txt, "PE")))
+
+    fd, _ev_red = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_ev_manifest([("PE.1", "done", "passed"),
+                                ("PE.2", "done", "could-not-run")]), fh)
+    fd, _ev_green = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_ev_manifest([("PE.1", "done", "passed")],
+                               phase_ev="passed"), fh)
+    # The same plan with the PHASE's own pointer left out: every task is covered
+    # and the phase sign-off is not, which is the shape ev21 is about.
+    fd, _ev_phgap = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_ev_manifest([("PE.1", "done", "passed")]), fh)
+    fd, _ev_gap = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_ev_manifest([("PE.1", "done", None),
+                                ("PE.2", "pending", None)]), fh)
+    try:
+        _c_er, _o_er, _e_er = _cli_io([_ev_red, "--gate", "--fail-on",
+                                       "failing-tests"])
+        check("ev7 --fail-on failing-tests exits 1 and NAMES the subject and the "
+              "word - `could-not-run` means the runner never started, which is "
+              "no verdict at all and cannot sign anything off",
+              _c_er == 1 and "GATE FAILED: failing-tests" in _o_er
+              and "task PE.2 could-not-run" in _o_er,
+              repr(_o_er.strip()[:140]))
+        _c_eg, _o_eg, _e_eg = _cli_io([_ev_green, "--gate", "--fail-on",
+                                       "failing-tests"])
+        check("ev8 SECOND DIRECTION over the same shape: a plan whose only "
+              "recorded run passed exits 0 and says so - what fails if the "
+              "condition starts tripping on any pointer at all",
+              _c_eg == 0 and "GATE PASSED: failing-tests" in _o_eg,
+              repr(_o_eg.strip()[:140]))
+        _c_ed, _o_ed, _e_ed = _cli_io([_ev_red, "--gate"])
+        check("ev9 ...and the DEFAULT gate is untouched by either condition: the "
+              "manifest that failed ev7 passes here. That is the promise a "
+              "pipeline which never set --fail-on is owed across an upgrade",
+              _c_ed == 0 and "GATE PASSED" in _o_ed
+              and "failing-tests" not in _o_ed, repr(_o_ed.strip()[:140]))
+        _c_em, _o_em, _e_em = _cli_io([_ev_gap, "--gate", "--fail-on",
+                                       "no-test-evidence"])
+        check("ev10 --fail-on no-test-evidence exits 1 naming the DONE task and "
+              "not the pending one, and the line is worded as an ABSENCE - `no "
+              "run recorded`, never a failure",
+              _c_em == 1 and "GATE FAILED: no-test-evidence" in _o_em
+              and "no run recorded: phase PE, task PE.1" in _o_em
+              and "PE.2" not in _o_em,
+              repr(_o_em.strip()[:160]))
+        _c_ea, _o_ea, _e_ea = _cli_io([_ev_gap, "--gate", "--fail-on",
+                                       "failing-tests"])
+        check("ev11 ...and the SAME plan PASSES failing-tests: absent evidence "
+              "and a red verdict are different news with different repairs, and "
+              "the pair over one fixture is what stops either case reading as "
+              "'nothing matched'",
+              _c_ea == 0 and "GATE PASSED" in _o_ea, repr(_o_ea.strip()[:140]))
+        _c_ec, _o_ec, _e_ec = _cli_io([_ev_green, "--gate", "--fail-on",
+                                       "no-test-evidence"])
+        check("ev12 SECOND DIRECTION: a done task that DOES carry a pointer "
+              "clears no-test-evidence - what fails if it starts reading 'any "
+              "task with no evidence' and gates on work nobody has run yet",
+              _c_ec == 0 and "GATE PASSED: no-test-evidence" in _o_ec,
+              repr(_o_ec.strip()[:140]))
+        check("ev13 an unknown --fail-on name is STILL a usage error, and both "
+              "new names together are still a real gate - two more accepted "
+              "words must not make the parser permissive",
+              _cli_io([_ev_red, "--gate", "--fail-on", "flaky-tests"])[0] == 2
+              and _cli_io([_ev_red, "--gate", "--fail-on",
+                           "failing-tests,no-test-evidence"])[0] == 1)
+        _c_ej, _o_ej, _e_ej = _cli_io([_ev_red, "--json", "--gate", "--fail-on",
+                                       "failing-tests"])
+        _ev_blob = _parses(_o_ej) or {}
+        check("ev14 the --json document carries the block AND the verdict, and "
+              "stdout is still exactly one JSON document with the GATE line on "
+              "stderr - the same contract ap1-ap3 pin",
+              _c_ej == 1
+              and _ev_blob.get("gate", {}).get("failed") == ["failing-tests"]
+              and [r["id"] for r in _ev_blob["testEvidence"]["failing"]]
+              == ["PE.2"]
+              and _ev_blob["testEvidence"]["byStatus"]
+              == {"passed": 1, "could-not-run": 1}
+              and "GATE FAILED" in _e_ej, repr(_o_ej[-80:]))
+        _c_ep, _o_ep, _e_ep = _cli_io([_ev_phgap, "--gate", "--fail-on",
+                                       "no-test-evidence"])
+        check("ev21 a DONE PHASE with no pointer reaches the gate line too, "
+              "named with its SCOPE. Every task in this plan recorded a run, so "
+              "a task-only reading exits 0 over a phase nothing signed off - and "
+              "PE.1 is absent from the line, which is what keeps this from "
+              "passing on a version that simply names everything",
+              _c_ep == 1 and "GATE FAILED: no-test-evidence" in _o_ep
+              and "no run recorded: phase PE" in _o_ep
+              and "PE.1" not in _o_ep, repr(_o_ep.strip()[:160]))
+    finally:
+        os.unlink(_ev_red)
+        os.unlink(_ev_green)
+        os.unlink(_ev_gap)
+        os.unlink(_ev_phgap)
+
+    _ev_fh = M.CONDITION_HELP.get("failing-tests", "")
+    _ev_nh = M.CONDITION_HELP.get("no-test-evidence", "")
+    check("ev15 the REASONING travels with the condition rather than living only "
+          "in the source: the text a user reads before wiring a pipeline says "
+          "why `no-checks` is in the set, that `empty-gate` is not, and that an "
+          "absent block is not a failure. ap9 already pins that this text is "
+          "what --help renders",
+          "no-checks" in _ev_fh and "not a verdict" in _ev_fh
+          and "empty-gate" in _ev_fh and "ABSENT" in _ev_fh
+          and "opt-in" in _ev_nh and "default" in _ev_nh,
+          repr((_ev_fh[:100], _ev_nh[:100])))
+    check("ev16 both names reach the derived --help epilog, with the sentence "
+          "that keeps them out of the default beside them",
+          "failing-tests" in _o_h and "no-test-evidence" in _o_h
+          and "Neither test-evidence condition is in it" in _o_h,
+          repr([w for w in ("failing-tests", "no-test-evidence")
+                if w not in _o_h]))
+
+    # F1. `evidence_rows` carries an id-less subject ON PURPOSE - dropping it
+    # would shrink a gate the reader believes covers the plan - so a row reaches
+    # the gate line with `id: None`, and `%s` over that printed the WORD `None`
+    # into the one sentence somebody reads while a build is red. Repaired at the
+    # rendering boundary only: the row still counts and still trips.
+    _ev_noid = {"meta": {"version": 2},
+                "phases": [{"id": "PE", "title": "Evidence", "status": "done",
+                            "testEvidence": {"runId": "R-PE",
+                                             "status": "passed",
+                                             "at": "2026-01-01T00:00:00Z"},
+                            "tasks": [{"title": "no id at all",
+                                       "status": "done"},
+                                      {"id": "PE.2", "title": "t",
+                                       "status": "done"}]}]}
+    _ev_noid_s = M.rollup(_ev_noid, [], [])
+    _ev_noid_line = M._no_evidence_detail(_ev_noid_s)
+    check("ev17 an id-less subject renders as `-`, the mark this same table "
+          "already spells `commit` and `model` absences with - and the row is "
+          "STILL counted and still named beside the one that has an id, which "
+          "is what separates the repair from dropping the row: %r"
+          % (_ev_noid_line,),
+          _ev_noid_line
+          == "2 done subject(s) with no run recorded: task -, task PE.2"
+          and "None" not in _ev_noid_line)
+    _ev_noid_red = copy.deepcopy(_ev_noid)
+    _ev_noid_red["phases"][0]["tasks"][0]["testEvidence"] = {
+        "runId": "R1", "status": "failed", "at": "2026-01-01T00:00:00Z"}
+    _ev_noid_red_s = M.rollup(_ev_noid_red, [], [])
+    _ev_noid_red_line = M._failing_tests_detail(_ev_noid_red_s)
+    check("ev18 ...and the OTHER condition's line had the same hole, because it "
+          "interpolates the same key: the failing subject with no id reads `task "
+          "- failed`, the word is still reproduced, and `None` is nowhere: %r"
+          % (_ev_noid_red_line,),
+          _ev_noid_red_line == "1 subject(s): task - failed"
+          and "None" not in _ev_noid_red_line)
+
+    # F4. The column is EARNED, the way `_report_page._present_columns` earns an
+    # optional column: a plan that has never recorded a run renders exactly as it
+    # did before the feature existed rather than paying seven characters on every
+    # task row for a cell that is `-` in all of them.
+    _ev_bare = {"meta": {"version": 2},
+                "phases": [{"id": "P1", "title": "Only", "status": "done",
+                            "tasks": [{"id": "P1.1", "title": "first task",
+                                       "status": "done",
+                                       "commit": "abc1234def5678"}]}]}
+    _ev_bare_txt = M.render_status(_ev_bare, M.rollup(_ev_bare, [], []))
+    check("ev19 a plan with no evidence anywhere renders WITHOUT the column, "
+          "byte for byte as it did before the feature - pinned on the rendered "
+          "header and the rendered row rather than on a flag, because a flag "
+          "case goes green while the widths shift underneath it: %r"
+          % (_ev_bare_txt,),
+          "     task      title       status  model  waiting on  commit"
+          in _ev_bare_txt.splitlines()
+          and "     [x] P1.1  first task  Done    -      -           abc1234"
+          in _ev_bare_txt.splitlines()
+          and "tests" not in _ev_bare_txt)
+    _ev_kept = copy.deepcopy(_ev_bare)
+    _ev_kept["phases"][0]["tasks"][0]["testEvidence"] = {
+        "runId": "R", "status": "passed", "at": "2026-01-01T00:00:00Z"}
+    _ev_kept_txt = M.render_status(_ev_kept, M.rollup(_ev_kept, [], []))
+    check("ev20 SECOND DIRECTION over the SAME plan plus one pointer: the column "
+          "appears and carries the word. Without this half, ev19 is satisfied by "
+          "deleting the feature: %r" % (_ev_kept_txt,),
+          "     task      title       status  model  waiting on  tests   commit"
+          in _ev_kept_txt.splitlines()
+          and "     [x] P1.1  first task  Done    -      -           passed  "
+              "abc1234" in _ev_kept_txt.splitlines())
 
 
 def _selftest():
