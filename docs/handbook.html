@@ -364,14 +364,17 @@
 <div class="page">
 
   <header class="masthead">
-    <div class="label">Team handbook · audit plugin v1.4.1</div>
+    <div class="label">Team handbook &middot; audit plugin</div>
     <h1>Audit Plugin Handbook</h1>
-    <p class="lede">The manifest is the plan. Commands move work through it, the board mirrors it,
-      and the panel is the same levers with a mouse.</p>
+    <p class="lede">The manifest is the plan. The evidence ledger is what actually ran. Commands
+      move work through both, the board mirrors the plan, and the panel is the same levers with a
+      mouse.</p>
     <p style="color:var(--ink-faint);font-size:var(--step-2);max-width:60ch">
-      Written against the plugin, not against one repository: every command, flag and default here
-      is the same wherever it is installed. Where a value is yours to supply it appears as
-      <code>&lt;org&gt;</code>, <code>&lt;project&gt;</code> or <code>&lt;phaseId&gt;</code>.
+      Written against the plugin, not against one repository: every command, flag and default here is
+      the same wherever it is installed, and a value you supply appears as <code>&lt;org&gt;</code>,
+      <code>&lt;project&gt;</code> or <code>&lt;phaseId&gt;</code>. This page names no version on
+      purpose &mdash; it carried two and they disagreed. Run <code>/plugin list</code> for yours; a
+      flag named here that it rejects means the install is behind.
     </p>
   </header>
 
@@ -400,30 +403,32 @@
       <h2>Install &amp; update</h2>
     </div>
 
-    <p>Two commands, typed into Claude Code rather than a shell. The first registers the
-      marketplace this plugin ships from; the second installs the plugin out of it.</p>
+    <p>Two commands, typed into Claude Code rather than a shell: the first registers the marketplace
+      this plugin ships from, the second installs the plugin out of it.</p>
 
     <pre><code>/plugin marketplace add AleksandarBisevac/claude-plugins
 /plugin install audit@quality-gates</code></pre>
 
     <p>Requirements are deliberately thin: <strong>Python 3.8 or newer</strong>, reachable as
-      <code>python3</code>, <code>python</code> or <code>py</code>. On Windows, run inside Git Bash.
-      There is <strong>nothing to <code>pip install</code></strong> &mdash; the hooks and scripts are
-      standard library only, on purpose, because a guard that needs a dependency is a guard that is
-      switched off on most machines.</p>
+      <code>python3</code>, <code>python</code> or <code>py</code>; on Windows, run inside Git Bash.
+      There is <strong>nothing to <code>pip install</code></strong> &mdash; a guard that needs a
+      dependency is a guard that is switched off on most machines.</p>
 
     <div class="note">
       <div class="label">Installing arms hooks everywhere</div>
       <p>The guard hooks activate in <strong>all</strong> your projects, not just the one you
-        installed from. That is by design &mdash; but the plan gate <strong>enforces only once a
-        manifest exists</strong>, and merely observes before that. Installing does not start
-        refusing edits in repositories that never opted in.</p>
+        installed from. What the plan gate <em>does</em> there is graded on evidence: with no
+        manifest it only <strong>observes</strong>, with a manifest and nothing running it
+        <strong>warns</strong>, and it <strong>denies</strong> an out-of-plan edit only once a phase
+        is <code>in_progress</code>. So installing does not start refusing edits in repositories that
+        never opted in. <code>/audit:doctor</code> prints the tier and its basis:</p>
+<pre><code>[OK     ] plan gate      deny - a phase is in_progress, so edits are held to the running plan</code></pre>
     </div>
 
     <h3>Scope decides who else gets it</h3>
 
-    <p><code>/plugin install</code> takes a <code>--scope</code>, and the choice is about where the
-      enabling record is written &mdash; not about which repositories the plugin can read.</p>
+    <p><code>/plugin install</code> takes a <code>--scope</code>. The choice is about where the
+      enabling record is written, not about which repositories the plugin can read.</p>
 
     <div class="tw">
       <table>
@@ -438,8 +443,8 @@
       </table>
     </div>
 
-    <p>Installing <em>enables</em> as a side effect &mdash; the separate <code>enable</code> verb
-      exists only to switch a disabled plugin back on.</p>
+    <p>Installing <em>enables</em> as a side effect; the separate <code>enable</code> verb exists
+      only to switch a disabled plugin back on.</p>
 
     <h3>Updating, and why it is three commands</h3>
 
@@ -455,25 +460,22 @@
       <li><strong>install</strong> bumps the cached copy <em>and</em> the install record. These drift
         apart: a record can pin a version long since superseded while a newer copy sits in the cache.</li>
       <li><strong>reload-plugins</strong> makes the new commands appear in the session you already
-        have open &mdash; Claude Code reads the command list once, at startup.</li>
+        have open &mdash; the command list is read once, at startup.</li>
     </ul>
 
     <div class="tip">
       <div class="label">A project-scope install pins a version</div>
-      <p>Installing at <code>project</code> scope pins that repository to the cached version it
-        installed. It does not follow later releases: a repo set up months ago can still be running
-        the version it was installed with while user scope has moved on. Re-run the install
-        <em>in that repository</em> to bump it.</p>
+      <p>It does not follow later releases: a repo set up months ago can still be running the version
+        it was installed with while user scope has moved on. Re-run the install <em>in that
+        repository</em> to bump it.</p>
     </div>
-
-    <h3>Checking it actually took</h3>
 
     <pre><code>/plugin list      # audit@quality-gates, enabled
 /audit:status     # renders the manifest, or points you at /audit:init</code></pre>
 
     <p>If <code>/audit:*</code> comes back <em>not recognized</em>, it is nearly always one of two
-      things: the plugin is installed but not enabled, or it was only ever installed at project
-      scope for some <em>other</em> repository. The three update commands above resolve both, and
+      things: installed but not enabled, or only ever installed at project scope for some
+      <em>other</em> repository. The three commands above resolve both, and
       <code>/audit:doctor</code> reports what the hooks will actually use once they do.</p>
   </section>
 
@@ -484,41 +486,42 @@
       <h2>The model in one minute</h2>
     </div>
 
-    <p>Everything hangs off one file — the <strong>manifest</strong>. It holds
+    <p>The plan hangs off one file &mdash; the <strong>manifest</strong>. It holds
       <strong>phases</strong>, each holding <strong>tasks</strong>, plus bugs and parked proposals.
-      Commands read and write that file; nothing else is the source of truth.</p>
+      Commands read and write that file; nothing else is the source of truth about what is meant to
+      happen.</p>
+
+    <p>What <em>did</em> happen is kept somewhere else. Every gate run is appended to an
+      <strong>evidence ledger</strong> beside the manifest, and the manifest caches only a pointer
+      &mdash; <code>testEvidence</code> &mdash; at the run that last exercised each task and each
+      phase. The pointer is disposable: deleting it is always safe, the next run writes it back, and
+      <strong>absent means no run was recorded, never &ldquo;failed&rdquo;</strong>.
+      <a href="#phases">Running phases</a> is where that gets read.</p>
 
     <figure class="fig">
       <figcaption class="fig-head">
         <span class="label">Where work lives, and how it moves</span>
         <button type="button" class="expand" data-expand="fig-lifecycle"
-                data-title="Manifest lifecycle" data-note="lb-note-lifecycle">⤢ Expand</button>
+                data-title="Manifest lifecycle" data-note="lb-note-lifecycle">&#10530; Expand</button>
       </figcaption>
       <div class="diagram" id="fig-lifecycle">
         <svg id="claude-mermaid-0" width="1561.546875" xmlns="http://www.w3.org/2000/svg" class="flowchart" height="238.7708740234375" viewBox="0 0 1561.546875 238.7708740234375" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#claude-mermaid-0{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:21px;fill:#42392e;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#claude-mermaid-0 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#claude-mermaid-0 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#claude-mermaid-0 .error-icon{fill:hsl(221.25, 42.1052631579%, 97.5490196078%);}#claude-mermaid-0 .error-text{fill:rgb(8.8815789475, 7.2368421054, 3.6184210527);stroke:rgb(8.8815789475, 7.2368421054, 3.6184210527);}#claude-mermaid-0 .edge-thickness-normal{stroke-width:1px;}#claude-mermaid-0 .edge-thickness-thick{stroke-width:3.5px;}#claude-mermaid-0 .edge-pattern-solid{stroke-dasharray:0;}#claude-mermaid-0 .edge-thickness-invisible{stroke-width:0;fill:none;}#claude-mermaid-0 .edge-pattern-dashed{stroke-dasharray:3;}#claude-mermaid-0 .edge-pattern-dotted{stroke-dasharray:2;}#claude-mermaid-0 .marker{fill:#8a7f6d;stroke:#8a7f6d;}#claude-mermaid-0 .marker.cross{stroke:#8a7f6d;}#claude-mermaid-0 svg{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:21px;}#claude-mermaid-0 p{margin:0;}#claude-mermaid-0 .label{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;color:#42392e;}#claude-mermaid-0 .cluster-label text{fill:#42392e;}#claude-mermaid-0 .cluster-label span{color:#42392e;}#claude-mermaid-0 .cluster-label span p{background-color:transparent;}#claude-mermaid-0 .label text,#claude-mermaid-0 span{fill:#42392e;color:#42392e;}#claude-mermaid-0 .node rect,#claude-mermaid-0 .node circle,#claude-mermaid-0 .node ellipse,#claude-mermaid-0 .node polygon,#claude-mermaid-0 .node path{fill:#f4efe4;stroke:#7a6c52;stroke-width:1px;}#claude-mermaid-0 .rough-node .label text,#claude-mermaid-0 .node .label text,#claude-mermaid-0 .image-shape .label,#claude-mermaid-0 .icon-shape .label{text-anchor:middle;}#claude-mermaid-0 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#claude-mermaid-0 .rough-node .label,#claude-mermaid-0 .node .label,#claude-mermaid-0 .image-shape .label,#claude-mermaid-0 .icon-shape .label{text-align:center;}#claude-mermaid-0 .node.clickable{cursor:pointer;}#claude-mermaid-0 .root .anchor path{fill:#8a7f6d!important;stroke-width:0;stroke:#8a7f6d;}#claude-mermaid-0 .arrowheadPath{fill:#0b090b;}#claude-mermaid-0 .edgePath .path{stroke:#8a7f6d;stroke-width:1px;}#claude-mermaid-0 .flowchart-link{stroke:#8a7f6d;fill:none;}#claude-mermaid-0 .edgeLabel{background-color:rgb(244, 246, 244);text-align:center;}#claude-mermaid-0 .edgeLabel p{background-color:rgb(244, 246, 244);}#claude-mermaid-0 .edgeLabel rect{opacity:0.5;background-color:rgb(244, 246, 244);fill:rgb(244, 246, 244);}#claude-mermaid-0 .labelBkg{background-color:rgba(244, 246, 244, 0.5);}#claude-mermaid-0 .cluster rect{fill:rgba(127,127,127,0.07);stroke:#7a6c52;stroke-width:1px;}#claude-mermaid-0 .cluster text{fill:#42392e;}#claude-mermaid-0 .cluster span{color:#42392e;}#claude-mermaid-0 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:12px;background:hsl(221.25, 42.1052631579%, 97.5490196078%);border:1px solid hsl(221.25, 2.1052631579%, 87.5490196078%);border-radius:2px;pointer-events:none;z-index:100;}#claude-mermaid-0 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#42392e;}#claude-mermaid-0 rect.text{fill:none;stroke-width:0;}#claude-mermaid-0 .icon-shape,#claude-mermaid-0 .image-shape{background-color:rgb(244, 246, 244);text-align:center;}#claude-mermaid-0 .icon-shape p,#claude-mermaid-0 .image-shape p{background-color:rgb(244, 246, 244);padding:2px;}#claude-mermaid-0 .icon-shape .label rect,#claude-mermaid-0 .image-shape .label rect{opacity:0.5;background-color:rgb(244, 246, 244);fill:rgb(244, 246, 244);}#claude-mermaid-0 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#claude-mermaid-0 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#claude-mermaid-0 .node .neo-node{stroke:#7a6c52;}#claude-mermaid-0 [data-look="neo"].node rect,#claude-mermaid-0 [data-look="neo"].cluster rect,#claude-mermaid-0 [data-look="neo"].node polygon{stroke:url(#claude-mermaid-0-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-0 [data-look="neo"].node path{stroke:url(#claude-mermaid-0-gradient);stroke-width:1px;}#claude-mermaid-0 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-0 [data-look="neo"].node .neo-line path{stroke:#7a6c52;filter:none;}#claude-mermaid-0 [data-look="neo"].node circle{stroke:url(#claude-mermaid-0-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-0 [data-look="neo"].node circle .state-start{fill:#000000;}#claude-mermaid-0 [data-look="neo"].icon-shape .icon{fill:url(#claude-mermaid-0-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-0 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#claude-mermaid-0-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-0 .node rect,#claude-mermaid-0 .node circle,#claude-mermaid-0 .node polygon,#claude-mermaid-0 .node path,#claude-mermaid-0 .cluster rect{stroke-width:2px;}#claude-mermaid-0 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="claude-mermaid-0_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="claude-mermaid-0_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-0_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-0_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-0_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-0_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="claude-mermaid-0_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M183.141,137.451L199.335,137.451C215.529,137.451,247.917,137.451,279.638,137.451C311.359,137.451,342.414,137.451,357.941,137.451L373.469,137.451" id="claude-mermaid-0-L_P_PH_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_P_PH_0" data-points="W3sieCI6MTgzLjE0MDYyNSwieSI6MTM3LjQ1MDUyOTA5ODUxMDc0fSx7IngiOjI4MC4zMDQ2ODc1LCJ5IjoxMzcuNDUwNTI5MDk4NTEwNzR9LHsieCI6Mzc3LjQ2ODc1LCJ5IjoxMzcuNDUwNTI5MDk4NTEwNzR9XQ==" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path><path d="M524.515,102.732L539.251,94.29C553.986,85.847,583.458,68.963,610.894,60.52C638.331,52.078,663.732,52.078,676.432,52.078L689.133,52.078" id="claude-mermaid-0-L_PH_T_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_PH_T_0" data-points="W3sieCI6NTI0LjUxNDg2NTM2MDEyNDYsInkiOjEwMi43MzE3NzkwOTg1MTA3NH0seyJ4Ijo2MTIuOTI5Njg3NSwieSI6NTIuMDc4MTI1fSx7IngiOjY5My4xMzI4MTI1LCJ5Ijo1Mi4wNzgxMjV9XQ==" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path><path d="M799.93,52.078L816.439,52.078C832.948,52.078,865.966,52.078,895.379,52.078C924.792,52.078,950.599,52.078,963.503,52.078L976.406,52.078" id="claude-mermaid-0-L_T_SO_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_T_SO_0" data-points="W3sieCI6Nzk5LjkyOTY4NzUsInkiOjUyLjA3ODEyNX0seyJ4Ijo4OTguOTg0Mzc1LCJ5Ijo1Mi4wNzgxMjV9LHsieCI6OTgwLjQwNjI1LCJ5Ijo1Mi4wNzgxMjV9XQ==" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path><path d="M1244.406,52.078L1255.983,52.078C1267.56,52.078,1290.714,52.078,1313.201,52.078C1335.688,52.078,1357.508,52.078,1368.418,52.078L1379.328,52.078" id="claude-mermaid-0-L_SO_D_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_SO_D_0" data-points="W3sieCI6MTI0NC40MDYyNSwieSI6NTIuMDc4MTI1fSx7IngiOjEzMTMuODY3MTg3NSwieSI6NTIuMDc4MTI1fSx7IngiOjEzODMuMzI4MTI1LCJ5Ijo1Mi4wNzgxMjV9XQ==" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path><path d="M550.359,137.451L560.788,137.451C571.216,137.451,592.073,137.451,612.3,140.872C632.528,144.294,652.126,151.138,661.925,154.56L671.724,157.981" id="claude-mermaid-0-L_PH_ADO_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_PH_ADO_0" data-points="W3sieCI6NTUwLjM1OTM3NSwieSI6MTM3LjQ1MDUyOTA5ODUxMDc0fSx7IngiOjYxMi45Mjk2ODc1LCJ5IjoxMzcuNDUwNTI5MDk4NTEwNzR9LHsieCI6Njc1LjUsInkiOjE1OS4zMDAwNzY4MjUyNTAyN31d" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path><path d="M675.5,194.397L665.072,195.908C654.643,197.419,633.786,200.441,612.194,197.007C590.601,193.572,568.273,183.681,557.108,178.735L545.944,173.789" id="claude-mermaid-0-L_ADO_PH_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_ADO_PH_0" data-points="W3sieCI6Njc1LjUsInkiOjE5NC4zOTY4ODE3MjM0MjM0Nn0seyJ4Ijo2MTIuOTI5Njg3NSwieSI6MjAzLjQ2MzU1ODE5NzAyMTQ4fSx7IngiOjU0Mi4yODcwMTg1ODMzODQyLCJ5IjoxNzIuMTY5Mjc5MDk4NTEwNzR9XQ==" data-look="classic" marker-end="url(#claude-mermaid-0_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(280.3046875, 137.45052909851074)"><g class="label" data-id="L_P_PH_0" transform="translate(-57.1640625, -9.359375)"><foreignObject width="114.328125" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>materialize</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(612.9296875, 52.078125)"><g class="label" data-id="L_PH_T_0" transform="translate(-17.8515625, -9.359375)"><foreignObject width="35.703125" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>run</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(898.984375, 52.078125)"><g class="label" data-id="L_T_SO_0" transform="translate(-41.421875, -9.359375)"><foreignObject width="82.84375" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>all done</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(1313.8671875, 52.078125)"><g class="label" data-id="L_SO_D_0" transform="translate(-29.4609375, -9.359375)"><foreignObject width="58.921875" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>merge</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(612.9296875, 137.45052909851074)"><g class="label" data-id="L_PH_ADO_0" transform="translate(-22.5703125, -9.359375)"><foreignObject width="45.140625" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>push</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(606.51121, 200.62021)"><g class="label" data-id="L_ADO_PH_0" transform="translate(-21.3828125, -9.359375)"><foreignObject width="42.765625" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>pull</p></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default" id="claude-mermaid-0-flowchart-P-0" data-look="classic" transform="translate(95.5703125, 137.45052909851074)"><rect class="basic label-container" style="" x="-87.5703125" y="-34.71875" width="175.140625" height="69.4375"></rect><g class="label" style="" transform="translate(-55.5703125, -18.71875)"><rect></rect><foreignObject width="111.140625" height="37.4375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>proposals[]<br>parked</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-0-flowchart-PH-1" data-look="classic" transform="translate(463.9140625, 137.45052909851074)"><rect class="basic label-container" style="" x="-86.4453125" y="-34.71875" width="172.890625" height="69.4375"></rect><g class="label" style="" transform="translate(-54.4453125, -18.71875)"><rect></rect><foreignObject width="108.890625" height="37.4375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>phase P0<br>tasks T1..Tn</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-0-flowchart-T-3" data-look="classic" transform="translate(746.53125, 52.078125)"><rect class="basic label-container" style="" x="-53.3984375" y="-25.359375" width="106.796875" height="50.71875"></rect><g class="label" style="" transform="translate(-21.3984375, -9.359375)"><rect></rect><foreignObject width="42.796875" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>task</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-0-flowchart-SO-5" data-look="classic" transform="translate(1112.40625, 52.078125)"><rect class="basic label-container" style="" x="-132" y="-44.078125" width="264" height="88.15625"></rect><g class="label" style="" transform="translate(-100, -28.078125)"><rect></rect><foreignObject width="200" height="56.15625"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;"><span class="nodeLabel"><p>phase sign-off<br>review · tests · invariants</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-0-flowchart-D-7" data-look="classic" transform="translate(1468.4375, 52.078125)"><rect class="basic label-container" style="" x="-85.109375" y="-25.359375" width="170.21875" height="50.71875"></rect><g class="label" style="" transform="translate(-53.109375, -9.359375)"><rect></rect><foreignObject width="106.21875" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>phase done</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-0-flowchart-ADO-9" data-look="classic" transform="translate(746.53125, 184.10418319702148)"><path d="M0,13.298619237069973 a71.03125,13.298619237069973 0,0,0 142.0625,0 a71.03125,13.298619237069973 0,0,0 -142.0625,0 l0,66.73611923706997 a71.03125,13.298619237069973 0,0,0 142.0625,0 l0,-66.73611923706997" class="basic label-container outer-path" style="" transform="translate(-71.03125, -46.66667885560496)"></path><g class="label" style="" transform="translate(-63.03125, -8.052083333333334)"><rect></rect><foreignObject width="126.0625" height="37.4375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>Azure DevOps<br>work items</p></span></div></foreignObject></g></g></g></g></g><defs><filter id="claude-mermaid-0-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="claude-mermaid-0-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="claude-mermaid-0-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#7a6c52" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(-78.75, 2.1052631579%, 82.5490196078%)" stop-opacity="1"></stop></linearGradient></svg>
       </div>
       <div class="fig-note" id="lb-note-lifecycle">
-        <b>Solid arrows are the manifest's own lifecycle</b> — they happen whether or not a board
-        exists. <b>Dotted arrows are the ADO connector</b>, and they are the only two places
+        <b>Solid arrows are the manifest's own lifecycle</b> &mdash; they happen whether or not a
+        board exists. <b>Dotted arrows are the ADO connector</b>, and they are the only two places
         anything leaves or enters this repo. A phase never reaches <code>done</code> by being
         closed on the board; it reaches it through sign-off, and the board is told afterwards.
       </div>
     </figure>
 
-    <div class="grid2">
-      <div class="tip">
-        <div class="label">Read the badges</div>
-        <p>Every command below carries what it touches:
-          <span class="badge b-read">read-only</span>
-          <span class="badge b-write">writes manifest</span>
-          <span class="badge b-ado">writes ADO</span>
-          <span class="badge b-lock">takes lock</span></p>
-      </div>
-      <div class="note">
-        <div class="label">One direction at a time</div>
-        <p>Sync is never bidirectional in a single call. You push, or you pull. That is deliberate —
-          it is what makes a surprise on the board traceable to one invocation.</p>
-      </div>
+    <div class="tip">
+      <div class="label">Read the badges</div>
+      <p>Every command below carries what it touches:
+        <span class="badge b-read">read-only</span>
+        <span class="badge b-write">writes manifest</span>
+        <span class="badge b-ado">writes ADO</span>
+        <span class="badge b-lock">takes lock</span></p>
     </div>
   </section>
 
@@ -538,11 +541,11 @@
         <span class="badge b-write">writes manifest</span>
       </div>
       <div class="cmd-body">
-        <p>Interviews for scope, fans out read-only explorers across the codebase, synthesizes a
-          plan, and <strong>shows it for approval before writing anything</strong>. What you approve
-          becomes live phases; what you decline is parked as proposals rather than thrown away.</p>
-        <p>It also asks how to store the manifest: one file, or one file per phase
-          (<code>sharded</code>) for parallel worktrees.</p>
+        <p>Interviews for scope, fans out read-only explorers across the codebase, synthesizes a plan,
+          and <strong>shows it for approval before writing anything</strong>. What you approve becomes
+          live phases; what you decline is parked as proposals rather than thrown away. It also asks
+          how to store the manifest: one file, or one per phase (<code>sharded</code>) for parallel
+          worktrees.</p>
       </div>
     </div>
 
@@ -552,36 +555,33 @@
         <span class="badge b-read">read-only</span>
       </div>
       <div class="cmd-body">
-        <p>The first thing to run when something behaves oddly. Reports the interpreter the hooks
-          use, git root, config, manifest and shard integrity, which plan-gate tier is active,
-          build runners, whether hooks have ever fired, and whether the capability policy is inert
-          or never enforced.</p>
+        <p>The first thing to run when something behaves oddly. Reports the interpreter the hooks use,
+          git root, config, manifest and shard integrity, the active plan-gate tier, build runners,
+          whether hooks have ever fired, whether the capability policy is inert, and whether every
+          <code>testEvidence</code> pointer names a run this checkout holds. <code>--deep</code> adds
+          the journal chain.</p>
       </div>
     </div>
 
-    <!-- e2e-2026-08-25: build runners -->
     <h3>A gate that cannot run is not a gate that passed</h3>
 
     <p><code>meta.buildCommands</code> names the commands a phase's sign-off runs, and
       <code>/audit:doctor</code> checks each one's <em>runner</em> against this machine's
-      <code>PATH</code>. It warns per runner, because a missing one is reported as
-      <strong>infrastructure failure, not a red test</strong> &mdash; and that distinction is the
-      whole value of the check, since one verdict says &ldquo;your change is wrong&rdquo; and the
-      other says &ldquo;nothing was measured&rdquo;.</p>
-
-    <p><strong>The gate is chosen per phase, not per manifest.</strong> Each phase's
-      <code>testGate</code> lists which <code>buildCommands</code> keys must pass, so one warning
-      does not disable every phase: where a repo's Python runner is absent, a phase whose gate
-      names only the JS keys still runs a gate that grades. Read the warning against the phase you
-      are about to start, not against the plan as a whole.</p>
+      <code>PATH</code>. It warns per runner, because a missing one is
+      <strong>infrastructure failure, not a red test</strong> &mdash; one verdict says
+      &ldquo;your change is wrong&rdquo; and the other says &ldquo;nothing was measured&rdquo;.
+      And <strong>the gate is chosen per phase, not per manifest</strong>: each phase's
+      <code>testGate</code> lists which keys must pass, so where a repo's Python runner is absent a
+      phase naming only the JS keys still runs a gate that grades. Read the warning against the
+      phase you are about to start.</p>
 
     <div class="note">
       <div class="label">Do not answer a missing runner with a new path</div>
       <p>Measured on a conda project: <code>buildCommands.pytest</code> read
-        <code>.venv/bin/python</code>, no <code>.venv</code> existed anywhere, and the repair was
-        not a different command. The environment the project already declares in
-        <code>environment.yml</code> &mdash; carrying both missing runners &mdash; had simply never
-        been created on that machine. Repointing the key would have hidden that.</p>
+        <code>.venv/bin/python</code> and no <code>.venv</code> existed anywhere. The repair was not a
+        different command &mdash; the environment the project already declares in
+        <code>environment.yml</code>, carrying both missing runners, had simply never been created on
+        that machine. Repointing the key would have hidden that.</p>
     </div>
 
   </section>
@@ -593,8 +593,9 @@
       <h2>Running phases</h2>
     </div>
 
-    <p>A phase is the unit of work and the unit of review. You can run a whole phase, one task, or
-      simply “whatever is next” — and every one of them previews first.</p>
+    <p>A phase is the unit of work and the unit of review. Run a whole phase, one task, or
+      &ldquo;whatever is next&rdquo; &mdash; each of them previews first with
+      <code>--dry-run</code>.</p>
 
     <div class="cmd">
       <div class="cmd-line">
@@ -602,14 +603,10 @@
         <span class="badge b-write">writes manifest</span>
       </div>
       <div class="cmd-body">
-        <p>Runs every ready task in the phase — in parallel where that is safe — until none remain,
-          then runs <strong>Phase sign-off</strong>: review, the test gate, an invariant check, an
-          optional runtime boot, and the merge.</p>
-        <ul>
-          <li>A phase already <code>done</code> is <strong>refused</strong>; it points you at
-            <code>/audit:review</code> instead of silently re-running.</li>
-          <li><code>--dry-run</code> prints the plan and mutates nothing.</li>
-        </ul>
+        <p>Every ready task in the phase &mdash; in parallel where that is safe &mdash; then
+          <strong>Phase sign-off</strong> in a fixed order: review, the test gate, an invariant check,
+          an optional runtime boot, the sign-off commit, the merge. A phase already <code>done</code>
+          is <strong>refused</strong> and points you at <code>/audit:review</code>.</p>
         <pre><code>/audit:phase P0 --dry-run   # see the plan
 /audit:phase P0             # then run it</code></pre>
       </div>
@@ -622,8 +619,8 @@
           <span class="badge b-write">writes manifest</span>
         </div>
         <div class="cmd-body">
-          <p>Executes the next ready task — phase order first, then task-id order — and then tells
-            you what became ready.</p>
+          <p>The next ready task &mdash; phase order, then task-id order &mdash; then what became
+            ready.</p>
         </div>
       </div>
       <div class="cmd">
@@ -645,8 +642,8 @@
           <span class="badge b-write">writes manifest</span>
         </div>
         <div class="cmd-body">
-          <p>Finds the in-progress phase and continues from the first uncommitted task. This is the
-            answer to “my session died mid-phase”.</p>
+          <p>The in-progress phase, continued from the first uncommitted task &mdash; the answer to
+            &ldquo;my session died mid-phase&rdquo;.</p>
         </div>
       </div>
       <div class="cmd">
@@ -655,37 +652,199 @@
           <span class="badge b-write">writes manifest</span>
         </div>
         <div class="cmd-body">
-          <p>Re-runs sign-off on demand, after fixes — the same review, test gate, invariant check
-            and merge, without re-running the tasks.</p>
+          <p>Re-runs sign-off on demand, after fixes, without re-running the tasks.</p>
         </div>
       </div>
     </div>
 
-    <div class="cmd">
-      <div class="cmd-line">
-        <span class="c">/audit:worktree &lt;phaseId&gt; [--remove]</span>
-        <span class="badge b-write">writes manifest</span>
+    <div class="grid2">
+      <div class="cmd">
+        <div class="cmd-line">
+          <span class="c">/audit:worktree &lt;phaseId&gt; [--remove]</span>
+          <span class="badge b-write">writes manifest</span>
+        </div>
+        <div class="cmd-body">
+          <p>A git worktree for a phase, plus its branch, so two people can run two phases at once:
+            open a session in the printed path and run <code>/audit:phase</code> there.
+            <strong>Sharded manifests merge back conflict-free</strong>, which is why that layout
+            exists.</p>
+        </div>
       </div>
-      <div class="cmd-body">
-        <p>Creates a git worktree for a phase and derives its branch, so two people can run two
-          phases at once. Open a Claude session in the printed path and run
-          <code>/audit:phase</code> there.</p>
-        <p><strong>Sharded manifests merge back conflict-free</strong> — that is the reason the
-          layout exists.</p>
+      <div class="cmd">
+        <div class="cmd-line">
+          <span class="c">/audit:status [--gate] [--fail-on &hellip;]</span>
+          <span class="badge b-read">read-only</span>
+        </div>
+        <div class="cmd-body">
+          <p>Phases, tasks, bugs, the ready-now list, what each pending task waits on, and a
+            <code>tests</code> column carrying what the run that last exercised it said. No locks, no
+            mutations &mdash; safe mid-phase.</p>
+        </div>
       </div>
     </div>
 
-    <div class="cmd">
-      <div class="cmd-line">
-        <span class="c">/audit:status [--gate] [--fail-on &lt;c1,c2&gt;] [--json]</span>
-        <span class="badge b-read">read-only</span>
-      </div>
-      <div class="cmd-body">
-        <p>Phases, tasks, bugs, the ready-now list, and <strong>what each pending task is waiting
-          on</strong>. No locks, no mutations — safe to run at any time, including mid-phase.</p>
-        <p>With <code>--gate</code> the same state becomes a CI pass/fail verdict over conditions
-          you choose with <code>--fail-on</code>.</p>
-      </div>
+<pre><code>  P2   Input validation           In progress [###.........] 1/4  audit/p2-input-validation
+     [x] P2.1   Validate the checkout payload                Done         sonnet  -           passed     c4a11b9
+     [~] P2.2   Sanitize the product-search query            In progress  opus    -           -          -
+     [!] P2.3   Escape server-rendered template output       Blocked      sonnet  -           failed     -
+     [ ] P2.4   Add zod schemas for cart mutations           Pending      haiku   -           -          -        READY</code></pre>
+
+    <p>That column appears only once a task in view has recorded a run, so a plan that has never run
+      a gate renders as it always did, and <code>-</code> inside it means <strong>no run was
+      recorded</strong> &mdash; not a failure.</p>
+
+    <h3>The gate is bracketed, and the run is recorded</h3>
+
+    <p>The gate is never run by hand. It goes through <code>run-test-gate.py</code>, which brackets it
+      and answers the two questions an exit code cannot: <strong>did the gate change the working
+      tree</strong> (<code>git status --porcelain</code> before and after) and <strong>did anything
+      actually run</strong>. Both failures used to be exit 0. <code>--record</code> then writes the run
+      into the evidence ledger and points the plan at it.</p>
+
+<pre><code># what /audit:run does for a task, and /audit:phase at sign-off
+python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
+    docs/audit/audit-plan.json P2 --task P2.3 --record
+
+  evidence: recorded 2026-07-15T09:40:00Z.13be6d
+  pointer:  P2.3 now names it</code></pre>
+
+    <p>Those last two lines are separate facts. Rows land in
+      <code>&lt;manifest dir&gt;/evidence/&lt;YYYY-MM&gt;.&lt;writer&gt;.jsonl</code> &mdash; one file
+      per writer per month, so two worktrees never conflict on merge &mdash; and the directory is
+      <strong>meant to be committed</strong>: it is the record somebody hands to a client
+      (<code>evidence.dir</code> moves it). A row keeps what ran, what it answered and what it
+      observed; never a runner's output.</p>
+
+    <div class="note">
+      <div class="label">A refused pointer is a designed state, not an error</div>
+      <p>The ledger row is written first and the plan is pointed at it second, so the only reachable
+        partial state is the harmless one: a run that happened with nothing yet naming it. When
+        another live session holds the phase lock, the second line reads
+        <code>pointer:&nbsp; NOT updated - the phase lock is held by another live run (&hellip;)</code>.
+        <strong>Do not re-run the gate to chase it</strong> &mdash; the repair reads the ledger
+        against the plan and runs no tests at all:</p>
+<pre><code>python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
+    docs/audit/audit-plan.json P2 --reconcile
+
+[run-test-gate] reconcile: 7 subject(s) in the ledger
+  already:  phase P1
+  already:  task BF1.1</code></pre>
+    </div>
+
+    <div class="tip">
+      <div class="label">The runs a commit would otherwise never carry</div>
+      <p>A task commit stages the evidence directory, so a run that fails at attempt one and succeeds
+        at attempt two is already durable, failure included. What is <em>not</em> durable is a run
+        whose task or phase never commits at all &mdash; a task going <code>blocked</code>, an
+        infrastructure stop, a red sign-off gate. <code>commit-audit-state.py</code> covers exactly
+        those points, staging the phase's manifest file, the journal and the evidence directory
+        &mdash; and <strong>never the task's own files</strong>: the index is read back and compared
+        against that list, and anything else refuses the commit rather than riding along. A failed
+        task's code stays uncommitted; only the record of the failure lands.</p>
+    </div>
+
+    <h3>Reading a verdict</h3>
+
+    <p>The verdict is one word from the run, read off the <em>ledger</em> rather than the cached
+      pointer. Only <code>passed</code> and <code>empty-gate</code> can sign work off.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Word</th><th>Shown as</th><th>Means</th></tr></thead>
+        <tbody>
+          <tr><td><code>passed</code></td><td>Passed</td><td>every command exited 0, the tree is unchanged, and at least one check ran</td></tr>
+          <tr><td><code>failed</code></td><td>Failed</td><td>a command ran to completion and came back non-zero</td></tr>
+          <tr><td><code>no-checks</code></td><td>No checks ran</td><td>exit 0 and <strong>not a verdict</strong>: every step reported zero checks</td></tr>
+          <tr><td><code>timed-out</code></td><td>Timed out</td><td>a step overran its bound and was torn down; its exit code is an artefact of the kill</td></tr>
+          <tr><td><code>cancelled</code></td><td>Cancelled</td><td>the run stopped rather than answered</td></tr>
+          <tr><td><code>could-not-run</code></td><td>Could not run</td><td>the runner never started &mdash; a missing binary, not a red test</td></tr>
+          <tr><td><code>empty-gate</code></td><td>Empty gate</td><td>the phase declares no gate, so sign-off rests on review alone</td></tr>
+          <tr><td>&mdash;</td><td>No gate configured</td><td>neither the task's <code>tests.gate</code> nor its phase's <code>testGate</code> exists: nothing could have run</td></tr>
+          <tr><td>&mdash;</td><td>No evidence</td><td>a gate <em>is</em> configured and no run has been recorded. Not a failure</td></tr>
+          <tr><td>&mdash;</td><td>Pointer without evidence</td><td>the plan names a <code>runId</code> this checkout's ledger does not carry &mdash; the evidence directory was not committed, or was pruned</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>A run also carries <strong>observations</strong>, which are not verdicts and sit beside the
+      badge rather than inside it: not &ldquo;what did it say&rdquo; but &ldquo;what else is true
+      about the run that said it&rdquo;. Each is three-valued, and <code>null</code> is never
+      <code>0</code>.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Marker</th><th>Means</th></tr></thead>
+        <tbody>
+          <tr><td>tree mutated</td><td>the gate rewrote files. A gate is a measurement &mdash; do not commit on that run</td></tr>
+          <tr><td>tree unknown</td><td>no comparison was made: git could not describe the tree, or the run was interrupted</td></tr>
+          <tr><td>no overlap</td><td>the run named paths, and none is a file this work declares</td></tr>
+          <tr><td>coverage unknown</td><td>the runner printed no paths, so overlap is not knowable from its output</td></tr>
+          <tr><td>checks unknown</td><td>this runner reports no check count &mdash; which is not the same as reporting zero</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Every row below is a real subject in the published example report,
+      <a href="index.html">acme-store</a>.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>You see</th><th>It means</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>P2.1</code> &mdash; <strong>Passed</strong>, marked <em>tree mutated</em></td>
+            <td>Both at once: every command exited 0, and the gate rewrote
+              <code>src/checkout/validate.ts</code> on its way through. Do not commit on that run;
+              repair it with the read-only spelling of the check, via
+              <code>/audit:phase retarget</code>.</td>
+          </tr>
+          <tr>
+            <td><code>BF1.1</code> &mdash; <strong>No checks ran</strong></td>
+            <td><code>npm test</code> exited 0, and <code>pre-commit run --all-files</code> exited 0
+              having reported zero hooks. A gate that skipped everything and one that verified
+              everything are the same exit code.</td>
+          </tr>
+          <tr>
+            <td><code>P2.3</code> &mdash; <strong>Failed</strong>, marked <em>no overlap</em></td>
+            <td>Two facts: <code>npm test</code> came back non-zero, and the run named none of the
+              file this task declares. The report's <em>Earlier runs</em> disclosure carries the
+              attempts before it.</td>
+          </tr>
+          <tr>
+            <td><code>BF1.2</code> &mdash; <strong>Passed</strong>, no markers</td>
+            <td>A clean row: tree unchanged, both declared files named by the run, and a real check
+              count behind the verdict. Nothing left unknown.</td>
+          </tr>
+          <tr>
+            <td><code>P2.2</code> &mdash; <strong>No evidence</strong>, <code>-</code> in the terminal</td>
+            <td>Its phase declares <code>lint, test, typecheck</code>, so a gate would grade this
+              task &mdash; and none has run against it. A gap in the record, not a red test.</td>
+          </tr>
+          <tr>
+            <td><code>P4.1</code> &mdash; <strong>No gate configured</strong></td>
+            <td>P4 is documentation and declares no <code>testGate</code>. Running the gate says so
+              rather than passing: <code>[run-test-gate] P4 declares an EMPTY gate: nothing here can
+              prove it done, so sign-off rests on review alone</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tip">
+      <div class="label">Gating a build on what the tests said</div>
+      <p><code>--fail-on</code> gained two conditions. <code>failing-tests</code> trips on a task
+        <em>or phase</em> whose pointer names a run that cannot sign work off;
+        <code>no-test-evidence</code> trips on a <code>done</code> task or phase carrying no pointer
+        at all. Neither is in the default set, and neither reads a silence as a failure &mdash; a plan
+        that has never recorded a run trips neither.</p>
+<pre><code>/audit:status --gate --fail-on invalid,failing-tests
+
+GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks)</code></pre>
+      <p>Both read the manifest and nothing more; whether that <code>runId</code> still resolves is
+        <code>/audit:doctor</code>'s question. <code>/audit:status --help</code> prints the whole
+        condition list, rendered from the same tuple the gate evaluates, and
+        <code>docs/examples/azure-pipelines.yml</code> shows the shape of a pipeline built around
+        it.</p>
     </div>
   </section>
 
@@ -696,19 +855,35 @@
       <h2>Shaping phases &amp; tasks</h2>
     </div>
 
-    <p>The plan is not frozen. Four verbs change it, and each one records what it did — these are
-      journalled operations, not edits.</p>
+    <p>The plan is not frozen. <code>/audit:task</code> and <code>/audit:phase</code> change its
+      shape, and every verb records what it did &mdash; these are journalled operations, not edits.
+      <strong>Every answer is a flag</strong>, and the dialogue only covers what you did not pass, so
+      a fully-flagged call is non-interactive.</p>
 
     <div class="cmd">
       <div class="cmd-line">
-        <span class="c">/audit:task add "&lt;title&gt;" [--phase &lt;id&gt;]</span>
+        <span class="c">/audit:task add "&lt;title&gt;" [--phase &lt;id&gt;] [&hellip;]</span>
         <span class="badge b-write">writes manifest</span>
         <span class="badge b-lock">takes lock</span>
       </div>
       <div class="cmd-body">
-        <p>Interactive. Allocates the id, initializes every orchestrator field, updates the
-          <code>fileIndex</code>, and revalidates the manifest before it returns.</p>
-        <pre><code>/audit:task add "Extract the KPI query into a service" --phase P2</code></pre>
+        <p>Allocates the id, initializes every orchestrator field, updates <code>fileIndex</code>, and
+          revalidates before returning.</p>
+        <pre><code>/audit:task add "Extract the KPI query into a service" --phase P2 \
+  --files src/kpi/query.ts,src/kpi/service.ts --tests-mode regression --risk med</code></pre>
+      </div>
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-line">
+        <span class="c">/audit:task scope &lt;taskId&gt; [--files &hellip;] [--gate &hellip;] [&hellip;]</span>
+        <span class="badge b-write">writes manifest</span>
+        <span class="badge b-lock">takes lock</span>
+      </div>
+      <div class="cmd-body">
+        <p>Re-scopes a task that already exists &mdash; files, gate, test mode, risk, edges. The
+          alternative was <code>cancel</code> plus a fresh <code>add</code>, which lost the id and
+          everything hanging off it.</p>
       </div>
     </div>
 
@@ -720,20 +895,36 @@
       </div>
       <div class="cmd-body">
         <p>Renumbers the task into the target phase, <strong>rewrites every reference to it</strong>,
-          and records a chained <code>task.move</code> journal row. You do not chase the id by hand.</p>
+          and records a chained <code>task.move</code> row. You do not chase the id by hand.</p>
       </div>
     </div>
 
     <div class="cmd">
       <div class="cmd-line">
-        <span class="c">/audit:task cancel &lt;id&gt; --reason "&lt;why&gt;"</span>
+        <span class="c">/audit:phase add "&lt;title&gt;" --outcome "&lt;what success is&gt;" [&hellip;]</span>
         <span class="badge b-write">writes manifest</span>
         <span class="badge b-lock">takes lock</span>
       </div>
       <div class="cmd-body">
-        <p>Closes a task — or a whole phase — as <strong>terminal but not done</strong>, recording
-          the reason, the moment and a journal row. Use it instead of deleting: “we decided not to”
-          is information, and a deleted task cannot say it.</p>
+        <p>Adds a phase to a plan that already exists, without re-running <code>/audit:init</code>.
+          <code>--outcome</code> is required &mdash; a phase with no statement of what success is
+          cannot be signed off against anything.</p>
+        <pre><code>/audit:phase add "Cache the catalog query" --outcome "The catalog page issues one query" \
+  --area backend --gate lint --gate test --blocked-by P2</code></pre>
+      </div>
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-line">
+        <span class="c">/audit:phase retarget &lt;phaseId&gt; [--gate &hellip;] [--gate-clear] [--outcome &hellip;]</span>
+        <span class="badge b-write">writes manifest</span>
+        <span class="badge b-lock">takes lock</span>
+      </div>
+      <div class="cmd-body">
+        <p>Changes what a phase is measured by &mdash; gate, area tags, desired outcome. This is the
+          repair when a gate turns out to rewrite the tree. Refused on a phase already
+          <code>done</code> or <code>cancelled</code>, whose sign-off was given against the gate it
+          had.</p>
       </div>
     </div>
 
@@ -743,65 +934,69 @@
         <span class="badge b-write">writes manifest</span>
       </div>
       <div class="cmd-body">
-        <p>Pins a phase ahead of the others <strong>among work that is already ready</strong>.
-          It never runs something ahead of its dependency — priority reorders the ready set, it
-          does not override the graph.</p>
-        <p><strong>Priority is a phase lever, not a task one.</strong> Tasks have no priority at
-          all; their order inside a phase comes from the dependency graph and their ids. This
-          reads as <code>/audit:phase</code> because that is what it acts on —
+        <p>Pins a phase ahead of the others <strong>among work that is already ready</strong>:
+          priority reorders the ready set, it does not override the graph.
+          <strong>It is a phase lever, not a task one</strong> &mdash; tasks have no priority at all,
+          and their order inside a phase comes from the dependency graph and their ids.
           <code>/audit:task priority</code> is the legacy spelling and still works.</p>
       </div>
     </div>
 
     <div class="cmd">
       <div class="cmd-line">
-        <span class="c">/audit:bug add "&lt;title&gt;" · list · fix &lt;bugId&gt; · close &lt;bugId&gt; [wontfix]</span>
+        <span class="c">/audit:phase cancel &lt;phaseId&gt; --reason "&lt;why&gt;"</span>
+        <span class="badge b-write">writes manifest</span>
+        <span class="badge b-lock">takes lock</span>
+      </div>
+      <div class="cmd-body">
+        <p>Closes a phase &mdash; and every unfinished task under it &mdash; as <strong>terminal but
+          not done</strong>, recording the reason, the moment and a journal row;
+          <code>/audit:task cancel &lt;taskId&gt;</code> does one task. Use it instead of deleting:
+          &ldquo;we decided not to&rdquo; is information, and a deleted task cannot say it. Readiness
+          treats a cancelled blocker as settled, so a plan never deadlocks on work nobody will do.</p>
+      </div>
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-line">
+        <span class="c">/audit:bug add · list · fix &lt;bugId&gt; · close &lt;bugId&gt; [wontfix]</span>
         <span class="badge b-write">writes manifest</span>
       </div>
       <div class="cmd-body">
-        <p>Bugs live in the manifest beside the plan. <code>fix</code> materializes a TDD fix task;
-          <strong>the repro test must fail red-first</strong>, which is what proves the bug is the
-          bug. Execution itself stays in the normal run commands.</p>
+        <p>Bugs live in the manifest beside the plan. <code>fix</code> materializes a TDD fix task, and
+          <strong>the repro test must fail red-first</strong> &mdash; that is what proves the bug is
+          the bug. Execution stays in the normal run commands.</p>
         <pre><code>/audit:bug add "Sparkline drops the last day on month boundaries"
 /audit:bug fix BUG-3 --phase P1
 /audit:run T14</code></pre>
       </div>
     </div>
 
-    <!-- e2e-2026-08-25: areas -->
     <h3>Areas &mdash; one repo, two stacks</h3>
 
     <p>A phase can carry <code>area</code>: one tag (<code>"backend"</code>) or a list for
       cross-cutting work (<code>["backend","frontend"]</code>, grouped under each).
       <code>meta.areas</code> is the registry that gives a tag properties &mdash; a
-      <code>root</code> directory, a <code>description</code>, a default <code>reviewSkill</code>,
-      default executor <code>skills</code> and an advisory <code>owner</code>. Reviewer resolution
-      is <code>phase.reviewSkill</code> &rarr; <code>areas[tag].reviewSkill</code> &rarr;
-      <code>meta.reviewSkill</code>; executor skills are the area's plus the task's own, deduped,
-      area first. Where a phase carries several tags, <strong>written order decides</strong>: the
-      first tag whose area declares the field answers.</p>
+      <code>root</code>, a <code>description</code>, a default <code>reviewSkill</code>, default
+      executor <code>skills</code>, an advisory <code>owner</code>. Reviewer resolution is
+      <code>phase.reviewSkill</code> &rarr; <code>areas[tag].reviewSkill</code> &rarr;
+      <code>meta.reviewSkill</code>; executor skills are the area's plus the task's own, deduped, area
+      first. Where a phase carries several tags, <strong>written order decides</strong>.</p>
 
     <p><strong>This is a manifest label and it reaches no board.</strong> It groups and filters in
-      <code>status</code>, the report and the panel, and it selects reviewers and skills. It is
-      <em>not</em> <code>System.AreaPath</code> and not a work-item tag &mdash; a backend card and
-      a frontend card leave for ADO carrying the same tag set. Where the board has to tell them
-      apart, that is <code>meta.ado.areaPath</code>, or a tag added on the item itself, which a
-      push preserves.</p>
+      <code>status</code>, the report and the panel, and selects reviewers and skills. It is
+      <em>not</em> <code>System.AreaPath</code> &mdash; a backend card and a frontend card leave for
+      ADO carrying the same tag set, and where the board has to tell them apart that is
+      <code>meta.ado.areaPath</code> or a tag on the item itself, which a push preserves.</p>
 
-    <p>Two asymmetries are worth knowing before registering anything:</p>
-    <ul>
-      <li><strong>An absent tag is not a tag.</strong> A phase with no <code>area</code> raises
-        nothing at all. The validator warns about an <em>unregistered</em> tag, and only once the
-        manifest registers areas &mdash; where it is usually a typo. So leaving a phase untagged
-        stays a legitimate answer when no tag would be true of it, and beats inventing one to fill
-        the field.</li>
-      <li><strong>Registering an area makes its silence visible.</strong> An area declaring no
-        <code>skills</code> resolves none, so a task with none of its own warns
-        <code>no skills resolve</code>. The ways out are the task's own <code>skills</code>,
-        defaults on the area, or <code>"skills": null</code> to state that none applies &mdash;
-        and that last one is the point: it records the intention, where leaving the warning
-        standing records nothing.</li>
-    </ul>
+    <p>Two asymmetries. <strong>An absent tag is not a tag</strong>: a phase with no
+      <code>area</code> raises nothing, and the validator warns only about an <em>unregistered</em>
+      one &mdash; usually a typo &mdash; so leaving a phase untagged beats inventing a tag to fill the
+      field. And <strong>registering an area makes its silence visible</strong>: an area declaring no
+      <code>skills</code> resolves none, so a task with none of its own warns
+      <code>no skills resolve</code>. Answer it with the task's own <code>skills</code>, defaults on
+      the area, or <code>"skills": null</code> &mdash; that last one records the intention, where
+      leaving the warning standing records nothing.</p>
 
   </section>
 
@@ -813,8 +1008,8 @@
     </div>
 
     <p>Work that <code>/audit:init</code> proposed and nobody accepted yet lives in
-      <code>proposals[]</code>, outside the phases. It is a queue, not a plan — an empty live plan
-      with parked proposals means nothing is scheduled, not that something was lost.</p>
+      <code>proposals[]</code>, outside the phases. It is a queue, not a plan &mdash; an empty live
+      plan with parked proposals means nothing is scheduled, not that something was lost.</p>
 
     <div class="cmd">
       <div class="cmd-line">
@@ -836,22 +1031,16 @@
       </div>
       <div class="cmd-body">
         <p><strong>Materialization is a move, not a re-synthesis.</strong> The proposal enters the
-          plan as it was parked. That has a practical consequence worth planning around: if an open
-          question would change what the phase <em>contains</em>, settle it first — otherwise you
-          materialize a phase built on a guess and edit it afterwards.</p>
-        <p>Phase ids are allocated <strong>at materialization</strong>, with a collision guard that
-          reports <code>[renamed from …]</code> when it has to pick a new one. So a
-          <code>blockedBy P0</code> on a parked proposal points at something that does not exist
-          yet — that is normal, and the edge resolves when you materialize.</p>
-        <p>When one materialization waits on a still-parked proposal you get exactly one question:</p>
-        <ul>
-          <li><code>--with-deps</code> — pull in what it waits on <em>(recommended)</em></li>
-          <li><code>--drop-edges</code> — cut the edge, and <strong>record the cut in the phase
-            description</strong></li>
-          <li>abort — nothing changes</li>
-        </ul>
-        <p><code>--all</code> implies <code>--with-deps</code> and goes in dependency order, which
-          resolves the whole graph without asking per edge.</p>
+          plan as it was parked, so settle any open question that would change what the phase
+          <em>contains</em> first &mdash; otherwise you materialize a guess and edit it afterwards.
+          Phase ids are allocated <strong>at materialization</strong>, with a collision guard that
+          reports <code>[renamed from &hellip;]</code>, so a <code>blockedBy P0</code> on a parked
+          proposal points at nothing until then.</p>
+        <p>When one materialization waits on a still-parked proposal you get exactly one question:
+          <code>--with-deps</code> pulls in what it waits on <em>(recommended)</em>,
+          <code>--drop-edges</code> cuts the edge and <strong>records the cut in the phase
+          description</strong>, or you abort. <code>--all</code> implies <code>--with-deps</code> and
+          goes in dependency order.</p>
       </div>
     </div>
 
@@ -881,7 +1070,7 @@
     </div>
 
     <p>The connector is configured in <code>meta.ado</code> in the manifest. Credentials never go
-      there — not in the manifest, not in the config, not in any file. Auth belongs to
+      there &mdash; not in the manifest, not in the config, not in any file. Auth belongs to
       <code>az</code> or the MCP server, and the secret guard blocks a token that tries to get
       printed.</p>
 
@@ -892,221 +1081,152 @@
         <span class="badge b-write">writes manifest</span>
       </div>
       <div class="cmd-body">
-        <p><strong>Start here.</strong> Four read-only rungs and one write at the end, so nothing
-          is configured until access is proven — and the first thing that proves access is no
-          longer a <code>push</code>, which is also the first thing that can create items on
-          somebody's real board.</p>
-        <ul>
-          <li><strong>Transport</strong> — the MCP tools if this session has them, else the
-            <code>az</code> CLI plus its devops extension, else install guidance.</li>
-          <li><strong>Which auth path is in effect</strong>, reported rather than assumed. A stored
-            token is per organization, so one org can resolve through a token while another
-            resolves through your sign-in, at the same moment. When more than one path is present
-            it names them and picks none.</li>
-          <li><strong>A read-only probe</strong> in the Work Items scope — the only scope the
-            connector needs, so it tests what a careful person actually granted.</li>
-          <li><strong>Process detection</strong>: one query returns the work item types and the
-            states in use, which settles <code>types.pbi</code> and whether you need a
-            <code>stateMap</code> at all.</li>
-        </ul>
-        <p>Only then does it ask to write <code>organization</code>, <code>project</code>, the
-          proposed types and <code>enabled</code>, and revalidate. Re-running it against a
-          configured manifest re-probes and reports rather than clobbering.</p>
+        <p><strong>Start here.</strong> Read-only rungs first and one write at the end, so nothing is
+          configured until access is proven &mdash; and the thing that proves it is no longer a
+          <code>push</code>, which is also the first thing that can create items on somebody's real
+          board. It checks the transport, reports <strong>which auth path is in effect</strong>
+          rather than assuming one, probes read-only in the Work Items scope, and detects the
+          process. Re-run against a configured manifest, it re-probes and reports rather than
+          clobbering.</p>
       </div>
     </div>
 
-    <p>The rest of this section is what <code>connect</code> checks on your behalf. Read it when
-      something stops, or when you want to write <code>meta.ado</code> by hand.</p>
-
-    <h3>The preflight, in order</h3>
-    <p>Every <code>sync</code> invocation walks the same ladder and stops at the first rung that
-      fails, saying which one. Nothing is read from or written to the board before it passes.</p>
-
-    <div class="tw">
-      <table>
-        <thead><tr><th>Rung</th><th>Fails when</th><th>What you get</th></tr></thead>
-        <tbody>
-          <tr><td>manifest resolves</td><td>no manifest</td><td>stop, pointed at <code>/audit:init</code></td></tr>
-          <tr><td><code>meta.ado</code> exists</td><td>never configured</td><td>stop, with the setup snippet below</td></tr>
-          <tr><td><code>enabled</code></td><td><code>enabled: false</code></td><td><code>push</code>/<code>pull</code> stop; <strong><code>status</code> still runs</strong></td></tr>
-          <tr><td>transport</td><td>no MCP tools and no <code>az</code></td><td>install guidance for <code>az extension add --name azure-devops</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p>If <code>meta.ado</code> is missing, this is the block to add to <code>meta</code>:</p>
+    <p>Every <code>sync</code> invocation walks the same ladder &mdash; manifest,
+      <code>meta.ado</code>, <code>enabled</code>, transport &mdash; and stops at the first rung that
+      fails, saying which. Nothing reaches the board before it passes, and <code>enabled: false</code>
+      stops <code>push</code> and <code>pull</code> while <strong><code>status</code> still
+      runs</strong>. To write the block by hand, this is all that is required; everything else
+      (<code>stateMap</code>, <code>sprint</code>, <code>pull</code>, <code>onComplete</code>,
+      <code>comments</code>, <code>echo</code>, <code>phaseWorkItems</code>, <code>fields</code>,
+      <code>conventions</code>, <code>enabled</code>) is optional and edited by the panel's ADO
+      card:</p>
 <pre><code>"ado": { "organization": "&lt;org&gt;", "project": "&lt;project&gt;",
          "areaPath": null, "iterationPath": null,
          "types": { "bug": "Bug", "task": "Task" } }</code></pre>
-    <p>Everything else — <code>stateMap</code>, <code>sprint</code>, <code>pull</code>,
-      <code>onComplete</code>, <code>comments</code>, <code>echo</code>,
-      <code>phaseWorkItems</code>, <code>enabled</code> — is optional, and the panel's ADO card
-      edits all of them.</p>
-
-    <div class="note">
-      <div class="label">A working board command proves the organization is reachable, never which identity reached it</div>
-      <p><strong>A stored token is per organization.</strong> <code>az devops login</code> records
-        it against one org, so on the same machine one organization can resolve through a stored
-        token while another resolves through your Azure sign-in — at the same moment, with no
-        indication which is in play. Measured: with a deliberately invalid
-        <code>AZURE_DEVOPS_EXT_PAT</code> exported, a query against an org that resolves by
-        sign-in still succeeded, so an environment token does <em>not</em> simply override
-        everything.</p>
-      <p>The order between the three paths is <strong>not something to guess at</strong>, and
-        <code>/audit:sync connect</code> does not: it reports every path present and picks none
-        when there is more than one. Before a first push, check both <code>az account show</code>
-        and whether a token is stored or exported — a push under the wrong identity does not fail,
-        it writes into the wrong organization.</p>
-      <p>One more that reads backwards: <code>you need to run the login command</code>
-        <strong>does not mean you are logged out.</strong> A nonexistent organization produces the
-        same message, so treat it as two readings and check the org name first.</p>
-    </div>
-
-    <div class="note">
-      <div class="label">Overlapping iterations break <code>sprint</code> resolution</div>
-      <p><code>meta.ado.sprint</code> resolves the current iteration through the team's timeframe.
-        Where a long-running iteration overlaps the numbered sprints — a months-long workstream
-        running alongside them — “current” matches more than one and the stamp lands on the wrong
-        path. A static <code>iterationPath</code> sidesteps the resolution entirely, and
-        <code>sync status</code> prints <code>sprint: unresolvable</code> rather than guessing.</p>
-    </div>
 
     <h3>The token, and what it may do</h3>
-    <p>Authentication is per person and per machine. Configuration travels in the manifest and
-      arrives with a merge; <strong>access does not</strong> — every teammate authenticates
-      themselves.</p>
 
-    <div class="tw">
-      <table>
-        <thead><tr><th>Step</th><th>What to do</th></tr></thead>
-        <tbody>
-          <tr><td>Create the token</td><td>In the browser profile signed in to the account that has access: <em>User settings → Personal access tokens → New Token</em></td></tr>
-          <tr><td>Scope</td><td><strong>Work Items → Read &amp; write</strong>, and nothing else. That is the whole surface the connector writes: titles, descriptions, state, area, iteration, tags, comments, parent links</td></tr>
-          <tr><td>Store it</td><td><code>az devops login --organization https://dev.azure.com/&lt;org&gt;</code>, pasted at the prompt — no browser involved, so a machine juggling several accounts is not a problem here</td></tr>
-          <tr><td>Verify</td><td>A WIQL count over the project. It uses exactly the scope you granted, so it tests the thing the plugin will do</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <p>Configuration travels in the manifest and arrives with a merge; <strong>access does
+      not</strong> &mdash; every teammate authenticates themselves. Create the token in the browser
+      profile signed in to the account that has access, scope it to <strong>Work Items &rarr; Read
+      &amp; write</strong> and nothing else, then store it:</p>
+<pre><code>az devops login --organization https://dev.azure.com/&lt;org&gt;</code></pre>
 
     <div class="note">
       <div class="label">Do not reach for Full access</div>
-      <p>A Work Items token cannot read your source, touch pipelines or cut releases. That narrow
-        scope is what makes a longer expiry a reasonable trade — <strong>scope bounds the damage,
-        expiry bounds the duration</strong>. With Full access the arithmetic reverses.</p>
-      <p>Tokens expire. When one does, <code>sync</code> starts returning 401 and it reads like a
-        broken configuration rather than an expired credential — so write the expiry date down
-        where the team can see it.</p>
+      <p>Work Items read-write is the whole surface the connector writes: titles, descriptions,
+        state, area, iteration, tags, comments, parent links. A token that narrow cannot read your
+        source, touch pipelines or cut releases, which makes a longer expiry a reasonable trade
+        &mdash; <strong>scope bounds the damage, expiry bounds the duration</strong>. With Full access
+        the arithmetic reverses. An expired one makes <code>sync</code> return 401, which reads like a
+        broken configuration, so write the expiry date where the team can see it.</p>
     </div>
 
-    <h3>Find out what the board actually uses</h3>
-    <p>Before configuring anything, one read-only query tells you the process, which decides
-      <code>types.pbi</code> and whether you need a <code>stateMap</code> at all:</p>
+    <div class="note">
+      <div class="label">A working board command proves the organization is reachable, never which identity reached it</div>
+      <p><strong>A stored token is per organization.</strong> On one machine one org can resolve
+        through a stored token while another resolves through your Azure sign-in, with no indication
+        which is in play &mdash; measured: with a deliberately invalid
+        <code>AZURE_DEVOPS_EXT_PAT</code> exported, a query against a sign-in org still succeeded. So
+        before a first push check <code>az account show</code> <em>and</em> whether a token is stored
+        or exported: a push under the wrong identity does not fail, it writes into the wrong
+        organization. And <code>you need to run the login command</code> <strong>does not mean you are
+        logged out</strong> &mdash; a nonexistent org produces the same message.</p>
+    </div>
+
+    <h3>What the board actually uses</h3>
+
+    <p><code>connect</code> detects this for you. To ask it yourself, one read-only query does it
+      &mdash; the process decides <code>types.pbi</code> and whether you need a
+      <code>stateMap</code>:</p>
 <pre><code>az boards query --organization https://dev.azure.com/&lt;org&gt; --project &lt;project&gt; \
   --wiql "SELECT [System.Id],[System.State],[System.WorkItemType] FROM WorkItems
           WHERE [System.TeamProject] = '&lt;project&gt;'" -o json</code></pre>
-    <p>Read the distinct types and states out of it:</p>
 
     <div class="tw">
       <table>
         <thead><tr><th>If you see</th><th>Process</th><th>What follows</th></tr></thead>
         <tbody>
-          <tr><td><code>User Story</code> · New/Active/Resolved/Closed/Removed</td><td>Agile</td><td><code>types.pbi: "User Story"</code>; the built-in <code>stateMap</code> defaults already match — leave it out</td></tr>
-          <tr><td><code>Product Backlog Item</code> · New/Approved/Committed/Done</td><td>Scrum</td><td><code>types.pbi: "Product Backlog Item"</code>; <strong>you must set <code>stateMap</code></strong> — the defaults name Agile states</td></tr>
+          <tr><td><code>User Story</code> &middot; New/Active/Resolved/Closed/Removed</td><td>Agile</td><td><code>types.pbi: "User Story"</code>; the built-in <code>stateMap</code> defaults already match &mdash; leave it out</td></tr>
+          <tr><td><code>Product Backlog Item</code> &middot; New/Approved/Committed/Done</td><td>Scrum</td><td><code>types.pbi: "Product Backlog Item"</code>; <strong>you must set <code>stateMap</code></strong> &mdash; the defaults name Agile states</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="note">
       <div class="label">Board columns are not states</div>
-      <p>A team can run six columns over four states — “Awaiting feedback”, “In-Progress” and “In
-        Review” all sitting on <code>Active</code>. A card's column lives in per-team hidden
-        <code>WEF_</code> fields whose id differs per board, and <strong>the connector refuses to
-        write them</strong>. It sets <code>System.State</code> and lets the team's own
-        column↔state mapping move the card.</p>
-      <p>So a pushed task lands in the <em>default</em> column for its state, not necessarily the
-        one you had in mind — and a column backed by no state of its own (a review lane, a split
-        Doing/Done) <strong>cannot be targeted at all</strong>. If a <code>stateMap</code> aims at
-        one, the connector reports the rejection instead of faking the move.</p>
+      <p>A card's column lives in per-team hidden <code>WEF_</code> fields whose id differs per
+        board, and <strong>the connector refuses to write them</strong>: it sets
+        <code>System.State</code> and lets the team's own column&harr;state mapping move the card. So
+        a pushed item lands in the <em>default</em> column for its state, and a column backed by no
+        state of its own &mdash; a review lane, a split Doing/Done &mdash; <strong>cannot be targeted
+        at all</strong>.</p>
+      <p>Relatedly, <code>sprint</code> resolves the current iteration through the team's timeframe,
+        so a long-running workstream overlapping the numbered sprints makes &ldquo;current&rdquo;
+        match more than one. A static <code>iterationPath</code> sidesteps the resolution, and
+        <code>sync status</code> prints <code>sprint: unresolvable</code> rather than guessing.</p>
     </div>
 
-    <div class="tip">
-      <div class="label"><code>meta.ado.conventions</code> — what an item must look like to belong</div>
-      <p>Boards usually have a house shape: a description skeleton, mandatory markers, an allowed
-        tag vocabulary, a required parent. Put it in <code>conventions</code> and a
-        <strong>conformance gate runs before every create</strong> — the payload is checked, and a
-        refusal reaches you <em>before</em> the item exists rather than after somebody has to clean
-        it up.</p>
-      <p>A board with no <code>conventions</code> block passes and says <strong>nothing was
-        checked</strong>. That is an answer — “this board has no standard” — not a silent success,
-        and it is worth reading as one.</p>
+    <h3>Conventions the board enforces</h3>
+
+    <p><code>meta.ado.conventions</code> carries a board's house shape &mdash; a description
+      skeleton, mandatory markers, a tag vocabulary, a required parent &mdash; and a
+      <strong>conformance gate runs before every create</strong>, so a refusal reaches you
+      <em>before</em> the item exists. A board with no <code>conventions</code> block passes saying
+      <strong>nothing was checked</strong>: an answer, not a silent success.</p>
+
+    <p><code>requireParent: true</code> means a card must hang under something; where it hangs is
+      <a href="#ado-track">the field map</a>'s subject, and declaring neither end is not neutral
+      &mdash; the connector then builds its own branch, putting audit work <em>beside</em> the team's
+      planning instead of inside it. <code>tagVocabulary</code> restricts what tags an item may carry,
+      one axis per prefix plus <code>"*"</code> for unprefixed tags, and <strong>the empty list means
+      opposite things on the two</strong>: <code>{"*": []}</code> admits <em>any</em> bare tag,
+      because a wildcard with nothing narrowing it is still a wildcard, while
+      <code>{"supplier": []}</code> admits <em>no</em> <code>supplier:</code> value.</p>
+
+    <div class="note">
+      <div class="label">Check the vocabulary against the connector's own tag</div>
+      <p>The provenance tag defaults to <code>audit-plugin</code>, which carries no prefix &mdash; so
+        a board whose vocabulary admits only prefixed tags refuses every item the connector creates,
+        while the manifest still validates clean, because each block is graded alone. Nothing is wrong
+        with either; they disagree. A prefixed <code>meta.ado.tag</code> closes it.</p>
     </div>
 
-    <div class="cmd">
-      <div class="cmd-line">
-        <span class="c">/audit:sync status</span>
-        <span class="badge b-read">read-only</span>
+    <div class="grid2">
+      <div class="cmd">
+        <div class="cmd-line">
+          <span class="c">/audit:sync status</span>
+          <span class="badge b-read">read-only</span>
+        </div>
+        <div class="cmd-body">
+          <p>The connector line, linked vs unlinked counts, then a row per linked item:
+            <code>manifest id | title | manifest status | ado id | ado state | drift?</code>
+            It writes to neither side and takes no lock.</p>
+        </div>
       </div>
-      <div class="cmd-body">
-        <p>The connector line first — <code>enabled</code> / <code>echo</code> /
-          <code>phaseWorkItems</code>, and the resolved sprint or
-          <code>sprint: unresolvable</code>. Then linked vs unlinked counts, then a row per linked
-          item: <code>manifest id | title | manifest status | ado id | ado state | drift?</code></p>
-        <p>It writes nothing on either side and takes no lock. Run it freely — it is the lens you
-          use to decide whether a push is needed at all.</p>
+      <div class="cmd">
+        <div class="cmd-line">
+          <span class="c">/audit:sync parents</span>
+          <span class="badge b-read">reads ADO</span>
+          <span class="badge b-write">manifest</span>
+        </div>
+        <div class="cmd-body">
+          <p>Caches the project's backlog ranks and parent-shaped items. <strong>Run it before the
+            first push</strong>: measured, ADO does not enforce its own type hierarchy on a link made
+            through the API, so the connector checks the tree itself &mdash; and without this cache
+            every parent link reports <code>not verified</code> while the create proceeds anyway.</p>
+        </div>
       </div>
     </div>
 
     <div class="tip">
       <div class="label">Order that keeps the first mistake small</div>
       <p>Verify with <code>/audit:sync status</code> while the plan is still small, then materialize,
-        then push <strong>one phase</strong> with <code>--phase</code>. A wrong state map then costs
-        a few items instead of a whole board.</p>
-      <p>Note what that implies on a fresh install: while every phase is still parked there is
-        <strong>nothing to push</strong>. Proposals are not work items and never become them —
-        only a materialized phase reaches the board. So configuring the connector first costs
-        nothing, and it is the one moment when a misconfiguration cannot create anything.</p>
+        then push <strong>one phase</strong> with <code>--phase</code>: a wrong state map then costs a
+        few items instead of a whole board. On a fresh install, while every phase is still parked,
+        there is <strong>nothing to push</strong> &mdash; so configuring the connector first is the
+        one moment when a misconfiguration cannot create anything.</p>
     </div>
-
-    <!-- e2e-2026-08-25: conventions -->
-    <h3>Conventions the board enforces</h3>
-
-    <p><code>meta.ado.conventions</code> carries a board's own house rules, and both keys change
-      what a push may do.</p>
-
-    <p><code>requireParent: true</code> means a card must hang under something. Resolution is
-      <code>phase.adoParent</code>, then <code>meta.ado.parentWorkItem</code> &mdash; and on a
-      phase, <strong>absent and <code>null</code> are different answers</strong>: absent falls
-      through to the manifest-wide id, <code>null</code> does not. Setting neither is not a neutral
-      default. The connector then builds its own branch, which puts audit work <em>beside</em> the
-      team's planning instead of inside it, where nobody planning from that board sees it. The id
-      is an <strong>integer</strong>; a quoted one is a typo the validator names rather than
-      coerces, because coercing hides it.</p>
-
-    <p><code>tagVocabulary</code> restricts what tags an item may carry &mdash; one axis per prefix
-      (<code>type:</code>, <code>supplier:</code>, &hellip;), plus <code>"*"</code> for unprefixed
-      tags. <strong>The empty list means opposite things on the two.</strong>
-      <code>{"*": []}</code> admits <em>any</em> bare tag, because a wildcard with nothing
-      narrowing it is still a wildcard; <code>{"supplier": []}</code> admits <em>no</em>
-      <code>supplier:</code> value. A restriction is something you opt into by listing.</p>
-
-    <div class="note">
-      <div class="label">Check the vocabulary against the connector's own tag</div>
-      <p>The provenance tag defaults to <code>audit-plugin</code>, which carries no prefix &mdash;
-        so a board whose vocabulary admits only prefixed tags refuses every item the connector
-        creates, while the manifest still validates clean, because each block is graded alone.
-        Nothing is wrong with either block; they disagree. A prefixed
-        <code>meta.ado.tag</code> closes it.</p>
-    </div>
-
-    <p><code>/audit:sync parents</code> caches what this needs: the project's own backlog ranks and
-      its parent-shaped items. Run it before the first push. Without the cache every parent link
-      reports <code>not verified</code> while the create proceeds anyway &mdash; so under
-      <code>requireParent</code> the check abstains at exactly the moment you wanted it to grade.
-      The rank cache carries its own trap, and says so in its <code>basis</code>: it files a bug's
-      rank under whatever <code>meta.ado.types.bug</code> names at fetch time, so renaming that key
-      stops the cached name from matching and bugs begin reading <code>not verified</code>. Re-run
-      the fetch after any such rename.</p>
-
   </section>
 
   <!-- 08 ------------------------------------------------------------------ -->
@@ -1120,16 +1240,16 @@
       <figcaption class="fig-head">
         <span class="label">One direction per invocation</span>
         <button type="button" class="expand" data-expand="fig-sync"
-                data-title="Sync directions" data-note="lb-note-sync">⤢ Expand</button>
+                data-title="Sync directions" data-note="lb-note-sync">&#10530; Expand</button>
       </figcaption>
       <div class="diagram" id="fig-sync">
         <svg id="claude-mermaid-1" width="1054.765625" xmlns="http://www.w3.org/2000/svg" class="flowchart" height="128.89300537109375" viewBox="0 0 1054.765625 128.89300537109375" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#claude-mermaid-1{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:21px;fill:#42392e;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#claude-mermaid-1 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#claude-mermaid-1 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#claude-mermaid-1 .error-icon{fill:hsl(221.25, 42.1052631579%, 97.5490196078%);}#claude-mermaid-1 .error-text{fill:rgb(8.8815789475, 7.2368421054, 3.6184210527);stroke:rgb(8.8815789475, 7.2368421054, 3.6184210527);}#claude-mermaid-1 .edge-thickness-normal{stroke-width:1px;}#claude-mermaid-1 .edge-thickness-thick{stroke-width:3.5px;}#claude-mermaid-1 .edge-pattern-solid{stroke-dasharray:0;}#claude-mermaid-1 .edge-thickness-invisible{stroke-width:0;fill:none;}#claude-mermaid-1 .edge-pattern-dashed{stroke-dasharray:3;}#claude-mermaid-1 .edge-pattern-dotted{stroke-dasharray:2;}#claude-mermaid-1 .marker{fill:#8a7f6d;stroke:#8a7f6d;}#claude-mermaid-1 .marker.cross{stroke:#8a7f6d;}#claude-mermaid-1 svg{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:21px;}#claude-mermaid-1 p{margin:0;}#claude-mermaid-1 .label{font-family:"Source Serif 4",Georgia,"Times New Roman",serif;color:#42392e;}#claude-mermaid-1 .cluster-label text{fill:#42392e;}#claude-mermaid-1 .cluster-label span{color:#42392e;}#claude-mermaid-1 .cluster-label span p{background-color:transparent;}#claude-mermaid-1 .label text,#claude-mermaid-1 span{fill:#42392e;color:#42392e;}#claude-mermaid-1 .node rect,#claude-mermaid-1 .node circle,#claude-mermaid-1 .node ellipse,#claude-mermaid-1 .node polygon,#claude-mermaid-1 .node path{fill:#f4efe4;stroke:#7a6c52;stroke-width:1px;}#claude-mermaid-1 .rough-node .label text,#claude-mermaid-1 .node .label text,#claude-mermaid-1 .image-shape .label,#claude-mermaid-1 .icon-shape .label{text-anchor:middle;}#claude-mermaid-1 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#claude-mermaid-1 .rough-node .label,#claude-mermaid-1 .node .label,#claude-mermaid-1 .image-shape .label,#claude-mermaid-1 .icon-shape .label{text-align:center;}#claude-mermaid-1 .node.clickable{cursor:pointer;}#claude-mermaid-1 .root .anchor path{fill:#8a7f6d!important;stroke-width:0;stroke:#8a7f6d;}#claude-mermaid-1 .arrowheadPath{fill:#0b090b;}#claude-mermaid-1 .edgePath .path{stroke:#8a7f6d;stroke-width:1px;}#claude-mermaid-1 .flowchart-link{stroke:#8a7f6d;fill:none;}#claude-mermaid-1 .edgeLabel{background-color:rgb(244, 246, 244);text-align:center;}#claude-mermaid-1 .edgeLabel p{background-color:rgb(244, 246, 244);}#claude-mermaid-1 .edgeLabel rect{opacity:0.5;background-color:rgb(244, 246, 244);fill:rgb(244, 246, 244);}#claude-mermaid-1 .labelBkg{background-color:rgba(244, 246, 244, 0.5);}#claude-mermaid-1 .cluster rect{fill:rgba(127,127,127,0.07);stroke:#7a6c52;stroke-width:1px;}#claude-mermaid-1 .cluster text{fill:#42392e;}#claude-mermaid-1 .cluster span{color:#42392e;}#claude-mermaid-1 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:12px;background:hsl(221.25, 42.1052631579%, 97.5490196078%);border:1px solid hsl(221.25, 2.1052631579%, 87.5490196078%);border-radius:2px;pointer-events:none;z-index:100;}#claude-mermaid-1 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#42392e;}#claude-mermaid-1 rect.text{fill:none;stroke-width:0;}#claude-mermaid-1 .icon-shape,#claude-mermaid-1 .image-shape{background-color:rgb(244, 246, 244);text-align:center;}#claude-mermaid-1 .icon-shape p,#claude-mermaid-1 .image-shape p{background-color:rgb(244, 246, 244);padding:2px;}#claude-mermaid-1 .icon-shape .label rect,#claude-mermaid-1 .image-shape .label rect{opacity:0.5;background-color:rgb(244, 246, 244);fill:rgb(244, 246, 244);}#claude-mermaid-1 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#claude-mermaid-1 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#claude-mermaid-1 .node .neo-node{stroke:#7a6c52;}#claude-mermaid-1 [data-look="neo"].node rect,#claude-mermaid-1 [data-look="neo"].cluster rect,#claude-mermaid-1 [data-look="neo"].node polygon{stroke:url(#claude-mermaid-1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-1 [data-look="neo"].node path{stroke:url(#claude-mermaid-1-gradient);stroke-width:1px;}#claude-mermaid-1 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-1 [data-look="neo"].node .neo-line path{stroke:#7a6c52;filter:none;}#claude-mermaid-1 [data-look="neo"].node circle{stroke:url(#claude-mermaid-1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-1 [data-look="neo"].node circle .state-start{fill:#000000;}#claude-mermaid-1 [data-look="neo"].icon-shape .icon{fill:url(#claude-mermaid-1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-1 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#claude-mermaid-1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#claude-mermaid-1 .node rect,#claude-mermaid-1 .node circle,#claude-mermaid-1 .node polygon,#claude-mermaid-1 .node path,#claude-mermaid-1 .cluster rect{stroke-width:2px;}#claude-mermaid-1 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="claude-mermaid-1_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="claude-mermaid-1_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-1_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-1_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-1_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="claude-mermaid-1_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="claude-mermaid-1_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M264.406,42.254L280.078,39.185C295.75,36.115,327.094,29.976,357.776,28.834C388.459,27.693,418.48,31.549,433.491,33.477L448.501,35.405" id="claude-mermaid-1-L_M_A_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_M_A_0" data-points="W3sieCI6MjY0LjQwNjI1LCJ5Ijo0Mi4yNTQyNzc4MDM2MDU2OH0seyJ4IjozNTguNDM3NSwieSI6MjMuODM2ODk0OTg5MDEzNjcyfSx7IngiOjQ1Mi40Njg3NSwieSI6MzUuOTE0MzAzMjQ1ODk0NH1d" data-look="classic" marker-end="url(#claude-mermaid-1_flowchart-v2-pointEnd)"></path><path d="M452.469,52.287L436.797,54.8C421.125,57.313,389.781,62.339,359.104,64.852C328.427,67.365,298.417,67.365,283.411,67.365L268.406,67.365" id="claude-mermaid-1-L_A_M_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A_M_0" data-points="W3sieCI6NDUyLjQ2ODc1LCJ5Ijo1Mi4yODcxNTM5MDg5NjU3ODR9LHsieCI6MzU4LjQzNzUsInkiOjY3LjM2NDcxNzQ4MzUyMDUxfSx7IngiOjI2NC40MDYyNSwieSI6NjcuMzY0NzE3NDgzNTIwNTF9XQ==" data-look="classic" marker-end="url(#claude-mermaid-1_flowchart-v2-pointEnd)"></path><path d="M565.859,43.196L590.443,43.196C615.026,43.196,664.193,43.196,712.701,47.062C761.21,50.927,809.06,58.658,832.985,62.523L856.911,66.389" id="claude-mermaid-1-L_A_S_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_A_S_0" data-points="W3sieCI6NTY1Ljg1OTM3NSwieSI6NDMuMTk2MjY5OTg5MDEzNjd9LHsieCI6NzEzLjM1OTM3NSwieSI6NDMuMTk2MjY5OTg5MDEzNjd9LHsieCI6ODYwLjg1OTM3NSwieSI6NjcuMDI2NjkzOTUwODEzOTV9XQ==" data-look="classic" marker-end="url(#claude-mermaid-1_flowchart-v2-pointEnd)"></path><path d="M264.406,98.244L280.078,102.019C295.75,105.794,327.094,113.343,367.887,117.118C408.68,120.893,458.922,120.893,518.076,120.893C577.229,120.893,645.294,120.893,703.252,117.027C761.21,113.162,809.06,105.431,832.985,101.566L856.911,97.7" id="claude-mermaid-1-L_M_S_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style=";" data-edge="true" data-et="edge" data-id="L_M_S_0" data-points="W3sieCI6MjY0LjQwNjI1LCJ5Ijo5OC4yNDM5ODIzMDU4MTAzNn0seyJ4IjozNTguNDM3NSwieSI6MTIwLjg5MjUzOTk3ODAyNzM0fSx7IngiOjUwOS4xNjQwNjI1LCJ5IjoxMjAuODkyNTM5OTc4MDI3MzR9LHsieCI6NzEzLjM1OTM3NSwieSI6MTIwLjg5MjUzOTk3ODAyNzM0fSx7IngiOjg2MC44NTkzNzUsInkiOjk3LjA2MjExNjAxNjIyNzA3fV0=" data-look="classic" marker-end="url(#claude-mermaid-1_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(358.4375, 23.836894989013672)"><g class="label" data-id="L_M_A_0" transform="translate(-46.53125, -9.359375)"><foreignObject width="93.0625" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>sync push</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(358.4375, 67.36471748352051)"><g class="label" data-id="L_A_M_0" transform="translate(-45.3359375, -9.359375)"><foreignObject width="90.671875" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"><p>sync pull</p></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(713.359375, 43.19626998901367)"><g class="label" data-id="L_A_S_0" transform="translate(-100, -28.078125)"><foreignObject width="200" height="56.15625"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;"><span class="edgeLabel"><p>sync status<br>reads both, writes neither</p></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" data-id="L_M_S_0" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default" id="claude-mermaid-1-flowchart-M-0" data-look="classic" transform="translate(136.203125, 67.36471748352051)"><rect class="basic label-container" style="" x="-128.203125" y="-34.71875" width="256.40625" height="69.4375"></rect><g class="label" style="" transform="translate(-96.203125, -18.71875)"><rect></rect><foreignObject width="192.40625" height="37.4375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>manifest<br>bugs · tasks · phases</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-1-flowchart-A-1" data-look="classic" transform="translate(509.1640625, 43.19626998901367)"><path d="M0,11.891263026807367 a56.6953125,11.891263026807367 0,0,0 113.390625,0 a56.6953125,11.891263026807367 0,0,0 -113.390625,0 l0,46.610013026807366 a56.6953125,11.891263026807367 0,0,0 113.390625,0 l0,-46.610013026807366" class="basic label-container outer-path" style="" transform="translate(-56.6953125, -35.19626954021105)"></path><g class="label" style="" transform="translate(-48.6953125, 1.307291666666666)"><rect></rect><foreignObject width="97.390625" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>ADO board</p></span></div></foreignObject></g></g><g class="node default" id="claude-mermaid-1-flowchart-S-5" data-look="classic" transform="translate(953.8125, 82.04440498352051)"><rect class="basic label-container" style="" x="-92.953125" y="-25.359375" width="185.90625" height="50.71875"></rect><g class="label" style="" transform="translate(-60.953125, -9.359375)"><rect></rect><foreignObject width="121.90625" height="18.71875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel"><p>drift report</p></span></div></foreignObject></g></g></g></g></g><defs><filter id="claude-mermaid-1-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="claude-mermaid-1-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="claude-mermaid-1-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#7a6c52" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(-78.75, 2.1052631579%, 82.5490196078%)" stop-opacity="1"></stop></linearGradient></svg>
       </div>
       <div class="fig-note" id="lb-note-sync">
         <b>There is no arrow that goes both ways.</b> A push never reads the board's intent back,
-        and a pull never writes to it — so anything that appears on the board is traceable to one
-        invocation somebody ran. <code>sync status</code> is the only operation that touches both
-        sides, and it writes to neither.
+        and a pull never writes to it &mdash; so anything that appears on the board is traceable to
+        one invocation somebody ran. <code>sync status</code> is the only operation that touches
+        both sides, and it writes to neither.
       </div>
     </figure>
 
@@ -1141,15 +1261,15 @@
         <span class="badge b-lock">takes lock</span>
       </div>
       <div class="cmd-body">
-        <p>Default is <code>bugs</code>. Explicit and idempotent — running it twice does not create
-          duplicates, because the manifest side of each link (<code>ado: {id, url, lastSyncedAt}</code>)
-          is written immediately after each successful call.</p>
+        <p>Default is <code>bugs</code>. Idempotent, because the manifest side of each link
+          (<code>ado: {id, url, lastSyncedAt}</code>) is written immediately after each successful
+          call.</p>
         <ul>
-          <li><strong>States are applied by UPDATE, never at create.</strong> ADO only accepts the
-            initial state at creation, so every other target state is a second call.</li>
-          <li>A state the process rejects <strong>degrades per item</strong> — retry without State,
-            report it, and point at <code>stateMap</code>. One bad item does not abort the run.</li>
-          <li>Tags are <strong>read-merge-write</strong> against the item's existing tag list, never
+          <li><strong>States are applied by UPDATE, never at create</strong> &mdash; ADO only accepts
+            the initial state at creation.</li>
+          <li>A state the process rejects <strong>degrades per item</strong>: retry without State,
+            report it, point at <code>stateMap</code>. One bad item does not abort the run.</li>
+          <li>Tags are <strong>read-merge-write</strong> against the item's existing list, never
             replaced wholesale.</li>
         </ul>
         <pre><code>/audit:sync push tasks --phase P0    # one phase, smallest first write
@@ -1165,45 +1285,34 @@
       </div>
       <div class="cmd-body">
         <p>Brings assigned ADO bugs, or the current sprint's items, into the manifest.
-          <strong>Never modifies ADO.</strong></p>
-        <p>The dedup rule is the part worth knowing: a candidate whose id already appears in
-          <em>any</em> manifest <code>ado.id</code> — live tasks, bugs, phases,
-          <strong>and parked proposals</strong> — is dropped. So a re-pull imports nothing, and
-          parking a proposal does not make its item eligible again.</p>
-        <p><strong>The two flavours are scoped differently.</strong> Both ask before importing
-          anything, so neither can flood you — but do not carry the habit of one over to the
-          other:</p>
+          <strong>Never modifies ADO.</strong> A candidate whose id already appears in <em>any</em>
+          manifest <code>ado.id</code> &mdash; live tasks, bugs, phases, <strong>and parked
+          proposals</strong> &mdash; is dropped, so a re-pull imports nothing and parking a proposal
+          does not make its item eligible again. Both flavours ask before importing, and they are
+          scoped differently:</p>
         <ul>
-          <li><code>pull sprint</code> <strong>refuses to import blind</strong>. It needs an
-            iteration (<code>sprint</code> or <code>iterationPath</code>, else it stops), and it
-            needs a filter — <code>pull.areaPath</code> or <code>pull.tags</code> — because one
-            sprint can span several repositories. With no filter it lists the sprint read-only,
-            makes you pick, and offers to save the filter you chose.</li>
-          <li><code>pull bugs</code> is <strong>project-wide</strong>: every non-closed bug,
-            narrowed only by <code>areaPath</code> if one is set. Not sprint-scoped.</li>
+          <li><code>pull sprint</code> <strong>refuses to import blind</strong>. It needs an iteration
+            and a filter (<code>pull.areaPath</code> or <code>pull.tags</code>), because one sprint
+            can span several repositories. With no filter it lists the sprint read-only, makes you
+            pick, and offers to save the filter. If your team already tags the cards it owns, that
+            tag <em>is</em> the filter:
+            <code>"pull": { "tags": ["&lt;your-card-tag&gt;"] }</code>.</li>
+          <li><code>pull bugs</code> is <strong>project-wide</strong>: every non-closed bug, narrowed
+            only by <code>areaPath</code> if one is set. Not sprint-scoped.</li>
         </ul>
         <p>Imported sprint items land as <strong>parked proposals</strong>, one per PBI with its
-          child tasks — nothing enters the live plan until you materialize it.</p>
+          child tasks &mdash; nothing enters the live plan until you materialize it.</p>
       </div>
-    </div>
-
-    <div class="tip">
-      <div class="label">If your team already tags its cards, that tag is the filter</div>
-      <p>Most teams mark the cards they own — a supplier tag, a squad name. Put it in
-        <code>pull.tags</code> and a sprint pull sees only your cards in that iteration:</p>
-<pre><code>"pull": { "tags": ["&lt;your-card-tag&gt;"] }</code></pre>
     </div>
 
     <div class="note">
       <div class="label">Push recognises its own links, and only its own</div>
       <p>An item with no <code>ado</code> field is CREATED; one with <code>ado.id</code> is fetched,
-        its mapped fields diffed, and UPDATED <strong>only if something differs</strong>. That is
-        what makes a repeated push idempotent.</p>
-      <p>But push does <strong>not</strong> match by title or tag. A card somebody made by hand for
-        the same phase is invisible to it, and pushing will create a second one. Broad dedup exists
-        only in the other direction. So when the board already holds work that corresponds to your
-        plan: <strong><code>pull</code> first, then <code>push</code></strong> — the pull links
-        them, and the push then updates instead of duplicating.</p>
+        diffed and UPDATED <strong>only if something differs</strong>. But push does
+        <strong>not</strong> match by title or tag: a card somebody made by hand for the same phase
+        is invisible to it, and pushing creates a second one. Broad dedup exists only in the other
+        direction, so when the board already holds work matching your plan,
+        <strong><code>pull</code> first, then <code>push</code></strong>.</p>
     </div>
   </section>
 
@@ -1214,7 +1323,8 @@
       <h2>ADO: the field map &amp; drift</h2>
     </div>
 
-    <p>What lands where on a push. Every default is overridable in <code>meta.ado</code>.</p>
+    <p>What lands where on a push. Every default is overridable in <code>meta.ado</code>. Test
+      evidence is not on this list and will not be &mdash; the ledger stays in the repository.</p>
 
     <div class="tw">
       <table>
@@ -1222,156 +1332,98 @@
           <tr><th>Manifest side</th><th>ADO field</th><th>Configured by</th></tr>
         </thead>
         <tbody>
-          <tr><td>bug</td><td>work item type</td><td><code>types.bug</code> — default <code>Bug</code></td></tr>
-          <tr><td>task</td><td>work item type</td><td><code>types.task</code> — default <code>Task</code></td></tr>
-          <tr><td>phase</td><td>work item type</td><td><code>types.pbi</code> · <code>phaseWorkItems</code> (absent = on)</td></tr>
-          <tr><td>bug title · <code>[taskId] title</code> · <code>[phaseId] title</code></td><td>Title</td><td>—</td></tr>
-          <tr><td>description + repro + expected/actual</td><td>Repro Steps (Bug) / Description</td><td>—</td></tr>
-          <tr><td>severity high / med / low</td><td>Severity <code>2 - High</code> / <code>3 - Medium</code> / <code>4 - Low</code></td><td>—</td></tr>
-          <tr><td>bug status <code>open → New</code>, <code>triaged</code>/<code>in_progress → Active</code>, <code>fixed → Resolved</code>, <code>wontfix → Closed</code></td><td>State</td><td><code>stateMap.bug</code></td></tr>
-          <tr><td>task status <code>pending → New</code>, <code>in_progress → Active</code>, <code>blocked → Active</code> + tag <code>blocked</code>, <code>done → Closed</code>, <code>cancelled → Removed</code></td><td>State</td><td><code>stateMap.task</code></td></tr>
-          <tr><td>phase status</td><td>State</td><td><code>stateMap.phase</code> — phase-item vocabularies differ</td></tr>
-          <tr><td>task <code>done</code> + <code>onComplete.remainingWork</code></td><td><code>RemainingWork</code></td><td>stock processes force-clear it at done → retry state-only, report the skip</td></tr>
-          <tr><td>always</td><td>Area · Iteration</td><td><code>areaPath</code> · <code>sprint</code> else <code>iterationPath</code></td></tr>
-          <tr><td>always</td><td>provenance tag</td><td><code>tag</code> — absent = <code>audit-plugin</code>, null = none</td></tr>
+          <tr><td>bug</td><td>work item type</td><td><code>types.bug</code> &mdash; default <code>Bug</code></td></tr>
+          <tr><td>task</td><td>work item type</td><td><code>types.task</code> &mdash; default <code>Task</code></td></tr>
+          <tr><td>phase</td><td>work item type</td><td><code>types.pbi</code> &middot; <code>phaseWorkItems</code> (absent = on)</td></tr>
+          <tr><td>bug title &middot; <code>[taskId] title</code> &middot; <code>[phaseId] title</code></td><td>Title</td><td>&mdash;</td></tr>
+          <tr><td>description + repro + expected/actual</td><td>Repro Steps (Bug) / Description</td><td>&mdash;</td></tr>
+          <tr><td>severity high / med / low</td><td>Severity <code>2 - High</code> / <code>3 - Medium</code> / <code>4 - Low</code></td><td>&mdash;</td></tr>
+          <tr><td>bug status <code>open &rarr; New</code>, <code>triaged</code>/<code>in_progress &rarr; Active</code>, <code>fixed &rarr; Resolved</code>, <code>wontfix &rarr; Closed</code></td><td>State</td><td><code>stateMap.bug</code></td></tr>
+          <tr><td>task status <code>pending &rarr; New</code>, <code>in_progress &rarr; Active</code>, <code>blocked &rarr; Active</code> + tag <code>blocked</code>, <code>done &rarr; Closed</code>, <code>cancelled &rarr; Removed</code></td><td>State</td><td><code>stateMap.task</code></td></tr>
+          <tr><td>phase status</td><td>State</td><td><code>stateMap.phase</code> &mdash; phase-item vocabularies differ</td></tr>
+          <tr><td>task <code>done</code> + <code>onComplete.remainingWork</code></td><td><code>RemainingWork</code></td><td>stock processes force-clear it at done &rarr; retry state-only, report the skip</td></tr>
+          <tr><td>always</td><td>Area &middot; Iteration</td><td><code>areaPath</code> &middot; <code>sprint</code> else <code>iterationPath</code></td></tr>
+          <tr><td>always</td><td>provenance tag</td><td><code>tag</code> &mdash; absent = <code>audit-plugin</code>, null = none</td></tr>
         </tbody>
       </table>
     </div>
 
+    <p>A <code>stateMap</code> value of <code>null</code> means <strong>never move state for that
+      transition</strong>: the field is skipped and the team moves that card by hand. The built-in
+      defaults name <strong>Agile-process</strong> states, so a Scrum project must set
+      <code>stateMap</code> &mdash; <code>/audit:doctor</code> carries that advisory.</p>
+
     <div class="note">
-      <div class="label">Decide which phases belong on the board — the manifest cannot say it for you</div>
-      <p>The plugin proposes phases from what the code needs. Some deliver something a stakeholder
-        recognises; others are “extract this query into a service”. Both are real phases and only
-        the first kind belongs on a shared backlog.</p>
-      <p>There is <strong>no per-phase opt-out today</strong>: <code>phaseWorkItems</code> is a
-        global on/off, and the only selectivity is what you name at the call site. Nothing reaches
-        the board by accident — push is never automatic, it prints a plan listing every create, and
-        it confirms before the first write — but the intent lives in people's heads. So make it a
-        team rule and write it down:</p>
+      <div class="label">Decide which phases belong on the board &mdash; the manifest cannot say it for you</div>
+      <p>Some phases deliver something a stakeholder recognises; others are &ldquo;extract this query
+        into a service&rdquo;. Only the first kind belongs on a shared backlog, and there is
+        <strong>no per-phase opt-out today</strong>: <code>phaseWorkItems</code> is a global on/off,
+        so the only selectivity is what you name at the call site. Make it a team rule:</p>
 <pre><code>/audit:sync push tasks --phase P3    # always name the phase
 /audit:sync push all                # the command your team does not run</code></pre>
     </div>
 
     <div class="tip">
-      <div class="label">Where each phase hangs — a board is a tree, and so is this</div>
+      <div class="label">Where each phase hangs &mdash; a board is a tree, and so is this</div>
       <p><code>meta.ado.parentWorkItem</code> is the <strong>fallback</strong>: one work item that
-        anything undeclared hangs under. Where a sprint spans several Features — each with its own
-        stories and its own tasks — a phase declares its own instead:</p>
+        anything undeclared hangs under. Where a sprint spans several Features, a phase declares its
+        own instead:</p>
 <pre><code>"phases": [
   { "id": "P0", "adoParent": { "id": 71157 } },       // this Feature
   { "id": "P3", "adoParent": null },                  // nothing, on purpose
   { "id": "P4" }                                      // whatever the fallback says
 ]</code></pre>
-      <p>Three states, and they are three different answers. <strong>Absent</strong> falls through
-        to the fallback. An <strong>object</strong> names the parent. Explicit <strong>null</strong>
-        means this phase hangs under nothing even when a fallback is set — uncategorised on
-        purpose, a legitimate outcome and never an error.</p>
-      <p>Ask the board for its candidates rather than typing ids from memory:</p>
-<pre><code>/audit:sync parents        # caches the backlog levels and the parents you may pick</code></pre>
-      <p>The push plan then prints the resolved parent <em>per phase</em>, with where it came from —
-        so a fallback that quietly applies to eleven phases and not the twelfth is visible before
-        you confirm, not after.</p>
-    </div>
-
-    <div class="note">
-      <div class="label">The plugin checks the tree because ADO does not</div>
-      <p>Measured, not assumed: <strong>ADO does not enforce its own type hierarchy on a link
-        created through the API.</strong> A Product Backlog Item really can end up filed under a
-        Task, and the server will not object. So the connector checks it — structurally (an item
-        cannot hang under its own child, and a declared cycle is refused) and, once
-        <code>/audit:sync parents</code> has cached the backlog ranks, by level. Equal rank is a
-        note rather than a refusal, because a Bug under a story is rank-2-under-rank-2 on many
-        boards and teams do it deliberately.</p>
-      <p>Where the ranks have never been fetched, each item reports <strong>not verified</strong>
-        rather than being assumed fine.</p>
+      <p>Three states, three answers. <strong>Absent</strong> falls through to the fallback; an
+        <strong>object</strong> names the parent; explicit <strong>null</strong> means this phase
+        hangs under nothing even when a fallback is set &mdash; uncategorised on purpose, never an
+        error. The id is an <strong>integer</strong>; a quoted one is a typo the validator names
+        rather than coerces. The push plan prints the resolved parent <em>per phase</em> with where it
+        came from, so a fallback quietly applying to every phase but one is visible before you
+        confirm.</p>
     </div>
 
     <div class="tip">
       <div class="label">When the board demands fields the connector does not write</div>
-      <p><code>conventions</code> says what an item must have; it can only <strong>refuse</strong>.
-        <code>meta.ado.fields</code> is the other half — what this project <strong>supplies</strong>,
-        per work item type, merged into the create payload before the gate grades it:</p>
+      <p><code>conventions</code> says what an item must have and can only <strong>refuse</strong>.
+        <code>meta.ado.fields</code> is the other half &mdash; what this project
+        <strong>supplies</strong>, per work item type, merged into the create payload before the gate
+        grades it:</p>
 <pre><code>"fields": {
   "Task":       { "Microsoft.VSTS.Common.Activity": "Development",
                   "Microsoft.VSTS.Scheduling.OriginalEstimate": 4 },
   "User Story": { "Microsoft.VSTS.Scheduling.StoryPoints": 3 }
 }</code></pre>
-      <p>A template may <strong>not</strong> name a field the connector already maps — that is
-        refused when you write it, because there is no later state in which such a setting quietly
-        starts working. Values are literals; there is no substitution language, because the fields
-        that would carry manifest data are exactly the ones a template may not name.</p>
-    </div>
-
-    <div class="note">
-      <div class="label">Read-only fields fail two different ways, and one of them looks like success</div>
-      <p><code>System.BoardColumn</code> refuses out loud. But <code>System.Parent</code>,
-        <code>System.Id</code> and <code>System.CreatedBy</code> each <strong>create the item,
-        report success, and leave the field unset</strong> — measured on a live board. So for the
-        field people most want to set, "try it and report what ADO said" would report a create that
-        worked. That is why naming one in a template is refused at validation instead.</p>
+      <p>A template may <strong>not</strong> name a field the connector already maps, nor a read-only
+        one, and that is refused when you write it rather than tried &mdash; because read-only fields
+        fail two ways and one looks like success. Measured live: <code>System.BoardColumn</code>
+        refuses out loud, while <code>System.Parent</code>, <code>System.Id</code> and
+        <code>System.CreatedBy</code> each create the item, report success, and leave the field unset.
+        Values are literals, with no substitution language.</p>
     </div>
 
     <div class="note">
       <div class="label">A difference has three readings, not two</div>
-      <p>When <code>sync status</code> shows drift, the obvious two are “the manifest is ahead” and
-        “the board is ahead”. On a board several teams write to, the common third is:
-        <strong>somebody else moved this card after we last touched it, and neither side is
-        wrong.</strong> Do not let a push decide that silently — read the drift, then choose.</p>
-      <p>The reading names the writer, so you can go and ask that person:
-        <code>local ahead — push is the fix</code>,
-        <code>external (&lt;who&gt;, &lt;when&gt;) — push would overwrite it</code>, or
-        <code>unknown — never synced or unstamped</code>, which draws no suggested action
-        because the basis for one is missing.</p>
-    </div>
-
-    <div class="tip">
-      <div class="label">The board read is one query, and it says what it did</div>
-      <p>Every linked item is fetched in <strong>one query per chunk</strong>, not one call per
-        item — the chunk size, the field list and the per-query bound live in a script rather than in
-        prose, because those are the three things prose cannot be held to. The output reports the
-        shape of what it did rather than implying one call, and prints the counts
-        <strong>even at zero</strong>.</p>
-      <p>Two exit codes matter and they are not "worked / failed". <strong>Exit 0 means every chunk
-        answered</strong> and the payload is complete for the ids asked for.
-        <strong>Exit 1 means at least one chunk did not answer</strong>: the payload is partial, it
-        names the ids it has no news about, and you stop rather than build a table from it — an
-        absent row is not an unchanged one. An id that came back with no row at all is named too, so
-        a work item somebody deleted is a thing you are told, not a row that vanishes from a table
-        that then looks complete.</p>
-      <p>The real service limit is on the <strong>query text</strong>, not the number of ids, so the
-        chunker measures the text every time and refuses an oversized query before spending the
-        call — including in a dry run, which is where you want to find that out.</p>
-    </div>
-
-    <div class="note">
-      <div class="label">The drift column needs a basis, and the basis is the state map</div>
+      <p>The obvious two are &ldquo;the manifest is ahead&rdquo; and &ldquo;the board is ahead&rdquo;.
+        On a board several teams write to, the common third is: <strong>somebody else moved this card
+        after we last touched it, and neither side is wrong.</strong> The reading names the writer so
+        you can go and ask that person &mdash; <code>local ahead</code>,
+        <code>external (&lt;who&gt;, &lt;when&gt;)</code>, or <code>unknown</code>, which draws no
+        suggested action because the basis for one is missing.</p>
       <p>The comparison is <strong>your status translated through <code>stateMap</code></strong>
-        against the board's state — not your status against the board's. The board read does not
-        translate it for you: the map lives in the command, and a second copy in the fetcher would be
-        a second answer. Without it every row reads
-        <code>state not compared (no mapped state supplied)</code> — which is the truth, and is
-        also what a drift table looks like when nobody supplied the map.</p>
-      <p>So if a whole <code>sync status</code> table says nothing is compared, that is not
-        a clean board. It is a missing map.</p>
+        against the board's. Without a map every row reads
+        <code>state not compared (no mapped state supplied)</code> &mdash; so a whole table saying
+        nothing is compared is not a clean board, it is a missing map.</p>
     </div>
 
     <div class="note">
-      <div class="label">On a sharded plan, read the manifest assembled or read almost none of it</div>
-      <p>In the sharded layout the index holds each phase as a stub — <code>id</code>,
-        <code>title</code>, <code>shard</code> — and nothing else. A phase's own board link and every
-        task's link live in the shard body, so a <strong>plain read of the manifest file finds the
-        bugs and stops</strong>. Measured on one real plan: a raw read reaches two links, the
-        assembled read reaches sixty-nine.</p>
-      <p>It does not error. It under-counts, and the connector line looks plausible. The scripts on
-        this path all load assembled; the trap is in any count you compute yourself.</p>
-    </div>
-
-    <div class="tip">
-      <div class="label">Two settings that stop unwanted writes</div>
-      <p>A <code>stateMap</code> value of <code>null</code> means <strong>never move state for that
-        transition</strong> — the field is skipped and the team moves that card by hand.
-        The built-in defaults name <strong>Agile-process</strong> states; a Scrum project must set
-        <code>stateMap</code>, and <code>/audit:doctor</code> carries that advisory.</p>
+      <div class="label">A sharded manifest read raw looks like a clean answer</div>
+      <p>The index holds each phase as a stub, and every board link below a phase lives in the shard
+        body &mdash; so a plain read of the manifest file finds the bugs and stops, where an assembled
+        read finds every link. It does not error; it under-counts, and the connector line looks
+        plausible. The scripts on this path all load assembled, so the trap is in any count you
+        compute yourself. The board read is honest in the same way: a fetch that could not answer for
+        every id exits 1 and names the ones it has no news about, rather than leaving a table that
+        looks complete.</p>
     </div>
   </section>
 
@@ -1395,61 +1447,76 @@
       </div>
     </div>
 
-    <p>Seven sections, in the order they appear:</p>
+    <p>The sections, in the order they appear:</p>
 
     <div class="tabs">
       <div class="tab"><h4>Overview</h4>
-        <p>Where a run stands: phases, what is ready, what is waiting. The live view — it refreshes
-          from disk while you watch.</p></div>
+        <p>Where a run stands, and what the tests said. The live view; it refreshes from disk while
+          you watch.</p></div>
       <div class="tab"><h4>Plan &amp; models</h4>
-        <p>Per-phase review model and per-task skills and models. This is where you set which model
-          reviews a phase, without editing the manifest by hand.</p></div>
+        <p>Per-phase review model, per-task skills and models.</p></div>
       <div class="tab"><h4>Usage</h4>
-        <p>Token spend by phase, task, model, author and time, with cache economics and
-          cost-per-task — the same data as <code>/audit:usage</code>.</p></div>
+        <p>Token spend by phase, task, model, author and time &mdash; <code>/audit:usage</code>'s
+          data.</p></div>
       <div class="tab"><h4>Policy</h4>
-        <p>The capability policy: what agents are allowed to do. Expandable full-screen, searchable
-          by name and by description.</p></div>
+        <p>What agents are allowed to do. Expandable full-screen, searchable by name and
+          description.</p></div>
       <div class="tab"><h4>Proposals</h4>
-        <p>Parked proposals, materialize and drop — the same script the CLI calls, so both sides
-          behave identically.</p></div>
+        <p>Materialize and drop, through the same script the CLI calls.</p></div>
       <div class="tab"><h4>Settings</h4>
-        <p>The guard configuration in <code>audit.config.json</code>, validated as you type rather
-          than on save.</p></div>
+        <p><code>audit.config.json</code>, validated as you type rather than on save;
+          <code>evidence.dir</code> sits in its Audit trail card.</p></div>
       <div class="tab"><h4>Appearance</h4>
-        <p>Theme and presentation for the panel and the rendered report.</p></div>
+        <p>Theme and presentation, for the panel and the rendered report.</p></div>
+    </div>
+
+    <h3>What the tests said, on Overview</h3>
+
+    <p>Open a phase and its detail carries two evidence lines, <strong>labelled apart</strong>:
+      <code>phase sign-off</code> is the phase's own gate run, and <code>tasks</code> is a roll-up
+      counting its tasks by verdict. They measure different things over different files, so one badge
+      for both would claim a measurement nobody made. The task table below them ends in a
+      <code>tests</code> column, in the same position the report uses.</p>
+
+    <p>Badges and markers read exactly as they do in <a href="#phases">Running phases</a>. A badge
+      with a run behind it is also a button: pressing it opens that run's steps (name, exit, checks,
+      took, outcome) and the <strong>basis</strong> lines for anything it could not determine. A
+      subject with no recorded run is deliberately not a control, because there is nothing to
+      open.</p>
+
+    <div class="tip">
+      <div class="label">It notices a run landing</div>
+      <p>The freshness fingerprint covers the config, the manifest, every shard, the usage ledger
+        <em>and</em> the evidence directory, so a gate recorded in another window refreshes the badge
+        without a reload. Only the runs the plan <strong>points at</strong> travel to the browser
+        &mdash; earlier attempts stay in the ledger, and the report is where you read them. And where a
+        pointer dangles it says how many ledger files it read and how many lines it could not parse,
+        so <em>Pointer without evidence</em> tells an unwritten evidence directory apart from an
+        unreadable one.</p>
     </div>
 
     <div class="note">
       <div class="label">What the panel does not cover, stated rather than discovered</div>
-      <p>The rule is that every feature has a command <em>and</em> a way through the panel. Three
-        places it does not hold today, so you look for them in the terminal and not on screen:</p>
-      <p><strong>Board status and drift.</strong> The ADO card shows manifest evidence only — how
-        many tasks, bugs and phases carry a link, and when the last sync was. It never reads the
-        board, so it cannot show state drift, parent drift or sprint drift. Its own text points you
-        at the CLI, and that is where the answer is: <code>/audit:sync status</code>.</p>
-      <p><strong>Pulling from the board.</strong> There is no panel path at all. Both flavours ask
-        you which items to import, and the panel's manifest writer is deliberately restricted to
-        composition levers — it never changes structure — so it could not apply a pull's
-        result even if it offered one.</p>
+      <p>The rule is that every feature has a command <em>and</em> a way through the panel. Where it
+        does not hold today, you look in the terminal:</p>
+      <p><strong>Board status and drift.</strong> The ADO card shows manifest evidence only &mdash;
+        how many tasks, bugs and phases carry a link, and when the last sync was. It never reads the
+        board, so it cannot show state, parent or sprint drift, and the <code>ADO parent</code> cell
+        shows what you <em>declared</em>: a phase whose card somebody dragged under a different epic
+        by hand reads exactly like one that agrees. <code>/audit:sync status</code> knows the
+        difference.</p>
+      <p><strong>Pulling from the board.</strong> No panel path at all &mdash; both flavours ask you
+        which items to import, and the panel's manifest writer is restricted to composition levers.</p>
       <p><strong>Pruning the plan-gate feed.</strong> The panel <em>server</em> can do it; the Plan
-        gate card has no button for it yet. Until it does, <code>/audit:logs prune</code> is the way,
-        and <code>--dry-run</code> reports the same counts and writes nothing.</p>
-      <p><strong>The parent column shows what you declared, never what the board did.</strong> The
-        <code>ADO parent</code> cell is your declaration plus the cached candidate list. A phase
-        whose card somebody dragged under a different epic by hand reads exactly the same as one
-        that agrees. <code>/audit:sync status</code>'s <code>parent?</code> cell is the surface that
-        knows the difference.</p>
+        gate card has no button yet, so <code>/audit:logs prune</code> is the way.</p>
+      <p><strong>Running anything.</strong> The panel configures runs; it never starts one, and it
+        never records a gate.</p>
     </div>
 
-    <div class="tip">
-      <div class="label">Where panel and CLI <em>are</em> one implementation</div>
-      <p>Materialize, drop and revive run the same script from either side, and so does the config
-        validator. For those there is no “panel version” of a rule that can drift from the command
-        version — which is why a change made in the panel shows up in <code>/audit:status</code>
-        immediately. The gaps above are missing paths, not second implementations; nothing here has
-        two answers.</p>
-    </div>
+    <p>Everywhere else, panel and CLI <em>are</em> one implementation: materialize, drop and revive
+      run the same script from either side, and so does the config validator. The gaps above are
+      missing paths, not second implementations, which is why a change made in the panel shows up in
+      <code>/audit:status</code> immediately.</p>
   </section>
 
   <!-- 11 ------------------------------------------------------------------ -->
@@ -1460,8 +1527,9 @@
     </div>
 
     <p>Every change to the plan and the config appends one hash-chained row to a journal beside the
-      manifest. It is meant to be <strong>committed</strong> — that is what makes it evidence rather
-      than a log — and that single fact decides everything else about what a row may hold.</p>
+      manifest. It is meant to be <strong>committed</strong> &mdash; that is what makes it evidence
+      rather than a log &mdash; and that single fact decides everything else about what a row may
+      hold.</p>
 
     <figure class="fig">
       <figcaption class="fig-head">
@@ -1479,72 +1547,74 @@
       </div>
     </figure>
 
-    <h3>What a row no longer carries, and what stands in its place</h3>
+    <h3>What a row may hold, and what it may not</h3>
+
+    <p>Because the file ships, no row names a machine. A command is stored as
+      <code>commandSha256</code> + <code>commandBytes</code> + <code>program</code>, so you can still
+      ask <em>&ldquo;was it this command?&rdquo;</em> by hashing your candidate while the arguments
+      &mdash; where paths, hostnames and tokens live &mdash; are not there. <code>cwd</code> is
+      repo-relative, <code>.</code> at the root, or <code>&lt;outside-repo&gt;</code>; unresolvable,
+      empty and outside all land on that token, because a redactor that guesses is a home directory in
+      a file that ships. There is no <code>actor.host</code> at all. And the file <em>name</em> is the
+      session id or a random per-checkout token rather than the machine's, which mattered most of all:
+      the chain is seeded from that base name, so a name committed there could never be corrected
+      without breaking <code>verify</code> on every clone that already had the file.</p>
+
+    <h3>The rows a test run leaves</h3>
+
+    <p>The journal <strong>anchors</strong> the evidence ledger rather than duplicating it: an exit
+      code and a duration are things the plugin observed about the machine, not fields of the
+      plan.</p>
 
     <div class="tw">
       <table>
-        <thead>
-          <tr><th>It used to store</th><th>It now stores</th><th>Why the swap</th></tr>
-        </thead>
+        <thead><tr><th>Action</th><th>Says</th><th>Written when</th></tr></thead>
         <tbody>
           <tr>
-            <td>the command text, verbatim</td>
-            <td><code>commandSha256</code>, <code>commandBytes</code>, <code>program</code></td>
-            <td>Arguments are where the paths, hostnames and tokens live. You can still ask
-              <em>“was it this command?”</em> by hashing your candidate.</td>
+            <td><code>test.evidence.recorded</code></td>
+            <td>a gate run was written to the evidence record: <code>runId</code>, and the task or
+              phase it was about</td>
+            <td>its subject is the <strong>evidence file</strong>, so it is true the moment the row
+              lands, whatever happens to the plan afterwards</td>
           </tr>
           <tr>
-            <td>an absolute <code>cwd</code></td>
-            <td>a repo-relative path, <code>.</code> at the root, or
-              <code>&lt;outside-repo&gt;</code></td>
-            <td>Unresolvable, empty and outside all land on the token. A redactor that guesses is a
-              home directory in a file that ships.</td>
+            <td><code>task.testEvidence</code> / <code>phase.testEvidence</code></td>
+            <td>a <code>testEvidence</code> pointer moved, naming <code>from</code> and <code>to</code></td>
+            <td><strong>only after the pointer actually lands.</strong> A pointer refused by another
+              live session leaves the row above standing and no row here, because the chain must
+              never assert a transition that did not happen</td>
           </tr>
           <tr>
-            <td><code>actor.host</code></td>
-            <td>nothing</td>
-            <td>Nothing ever read it. <code>verify</code> does not, no surface renders it, and
-              <code>actor.sessionId</code> already carried the per-session identity. A field with a
-              reader has a redaction question; a field with none has a deletion answer.</td>
-          </tr>
-          <tr>
-            <td>the machine name, in the <em>file name</em></td>
-            <td>the session id, else a random per-checkout token</td>
-            <td>The worst of the four, because the chain is seeded from the file's own base name — a
-              name committed there can never be corrected without breaking
-              <code>verify</code> on every clone that already has the file.</td>
+            <td><code>audit.state.committed</code></td>
+            <td>an audit-state commit was made for work no task commit will carry</td>
+            <td>a task went <code>blocked</code>, an infrastructure stop, a red sign-off gate, or
+              <code>/audit:resume</code>'s opening sweep</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <div class="note">
-      <div class="label">The digest is unsalted, and that is not an oversight</div>
-      <p>Unsalted is what makes it useful: hashing your candidate is how you check a guess. A salt
-        shipped with the plugin would be published with it, and a per-machine salt would be readable
-        by the same user it hid things from. So a <strong>short command from an obvious
-        vocabulary is recoverable</strong> by anyone willing to enumerate that vocabulary. This buys
-        friction and data minimisation. It is not anonymisation and must not be sold as it.</p>
-    </div>
-
-    <div class="tip">
-      <div class="label">Old rows are left exactly as they are</div>
-      <p>History is not rewritten — the chain runs through those bytes, so correcting a row in place
-        is what breaks <code>verify</code>. Old and new rows share a file and the chain crosses the
-        version boundary intact: a row can be superseded by a later one, never corrected. If you want
-        to know whether anything already committed carries machine identity, that is a question about
-        the files in git, and it is a different question from what the writer does now.</p>
-    </div>
+    <p><strong>Each action has exactly one writer</strong> &mdash; never append one by hand, because
+      two writers means duplicate rows and a doctor that can no longer trust the count. These three
+      are written <em>in process</em> rather than by the <code>journal-writes</code> hook, because the
+      hook watches edit <em>tools</em> and these writers use <code>os.replace</code> and
+      <code>git commit</code>.</p>
 
     <div class="note">
       <div class="label">Tamper-evident, not tamper-proof</div>
-      <p>Editing, deleting or reordering a row breaks the chain and <code>verify</code> names the
-        row. What it cannot stop is a forger who rewrites the whole file and recomputes every hash
-        forward — there is no secret key, and nowhere on a user's machine to keep one the same user
-        cannot read. It is a smoke detector, not a vault.</p>
-      <p>The other half of what it proves is <strong>out-of-band drift</strong>: a document that
-        changed with no row to explain it — a checkout, a script, a shell write. Those come back as
-        warnings, not findings, and they are usually the interesting line.</p>
+      <p>Editing, deleting or reordering a row breaks the chain and <code>verify</code> names the row.
+        What it cannot stop is a forger who rewrites the whole file and recomputes every hash forward
+        &mdash; there is no secret key, and nowhere on a user's machine to keep one the same user
+        cannot read. It is a smoke detector, not a vault. The other half of what it proves is
+        <strong>out-of-band drift</strong>: a document that changed with no row to explain it, which
+        comes back as a warning rather than a finding and is usually the interesting line. History is
+        never rewritten to tidy any of this up &mdash; the chain runs through those bytes, so a row
+        can be superseded by a later one, never corrected.</p>
+      <p>The command digest is <strong>unsalted</strong> on purpose &mdash; hashing your candidate is
+        how you check a guess, a shipped salt would be published with the plugin, and a per-machine
+        salt would be readable by the same user it hid things from. So a short command from an obvious
+        vocabulary is recoverable. This buys friction and data minimisation; it is not anonymisation
+        and must not be sold as it.</p>
     </div>
 
     <div class="cmd">
@@ -1553,8 +1623,16 @@
         <span class="badge b-read">read-only</span>
       </div>
       <div class="cmd-body">
-        <p>Verifies the chain across every journal file, live and archived, and reports drift
-          separately from breakage. This is the command that tells you the trail still holds.</p>
+        <p>Verifies the chain across every journal file, live and archived, reporting drift separately
+          from breakage. It also grades the pointers against the ledger both ways &mdash; a pointer
+          naming a run this checkout does not have, and a recorded run the plan has not caught up
+          to:</p>
+<pre><code>[OK     ] evidence       7 pointer(s) in the plan, 9 recorded run(s), and every
+                          pointer names a run this checkout holds</code></pre>
+        <p>Both are advisory, because a pointer refused by a live lock is a designed state and the
+          repair is one <code>--reconcile</code>. Asked of what is <em>committed</em>, the same
+          question is a breach instead:
+          <code>/audit:status --gate --fail-on invariant-breach</code>.</p>
       </div>
     </div>
   </section>
@@ -1572,46 +1650,53 @@
           <tr><th>Command</th><th>Arguments</th><th>Touches</th><th>Panel path</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>/audit:status</code></td><td><code>[--gate] [--fail-on …] [--json]</code></td><td><span class="badge b-read">read-only</span></td><td>Overview — the live view of the same state</td></tr>
-          <tr><td><code>/audit:doctor</code></td><td><code>[--deep] [--json]</code></td><td><span class="badge b-read">read-only</span></td><td><em>none</em> — CLI only</td></tr>
+          <tr><td><code>/audit:status</code></td><td><code>[--gate] [--fail-on &hellip;] [--phase ID] [--json] [--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td>Overview &mdash; the live view of the same state</td></tr>
+          <tr><td><code>/audit:doctor</code></td><td><code>[--deep] [--json] [--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; CLI only</td></tr>
           <tr><td><code>/audit:report</code></td><td><code>[--out-dir &lt;dir&gt;] [--share]</code></td><td><span class="badge b-read">read-only</span></td><td>Export report, from any tab</td></tr>
-          <tr><td><code>/audit:usage</code></td><td><code>[--by phase|task|model|author|agent|day|month] [--since 7d] …</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
+          <tr><td><code>/audit:usage</code></td><td><code>[--by phase|task|model|author|agent|day|month] [--phase] [--author] [--area] [--since 7d] [--format md|ascii] [--json] [--backfill]</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
           <tr><td><code>/audit:guide</code></td><td><code>&lt;question&gt;</code></td><td><span class="badge b-read">read-only</span></td><td>Help drawer</td></tr>
-          <tr><td><code>/audit:sync status</code></td><td>—</td><td><span class="badge b-read">read-only</span></td><td><em>none</em> — the ADO card shows manifest counts, never the board</td></tr>
-          <tr><td><code>/audit:sync connect</code></td><td>—</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> — the card edits <code>meta.ado</code> once connected</td></tr>
-          <tr><td><code>/audit:sync parents</code></td><td>—</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>partial</em> — the cached candidates fill the parent picker</td></tr>
-          <tr><td><code>/audit:phase</code></td><td><code>&lt;phaseId&gt; [--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — the panel configures runs, never starts one</td></tr>
-          <tr><td><code>/audit:next</code></td><td><code>[--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — same reason</td></tr>
-          <tr><td><code>/audit:run</code></td><td><code>&lt;taskId&gt; [--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — same reason</td></tr>
-          <tr><td><code>/audit:resume</code></td><td>—</td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — same reason</td></tr>
-          <tr><td><code>/audit:review</code></td><td><code>&lt;phaseId&gt;</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — same reason</td></tr>
-          <tr><td><code>/audit:task</code></td><td><code>add · move · cancel · priority</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>partial</em> — Plan &amp; models edits levers, not structure</td></tr>
-          <tr><td><code>/audit:bug</code></td><td><code>add · list · fix · close</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — bugs are listed, not edited</td></tr>
-          <tr><td><code>/audit:propose</code></td><td><code>list · materialize · drop · revive</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td>Proposals — same script from both sides</td></tr>
-          <tr><td><code>/audit:worktree</code></td><td><code>&lt;phaseId&gt; [--remove]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — CLI only</td></tr>
-          <tr><td><code>/audit:layout</code></td><td><code>&lt;sharded|single-file&gt; [--dry-run]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> — CLI only</td></tr>
-          <tr><td><code>/audit:panel</code></td><td><code>[stop|status] [--port &lt;n&gt;]</code></td><td><span class="badge b-write">manifest</span></td><td>n/a — it <em>is</em> the panel</td></tr>
-          <tr><td><code>/audit:sync push</code></td><td><code>[bugs|tasks|all] [--task | --phase]</code></td><td><span class="badge b-ado">ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> — CLI only, and it writes to somebody's board</td></tr>
-          <tr><td><code>/audit:sync pull</code></td><td><code>[bugs|sprint]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — interactive by construction</td></tr>
-          <tr><td><code>/audit:logs</code></td><td><code>prune [--older-than DAYS] [--dry-run]</code></td><td><span class="badge b-write">logs feed</span></td><td><em>endpoint only</em> — the server can prune, the Plan gate card has no button yet</td></tr>
-          <tr><td><code>/audit:migrate</code></td><td>—</td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> — the older spelling of <code>layout sharded</code></td></tr>
-          <tr><td><code>/audit:init</code></td><td><code>[scope/goals]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> — CLI only</td></tr>
+          <tr><td><code>/audit:sync status</code></td><td>&mdash;</td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; the ADO card shows manifest counts, never the board</td></tr>
+          <tr><td><code>/audit:sync connect</code></td><td>&mdash;</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; the card edits <code>meta.ado</code> once connected</td></tr>
+          <tr><td><code>/audit:sync parents</code></td><td>&mdash;</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>partial</em> &mdash; the cached candidates fill the parent picker</td></tr>
+          <tr><td><code>/audit:phase</code></td><td><code>&lt;phaseId&gt; [--dry-run]</code> &middot; <code>add</code> &middot; <code>retarget</code> &middot; <code>priority</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the panel configures runs, never starts one</td></tr>
+          <tr><td><code>/audit:next</code></td><td><code>[--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
+          <tr><td><code>/audit:run</code></td><td><code>&lt;taskId&gt; [--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
+          <tr><td><code>/audit:resume</code></td><td>&mdash;</td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
+          <tr><td><code>/audit:review</code></td><td><code>&lt;phaseId&gt;</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
+          <tr><td><code>/audit:task</code></td><td><code>add</code> &middot; <code>scope</code> &middot; <code>move</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>partial</em> &mdash; Plan &amp; models edits levers, not structure</td></tr>
+          <tr><td><code>/audit:bug</code></td><td><code>add "&lt;title&gt;"</code> &middot; <code>list [all|&lt;status&gt;]</code> &middot; <code>fix &lt;bugId&gt; [--phase]</code> &middot; <code>close &lt;bugId&gt; [wontfix]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; bugs are listed, not edited</td></tr>
+          <tr><td><code>/audit:propose</code></td><td><code>list [all]</code> &middot; <code>materialize &lt;PROP-id&gt;|--all</code> &middot; <code>drop</code> &middot; <code>revive</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td>Proposals &mdash; same script from both sides</td></tr>
+          <tr><td><code>/audit:worktree</code></td><td><code>&lt;phaseId&gt; [--remove]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:layout</code></td><td><code>&lt;sharded|single-file&gt; [--dry-run] [--renumber] [--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:panel</code></td><td><code>[stop|status] [--port &lt;n&gt;]</code></td><td><span class="badge b-write">manifest</span></td><td>n/a &mdash; it <em>is</em> the panel</td></tr>
+          <tr><td><code>/audit:sync push</code></td><td><code>[bugs|tasks|all] [--task | --phase]</code></td><td><span class="badge b-ado">ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only, and it writes to somebody's board</td></tr>
+          <tr><td><code>/audit:sync pull</code></td><td><code>[bugs|sprint]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; interactive by construction</td></tr>
+          <tr><td><code>/audit:logs</code></td><td><code>prune [--older-than DAYS] [--dry-run] [--json]</code></td><td><span class="badge b-write">logs feed</span></td><td><em>endpoint only</em> &mdash; the server can prune, the Plan gate card has no button yet</td></tr>
+          <tr><td><code>/audit:migrate</code></td><td><code>[--dry-run] [--renumber] [--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the legacy spelling of <code>layout sharded</code></td></tr>
+          <tr><td><code>/audit:init</code></td><td><code>[scope/goals]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="tip">
-      <div class="label">When you are unsure what something does</div>
-      <p><code>/audit:guide &lt;question&gt;</code> answers from the plugin's own documentation,
-        with a citation for every claim, and changes nothing.</p>
+      <div class="label">Not on the table, and worth knowing</div>
+      <p><code>run-test-gate.py</code> (<code>--record</code>, <code>--reconcile</code>) and
+        <code>commit-audit-state.py</code>, both under <code>scripts/governance/</code>, are scripts
+        rather than slash commands: the pipeline runs them for you, the <em>repair</em> is yours, and
+        <a href="#phases">Running phases</a> covers both. For anything else,
+        <code>/audit:guide &lt;question&gt;</code> answers from the plugin's own documentation with a
+        citation for every claim, and <code>/audit:status --help</code> prints its condition list
+        from the same tuple the gate evaluates.</p>
     </div>
   </section>
 
   <footer>
-    Every command, flag and mapping on this page is taken from the plugin's own command
-    definitions at v1.3.0, and the behaviour described was exercised against a live board and a
-    running panel rather than read off the source. Where this page and <code>/audit:guide</code>
-    disagree, the guide is right — it reads the source.
+    Every command, flag, config key and mapping on this page was checked against the plugin's own
+    command definitions and scripts. The terminal output quoted here was produced by running those
+    scripts against the published <a href="index.html">acme-store</a> example, and every worked
+    example is drawn from its manifest and its evidence ledger rather than invented. No gate in the
+    plugin's repository reads this page, so where it and <code>/audit:guide</code> disagree, the
+    guide is right &mdash; it reads the source.
   </footer>
 
 </div>
