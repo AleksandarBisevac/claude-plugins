@@ -24,3 +24,12 @@ Otherwise run the full preflight (steps 1–5, including acquiring the lock) and
    relay it rather than restating it. Release the lock and stop.
 3. Otherwise run **Execute the task** (orchestrator), then follow **Reporting** — outcome +
    what is ready next. Release the lock.
+
+**Before that release, if the task did not reach `done`: the record of its gate has nothing
+to ride out on.** This command commits on success and only on success, so a run ending
+`blocked` — or stopping on the infrastructure path — leaves the rows the gate just wrote
+sitting in the working tree with nothing coming behind them to carry them.
+`${CLAUDE_PLUGIN_ROOT}/commands/run.md` → *What one run leaves behind* states it in full:
+which invocation becomes evidence, why a refused pointer is not a failure, and what
+`commit-audit-state.py` may and may not stage. It applies here unchanged — the two commands
+differ in how the task is chosen and in nothing else.

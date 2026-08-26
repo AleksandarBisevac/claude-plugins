@@ -57,6 +57,27 @@ Otherwise run the full preflight (steps 1–5, including the lock) and emit **Pr
 
 Then follow **Reporting** and release the lock.
 
+**What a phase run records, and where those records have to end up.** Every task's gate run
+is recorded against that task; **Phase sign-off's own gate run is recorded against the
+phase**, kept apart from its tasks' so a reader can follow either — the phase's gate and its
+tasks' gates measure different work over different files, and merging them would claim a
+measurement nobody made. Each task commit and the sign-off commit stage the evidence
+directory alongside the journal, for the same reason the journal is staged: a `testEvidence`
+pointer that reaches a clone without the row it names points at nothing, and
+`verify-invariants.py`'s `evidence-committed` is what says so afterwards.
+
+**A red sign-off gate is where a phase run stops committing.** The phase stays
+`in_progress`, nothing is committed, and the rows the gate just wrote have nothing behind
+them — a named point in the orchestrator's *Keeping a failed run's record*, where
+`commit-audit-state.py` makes them durable without staging any implementation. Read the
+gate's own lines before signing off rather than reading the exit code alone: a rewritten
+tree and a gate that checked nothing each turn the run red and say which, while
+`NO OVERLAP WITH THIS WORK` **moves the exit code not at all** — the gate ran, it passed, and
+none of the paths it printed is a file this phase's tasks declare. That last one is reported
+and never refused, because the overlap is derived from paths a runner happens to print and a
+heuristic that refused would manufacture false refusals. Deciding whether this gate can grade
+this work is therefore yours, and the line is what puts the question in front of you.
+
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
 One more phase in a plan that already exists. Until this verb nothing in the tree
@@ -166,6 +187,15 @@ as breakage.
 **Not a done or cancelled phase.** Its sign-off was given against the gate it had, and
 moving that afterwards rewrites what the sign-off attested. A phase that is `pending` or
 `in_progress` is exactly the case this verb is for.
+
+**Retargeting changes what the next run measures and rewrites nothing that already
+happened.** A recorded run is graded by the gate it ran under, and its ledger row keeps the
+steps it actually ran — so the phase's `testEvidence` goes on pointing at a run of the old
+gate until a new one is recorded, which is the honest reading and not staleness to repair.
+A phase whose gate has been cleared records nothing at all: the runner reports the EMPTY
+gate and returns before writing a row, so the report and the panel read the phase — and
+every task in it that declares no `tests.gate` of its own — as `No gate configured`,
+*nothing could have run*, rather than as a run that answered nothing.
 
 `--gate` and `--gate-clear` together are refused: two answers about one field, and
 guessing which was meant is the fault this closes. `--area` with an empty value REMOVES
