@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 
+import json
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _doctor_completions as M                    # noqa: E402
@@ -413,6 +414,120 @@ def _cases(check):
           "where it is right",
           "repair-commits.py" in _src)
 
+
+    # ------------------------------------------- check_evidence_pointers
+    # The advisory twin of `_invariants.evidence-committed`. That one grades what
+    # is COMMITTED and calls a mismatch a breach; this grades the working tree,
+    # where a mismatch is routine and repairable, so nothing here is worse than a
+    # warning.
+    import shutil as _shutil
+    import _evidence_io as _ev
+
+    def _ledger_project(name, rows):
+        root = os.path.join(tmp, name)
+        os.makedirs(os.path.join(root, ".claude"), exist_ok=True)
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        for row in rows:
+            _ev.append_row(root, row)
+        return root
+
+    def _plan(pointer=None, phase_pointer=None):
+        task = {"id": "P1.1", "title": "t", "status": "done"}
+        if pointer:
+            task["testEvidence"] = pointer
+        phase = {"id": "P1", "title": "one", "status": "done", "tasks": [task]}
+        if phase_pointer:
+            phase["testEvidence"] = phase_pointer
+        return {"meta": {"version": 2}, "phases": [phase]}
+
+    ROW = {"v": 1, "runId": "R1", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+           "taskId": "P1.1", "status": "failed"}
+
+    rep = base.Report()
+    proj = _ledger_project("dcev-ok", [ROW])
+    M.check_evidence_pointers(rep, proj, _plan(
+        {"runId": "R1", "status": "failed", "at": ROW["ts"]}))
+    check("dc25 a pointer naming a run the ledger holds is one ok line and "
+          "nothing else - the advisory check has to be quiet when the plan and "
+          "the record agree, or nobody will read the times it is not: %r"
+          % (_levels(rep, "evidence"),),
+          _levels(rep, "evidence") == ["OK"])
+
+    rep = base.Report()
+    proj = _ledger_project("dcev-dangling", [ROW])
+    M.check_evidence_pointers(rep, proj, _plan(
+        {"runId": "R-GONE", "status": "passed", "at": ROW["ts"]}))
+    check("dc26 a pointer naming a run NO row carries warns about BOTH facts, "
+          "because one situation is two problems: the plan refers to evidence "
+          "this checkout does not have, AND the row it does have is pointed at "
+          "by nothing. Folding them into one line would drop whichever repair "
+          "the reader was not already looking for - and neither is a finding, "
+          "because a doctor is advisory: %r"
+          % (_levels(rep, "evidence"),),
+          _levels(rep, "evidence") == ["WARNING", "WARNING"]
+          and "R-GONE" in _detail(rep, "evidence")
+          and "reconcile" in _detail(rep, "evidence")
+          and "P1.1" in _detail(rep, "evidence"))
+
+    rep = base.Report()
+    proj = _ledger_project("dcev-behind", [ROW])
+    M.check_evidence_pointers(rep, proj, _plan())
+    check("dc27 THE OTHER DIRECTION: a recorded run whose subject has no "
+          "pointer is the record being AHEAD of the plan - what a refused "
+          "pointer leaves behind - and the warning names the command that "
+          "catches it up rather than leaving a reader to find it: %r"
+          % (_detail(rep, "evidence")[:90],),
+          _levels(rep, "evidence") == ["WARNING"]
+          and "reconcile" in _detail(rep, "evidence")
+          and "P1.1" in _detail(rep, "evidence"))
+
+    rep = base.Report()
+    PHASE_ROW = {"v": 1, "runId": "RP", "ts": "2026-08-26T11:00:00Z",
+                 "scope": "phase", "phaseId": "P1", "status": "no-checks"}
+    proj = _ledger_project("dcev-phase", [ROW, PHASE_ROW])
+    M.check_evidence_pointers(rep, proj, _plan(
+        {"runId": "R1", "status": "failed", "at": ROW["ts"]},
+        phase_pointer={"runId": "RP-GONE", "status": "passed",
+                       "at": PHASE_ROW["ts"]}))
+    check("dc31 a PHASE pointer is collected and graded like a task's - the "
+          "sign-off gate's own run is the one a reader most wants to follow, "
+          "and a walk that visited only tasks would clear a phase pointing at "
+          "nothing while the tasks beside it all resolved: %r"
+          % (_detail(rep, "evidence")[:100],),
+          "RP-GONE" in _detail(rep, "evidence")
+          and "phase P1" in _detail(rep, "evidence"))
+
+    rep = base.Report()
+    proj = _ledger_project("dcev-empty", [])
+    M.check_evidence_pointers(rep, proj, _plan())
+    check("dc28 no runs and no pointers is an ok line, not silence - a check "
+          "that printed nothing could not be told from one that never ran",
+          _levels(rep, "evidence") == ["OK"])
+
+    rep = base.Report()
+    proj = _ledger_project("dcev-torn", [ROW])
+    edir = _ev.evidence_dir(proj)
+    with open(os.path.join(edir, sorted(os.listdir(edir))[0]), "a") as fh:
+        fh.write("{not json\n")
+    M.check_evidence_pointers(rep, proj, _plan(
+        {"runId": "R1", "status": "failed", "at": ROW["ts"]}))
+    check("dc29 a torn ledger row is reported even while every pointer "
+          "resolves - the plan is fine and the record lost a row, and folding "
+          "those into one verdict would hide whichever was not being looked "
+          "at: %r" % (_levels(rep, "evidence"),),
+          "WARNING" in _levels(rep, "evidence")
+          and "could not be read" in _detail(rep, "evidence"))
+
+    rep = base.Report()
+    M.check_evidence_pointers(rep, None, _plan(
+        {"runId": "R1", "status": "failed", "at": ROW["ts"]}))
+    check("dc30 a project the ledger cannot be read for is a warning saying "
+          "so, never an ok - a reader that cleared nothing must not report a "
+          "clean plan: %r" % (_levels(rep, "evidence"),),
+          _levels(rep, "evidence") == ["WARNING"]
+          and "not checked" in _detail(rep, "evidence"))
+    _shutil.rmtree(os.path.join(tmp, "dcev-ok"), ignore_errors=True)
 
 
 def _selftest():

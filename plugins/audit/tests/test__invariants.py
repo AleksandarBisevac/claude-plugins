@@ -208,7 +208,7 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
           journal_in_commit=False, journal_real=False,
           evidence_in_commit=False, evidence_near_miss=False,
           audit_state=None, evidence_outside=False, journal_off=False,
-          leave_dirty=False):
+          leave_dirty=False, evidence_pointer=None):
     """A repo with one finished phase, broken in exactly the way the flags say.
 
     ONE BUILDER RATHER THAN ONE PER CASE, because the clean path has to be the
@@ -308,6 +308,32 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         shard["tasks"][1]["dependsOn"] = ["P9.9"]
     _write_json(shard_path, shard)
     staged = ["src/b.py", "docs/audit/phases/P1.json"]
+    if evidence_pointer:
+        # A pointer in the COMMITTED state, and a row for it in three shapes:
+        # committed beside it, never written at all, or written and left out of
+        # the commit. The third is the realistic failure - the row exists on the
+        # machine that ran the gate and reaches no clone.
+        shard["tasks"][0]["testEvidence"] = {
+            "runId": "RUN-1", "status": "failed", "at": "2026-08-26T10:00:00Z"}
+        if evidence_pointer == "phase":
+            shard["testEvidence"] = {"runId": "RUN-2", "status": "passed",
+                                     "at": "2026-08-26T11:00:00Z"}
+        _write_json(shard_path, shard)
+        if evidence_pointer != "orphan":
+            evdir = os.path.join(audit, "evidence")
+            os.makedirs(evdir, exist_ok=True)
+            rows = ['{"runId":"RUN-1","scope":"task","taskId":"P1.1","v":1}']
+            if evidence_pointer == "phase":
+                rows.append('{"runId":"RUN-2","scope":"phase","phaseId":"P1","v":1}')
+            if evidence_pointer == "torn":
+                # A row COMMITTED unreadable. It says a row could not be read,
+                # never that a pointer is unsupported - and the two must not
+                # arrive as the same verdict.
+                rows.append("{not json at all")
+            _write(os.path.join(evdir, "2026-08.fixture.jsonl"),
+                   "\n".join(rows) + "\n")
+            if evidence_pointer != "uncommitted-row":
+                staged.append("docs/audit/evidence/2026-08.fixture.jsonl")
     if rogue:
         _write(os.path.join(root, "src", "rogue.py"), "rogue = 1\n")
         staged.append("src/rogue.py")
@@ -861,6 +887,83 @@ def _cases(check):
               "main is a breach again, which is the pair that proves the resolver "
               "is what decides: %r" % (ref["breaches"],),
               len(ref["breaches"]) == 1)
+
+        # --- evidence-committed -------------------------------------------
+        # C3's other half. `audit-state-scope` grades what a commit STAGED;
+        # this grades what the committed plan POINTS AT. A pointer is a cache at
+        # a row in the ledger, so a committed pointer whose row no clone holds is
+        # a plan referring to evidence that does not travel with it.
+        paired = repos.get(evidence_pointer="paired")
+        ec = _check(_phase_answer(paired), "evidence-committed")
+        check("iv61 a committed pointer whose row is committed beside it is "
+              "clean, and `examined` is asserted - a check that resolved no "
+              "pointer at all would otherwise print the calmest word in the "
+              "vocabulary: %r" % ((ec["verdict"], ec["examined"]),),
+              ec["verdict"] == M.CLEAN and ec["examined"] == 1
+              and ec["breaches"] == [], ec["gaps"])
+
+        orphan = repos.get(evidence_pointer="orphan")
+        ec = _check(_phase_answer(orphan), "evidence-committed")
+        check("iv62 THE FAULT: a pointer committed with no row anywhere is a "
+              "BREACH naming the run and the subject - the plan as cloned "
+              "refers to evidence the repository does not hold: %r"
+              % (ec["breaches"],),
+              ec["verdict"] == M.BREACH and len(ec["breaches"]) == 1
+              and "RUN-1" in ec["breaches"][0] and "P1.1" in ec["breaches"][0])
+
+        left_out = repos.get(evidence_pointer="uncommitted-row")
+        ec = _check(_phase_answer(left_out), "evidence-committed")
+        check("iv63 ...and the REALISTIC shape is the same breach: the row is on "
+              "the machine that ran the gate, in the working tree, and simply "
+              "not in the commit. This is what C3 exists to prevent, and it is "
+              "the one a working-tree reader would call fine: %r"
+              % (ec["breaches"],),
+              ec["verdict"] == M.BREACH and "RUN-1" in ec["breaches"][0])
+
+        plain_repo = repos.get()
+        ec = _check(_phase_answer(plain_repo), "evidence-committed")
+        check("iv64 a committed plan carrying NO pointer is not-applicable, not "
+              "clean - there was nothing to resolve, and saying `clean` would "
+              "spend the word on a phase nobody checked: %r" % (ec["verdict"],),
+              ec["verdict"] == M.NA and ec["examined"] == 0)
+
+        both = repos.get(evidence_pointer="phase")
+        ec = _check(_phase_answer(both), "evidence-committed")
+        check("iv65 a PHASE pointer is resolved as well as a task's - the "
+              "sign-off gate's own run is the one a reader most wants to follow, "
+              "and a check that walked only tasks would clear a phase pointing "
+              "at nothing: %r" % ((ec["verdict"], ec["examined"]),),
+              ec["verdict"] == M.CLEAN and ec["examined"] == 2)
+
+        torn = repos.get(evidence_pointer="torn")
+        ec = _check(_phase_answer(torn), "evidence-committed")
+        check("iv67 a committed row that is not readable JSON is a GAP beside a "
+              "resolved pointer, never a breach: it says a row could not be "
+              "read, and calling that unsupported would accuse the plan of "
+              "something the reader could not establish: %r"
+              % ((ec["verdict"], ec["gaps"]),),
+              ec["verdict"] == M.PARTIAL and ec["breaches"] == []
+              and len(ec["gaps"]) == 1 and "not readable" in ec["gaps"][0])
+
+        nogit = _harness.fixture_root("audit-inv-nogit-")
+        empty, gap_lines = M._committed_run_ids(nogit, "docs/audit/evidence")
+        check("iv68 where git will not list the committed evidence directory, "
+              "the answer is NO ROWS PLUS A GAP - never an empty set on its "
+              "own. Silent emptiness would turn every pointer into a breach "
+              "with nothing beside it saying the reader could not look, which "
+              "is a false accusation rather than a missed one: %r"
+              % ((sorted(empty), gap_lines),),
+              empty == set() and len(gap_lines) == 1
+              and "unknown" in gap_lines[0])
+
+        outside = repos.get(evidence_pointer="paired", evidence_outside=True)
+        ec = _check(_phase_answer(outside), "evidence-committed")
+        check("iv66 an evidence directory OUTSIDE the git root is "
+              "not-applicable, never a breach. It cannot be committed at all, "
+              "so the plan is not at fault for pointing at rows git was never "
+              "going to hold - step 4c degrades for exactly this layout: %r"
+              % ((ec["verdict"], ec["gaps"]),),
+              ec["verdict"] == M.NA and ec["breaches"] == [])
 
         # --- folding -----------------------------------------------------------
         answer = _phase_answer(rogue)

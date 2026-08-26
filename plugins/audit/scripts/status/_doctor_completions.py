@@ -51,6 +51,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
+import _evidence_io  # noqa: E402  (the ledger this correlates the plan against)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable?)
 
@@ -118,6 +119,79 @@ def _check_commit_trail(rep, manifest, git_root):
         rep.ok("commit trail",
                "all %d recorded task commit(s) are reachable" % (n,)
                if n else "no task commit recorded yet - nothing to reach")
+
+
+def check_evidence_pointers(rep, project, manifest):
+    """The plan's `testEvidence` pointers against the ledger, both directions.
+
+    ADVISORY, AND THAT IS THE DIVISION OF LABOUR. `evidence-committed` in
+    `_invariants` asks the same question of what is COMMITTED and calls a mismatch
+    a breach; this asks it of the working tree, where a mismatch is routine and
+    repairable - a pointer refused by a live lock is a DESIGNED state, and the
+    reconcile that fixes it is one command. So everything here is a warning at
+    most, and a doctor that cannot read the ledger says so rather than clearing
+    the plan.
+
+    BOTH DIRECTIONS, because they are different problems with different repairs.
+    A pointer naming a run no row carries means the plan refers to evidence this
+    checkout does not have. A recorded run whose subject's pointer does not name
+    it means the opposite: the record is ahead of the plan, which is exactly what
+    a refused pointer leaves behind and exactly what `--reconcile` is for.
+    """
+    pointers = []
+    for phase in ((manifest or {}).get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        holders = [(phase, "phase", str(phase.get("id")))]
+        holders += [(t, "task", str(t.get("id")))
+                    for t in (phase.get("tasks") or []) if isinstance(t, dict)]
+        for holder, scope, subject in holders:
+            block = holder.get("testEvidence")
+            if isinstance(block, dict) and block.get("runId"):
+                pointers.append((scope, subject, str(block["runId"])))
+    try:
+        read = _evidence_io.read_rows(project)
+        latest = _evidence_io.latest_by_subject(read["rows"])
+    except Exception as exc:
+        # NOT an ok line. A reader who could not open the ledger has cleared
+        # nothing, and saying so is the whole point of the level.
+        rep.warn("evidence", "could not read the evidence ledger, so the plan's "
+                             "pointers were not checked: %s" % (exc,))
+        return
+    if not pointers and not read["rows"]:
+        rep.ok("evidence", "no runs recorded and no pointers in the plan")
+        return
+    known = set(str(r.get("runId")) for r in read["rows"] if r.get("runId"))
+    dangling = [(scope, subject, run) for scope, subject, run in pointers
+                if run not in known]
+    behind = []
+    for (scope, subject), row in sorted(latest.items()):
+        current = [r for s, sub, r in pointers if s == scope and sub == subject]
+        if not current or current[0] != str(row.get("runId")):
+            behind.append("%s %s" % (scope, subject))
+    if read["unreadable"]:
+        rep.warn("evidence", "%d ledger row(s) could not be read and were not "
+                             "matched against any pointer"
+                             % (read["unreadable"],))
+    for scope, subject, run in dangling:
+        rep.warn("evidence", "%s %s points at run %s, which no row in this "
+                             "checkout's ledger carries - the plan refers to "
+                             "evidence that is not here"
+                             % (scope, subject, run))
+    if behind:
+        # NAMED IN FULL, never a count beside a sample. A number over a cut
+        # list leaves a reader unable to tell whether they are seeing all of it,
+        # which is the shape this repository lints for - and it caught this line.
+        # Subject ids are short, and a plan with many of them has a reconcile
+        # that is overdue, which is precisely what the reader should see.
+        rep.warn("evidence", "the record is ahead of the plan for %s - what a "
+                             "refused pointer leaves behind; "
+                             "`run-test-gate.py --reconcile` catches it up"
+                             % (", ".join(behind),))
+    if not dangling and not behind and not read["unreadable"]:
+        rep.ok("evidence", "%d pointer(s) in the plan, %d recorded run(s), and "
+                           "every pointer names a run this checkout holds"
+                           % (len(pointers), len(read["rows"])))
 
 
 def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,

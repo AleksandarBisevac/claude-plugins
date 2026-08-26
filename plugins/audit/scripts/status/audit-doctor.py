@@ -148,6 +148,7 @@ check_journal = _trail.check_journal
 
 _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
+check_evidence_pointers = _completions.check_evidence_pointers
 
 check_locks = _hygiene.check_locks
 check_local_artifacts = _hygiene.check_local_artifacts
@@ -198,6 +199,7 @@ def diagnose(project, deep=False):
     check_journal(rep, project, cfg, cfg_mod, git_root)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
+    check_evidence_pointers(rep, project, manifest)
     check_locks(rep, git_root, project, manifest_rel)
     check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root)
     return rep

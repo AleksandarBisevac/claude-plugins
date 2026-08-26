@@ -302,7 +302,7 @@ L3:
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
-  _doctor_completions -> _commit_trail, _doctor_report, _journal_io, _output
+  _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _output
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
@@ -2284,6 +2284,18 @@ file and it says only that a run was *recorded*, which is true the moment it is 
 that says the **plan** moved belongs to whoever moves it and must not be written before that
 happens. The ledger half is deliberately **not** fail-soft: a run whose evidence could not be
 stored must not be reported as recorded.
+
+**`evidence-committed` is `audit-state-scope`'s other half.** That one grades what a commit
+*staged*; this grades what the committed plan *points at*. A `testEvidence` block is a cache at a
+row in the ledger, so a pointer that survives a clone while its row does not is a plan referring to
+evidence that did not travel with it — and the working tree is exactly where that looks fine, which
+is why both the listing and the reading come from `HEAD` rather than from disk. The claim is
+narrower than the invariant and the difference is stated: it asks about HEAD, not about every state
+the phase ever committed, because a pointer briefly unsupported and since repaired is not a fault a
+reader can act on. An evidence directory outside the git root is **not-applicable, never a breach** —
+it cannot be committed there at all, so the plan is not at fault for naming rows git was never going
+to hold. A torn committed row is a **gap**: it says a row could not be read, never that a pointer is
+unsupported.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

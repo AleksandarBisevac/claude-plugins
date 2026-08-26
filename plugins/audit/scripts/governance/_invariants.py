@@ -117,8 +117,9 @@ NA = "not-applicable"
 # (the task's `files`, which one permits and the other forbids). A reader
 # comparing two commit-shaped rules needs them adjacent; separated, the difference
 # that matters reads as an omission.
-CHECK_NAMES = ("commit-scope", "audit-state-scope", "branch-history",
-               "manifest-revalidated", "high-risk-model", "base-ref")
+CHECK_NAMES = ("commit-scope", "audit-state-scope", "evidence-committed",
+               "branch-history", "manifest-revalidated", "high-risk-model",
+               "base-ref")
 
 # A commit whose file list `git show --name-only` will not print. Stated as a
 # constant because the empty output it produces is indistinguishable from "this
@@ -486,6 +487,130 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                             % (sha[:12], path))
     return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, breaches, gaps,
                   examined)
+
+
+# --- evidence committed -------------------------------------------------------
+EVIDENCE_COMMITTED_BASIS = (
+    "every `testEvidence.runId` in the phase's COMMITTED state at HEAD, against "
+    "the `runId`s in the evidence rows HEAD holds - the plan and the record as a "
+    "clone would receive them, not as this working tree happens to have them")
+
+
+def _committed_run_ids(git_root, evidence_rel):
+    """`(runIds, gaps)` - every `runId` the committed evidence rows carry.
+
+    READ FROM HEAD AND NOT FROM DISK. The whole question is what a CLONE would
+    find, and a row sitting unstaged in this working tree is exactly the case
+    that looks fine here and reaches nobody.
+    """
+    ids, gaps = set(), []
+    code, listing = _git(git_root, ["ls-tree", "-r", "--name-only", "HEAD",
+                                    evidence_rel])
+    if code is None or code != 0:
+        return ids, ["git would not list the committed evidence directory, so "
+                     "which rows HEAD holds is unknown"]
+    for name in [ln.strip() for ln in listing.splitlines() if ln.strip()]:
+        if not name.endswith(".jsonl"):
+            continue
+        code, blob = _git(git_root, ["show", "HEAD:" + name])
+        if code is None or code != 0:
+            gaps.append("git would not read the committed %s, so its rows could "
+                        "not be counted" % (name,))
+            continue
+        for line in blob.splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                # A torn line is a gap and not a breach: it says a row could not
+                # be read, never that a pointer is unsupported.
+                gaps.append("a row in the committed %s is not readable JSON, so "
+                            "it could not be matched against any pointer" % (name,))
+                continue
+            if isinstance(row, dict) and row.get("runId"):
+                ids.add(str(row["runId"]))
+    return ids, gaps
+
+
+def _committed_pointers(git_root, phase_file_rel):
+    """`(pointers, gaps)` - `(subject, runId)` for every pointer HEAD's plan carries.
+
+    The PHASE's own pointer is collected beside its tasks': a sign-off gate's run
+    is the one a reader most wants to follow, and walking only tasks would clear
+    a phase pointing at nothing.
+    """
+    if not phase_file_rel:
+        return [], ["this phase's manifest file is outside the git root, so its "
+                    "committed state cannot be read"]
+    code, blob = _git(git_root, ["show", "HEAD:" + phase_file_rel])
+    if code is None or code != 0:
+        return [], ["git would not read the committed %s, so the pointers it "
+                    "carries are unknown" % (phase_file_rel,)]
+    try:
+        body = json.loads(blob)
+    except Exception as exc:
+        return [], ["the committed %s is not readable JSON (%s)"
+                    % (phase_file_rel, exc)]
+    phases = [body] if body.get("id") else [
+        p for p in (body.get("phases") or []) if isinstance(p, dict)]
+    out = []
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        for holder, subject in [(phase, "phase %s" % (phase.get("id"),))] + [
+                (t, "task %s" % (t.get("id"),))
+                for t in (phase.get("tasks") or []) if isinstance(t, dict)]:
+            pointer = holder.get("testEvidence")
+            if isinstance(pointer, dict) and pointer.get("runId"):
+                out.append((subject, str(pointer["runId"])))
+    return out, []
+
+
+def evidence_committed(git_root, phase_file_rel, evidence_rel):
+    """A committed pointer names a run the repository actually holds.
+
+    THE OTHER HALF OF `audit-state-scope`. That one grades what a commit STAGED;
+    this grades what the committed plan POINTS AT. A `testEvidence` block is a
+    cache at a row in the ledger, so a pointer that survives a clone while its row
+    does not is a plan referring to evidence that did not travel with it - and the
+    working tree is exactly where that looks fine.
+
+    THE CLAIM IS NARROWER THAN THE INVARIANT, AND THE DIFFERENCE IS STATED. It
+    asks about HEAD and not about every state this phase ever committed: a pointer
+    that was briefly unsupported and has since been repaired is not a fault a
+    reader can act on, and reporting it forever would make the check noise. What
+    a clone receives today is the thing worth grading.
+
+    NOT-APPLICABLE, NEVER A BREACH, when the evidence directory sits outside the
+    git root: it cannot be committed at all there, so the plan is not at fault for
+    naming rows git was never going to hold. Step 4c degrades for that layout and
+    so does this.
+    """
+    if not evidence_rel:
+        return result("evidence-committed", EVIDENCE_COMMITTED_BASIS, [], [], 0,
+                      applies=False)
+    ok, why = _git_available(git_root)
+    if not ok:
+        return result("evidence-committed", EVIDENCE_COMMITTED_BASIS, [], [why], 0)
+    pointers, gaps = _committed_pointers(git_root, phase_file_rel)
+    if not pointers:
+        # NOT-APPLICABLE rather than no-basis: there was nothing to resolve, and
+        # `no-basis` is the word for a check that WANTED to look and could not.
+        # Where a gap stopped the reading, it applies and the gap is what says so.
+        return result("evidence-committed", EVIDENCE_COMMITTED_BASIS, [], gaps, 0,
+                      applies=bool(gaps))
+    known, more_gaps = _committed_run_ids(git_root, evidence_rel)
+    gaps = gaps + more_gaps
+    breaches = []
+    for subject, run_id in pointers:
+        if run_id not in known:
+            breaches.append(
+                "%s points at run %s, and no evidence row HEAD holds carries "
+                "that id - the plan as cloned refers to a run the repository "
+                "does not have" % (subject, run_id))
+    return result("evidence-committed", EVIDENCE_COMMITTED_BASIS, breaches, gaps,
+                  len(pointers))
 
 
 # --- branch history -----------------------------------------------------------
@@ -930,6 +1055,7 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
         # check comes to allow a directory the other reports.
         audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                           journal_rel, evidence_rel),
+        evidence_committed(git_root, phase_file_rel, evidence_rel),
         branch_history(phase, git_root),
         manifest_revalidated(phase, git_root, project, index_rel,
                              phase_file_rel, phase_file_abs),
