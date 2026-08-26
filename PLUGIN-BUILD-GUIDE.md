@@ -309,10 +309,10 @@ L4:
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
-  _panel_runstate -> _journal_io, _locks, _output, _panel_paths
+  _panel_runstate -> _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _proposals -> _fmt, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
@@ -2752,6 +2752,14 @@ once), the ADO card's manifest-evidence-only banner, and `areas_state` — the r
 plus every tag the phases actually use, since the two disagree in both directions and each
 disagreement is worth seeing.
 
+It also carries the test-evidence half of a row: `testEvidence` verbatim as the manifest holds
+it — absent means no run was recorded and never "failed" — beside `gateSource`, which says
+whose gate would grade the subject and so separates "nobody has run this" from "there is
+nothing here to run". `evidence_view` then ships the runs those pointers name, as positional
+facts read against `EVIDENCE_FIELDS`, with the ledger's three-valued observations kept
+three-valued: a tree comparison that was never made is not a clean tree, and a runner that
+reports no check count has not reported zero.
+
 ### `plugins/audit/scripts/panel/_panel_policy.py`
 The capability policy as the switchboard shows it: the block, the verdict for each discovered
 capability (through `_policy.resolve` — the same function the guard hook calls, so the preview
@@ -2762,7 +2770,10 @@ the guard has ever actually run here. MCP rows are stand-ins (`mcp__<server>__*`
 Who is running what: the shared git-dir locks with a liveness verdict and its basis (the badge
 used to claim "running" about a process it had not checked), `data_fingerprint` — the cheap
 per-request stat the 5-second poll watches so a file that moved on disk hands off to
-`refreshFromDisk` — and `_gate_block`, the Plan gate card computed with the hooks' own
+`refreshFromDisk`, and which stamps the EVIDENCE directory alongside the usage ledger through
+one `newest_jsonl` rather than two copies of the same walk, so a gate that finishes mid-phase
+lights its badge without a reload even when the row lands without the shard moving — and
+`_gate_block`, the Plan gate card computed with the hooks' own
 functions so it cannot disagree with the gate about what tier is in force. Each feed row it
 serves goes through `_redacted_event` first: the `file` cell is put through
 `_journal_io.repo_relative_or_token`, so an out-of-repository row reaches the browser as its

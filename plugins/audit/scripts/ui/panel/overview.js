@@ -132,15 +132,20 @@ const segOf=st=>st==='done'||st==='cancelled'?'archived'
 /**
  * @type {{q: string, ts: string, bs: string, byArea: boolean,
  *   sort: 'plan'|'progress'|'status', view: ('active'|'archived'|'all'|null),
- *   open: Object<string, boolean>}}
+ *   open: Object<string, boolean>, evOpen: Object<string, boolean>}}
  * The Overview filter, hoisted out of the render because the 5s poll repaints
  * this view: held in the render closure it would be wiped by a badge update five
  * seconds after the reader set it. `open` and `view` ride it for the same reason
  * — a badge repaint must not fold every row somebody opened. `view: null` means
  * "not chosen yet" and is what lets the first render pick a default from the
  * plan; '' in a status filter means "no filter", never a status.
+ *
+ * `evOpen` is which recorded test runs are open, keyed by SUBJECT id — a phase
+ * id or a task id, which never collide. It is a second map rather than a second
+ * meaning for `open` because the two nest: a reader who opened a phase and then
+ * one of its runs must not lose the run when a poll repaints the phase.
  */
-const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{}};
+const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{},evOpen:{}};
 // Nothing-to-see-first: the statuses that need a human come before the ones that
 // do not, in the strips and in the status sort. Plan order is still the default —
 // a plan is written in an order and that order means something.
@@ -268,6 +273,266 @@ function ovExcerpt(text,term,width){
  const pad=Math.floor((w-String(term).length)/2);
  const from=Math.min(Math.max(at-pad,0),Math.max(s.length-w,0)),to=from+w;
  return (from>0?'…':'')+s.slice(from,to).trim()+(to<s.length?'…':'');}
+
+// ---------- recorded test runs ----------
+// A BADGE IS THE STATUS AND NOTHING ELSE; the observations sit BESIDE it. Not a
+// layout preference: a gate can fail AND rewrite the tree, and
+// `run-test-gate.render` prints those as two sentences for the reason it states
+// there — a reader who fixed the failure would otherwise meet the rewrite
+// afterwards. The same holds for a run that passed while nothing ran, and for
+// one whose tree comparison could not be made at all.
+//
+// Everything below reads FACTS the server shipped — `STATE.evidence.runs`, one
+// positional row per run the plan points at, read against `.fields` — rather
+// than a verdict somebody rendered, so the three-valued observations stay
+// three-valued all the way to the pixel.
+/**
+ * @type {Object<string, string>} the word for each verdict, and for the three
+ * silences no run ever answers. NOT exhaustive on purpose: the manifest schema
+ * leaves the status enum open, so `evWord` names an unrecognised verdict instead
+ * of folding it into 'failed'.
+ */
+const EVWORD={passed:'Passed',failed:'Failed','no-checks':'No checks ran',
+ 'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
+ 'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
+ dangling:'Pointer without evidence'};
+/**
+ * @type {string[]} verdicts, most-in-need-of-a-human first. OVORDER's rule one
+ * vocabulary over, so a phase's roll-up leads with what is wrong rather than
+ * with whatever its first task happened to say.
+ */
+const EVORDER=['failed','could-not-run','timed-out','cancelled','no-checks',
+ 'dangling','empty-gate','none','no-gate','passed'];
+/**
+ * The word for a verdict.
+ * @param {string} k - a verdict key, from the ledger or from evState
+ * @returns {string} the table's word; an unrecognised verdict is humanised and
+ *   shown AS ITSELF, and a run that cached no verdict says so rather than
+ *   rendering the em dash `label('')` gives, which reads as "nothing here"
+ */
+function evWord(k){
+ // Own-property read: a status word comes out of a file a human may edit, and
+ // `EVWORD['constructor']` inherits a function that would reach the page.
+ if(Object.prototype.hasOwnProperty.call(EVWORD,k))return EVWORD[k];
+ if(!k)return 'Verdict not recorded';
+ const word=label(k);
+ // ...and `label` reads ITS table without that guard, so the same word comes
+ // back as `Object.prototype.constructor`. Found by calling this function
+ // rather than by reading it. The raw word is the honest fallback, because
+ // naming what was not recognised is this arm's whole contract; the guard
+ // belongs in `label` and is not fixed here, in a change about something else.
+ return typeof word==='string'?word:k;}
+/**
+ * A positional fact row as an object, read against the column names shipped
+ * beside it.
+ * @param {*} row - one entry of `STATE.evidence.runs`, or one step inside it
+ * @param {string[]|undefined} fields - the matching `fields`/`stepFields` list
+ * @returns {Object<string, *>|null} null when there is no row at all — never an
+ *   empty object, because every three-valued read would then answer `undefined`
+ *   and a caller could not tell that from a run that observed nothing
+ */
+function evRow(row,fields){
+ if(!Array.isArray(row))return null;
+ const out={};(fields||[]).forEach((f,i)=>{out[f]=row[i];});return out;}
+/**
+ * What one subject's test evidence amounts to — as facts, not as a rendered cell.
+ *
+ * FOUR ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
+ * fact about the PLAN: nothing could have run. No pointer is a fact about the
+ * LEDGER: nothing has run yet, which is never "failed". A pointer whose run the
+ * ledger does not hold is a third thing, and the only one that says the record
+ * itself is wrong. Only the fourth reads a verdict.
+ * @param {{testEvidence: *, gateSource: (string|null|undefined)}} node - the
+ *   composition row for a task or a phase
+ * @param {{runs: (Object<string, Array<*>>|undefined), fields: (string[]|undefined),
+ *   files: (number|undefined), unreadable: (number|undefined)}} ev -
+ *   `STATE.evidence`
+ * @returns {{key: string, why: string, run: (Object<string, *>|null)}} `run` is
+ *   null for all three silences, which is what makes a marker beside them
+ *   impossible: an observation needs a run that made it
+ */
+function evState(node,ev){
+ const row=node||{},pointer=row.testEvidence,src=row.gateSource;
+ if(pointer==null)return src
+  ?{key:'none',run:null,
+    why:'no run has been recorded for this subject. The '+src+"'s gate is what "
+      +'would grade it — an absent record is not a failure.'}
+  :{key:'no-gate',run:null,
+    why:'no test gate is declared here or on the phase, so no run could have '
+      +'been recorded. Nothing has been proven either way.'};
+ const rid=(typeof pointer==='object'&&typeof pointer.runId==='string')
+   ?pointer.runId:'';
+ const run=rid?evRow(((ev||{}).runs||{})[rid],(ev||{}).fields):null;
+ if(!run)return {key:'dangling',run:null,
+   why:'the plan points at '+(rid?'run '+rid:'a block naming no run')
+     +' and the evidence ledger does not hold it — '
+     +plural((ev&&ev.files)||0,'file read','files read')+', '
+     +plural((ev&&ev.unreadable)||0,'line unreadable','lines unreadable')
+     +'. The plan caches the verdict "'
+     +((pointer&&pointer.status)||'not recorded')+'".'};
+ return {key:(typeof run.status==='string')?run.status:'',run:run,
+   why:'run '+(run.runId||'?')+(run.at?', recorded '+ovStamp(run.at)+' UTC':'')};}
+/**
+ * The observations that sit beside a badge — never inside it.
+ *
+ * EVERY ONE OF THESE IS THREE-VALUED, AND A TRUTHY TEST MERGES TWO OF THE THREE.
+ * `null` is "no comparison was made", `0` is "compared, and there was nothing",
+ * a positive number is the finding. A gate that rewrote the tree and a gate
+ * nobody could ask about are not the same thing, and `!x` calls them both clean.
+ * @param {Object<string, *>|null} run - a decoded run, or null when there is none
+ * @returns {Array<{text: string, why: string}>} empty when there is no run —
+ *   a marker with no run behind it would be an observation nobody made
+ */
+function evMarks(run){
+ if(!run)return [];
+ const marks=[];
+ if(run.treeMutated==null)marks.push({text:'tree unknown',
+   why:run.treeBasis||'no tree comparison was made, so a rewrite cannot be '
+     +'ruled out'});
+ else if(run.treeMutated>0)marks.push({text:'tree mutated',
+   why:plural(run.treeMutated,'file was','files were')+' rewritten by the gate '
+     +'itself. A gate is a measurement: this run cannot sign anything off.'});
+ if(run.coverage==null)marks.push({text:'coverage unknown',
+   why:run.coverageBasis||'the overlap with this work could not be asked for'});
+ else if(run.coverage===0)marks.push({text:'no overlap',
+   why:'the gate ran and named none of the files this work owns — the third way '
+     +'a gate says nothing, after doing too much and doing nothing'});
+ if(run.ranTotal==null)marks.push({text:'checks unknown',
+   why:run.countsBasis||'check count not knowable from this runner'});
+ return marks;}
+/**
+ * What the run says about how many checks ran. THREE ANSWERS, NEVER TWO.
+ * @param {Object<string, *>} run - a decoded run
+ * @returns {string} `null` is "not knowable from this runner" and is emphatically
+ *   not zero; rendering it as a count of nothing is the defect this exists for
+ */
+const evChecks=run=>run.ranTotal==null
+ ?'check count not knowable from this runner'
+ :(run.ranTotal===0?'no checks ran':plural(run.ranTotal,'check ran','checks ran'));
+/**
+ * A duration in the unit a reader can hold.
+ * @param {number} ms - milliseconds, as the ledger recorded them
+ * @returns {string} seconds past a second, milliseconds below it
+ */
+const evMs=ms=>ms>=1000?(ms/1000).toFixed(ms>=10000?0:1)+'s':Math.round(ms)+'ms';
+/**
+ * One subject's verdict, with its observations beside it.
+ * @param {{key: string, why: string, run: (Object<string, *>|null)}} s - evState's answer
+ * @returns {HTMLSpanElement} the pill and the markers, in one inline box
+ */
+function evBadge(s){
+ return el('span',{class:'evb'},
+  el('span',{class:'st','data-evstatus':s.key||'unknown',title:s.why},
+    evWord(s.key)),
+  evMarks(s.run).map(m=>el('span',{class:'evmk','data-evmark':m.text,title:m.why},
+    m.text)));}
+/**
+ * One recorded run, opened: what it answered, and the basis for what it could not.
+ *
+ * The bases are printed rather than summarised. "unknown" without the sentence
+ * that produced it is the shape a reader cannot act on, and the ledger already
+ * carries all three of them.
+ * @param {Object<string, *>} run - a decoded run
+ * @returns {HTMLDivElement}
+ */
+function evDetail(run){
+ const box=el('div',{class:'evdet','data-evrun':run.runId||''});
+ box.append(el('div',{class:'mut'},'run '+(run.runId||'?')
+   +(run.at?' · '+ovStamp(run.at)+' UTC':'')
+   +(run.attempt!=null?' · attempt '+run.attempt:'')
+   +(run.durationMs!=null?' · '+evMs(run.durationMs):'')
+   +' · '+evChecks(run)));
+ [['tree',run.treeBasis],['coverage',run.coverageBasis],
+  ['checks',run.countsBasis]].forEach(pair=>{
+   if(pair[1])box.append(el('div',{class:'evbasis','data-evbasis':pair[0]},
+     pair[0]+': '+pair[1]));});
+ const steps=Array.isArray(run.steps)?run.steps:[];
+ // An empty step list is SAID. A gate with no commands and a run whose steps
+ // nothing recorded look identical in an empty table, and the first is a real
+ // answer a reader acts on.
+ if(!steps.length)box.append(el('div',{class:'mut'},'This run recorded no steps.'));
+ else{const tb=el('tbody');
+  steps.forEach(raw=>{const s=evRow(raw,(STATE.evidence||{}).stepFields);
+   if(!s)return;
+   tb.append(el('tr',{'data-evstep':s.name||''},
+     el('td',{class:'mono'},s.name||''),
+     el('td',{class:'mono'},s.exit==null?'—':String(s.exit)),
+     // The same three answers one step down. `0` is a step that ran and checked
+     // nothing; `null` is a runner that does not report counts at all.
+     el('td',{},s.ran==null?'not knowable':String(s.ran)),
+     el('td',{class:'mut'},s.durationMs==null?'':evMs(s.durationMs)),
+     el('td',{class:'mut'},s.outcome||'')));});
+  box.append(el('table',{class:'evsteps'},
+    tableHead(['step','exit','checks','took','outcome']),tb));}
+ return box;}
+/**
+ * A subject's badge, and its run beneath when the reader has opened it.
+ *
+ * A subject with no recorded run is NOT a control: there is nothing to open, and
+ * a button onto an empty box is a promise the page cannot keep.
+ *
+ * CONTAINED, and this is the one door into the feature from the phase detail.
+ * An evidence badge is an addition to a table somebody opened for other reasons,
+ * so a throw here must cost the badge and not the whole Overview — `runContained`
+ * is boot's version of the same rule. The fallback is a sentinel no real verdict
+ * can produce, because a failure that renders like an answer is the thing this
+ * repo names silent.
+ * @param {string} id - the subject id, which is the key `OVF.evOpen` holds
+ * @param {object} node - the composition row carrying testEvidence/gateSource
+ * @param {object} ev - `STATE.evidence`
+ * @returns {{badge: HTMLElement, detail: (HTMLElement|null)}}
+ */
+function evCell(id,node,ev){
+ try{
+  const s=evState(node,ev),badge=evBadge(s);
+  if(!s.run)return {badge:badge,detail:null};
+  const open=!!OVF.evOpen[id];
+  return {badge:el('button',{class:'evtog',type:'button','data-evtog':id,
+    'aria-expanded':open?'true':'false',
+    title:(open?'hide ':'show ')+'what this run did',
+    onclick:()=>{OVF.evOpen[id]=!open;renderOver();}},badge),
+   detail:open?evDetail(s.run):null};
+ }catch(cause){console.error('evidence badge failed for '+id,cause);
+  return {badge:el('span',{class:'evfail'},'evidence unavailable'),detail:null};}}
+/**
+ * The phase's tasks counted by what their evidence says.
+ *
+ * A SECOND MEASUREMENT, NEVER MERGED WITH THE FIRST. The phase's own sign-off run
+ * graded the phase; these graded tasks. One badge for both would claim a
+ * measurement nobody made.
+ * @param {Array<object>} tasks - the phase's composition rows
+ * @param {object} ev - `STATE.evidence`
+ * @returns {Array<{key: string, n: number}>} most-in-need-of-a-human first
+ */
+function evTaskRoll(tasks,ev){
+ const counts=new Map();
+ tasks.forEach(t=>{const k=evState(t,ev).key;counts.set(k,(counts.get(k)||0)+1);});
+ return [...counts.keys()].sort((a,b)=>ovRank(EVORDER,a)-ovRank(EVORDER,b))
+  .map(k=>({key:k,n:counts.get(k)}));}
+/**
+ * The roll-up as cells, contained for `evCell`'s reason and with its own sentinel.
+ * @param {Array<object>} tasks - the phase's composition rows
+ * @param {object} ev - `STATE.evidence`
+ * @returns {Node|Array<Node>} a sentence when there is nothing to count, one
+ *   pill per verdict otherwise
+ */
+function evRollCells(tasks,ev){
+ try{
+  if(!tasks.length)return el('span',{class:'mut'},'no tasks to count');
+  return evTaskRoll(tasks,ev).map(r=>el('span',{class:'st','data-evstatus':r.key,
+    title:plural(r.n,'task in this phase says','tasks in this phase say')+' '
+      +evWord(r.key).toLowerCase()},r.n+' '+evWord(r.key)));
+ }catch(cause){console.error('evidence roll-up failed',cause);
+  return el('span',{class:'evfail'},'roll-up unavailable');}}
+/**
+ * One labelled evidence line inside a phase's detail.
+ * @param {string} lbl - what the line is a measurement OF; the label is the
+ *   whole point, since two unlabelled badges read as one contradiction
+ * @param {...(Node|Array<Node>|null)} parts - what to put beside it
+ * @returns {HTMLDivElement}
+ */
+const evLine=(lbl,...parts)=>el('div',{class:'evline','data-evline':lbl},
+ el('span',{class:'evlbl'},lbl),parts);
 /**
  * A phase's tasks, in the columns the report's table uses — id, title, status,
  * risk (coloured TEXT, not a pill), commit and when it finished, led by what the
@@ -286,24 +551,44 @@ function ovExcerpt(text,term,width){
  */
 function ovDetail(p){
  const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id);
+ const ev=STATE.evidence||{};
+ // The ROLLUP phase carries the progress bar; the COMPOSITION phase carries the
+ // pointer and the gate. Looked up rather than assumed present: a phase the
+ // rollup knows and the composition does not gets the same honest "no evidence"
+ // as one that has never been run.
+ const cph=((STATE.composition||{}).phases||[]).find(x=>x.id===p.id)||{};
  const box=el('div',{class:'ovdetail','data-ovdetail':p.id});
  if(p.desiredOutcome)box.append(el('div',{class:'mut small','data-ovpurpose':p.id},
    'Desired: '+p.desiredOutcome));
+ // BOTH, LABELLED APART. The phase's own sign-off run and the roll-up over its
+ // tasks measure different things over different files, and a reader shown one
+ // of them alone would take it for the other.
+ const pcell=evCell(p.id,cph,ev);
+ box.append(evLine('phase sign-off',pcell.badge));
+ if(pcell.detail)box.append(pcell.detail);
+ box.append(evLine('tasks',evRollCells(tasks,ev)));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{
   const tb=el('tbody');
   tasks.forEach(t=>{
    const when=ovStamp(t.completedAt||t.startedAt);
+   const cell=evCell(t.id||'',t,ev);
    tb.append(el('tr',{'data-ovtask':t.id||''},
     el('td',{class:'mono'},t.id||''),
     el('td',{class:'ovt'},t.title||''),
     el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
+    // What the PLAN says happened, then whether anything measured it.
+    el('td',{},cell.badge),
     el('td',{},t.risk?el('span',{class:'rk','data-risk':t.risk},t.risk):null),
     el('td',{class:'mono'},t.commit?String(t.commit).slice(0,9):''),
     // A start stamp is labelled as one, or an unfinished task reads as finished.
-    el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));});
+    el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));
+   // The opened run gets a row of its own, spanning the table, so the columns
+   // above it keep the widths every other row agreed on.
+   if(cell.detail)tb.append(el('tr',{'data-evdetail':t.id||''},
+     el('td',{colspan:'7'},cell.detail)));});
   box.append(el('table',{class:'ovtasks'},
-    tableHead(['id','title','status','risk','commit','done (UTC)']),tb));}
+    tableHead(['id','title','status','tests','risk','commit','done (UTC)']),tb));}
  box.append(el('div',{class:'row',style:'margin-top:.4rem'},
    el('button',{class:'btn small','data-ovedit':p.id,type:'button',
      title:'Plan & models is where tasks, models and skills are changed',

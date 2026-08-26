@@ -39,11 +39,11 @@ another rule, which is a cascade change disguised as housekeeping.
 | `labels-and-hints.css` | A field's label row, the ⓘ that opens the help drawer, and the one `#hinttip` element on `<body>` that shows its text. |
 | `combobox.css` | The custom autocomplete combobox that replaces `<datalist>`, whose menu is placed by JS, and the chip containers beside it. |
 | `blocks-and-ado.css` | The Blocks view's subtabs and registry table, and the ADO card's fixed-layout stateMap mini-tables. |
-| `status-colours.css` | The one place a status name becomes `--st`, and the pill that wears it. |
+| `status-colours.css` | The one place a status name becomes `--st`, and the pill that wears it — for the plan's statuses and, in the same grammar, for a recorded test run's verdict. |
 | `composition.css` | The Composition view: its filter toolbar and the collapsible phase/task table where models and skills are edited. |
 | `overview-filters.css` | The Overview's summary strips — a legend that is also the filter — its toolbar and group headers. |
 | `appearance-table.css` | The Appearance tab's token table: name, light and dark side by side, with the native swatch and the hex field. |
-| `overview-rows.css` | The Overview's expandable phase rows, task detail table, risk text, and the ready-now list. |
+| `overview-rows.css` | The Overview's expandable phase rows, task detail table, risk text, the test-evidence badge with its markers and openable run, and the ready-now list. |
 | `policy.css` | The policy switchboard: the wide table that scrolls inside its own frame, the per-rule select, the verdict pill and its basis, and the honesty note. |
 | `proposals.css` | Parked phases: the disclosure card, its label/value fact stack, the action row and the drop-reason field. |
 

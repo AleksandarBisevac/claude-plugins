@@ -20,12 +20,14 @@ import _panel_paths as _paths                     # noqa: E402  (the shared base
 import _ado_parent as _adop                    # noqa: E402  (the marker + resolve)
 import _ado_tracked as _adot               # noqa: E402  (the three-valued answer + its basis)
 import _ado_drift as _drift                    # noqa: E402  (link_inventory: the walk the banner counts)
-import _loader                                 # noqa: E402  (read-ado-links.py is an entry point; only a load reaches it)
+import _loader                                 # noqa: E402  (read-ado-links.py + run-test-gate.py are entry points; only a load reaches them)
+import _evidence_io as _evidence           # noqa: E402  (where the run ledger lives, for the fixture)
 import _panel_composition as M      # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
+    import json
     import pathlib                                 # noqa: F401  (used by moved cases)
     import re
     import shutil
@@ -770,6 +772,236 @@ def _cases(check):
               {"meta": {"ado": {"connection": dict(_CONN)}}, "phases": []})
           and M._composition_view({"phases": []})["adoConnection"]["state"]
           == "absent")
+
+    # --- test evidence: the pointer, whose gate, and the runs it names ---------
+    # THE POINTER IS A CACHE AND THE LEDGER IS THE TRUTH. Everything here holds
+    # one of two lines: absent evidence is never a verdict, and an observation
+    # nobody made is never a clean one.
+    _EV_PTR = {"runId": "r-1", "status": "passed", "at": "2026-08-20T10:00:00Z"}
+    _ev_manifest = {
+        "meta": {"buildCommands": {"lint": "ruff check ."}},
+        "phases": [
+            {"id": "P1", "title": "gated", "status": "in_progress",
+             "testGate": ["lint"], "testEvidence": dict(_EV_PTR, runId="r-ph"),
+             "tasks": [
+                 # own gate + own pointer
+                 {"id": "P1.1", "title": "a", "status": "done",
+                  "tests": {"gate": ["pytest -q"]}, "testEvidence": dict(_EV_PTR)},
+                 # no gate of its own: the PHASE's gate is what would grade it,
+                 # and no run has been recorded
+                 {"id": "P1.2", "title": "b", "status": "pending"},
+                 # a gate declared as blank strings is no gate at all
+                 {"id": "P1.3", "title": "c", "status": "pending",
+                  "tests": {"gate": ["   ", ""]}}]},
+            {"id": "P2", "title": "ungated", "status": "pending",
+             "testGate": [],
+             "tasks": [{"id": "P2.1", "title": "d", "status": "pending"}]}]}
+    _ev_view = M._composition_view(_ev_manifest)
+    _ev_tasks = dict((t["id"], t) for t in _ev_view["tasks"])
+    _ev_phases = dict((p["id"], p) for p in _ev_view["phases"])
+    check("ev1 the composition rows carry the pointer VERBATIM and the source of "
+          "the gate that would produce it - both, because the pointer alone "
+          "cannot tell 'nobody has run this' from 'there is nothing here to "
+          "run', and those send a reader to different places",
+          _ev_tasks["P1.1"]["testEvidence"] == _EV_PTR
+          and _ev_tasks["P1.1"]["gateSource"] == "task"
+          and _ev_phases["P1"]["testEvidence"]["runId"] == "r-ph"
+          and _ev_phases["P1"]["gateSource"] == "phase",
+          repr((_ev_tasks["P1.1"], _ev_phases["P1"]["testEvidence"])))
+    check("ev2 ...and an absent pointer is None, never a verdict - while the "
+          "gate source beside it STILL says the phase's gate would grade this "
+          "task. The negative is the load-bearing half: a payload that filled "
+          "the gap with the worst reading of a silence is what the schema "
+          "forbids at the field",
+          _ev_tasks["P1.2"]["testEvidence"] is None
+          and _ev_tasks["P1.2"]["gateSource"] == "phase"
+          and _ev_tasks["P1.2"]["status"] == "pending",
+          repr(_ev_tasks["P1.2"]))
+    check("ev3 a subject nothing could grade says so with a THIRD answer: no "
+          "gate on the task, none on its phase, so `gateSource` is None and the "
+          "badge reads 'No gate configured' rather than 'No evidence'. An "
+          "all-blank gate is no gate, which is `gate_of`'s own rule",
+          _ev_tasks["P1.3"]["gateSource"] == "phase"
+          and _ev_tasks["P2.1"]["gateSource"] is None
+          and _ev_phases["P2"]["gateSource"] is None
+          and _ev_tasks["P2.1"]["testEvidence"] is None,
+          repr((_ev_tasks["P1.3"]["gateSource"], _ev_tasks["P2.1"]["gateSource"])))
+    # THE ONE VALUE EXPRESSED IN TWO PLACES, pinned rather than commented.
+    # `_gate_source` mirrors `run-test-gate.gate_of`'s resolution because that
+    # file is an entry point at layer 7 and this module sits at 4. A comment
+    # claiming two implementations agree is not a check; this drives both.
+    _gate_mod = _loader.load_script("run-test-gate.py", modname="audit_rtg_ev")
+    _gate_pairs = []
+    for _ph in _ev_manifest["phases"]:
+        _gate_pairs.append((M._gate_source(_ph),
+                            _gate_mod.gate_of(_ev_manifest, _ph["id"])[1]
+                            if _gate_mod.gate_of(_ev_manifest, _ph["id"])[0]
+                            else None))
+        for _t in _ph["tasks"]:
+            _cmds, _src, _err = _gate_mod.gate_of(_ev_manifest, _ph["id"], _t["id"])
+            _gate_pairs.append((M._gate_source(_ph, _t),
+                                _src if _cmds else None))
+    check("ev4 `_gate_source` answers exactly what `run-test-gate.gate_of` "
+          "answers, over every subject in one fixture - task gate, phase "
+          "fallback, blank-string gate and no gate at all. Whole pair list "
+          "rather than 'at least one agrees', so a mutation that also broke "
+          "something else cannot pass for this: %r" % (_gate_pairs,),
+          bool(_gate_pairs)
+          and all(mine == theirs for mine, theirs in _gate_pairs)
+          # ...and the fixture really does exercise all three answers, or the
+          # agreement above would be an agreement about one case.
+          and set(m for m, _t in _gate_pairs) == set([None, "phase", "task"]))
+    check("ev5 a count is THREE-VALUED or it is not a count: [] is 'compared, "
+          "and there was nothing', a list is the finding, and None is 'no "
+          "comparison was made'. `len(x or [])` maps all three onto a number "
+          "and calls the third one clean, which is the merge the gate runner "
+          "refuses to make",
+          M._count_or_unknown([]) == 0
+          and M._count_or_unknown(["a", "b"]) == 2
+          and M._count_or_unknown(None) is None
+          # Neither None nor a list: no basis to call it clean, so it lands on
+          # unknown rather than on zero.
+          and M._count_or_unknown("scripts/x.py") is None)
+    _ev_unknown = M._evidence_facts({
+        "runId": "r-u", "scope": "task", "status": "passed", "ts": "t",
+        "observations": {"ranTotal": None, "countsBasis": "no counter",
+                         "treeMutated": None, "treeBasis": "git could not say",
+                         "coverage": None, "coverageBasis": "nothing declared"}})
+    _ev_clean = M._evidence_facts({
+        "runId": "r-c", "scope": "task", "status": "passed", "ts": "t",
+        "observations": {"ranTotal": 0, "countsBasis": "counted",
+                         "treeMutated": [], "treeBasis": "before and after",
+                         "coverage": [], "coverageBasis": "asked"}})
+    _ev_cols = dict((n, i) for i, n in enumerate(M.EVIDENCE_FIELDS))
+    check("ev6 UNKNOWN AND CLEAN ARE DIFFERENT ROWS, in all three fields at "
+          "once. A run whose tree was never compared, whose overlap was never "
+          "asked for and whose checks nothing counted must not ship the same "
+          "numbers as a run that compared, asked, counted and found nothing: "
+          "%r vs %r"
+          % ([_ev_unknown[_ev_cols[k]] for k in
+              ("ranTotal", "treeMutated", "coverage")],
+             [_ev_clean[_ev_cols[k]] for k in
+              ("ranTotal", "treeMutated", "coverage")]),
+          _ev_unknown[_ev_cols["ranTotal"]] is None
+          and _ev_clean[_ev_cols["ranTotal"]] == 0
+          and _ev_unknown[_ev_cols["treeMutated"]] is None
+          and _ev_clean[_ev_cols["treeMutated"]] == 0
+          and _ev_unknown[_ev_cols["coverage"]] is None
+          and _ev_clean[_ev_cols["coverage"]] == 0
+          # ...and every basis travels whole, because "unknown" without the
+          # sentence that produced it is the shape nobody can act on.
+          and _ev_unknown[_ev_cols["treeBasis"]] == "git could not say"
+          and _ev_unknown[_ev_cols["countsBasis"]] == "no counter")
+    check("ev7 a row with NO observations block answers unknown to all three "
+          "rather than zero - the block is where every observation is written, "
+          "so its absence means nobody wrote one down, not that nothing was "
+          "found",
+          [M._evidence_facts({"runId": "r"})[_ev_cols[k]]
+           for k in ("ranTotal", "treeMutated", "coverage")] == [None, None, None])
+    # --- the ledger read, against a real evidence directory --------------------
+    _evproj = tempfile.mkdtemp(prefix="panel-evidence-")
+    try:
+        _atomic_write_json(_paths._config_path(_evproj), {})
+        _evdir = _evidence.evidence_dir(_evproj)
+        os.makedirs(_evdir, exist_ok=True)
+
+        def _evrow(run_id, ts, **over):
+            row = {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+                   "taskId": "P1.1", "phaseId": "P1", "status": "passed",
+                   "durationMs": 1200, "attempt": 2,
+                   "steps": [{"name": "unit", "exit": 0, "ran": 12,
+                              "durationMs": 900, "command": "pytest -q"}],
+                   "observations": {"ranTotal": 12, "countsBasis": "counted",
+                                    "treeMutated": [], "treeBasis": "both ends",
+                                    "coverage": ["src/a.py"],
+                                    "coverageBasis": "declared"}}
+            row.update(over)
+            return row
+
+        with open(os.path.join(_evdir, "2026-08.w1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(_evrow("r-1", "2026-08-20T10:00:00Z")) + "\n")
+            fh.write(json.dumps(_evrow("r-old", "2026-08-19T10:00:00Z")) + "\n")
+            fh.write("{not json\n")
+        _ev_out = M.evidence_view(_evproj, _ev_view)
+        check("ev8 the payload ships the runs the plan POINTS AT and no others - "
+              "keyed by runId, with the column names beside them so the browser "
+              "reads its rows rather than trusting an order. `r-old` is a real "
+              "row in the same file that nothing points at, which is what makes "
+              "this a cut rather than a copy: %r" % (sorted(_ev_out["runs"]),),
+              # `.get`, never `[...]`: a payload that LOST a key must fail
+              # this case by name rather than raise and take every case below
+              # it with it.
+              sorted(_ev_out["runs"]) == ["r-1"]
+              and _ev_out.get("fields") == list(M.EVIDENCE_FIELDS)
+              and _ev_out.get("stepFields") == list(M.EVIDENCE_STEP_FIELDS))
+        _ev_r1 = dict(zip(M.EVIDENCE_FIELDS, _ev_out["runs"]["r-1"]))
+        check("ev9 ...and the row carries what a badge and its detail need: the "
+              "verdict, when, the attempt, the duration, the three observations "
+              "and one positional row per step read against stepFields",
+              _ev_r1["status"] == "passed" and _ev_r1["at"] == "2026-08-20T10:00:00Z"
+              and _ev_r1["attempt"] == 2 and _ev_r1["durationMs"] == 1200
+              and _ev_r1["ranTotal"] == 12 and _ev_r1["treeMutated"] == 0
+              and _ev_r1["coverage"] == 1
+              and _ev_r1["steps"] == [["unit", 0, 12, 900, None]],
+              repr(_ev_r1))
+        check("ev10 NEITHER SPELLING OF A COMMAND CROSSES. A step's command is "
+              "either the manifest's published string or a digest of an ad-hoc "
+              "one, and a badge in a table renders neither - shipping it would "
+              "put a command on a surface with no room to say which of the two "
+              "it is",
+              "command" not in M.EVIDENCE_STEP_FIELDS
+              and "commandSha256" not in M.EVIDENCE_STEP_FIELDS
+              and "pytest -q" not in json.dumps(_ev_out))
+        check("ev11 a torn line is COUNTED and the files are counted, because a "
+              "pointer whose run is missing has to say WHY - an evidence "
+              "directory that was never written and one whose lines could not "
+              "be parsed are different answers and the badge's basis needs both",
+              _ev_out["files"] == 1 and _ev_out["unreadable"] == 1)
+        # A SECOND ROW WEARING ONE runId, newest first by `ts`. Two worktrees
+        # write two files whose concatenation is in no meaningful order, so
+        # reading position would make "the run" depend on a directory listing.
+        with open(os.path.join(_evdir, "2026-08.w2.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(_evrow("r-1", "2026-08-21T10:00:00Z",
+                                       status="failed")) + "\n")
+        _ev_dup = M.evidence_view(_evproj, _ev_view)
+        check("ev12 two rows wearing one runId resolve to the NEWEST by ts, not "
+              "to whichever file the directory listed first - the older row is "
+              "in the earlier file, so a position read would have answered "
+              "'passed'",
+              dict(zip(M.EVIDENCE_FIELDS,
+                       _ev_dup["runs"]["r-1"]))["status"] == "failed"
+              and _ev_dup["files"] == 2)
+        # A POINTER THE LEDGER CANNOT ANSWER, which is the third badge and not
+        # the absent one. The counts are what let the page say why.
+        _ev_missing = M.evidence_view(_evproj, M._composition_view({
+            "phases": [{"id": "P9", "title": "x", "status": "pending",
+                        "testGate": ["lint"],
+                        "tasks": [{"id": "P9.1", "title": "y",
+                                   "status": "done",
+                                   "testEvidence": {"runId": "r-gone",
+                                                    "status": "passed",
+                                                    "at": "2026-08-01T00:00:00Z"}}]}]}))
+        check("ev13 a pointer the ledger does not hold ships NO run - which is "
+              "what lets the page say 'Pointer without evidence' rather than "
+              "rendering the cached verdict as if it had been read. The counts "
+              "come back non-zero, so the sentence has a basis and cannot be "
+              "confused with an empty ledger",
+              _ev_missing["runs"] == {} and _ev_missing["files"] == 2
+              and _ev_missing["unreadable"] == 1)
+        check("ev14 every exit ships ONE key set - the empty shape and a "
+              "populated read cannot disagree, which is the `undefined` on a "
+              "fresh install that only the reader least placed to report it "
+              "ever meets",
+              sorted(M.empty_evidence()) == sorted(_ev_out)
+              and sorted(M.empty_evidence()) == sorted(_ev_missing))
+        check("ev15 a project with no evidence directory at all is an ANSWER "
+              "and never a raise: no runs, no files, nothing unreadable",
+              M.evidence_view(os.path.join(_evproj, "nope"), _ev_view)
+              == M.empty_evidence())
+    finally:
+        shutil.rmtree(_evproj, ignore_errors=True)
 
     shutil.rmtree(tmp, ignore_errors=True)
 

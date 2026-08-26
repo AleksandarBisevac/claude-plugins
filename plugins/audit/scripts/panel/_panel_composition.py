@@ -40,6 +40,7 @@ import _priority              # noqa: E402  (what a valid tier is, and who holds
 import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
 import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
+import _evidence_io as _ev    # noqa: E402  (the pointer's key and the ONE ledger read, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -660,6 +661,191 @@ def _resolved_tracked(phase, ado):
     return {"tracked": res["tracked"], "basis": res["basis"]}
 
 
+# --- whether a run was recorded, and whose gate would have graded it ----------
+# THE POINTER IS A CACHE AND THE LEDGER IS THE TRUTH -- `_evidence_io`'s own
+# contract, and the reason both travel to the browser instead of one folded
+# answer. The row carries what the PLAN claims; `evidence_view` carries what the
+# LEDGER holds. Folding them here would have to pick one, and the case a reader
+# most needs to see is exactly the one where they disagree.
+def _pointer_of(node):
+    """`testEvidence` as the manifest carries it, or None when it carries none.
+
+    ABSENT MEANS NO RUN WAS RECORDED, NEVER 'FAILED'. The schema says so at the
+    field, and it is the one reading of a silence that costs somebody a night -- a
+    manifest written before this field existed, a task nobody has run, and a block
+    somebody deleted are one state. So the key is READ and never defaulted, and
+    nothing here invents a verdict for a subject that has none.
+
+    A block that is present but is not an object travels AS IT IS, for
+    `_ado_tracked_of`'s reason one field over: flattening it to absent would have
+    the badge painting 'nothing recorded' over somebody's broken declaration,
+    which is the confident wrong answer this whole field exists to remove.
+    """
+    return node.get(_ev.POINTER_KEY)
+
+
+def _gate_source(phase, task=None):
+    """`"task"`, `"phase"` or None -- whose gate would grade this subject.
+
+    A SECOND EXPRESSION OF `run-test-gate.gate_of`'s resolution, and it is spelled
+    here rather than imported because that file is an entry point at layer 7 while
+    this module sits at 4: importing it would be an upward edge the layer lint
+    fails by name. What keeps the two honest is not this paragraph --
+    `tests/test__panel_composition.py` drives both over one table of subjects and
+    goes red when they disagree.
+
+    ABSENT, EMPTY AND ALL-BLANK ARE ONE ANSWER, which is `gate_of`'s own rule: a
+    task with no `tests` block and a task with `tests.gate: []` both declare no
+    gate, and making them two answers would be two chances to disagree about one
+    question. The fallback direction is `gate_of`'s too -- a task declaring
+    nothing is graded by the PHASE's gate, and 'this task's gate passed' and 'the
+    phase's gate passed while pointed at this task's files' are different claims a
+    badge must not merge.
+
+    None is NOT 'nothing ran'. It is 'nothing could have run', which is the
+    sentence `No gate configured` says and the one `No evidence` does not.
+    """
+    if task is not None:
+        tests = task.get("tests")
+        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
+        if any(isinstance(e, str) and e.strip() for e in entries):
+            return "task"
+    if any(isinstance(e, str) and e.strip()
+           for e in (phase.get("testGate") or [])):
+        return "phase"
+    return None
+
+
+# The positional columns of one evidence fact row, and of one step inside it. The
+# client reads its rows against these lists, so the two travel together in the
+# payload -- `_panel_usage._FACT_FIELDS`'s shape, for its reason: what the browser
+# receives is what the run OBSERVED, and every badge, marker and sentence on the
+# page is re-derived from that rather than being a verdict the server wrote.
+EVIDENCE_FIELDS = ("runId", "scope", "status", "at", "attempt", "durationMs",
+                   "ranTotal", "countsBasis", "treeMutated", "treeBasis",
+                   "coverage", "coverageBasis", "steps")
+EVIDENCE_STEP_FIELDS = ("name", "exit", "ran", "durationMs", "outcome")
+
+
+def _evidence_steps(row):
+    """Each recorded step as a positional row, in the order the run ran them.
+
+    Bounded by what the ledger already bounded (`_evidence_io.MAX_STEPS`), so
+    nothing here re-cuts a list somebody else already cut and counted.
+
+    NEITHER `command` NOR `commandSha256` CROSSES. A step's command is either the
+    manifest's own published string or a digest of an ad-hoc one, and a badge in a
+    table renders neither; shipping it would put a command on a surface that has
+    no room to say which of the two it is.
+    """
+    out = []
+    for step in (row.get("steps") or []):
+        if isinstance(step, dict):
+            out.append([step.get(k) for k in EVIDENCE_STEP_FIELDS])
+    return out
+
+
+def _count_or_unknown(value):
+    """`len(value)` for a list, None for anything else -- and None means UNKNOWN.
+
+    The direction is the whole point. `treeMutated` and `coverage` are
+    three-valued in the ledger: `[]` is 'compared, and there was nothing', a list
+    is the finding, and None is 'no comparison was made'. `len(value or [])` maps
+    all three onto a number and calls the third one clean, which is the merge
+    `run-test-gate.render` refuses to make and the reason its basis lines exist.
+    Anything that is neither None nor a list lands on None as well: a value this
+    function cannot count is a value it has no basis to call clean.
+    """
+    return len(value) if isinstance(value, list) else None
+
+
+def _evidence_facts(row):
+    """One recorded run as a positional fact row, read against EVIDENCE_FIELDS.
+
+    THE LISTS BECOME COUNTS AND THE BASES TRAVEL WHOLE. A count answers 'is there
+    a marker'; the basis answers 'why is this unknown'; the paths themselves are
+    the one part no badge ever renders, and a table with no room for them would
+    have to truncate a list the ledger deliberately kept.
+
+    A row with no `observations` block answers UNKNOWN to all three questions
+    rather than answering zero. That is the honest reading: the block is what
+    `_evidence_io.row_for` writes every observation into, so its absence means
+    nobody wrote one down -- not that nothing was found.
+    """
+    obs = row.get("observations")
+    obs = obs if isinstance(obs, dict) else {}
+    return [row.get("runId"), row.get("scope"), row.get("status"), row.get("ts"),
+            row.get("attempt"), row.get("durationMs"),
+            obs.get("ranTotal"), obs.get("countsBasis"),
+            _count_or_unknown(obs.get("treeMutated")), obs.get("treeBasis"),
+            _count_or_unknown(obs.get("coverage")), obs.get("coverageBasis"),
+            _evidence_steps(row)]
+
+
+def empty_evidence():
+    """The `evidence` payload for a project whose plan points at nothing.
+
+    ONE SHAPE FOR EVERY EXIT, which is `_panel_usage._usage_shape`'s reason: a key
+    spelled in one branch and forgotten in the other is an `undefined` that only a
+    fresh install ever meets -- i.e. only the reader least placed to report it.
+
+    `files` and `unreadable` are zero here rather than absent because no pointer
+    exists on this path, so nothing reads them; the moment a pointer does exist,
+    `evidence_view` replaces both with what the ledger actually answered.
+    """
+    return {"fields": list(EVIDENCE_FIELDS),
+            "stepFields": list(EVIDENCE_STEP_FIELDS),
+            "runs": {}, "files": 0, "unreadable": 0}
+
+
+def evidence_view(project, composition, config=None):
+    """The recorded runs the plan POINTS AT, as facts the browser re-aggregates.
+
+    Keyed by `runId` and cut to the pointers the composition rows already carry,
+    because that is the whole of what a badge needs: every other row in the ledger
+    is history, and shipping the history would put an unbounded file on every
+    `/api/state`. It is handed the composition rather than the manifest for the
+    same economy -- the pointers are on those rows, and a second walk over the
+    plan would be a second answer to 'which runs does this plan name'.
+
+    `files` and `unreadable` ride along and are not decoration. A pointer whose
+    run is not here is a real state with a sentence of its own -- the plan names a
+    run the ledger does not hold -- and a reader cannot tell an evidence directory
+    that was never written from one whose lines could not be parsed unless both
+    counts are on the page. `read_rows` counts a torn line rather than dropping it
+    in silence for exactly that reason.
+
+    The ledger is read WHOLE and cut afterwards: `read_rows` is the one walk over
+    it, and a filtered read written here would be a second opinion about what is
+    in the directory.
+    """
+    wanted = set()
+    for group in ("phases", "tasks"):
+        for row in (composition.get(group) or []):
+            pointer = row.get(_ev.POINTER_KEY)
+            run_id = pointer.get("runId") if isinstance(pointer, dict) else None
+            if isinstance(run_id, str) and run_id:
+                wanted.add(run_id)
+    read = _ev.read_rows(project, config=config)
+    newest = {}
+    for row in read["rows"]:
+        run_id = row.get("runId")
+        if run_id not in wanted:
+            continue
+        current = newest.get(run_id)
+        # `latest_by_subject`'s comparison, one key over: two worktrees write two
+        # files whose concatenation is in no meaningful order, so reading position
+        # would make 'the run' depend on a directory listing.
+        if current is None or (str(row.get("ts") or "")
+                               >= str(current.get("ts") or "")):
+            newest[run_id] = row
+    out = empty_evidence()
+    out["runs"] = dict((k, _evidence_facts(v)) for k, v in newest.items())
+    out["files"] = read["files"]
+    out["unreadable"] = read["unreadable"]
+    return out
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
@@ -706,7 +892,16 @@ def _composition_view(manifest):
                            # absent declaration is the default said out loud and
                            # for an unreadable one is nothing at all.
                            "adoTracked": _ado_tracked_of(ph),
-                           "adoTrackedResolved": _resolved_tracked(ph, ado)})
+                           "adoTrackedResolved": _resolved_tracked(ph, ado),
+                           # BOTH HALVES AGAIN, and here they are two different
+                           # silences rather than a declaration and its
+                           # resolution. The POINTER alone cannot tell 'nobody
+                           # has run this phase's sign-off gate' from 'there is
+                           # no gate here to run', and a reader acts on those in
+                           # different places -- one is work not done, the other
+                           # is a plan that can never prove itself done.
+                           "testEvidence": _pointer_of(ph),
+                           "gateSource": _gate_source(ph)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),
@@ -722,6 +917,13 @@ def _composition_view(manifest):
             "commit": t.get("commit"),
             "startedAt": t.get("startedAt"),
             "completedAt": t.get("completedAt"),
+            # The pointer this task carries, and whose gate would have produced
+            # it. `gateSource` is what separates the two silences: a task with a
+            # gate and no pointer has not been run, and a task with neither could
+            # not have been. `status` above is what the PLAN says happened;
+            # this is whether anything measured it.
+            "testEvidence": _pointer_of(t),
+            "gateSource": _gate_source(ph, t),
         })
     # Every skill name the AREAS declare, deduped in registry order — the other
     # half of what the manifest spells (task rows carry their own). Shipped so

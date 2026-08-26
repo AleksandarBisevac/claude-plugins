@@ -39,6 +39,7 @@ _output.install_path()
 
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
 import _locks                 # noqa: E402  (lock paths + the liveness verdict, at layer 1)
+import _evidence_io as _ev    # noqa: E402  (where the test-run ledger lives, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -149,9 +150,17 @@ def data_fingerprint(project, config):
     (mtime_ns, size) of: the CONFIG file first (manifestPath/ledgerDir live in
     it, so a config edit must move the stamp even when it merely points the
     panel at different files), then the manifest, then every shard the index
-    names, then the newest (mtime_ns, size) across the ledger dir's *.jsonl.
-    Pure stats per request — no watcher thread, no state between calls —
-    folded into /api/runstatus so the existing 5s poll carries it for free.
+    names, then the newest (mtime_ns, size) across the ledger dir's *.jsonl,
+    then the same across the EVIDENCE dir's. Pure stats per request — no watcher
+    thread, no state between calls — folded into /api/runstatus so the existing
+    5s poll carries it for free.
+
+    THE EVIDENCE DIRECTORY IS STAMPED FOR THE SAME REASON AS THE LEDGER, and it
+    is the half a live panel is actually for: a gate that finishes mid-phase
+    appends a row there and moves a pointer in the manifest, and the pointer's
+    shard is already watched — but a `--reconcile` pass, or a run recorded while
+    another session held the phase lock, writes the row and NOT the shard. Watch
+    the manifest alone and that badge waits for a manual reload.
 
     SSE was weighed and rejected for this: through the stdlib server it would
     be stream-until-close over HTTP/1.0 (no chunked replies), a second send
@@ -168,6 +177,29 @@ def data_fingerprint(project, config):
         except Exception:
             return "-"
 
+    def newest_jsonl(directory):
+        """The newest (mtime_ns, size) across a directory's *.jsonl, as a stamp.
+
+        ONE EXPRESSION FOR TWO DIRECTORIES. The usage ledger and the evidence
+        ledger are the same shape — append-only *.jsonl, one file per writer per
+        month — and a second copy of this loop is a second chance for one of them
+        to quietly stop being watched, which is precisely the failure the stamp
+        exists to prevent. "-" for a directory that is missing, unreadable, or
+        holds no *.jsonl, so a project with no ledger yet yields a STABLE
+        sentinel rather than a stamp that moves on nothing.
+        """
+        newest = None
+        try:
+            for name in os.listdir(directory):
+                if name.endswith(".jsonl"):
+                    st = os.stat(os.path.join(directory, name))
+                    key = (st.st_mtime_ns, st.st_size)
+                    if newest is None or key > newest:
+                        newest = key
+        except Exception:
+            newest = None
+        return "-" if newest is None else "%d:%d" % newest
+
     parts = []
     try:
         parts.append(stamp(_config_path(project)))
@@ -182,18 +214,19 @@ def data_fingerprint(project, config):
             for ph in idx.get("phases") or []:
                 if isinstance(ph, dict) and isinstance(ph.get("shard"), str):
                     parts.append(stamp(os.path.join(base, ph["shard"])))
-        newest = None
         try:
-            led = str(_paths.hooks_config().ledger_dir(project, config))
-            for name in os.listdir(led):
-                if name.endswith(".jsonl"):
-                    st = os.stat(os.path.join(led, name))
-                    key = (st.st_mtime_ns, st.st_size)
-                    if newest is None or key > newest:
-                        newest = key
+            parts.append(newest_jsonl(
+                str(_paths.hooks_config().ledger_dir(project, config))))
         except Exception:
-            newest = None
-        parts.append("-" if newest is None else "%d:%d" % newest)
+            # The directory RESOLUTION is what can raise here; the walk cannot.
+            # Same sentinel either way, so a project whose ledgerDir cannot be
+            # resolved stamps stably instead of moving the fingerprint on every
+            # poll.
+            parts.append("-")
+        try:
+            parts.append(newest_jsonl(_ev.evidence_dir(project, config)))
+        except Exception:
+            parts.append("-")
         return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
     except Exception:
         return "unavailable"
