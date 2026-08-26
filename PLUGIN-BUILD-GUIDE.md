@@ -2142,6 +2142,36 @@ record" would separate the trail from the evidence the first time a repo set an 
 — a boundary its cases assert from the outside, since a prefix test without it admits every
 sibling whose name merely starts the same way.
 
+**A row is assembled from named fields, never copied.** `row_for()` reads the keys it knows out of
+the runner's result and nothing else, which is what makes *no runner output is ever written here* a
+property of the writer rather than a habit each call site has to remember — the gate runner holds
+full merged stdout in memory while it counts checks and scrapes paths, and none of it has a route
+into this file. A **command the manifest publishes** is stored verbatim, because the plan already
+carries it in plain text and storing it exposes nothing new; anything else falls back to
+`command_facts()` — digest, byte length, program name. Paths go through the journal's
+`repo_relative_or_token`, since this file is committed and an absolute path in it names somebody's
+machine in a repository that goes to clients.
+
+**Cuts announce themselves.** A run wider than `MAX_STEPS` or `MAX_PATHS` is trimmed and the row
+carries the count of what went — and a row that *fit* carries no count at all, because a number
+appearing only when non-zero cannot be told from one nobody computed. Three-valued fields keep
+their shape end to end: an unknown tree stays `None` rather than flattening to the empty list a
+truthy reader would call clean, and a step's `ran` keeps its `None` rather than vanishing into
+"absent", which a reader could mistake for zero.
+
+**`read_rows()` counts what it lost.** A torn line is skipped *and* counted, which is where this
+departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for telemetry and wrong
+for evidence. It reports the file count too, because "no rows" and "no files" are different answers
+and a bare list could not tell them apart.
+
+**`record()` writes the ledger row first and anchors it second**, so the only reachable partial
+state is the harmless one — a run that happened with nothing yet pointing at it. The reverse would
+put a claim into a hash chain about a row that does not exist. The anchor's subject is the evidence
+file and it says only that a run was *recorded*, which is true the moment it is written; the row
+that says the **plan** moved belongs to whoever moves it and must not be written before that
+happens. The ledger half is deliberately **not** fail-soft: a run whose evidence could not be
+stored must not be reported as recorded.
+
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that
 has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole answer,

@@ -184,10 +184,18 @@ DETAILS_VERSION = 2
 # `MAX_VALUE_CHARS`; and it exposes nothing new, because `summary` already carries
 # the same words verbatim into the same committed file. A key that fails any of
 # those three does not belong here -- `command` is the standing example.
+#
+# `runId` IS on this list, and it passes the same three tests `reason` did. It is
+# a FIELD OF THE PLAN that moved -- `task.testEvidence.runId` is a manifest key,
+# not something the plugin observed about the machine; it is bounded like any
+# other value by `MAX_VALUE_CHARS`; and it exposes nothing new, because the same
+# id is written into the manifest this row is about. It is what lets a row in the
+# committed evidence file be tied to a row in the chain without building a second
+# chain to do it.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
-                "program", "cwd")
+                "program", "cwd", "runId")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
