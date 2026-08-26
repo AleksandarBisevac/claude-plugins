@@ -358,6 +358,20 @@
         }
       }
     },
+    "evidence": {
+      "type": "object",
+      "description": "Where the test-execution evidence record lives (scripts/governance/_evidence_io.py): an append-only NDJSON row per gate run, one file per writer per month so two worktrees never conflict. COMMITTED beside the manifest like the journal rather than kept as local scratch like the usage ledger - it is evidence somebody hands to a client, so it has to survive a clone. A row carries structured facts only: never runner output, and a command is stored verbatim only where the manifest already publishes it, otherwise as a digest, a byte length and a program name. There is deliberately no `enabled` here - recording is opt-in at the call site (`run-test-gate.py --record`), and a second off switch would be two keys expressing one thing.",
+      "additionalProperties": true,
+      "properties": {
+        "dir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Project-relative directory for the monthly per-writer .jsonl files. Empty or absent keeps them beside the manifest, derived from `manifestPath` rather than hardcoded - which is what lets one commit carry both a run and the record of it."
+        }
+      }
+    },
     "journal": {
       "type": "object",
       "description": "The tamper-evident audit trail (scripts/governance/audit-journal.py + hooks/journal-writes.py): an append-only, hash-chained record of every write to the manifest and to this config, whichever tool made it. Tamper-EVIDENT, not tamper-proof - editing, deleting or reordering a row breaks the chain and `audit-journal.py verify` names it, but with no secret key a forger who rewrites the whole file produces a chain that verifies. See SECURITY.md.",

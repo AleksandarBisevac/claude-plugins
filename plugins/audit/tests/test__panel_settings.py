@@ -46,6 +46,7 @@ def _cases(check):
     _containers = {"secretPatterns": _vc.KNOWN_SECRET, "guardEdits": _vc.KNOWN_GUARD,
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
                    "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL,
+                   "evidence": _vc.KNOWN_EVIDENCE,
                    "priority": _vc.KNOWN_PRIORITY}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is

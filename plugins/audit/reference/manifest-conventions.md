@@ -102,6 +102,12 @@ Every newly created task MUST be initialized with ALL of:
 `dependsOn: []` (empty when none) and a `tests` object with `mode`, `add`,
 `expectRedFirst`, `gate`.
 
+**`testEvidence` is deliberately NOT in that list**, and its absence is the fact rather than an
+omission: it is written by the recorder when a gate actually runs, and absent means *no run has
+been recorded*, which is a different claim from every value it could be initialized to. The same
+goes for a phase. Nothing initializes it, nothing needs to, and a hand-written one would name a
+`runId` that resolves to no row in any ledger.
+
 ## New phase template
 
 A newly created phase MUST be initialized with: `status: "pending"`,
@@ -276,10 +282,24 @@ The journal's **completion-record actions**:
   work item (details: taskId?, phaseId, adoId). `lastSyncedAt` bumps deliberately
   draw NO row — the plan did not move (see tracker-sync.md → Journal)
 - `task.move` — a task was renumbered into another phase (details: fromId, toId, fromPhase, toPhase)
+- `test.evidence.recorded` — a gate run was written to the evidence record (details: runId,
+  taskId?, phaseId). Its subject is the **evidence file**, and it says only that a run was
+  recorded — which is true the moment it is written, whatever happens to the plan afterwards
+- `task.testEvidence` / `phase.testEvidence` — a `testEvidence` pointer moved (details: runId,
+  taskId?, phaseId, field, from, to). Written **only after the pointer actually lands**: a pointer
+  refused by another live session leaves the row above standing and no row here, because the chain
+  must never assert a transition that did not happen
+- `audit.state.committed` — an audit-state commit was made for work no task commit will carry
+  (details: commit, phaseId)
 
-All but `task.move` are emitted by the `journal-writes` hook and by NOTHING else — never
-append them by hand; two writers means duplicate rows and a doctor that can no longer
-trust the count. `task.move` is written by `/audit:task move` via the journal CLI.
+**Each action has exactly ONE writer**, and which one differs — never append any of them by hand,
+because two writers means duplicate rows and a doctor that can no longer trust the count.
+The `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
+records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `ado.link`.
+`task.move` is written by `/audit:task move` via the journal CLI. The three evidence actions are
+written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
+*tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`
+already works around.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);
 spend is joined from the ledger by `taskId`.
 

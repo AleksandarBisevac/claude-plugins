@@ -71,7 +71,7 @@ KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
-    "journal", "policy", "ui", "priority",
+    "journal", "evidence", "policy", "ui", "priority",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -96,6 +96,14 @@ KNOWN_BANDS = {"highUSD", "outlierUSD"}
 # so a repo that moves its plan takes the record of it along. Same shape as
 # usage.bands: a null here is an answer, not a missing value.
 KNOWN_JOURNAL = {"enabled", "dir", "strictManifestState"}
+# The test-evidence record. ONE KEY, and the absence of an `enabled` beside it is
+# the decision rather than an oversight: recording is opt-in at the call site
+# (`run-test-gate.py --record`), so a second off switch would be two keys saying
+# one thing -- and COMPATIBILITY.md then owes a written precedence rule for the
+# pair. `dir` is null by default and that null is MEANINGFUL, exactly as
+# `journal.dir`'s is: it means "beside the manifest", so a repo that moves its
+# plan takes the record of its runs along with it.
+KNOWN_EVIDENCE = {"dir"}
 # Phase prioritisation. One key, and it is advisory: see `_check_root`'s note on
 # why nothing clamps to it.
 KNOWN_PRIORITY = {"maxTier"}
@@ -314,6 +322,7 @@ def validate_config(obj):
             _check_pricing(us.get("pricing"), findings, warnings)
 
     _check_journal(obj.get("journal"), findings, warnings)
+    _check_evidence(obj.get("evidence"), findings, warnings)
 
     # Delegated whole: the module that resolves a policy decides what a malformed
     # one is. A copy of those rules here would be free to call legal what the guard
@@ -326,6 +335,30 @@ def validate_config(obj):
 
 
 # --- sub-checkers ---------------------------------------------------------------
+def _check_evidence(evidence, findings, warnings):
+    """The test-evidence record's one setting.
+
+    An empty `dir` is a FINDING and not a shrug, for `_check_journal`'s reason one
+    record over: the string is joined onto the project path, so `""` would put the
+    evidence file at the repository ROOT — and this one is committed, so the
+    mistake ships. `null` is different and is the default: beside the manifest,
+    derived from `manifestPath`, which is what lets one commit carry both a run
+    and the record of it."""
+    if evidence is None:
+        return
+    if not isinstance(evidence, dict):
+        findings.append("evidence must be an object")
+        return
+    for k in _real_keys(evidence):
+        if k not in KNOWN_EVIDENCE:
+            warnings.append("unknown evidence key %r" % k)
+    if evidence.get("dir") is not None:
+        d = evidence["dir"]
+        if not isinstance(d, str) or not d.strip():
+            findings.append("evidence.dir must be a non-empty string, or null to "
+                            "keep the record beside the manifest")
+
+
 def _check_journal(journal, findings, warnings):
     """The audit trail's two settings.
 

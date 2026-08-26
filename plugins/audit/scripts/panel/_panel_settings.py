@@ -230,6 +230,12 @@ FIELD_HELP = {
         "the manifest, which is what lets one commit carry both the change and the "
         "record of it. One file per writer, so two sessions in two worktrees never "
         "conflict.",
+    "evidence.dir":
+        "Where the per-writer monthly .jsonl files of test-gate runs live. Empty "
+        "keeps them beside the manifest, which is what lets one commit carry both "
+        "a run and the record of it. Committed on purpose, unlike the usage "
+        "ledger: this is evidence somebody hands to a client, so it has to "
+        "survive a clone.",
     "journal.strictManifestState":
         "ask surfaces a confirmation prompt whenever an edit changes a task's or "
         "phase's status, completedAt, commit or attempts in the manifest. off "
@@ -477,6 +483,8 @@ SETTINGS_GROUPS = (
             {"path": "journal.enabled", "label": "Record plan and config writes",
              "kind": "bool"},
             {"path": "journal.dir", "label": "Where the record is kept",
+             "kind": "text", "placeholder": "beside the manifest"},
+            {"path": "evidence.dir", "label": "Where test evidence is kept",
              "kind": "text", "placeholder": "beside the manifest"},
             {"path": "journal.strictManifestState",
              "label": "Confirm manifest state edits",

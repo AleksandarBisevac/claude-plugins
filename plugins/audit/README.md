@@ -702,6 +702,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
 | `tddReminder.inProgressPolicy` | Manifest interplay: `skip-gate-only` \| `skip-all` \| `warn-always` | `skip-gate-only` |
+| `evidence.dir` | Where the test-evidence record lives: one append-only NDJSON file per writer per month, **committed** beside the manifest — unlike the usage ledger, which is local scratch — so a recorded run survives a clone. Empty keeps it beside `manifestPath` | beside the manifest |
 | `usage.enabled` | Meter token usage on Stop / SubagentStop | `true` |
 | `usage.ledgerDir` | Where the monthly NDJSON ledger + scan cursors live (deliberately outside `stateDir`, which is GC'd) | `.claude/usage` |
 | `usage.authorMode` | How the spender is recorded: `email` \| `name` \| `hash` \| `none` | `email` |

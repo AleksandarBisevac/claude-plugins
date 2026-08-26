@@ -230,6 +230,18 @@ DEFAULTS = {
     # confirmation prompt on manifest STATE edits (status/completedAt/commit/
     # attempts) -- never "deny": the orchestrator writes through the same tools.
     "journal": {"enabled": True, "dir": None, "strictManifestState": "off"},
+    # Where the test-evidence record lives -- an append-only NDJSON row per gate
+    # run, one file per writer per month, COMMITTED beside the manifest like the
+    # journal rather than kept as local scratch like the usage ledger: it is
+    # evidence somebody hands to a client, so it has to survive a clone.
+    #
+    # NO `enabled` BESIDE IT, unlike the journal, and that is a decision rather
+    # than an omission: recording is already opt-in at the call site
+    # (`run-test-gate.py --record`), so a second off switch would be two keys
+    # expressing one thing -- which COMPATIBILITY.md then owes a written
+    # precedence rule for. One key, one purpose, and `_evidence_io.evidence_dir`
+    # is what reads it.
+    "evidence": {"dir": None},
     # th (F-P-6): the panel's and the report's LOOK. `theme` is a preset name or
     # a path to a theme file; absent means "search" -- .claude/audit.theme.json
     # in the project, then ~/.claude/audit.theme.json, then the built-in. No

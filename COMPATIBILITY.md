@@ -64,6 +64,18 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   to, and its tasks with it; **absent keeps meaning tracked**, which is what makes
   adding the key free — a plan that never writes it behaves exactly as it did before,
   so it is a minor. Ceasing to read it, or reversing what absence means, is a major.
+- **`testEvidence` is under the same promise, and is deliberately three keys.**
+  A task or a phase may carry `{runId, status, at}` pointing at the run that last
+  exercised it. **Absent means no run has been recorded** — never "failed" — which is
+  again what makes adding it free. It is a **cache**, not the truth: the record lives
+  in the evidence file beside the manifest, deleting the block is always safe, and
+  `runId` is **opaque** — its format is not a schema and must not be parsed. What is
+  promised is that the key keeps being read and that absence keeps meaning what it
+  means. `status` **may gain members** — that is the standing "an enum gains no
+  members" exclusion below, and code switching on it needs a default arm.
+  The **contents of the evidence file itself are not promised**, for the reason the
+  usage ledger's NDJSON fields are not: it is a record this plugin writes and
+  re-derives, and the manifest block is the interface.
 
 ### Not promised
 
@@ -162,7 +174,9 @@ depending on an implementation:
 
 - the panel's HTTP endpoints and its page,
 - the rendered report's HTML, its DOM and its Markdown twin,
-- the audit trail's row shape and the usage ledger's NDJSON fields,
+- the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
+  record's — all three are files this plugin writes and re-derives; the manifest's
+  `testEvidence` block is the interface, and an evidence row is not,
 - the hooks' payload handling, and every exit code except the validators' — the CI
   verdict `/audit:status --gate` returns is a fair thing to want promised and is not
   promised here, so pin the plugin version if you wire it into a pipeline,

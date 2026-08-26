@@ -228,6 +228,33 @@ def _cases(check):
     check("a non-string dir is a finding", any("journal.dir" in x for x in f))
     f, w = M.validate_config({"journal": []})
     check("non-object journal -> finding", any("journal must be" in x for x in f))
+
+    # --- evidence -------------------------------------------------------------
+    # The same shape one record over, and the same trap: `dir` is joined onto the
+    # project path, so an empty string puts the file at the repository ROOT - and
+    # this record is COMMITTED, so that mistake ships rather than sitting in
+    # somebody's scratch directory.
+    f, w = M.validate_config({"evidence": {"dir": "docs/audit/evidence"}})
+    check("the documented evidence dir validates clean", not f and not w)
+    f, w = M.validate_config({"evidence": {"dir": None}})
+    check("a null evidence dir is the DEFAULT and not a missing value - it means "
+          "beside the manifest, so a repo that moves its plan takes the record of "
+          "its runs along", not f and not w)
+    f, w = M.validate_config({"evidence": {"dir": ""}})
+    check("an EMPTY evidence dir is a finding - it would put a COMMITTED record "
+          "at the repository root, which is the version of this mistake that "
+          "ships: %r" % (f,), any("evidence.dir" in x for x in f))
+    f, w = M.validate_config({"evidence": {"dir": 3}})
+    check("a non-string evidence dir is a finding, paired with the empty one "
+          "above so neither branch can be the only reason this passes",
+          any("evidence.dir" in x for x in f))
+    f, w = M.validate_config({"evidence": []})
+    check("non-object evidence -> finding", any("evidence must be" in x for x in f))
+    f, w = M.validate_config({"evidence": {"enabled": True}})
+    check("`enabled` is NOT a key here and a warning says so - recording is "
+          "opt-in at the call site, and a second off switch would be two keys "
+          "expressing one thing: %r" % (w,),
+          not f and any("evidence" in x for x in w))
     f, w = M.validate_config({"journal": {"enabledd": True}})
     check("a misspelled journal key -> warning only",
           not f and any("journal" in x for x in w))

@@ -336,6 +336,25 @@ report, because `git switch -c` is about to fail anyway.
      gate plus a structured **outcome** = `{ technical, descriptive }`. It must distinguish
      **"gates ran and failed"** from **"gates could not run"** (command not found, runner crashed
      before executing tests, zero tests collected where `tests.add` expects some).
+   - **After the subagent returns, YOU run the task's gate through the script and record it:**
+
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
+         <manifestPath> <phaseId> --task <taskId> --record
+     ```
+
+     The subagent's own run is what it develops against; **this** run is the one that becomes
+     evidence. It has to be yours and not its, for the reason the script exists at all: the
+     bracket, the check count, the coverage answer and the tree comparison are only true of a run
+     the wrapper made. `--task` resolves that task's `tests.gate` when it declares one and falls
+     back to the phase's otherwise, saying which — so a task with no gate of its own is never
+     credited with having passed one.
+
+     **Read the two lines it prints under the verdict.** `evidence: recorded <runId>` is the row;
+     `pointer:` is whether the plan now names it. A pointer can be **refused** — another live
+     session may hold the phase lock — and that is a designed state, not an error: the run is
+     recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
+     chase a refused pointer.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
      For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
@@ -360,6 +379,13 @@ report, because `git switch -c` is about to fail anyway.
           carrying, and a record committed a week later cannot be checked against the change it
           describes. One file per writer per month, so parallel phases never conflict on it. If
           `journal.enabled` is false there is nothing there and nothing to stage.
+        - **Stage the evidence directory too** (`evidence.dir`, default `<manifest dir>/evidence`) if it
+          exists inside `<gitRoot>`, and for the journal's reason one record over: the rows this
+          commit's `testEvidence` pointers name have to travel with the pointers, or a clone
+          receives a plan referring to runs it does not have. `verify-invariants.py`'s
+          `evidence-committed` is what says so afterwards. One file per writer per month, so
+          parallel phases never conflict on it either. If the directory is outside `<gitRoot>` it
+          cannot be committed — proceed without it, exactly as for the journal.
         - **Completion rows are hook-emitted.** The `journal-writes` hook derives `task.complete`,
           `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
           a shell command inside a `Bash` call included — NEVER append those actions by hand (two
@@ -385,6 +411,38 @@ report, because `git switch -c` is about to fail anyway.
      (fix `meta.buildCommands` / `tests.gate` first). Never burn retries on missing infrastructure.
 5. Manual gate items (e.g. `"manual: <checklist>"`) cannot be auto-run — surface them as **human action items**.
 
+## Keeping a failed run's record (audit-state commits)
+
+**A failed run is never committed by a task commit, and that is the whole problem.** A red gate
+leaves the task `in_progress` and commits nothing; an infrastructure failure stops; sign-off only
+commits once every gate is green. So `failed`, `timed-out`, `cancelled` and `could-not-run`
+evidence can sit in a working tree forever — exactly the history the record exists to keep.
+
+**The gap is narrower than "every failure", which is why this is rare.** A task commit stages the
+evidence directory, so it carries every row written since the last one: a run that fails at attempt
+1 and succeeds at attempt 2 is already durable, failure included. What is not durable is a run
+whose task or phase **never subsequently commits**. Run this at those points, and only those:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-audit-state.py" <manifestPath> <phaseId>
+```
+
+1. a task moves to **`blocked`** (attempts exhausted) — the main case;
+2. an **infrastructure failure**, at the STOP above;
+3. a **phase sign-off gate is red** and the phase stays `in_progress`;
+4. at the start of `/audit:resume`, to sweep whatever an interrupted session left behind.
+
+**It is idempotent and safe to call when nothing is wrong** — with nothing uncommitted it makes no
+commit and says so, so calling it spuriously costs a line of output. It stages the phase's manifest
+file, the journal and the evidence directory and **never the task's `files`**: the implementation
+stays unstaged, which is what makes committing a failed task's *state* possible at all.
+`verify-invariants.py`'s `audit-state-scope` grades those commits afterwards, and a staged
+implementation file is a breach.
+
+**Do not run it from a signal handler or an interrupt path.** A cancelled run records its row
+locally and returns; trigger 4 is what makes that row durable later. Git belongs to the
+orchestrator, and a commit made while stopping is how a half-made one happens.
+
 ## Phase sign-off (Definition of Done — strict order)
 
 Run only when **all** tasks in the phase are `done`. All review/test work runs on the phase branch.
@@ -407,10 +465,17 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    null**, skip this step — tests are the signer.
 2. **`testGateGreen`** — run the gate **through the script**, not by hand:
    ```
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> <phaseId>
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
+       <manifestPath> <phaseId> --record
    ```
    (run `meta.nodePreamble` first, un-piped, if set). All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
+
+   `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the
+   phase's own gate run, kept apart from its tasks' so a reader can follow either. As at task
+   level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan
+   up. Everything it writes happens after the verdict is complete, so the recording can never
+   appear in the tree comparison it is being judged by.
 
    **It brackets the gate, and that is why it is a script (F193).** A gate is a MEASUREMENT.
    Exit 1 means one of three things and the output says which: a command failed, the gate
@@ -469,7 +534,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —
       the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor).
-      Stage the journal directory here too, for the same reason as the task commits.
+      Stage the journal directory **and the evidence directory** here too, for the same reason as
+      the task commits: the sign-off gate's own run was recorded a moment ago, and its row has to
+      reach the same clone as the pointer that names it.
    c. **Merge into the phase's RESOLVED PARENT** (`resolve-branch.py … --phase <phaseId>` prints
       it; `phase.parentBranch ?? meta.developmentBranch`): `git switch <parent>`;
       `git merge --ff-only <branch>`.
