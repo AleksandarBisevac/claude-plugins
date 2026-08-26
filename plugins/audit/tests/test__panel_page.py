@@ -655,14 +655,16 @@ def _cases(check):
           and "data-ovview" in M.UI_HTML
           and "data-ovoutside" in M.UI_HTML
           and "' phases match')+' outside this view" in M.UI_HTML)
-    check("ov: the phase detail is the report's task columns, read-only - id, "
-          "title, status, risk as coloured TEXT, commit and the completion "
-          "stamp to the minute - plus `tests`, which is what a run RECORDED "
-          "about the task and is deliberately a column of its own beside the "
-          "status the plan claims",
+    check("ov: the phase detail is the report's task columns IN THE REPORT'S "
+          "ORDER, read-only - id, title, status, risk as coloured TEXT, commit "
+          "and the completion stamp to the minute, and then `tests`, which is "
+          "what a run RECORDED about the task and is deliberately a column of "
+          "its own beside the status the plan claims. It trails the plan's own "
+          "columns because the report's `_OPTIONAL_COLS` puts it after `done`, "
+          "and the two tables are meant to read the same way",
           "function ovDetail(" in M.UI_HTML
-          and "tableHead(['id','title','status','tests','risk','commit',"
-              "'done (UTC)'])" in M.UI_HTML
+          and "tableHead(['id','title','status','risk','commit',"
+              "'done (UTC)','tests'])" in M.UI_HTML
           and "class:'rk','data-risk':t.risk" in M.UI_HTML
           and ".rk[data-risk=\"high\"]{color:var(--err)}" in M.UI_HTML)
 

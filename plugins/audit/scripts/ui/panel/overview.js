@@ -542,9 +542,13 @@ function evRollCells(tasks,ev){
 const evLine=(lbl,...parts)=>el('div',{class:'evline','data-evline':lbl},
  el('span',{class:'evlbl'},lbl),parts);
 /**
- * A phase's tasks, in the columns the report's table uses — id, title, status,
- * risk (coloured TEXT, not a pill), commit and when it finished, led by what the
- * phase is FOR.
+ * A phase's tasks, in the columns the report's table uses and in ITS order — id,
+ * title, status, risk (coloured TEXT, not a pill), commit, when it finished, and
+ * then `tests` — led by what the phase is FOR.
+ *
+ * `tests` trails the plan's own columns because that is where the report puts it,
+ * and the two tables are meant to read the same way; `tools/ui-checks/stage-tabs.mjs`
+ * is what holds them together.
  *
  * The outcome leads rather than trailing the table: this is where it lives now
  * that the row does not carry it, and a purpose read after its tasks is a
@@ -585,18 +589,19 @@ function ovDetail(p){
     el('td',{class:'mono'},t.id||''),
     el('td',{class:'ovt'},t.title||''),
     el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
-    // What the PLAN says happened, then whether anything measured it.
-    el('td',{},cell.badge),
     el('td',{},t.risk?el('span',{class:'rk','data-risk':t.risk},t.risk):null),
     el('td',{class:'mono'},t.commit?String(t.commit).slice(0,9):''),
     // A start stamp is labelled as one, or an unfinished task reads as finished.
-    el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':'')))));
+    el('td',{class:'mut'},when+(t.completedAt?'':(when?' (started)':''))),
+    // Everything the PLAN says, and then whether anything MEASURED it. Last,
+    // because that is where the report's table carries it.
+    el('td',{},cell.badge)));
    // The opened run gets a row of its own, spanning the table, so the columns
    // above it keep the widths every other row agreed on.
    if(cell.detail)tb.append(el('tr',{'data-evdetail':t.id||''},
      el('td',{colspan:'7'},cell.detail)));});
   box.append(el('table',{class:'ovtasks'},
-    tableHead(['id','title','status','tests','risk','commit','done (UTC)']),tb));}
+    tableHead(['id','title','status','risk','commit','done (UTC)','tests']),tb));}
  box.append(el('div',{class:'row',style:'margin-top:.4rem'},
    el('button',{class:'btn small','data-ovedit':p.id,type:'button',
      title:'Plan & models is where tasks, models and skills are changed',

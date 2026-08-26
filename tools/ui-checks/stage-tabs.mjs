@@ -283,15 +283,42 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
           && det.firstElementChild.hasAttribute('data-ovpurpose')),
       };
     }, firstId);
+    // THE RULE, NOT A SNAPSHOT. This used to compare the whole join against one
+    // hardcoded list, which meant it went red the moment either surface grew a
+    // column it was entitled to grow — and it did, the day `tests` was added to
+    // both. The report's column set is not fixed by design:
+    // `_report_page._OPTIONAL_COLS` draws a column exactly when some task fills
+    // it, so a snapshot here is a claim the report never made.
+    //
+    // Two independent claims instead. First: these are the columns the panel
+    // always draws, in this order, at the front.
+    const MANDATORY = ['id', 'title', 'status', 'risk', 'commit', 'done (UTC)'];
+    // Second: `tests` is the only thing allowed after them, and only last — so
+    // the tail is either nothing at all or exactly that one column.
+    const OPTIONAL_LAST = ['tests'];
+    const LEGAL_TAILS = ['', OPTIONAL_LAST.join(',')];
+    // Neither claim is derived from what the page drew. `want = cols.includes(
+    // 'tests') ? A : B` reads the expectation out of the value under test: it
+    // can then only ever fail on ordering, and a column appearing or vanishing
+    // stops being a finding at all.
+    const head = inPlace.cols.slice(0, MANDATORY.length).join(',');
+    const tail = inPlace.cols.slice(MANDATORY.length).join(',');
     if (!inPlace.stayed || inPlace.expanded !== 'true' || !inPlace.detail) {
       fail(`overview: clicking a phase row did not open it in place `
          + `(${JSON.stringify(inPlace)})`);
     } else if (inPlace.rows !== inPlace.want) {
       fail(`overview: the detail lists ${inPlace.rows} tasks for a phase with `
          + `${inPlace.want}`);
-    } else if (inPlace.cols.join(',') !== 'id,title,status,risk,commit,done (UTC)') {
+    } else if (head !== MANDATORY.join(',')) {
       fail(`overview: the detail's columns are ${JSON.stringify(inPlace.cols)} — `
-         + `it is meant to follow the report's table`);
+         + `it is meant to follow the report's table, which always opens with `
+         + `${JSON.stringify(MANDATORY)} in that order, and this one opens with `
+         + `${JSON.stringify(inPlace.cols.slice(0, MANDATORY.length))}`);
+    } else if (!LEGAL_TAILS.includes(tail)) {
+      fail(`overview: the detail's columns are ${JSON.stringify(inPlace.cols)} — `
+         + `after the report's mandatory columns it may carry nothing, or `
+         + `${JSON.stringify(OPTIONAL_LAST)} last, and it carries `
+         + `${JSON.stringify(inPlace.cols.slice(MANDATORY.length))}`);
     } else if (!inPlace.edit) {
       fail('overview: the detail offers no way to Composition — the click used to '
          + 'go there, so removing it without a named replacement strands the reader');
@@ -300,8 +327,12 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
          + `lead with it (${JSON.stringify(inPlace.purpose)}) — no row carries it `
          + `any more, so this is where it is read`);
     } else {
-      note(`overview: a phase opens in place with its ${inPlace.rows} tasks in the `
-         + `report's columns, and Composition is a named press`);
+      // The tail is named on the PASS as well, because green has two shapes here
+      // — the optional column drawn, and the optional column absent — and a note
+      // that cannot tell them apart hides a column that stopped shipping.
+      note(`overview: a phase opens in place with its ${inPlace.rows} tasks in `
+         + `the report's columns, ${tail ? `plus ${tail}` : `no ${OPTIONAL_LAST}`}`
+         + `, and Composition is a named press`);
     }
     // ...and that named press still does what the click used to.
     await page.locator(`#over [data-ovedit="${firstId}"]`).click();
