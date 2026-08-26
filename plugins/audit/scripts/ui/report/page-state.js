@@ -25,7 +25,7 @@
    */
   const HASH = (() => {
     const h = location.hash || '';
-    if (h.indexOf('#!') !== 0) return {};
+    if (h.indexOf('#!') !== 0) return Object.create(null);
     return h.slice(2).split('&').filter(Boolean).reduce((acc, pair) => {
       const i = pair.indexOf('=');
       const k = i < 0 ? pair : pair.slice(0, i);
@@ -34,7 +34,11 @@
       // key stays present so the control it drives is still restored.
       try { acc[k] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { acc[k] = ''; }
       return acc;
-    }, {});
+    // No prototype, because every key here is whatever the link said. On a plain
+    // object `acc['__proto__'] = 'dark'` is swallowed by the prototype setter
+    // rather than stored, so `#!__proto__=x` would decode to an empty hash and
+    // silently restore the LOCAL copy instead of the view the link names.
+    }, Object.create(null));
   })();
 
   const count = document.getElementById('audit-count');
@@ -237,10 +241,18 @@
 
   // Which phases are expanded survives filtering AND a page reload.
   const STORE = 'audit-report-expanded:' + (document.title || 'report');
-  let expanded = {};
+  // No prototype, because the keys are phase ids and the schema puts no
+  // `pattern` on an id at all. On a plain object `expanded['__proto__'] = true`
+  // is swallowed, so that phase could never be opened; `expanded.constructor`
+  // reads back as a function, so that phase renders open before anyone clicks
+  // it and the first click closes it.
+  const expanded = Object.create(null);
   // The `try` is for the PARSE, not for storage: storageGet cannot throw, so a
   // refused read and a corrupt stored value no longer share one handler.
-  try { expanded = JSON.parse(storageGet(STORE)) || {}; } catch (e) {}
+  // Own keys are COPIED IN rather than the map being replaced: JSON.parse hands
+  // back a plain object, and a corrupt value hands back a string or an array,
+  // both of which used to be adopted whole by `|| {}` and then written to.
+  try { Object.assign(expanded, JSON.parse(storageGet(STORE))); } catch (e) {}
 
   /**
    * Write the expand state back to storage, ignoring a refusal.
@@ -253,7 +265,8 @@
   // --- filter state, and the controls that write it ----------------------------
 
   let phaseStatus = '';   // toolbar: filter which PHASES show, by phase status
-  let taskStatus = {};    // per phase: filter that phase's TASKS, by task status
+  // Keyed by phase id, so prototype-free for the reason `expanded` above is.
+  let taskStatus = Object.create(null);   // per phase: filter its TASKS by status
   let modelFilter = '';   // panel: only tasks run by this model
   let dFrom = '';         // panel: ISO dates, compared as plain strings
   let dTo = '';
@@ -410,10 +423,16 @@
    * @type {string} an ISO date, or '' when no task carries one
    */
   let DMAX = '';
+  // Both are keyed by `data-phase`, i.e. by a phase id out of the manifest, and
+  // both are BUILT rather than read from a literal - so the fix is a map with no
+  // prototype rather than a guarded read. On a plain object a phase called
+  // `constructor` made `TASKS[k]` answer with a function, and `.push` on it
+  // threw at load: one manifest id blanked the whole interactive layer of a
+  // report somebody opened from a link.
   /** @type {Object<string, HTMLTableRowElement[]>} phase id -> its task rows */
-  const TASKS = {};
+  const TASKS = Object.create(null);
   /** @type {Object<string, HTMLTableRowElement>} phase id -> its task-filter row */
-  const TFROW = {};
+  const TFROW = Object.create(null);
   if (grouped) {
     for (const t of grouped.querySelectorAll('tbody tr.task')) {
       const k = t.getAttribute('data-phase');
@@ -463,7 +482,11 @@
    * @param {string} seg a phase row's segment
    * @returns {boolean} whether the current view shows that segment
    */
-  const inView = (seg) => (VIEWS[viewMode] || VIEWS.all).includes(seg);
+  // `lookup`, not `VIEWS[viewMode]`: VIEWS is a literal this file wrote, and
+  // `viewMode` is whatever the fragment said. `#!v=constructor` passed the guard
+  // in exports.js (a function is truthy), landed here, and `.includes` on
+  // Object.prototype.constructor threw out of the first filter pass.
+  const inView = (seg) => (lookup(VIEWS, viewMode) || VIEWS.all).includes(seg);
 
   // Which order the phase rows are listed in, the same shape as the view above:
   // the element, the vocabulary, the default. `plan` is the written plan, which
@@ -487,9 +510,15 @@
    * than restated: a status the plan does not use has no row, no chip, and no
    * entry, which is the right answer for all three.
    *
+   * Prototype-free: the key is a phase STATUS, and `_seg_of` on the Python side
+   * says in as many words that an unknown vocabulary value reaches it. With a
+   * prototype, `'constructor' in STATUS_SEG` was already true, so the entry was
+   * never recorded and every phase of that status was filtered out of every
+   * view - the `in` test walks the chain exactly as the bracket read does.
+   *
    * @type {Object<string, string>}
    */
-  const STATUS_SEG = {};
+  const STATUS_SEG = Object.create(null);
   phaseRows.forEach((pr) => {
     const st = pr.getAttribute('data-status');
     if (st && !(st in STATUS_SEG)) STATUS_SEG[st] = pr.__seg;
@@ -506,9 +535,14 @@
    * same reason `STATUS_SEG` is - the alternative is a second copy of Python's
    * segment rule, and two copies of a rule is one copy and one lie.
    *
+   * Prototype-free for the reason STATUS_SEG above is, and this one is the
+   * plainer key: an area tag is documented free text. `'constructor' in
+   * AREA_SEGS` was true, so the array was never created and `.indexOf` on the
+   * inherited function threw while the page was still loading.
+   *
    * @type {Object<string, string[]>}
    */
-  const AREA_SEGS = {};
+  const AREA_SEGS = Object.create(null);
   phaseRows.forEach((pr) => {
     (pr.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
       if (!(a in AREA_SEGS)) AREA_SEGS[a] = [];

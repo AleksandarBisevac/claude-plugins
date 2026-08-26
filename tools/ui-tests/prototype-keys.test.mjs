@@ -278,3 +278,92 @@ describe('no panel part reads one of these tables bare', () => {
     expect(panelParts().some((n) => readPart(n).includes('lookup(LABELS,'))).toBe(true);
   });
 });
+
+describe('a map the panel BUILDS from outside keys stores what it is given', () => {
+  // The other half of the class, and the one no read helper can repair:
+  // `m['__proto__']=v` on a plain object re-points the prototype instead of
+  // storing the value, so nothing ever reads it back. Task and phase ids carry
+  // NO `pattern` in the JSON Schema, and model names and authors are free text
+  // in the ledger, so every key here comes from outside.
+
+  it('the Overview remembers a phase called `__proto__` is open', () => {
+    const { ctx } = panel();
+    expect(vm.runInContext('Object.getPrototypeOf(OVF.open)', ctx)).toBe(null);
+    expect(vm.runInContext('Object.getPrototypeOf(OVF.evOpen)', ctx)).toBe(null);
+    vm.runInContext("OVF.open['__proto__']=true;OVF.evOpen['constructor']=true;", ctx);
+    expect(vm.runInContext("OVF.open['__proto__']", ctx)).toBe(true);
+    expect(vm.runInContext('OVF.evOpen.constructor', ctx)).toBe(true);
+    expect(vm.runInContext('Object.keys(OVF.open)', ctx)).toEqual(['__proto__']);
+  });
+
+  it('...and an id nobody opened still reads as closed, not as a function', () => {
+    // The other direction: a map that answered `true` for everything would pass
+    // the case above and fold nothing.
+    const { ctx } = panel();
+    INHERITED.forEach((k) => {
+      expect(vm.runInContext('!!OVF.open[' + JSON.stringify(k) + ']', ctx), k)
+        .toBe(false);
+      expect(vm.runInContext('!!OVF.evOpen[' + JSON.stringify(k) + ']', ctx), k)
+        .toBe(false);
+    });
+  });
+
+  it('the palette ranks a model called `constructor` by its spend', () => {
+    // `uRanks` accumulates tokens into a map keyed by a LEDGER value. On a plain
+    // object `t['constructor']` came back as a function, `fn + tokens` made a
+    // string, and the comparator then subtracted two strings and sorted by NaN.
+    const { ctx } = panel();
+    // Spends chosen so the answer is a real order and no value equals its key.
+    vm.runInContext(
+      'USAGE={facts:['
+      + "['t',null,null,'constructor',null,null,null,50,0,0],"
+      + "['t',null,null,'__proto__',null,null,null,10,0,0],"
+      + "['t',null,null,'claude-opus-5',null,null,null,30,0,0]"
+      + ']};', ctx);
+    const { uRanks } = reach(ctx, ['uRanks']);
+    const bySpend = uRanks(3, 'spend');
+    expect(Object.getPrototypeOf(bySpend)).toBe(null);
+    // Descending by tokens: constructor 50, opus 30, __proto__ 10 — which is
+    // NOT the lexical order the other mode gives, so neither answer is the
+    // other's under a different name.
+    expect(bySpend.constructor).toBe(0);
+    expect(bySpend['claude-opus-5']).toBe(1);
+    expect(bySpend['__proto__']).toBe(2);
+    const byName = uRanks(3, 'name');
+    expect(Object.keys(byName).sort()).toEqual(
+      ['__proto__', 'claude-opus-5', 'constructor']);
+  });
+
+  it('and the ranks really do differ from the order they were written in', () => {
+    // Guards the case above against a comparator that answered iteration order:
+    // 'name' sorts lexically and 'spend' by tokens, and the two disagree here.
+    const { ctx } = panel();
+    vm.runInContext(
+      'USAGE={facts:['
+      + "['t',null,null,'constructor',null,null,null,50,0,0],"
+      + "['t',null,null,'__proto__',null,null,null,10,0,0],"
+      + "['t',null,null,'claude-opus-5',null,null,null,30,0,0]"
+      + ']};', ctx);
+    const { uRanks } = reach(ctx, ['uRanks']);
+    const bySpend = uRanks(3, 'spend');
+    const byName = uRanks(3, 'name');
+    expect(byName['__proto__']).toBe(0);
+    expect(byName.constructor).toBe(2);
+    expect(bySpend.constructor).not.toBe(byName.constructor);
+    expect(bySpend['__proto__']).not.toBe(byName['__proto__']);
+  });
+
+  it('the proof above can fail: a plain object drops the `__proto__` rank', () => {
+    const src = 'const o=Object.create(null);'.replace('Object.create(null)', '{}');
+    expect(src).toBe('const o={};');
+    // Driven rather than argued: the same write against a plain object.
+    const plain = {};
+    plain['__proto__'] = 3;
+    expect(Object.prototype.hasOwnProperty.call(plain, '__proto__')).toBe(false);
+    expect(Object.keys(plain)).toEqual([]);
+    const bare = Object.create(null);
+    bare['__proto__'] = 3;
+    expect(bare['__proto__']).toBe(3);
+    expect(Object.keys(bare)).toEqual(['__proto__']);
+  });
+});

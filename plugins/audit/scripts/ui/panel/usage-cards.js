@@ -18,7 +18,10 @@ function uBudgets(facts){
  const B=USAGE.phaseBudgets||{};
  const ids=Object.keys(B);
  if(!ids.length)return [];
- const spent={};
+ // Keyed by a phase id out of the ledger, so no prototype: `spent.constructor`
+ // is a function, and adding a cost to it produced a string the sort then
+ // ordered by NaN.
+ const spent=Object.create(null);
  for(const f of facts){const p=f[F.phase]||'--';
   spent[p]=(spent[p]||0)+f[F.cost];}
  const rows=ids.map(id=>{const used=spent[id]||0,budget=B[id];
@@ -357,7 +360,9 @@ function uPerson(){
  out.push(el('div',{class:'ufact','data-ptasks':String(tasks.size),
    'data-pphases':String(phases.size),'data-pmsgs':String(msgs)},
    bits.join(' - ')));
- const M=USAGE.taskMeta||{},split={};
+ // Keyed by a task STATUS out of the manifest, which the report's own segment
+ // rule documents as reaching it unknown.
+ const M=USAGE.taskMeta||{},split=Object.create(null);
  for(const t of tasks){const st=(M[t]||{}).status||'untracked';
   split[st]=(split[st]||0)+1;}
  const order=['done','in_progress','blocked','pending','untracked'];
@@ -428,7 +433,7 @@ let BANDS=null;
  */
 function uBandInfo(){
  if(BANDS)return BANDS;
- const cfg=USAGE.bands||{},M=USAGE.taskMeta||{},cost={};
+ const cfg=USAGE.bands||{},M=USAGE.taskMeta||{},cost=Object.create(null);
  for(const f of USAGE.facts){const t=f[F.task];
   if(t&&t!=='--'&&M[t])cost[t]=(cost[t]||0)+f[F.cost];}
  let hi=Number(cfg.highUSD),ou=Number(cfg.outlierUSD),basis='absolute',sample=0;
@@ -442,7 +447,9 @@ function uBandInfo(){
     Math.round(p/100*(done.length-1))))];
   hi=pct(COST_BAND_PARAMS.percentileHigh);ou=pct(COST_BAND_PARAMS.percentileOutlier);
   basis='relative';}
- const byTask={},counts={typical:0,high:0,outlier:0};
+ // `byTask` is keyed by a task id and gets no prototype; `counts` is keyed by
+ // the three band names this line writes, so it keeps its.
+ const byTask=Object.create(null),counts={typical:0,high:0,outlier:0};
  for(const t in cost){const b=cost[t]>ou?'outlier':cost[t]>hi?'high':'typical';
   byTask[t]=b;counts[b]++;}
  return (BANDS={basis,sufficient:true,high:hi,outlier:ou,byTask,counts,sample,

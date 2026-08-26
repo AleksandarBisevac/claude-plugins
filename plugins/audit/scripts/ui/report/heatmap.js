@@ -408,7 +408,9 @@
    * @returns {void}
    */
   function setView(v) {
-    if (!VIEWS[v]) return;
+    // Own-property read: see `inView` in page-state.js. This caller is the
+    // select rather than the link, but one guard on one table beats two.
+    if (!lookup(VIEWS, v)) return;
     viewMode = v;
     if (viewSel && viewSel.value !== v) viewSel.value = v;
     refresh();                       // which syncs the chips, for every caller

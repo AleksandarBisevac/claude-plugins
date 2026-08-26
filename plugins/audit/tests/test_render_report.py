@@ -1197,8 +1197,12 @@ def _cases(check):
     check("scale: refresh() runs no DOM query per phase - that loop is O(phases x "
           "rows) and it ran on every keystroke",
           "querySelectorAll" not in _body and "querySelector(" not in _body)
+    # Prototype-free, because both are keyed by a manifest phase id and the
+    # schema puts no `pattern` on an id: `TASKS['constructor']` answered with a
+    # function and `.push` on it threw while the page was still loading.
     check("scale: the phase->tasks index is built once, up front",
-          "const TASKS = {};" in M._SCRIPT and "const TFROW = {};" in M._SCRIPT)
+          "const TASKS = Object.create(null);" in M._SCRIPT
+          and "const TFROW = Object.create(null);" in M._SCRIPT)
     check("scale: row text is lowercased once and kept, not re-derived per keystroke",
           "r.__auditText" in M._SCRIPT)
     check("scale: sorting copies the index before ordering it, so the index is "

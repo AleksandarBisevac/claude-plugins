@@ -1113,6 +1113,17 @@ def _cases(check):
         # written yet for the sake of a copy that no longer exists. The miss
         # sample below is now `shared/theme.js`'s own line, which is excluded as
         # the home; it stays here because what it proves is unchanged.
+        # The miss samples are a CALL, which both surfaces make and which the
+        # extraction keeps, and the panel's inline own-property read over a table
+        # this helper does not own - the repair, not the defect, and the reason
+        # `hasOwnProperty` is not the needle.
+        "own-property table read": (
+            ("const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;",
+             "function lookup(table, key) { return table[key]; }",
+             "let ownProp = (t, k) => t[k];",
+             "const getOwn=(t,k)=>t[k];"),
+            ("orderPhaseBlocks(lookup(ORDERS, phaseOrder));",
+             "if(Object.prototype.hasOwnProperty.call(EVWORD,k))return EVWORD[k];")),
         "which mode the page is painting": (
             ("const isDark=()=>root.getAttribute('data-theme')==='dark';",
              "const isDark = () => { return t ? t === 'dark' : p(); };",

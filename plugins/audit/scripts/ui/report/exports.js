@@ -431,7 +431,11 @@
     const stored = storageGet(STORE_KEY);
     if (stored) stored.split('&').forEach(restoreStoredPair);
   }
-  if (HASH.v && VIEWS[HASH.v]) {
+  // Both guards read their table as OWN properties. The fragment is the most
+  // reachable outside key this page has - no manifest and no config, just a
+  // link - and `#!v=constructor` used to pass a truthiness test on an inherited
+  // function and set `viewMode` to a name no view exists for.
+  if (HASH.v && lookup(VIEWS, HASH.v)) {
     viewMode = HASH.v;
     if (viewSel) viewSel.value = viewMode;
   }
@@ -441,10 +445,10 @@
   // then rearrange it in front of the reader. `sortSel` gates it because a plan
   // with nothing pinned has no ranks on its rows, and a fragment can name an
   // order the page cannot honour.
-  if (HASH.so && ORDERS[HASH.so] && sortSel) {
+  if (HASH.so && lookup(ORDERS, HASH.so) && sortSel) {
     phaseOrder = HASH.so;
     sortSel.value = phaseOrder;
-    orderPhaseBlocks(ORDERS[phaseOrder]);
+    orderPhaseBlocks(lookup(ORDERS, phaseOrder));
   }
   if (q && HASH.q) q.value = HASH.q;
   if (HASH.ps) {

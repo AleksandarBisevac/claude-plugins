@@ -354,12 +354,16 @@ let USLOTS={}, MSLOTS={};
  * @returns {Object<string, number>} value to rank
  */
 function uRanks(field,by){
- if(by==='name'){const o={};
+ // Every map below is keyed by a LEDGER VALUE - a model name, an author, a task
+ // or phase id - so none of them may have a prototype: `t['constructor']` read
+ // back as a function, `(fn||0)+tokens` concatenated a string, and the sort
+ // comparator then subtracted two strings and ordered by NaN.
+ if(by==='name'){const o=Object.create(null);
   [...new Set(USAGE.facts.map(f=>f[field]))].sort().forEach((k,i)=>o[k]=i);
   return o;}
- const t={};
+ const t=Object.create(null);
  for(const f of USAGE.facts)t[f[field]]=(t[f[field]]||0)+f[F.tokens];
- const o={};Object.keys(t).sort((a,b)=>t[b]-t[a]||(a<b?-1:1))
+ const o=Object.create(null);Object.keys(t).sort((a,b)=>t[b]-t[a]||(a<b?-1:1))
   .forEach((k,i)=>o[k]=i);return o;}
 /**
  * Hand each drawn entity a palette slot, in two passes. First pass: everyone in
@@ -383,7 +387,7 @@ function uRanks(field,by){
  *   left is absent, and `uCol` renders it neutral
  */
 function uSlots(field,present,by){
- const rank=uRanks(field,by),used=new Set(),out={};
+ const rank=uRanks(field,by),used=new Set(),out=Object.create(null);
  const keys=[...new Set(present)].filter(k=>k&&k!=='other')
   .sort((a,b)=>(rank[a]==null?1e9:rank[a])-(rank[b]==null?1e9:rank[b]));
  for(const k of keys){const r=rank[k];

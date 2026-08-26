@@ -2046,6 +2046,24 @@ SHARED_CONCERNS = (
      "constant of its own under a different name. The panel's day-number helpers "
      "(dnum, dayIso) stayed in panel/core.js, where they have one reader - "
      "dayIso replacing three identical local copies."),
+    ("own-property table read", "shared/lookup.js",
+     r"re:(?:function|const|let|var)\s+"
+     r"(?:lookup|ownValue|ownProp|ownEntry|getOwn|tableGet)\s*[=(]", 0,
+     "EXTRACTED as lookup, and the row exists because the DEFECT was extracted "
+     "once and only halfway: the panel got the helper while the report carried "
+     "the identical class and was out of that change's scope. The report is the "
+     "worse surface of the two - it needs no manifest and no config, only a "
+     "link, and `#!v=constructor` passed a truthiness guard on an inherited "
+     "function and threw out of the first filter pass of a page somebody opened "
+     "from a CI artifact. THE NEEDLE IS THE DECLARATION AND NOT THE CALL, the "
+     "way the theme row's is: every surface calls this and an extraction keeps "
+     "the calls, so a needle on the call would report the readers this row "
+     "exists to permit. It names the spellings a second author reaches for "
+     "rather than only the one in the home, because what brings the class back "
+     "is a guard retyped under another name. `hasOwnProperty` itself cannot be "
+     "the needle - the panel's verdict-word reader spells the call inline over "
+     "a table this helper does not own, and it is the repair rather than the "
+     "defect."),
     ("which mode the page is painting", "shared/theme.js",
      r"re:(?:function|const|let|var)\s+"
      r"(?:isDark|isDarkMode|darkNow|inDarkMode)\s*[=(]", 0,

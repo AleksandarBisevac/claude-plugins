@@ -191,10 +191,14 @@
    * @returns {void}
    */
   function setPhaseOrder(v) {
-    if (!ORDERS[v] || !sortSel) return;
+    // `lookup`, because "anything else is ignored" was not true of five names:
+    // `ORDERS['constructor']` is a function, so the guard passed and the table
+    // was then sorted by `+pr.getAttribute(...)` of nothing - or rather by
+    // whatever the inherited function returned, which is not a rank at all.
+    if (!lookup(ORDERS, v) || !sortSel) return;
     phaseOrder = v;
     if (sortSel.value !== v) sortSel.value = v;
-    orderPhaseBlocks(ORDERS[v]);
+    orderPhaseBlocks(lookup(ORDERS, v));
     refresh();                       // which also writes the choice to the link
   }
 

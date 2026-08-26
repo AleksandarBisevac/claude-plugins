@@ -232,7 +232,10 @@ function compChanges(patch){
  for(const k of ['reviewSkill','buildCommands','branch'])
   if(patch.meta&&(k in patch.meta)&&!cfSame(comp.meta[k],patch.meta[k]))
    rows.push(cfRow('meta',k,comp.meta[k],patch.meta[k]));
- const byP={};(comp.phases||[]).forEach(p=>{byP[p.id]=p;});
+ // Indexed by manifest ids, which carry no `pattern` in the schema - so no
+ // prototype, or a phase called `constructor` would resolve to Object itself
+ // and be compared field by field against the patch.
+ const byP=Object.create(null);(comp.phases||[]).forEach(p=>{byP[p.id]=p;});
  Object.keys(patch.phases||{}).sort().forEach(pid=>{
   const p=byP[pid],pv=patch.phases[pid]||{};
   if(!p)return;
@@ -259,7 +262,7 @@ function compChanges(patch){
   // then report the save as drift against a dialog that had simply not looked.
   if(('adoTracked' in pv)&&!cfSame(p.adoTracked,pv.adoTracked))
    rows.push(cfRow(pid,'adoTracked',p.adoTracked,pv.adoTracked));});
- const byT={};(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
+ const byT=Object.create(null);(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
  Object.keys(patch.tasks||{}).sort().forEach(tid=>{
   const t=byT[tid],tv=patch.tasks[tid]||{};
   if(!t)return;
@@ -283,7 +286,10 @@ function compChanges(patch){
  * @param {Object<string, *>} [out] - accumulator for the recursion
  * @returns {Object<string, *>} leaf value by dotted path
  */
-function cfFlat(o,pre,out){out=out||{};
+// The keys are DOTTED CONFIG PATHS off a document a human edits, so the
+// accumulator gets no prototype: a config key of `__proto__` would otherwise be
+// dropped on the way in and the diff would not mention it.
+function cfFlat(o,pre,out){out=out||Object.create(null);
  if(o&&typeof o==='object'&&!Array.isArray(o))for(const k of Object.keys(o)){
   const p=pre?pre+'.'+k:k,v=o[k];
   if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)cfFlat(v,p,out);
@@ -723,7 +729,7 @@ function cfVal(v,cls,field){
  *   belong to no phase and are left out
  */
 function cfTouched(rows){
- const byT={};((STATE.composition||{}).tasks||[]).forEach(t=>{byT[t.id]=t.phaseId;});
+ const byT=Object.create(null);((STATE.composition||{}).tasks||[]).forEach(t=>{byT[t.id]=t.phaseId;});
  const s=new Set();
  rows.forEach(r=>{if(r.target==='meta'||r.target==='config')return;
   s.add(byT[r.target]||r.target);});

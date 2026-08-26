@@ -1027,6 +1027,7 @@ UI_ASSETS = (
     "shared/dates.js",
     "shared/calendar.js",
     "shared/download.js",
+    "shared/lookup.js",
     "shared/plural.js",
     "shared/storage.js",
     "shared/theme.js",

@@ -537,7 +537,8 @@ function modelItems(){
  const add=(name,source,description)=>{
   if(name&&!out.has(name))out.set(name,{name,source,description});};
  const comp=(STATE&&STATE.composition)||{phases:[],tasks:[]};
- const useT={},useP={};
+ // Keyed by MODEL NAME, which the schema declares plain free text.
+ const useT=Object.create(null),useP=Object.create(null);
  (comp.tasks||[]).forEach(t=>{if(t.model)useT[t.model]=(useT[t.model]||0)+1;});
  (comp.phases||[]).forEach(p=>{if(p.reviewModel)useP[p.reviewModel]=(useP[p.reviewModel]||0)+1;});
  [...new Set([...Object.keys(useT),...Object.keys(useP)])].sort().forEach(m=>{
@@ -841,7 +842,11 @@ function renderComp(){closeCombo();
      settingsLink('change where it goes','manifestPath')));
   c.append(none);focusBack(keepBack);return;}
  MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
- const patch={meta:{},phases:{},tasks:{}};
+ // `meta` is keyed by the three field names below it; the other two are keyed
+ // by manifest ids and so carry no prototype - a patch written under
+ // `__proto__` would otherwise be silently dropped and the save would report
+ // nothing to save while the box on screen held an edit.
+ const patch={meta:{},phases:Object.create(null),tasks:Object.create(null)};
  const meta=el('div',{class:'card'});meta.append(h2h('Phase sign-off review skill (meta.reviewSkill)',MDESC.reviewSkill,
    {comp:'reviewSkill',label:'Phase sign-off review skill'}));
  meta.append(el('div',{class:'row'},skillPicker(comp.meta.reviewSkill,
@@ -945,7 +950,9 @@ function renderComp(){closeCombo();
    (comp.adoParents||{}).basis||''));
 
  const open=COMPF.open;
- const phaseEls=[];const byPhase={};comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
+ // No prototype: `byPhase.constructor` answered with Object itself, which is
+ // truthy, so `.push` on it threw and took the whole Composition tab down.
+ const phaseEls=[];const byPhase=Object.create(null);comp.tasks.forEach(t=>{(byPhase[t.phaseId]=byPhase[t.phaseId]||[]).push(t);});
  // Work you can still act on comes first, which is the order the report already
  // reads in and the Overview already filters by. Decorated rather than sorted in
  // place: `comp.phases` is the payload the poll hands over and the status filter

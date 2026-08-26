@@ -615,8 +615,11 @@ def _cases(check):
     check("overview: the filter state is hoisted out of the render, so the poll "
           "cannot wipe it - the VIEW and which phases are open ride it too, or "
           "a 5s badge repaint would fold every row a reader opened",
-          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{},"
-          "evOpen:{}};" in M.UI_HTML
+          # The two id-keyed maps carry no prototype (a phase called `constructor`
+          # rendered open before anyone pressed it), which is why this literal is
+          # not the one-line `open:{},evOpen:{}` it was written against.
+          "const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,\n"
+          " open:Object.create(null),evOpen:Object.create(null)};" in M.UI_HTML
           and M.UI_HTML.index("const OVF=") < M.UI_HTML.index("function renderOver"))
     check("overview: and the caret survives a repaint mid-search",
           "act.id==='ovq'" in M.UI_HTML and "n.setSelectionRange(caret,caret)" in M.UI_HTML)
@@ -845,7 +848,7 @@ def _cases(check):
           and "const open=!!OVF.evOpen[id];" in _evsrc
           # find(), not index(): a name that left OVF entirely must fail THIS
           # case rather than raise and strand every case below it.
-          and 0 <= M.UI_HTML.find("evOpen:{}")
+          and 0 <= M.UI_HTML.find("evOpen:Object.create(null)")
           < M.UI_HTML.find("function renderOver"))
     check("ev17 a subject with no recorded run is NOT a control - there is "
           "nothing to open, and a button onto an empty box is a promise the "

@@ -145,7 +145,12 @@ const segOf=st=>st==='done'||st==='cancelled'?'archived'
  * meaning for `open` because the two nest: a reader who opened a phase and then
  * one of its runs must not lose the run when a poll repaints the phase.
  */
-const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,open:{},evOpen:{}};
+// `open` and `evOpen` are keyed by a phase or task id and get no prototype:
+// `OVF.evOpen['constructor']` read back as a function, so that subject's
+// evidence rendered expanded before anyone pressed it, and the first press
+// collapsed it.
+const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,
+ open:Object.create(null),evOpen:Object.create(null)};
 // Nothing-to-see-first: the statuses that need a human come before the ones that
 // do not, in the strips and in the status sort. Plan order is still the default —
 // a plan is written in an order and that order means something.
@@ -333,7 +338,10 @@ function evWord(k){
  */
 function evRow(row,fields){
  if(!Array.isArray(row))return null;
- const out={};(fields||[]).forEach((f,i)=>{out[f]=row[i];});return out;}
+ // The field NAMES come out of the evidence ledger, so the row this builds
+ // carries no prototype - `row.constructor` would otherwise answer for a
+ // column the ledger never had.
+ const out=Object.create(null);(fields||[]).forEach((f,i)=>{out[f]=row[i];});return out;}
 /**
  * What one subject's test evidence amounts to — as facts, not as a rendered cell.
  *
@@ -681,8 +689,9 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // the rollup carries done/total per phase and nothing finer — and "which phases
  // have work in progress" is the question the strip is for.
  const tasks=(STATE.composition||{}).tasks||[];
- const pStatus={};
- tasks.forEach(t=>{const m=pStatus[t.phaseId]=pStatus[t.phaseId]||{};
+ // Two levels, two outside keys: the phase id and the task status.
+ const pStatus=Object.create(null);
+ tasks.forEach(t=>{const m=pStatus[t.phaseId]=pStatus[t.phaseId]||Object.create(null);
   const s=t.status||'';m[s]=(m[s]||0)+1;});
  const tBy=r.tasks.byStatus||{},bBy=r.bugs.byStatus||{};
  const tstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Tasks'),
@@ -920,7 +929,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   c.append(gcard);}
 
  // --- ready now ----------------------------------------------------------------
- const tById={};tasks.forEach(t=>{tById[t.id]=t;});
+ const tById=Object.create(null);tasks.forEach(t=>{tById[t.id]=t;});
  // Deliberately NOT scoped by the strips: this is the do-something-now list, and a
  // filter set to look at what is blocked must not empty the one card that says
  // where to start.

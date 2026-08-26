@@ -122,6 +122,10 @@
     const anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
     let visP = 0, visT = 0, totT = 0;
+    // Plain `{}` on purpose, and the one map here that keeps its prototype:
+    // the key is `data-seg`, which Python's `_seg_of` emits from a closed
+    // set of three words. Every other map in this report is keyed by a
+    // manifest id, a status or a fragment value and is prototype-free.
     const segVis = {};   // visible phases per segment, for the seghead painter
     phaseRows.forEach((pr) => {
       const pid = pr.getAttribute('data-phase');
