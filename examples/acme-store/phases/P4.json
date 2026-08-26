@@ -1,0 +1,55 @@
+{
+  "id": "P4",
+  "title": "Documentation",
+  "area": [
+    "auth",
+    "checkout"
+  ],
+  "status": "pending",
+  "model": "haiku",
+  "blockedBy": [],
+  "desiredOutcome": "The invariants Phase 1 and Phase 2 established are written down where the next reader will look for them, so the next audit does not rediscover them.",
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "opus",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P4.1",
+      "title": "Write down the auth and checkout invariants",
+      "status": "pending",
+      "model": "haiku",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "docs/architecture/invariants.md"
+      ],
+      "docs": [],
+      "description": "Record the invariants the hardening and validation phases established: which values are hashed, which payloads are validated, and where escaping happens.",
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": []
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "low",
+      "verifiedBy": []
+    }
+  ]
+}

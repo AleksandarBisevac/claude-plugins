@@ -45,6 +45,12 @@ import { resolve } from 'node:path';
 import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
          newLadderTally, assertStillLive, newLivenessTally,
          assertLivenessWasChecked } from './capture-screenshots.mjs';
+// Naming a <details> by what it CONTAINS. `.more` is a shared BEHAVIOURAL class
+// (print expansion) that several disclosures wear on purpose, so it identifies a
+// behaviour and not a disclosure; the rule and the scar it came from are in that
+// file. Imported by both gates so there is one copy of it.
+import { HEATMAP_NAV, USAGE_DETAIL_CHARTS, readDisclosure,
+         disclosureSummary } from './ui-checks/disclosures.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -1372,14 +1378,33 @@ if (await page.$('.hm') && !(await page.$('#audit-hm-gran'))) {
       return hw >= cw * 0.9;
     }), true);
 
-  // The heatmap lives inside the Detail disclosure; a reader opens it to
-  // reach the nav, and so does this. Driven like the reader would, via the
-  // summary, not by poking the open property.
-  const moreOpen = await page.evaluate(() => !!document.querySelector('details.more[open]'));
-  if (!moreOpen) {
-    await page.click('details.more > summary');
-    await page.waitForTimeout(150);
+  // The heatmap lives inside the Usage section's Detail disclosure; a reader
+  // opens it to reach the nav, and so does this. Driven like the reader would,
+  // via the summary, not by poking the open property.
+  //
+  // WHICH disclosure comes from the nav itself: `disclosureSummary` takes the
+  // `<details>` around `#audit-hm-gran`. This used to read `details.more`, which
+  // named a shared print-behaviour class rather than a disclosure — and once the
+  // test-evidence history started wearing it too, the click went to whichever
+  // came first in the document, found it invisible inside a closed task drawer,
+  // and spent thirty seconds dying.
+  if (await readDisclosure(page, HEATMAP_NAV) === 'shut') {
+    const summary = await disclosureSummary(page, HEATMAP_NAV);
+    if (summary) {
+      await summary.click();
+      await page.waitForTimeout(150);
+    }
   }
+  const hmDisclosure = await readDisclosure(page, HEATMAP_NAV);
+  expect('a reader opening the Detail disclosure by its summary reaches the '
+    + 'heatmap calendar navigation - the disclosure that opens is the one '
+    + 'CONTAINING the nav, not whichever .more the document happens to hold '
+    + 'first', hmDisclosure, 'open');
+  // Recovered, not repaired. The line above has already recorded that a reader
+  // could not reach the nav; forcing it open keeps the assertions below running
+  // instead of losing every one of them to a 30-second Playwright timeout that
+  // reads as the CHECKER dying (the rule this file opens with).
+  if (hmDisclosure !== 'open') await readDisclosure(page, HEATMAP_NAV, { open: true });
   await page.evaluate(() => document.getElementById('audit-hm-gran')
     .scrollIntoView({ block: 'center' }));
   await page.waitForTimeout(200);
@@ -2062,17 +2087,41 @@ expect('...nor the panel inside it', onPaper.panel, true);
   //     The two disclosures are treated differently ON PURPOSE. `.fdetails` is
   //     a popover — absolutely positioned, hung off its control — so it is a
   //     layer, and a layer over the table is what a layer is for; it is closed.
-  //     `details.more` is IN FLOW: opening it does not cover anything, it makes
-  //     the document longer, and the heatmap, the small multiples and the
-  //     ranked lists are only laid out at all when it is open. It is opened, so
-  //     the ladder measures them rather than measuring their absence.
+  //     The Usage section's Detail disclosure is IN FLOW: opening it does not
+  //     cover anything, it makes the document longer, and the heatmap and the
+  //     small multiples are only laid out at all when it is open. It is opened,
+  //     so the ladder measures them rather than measuring their absence.
+  //
+  //     NAMED BY THE CHARTS IT WRAPS, never by `.more`. This line read
+  //     `document.querySelector('details.more')`, and when the test-evidence
+  //     history started wearing that same print-behaviour class it came first in
+  //     the document — so this opened the evidence history, left the Usage
+  //     detail shut, and the ladder measured precisely the absence the paragraph
+  //     above says it must not. Nothing failed. The assertion below is what
+  //     ends that: this step is only worth running if it actually laid the
+  //     charts out, so it now has to say so.
+  //
+  //     Every disclosure is SHUT FIRST — `.fdetails` among them, which is where
+  //     its close now happens — and then exactly one is re-opened. The order is
+  //     what makes the assertion below a statement about THIS step: section 6e
+  //     opens the same disclosure a thousand lines earlier and nothing since has
+  //     closed it, so a wrong derivation here would have ridden 6e's coat-tails
+  //     and reported "open" about a disclosure it never touched.
   await page.evaluate(() => {
-    const d = document.querySelector('.fdetails');
-    if (d) d.open = false;
-    const m = document.querySelector('details.more');
-    if (m) m.open = true;
+    for (const d of document.querySelectorAll('details')) d.open = false;
     window.scrollTo(0, 0);
   });
+  const usageDetail = await readDisclosure(page, USAGE_DETAIL_CHARTS, { open: true });
+  if (usageDetail === 'absent') {
+    notes.push('ok   (no usage detail in this report — the ladder has no charts '
+      + 'to lay out, and nothing to open)');
+  } else {
+    // @needs-usage-payload — the one site here rides the usage charts existing.
+    expect('the ladder measures the Usage detail LAID OUT rather than measuring '
+      + 'its absence - the disclosure that opened is the one CONTAINING the '
+      + 'usage charts', usageDetail, 'open');
+    // @end-needs-usage-payload
+  }
   await page.waitForTimeout(300);
   const openRows = await page.evaluate(() =>
     [...document.querySelectorAll('tr.task')].filter((r) => r.offsetParent !== null).length);

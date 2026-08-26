@@ -28,6 +28,8 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _evidence_view as M                         # noqa: E402
+import _manifest_io                                # noqa: E402
+import _output                                     # noqa: E402
 import _report_html                                # noqa: E402
 import _report_page                                # noqa: E402
 import _report_md                                  # noqa: E402
@@ -449,6 +451,50 @@ def _cases(check):
           "renders for the same plan and the same evidence, so the Download .md "
           "button cannot drift from the page it was downloaded off",
           base64.b64decode(_blob).decode("utf-8") == md)
+
+    _shipped_cases(check)
+
+
+# --- the artifact this repository actually ships ------------------------------
+def _shipped_cases(check):
+    """The worked example, read off the tree rather than built here.
+
+    THE ONE INTEGRITY CLAIM NOTHING ELSE MAKES. `examples/acme-store/` is the
+    first COMMITTED evidence ledger in this project, and its plan points into it
+    from four separate shard files. A `runId` on either side that the other does
+    not answer to renders as `Pointer without evidence` - a state the example
+    would then be teaching a reader is normal - and until this case the only thing
+    that would have noticed was a full re-render compared byte for byte, which is
+    a release step and not a per-change one.
+
+    Read through `load_evidence`, because that is the function the report uses:
+    a case that walked the JSON itself would be asserting its own reading of the
+    pointer rule rather than the one that ships.
+    """
+    root = os.path.join(_output.REPO_ROOT, "examples", "acme-store")
+    plan_path = os.path.join(root, "audit-plan.json")
+    if not os.path.isfile(plan_path):
+        # A tree without the example is not a failing example. Said out loud,
+        # because a case that quietly skipped would read as a passing one.
+        check("ev18 SKIPPED: this tree carries no examples/acme-store to check",
+              True)
+        return
+    plan = _manifest_io.load_manifest(plan_path)
+    shipped = M.load_evidence(plan, plan_path, project_dir=root)
+    check("ev18 the shipped example points at a ledger that is actually there - "
+          "`load_evidence` returns None when no subject points at a run at all, "
+          "and every claim below would then be about an empty document",
+          shipped is not None and shipped["rows"] > 0
+          and shipped["unreadable"] == 0,
+          repr(None if shipped is None
+               else (shipped["rows"], shipped["files"],
+                     shipped["unreadable"])))
+    _bad = sorted([t for t, v in shipped["tasks"].items()
+                   if v["key"] == "dangling"]
+                  + [q for q, e in shipped["phases"].items()
+                     if e["own"]["key"] == "dangling"])
+    check("ev18b ...and NOT ONE of its pointers dangles: %r" % (_bad,),
+          _bad == [])
 
 
 def _selftest():

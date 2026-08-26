@@ -491,6 +491,30 @@ def _cases(check):
           "min-width:32rem" in M._CSS and "padding:1rem 1.1rem" in M._CSS)
     check("filters: and still cannot outgrow a narrow viewport",
           "max-width:calc(100vw - 2rem)" in M._CSS)
+    # A PROPERTY OF THE SOURCE, and labelled as one. Every row in the panel is a
+    # chip per value the manifest happens to carry, so its content height belongs
+    # to somebody else's plan: two filter axes were added and the bar carrying the
+    # panel grew past half a phone screen, over the table it filters. What this
+    # can check is that the declaration is there and that the cap is stated
+    # against the VIEWPORT rather than against a chip count — a number in `rem`
+    # would go stale the same way. Whether the panel actually gives the table the
+    # screen back is a painted fact, and only a browser can have it:
+    # tools/check-report-interactive.mjs opens the panel at 390x780, scrolls, and
+    # measures how much of the screen the bar still owns.
+    check("filters: ...nor a viewport of any height, which is what stops the "
+          "panel's height being a property of how many chips the plan produced",
+          "max-height:45vh;overflow-y:auto" in M._CSS)
+    # Baseline LIMITED as of the 2026-07-08 snapshot. The panel is a scroll
+    # container now, so the temptation to stop its scroll chaining at the ends is
+    # real and the answer is no: this sheet ships inside a file somebody opens
+    # from a CI artifact in whatever browser they have.
+    # The clause is the DECLARATION, not the word. Written as the word it went red
+    # on the comment above the rule, which says why the property is not used - a
+    # negative pin that cannot tell an emitted declaration from prose about it
+    # fails on the documentation of its own subject.
+    check("filters: ...and this stylesheet declares no overscroll-behavior to do "
+          "it with, a feature Baseline still calls limited",
+          "overscroll-behavior:" not in M._CSS)
     # A relative span measured against the wall clock answers a different question
     # every morning — and would make the committed example a file that cannot stay
     # byte-equal to itself, which is precisely what ci.yml compares.

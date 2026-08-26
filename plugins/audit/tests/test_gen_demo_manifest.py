@@ -28,6 +28,7 @@ import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("gen-demo-manifest.py", modname="gen_demo_manifest")
@@ -525,6 +526,48 @@ def _cases(check):
           "by-model chart has something to separate",
           len(set(_by_phase.values())) > 1, sorted(set(_by_phase.values())))
     _big = M.generate(n_phases=40, n_tasks=5, seed=11)
+    # THE SIZES THAT ARE ACTUALLY PUBLISHED, asked separately from the fixture
+    # every other case here uses. `docs/demo-large.html` is rendered at 40x5 and
+    # the panel screenshots at 6x3, and the run plan is derived from the phase and
+    # task STATUSES `_phase_plan` and `_task_statuses` hand out - which move with
+    # both flags. A spread that holds at 12x6 and quietly loses `no-checks` at the
+    # size somebody photographs is a state nobody would ever see go missing.
+    _published = {}
+    for _np, _nt in ((6, 3), (40, 5)):
+        _doc = M.generate(n_phases=_np, n_tasks=_nt, seed=11)
+        _tasks = [t for p in _doc["phases"] for t in p["tasks"]]
+        _published["%dx%d" % (_np, _nt)] = {
+            "verdicts": sorted(set(r["status"] for r in M.evidence_rows(
+                _doc, M.EVIDENCE_POINTER_ROOT))),
+            "unpointed": len([t for t in _tasks
+                              if not t.get(M._evidence_io.POINTER_KEY)]),
+            "ungated": len([t for t in _tasks
+                            if not (t.get("tests") or {}).get("gate")]),
+        }
+    # ...and the phase that declares no gate is one NOTHING RAN AGAINST. Taking
+    # the gate off a phase the fixture records runs for would publish a plan whose
+    # own ledger says a gate ran that the plan does not declare - and the states
+    # above all survive that, so only this asks the question.
+    _ungated = {}
+    for _np, _nt in ((6, 3), (40, 5), (12, 6)):
+        _doc = M.generate(n_phases=_np, n_tasks=_nt, seed=11)
+        _no_gate = [p for p in _doc["phases"] if not p.get("testGate")]
+        _ran = set(i.get("phaseId") for _s, i, _t, _a, _r
+                   in M._evidence_specs(_doc))
+        _ungated["%dx%d" % (_np, _nt)] = (
+            [p["id"] for p in _no_gate],
+            sorted(p["id"] for p in _no_gate if p["id"] in _ran))
+    check("the phase that declares no gate is one the fixture records NO run "
+          "against, at every size - a gateless phase with runs in the ledger "
+          "would publish a plan its own record contradicts: %r" % (_ungated,),
+          all(len(names) == 1 and with_runs == []
+              for names, with_runs in _ungated.values()))
+    check("both published sizes carry a verdict either way, a gate that checked "
+          "nothing, work with no run recorded against it, and a task nothing "
+          "grades: %r" % (_published,),
+          all(v["verdicts"] == ["failed", "no-checks", "passed"]
+              and v["unpointed"] > 0 and v["ungated"] == 1
+              for v in _published.values()))
     _big_tiers = sorted({p["model"] for p in _big["phases"]})
     check("...at the 40x5 scale the published demo is rendered from, too - "
           "where the first basis tried collapsed to a single tier",
@@ -544,8 +587,18 @@ def _cases(check):
     tmp = tempfile.mkdtemp(prefix="gen-demo-manifest-selftest-")
     try:
         written = M.write_manifest(m, tmp)
-        check("wrote an index + one shard per phase + the config",
-              len(written) == len(m["phases"]) + 2)
+        _ledger = [w for w in written if w.endswith(".jsonl")]
+        # COMPOSED RATHER THAN COUNTED TO ONE NUMBER. The ledger is one file per
+        # writer per MONTH, so how many of them a fixture produces moves with
+        # `--phases` (the plan's own calendar widens with it) - a single total
+        # would pin the plan size and the calendar together and go red for the
+        # wrong reason the first time either moved.
+        check("wrote an index + one shard per phase + the config + the evidence "
+              "ledger the pointers name",
+              len(written) == len(m["phases"]) + 2 + len(_ledger)
+              and len(_ledger) >= 1
+              and written[len(m["phases"]) + 1].endswith("audit.config.json"),
+              repr([os.path.basename(w) for w in written[-3:]]))
         cfg_path = os.path.join(tmp, ".claude", "audit.config.json")
         check("a .claude/audit.config.json is written beside the manifest",
               os.path.exists(cfg_path))
@@ -567,6 +620,95 @@ def _cases(check):
         check("round-trip preserves phase status (shards carry it, stubs do not)",
               [p["status"] for p in back["phases"]]
               == [p["status"] for p in m["phases"]])
+
+        # --- the evidence ledger, end to end (the five retired exemptions) ---
+        # THE FAILURE THOSE EXEMPTIONS WERE HOLDING SHUT was a pointer naming a
+        # run no ledger answers to, and it can only be checked against what was
+        # WRITTEN: the pointers land in the phase shards and the rows land in a
+        # directory beside them, so nothing `generate()` returns on its own can
+        # say whether the two agree on disk. This is the report's OWN reader,
+        # pointed at the fixture the generator just wrote.
+        _ev = _evidence_view.load_evidence(back, os.path.join(tmp,
+                                                              "audit-plan.json"),
+                                           project_dir=tmp)
+        check("the written fixture carries a ledger the report can read at all - "
+              "`load_evidence` returns None when nothing points at a run, and "
+              "every case below would then be judging an empty dict",
+              _ev is not None and _ev["rows"] > 0 and _ev["files"] >= 1
+              and _ev["unreadable"] == 0,
+              repr(None if _ev is None else
+                   (_ev["rows"], _ev["files"], _ev["unreadable"])))
+        _dangling = sorted(
+            [t for t, v in _ev["tasks"].items() if v["key"] == "dangling"]
+            + [q for q, e in _ev["phases"].items()
+               if e["own"]["key"] == "dangling"])
+        check("...and NOT ONE pointer dangles. A block whose `runId` the ledger "
+              "does not answer to renders as `Pointer without evidence`, and "
+              "publishing that state by accident on the page this project shows "
+              "itself with is the whole reason those exemptions existed: %r"
+              % (_dangling,), _dangling == [])
+        _keys = sorted(set(v["key"] for v in _ev["tasks"].values()))
+        check("...and the fixture reaches the states A ships: a verdict either "
+              "way, a gate that exited 0 having checked nothing, work not run "
+              "yet, and a subject nothing grades - four different sentences with "
+              "four different repairs: %r" % (_keys,),
+              _keys == ["failed", "no-checks", "no-evidence", "no-gate",
+                        "passed"])
+        _flags = sorted(set(k for v in _ev["tasks"].values()
+                            for k, _w in v["flags"]))
+        check("...with the observations beside them, each of which is a thing a "
+              "run noticed about ITSELF rather than a verdict: %r" % (_flags,),
+              "no-overlap" in _flags and "checks-unknown" in _flags
+              and "coverage-unknown" in _flags and "tree-mutated" in _flags)
+        _histories = sorted(t for t, v in _ev["tasks"].items() if v["history"])
+        check("...and one subject carries EARLIER runs, so the disclosure that "
+              "shows them is a control with something behind it rather than an "
+              "empty frame: %r" % (_histories,), len(_histories) >= 1)
+
+        # The two passes that must not disagree. `generate()` derives the
+        # pointers from rows built against a placeholder root and the writer
+        # derives the rows against the real one; nothing a pointer caches is a
+        # path, so the two are the same three fields either way - asserted rather
+        # than trusted, because it is what keeps the plan and the ledger in step.
+        _rows_a = M.evidence_rows(m, M.EVIDENCE_POINTER_ROOT)
+        _rows_b = M.evidence_rows(m, tmp)
+        check("the pointer pass and the write pass agree on every field a "
+              "pointer caches, whichever root they measure a path against",
+              [M._evidence_io.pointer_for(r) for r in _rows_a]
+              == [M._evidence_io.pointer_for(r) for r in _rows_b]
+              and bool(_rows_a))
+        # ...and the rule that produces them reads no pointer, which is what
+        # makes calling it before and after stamping safe. `m` is already
+        # stamped here; a second stamping must be a no-op.
+        _twice = json.loads(json.dumps(m))
+        M._stamp_pointers(_twice, M.evidence_rows(_twice,
+                                                  M.EVIDENCE_POINTER_ROOT))
+        check("stamping a manifest that is already stamped changes nothing - the "
+              "run plan is derived from the plan's statuses and never from the "
+              "pointers it writes",
+              json.dumps(_twice, sort_keys=True)
+              == json.dumps(m, sort_keys=True))
+
+        # THE COPY, PUT AGAINST THE ORIGINAL. `_status_of` spells the two arms of
+        # `run-test-gate.run_status` a generated plan can reach, because a demo
+        # generator reaching sideways into the gate runner is an edge `_deps`
+        # refuses. A copy nothing compares is the defect; this is the comparison,
+        # and it runs over EVERY row rather than a representative one, so an arm
+        # only some rows take cannot slip through.
+        _gate = _loader.load_script("run-test-gate.py", modname="run_test_gate")
+        _disagreed = [(r["runId"], r["status"],
+                       _gate.run_status(r["steps"], r["failed"],
+                                        r["observations"]["ranTotal"]))
+                      for r in _rows_b
+                      if r["status"] != _gate.run_status(
+                          r["steps"], r["failed"],
+                          r["observations"]["ranTotal"])]
+        check("every verdict the fixture publishes is the one the REAL "
+              "`run_status` reads off the same steps - the demo spells that "
+              "precedence itself and this is what stops the copy drifting: %r"
+              % (_disagreed,),
+              _disagreed == [] and len(_rows_b) > 1
+              and len(set(r["status"] for r in _rows_b)) > 1)
 
         vm = _loader.load_script("validate-manifest.py", modname="validate_manifest")
         findings, warnings = vm.validate(back)
@@ -635,7 +777,13 @@ def _cases(check):
 
         single = M.write_manifest(M.generate(n_phases=4, n_tasks=2, seed=11),
                                   os.path.join(tmp, "flat"), single_file=True)
-        check("--single-file writes one manifest plus the config", len(single) == 2)
+        _single_ledger = [w for w in single if w.endswith(".jsonl")]
+        check("--single-file writes one manifest plus the config plus the ledger "
+              "- the record does not become optional because the plan collapsed "
+              "into one file",
+              len(single) == 2 + len(_single_ledger)
+              and len(_single_ledger) >= 1,
+              repr([os.path.basename(w) for w in single]))
         flat = json.load(open(single[0], encoding="utf-8"))
         check("--single-file is meta.version 2", flat["meta"]["version"] == 2)
         f2, w2 = vm.validate(flat)

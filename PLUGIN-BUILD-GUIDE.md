@@ -343,7 +343,7 @@ L7:
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  gen-demo-manifest -> _demo_cast, _loader, _output
+  gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
@@ -1261,6 +1261,15 @@ uncommitted original did. `gen-demo-manifest.py <out-dir> [--phases 50] [--tasks
 statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle),
 deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
 phase never contains an unfinished task). `--selftest`.
+
+It also writes the **evidence ledger** beside the manifest and points the plan at it:
+`generate()` stamps a `testEvidence` block on every subject that has a recorded run, and
+`write_manifest()` writes the rows those pointers name — through `_evidence_io.row_for`, so a
+demo row is spelled by the recorder rather than by a second opinion about what a row is. The
+plan and the record are written together for one reason: a pointer whose `runId` no row
+answers to renders as `Pointer without evidence`, and the demo is the one page that state must
+never reach by accident. `generate()` itself still writes nothing — the rows are a value it
+returns none of, and `write_evidence()` is the only part that meets a disk.
 
 ### `plugins/audit/scripts/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,

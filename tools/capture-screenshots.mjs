@@ -97,6 +97,10 @@ import { livenessAt, assertStillLive, newLivenessTally,
 import { RESPONSIVE_LADDER, measureResponsiveFrame, walkResponsiveLadder,
          assertLadderMeasuredSomething, newLadderTally } from './ui-checks/responsive.mjs';
 import { unwiredStages, stageSources } from './ui-checks/wiring.mjs';
+// Naming a <details> by what it CONTAINS. `.more` is a shared BEHAVIOURAL class
+// several disclosures wear on purpose, so it identifies a behaviour and not a
+// disclosure; the rule and the scar it came from are in that file.
+import { USAGE_DETAIL_CHARTS, readDisclosure } from './ui-checks/disclosures.mjs';
 // The panel-tab stages. They are NOT re-exported: nothing outside this file
 // has ever called them, and a facade for a name with one caller is a second home
 // for no reason. What they need is handed over as `stageCtx`, built once in main().
@@ -6714,17 +6718,35 @@ async function main() {
       ladder.on('pageerror', (e) => ladderErrors.push(String(e.message).split('\n')[0]));
       await ladder.goto(url, { waitUntil: 'load' });
       await settle(ladder);
-      // The Detail disclosure is IN FLOW: opening it lengthens the document
-      // rather than covering it, and the heatmap, the small multiples and the
-      // ranked lists have no layout at all while it is shut. Opened here so the
+      // The Usage section's Detail disclosure is IN FLOW: opening it lengthens
+      // the document rather than covering it, and the heatmap and the small
+      // multiples have no layout at all while it is shut. Opened here so the
       // ladder measures them; the More-filters popover, which IS a layer, is
       // left shut. Same split as check-report-interactive.mjs's step 10.
+      //
+      // NAMED BY THE CHARTS IT WRAPS, never by `.more`: that class is shared
+      // print behaviour, so `querySelector('details.more')` answers "whichever
+      // is first in the document" and started opening the test-evidence history
+      // instead the moment that shipped — leaving the ladder to measure the
+      // absence of everything this step exists to lay out, silently.
       await ladder.evaluate(() => {
-        const m = document.querySelector('details.more');
-        if (m) m.open = true;
         const d = document.querySelector('.fdetails');
         if (d) d.open = false;
       });
+      const usageDetail = await readDisclosure(ladder, USAGE_DETAIL_CHARTS, { open: true });
+      if (usageDetail === 'absent') {
+        note('report ladder: no usage detail in this report, so there are no '
+           + 'charts to lay out and nothing to open');
+      } else if (usageDetail !== 'open') {
+        fail(`the report ladder was about to measure the Usage detail with its `
+           + `disclosure ${usageDetail} — every width below would have measured `
+           + `the absence of the heatmap and the small multiples instead of `
+           + `measuring them`);
+      } else {
+        note('report ladder: the Usage detail disclosure is open, so the widths '
+           + 'below measure the heatmap and the small multiples rather than '
+           + 'their absence');
+      }
       await ladder.waitForTimeout(250);
       const reportTally = newLadderTally();
       await walkResponsiveLadder(ladder, 'report', reportTally,

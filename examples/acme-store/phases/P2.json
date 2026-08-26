@@ -52,6 +52,11 @@
           "typecheck"
         ]
       },
+      "testEvidence": {
+        "runId": "2026-06-23T16:05:00Z.2f6ac8",
+        "status": "passed",
+        "at": "2026-06-23T16:05:00Z"
+      },
       "outcome": {
         "technical": "Boundary validator + 2 regression tests.",
         "descriptive": "Malformed checkouts are turned away early."
@@ -129,6 +134,11 @@
           "test",
           "typecheck"
         ]
+      },
+      "testEvidence": {
+        "runId": "2026-07-15T09:40:00Z.13be6d",
+        "status": "failed",
+        "at": "2026-07-15T09:40:00Z"
       },
       "outcome": {
         "technical": "Gates still red after 3 attempts: the legacy engine double-escapes some fields; a shared escaping helper is needed. Escalated to the team.",

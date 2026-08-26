@@ -18,7 +18,8 @@
     "buildCommands": {
       "lint": "npm run lint",
       "test": "npm test",
-      "typecheck": "npm run typecheck"
+      "typecheck": "npm run typecheck",
+      "precommit": "pre-commit run --all-files"
     },
     "ado": {
       "organization": "acme",
@@ -31,7 +32,7 @@
       }
     },
     "reportBasename": "acme-store-audit",
-    "reportSummary": "Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.",
+    "reportSummary": "Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on \u2014 documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.",
     "usage": {
       "ledgerDir": ".claude/usage",
       "showCost": true,
@@ -69,6 +70,11 @@
       "id": "BF1",
       "title": "Bugfix batch 1",
       "shard": "phases/BF1.json"
+    },
+    {
+      "id": "P4",
+      "title": "Documentation",
+      "shard": "phases/P4.json"
     }
   ],
   "fileIndex": {
@@ -105,6 +111,9 @@
     ],
     "src/auth/logout.ts": [
       "BF1.2"
+    ],
+    "docs/architecture/invariants.md": [
+      "P4.1"
     ]
   },
   "bugs": [

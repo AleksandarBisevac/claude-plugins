@@ -95,8 +95,28 @@
    rows at .5rem apart inside .75rem of padding, with nothing to separate the
    date range from the model chips from the note. 32rem with roomier padding and
    gap is the same content given space to be read. `max-width` still caps it to
-   the viewport, so the extra width costs nothing on a narrow screen. */
+   the viewport, so the extra width costs nothing on a narrow screen.
+
+   AND ITS HEIGHT IS CAPPED THE SAME WAY, FOR THE SAME REASON THE WIDTH IS. Every
+   row in here is a chip per value the plan happens to contain — areas, models,
+   the gate status a run reached, what a run observed — so the panel's content
+   height is a property of somebody else's manifest, not of this design. Written
+   without a cap it was merely short enough: two more axes were added and the bar
+   carrying the panel went from 578px to 770px on a 390x780 phone, over half the
+   screen, covering the very table it filters. Nothing about that was specific to
+   the axes that happened to be added; the next one costs the same again.
+   `45vh` says the thing the layout has to guarantee — a panel is a LAYER over
+   the table, so it takes under half the screen and the reader keeps the rows in
+   sight — and `overflow-y` says where the rest of the chips went. That is
+   strictly less scrolling than the uncapped panel bought: at 390x780 the last
+   filter row already sat 193px BELOW the fold, and reaching it meant scrolling
+   the document, which on a narrow screen carries the whole bar (it is `static`
+   while open) and the table away with it. Now the panel scrolls and the page
+   does not.
+   No `overscroll-behavior` to stop the scroll chaining at the ends: it is
+   Baseline LIMITED, and this sheet ships to whatever opened the file. */
 .filterpanel{position:absolute;top:calc(100% + .4rem);right:0;z-index:1;min-width:32rem;max-width:calc(100vw - 2rem);
+  max-height:45vh;overflow-y:auto;
   display:flex;flex-direction:column;gap:.7rem;padding:1rem 1.1rem;background:var(--surface);
   border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
 .frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}

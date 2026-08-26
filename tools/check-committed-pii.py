@@ -124,6 +124,22 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # repository tracks is written by a human, who is allowed to spell a home
 # directory in a sentence.
 _JOURNAL_RE = re.compile(r"(?:^|/)journal/(?:archive/)?[^/]+\.jsonl$")
+# THE EVIDENCE LEDGER, WHICH IS THE JOURNAL'S ARGUMENT ONE DIRECTORY OVER.
+# `_evidence_io` says in as many words that a run record "sits beside the manifest
+# and is COMMITTED, exactly like the journal", and an evidence row carries the
+# things this file exists to read: gate commands and repo-relative paths, written
+# by a machine rather than typed by a human. Until the recorder shipped no such
+# file existed anywhere, so the domain had never been widened to it and a leak
+# there would have been committed unread.
+#
+# THE SHAPE IS `_JOURNAL_RE`'s AND THE LIMIT IS THE SAME LIMIT. Both directory
+# names are `DEFAULT_DIRNAME` conventions a project may override (`journal.dir`,
+# `evidence.dir`), so both rules are a convention rather than a derivation - said
+# here rather than left for a reader to find, because a path rule that looks
+# authoritative is the kind nobody re-checks. There is no `archive/` arm: nothing
+# rolls the evidence ledger over, and an arm for a directory no writer creates
+# would read as coverage of a case that does not exist.
+_EVIDENCE_RE = re.compile(r"(?:^|/)evidence/[^/]+\.jsonl$")
 _THEME_RE = re.compile(r"(?:^|/)\.claude/(?:audit\.theme\.json|themes/[^/]+\.json)$")
 # The same stamp `check-rendered-artifacts.py` reads to pin a render's clock; here
 # it is what identifies a file as a rendered report at all, so a repository that
@@ -143,6 +159,8 @@ def domain_of(rel, text):
     slug = rel.replace("\\", "/")
     if _JOURNAL_RE.search(slug):
         return "journal"
+    if _EVIDENCE_RE.search(slug):
+        return "evidence"
     if _THEME_RE.search(slug):
         return "theme"
     if (slug.endswith(_REPORT_EXT) and isinstance(text, str)
@@ -201,13 +219,25 @@ _WRITER_SHAPES = (
 )
 
 
-def writer_id_problem(basename):
-    """Why a journal file's writer id is not one of the shapes this plugin mints.
+# The surfaces whose FILE NAME carries a writer id. Both are written by one
+# function - `_journal_io.file_for` composes `<month>.<writerId>.jsonl` for the
+# journal and `_evidence_io.append_row` calls that same function - so one leak
+# reaches both names, and a rule that read only the older of the two would be
+# describing the code as it was before the recorder shipped.
+_WRITER_NAMED = ("journal", "evidence")
 
-    The file NAME is the one field with no repair path: `genesis_prev()` seeds the
-    chain from these bytes, so a machine name committed here can never be corrected
-    without breaking `verify()` on every clone that already holds the file. Which
-    is why the name is checked as well as the contents.
+
+def writer_id_problem(basename):
+    """Why a record file's writer id is not one of the shapes this plugin mints.
+
+    Checked for BOTH surfaces in `_WRITER_NAMED`, because both names come out of
+    `_journal_io.writer_id` and a machine name lands in them identically. What
+    differs is the REPAIR and not the finding: a journal name has none at all --
+    `genesis_prev()` seeds the chain from these bytes, so correcting one breaks
+    `verify()` on every clone that already holds the file -- while an evidence
+    file is chained to nothing and can simply be renamed. A cheaper repair is not
+    a reason to look away from the leak, and saying which one applies is what
+    stops the journal's argument being read as the only argument.
     """
     stem = basename[:-len(".jsonl")] if basename.endswith(".jsonl") else basename
     _month, _dot, wid = stem.partition(".")
@@ -310,10 +340,13 @@ def scan(repo=None):
     rows = list(rows)
     for rel, surface, text in keep:
         rows.extend(scan_text(rel, text, surface))
-        if surface == "journal":
+        if surface in _WRITER_NAMED:
             problem = writer_id_problem(os.path.basename(rel))
             if problem is not None:
-                rows.append((rel, 0, "journal-writer-id", 1))
+                # NAMED FOR THE SURFACE, so a finding sends the reader to the
+                # right repair: one of these names can be corrected and the other
+                # cannot, and a single detector name would hide which.
+                rows.append((rel, 0, "%s-writer-id" % (surface,), 1))
     if not keep and not rows:
         # NOT reported when `rows` already carries `domain-unavailable`: git
         # having refused the question and git having answered "nothing of yours
@@ -554,6 +587,21 @@ def _foreign_cases(check):
     ])
     empty = _fixture_tree([("README.md", "nothing of ours is committed here\n")])
     clean = _fixture_tree([(clean_rel, '{"actor":{"via":"hook"}}\n')])
+    # THE EVIDENCE LEDGER, WITH THE LEAK WHERE AN EVIDENCE ROW REALLY CARRIES ONE.
+    # A step's command and a coverage path are what `_evidence_io` writes, and the
+    # file name is minted by the same `_journal_io.writer_id` the journal's is - so
+    # this fixture is the shape of the record rather than an invented string in a
+    # `.jsonl`. The sibling directory is the second direction: it is not the
+    # evidence ledger, and a rule that matched any `.jsonl` under `docs/audit`
+    # would drag a project's own data files into a domain that never claimed them.
+    evidence = _fixture_tree([
+        ("docs/audit/evidence/2026-08.MacBook-Pro.local-48645.jsonl",
+         '{"v":1,"runId":"r1","scope":"task","status":"passed","steps":'
+         '[{"name":"test","command":"npm test"}],"observations":'
+         '{"coverage":["/Users/someone/src/app.ts"]}}\n'),
+        ("docs/audit/evidence-notes/2026-08.a1b2c3d4e5f60718.jsonl",
+         '{"note":"a human wrote this under /Users/someone"}\n'),
+    ])
     try:
         rows = findings(leaky)
         seen = sorted((r[1], r[2]) for r in rows)
@@ -606,6 +654,33 @@ def _foreign_cases(check):
         _echo = dict((name, len(scan_text("ok.md", ok_line(run), "report")))
                      for name, run in (("this repo", scan()),
                                        ("a foreign tree", crun)))
+        erun = scan(evidence)
+        check("q22 the EVIDENCE LEDGER is in the domain and is really scanned - "
+              "`_evidence_io` commits a run record beside the manifest exactly as "
+              "the journal is committed, and a row carries gate commands and "
+              "repo-relative paths, so until this rule the first such file to land "
+              "would have been committed unread: %r, %r"
+              % (erun["surfaces"], sorted((r[1], r[2]) for r in erun["rows"])),
+              erun["surfaces"] == ["evidence"]
+              and sorted((r[1], r[2]) for r in erun["rows"])
+              == [(0, "evidence-writer-id"), (1, "posix-home")]
+              and erun["files"]
+              == ["docs/audit/evidence/2026-08.MacBook-Pro.local-48645.jsonl"])
+
+        # THE SECOND DIRECTION, and it is the one that decides between a rule and
+        # a file extension: the sibling `.jsonl` above carries a home directory in
+        # plain text and is NOT this check's business, because a human wrote it.
+        # A domain that swallowed it would fire on deliberate sites and teach its
+        # reader to skip the file, which is the narrowing this tool is built on.
+        check("q23 ...while a `.jsonl` that is not the evidence ledger stays "
+              "OUTSIDE the domain, however much it looks like one",
+              domain_of("docs/audit/evidence/2026-08.abc.jsonl", None) == "evidence"
+              and domain_of("evidence/2026-08.abc.jsonl", None) == "evidence"
+              and domain_of("docs/audit/evidence-notes/2026-08.abc.jsonl", None)
+              is None
+              and domain_of("docs/audit/evidence/summary.json", None) is None
+              and domain_of("docs/audit/evidence.jsonl", None) is None)
+
         check("q17 the OK line trips NONE of this file's own detectors, on both "
               "roots - the line CI prints and the line a `--repo` run prints: %r"
               % (_echo,),
@@ -621,7 +696,7 @@ def _foreign_cases(check):
         # directory and refuses a file that left anything in it, so this site was
         # live rather than theoretical.
         from _suite import remove_tree   # tools/_suite.py says why the import is here
-        for root in (leaky, empty, clean):
+        for root in (leaky, empty, clean, evidence):
             remove_tree(root)
 
 
@@ -696,10 +771,11 @@ def _cases(check):
     # below judges `_live`, and `_live == []` over an empty domain is the silent
     # pass this repository keeps re-finding - so the SET is asserted, not only its
     # verdict, and both surfaces this tree actually has must be in it.
-    check("q6 the domain over the live tree is not empty and reaches both the "
-          "journal and the rendered reports, so the cases below are judging "
-          "something: %d file(s), %r" % (len(_kept), _surfaces),
-          _bad == [] and _surfaces == ["journal", "report"])
+    check("q6 the domain over the live tree is not empty and reaches every "
+          "surface this repository commits - the journal, the evidence ledger "
+          "and the rendered reports - so the cases below are judging something: "
+          "%d file(s), %r" % (len(_kept), _surfaces),
+          _bad == [] and _surfaces == ["evidence", "journal", "report"])
 
     check("q7 every committed artifact is clean except what BASELINE accounts "
           "for: %r" % ([render(r) for r in unbaselined(_live)],),

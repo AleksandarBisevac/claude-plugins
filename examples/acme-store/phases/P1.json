@@ -11,6 +11,11 @@
     "lint",
     "test"
   ],
+  "testEvidence": {
+    "runId": "2026-06-10T11:00:00Z.b7d340",
+    "status": "passed",
+    "at": "2026-06-10T11:00:00Z"
+  },
   "baseRef": "0f3a9d1",
   "branch": "audit/p1-auth-hardening",
   "mergedAt": "2026-06-10T11:05:00Z",
@@ -47,6 +52,11 @@
           "lint",
           "test"
         ]
+      },
+      "testEvidence": {
+        "runId": "2026-06-02T15:38:00Z.4c1ba7",
+        "status": "passed",
+        "at": "2026-06-02T15:38:00Z"
       },
       "outcome": {
         "technical": "argon2id via the platform crypto lib; migration-on-login path added; 2 new tests.",
@@ -93,6 +103,11 @@
           "lint",
           "test"
         ]
+      },
+      "testEvidence": {
+        "runId": "2026-06-09T12:17:00Z.9e02f5",
+        "status": "passed",
+        "at": "2026-06-09T12:17:00Z"
       },
       "outcome": {
         "technical": "Sliding-window limiter keyed by IP and account; 1 regression test.",

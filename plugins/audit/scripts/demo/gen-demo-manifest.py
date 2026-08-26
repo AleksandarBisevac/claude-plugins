@@ -60,6 +60,7 @@ docstring has already carried two numbers that did.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import random
@@ -87,6 +88,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _evidence_io  # noqa: E402  (the recorder's own row writer and pointer shape)
+import _journal_io  # noqa: E402  (the canonical line spelling, and which month a row lands in)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
 
@@ -173,6 +176,81 @@ def _tests_add(mode, rel):
     if mode == "regression":
         return ["a guard locking %s's corrected behaviour" % rel]
     return []                              # gate-only authors no test at all
+
+
+# The one runner `run-test-gate.ran_count` recognises, and the only way a row in
+# this fixture can carry a check COUNT at all. Spelled here rather than inline
+# because two things read it: the gate a task declares, and the step the recorded
+# run reports against that gate.
+COUNTED_KEY = "precommit"
+TASK_GATE_KEY = "test"
+# A gate entry is either a key `meta.buildCommands` resolves or a literal command,
+# and this fixture uses KEYS throughout. That is not decoration: `run_gate` names a
+# step after the ENTRY, so a plan whose entries are whole shell commands renders
+# the same long string twice on every step row of the report - once as the step's
+# name and once as the command it ran. A key gives the row a short name and leaves
+# the command to say what it was.
+BUILD_COMMANDS = {"test": "yarn test", "lint": "yarn lint", "build": "yarn build",
+                  COUNTED_KEY: "pre-commit run --all-files"}
+PHASE_GATE_KEY = "test:%s"
+PHASE_GATE_COMMAND = "yarn test --selectProjects %s"
+
+
+def _build_commands():
+    """`meta.buildCommands`, including the per-area gate each phase signs off with.
+
+    The per-area entries are what keep a forty-phase monorepo demo from showing the
+    same gate on every phase, and they are KEYS rather than literals for the reason
+    above.
+    """
+    out = dict(BUILD_COMMANDS)
+    for tag in AREAS:
+        out[PHASE_GATE_KEY % tag] = PHASE_GATE_COMMAND % tag
+    return out
+
+
+def _ungated_phase(statuses):
+    """Which phase declares NO gate at all, or None when the plan has no room for one.
+
+    THE FIXTURE NEEDS A SUBJECT NOTHING GRADES. `No gate configured` and
+    `No evidence` are two different sentences with two different repairs -- nothing
+    here can be measured, versus it can be and never was -- and a fixture where
+    every phase declares a `testGate` renders only the second of them, so the
+    surfaces that tell them apart go unphotographed. The last phase is the one
+    chosen because it is the one whose work has not started under any plan size, so
+    an absent gate there reads as a phase nobody has written one for yet rather
+    than as a gate somebody deleted.
+
+    None below three phases, and that is derived rather than a floor: `_phase_plan`
+    has no `pending` phase to spare until then, and taking the gate off a phase
+    that is RUNNING would leave the fixture's own recorded runs with nothing to
+    have run.
+    """
+    return len(statuses) if statuses and statuses[-1] == "pending" else None
+
+
+def _task_gate(tstatus):
+    """The gate entries this task declares -- and whether any of them can be COUNTED.
+
+    TWO SHAPES ON PURPOSE. `ran_count` recognises exactly one runner, so a fixture
+    whose every gate is `yarn test` reports "check count not knowable" on every row
+    it will ever render, and can never reach `no-checks` -- a gate that exited 0
+    having checked NOTHING, which is the distinction this whole feature exists to
+    draw. A fixture where every gate is counted loses the other half, which is what
+    a real project's gate reports most of the time. So the fixture carries both.
+
+    WHICH TASK GETS WHICH IS DECIDED BY ROLE, NOT BY AN INDEX. The tasks a reader
+    opens first are the ones still moving - the running task and the stuck one -
+    and those are where a check count is worth showing. An `(pi + ti)` parity was
+    tried first and measured: the running task's index moves with `--tasks`, so the
+    parity landed differently across the sizes this generator is actually run at
+    and the `no-checks` row appeared or vanished with the flags. A fixture state
+    that comes and goes with a command-line argument is a state no gate can pin.
+    """
+    entries = [TASK_GATE_KEY]
+    if tstatus in ("in_progress", "blocked"):
+        entries.append(COUNTED_KEY)
+    return entries
 
 
 def _review_findings(area, pi, tasks):
@@ -359,6 +437,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     """
     rng = random.Random(seed)
     statuses = _phase_plan(n_phases)
+    ungated = _ungated_phase(statuses)
     phases, file_index, cursor = [], {}, BASE
 
     for pi, pstatus in enumerate(statuses, start=1):
@@ -373,7 +452,13 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             risk = RISKS[rng.randrange(len(RISKS))]
             started = p_start + datetime.timedelta(hours=4 * (ti - 1))
             rel = "src/%s/mod%02d_%02d.ts" % (area, pi, ti)
-            mode = TEST_MODES[(pi + ti) % len(TEST_MODES)]
+            # The one task nothing grades. It authors no test and declares no
+            # gate, and it sits in the phase that declares none either - both
+            # halves are needed, because `run-test-gate.gate_of` falls back to the
+            # phase's gate and a task alone cannot be ungated.
+            ungraded = pi == ungated and ti == n_tasks
+            mode = ("gate-only" if ungraded
+                    else TEST_MODES[(pi + ti) % len(TEST_MODES)])
             task = {
                 "id": tid,
                 "title": "%s %s" % (TITLE_VERBS[(pi + ti) % len(TITLE_VERBS)],
@@ -393,7 +478,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                     # because an always-populated list never shows it.
                     "add": _tests_add(mode, rel),
                     "expectRedFirst": mode == "tdd",
-                    "gate": ["yarn test --findRelatedTests %s" % rel],
+                    "gate": [] if ungraded else _task_gate(tstatus),
                 },
                 "attempts": 0,
                 "maxAttempts": 3,
@@ -454,9 +539,14 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             "desiredOutcome": (
                 "Everything under src/%s that this phase touches is validated and "
                 "covered by a test that would fail without the fix." % area),
-            "testGate": ["yarn test --selectProjects %s" % area],
+            "testGate": ["lint", PHASE_GATE_KEY % area],
             "tasks": tasks,
         }
+        # Removed rather than never written, so every other phase keeps the key
+        # order the fixture has always had - a reordered manifest is a diff
+        # nobody asked for on every shard at once.
+        if pi == ungated:
+            del phase["testGate"]
         # F34: the tier this phase's ORCHESTRATOR runs at. It was absent, and
         # `gen-demo-usage` maps an absent tier through
         # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` - which cannot fail, so all 148
@@ -564,8 +654,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                 "and task status is represented, along with budgets, area tags, a "
                 "gated phase and a full bug lifecycle."
                 % (n_phases, n_tasks)),
-            "buildCommands": {"test": "yarn test", "lint": "yarn lint",
-                              "build": "yarn build"},
+            "buildCommands": _build_commands(),
             # The build/runtime half of the configuration, which the orchestrator
             # prose reads and the committed acme example already declares. The
             # demo declared none of it, so the scale page showed a project with
@@ -616,6 +705,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         },
         "proposals": _proposals(n_phases),
     }
+    # The pointer each subject keeps at its newest recorded run. LAST, and outside
+    # the loop for `_stamp_claims`'s reason: it draws nothing from `rng`, so no
+    # byte generated above can move because this exists. It writes nothing either -
+    # the rows are a VALUE here, and `write_evidence()` is the only thing that
+    # meets a disk, which is what keeps this function as pure as its docstring says.
+    _stamp_pointers(manifest, evidence_rows(manifest, EVIDENCE_POINTER_ROOT))
     return manifest
 
 
@@ -647,30 +742,13 @@ SCHEMA_REL = ("schema", "audit-plan.schema.json")
 OPAQUE_FIELDS = frozenset(["proposal.payload"])
 
 SCHEMA_EXEMPTIONS = {
-    "phase.testEvidence":
-        "a POINTER at the run that last exercised this phase's gate - and "
-        "NOTHING writes one yet: the recorder that produces a run does not exist "
-        "in this release, so no ledger anywhere holds a row for a `runId` this "
-        "fixture could stamp. A hand-written block would publish an id that "
-        "resolves to no run, which is the one thing a pointer at evidence must "
-        "never do, and the demo is exactly where such a claim would be "
-        "photographed. REVISIT the day the test gate records: the report's "
-        "screenshot comes from this fixture, so it should carry a REAL block "
-        "then - generated the way every other field here is - and this row "
-        "should go with it.",
-    "task.testEvidence":
-        "the task-level twin of the phase key above, exempt for the same reason "
-        "and due back on the same day. Named separately rather than folded into "
-        "one row because the two are separate schema fields and the coverage "
-        "check reads them separately: a single row would leave whichever level "
-        "was written second uncovered.",
-    "testEvidence.runId":
-        "inside a block this fixture does not carry, so it is unreachable rather "
-        "than skipped. It comes back when the block does.",
-    "testEvidence.status":
-        "unreachable while the block above is exempt - see `phase.testEvidence`.",
-    "testEvidence.at":
-        "unreachable while the block above is exempt - see `phase.testEvidence`.",
+    # `phase.testEvidence`, `task.testEvidence` and the three fields of the block
+    # were all exempt here, on one reason: nothing wrote a run, so a hand-stamped
+    # pointer would have named an id that resolved to nothing. Each row named its
+    # own revisit trigger - "the day the test gate records" - and the recorder
+    # exists now, so the rows are gone and the fixture carries the block for real.
+    # See the `recorded runs` section: the pointers and the ledger beside the
+    # manifest are generated together, from the plan's own statuses.
     "<root>.$schema":
         "names a URL so an EDITOR can validate a document while a human types it. "
         "This fixture is generated into a temp directory, rendered, and thrown "
@@ -1107,6 +1185,296 @@ def _bugs(phases):
     return bugs
 
 
+# --- recorded runs ------------------------------------------------------------
+# THE LEDGER IS THE SOURCE OF TRUTH AND `testEvidence` IS A CACHE, and this fixture
+# has to publish both or it publishes a lie: a pointer whose `runId` no row answers
+# to renders as `Pointer without evidence`, and a demo is the one place that state
+# must never appear by accident.
+#
+# `SCHEMA_EXEMPTIONS` used to hold this whole region back, and the reason it gave
+# was that nothing wrote a run: a hand-stamped block would have named an id that
+# resolved to nothing. The recorder exists now, so the exemption's own revisit
+# trigger has fired and the rows below are generated the way every other field
+# here is - from the plan's own statuses, with no clock and nothing drawn from
+# `rng`, so the published bytes do not move between two runs of one command.
+#
+# EVERY ROW GOES THROUGH `_evidence_io.row_for`, never typed as JSON. That function
+# owns the allow-list, the rule that stores a command verbatim only where the plan
+# publishes it, and the three-valued observations; a second spelling here would be
+# a second answer to what a row IS, and the first thing it would get wrong is the
+# difference between an empty list and a null.
+EVIDENCE_VIA = "cli"
+# A minted writer token's shape (`_journal_io._TOKEN_RE`). The real one is random
+# per checkout - which is what keeps a machine name out of a committed file name -
+# and a generated fixture needs one that does not move, so it is fixed here.
+EVIDENCE_WRITER = "d41f8a6c92b70e35"
+# The root the POINTER pass measures a path against. Nothing a pointer caches is a
+# path -- it is an id, a word and a stamp -- so any root answers identically; a
+# constant is what makes that a property of the code rather than of whichever
+# directory the command happened to be run from.
+EVIDENCE_POINTER_ROOT = "."
+# What a step is worth in wall clock. Derived from the subject so two steps differ
+# and two runs differ, and fixed so a regenerated demo is byte-identical.
+_MS_BASE = 4000
+_MS_SPREAD = 57000
+
+
+def _hex(seed, width):
+    """A stable hex token for a fixture value that must look real and not move."""
+    return hashlib.sha256(str(seed).encode("utf-8")).hexdigest()[:width]
+
+
+def _at(iso, hours=0):
+    """`iso` moved by whole hours, in the manifest's own stamp format."""
+    moment = datetime.datetime.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ")
+    return _iso(moment + datetime.timedelta(hours=hours))
+
+
+def _run_steps(resolved, seed, red, zero):
+    """One step per gate entry -- and the check count `ran_count` could produce.
+
+    `resolved` is `run-test-gate._resolved`'s shape, `[(entry, command)]`, and the
+    step is NAMED FOR THE ENTRY rather than for the program: that is what the
+    runner records, and a fixture that named the program instead would render a
+    column no real run ever fills that way.
+
+    `ran` IS NOT INVENTED. `ran_count` recognises one runner and reports `None` for
+    every other, so a step whose command is not that runner carries a null here
+    too. A fixture that stamped a count on `yarn test` would publish a number this
+    plugin cannot produce from that command's output, which is the same defect as
+    a badge with no basis.
+
+    `red` names the entry that came back non-zero; `zero` makes the counted step
+    report that it checked nothing, which is what `no-checks` is made of.
+    """
+    steps = []
+    for i, pair in enumerate(resolved):
+        name, command = pair
+        ran = None
+        if "pre-commit" in command:
+            ran = 0 if zero else 4 + (i + len(command)) % 29
+        steps.append({"name": name, "command": command,
+                      "exit": 1 if name == red else 0, "ran": ran,
+                      "durationMs": _MS_BASE + int(
+                          _hex("%s-%s-%d" % (seed, name, i), 4), 16)
+                          % _MS_SPREAD})
+    return steps
+
+
+def _run_result(resolved, owns, head, seed, red=None, zero=False, mutated=(),
+                overlap=None):
+    """`run_gate`'s answer for one run of `commands`, assembled rather than run.
+
+    The VERDICT is not stated by the caller either -- `_status_of` reads it off the
+    steps, so a fixture cannot publish a word its own steps do not support, and
+    `tests/test_gen_demo_manifest.py` puts every row through the runner's real
+    `run_status` to keep that reading honest.
+    """
+    steps = _run_steps(resolved, seed, red, zero)
+    counts = [st["ran"] for st in steps if st["ran"] is not None]
+    ran_total = sum(counts) if counts else None
+    failed = [st["name"] for st in steps if st["exit"] != 0]
+    return {
+        "steps": steps,
+        "testedState": {
+            "head": head,
+            "headBasis": ("repository HEAD at execution time; it does not "
+                          "identify the tested state, because a task gate runs "
+                          "before the task commit"),
+            "scopeDigest": "sha256:" + _hex("scope-%s" % (seed,), 64),
+            "scopeBasis": "%d declared file(s); %d read, 0 missing"
+                          % (len(owns), len(owns)),
+            "dirtyDigest": "sha256:" + _hex("dirty-%s" % (seed,), 64),
+            "dirtyBasis": "git described the tree before the run; %d dirty "
+                          "path(s)" % (len(mutated) + 1,)},
+        "treeMutated": list(mutated),
+        "treeBasis": "git described the tree before and after",
+        "ranTotal": ran_total,
+        "durationMs": sum(st["durationMs"] for st in steps),
+        "status": _status_of(failed, ran_total),
+        "overlap": overlap,
+        "coverageBasis": (
+            "this runner printed no file paths, so coverage is not knowable "
+            "from its output" if overlap is None
+            else "the runner named %d path(s); the work under test declares %d "
+                 "file(s)" % (len(owns) * 3 + 4, len(owns))),
+        "failed": failed,
+    }
+
+
+def _status_of(failed, ran_total):
+    """The word `run-test-gate.run_status` would reach for these steps.
+
+    STATED HERE AND CHECKED THERE. Loading the gate runner to ask it would be an
+    edge from this layer to its own, which `_deps` refuses - and rightly: an entry
+    point reaching sideways into another entry point is how a demo generator ends
+    up owning a runner's start-up cost. So the fixture spells the two arms it can
+    actually reach, and `tests/test_gen_demo_manifest.py` puts every row it
+    produces through the real `run_status` and fails if the two disagree. A copy
+    nothing compares is the defect; a copy something compares is a fixture.
+
+    THE ARMS THIS FIXTURE CANNOT REACH ARE NOT SPELLED. `timed-out` and
+    `could-not-run` come from a wrapper observing a kill or a missing binary, and
+    a generated plan has neither - so they are absent rather than unreachable
+    branches nothing enters. And the zero is read as a POSITIVE zero: `None` means
+    this runner does not report a count and must not be mistaken for "nothing ran".
+    """
+    if failed:
+        return "failed"
+    if ran_total == 0:
+        return "no-checks"
+    return "passed"
+
+
+def _evidence_specs(manifest):
+    """`[(scope, ids, identity, result)]` -- every run this fixture publishes.
+
+    PURE, AND IT READS NO `testEvidence`. Two callers derive from it: `generate()`,
+    which stamps the pointer each run earns, and `write_evidence()`, which writes
+    the rows. `generate()` calls it before any pointer exists and the writer calls
+    it after every pointer does, so a rule that consulted the pointers would hand
+    the two callers different answers and put the plan and the ledger out of step -
+    which is the one failure a fixture publishing both must not have.
+
+    THE SHAPE OF THE STORY, and it is A's: work that finished passed, the phase
+    that finished signs itself off, the task still running shows a gate that
+    checked nothing, the stuck task shows a red per attempt, and everything not
+    started yet points at no run at all.
+    """
+    build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    out = []
+    for pi, phase in enumerate(manifest.get("phases") or [], start=1):
+        pstatus = phase.get("status")
+        if pstatus not in ("done", "in_progress"):
+            continue
+        head = phase.get("baseRef")
+        for ti, task in enumerate(phase.get("tasks") or [], start=1):
+            tstatus = task.get("status")
+            if tstatus not in ("done", "in_progress", "blocked"):
+                continue
+            entries = ((task.get("tests") or {}).get("gate")
+                       or phase.get("testGate") or [])
+            resolved = [(e, build.get(e, e)) for e in entries
+                        if isinstance(e, str) and e.strip()]
+            if not resolved:
+                continue                    # the ungated task: nothing to record
+            owns = list(task.get("files") or [])
+            ids = {"phaseId": phase.get("id"), "taskId": task.get("id")}
+            # The observation slices, in this file's own idiom: a marker that is
+            # always on and a marker that is never on are the same marker.
+            mutated = owns if (pi + ti) % 4 == 0 else []
+            overlap = [] if (pi + ti) % 5 == 0 else list(owns)
+            if tstatus == "done":
+                out.append(("task", ids, _at(task.get("completedAt")), 1,
+                            _run_result(resolved, owns, head,
+                                        "%s-done" % ids["taskId"],
+                                        mutated=mutated, overlap=overlap)))
+            elif tstatus == "in_progress":
+                # NOTHING RAN, AND THE GATE STILL EXITED 0. Nothing printed a path
+                # either, so coverage is UNKNOWN rather than empty - the two are
+                # different answers and this is where the fixture shows it.
+                out.append(("task", ids, _at(task.get("startedAt"), 2), 1,
+                            _run_result(resolved, owns, head,
+                                        "%s-live" % ids["taskId"],
+                                        zero=True, overlap=None)))
+            else:
+                # One row per attempt, because the task records three of them and
+                # a ledger that showed the last would make `Earlier runs` a
+                # disclosure with nothing behind it.
+                for attempt in range(1, int(task.get("attempts") or 1) + 1):
+                    out.append(("task", ids, _at(task.get("startedAt"),
+                                                 8 * (attempt - 1)), attempt,
+                                _run_result(resolved, owns, head,
+                                            "%s-a%d" % (ids["taskId"], attempt),
+                                            red=resolved[0][0],
+                                            overlap=overlap)))
+        if pstatus == "done" and phase.get("testGate") and phase.get("mergedAt"):
+            owns = sorted(set(f for t in (phase.get("tasks") or [])
+                              for f in (t.get("files") or [])))
+            out.append(("phase", {"phaseId": phase.get("id")},
+                        _at(phase.get("mergedAt"), -1), None,
+                        _run_result([(e, build.get(e, e))
+                                     for e in phase["testGate"]],
+                                    owns, phase.get("baseRef"),
+                                    "%s-signoff" % (phase.get("id"),),
+                                    overlap=owns)))
+    return out
+
+
+def evidence_rows(manifest, project):
+    """Every recorded run, spelled by the recorder's own writer.
+
+    `project` is the root a path in a row is measured against. Every path this
+    fixture declares is repo-relative already, so the answer is the path itself
+    whatever root is handed over -- which is why the pointer pass may hand over a
+    placeholder and the write pass hands over the directory the fixture lands in.
+    Nothing the POINTER caches is a path, so the two passes cannot disagree.
+    """
+    rows = []
+    for scope, ids, ts, attempt, result in _evidence_specs(manifest):
+        identity = {"runId": "%s.%s" % (ts, _hex("%s-%s-%s" % (
+            scope, ids.get("taskId") or ids.get("phaseId"), attempt), 6)),
+            "ts": ts, "via": EVIDENCE_VIA}
+        if attempt is not None:
+            identity["attempt"] = attempt
+        published = [st["command"] for st in result["steps"]]
+        rows.append(_evidence_io.row_for(project, result, scope, ids, identity,
+                                         published=published))
+    return rows
+
+
+def _stamp_pointers(manifest, rows):
+    """Point every subject at its newest recorded run; returns the ids stamped.
+
+    `latest_by_subject` is the recorder's own rule for which run a pointer names,
+    borrowed rather than re-decided: a fixture that pointed at the FIRST of a
+    stuck task's attempts would publish a plan that disagrees with what
+    `--reconcile` would write the moment anybody ran it.
+    """
+    best = _evidence_io.latest_by_subject(rows)
+    stamped = []
+    for phase in (manifest.get("phases") or []):
+        pointer = best.get(("phase", str(phase.get("id"))))
+        if pointer is not None:
+            phase[_evidence_io.POINTER_KEY] = _evidence_io.pointer_for(pointer)
+            stamped.append(phase.get("id"))
+        for task in (phase.get("tasks") or []):
+            row = best.get(("task", str(task.get("id"))))
+            if row is not None:
+                task[_evidence_io.POINTER_KEY] = _evidence_io.pointer_for(row)
+                stamped.append(task.get("id"))
+    return stamped
+
+
+def write_evidence(manifest, out_dir):
+    """Write the ledger beside the manifest, and return the file it landed in.
+
+    OUTSIDE `generate()`, which is documented pure and stays that way: the rows are
+    a value that function returns nothing of, and the only thing that touches a
+    disk is this. The directory is asked of `_evidence_io` rather than joined here,
+    so the fixture lands wherever a real project's record would.
+    """
+    config = {"manifestPath": "audit-plan.json"}
+    directory = _evidence_io.evidence_dir(out_dir, config)
+    os.makedirs(directory, exist_ok=True)
+    rows = evidence_rows(manifest, out_dir)
+    # One file per writer per MONTH, which is the ledger's own layout and not a
+    # simplification worth making here: a fixture in one file would render a
+    # directory shape no real project ever has, and `read_rows` is what the report
+    # uses to walk it.
+    months = {}
+    for row in rows:
+        months.setdefault(_journal_io.month_of(row.get("ts")), []).append(row)
+    written = []
+    for month in sorted(months):
+        path = os.path.join(directory, "%s.%s.jsonl" % (month, EVIDENCE_WRITER))
+        with open(path, "w", encoding="utf-8") as fh:
+            for row in months[month]:
+                fh.write(_journal_io.canonical(row) + "\n")
+        written.append(path)
+    return written
+
+
 def write_config(out_dir):
     """Write `.claude/audit.config.json` pointing at the manifest we just wrote.
 
@@ -1140,6 +1508,11 @@ def write_manifest(manifest, out_dir, single_file=False):
     else:
         written = mio.save_sharded(index_path, manifest)
     written.append(write_config(out_dir))
+    # ...AND THE LEDGER THE POINTERS NAME. A fixture that wrote the plan and not
+    # the record would publish a `testEvidence` block resolving to nothing, which
+    # every surface renders as `Pointer without evidence` - the one state a demo
+    # must never show by accident.
+    written.extend(write_evidence(manifest, out_dir))
     return written
 
 
@@ -1167,9 +1540,16 @@ def main(argv):
     n_tasks = sum(len(p["tasks"]) for p in manifest["phases"])
     print("wrote %d phase(s), %d task(s), %d bug(s) to %s"
           % (len(manifest["phases"]), n_tasks, len(manifest["bugs"]), args.out_dir))
-    print("  %s" % written[-1])
-    if len(written) > 1:
-        print("  + %d shard(s)" % (len(written) - 1))
+    # NAMED RATHER THAN COUNTED OFF THE END OF THE LIST. `written` grew a tail the
+    # day the evidence ledger joined it, and an index counted back from the end is
+    # how a line saying "config" starts printing a ledger path instead. The shard
+    # count comes off the manifest, which is what it is a count OF.
+    ledger = [w for w in written if w.endswith(".jsonl")]
+    print("  %s" % (written[len(written) - len(ledger) - 1],))
+    for path in ledger:
+        print("  %s" % (path,))
+    if not args.single_file:
+        print("  + %d shard(s)" % (len(manifest["phases"]),))
     return 0
 
 

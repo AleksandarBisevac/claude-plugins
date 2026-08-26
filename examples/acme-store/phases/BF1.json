@@ -6,7 +6,8 @@
   "blockedBy": [],
   "desiredOutcome": "Reported bugs are reproduced red-first and fixed.",
   "testGate": [
-    "test"
+    "test",
+    "precommit"
   ],
   "baseRef": "c4a11b9",
   "branch": "audit/bf1-bugfix-batch-1",
@@ -39,8 +40,14 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "test"
+          "test",
+          "precommit"
         ]
+      },
+      "testEvidence": {
+        "runId": "2026-07-20T13:22:00Z.a05d29",
+        "status": "no-checks",
+        "at": "2026-07-20T13:22:00Z"
       },
       "outcome": {
         "technical": null,
@@ -76,8 +83,14 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "test"
+          "test",
+          "precommit"
         ]
+      },
+      "testEvidence": {
+        "runId": "2026-07-21T18:01:00Z.7c4e0b",
+        "status": "passed",
+        "at": "2026-07-21T18:01:00Z"
       },
       "outcome": {
         "technical": "Cookie cleared with an expired Set-Cookie and the session revoked server-side; 1 red-first test.",
