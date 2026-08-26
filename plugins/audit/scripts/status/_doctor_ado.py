@@ -21,10 +21,13 @@ without a pause, so an unannounced bounded wait is indistinguishable from a hang
 for as long as the bound. The wording borrows `fetch-ado-items`' "bound %ds per
 query" rather than inventing a second way to talk about a timeout.
 
-Layer 3: it reads `_doctor_report` (layer 2) for the collector and `_ado_drift`
-(layer 2) for the link walk, and reaches nothing else. The walk used to be a
+Layer 3: it reads `_doctor_report` (layer 2) for the collector, `_ado_drift`
+(layer 2) for the link walk and `_ado_tracked` (layer 1) for whether an item
+belongs on a board at all, and reaches nothing else. The walk used to be a
 second copy here - including the `id: true` trap - and one walk is why the
-doctor's count and the sync command's table cannot disagree about what is linked.
+doctor's count and the sync command's table cannot disagree about what is linked;
+the second import is the same rule applied before that question, so an item a
+plan keeps off the board is not reported here as one nobody has pushed yet.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_ado.py` - see
@@ -60,6 +63,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _ado_drift as _drift  # noqa: E402  (the one link walk, and origins)
+import _ado_tracked as _tracked  # noqa: E402  (the one answer about belonging)
 
 # A thin module-level alias, not a copy: the body below was moved out of
 # `audit-doctor.py` unchanged, and an alias keeps it reading the same name
@@ -231,10 +235,35 @@ def check_ado(rep, project, manifest):
         if isinstance(ts, str) and (newest is None or ts > newest):
             newest = ts
     origins = _drift.origin_breakdown(inventory)
+    # WHO THE PLAN KEEPS OFF THE BOARD, reported here and derived nowhere here.
+    # `_ado_tracked.inventory` owns the rules and the task inheritance exactly as
+    # `link_inventory` above owns the walk, and this file spells the key through
+    # that module's own constant so it holds no second reading of it.
+    #
+    # The figure belongs on THIS row because it is the one nobody would otherwise
+    # see: an item a plan keeps off the board carries no link and never will, so
+    # a row printing links alone reports a plan working exactly as designed as a
+    # plan half of which was never pushed. The unanswered figure travels with it
+    # because those items are NOT off the board - nothing had a basis to say
+    # either way - and a reader shown one number reads it as the whole.
+    # THIS FIGURE IS THE PLAN'S, AND IT IS SAID SO, because the connector line one
+    # command over answers a different question with the same word. `read-ado-links`
+    # partitions by LINK - an item declared off the board that still carries a work
+    # item is counted `linked` there, since the card exists whatever the plan now
+    # says - so its untracked column is smaller than this one by exactly the
+    # still-linked items. Both are right about their own question and a reader
+    # comparing two numbers labelled "untracked" would be right to call that a bug,
+    # so each names its basis: this one counts DECLARATIONS, that one counts CARDS.
+    plan = _tracked.counts(_tracked.inventory(manifest)["rows"])
+    off_board = ("%d item(s) the PLAN declares off the board (phases[].%s: false, "
+                 "tasks inherit; counted from the declaration, not from links - "
+                 "`read-ado-links.py` partitions the same items by link and says "
+                 "which are still carrying one), %d nothing could answer for"
+                 % (plan["untracked"], _tracked.FIELD, plan["unanswered"]))
     if not sum(linked.values()):
         rep.ok("ado links",
                "no item linked yet - configuration, not evidence; "
-               "/audit:sync push writes the first links")
+               "/audit:sync push writes the first links. %s" % (off_board,))
     else:
         # The origin split is here rather than in the sync command because it is
         # answerable OFFLINE - it reads the manifest's own links - and because the
@@ -244,11 +273,11 @@ def check_ado(rep, project, manifest):
         rep.ok("ado links",
                "%d task(s), %d bug(s), %d phase(s) linked%s - %d created here, "
                "%d imported, %d of unknown origin (link written before the "
-               "field existed, or by hand)"
+               "field existed, or by hand). %s"
                % (linked["task"], linked["bug"], linked["phase"],
                   (" - newest sync %s" % newest) if newest else "",
                   origins[_drift.ORIGIN_CREATED], origins[_drift.ORIGIN_IMPORTED],
-                  origins[_drift.UNKNOWN]))
+                  origins[_drift.UNKNOWN], off_board))
 
 
 # --- cli ------------------------------------------------------------------------

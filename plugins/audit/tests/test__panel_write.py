@@ -49,6 +49,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _ado_parent as _adop                        # noqa: E402  (the no-declaration marker)
+import _ado_tracked as _adot                       # noqa: E402  (the shape check the applier asks)
 import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_write imports it)
 import _panel_state                                # noqa: E402  (as _panel_write imports it)
@@ -1767,6 +1768,95 @@ def _cases(check):
         check("pp19 `adoParent` is in the phase write allow-list, so this whole "
               "block is exercising a field a patch may legally name",
               "adoParent" in M._PHASE_KEYS, repr(M._PHASE_KEYS))
+
+        # --- u-board: `adoTracked`, whose null is the OPPOSITE of pp13's ---
+        # THE THIRD SPELLING OF NULL IN ONE PATCH SECTION, and this one is back
+        # on priority's side rather than adoParent's. The reason is the schema
+        # and not a convention: `adoTracked` is typed boolean, so null is not a
+        # value it can hold and the key's absence is the only thing it can mean.
+        _at_shard = os.path.join(_pp_proj, "docs", "audit", "phases", "P1.json")
+        _at_off = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoTracked": False}}})
+        with open(_at_shard, encoding="utf-8") as _fh:
+            _at_body = json.load(_fh)
+        check("pp20 `adoTracked: false` is STORED as false - the one direction "
+              "that keeps work off somebody's shared board, so a write that "
+              "quietly dropped it would put the phase back on: %r"
+              % (_at_body.get(_adot.FIELD, "<<missing>>"),),
+              _at_off["ok"] and _at_body.get(_adot.FIELD) is False)
+        check("pp21 ...and the row for it is not a no-op: an ABSENT declaration "
+              "reads as None on the `from` side, which is the same value the "
+              "payload carries and the same one a save sends to clear it - so "
+              "the dialog's list and the echo are two readings of one pair: %r"
+              % (_at_off["applied"],),
+              {"target": "P1", "field": _adot.FIELD,
+               "from": None, "to": False} in _at_off["applied"])
+        _at_clear = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoTracked": None}}})
+        with open(_at_shard, encoding="utf-8") as _fh:
+            _at_body2 = json.load(_fh)
+        check("pp22 THE THIRD MEANING OF NULL: `adoTracked: null` PRUNES the "
+              "key, where `adoParent: null` stores it. Both are right and the "
+              "difference is the schema - adoParent's null is the answer 'hangs "
+              "under nothing', and adoTracked is typed boolean, so its null can "
+              "only be the absence of a declaration. Clearing it puts the phase "
+              "back on the default, which is TRACKED",
+              _at_clear["ok"] and _adot.FIELD not in _at_body2,
+              repr(_at_body2.get(_adot.FIELD, "<<absent>>")))
+        _at_on = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoTracked": True}}})
+        with open(_at_shard, encoding="utf-8") as _fh:
+            _at_body3 = json.load(_fh)
+        check("pp23 `true` is STORED rather than pruned as 'the same as the "
+              "default': the two resolve alike and they are not the same thing "
+              "- one is a decision somebody wrote down and the other is nobody "
+              "having looked, and the panel's own line under the control says "
+              "which: %r" % (_at_body3.get(_adot.FIELD, "<<missing>>"),),
+              _at_on["ok"] and _at_body3.get(_adot.FIELD) is True)
+        # THE OTHER DIRECTION, and it needed its own case: pp21 says a real
+        # change gets a row, and nothing said an unchanged field does NOT. A row
+        # emitted for a no-op is not cosmetic - `appliedDiff` compares the
+        # dialog's list with this echo, so an over-firing row makes every clean
+        # save report itself as drift against a manifest nobody moved. Paired
+        # with a real change so the save still happens and `applied` is a list
+        # rather than an `unchanged` short-circuit.
+        _at_same = M.apply_composition(
+            _pp_proj, {"phases": {"P1": {"adoTracked": True, "priority": 3}}})
+        check("pp23b re-sending the value a phase ALREADY holds produces no "
+              "row: the field did not move, and a row saying it did would put "
+              "this save one ahead of the dialog that listed it: %r"
+              % (_at_same["applied"],),
+              _at_same["ok"]
+              and [r for r in _at_same["applied"]
+                   if r.get("field") == _adot.FIELD] == []
+              and [r.get("field") for r in _at_same["applied"]] == ["priority"],
+              repr(_at_same["applied"]))
+        for _atbad, _atwhy in ((1, "an integer 1, which is not a boolean"),
+                               ("false", "the STRING 'false'"),
+                               ({"tracked": False}, "an object")):
+            _atr = M.apply_composition(
+                _pp_proj, {"phases": {"P1": {"adoTracked": _atbad}}})
+            check("pp24 %s is refused with `_ado_tracked.declared`'s own words "
+                  "rather than written and left for the validator: assuming "
+                  "the default on an unreadable value is what puts a phase on "
+                  "the board its author was trying to keep off: %r"
+                  % (_atwhy, _atr.get("findings")),
+                  not _atr["ok"]
+                  # `refused: ` is the prefix an APPLIER's refusal carries and
+                  # the validator's own findings do not - pp17's clause, for
+                  # pp17's reason: without it the case passes with the shape
+                  # check deleted, because the schema refuses these too.
+                  and (_atr["findings"][:1] or [""])[0].startswith("refused: ")
+                  and any(_adot.FIELD in f for f in _atr["findings"]))
+        with open(_at_shard, encoding="utf-8") as _fh:
+            check("pp25 ...and none of those three refusals wrote anything: the "
+                  "phase still holds the `true` pp23 stored",
+                  json.load(_fh).get(_adot.FIELD) is True)
+        check("pp26 `adoTracked` is in the phase write allow-list, so this "
+              "whole block is exercising a field a patch may legally name - "
+              "and without the row the control would be refused wholesale, "
+              "taking every unrelated edit in the same save with it",
+              _adot.FIELD in M._PHASE_KEYS, repr(M._PHASE_KEYS))
     finally:
         _sh2.rmtree(_pp_tmp, ignore_errors=True)
 

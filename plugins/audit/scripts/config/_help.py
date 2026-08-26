@@ -117,6 +117,11 @@ COMPOSITION_PATHS = {
     "phaseReviewModel": "phases[].review.model",
     "phasePriority": "phases[].priority",
     "phaseAdoParent": "phases[].adoParent",
+    # The question one step BEFORE the parent: whether this phase belongs on the
+    # shared board at all. Its own lever, and therefore its own reference - the
+    # two share a cell and a reader who opened the parent's page would find
+    # nothing there about a phase that is deliberately off the board.
+    "phaseAdoTracked": "phases[].adoTracked",
     # F187: three settings whose only path used to be a hand edit. The parent and
     # the gate that needs it sit at the top of `meta.ado`; the tag vocabulary is
     # inside `conventions`, which is where the board's own rules live.

@@ -94,6 +94,7 @@ import _panel_state           # noqa: E402  (the read side this write path reads
 import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
 import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs; the no-declaration marker)
+import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
 #                                            the SAME function set-priority.py asks)
@@ -764,6 +765,18 @@ def _composition_changes(manifest, patch):
             if was != now:
                 rows.append({"target": pid, "field": _ado_parent.FIELD,
                              "from": was, "to": now})
+        if _ado_tracked.FIELD in (pv or {}):
+            # `from` is the STORED value or None, and here None really is the
+            # absence: `adoTracked` is a boolean in the schema, so null is not a
+            # value it can carry and the key's absence is the only thing it can
+            # mean. That is the whole difference from the row above, and it is
+            # why this one does not need a marker - `_ado_tracked_of`'s rule,
+            # spelled here for the reason that one is.
+            was = ph.get(_ado_tracked.FIELD)
+            now = pv[_ado_tracked.FIELD]
+            if was != now:
+                rows.append({"target": pid, "field": _ado_tracked.FIELD,
+                             "from": was, "to": now})
         if "area" in (pv or {}):
             # BOTH SIDES THROUGH `areas_of`, so the row compares what is in force
             # with what would be, in one spelling. Compared as the resolved TAG
@@ -1284,6 +1297,40 @@ def _apply_ado_parent(manifest, phase, value):
     return None
 
 
+def _apply_ado_tracked(manifest, phase, value):
+    """Set or clear one phase's `adoTracked`. None, or a refusal string.
+
+    `null` IS THE CLEAR HERE, and that is the OPPOSITE of `_apply_ado_parent`
+    one function up - which is why the two are written apart rather than shared.
+    There, null is a value ("hangs under nothing, on purpose") and pruning it
+    would silently restore the override the key exists to undo. Here the schema
+    says `"type": "boolean"`, so null is not a value the field can hold and the
+    key's absence is the only thing it can mean: clearing it puts the phase back
+    on the default, which is TRACKED, and that is what the operator chose.
+
+    THE SHAPE COMES FROM `_ado_tracked.declared`, which is what every other
+    reader of this field asks - `_apply_ado_parent`'s arrangement exactly. It
+    refuses `bool` before `int` on purpose, so `adoTracked: 1` is named as the
+    typo it is rather than stored as a declaration; a refusal here says which
+    field is wrong instead of handing back a wall of validator findings about a
+    document the operator did not type.
+
+    `manifest` is unused and stays in the signature for the reason it does on
+    every applier in this file: `_apply_priority` needs the OTHER phases to
+    answer its question, and a sibling that dropped the argument would read as
+    if this rule were local when what makes it local is a fact about the rule.
+    """
+    if value is None:
+        phase.pop(_ado_tracked.FIELD, None)
+        return None
+    _declared, problem = _ado_tracked.declared(
+        {"id": phase.get("id"), _ado_tracked.FIELD: value})
+    if problem is not None:
+        return problem
+    phase[_ado_tracked.FIELD] = value
+    return None
+
+
 def apply_composition_patch(manifest, patch):
     """Apply an allow-listed composition patch to `manifest` in place.
     Returns None on success or an error string. Never touches structure."""
@@ -1311,6 +1358,10 @@ def apply_composition_patch(manifest, patch):
                 return err
         if _ado_parent.FIELD in (pv or {}):
             err = _apply_ado_parent(manifest, ph, pv[_ado_parent.FIELD])
+            if err:
+                return err
+        if _ado_tracked.FIELD in (pv or {}):
+            err = _apply_ado_tracked(manifest, ph, pv[_ado_tracked.FIELD])
             if err:
                 return err
         # F187. THE OTHER HALF OF `meta.areas`. The registry has had an editor

@@ -229,6 +229,13 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # SIBLING of `ado` and never a field inside it, because `ado` is
                # an adoLink sync writes and this is authored:
                "adoParent",
+               # U-BOARD: whether this phase belongs on the shared board at all.
+               # Absent means yes. `false` is DELIBERATELY untracked, which is a
+               # different thing from unlinked - and telling them apart is the
+               # whole point: an internal phase reported as unlinked forever is a
+               # permanent false positive in the drift lens. Authored, like
+               # `adoParent` and unlike `ado`:
+               "adoTracked",
                # v0.19: optional spend budget for this phase, in USD. Optional on
                # purpose — most phases will not carry one, and the surfaces render
                # an absent budget as "—" rather than as 0% or 100%.

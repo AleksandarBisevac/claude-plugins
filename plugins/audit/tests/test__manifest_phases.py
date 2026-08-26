@@ -158,6 +158,34 @@ def _cases(check):
     check("mp23 ...and every word and shape check it reads is "
           "`_manifest_vocab`'s object: %r" % (_drift,), _drift == [])
 
+    # mp24-mp26: the U-BOARD wiring. `_ado_tracked` owns the rule and this file
+    # owns whether the walk ASKS it — two separate failures, and the wiring is the
+    # one that disappears without a trace: the rule keeps passing its own suite
+    # while no manifest is ever graded by it.
+    _ph = _phase(tasks=[_task("P0.1")])
+    _ph["adoTracked"] = "yes"
+    _idx, _f, _w = M._walk_phases([_ph])
+    check("mp24 a phase's mistyped `adoTracked` reaches the walk's findings - "
+          "the rule lives in `_ado_tracked`, and this is the case that goes red "
+          "if the walk stops asking it: %r" % (_f,),
+          [x for x in _f if "adoTracked" in x] != [])
+    # THE SCOPE HALF, and it is the direction that would go unnoticed: a task
+    # inherits its phase's answer and declares nothing, so a finding on a TASK
+    # would be the validator refusing a key the resolver never reads.
+    _ph2 = _phase(tasks=[_task("P0.1")])
+    _ph2["tasks"][0]["adoTracked"] = "yes"
+    _idx2, _f2, _w2 = M._walk_phases([_ph2])
+    check("mp25 ...while the same value on a TASK raises no adoTracked finding: "
+          "the declaration is a phase's alone and a task inherits, so grading it "
+          "here would refuse a key nothing reads: %r" % (_f2,),
+          [x for x in _f2 if "adoTracked" in x] == [])
+    _ph3 = _phase(tasks=[_task("P0.1")])
+    _ph3["adoTracked"] = False
+    _idx3, _f3, _w3 = M._walk_phases([_ph3])
+    check("mp26 ...and a WELL-FORMED declaration is silent, so the check cannot "
+          "be satisfied by one that always fires: %r" % (_f3,),
+          [x for x in _f3 if "adoTracked" in x] == [])
+
 
 def _selftest():
     return _harness.run(_cases)

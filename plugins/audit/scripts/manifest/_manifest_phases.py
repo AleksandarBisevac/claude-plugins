@@ -56,6 +56,7 @@ import _manifest_io as _mio  # noqa: E402  (TERMINAL: what 'finished' means ever
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
 import _ado_parent as _parent  # noqa: E402  (what an `adoParent` declaration may say)
+import _ado_tracked as _tracked  # noqa: E402  (and what an `adoTracked` one may say)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -190,6 +191,19 @@ def _add_parent(obj, where, findings, warnings):
     warnings.extend(pw)
 
 
+def _add_tracked(obj, where, findings, warnings):
+    """The same adapter for `_ado_tracked`, and separate because the SCOPE differs.
+
+    `adoParent` is declared on a phase AND on a task; `adoTracked` is a phase's
+    alone, because a task inherits. Folding the two into one adapter would have
+    made the task call site carry a check that must never fire there, and the way
+    that goes wrong is silent: a task growing a declaration nothing reads.
+    """
+    tf, tw = _tracked.declaration_findings(obj, where)
+    findings.extend(tf)
+    warnings.extend(tw)
+
+
 # --- the walk --------------------------------------------------------------------
 def _walk_phases(phases):
     """One pass over every phase and every task: (index, findings, warnings).
@@ -235,6 +249,10 @@ def _walk_phases(phases):
         # parent resolves to and whether that place can be true are questions
         # about the whole plan, and `_manifest_crossrefs` asks them.
         _add_parent(phase, pwhere, f, w)
+        # U-BOARD: the other AUTHORED ado field, and PHASE-ONLY on purpose - a
+        # task inherits its phase's answer and never declares one, so checking it
+        # on the task walk below would invite a declaration the resolver ignores.
+        _add_tracked(phase, pwhere, f, w)
         if pid:
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:

@@ -93,6 +93,8 @@ claude-plugins/                           # this repo (personal, public)
           _ado_fields.py                  # meta.ado.fields: what this project supplies to those fields
           _ado_parent.py                  # where ONE item hangs on the board, and whether that place can be true
           resolve-ado-parent.py           # the door onto it: resolve, check the hierarchy, refuse a link nothing can build, build the cached ladder
+          _ado_tracked.py                 # whether an item belongs on the shared board at all, and why it does not
+          resolve-ado-tracked.py          # the door onto it: answer for a manifest or a scope, and never refuse a declared intention
           check-ado-item.py               # the gate /audit:sync push runs an item through before creating it
           _ado_connect.py                 # every decision /audit:sync connect makes: transport, auth path, probe, process
           ado-connect.py                  # the door onto it: the read-only ladder to a first working connector
@@ -245,6 +247,7 @@ L1:
   _ado_conventions -> _output
   _ado_fields -> _output
   _ado_parent -> _output
+  _ado_tracked -> _output
   _areas -> _output
   _branch -> _output
   _cli_fmt -> _output
@@ -271,7 +274,7 @@ L2:
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
-  _manifest_phases -> _ado_parent, _areas, _manifest_io, _manifest_vocab, _output
+  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _priority, _ui_theme
@@ -285,7 +288,7 @@ L2:
 
 L3:
   _ado_fetch -> _ado_drift, _output
-  _doctor_ado -> _ado_drift, _doctor_report, _output
+  _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
@@ -301,7 +304,7 @@ L4:
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _manifest_io, _output, _panel_paths, _priority
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _journal_io, _locks, _output, _panel_paths
@@ -319,7 +322,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _areas, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L7:
@@ -339,10 +342,11 @@ L7:
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
-  read-ado-links -> _ado_drift, _manifest_io, _output
+  read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
+  resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
   run-test-gate -> _manifest_io, _output
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
@@ -1810,6 +1814,79 @@ exit code. The narrowing happens once, in `scope_result()`: the printed refusals
 came from two separate walks while this file was being written, which is exactly the shape that
 lets a command exit 1 over something it never printed.
 
+### `plugins/audit/scripts/manifest/_ado_tracked.py`
+Whether one audit item belongs on the shared board **at all** (layer 1) — the question one step
+before `_ado_parent`'s. `/audit:sync status` could not tell **deliberately untracked** from
+**drift**: a phase nobody ever intended to put on Azure DevOps reported as `unlinked` on every run,
+for ever, so the drift lens grew one permanent false positive per such phase — and a lens carrying
+permanent rows stops being read, which costs it the real drift it exists to catch. `phase.ado`
+could not carry the intention either, and that is a fact about the field: `ado` is an `adoLink`
+that *sync writes*, so declaring an intention there would be authoring into a record.
+`phases[].adoTracked` is the authored sibling, exactly as `adoParent` is.
+
+**Absent means tracked**, which is what makes the key shippable: a plan that never sets it resolves
+precisely as it did before the key existed, and `at3` is the case that fails if that ever stops
+being true. `false` is deliberately off the board; `true` is the same answer said out loud.
+
+**A task inherits under both settings of `phaseWorkItems`, and the two are not one rule wearing two
+hats.** With phase work items on the inheritance is *forced* — a task hangs under its phase's work
+item and an untracked phase has none. With them off the task would get a work item of its own, so
+mechanics decide nothing: the phase is the unit an operator chose to keep off the board, and
+honouring that at the phase while pushing its tasks anyway puts the same work on the same board
+under another name. The answer is the same, the **basis** is not, and the basis is the half a
+reader has to check.
+
+**A bug is not answered, rather than answered `tracked`.** Bugs are owned by no phase, so there is
+nothing to inherit, and `bug.ado` is usually written by a *pull* off somebody else's board —
+calling that tracked would be the plugin claiming a card it never created. So `tracked` is
+**three-valued**: `True`, `False`, and `None` for "no basis to answer", with `is_tracked()` /
+`is_untracked()` named so no caller decides for itself what a falsy `None` meant. A truthiness read
+files an unanswered item as deliberately untracked, which is the exact collapse the feature undoes.
+
+**Why layer 1, and why the manifest arrives assembled.** `_ado_parent`'s argument exactly: the push
+plan, the status lens, the validator's neighbours at layer 2 and `resolve-ado-tracked.py` at layer 7
+all need the same answer, and two of those are layer-mates that cannot import each other. Reading
+the file here would mean importing `_manifest_io`, a layer-mate, and would push the module to layer
+2 where half its consumers could not reach it.
+
+**And it detects the un-assembled sharded index rather than trusting its caller.** In the sharded
+layout the file at `manifestPath` is an *index* whose phases are stubs, while `adoTracked` and
+`tasks` both live in the shard body — so a caller reaching for `json.load` sees no declaration on
+any phase and no task at all, and reports a deliberately internal plan as **tracked, by default**,
+on the layout parallel worktrees use. A phase still carrying a `shard` key is therefore not
+resolved: it is reported unanswered, naming the shard and the loader, because a stub is a missing
+basis and a missing basis is the thing to say. `at31` is that case and `at33` is its second
+direction.
+
+### `plugins/audit/scripts/manifest/resolve-ado-tracked.py`
+The door onto `_ado_tracked` (layer 7), same shape as `resolve-ado-parent.py` over `_ado_parent`: a
+real command because the caller is orchestrator prose reaching Python through Bash, and a
+`python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses. It renders a
+human block and `--json`, and `--all` is the default because the push plan needs the whole picture
+and a command whose default answers about nothing is one people forget to scope.
+
+**Not a gate, and the missing exit code is the load-bearing one.** `resolve-ado-parent.py` exits 1
+because a hierarchy violation is a link nothing can build. "This phase is not on the board" is a
+normal state somebody authored on purpose, so **exit 1 is not in this command's vocabulary at
+all** — `rt60` asserts that over every run the suite makes, collected as they happen rather than
+over the fixtures somebody remembered to list. Exit 0 includes *"nothing is tracked"*, and that
+answer gets its own closing sentence rather than the ordinary OK line: a success line that reads
+the same whether every phase was planned or none is the shape that gets believed on the wrong day.
+Exit 2 is unreadable input, an unknown flag, or a scope naming nothing — "tracked: nothing" about
+an id that does not exist reads exactly like a plan somebody keeps deliberately internal, which is
+the one confusion this feature exists to end.
+
+**Every count prints at zero**, the bug line included, because a count that appears only when it is
+non-zero cannot be told from a count nobody took. A scoped run also prints what it did *not* ask
+about, and carries both tallies in `--json` (`counts` for the scope, `manifestCounts` for the
+file): a consumer given only the first cannot tell a manifest that tracks nothing from a scope that
+happens to contain nothing tracked.
+
+**It loads through `_manifest_io`, which is the half the rules cannot do from the floor.** `rt40`
+pins that end to end on a real index-plus-shard fixture, and `rt41` asserts off the *file* that the
+index carries neither the declaration nor a task — two computations, so the pair is a result rather
+than a value compared with itself.
+
 ### `plugins/audit/scripts/manifest/_manifest_ado.py`
 `meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front
 door**: `validate()` calls `check_ado_meta` for the manifest and the panel's `write_ado`
@@ -2108,6 +2185,7 @@ sign-off answers `no-basis` about its reflog instead of `clean`. What it cannot 
 the module docstring rather than left for a reader to discover: a dropped stash, a push from
 another clone, and the manifest states written between two commits, which it counts from the
 journal's `stateHash` rows instead of passing over.
+
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

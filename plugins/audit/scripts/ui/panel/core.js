@@ -504,8 +504,59 @@ const typedNumber=text=>{
  if(t==='')return null;
  const n=Number(t);
  return (Number.isFinite(n)&&String(n)===t)?n:null;};
-const fillOptions=(sel,pairs,cur)=>{
- pairs.forEach(([v,t])=>{const o=el('option',{value:v},t);
+/**
+ * What one option SHOWS, and the full text when that is not all of it.
+ *
+ * SEPARATE FROM `fillOptions` SO IT CAN BE TESTED. The test shim's `append` is a
+ * no-op, so a select filled there has no children to inspect and a case asserting
+ * the rendering would be asserting nothing. The rule is the part that can be wrong
+ * without looking wrong, so the rule is what is reachable — the same arrangement
+ * `apChoiceOf` / `apPatchValue` already use one file over.
+ *
+ * `title` is null when nothing was cut, so the attribute MEANS something when it
+ * is there: a title on every option would make hovering one useless.
+ *
+ * @param {*} label - the option's full text
+ * @param {number} [limit] - most characters it may show; omitted = no bound
+ * @returns {{text: string, title: (string|null)}}
+ */
+const optionText=(label,limit)=>{
+ const full=String(label==null?'':label);
+ return (limit&&full.length>limit)
+  ?{text:full.slice(0,limit-1)+'…',title:full}
+  :{text:full,title:null};};
+/**
+ * Fill a `<select>`, optionally bounding what each option is allowed to SHOW.
+ *
+ * F211. A closed `<select>` renders one line and clips it — it does not wrap and
+ * it does not ellipsise — so an option label longer than the control is a phrase
+ * cut off mid-word. The composition table's parent picker is `width:9rem` and its
+ * labels ran to `use the fallback — nothing is set (meta.ado.parentWorkItem is
+ * empty)`, which the committed screenshot shows rendering as `use the fallback —`.
+ * A substring pin cannot see it: the whole literal IS in the page, and only the
+ * paint is wrong.
+ *
+ * THE BOUND IS A PARAMETER AND NOT A CONSTANT HERE, because it is a property of
+ * the CONTROL and this function fills every select in the panel — the usage
+ * filters and the model pickers are wider, and a single global bound would
+ * truncate labels that already fit. A caller that knows its width passes one; a
+ * caller that does not passes nothing and nothing changes for it.
+ *
+ * THE FULL TEXT IS NOT LOST, it moves to the option's `title`. Truncating without
+ * that would trade a clipped label for a shortened one, which is the same defect
+ * with better manners — and for a board candidate the part that gets cut is the
+ * work item's title, the part a person is choosing BY.
+ *
+ * @param {HTMLSelectElement} sel - the select to fill
+ * @param {Array<[string, string]>} pairs - [value, label]
+ * @param {string} cur - the value to select
+ * @param {number} [limit] - most characters an option may show; omitted = no bound
+ * @returns {HTMLSelectElement} `sel`
+ */
+const fillOptions=(sel,pairs,cur,limit)=>{
+ pairs.forEach(([v,t])=>{
+  const {text,title}=optionText(t,limit);
+  const o=el('option',title?{value:v,title}:{value:v},text);
   if(cur===v)o.selected=true;sel.append(o);});
  return sel;};
 /** How long a plain success stays in a savebar's note slot before it dissolves. */

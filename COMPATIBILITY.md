@@ -57,6 +57,13 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **Validation stays additive.** A manifest that validates against a release keeps
   validating against every later one in the major line. The repository rule behind
   this is in `CONTRIBUTING.md` under *Hard rules*, and it predates this document.
+- **A manifest key a released version READS keeps being read** — the promise the
+  config section below makes about a config key, made here for the same reason: the
+  manifest is a file you wrote. `phases[].adoTracked` is the newest one. A phase
+  carrying `adoTracked: false` stays off the Azure DevOps board `/audit:sync` pushes
+  to, and its tasks with it; **absent keeps meaning tracked**, which is what makes
+  adding the key free — a plan that never writes it behaves exactly as it did before,
+  so it is a minor. Ceasing to read it, or reversing what absence means, is a major.
 
 ### Not promised
 
@@ -69,6 +76,12 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **The text of findings and warnings.** They are for a human reading a terminal.
   Parse the exit code — the validator's own `--help` states which code means what —
   never the wording.
+- **The WORDING a command uses to report on a key it reads.** `/audit:sync status`
+  sorts the manifest's items into classes and `/audit:sync push` prints what a run
+  will skip; a later release may relabel a class, add another, or lay the table out
+  differently, the same way findings above may be rephrased. What is promised is that
+  the key keeps being read and that absence keeps meaning what it means. Anything
+  automated reads the manifest, never the table.
 - **The file names inside a sharded manifest's phase directory.** They are an
   implementation of the layout, reached through `_manifest_io`, not an interface.
 - **That `/audit:migrate` can be undone.** It is documented as one-directional. It is

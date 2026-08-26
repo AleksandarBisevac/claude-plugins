@@ -151,8 +151,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" <manifest> \
   [--items <fetched.json> --out <mapped.json>] [--json]
 ```
 
-With no `--items` it prints the manifest side: linked vs unlinked per kind, then one
-row per link — `kind | manifest id | ado id | status | state | basis`. With
+With no `--items` it prints the manifest side per kind — linked, unlinked, and
+deliberately untracked, which is a class of its own and never rolls up into unlinked
+— then the leftovers that split leaves (an item nothing could answer for, an item
+declared off the board whose card exists anyway), then one
+row per link — `kind | manifest id | ado id | status | state | basis`. A card beats
+a declaration in that split, and `status` step 2 is where all of it is read. With
 `--items` it stamps `mapped` onto the payload `fetch-ado-items.py` wrote and writes
 `--out`, which is the file the drift door must be handed. Exit 0 = answered. **Exit 1
 = entries were given and not one of them could be given a state**, so every reading
@@ -361,7 +365,34 @@ failed echo.
    tasks): resolve `types.pbi` — null/absent → auto-detect and WRITE THE PICK BACK
    into `meta.ado.types.pbi` (tracker-sync.md → "Process templates"); the write-back
    happens inside this confirm-gated, index-locked run. Every in-scope phase lacking
-   `phase.ado` gets a CREATE in the plan.
+   `phase.ado` gets a CREATE in the plan — every TRACKED one, which is the next
+   paragraph's question and not one `phase.ado` can answer.
+
+   **Whether it belongs on this board at all — per item, resolved by one function.**
+   A phase may declare `adoTracked: false`, and then it is not on the shared board:
+   no CREATE for the phase, and none for its tasks either. Do NOT re-derive that here
+   — run the door, and print what it prints:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/resolve-ado-tracked.py" \
+     <manifest> [--all | --phase <id> | --task <id>] [--json]
+   ```
+
+   Exit 0 = answered (**including "nothing here is tracked"** — a plan with no
+   creates in it is an answer, not an error). Exit 2 = unreadable input or a scope
+   naming nothing — stop, and never read it as a pass. **There is no exit 1**: a
+   phase that is deliberately off the board is a normal state, not a violation, so
+   nothing here refuses, degrades or warns over one.
+
+   The rules it applies, so the plan can be read: `adoTracked: false` is untracked;
+   `true` or ABSENT is tracked, so a plan that never wrote the key does not move. A
+   task inherits its phase's answer — forced under `meta.ado.phaseWorkItems`, since a
+   task hangs under its phase's work item and an untracked phase has none, and still
+   inherited with `phaseWorkItems: false`, because the phase is the unit the operator
+   chose. A **bug** is not covered at all: bugs are not owned by a phase and `bug.ado`
+   is usually written by a pull, off the board — the door says so per item rather than
+   answering `tracked` for one, and every answer it gives carries the basis that
+   produced it.
 
    **Where that branch hangs — per item, resolved by one function.** A phase may
    declare its own `adoParent`; `meta.ado.parentWorkItem` is the manifest-wide
@@ -471,6 +502,18 @@ failed echo.
    **confirm via AskUserQuestion before the first write** — ADO writes are
    outward-facing and visible to the whole team. A refused item is never offered for
    creation; fix the manifest (or the conventions) and re-run.
+
+   **What `adoTracked: false` removed gets its own line, `U untracked (adoTracked:
+   false)`, printed even at zero** — with the phases named, and their tasks counted
+   against the phase that excluded them rather than listed loose. It is not a
+   subtraction to fold into the creates: an operator asked to approve a write reads
+   the plan as the whole of what this run will do, and *nothing to create for this
+   phase* and *deliberately skipped it* are the two readings a single lowered number
+   collapses into one. Refusals are already kept apart from creates for that reason;
+   this is the same distinction one rule over, and the difference between the two is
+   that a refusal is a defect to go and fix while an untracked phase is working as
+   the plan says it should. A run whose whole scope is untracked therefore says so
+   and creates nothing, instead of printing a plan that looks like an empty board.
 
    Carry step 2c's answer into that plan, because it is the part the confirm gate
    exists for:
@@ -739,10 +782,11 @@ Read-only, no ADO writes, no manifest writes.
 1. Lead with the connector line: `enabled`/`echo`/`phaseWorkItems` state (and the
    DISABLED banner from Preflight 3 when off), `sprint: <resolved path>` or
    `sprint: unresolvable (team '<t>')` when resolution fails.
-2. **The link inventory is a door, not a walk you write here.** Counting linked vs
-   unlinked means reading every phase, every task and every bug — which on the
-   sharded layout is a walk over the ASSEMBLED manifest and not over the file at
-   `manifestPath` (Preflight 1). Do not do it by hand:
+2. **The link inventory is a door, not a walk you write here.** Sorting the items
+   into linked, unlinked and deliberately untracked means reading every phase, every
+   task and every bug — which on the sharded layout is a walk over the ASSEMBLED
+   manifest and not over the file at `manifestPath` (Preflight 1). Do not do it by
+   hand:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/read-ado-links.py" <manifest>
@@ -754,6 +798,55 @@ Read-only, no ADO writes, no manifest writes.
    item claims** (`SHARED: #<id> …`), with that count printed even at zero: nothing
    validates that a work-item id is claimed once, so this is the only place it is
    ever counted, and two rows carrying one id read as a typo until it is said.
+
+   **Unlinked is not the complement of linked, and reading it as one is what the
+   untracked class fixes.** An item is unlinked when it has no `ado.id` and was
+   supposed to get one; it is *deliberately untracked* when `adoTracked: false` says
+   this board was never meant to carry it — a phase, and with it every task that
+   inherits the answer (push step 1, the same door). Without that third class an
+   internal refactor phase reports as unlinked on every run forever, and a lens
+   whose backlog can never reach zero is a permanent false positive: the drift table
+   is read for what is WRONG, and a row that will never be actioned trains the
+   reader to skim past the rows that will. Untracked is not a smaller kind of
+   unlinked and never rolls up into it — a deliberate exclusion and an unfinished
+   sync want opposite actions from the person reading the table.
+
+   **The per-kind line is a PARTITION of what the manifest holds, so a card beats a
+   declaration inside it.** `link_inventory` is what `linked` means on this surface,
+   and a work item exists whatever the plan now says — so an item declared off the
+   board that still carries one is counted `linked`, not untracked, and the classes
+   still add up to the total. The untracked column prints for every kind including
+   `bug`, where the question does not apply at all — the declaration is a property of
+   a phase, and a bug line missing the column would read as a kind nobody asked about
+   rather than one the question does not cover. Two leftovers fall out of that rule,
+   and the door prints both **even at zero**, each with a detail line per item, for
+   `SHARED:`'s reason: a figure that appears only when it is interesting cannot be
+   told from one nobody computed. Paste them as it prints them and re-tally neither:
+
+   - `plan item(s) whose adoTracked could not be answered — counted as unlinked,
+     never as untracked`, with a `NOT ANSWERED: <kind> <id> — <basis>` line each.
+     *Nothing had a basis to answer* is a state of its own and not a quiet
+     `tracked`: a key that is not a boolean, or a sharded index handed over
+     un-assembled. Such an item is counted UNLINKED, because being counted untracked
+     is a licence to stop reporting a gap and a row nothing could answer for has not
+     earned one. Bugs are outside that figure by construction — the declaration is a
+     property of a phase, so every bug is unanswered, and a number that can never
+     reach zero would report the ordinary state of every bug as a hole in the plan.
+   - `item(s) declared off the board that still carry a link`, with a `STILL LINKED:
+     <kind> <id> — <basis>` line each. This is the one somebody has to act on: the
+     plan says the work does not belong on the board and a work item for it is
+     sitting on one anyway, so nothing will push it again and nothing will take it
+     down. It is also the one row the per-kind split cannot show, because the card
+     wins there. Report it and leave it — `status` never fixes, and unlinking
+     somebody's card is a human decision.
+
+   **`/audit:doctor`'s off-board figure and this command's untracked column answer
+   different questions, and they legitimately differ.** Doctor counts DECLARATIONS —
+   what the plan says, with tasks inheriting — while this counts CARDS, so the column
+   here is smaller by exactly the `STILL LINKED` items. Both name their own basis on
+   their own line; neither is a check on the other, and a difference between them is
+   not drift to report. When they do agree, it is because that leftover is empty —
+   which the `STILL LINKED` line says outright rather than leaving to be inferred.
 
    Exit 0 = answered. **Exit 2 = the manifest or one of its shards could not be
    read** — stop and say which file, because a short table is indistinguishable from

@@ -204,6 +204,21 @@ LAYERS = (
      # `_manifest_vocab` is a layer-MATE, so borrowing that one is the sideways
      # edge this lint refuses, and a case pins the two answers equal.
      "_ado_parent",
+     # `_ado_tracked` is the question one step before that one: does this item
+     # belong on the board AT ALL. It is at the floor for `_ado_parent`'s reason
+     # and not by analogy with it - the push plan, `/audit:sync status`' drift
+     # lens, the validator's neighbours at L2 and `resolve-ado-tracked` at L7 all
+     # need the SAME answer, and two of those are layer-mates that cannot import
+     # each other. A second expression of "does this belong here" would BE a
+     # second policy, which is the false positive this key exists to end.
+     # THE MANIFEST ARRIVES ASSEMBLED, AS AN ARGUMENT, and that is what keeps it
+     # here: reading the file would mean importing `_manifest_io`, a layer-MATE,
+     # which is the sideways edge this lint refuses - and would push the module
+     # to L2 where half its consumers could not reach it. It detects an
+     # un-assembled sharded stub instead of trusting its caller, because
+     # `adoTracked` lives in the shard body and a raw read reports a whole plan
+     # tracked by default.
+     "_ado_tracked",
      # `_ado_connect` is every decision `/audit:sync connect` makes on the way
      # to a first working connector: which transport, which auth path, what a
      # read-only probe proved, and which process the board runs. At the floor
@@ -499,6 +514,17 @@ LAYERS = (
      # `explain-ado-drift`, because a loop is not a difference of opinion
      # between two teams - it is a link nothing can build.
      "resolve-ado-parent",
+     # `resolve-ado-tracked` is the door onto `_ado_tracked`: which items belong
+     # on the board at all, and the sentence saying why each one does not. A
+     # command for `check-ado-item`'s reason - the caller is orchestrator PROSE
+     # reaching Python through Bash, and a `python3 -c` naming a source path is
+     # the shape `guard-secrets-read` refuses. NOT a gate, unlike its neighbour
+     # above: a loop is a link nothing can build and earns exit 1, while "this
+     # phase is deliberately not on the board" is a state somebody authored, so
+     # exit 1 is not in this command's vocabulary at all. It reads `_ado_tracked`
+     # (L1) for the rules and `_manifest_io` (L1) for the loader, which is the
+     # half the rules cannot do from the floor.
+     "resolve-ado-tracked",
      # `resolve-branch` is the door onto `_branch`: which branch a phase forks
      # from, and what it is called. A command rather than a prose instruction
      # because a TEMPLATE has cases prose cannot carry, and rather than a

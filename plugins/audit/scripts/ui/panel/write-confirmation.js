@@ -249,7 +249,16 @@ function compChanges(patch){
   // `null → null` on this side and a real row on the server's, and the mismatch
   // check would fire on an edit that is perfectly fine.
   if(('adoParent' in pv)&&!cfSame(p.adoParent,pv.adoParent))
-   rows.push(cfRow(pid,'adoParent',p.adoParent,pv.adoParent));});
+   rows.push(cfRow(pid,'adoParent',p.adoParent,pv.adoParent));
+  // `adoTracked`'s `from` is the payload's value and needs no marker, which is
+  // the one way it differs from the row above: the schema types the field
+  // `boolean`, so null is not a value it can hold and the payload spells an
+  // absent declaration `null` — the same thing the patch sends to clear it, and
+  // the same thing `_composition_changes` reads off the manifest. Without the
+  // row the dialog would list nothing for a real change and `appliedDiff` would
+  // then report the save as drift against a dialog that had simply not looked.
+  if(('adoTracked' in pv)&&!cfSame(p.adoTracked,pv.adoTracked))
+   rows.push(cfRow(pid,'adoTracked',p.adoTracked,pv.adoTracked));});
  const byT={};(comp.tasks||[]).forEach(t=>{byT[t.id]=t;});
  Object.keys(patch.tasks||{}).sort().forEach(tid=>{
   const t=byT[tid],tv=patch.tasks[tid]||{};
@@ -678,6 +687,21 @@ function cfVal(v,cls,field){
  // the two answers that differ most read identically.
  if(none&&field==='adoParent')
   return el('span',{class:'cfv '+cls},'none — uncategorised on purpose (null)');
+ // Third field, third meaning for null, and here it is the one that is NOT a
+ // value at all: `adoTracked` is typed `boolean`, so null is the ABSENCE of a
+ // declaration — and the absence has a consequence, which is that the phase is
+ // tracked. "not set" would leave the reader to work that out, and the way it
+ // resolves is the direction that puts work on somebody's shared board.
+ // Through `AT_DEFAULT_SENTENCE`, which is BUILT from the menu's own option
+ // words rather than retyped: the option a reader picks and the row the dialog
+ // shows them afterwards are two readings of one answer, and two copies would be
+ // free to disagree about the direction — which here is the one that puts work
+ // on somebody's shared board. The dialog takes the long form because it has a
+ // whole row; the menu takes the short one because it has a 9rem select, and a
+ // single sentence in both is how the closed control came to read `no
+ // declaration — t`.
+ if(none&&field==='adoTracked')
+  return el('span',{class:'cfv '+cls+' unset'},AT_DEFAULT_SENTENCE);
  if(field==='adoParent'&&apIsFallback(v))
   return el('span',{class:'cfv '+cls+' unset'},
     'use the fallback (meta.ado.parentWorkItem)');

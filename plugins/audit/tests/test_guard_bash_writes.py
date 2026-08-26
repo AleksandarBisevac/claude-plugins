@@ -97,6 +97,27 @@ RWP_CASES = (("gitstatus", "git status --porcelain", True),
              ("npminstall", "npm install", False),
              ("empty", "", False))
 
+# `cd` moves the shell and cannot touch a file, and its absence from the allowlist
+# left every `cd <dir> && <read>` unproven - so the read inherited the blame for
+# whatever appeared in the tree meanwhile. Observed live, twice in one session, on a
+# `cd <other repo> && sed -n ...` while a long background job wrote in this one.
+#
+# BOTH DIRECTIONS, and the second half is the one that matters: the allow cases prove
+# the fix, the deny cases prove it did not become "anything starting with cd is fine".
+# A table of allow cases alone would pass equally against a guard that returned True
+# unconditionally.
+CD_CASES = (("cdgrep", "cd /x/y && grep -n foo FILE", True),
+            ("cdsed", "cd /x/y && sed -n '1,5p' FILE", True),
+            ("cdbare", "cd /x/y", True),
+            ("cdchain", "cd /a && cat f; cd /b && wc -l g", True),
+            ("pushpop", "pushd /x && cat f; popd", True),
+            # the deny half: `cd` must not launder the segment after it
+            ("cdrm", "cd /x && rm -rf f", False),
+            ("cdredirect", "cd /x && echo hi > f.txt", False),
+            ("cdgitadd", "cd /x && git add .", False),
+            ("cdsedinplace", "cd /x && sed -i.bak s/a/b/ f", False),
+            ("cdnpm", "cd /x && npm install", False))
+
 
 def _cases(check):
     tmp = Path(_harness.fixture_root("bash-writes-selftest-"))
@@ -108,8 +129,13 @@ def _cases(check):
     prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
 
-    def payload(tool, *, sid, file_path=None, command="x"):
+    def payload(tool, *, sid, file_path=None, command="x", background=False):
+        # `run_in_background` rides in `tool_input` beside `command` and `timeout` -
+        # measured off a real transcript on 2026-08-26, not assumed, because the
+        # whole background branch is dead if the key arrives somewhere else.
         ti = {"command": command} if tool == "Bash" else {"file_path": file_path}
+        if background:
+            ti["run_in_background"] = True
         return {"tool_name": tool, "tool_input": ti, "session_id": sid,
                 "cwd": str(tmp)}
 
@@ -764,6 +790,95 @@ def _cases(check):
         check("exp1-%s %r is %s" % (_tag, _cmd, "provably read-only" if _want
                                     else "watched"),
               M._command_is_read_only(_cmd) == _want)
+
+    # (cd) THE STRUCTURAL HALF, not just the predicate: a `cd`-prefixed read must
+    # stop inheriting dirt, and a `cd`-prefixed WRITE must keep being warned about.
+    # Run through `decide` rather than the predicate alone, because the predicate
+    # answering correctly and the verdict still landing is a real failure mode -
+    # F-P-24's absorb branch is what turns the answer into silence.
+    s = "bw-cd"
+    seed(s)
+    _expect("cd1 `cd <dir> && grep` no longer inherits another writer's file",
+            "silent",
+            payload("Bash", sid=s, command="cd plugins && grep -rn foo ."),
+            dirty=["src/second-session.ts"])
+    s = "bw-cd2"
+    seed(s)
+    _expect("cd2 ...while `cd <dir> && rm` is still warned about", "warn",
+            payload("Bash", sid=s, command="cd plugins && rm -rf src/gone.ts"),
+            dirty=["src/second-session.ts"])
+    for _tag, _cmd, _want in CD_CASES:
+        check("cdp1-%s %r is %s" % (_tag, _cmd, "provably read-only" if _want
+                                    else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
+    # (bg) A DETACHED JOB OF THIS SESSION. `_other_sessions` cannot see it - it skips
+    # `mine` on purpose - so before this the dirt it made landed on whatever ran next.
+    # The unit half first, because the recording rule has three branches and only one
+    # of them is "note it".
+    _bgs = {"bgLaunches": []}
+    check("bg1 a backgrounded writer is recorded",
+          M.record_background_launch(_bgs, {"command": "python3 tools/x.py",
+                                            "run_in_background": True}, 1000.0)
+          and len(_bgs["bgLaunches"]) == 1)
+    # INDEXED THROUGH A SLICE, NOT `[0]`. Written with `[0]` this raised IndexError
+    # under the mutation that stops recording, and a case that RAISES takes the whole
+    # suite down before the later cases run - so the mutation read as survived by the
+    # three cases that never executed. A case must be able to fail.
+    check("bg2 ...by PROGRAM only, never the command text",
+          [r["program"] for r in _bgs["bgLaunches"][:1]] == ["python3"]
+          and "tools/x.py" not in json.dumps(_bgs["bgLaunches"]))
+    # The two directions that must NOT record, so this is not "any Bash call".
+    _fg = {"bgLaunches": []}
+    check("bg3 a FOREGROUND writer is not recorded",
+          M.record_background_launch(_fg, {"command": "python3 tools/x.py"}, 1000.0)
+          is False and _fg["bgLaunches"] == [])
+    _ro = {"bgLaunches": []}
+    check("bg4 a backgrounded READ is not recorded - it cannot write later either",
+          M.record_background_launch(_ro, {"command": "grep -rn x .",
+                                           "run_in_background": True}, 1000.0)
+          is False and _ro["bgLaunches"] == [])
+    check("bg5 the basis is None with nothing recorded",
+          M.background_basis({"bgLaunches": []}, 1000.0) is None)
+    _basis = M.background_basis(_bgs, 1000.0 + 185)
+    check("bg6 ...and names the count, the program and an age when there is one",
+          _basis and "1 background job(s)" in _basis and "python3" in _basis
+          and "3m ago" in _basis)
+    # The cap keeps a long session's state bounded, and keeps the NEWEST.
+    _many = {"bgLaunches": []}
+    for _i in range(M._BG_LAUNCH_CAP + 5):
+        M.record_background_launch(_many, {"command": "prog%d x" % _i,
+                                           "run_in_background": True}, 1000.0 + _i)
+    check("bg7 the launch list is capped and keeps the newest",
+          len(_many["bgLaunches"]) == M._BG_LAUNCH_CAP
+          and [r["program"] for r in _many["bgLaunches"][-1:]]
+          == ["prog%d" % (M._BG_LAUNCH_CAP + 4)])
+
+    # THE STRUCTURAL HALF: the verdict must drop the authorship claim, not go silent.
+    s = "bw-bg"
+    seed(s)
+    _v_bg, _d_bg = M.decide(payload("Bash", sid=s,
+                                    command="python3 tools/prove-gates.py",
+                                    background=True),
+                            cfg=cfg, state_dir=sd, dirty=[])
+    _v_bg2, _d_bg2 = M.decide(payload("Bash", sid=s, command="python3 -c 'x'"),
+                              cfg=cfg, state_dir=sd,
+                              dirty=["src/second-session.ts"])
+    check("bg8 after a background launch, a later command is still WARNED",
+          _v_bg2 == "warn")
+    check("bg9 ...but the authorship claim is dropped and the job is named",
+          "CANNOT say the command wrote them" in _d_bg2
+          and "background job(s)" in _d_bg2)
+    # The other direction: no background launch -> the plain claim comes back. Without
+    # this, deleting the whole feature would leave bg8/bg9 passing on a warn that was
+    # always going to fire.
+    s = "bw-bg2"
+    seed(s)
+    _v_p, _d_p = M.decide(payload("Bash", sid=s, command="python3 -c 'x'"),
+                          cfg=cfg, state_dir=sd, dirty=["src/second-session.ts"])
+    check("bg10 with no background launch the plain authorship claim is made",
+          _v_p == "warn" and "background job(s)" not in _d_p
+          and "modified source file(s)" in _d_p)
 
     # (os) THE STRUCTURAL HALF. A command that is not provably read-only used to
     # inherit EVERY path that appeared since the last snapshot, and this product
