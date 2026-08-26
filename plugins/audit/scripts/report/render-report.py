@@ -95,6 +95,7 @@ import _manifest_rules        # noqa: E402  (the manifest rules, at layer 2)
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
+import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 
@@ -151,6 +152,12 @@ _themes_missing_color_scheme = _theme.themes_missing_color_scheme
 # this file still calls, to hand the ledger to the page.
 load_usage = _report_usage.load_usage
 
+# ...and the test-execution record, on exactly the same footing: an entry point
+# reads the disk and hands the result down, so nothing below this file has to
+# know where a ledger lives. It answers None when the plan points at no run, and
+# the page then renders as it did before any of this existed.
+load_evidence = _evidence_view.load_evidence
+
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that
 # reads what `main()` writes. Aliased so the cases below, which are about
@@ -202,7 +209,7 @@ def _verdict(summary):
 
 # --- rendering ------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False, css=None, show_proposals=True):
+                fragment=False, css=None, show_proposals=True, evidence=None):
     """The HTML report, with this file's gate verdict wired into it.
 
     The document itself is `_report_page.render_html`; the only thing added here
@@ -214,7 +221,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     return _report_page.render_html(manifest, summary, basename, usage,
                                     fragment=fragment, css=css,
                                     verdict=_verdict,
-                                    show_proposals=show_proposals)
+                                    show_proposals=show_proposals,
+                                    evidence=evidence)
 
 
 # --- cli ------------------------------------------------------------------------
@@ -286,6 +294,7 @@ def main(argv):
         findings, warnings = ["internal validator error: %s" % exc], []
     summary = lib.rollup(manifest, findings, warnings)
     usage = load_usage(manifest, manifest_path)
+    evidence = load_evidence(manifest, manifest_path)
 
     # th (F-P-6): resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme
@@ -312,7 +321,8 @@ def main(argv):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
-                                 css=_css, show_proposals=show_proposals))
+                                 css=_css, show_proposals=show_proposals,
+                                 evidence=evidence))
         written.append(p)
     if fmt == "artifact":
         # A separate name, never the .html one. The standalone file is what people
@@ -322,12 +332,13 @@ def main(argv):
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
                                  fragment=True, css=_css,
-                                 show_proposals=show_proposals))
+                                 show_proposals=show_proposals,
+                                 evidence=evidence))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_md(manifest, summary, usage))
+            fh.write(render_md(manifest, summary, usage, evidence))
         written.append(p)
     for p in written:
         print("wrote %s" % p)

@@ -117,3 +117,21 @@
     refresh();
   });
 
+  // test-gate chips (inside the More filters panel) — what a task's last
+  // recorded run SAID.
+  wireChips(tevBar, 'data-tev', (val, host, attr) => {
+    tevFilter = (tevFilter === val) ? '' : val;
+    highlight(host, attr, tevFilter);
+    refresh();
+  });
+
+  // ...and the observation chips beside them, on their OWN axis. A gate that
+  // failed and also rewrote the tree is two facts; one control expressing only
+  // their combination would need a name for every pairing, and would leave
+  // "which gates rewrote the tree" unaskable.
+  wireChips(tevFlagBar, 'data-tevf', (val, host, attr) => {
+    tevFlag = (tevFlag === val) ? '' : val;
+    highlight(host, attr, tevFlag);
+    refresh();
+  });
+

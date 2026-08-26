@@ -151,6 +151,41 @@ def _cases(check):
           "## Ready now" not in M.render_md(manifest, _quiet))
 
 
+    # --- tv: the twin gains ONE column and stops there ------------------------
+    # THE TWIN DOES NOT MIRROR THE HTML AND MUST NOT START. It is a data table
+    # read by machines, so what the whole test-evidence feature is allowed to add
+    # here is one machine value per task - the same key the HTML filters by, so
+    # the two surfaces cannot end up with two vocabularies.
+    _ev = {"tasks": {"P2.1": {"key": "no-checks", "label": "No checks ran"},
+                     "P1.1": {"key": "passed", "label": "Passed"}}}
+    _tev = M.render_md(manifest, summary, None, _ev)
+    check("md13 the column carries the MACHINE spelling, never the badge words "
+          "- a reader diffing two renders wants the value, not the sentence",
+          "| id | title | status | model | risk | commit | done | tests | ADO |"
+          in _tev
+          and "| no-checks |" in _tev and "| passed |" in _tev
+          and "No checks ran" not in _tev)
+    check("md14 SECOND-DIRECTION CASE: with no model the table is exactly the "
+          "one it always was - same header, same separator, no cell. This is "
+          "the case that fails if the column ever becomes unconditional, which "
+          "would move every committed twin in the repository",
+          "| id | title | status | model | risk | commit | done | ADO |"
+          in M.render_md(manifest, summary)
+          and "| tests |" not in M.render_md(manifest, summary)
+          and M.render_md(manifest, summary) != _tev)
+    # NOT `{"tasks": {}}`: an empty index is falsy, so that fixture renders no
+    # column at all and every clause below would pass without the branch under
+    # test ever running. The model has to hold a view for ONE of the two tasks.
+    _partial = M.render_md(manifest, summary, None,
+                           {"tasks": {"P1.1": {"key": "passed"}}})
+    check("md15 a task the model has no view for renders the em dash this table "
+          "already uses for 'nothing recorded', not an empty cell",
+          "| tests |" in _partial
+          and "| passed |" in _partial
+          and [ln for ln in _partial.splitlines()
+               if ln.startswith("| P2.1 ")][0].endswith("| — | — |"))
+
+
 def _selftest():
     return _harness.run(_cases)
 

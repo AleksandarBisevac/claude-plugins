@@ -26,3 +26,50 @@
 .rchip[data-risk="med"]{color:var(--rk-med-fg)}
 .rchip[data-risk="high"]{color:var(--rk-high-fg)}
 
+
+/* ---- the test gate's verdict, and what the run also noticed --------------
+   tv: the badge is a `.chip` and NOT a component of its own. A tinted pill
+   reporting a value is the grammar this sheet already has for that, and a second
+   one would put two kinds of "here is a value" side by side in one row. Only the
+   hue is new, and it arrives the way `data-status` already delivers one — which
+   is why these rules declare tokens and nothing else.
+   SCOPED TO THE MARK, deliberately: `data-tev` also rides the task ROW so the
+   filter can compare it in one attribute read, and an unscoped selector would
+   hand every descendant of that row a `--st` it never asked for. */
+:where(.chip,.tevn)[data-tev="passed"]{--st:var(--st-done);--st-ink:var(--st-done-ink)}
+:where(.chip,.tevn)[data-tev="failed"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
+/* Amber is "this is not a verdict", and it covers four states that are all
+   exit 0 or no exit at all: nothing ran, the run was killed, the runner never
+   started, and the plan points at a run this checkout does not hold. None of
+   them is a failing test and none of them can sign anything off. */
+:where(.chip,.tevn)[data-tev="no-checks"],
+:where(.chip,.tevn)[data-tev="timed-out"],
+:where(.chip,.tevn)[data-tev="could-not-run"],
+:where(.chip,.tevn)[data-tev="dangling"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
+:where(.chip,.tevn)[data-tev="cancelled"]{--st:var(--st-cancelled);
+  --st-ink:var(--st-cancelled-ink)}
+/* `empty-gate`, `no-evidence`, `no-gate` and any word this build does not know
+   are left to the `.chip` default, which is the pending grey. That is not an
+   omission: absence of evidence is not a colour, and tinting it would be the
+   report taking a position the plan does not support. */
+
+/* An observation is NOT a status, so it is not a pill. A gate can fail and also
+   rewrite the tree, and drawing the second as another pill beside the first
+   reads as two verdicts — which is exactly the collapse the renderer refuses. */
+.tevf{display:inline-block;margin-left:var(--sp-0);font-size:.72rem;font-weight:600;
+  letter-spacing:.02em;color:var(--muted);white-space:nowrap}
+/* Two of them are things that HAPPENED and three are things nobody could
+   establish. The first pair earns the warning ink; an unknown stays muted,
+   because "we could not look" is not a finding. */
+.tevf[data-tevf="tree-mutated"],
+.tevf[data-tevf="no-overlap"]{color:var(--st-prog-ink)}
+/* The count in a phase row's rollup: coloured text, no fill. A row already
+   carries a status pill and a progress bar, and a third filled shape on it would
+   compete with the phase's own state for the eye. */
+.tevn{color:var(--st-ink,var(--st-pending-ink));font-weight:600;white-space:nowrap}
+.tevn + .tevn{margin-left:var(--sp-1)}
+/* The phase row's two evidence marks. They are LABELLED APART in the markup —
+   "sign-off" and "tasks" — because they are two measurements, and this only has
+   to keep them from running together. */
+.ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);white-space:nowrap}
+.tevcell{line-height:1.8}

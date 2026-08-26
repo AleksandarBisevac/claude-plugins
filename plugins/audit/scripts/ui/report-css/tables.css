@@ -66,6 +66,11 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
   padding:.6rem .75rem .7rem 2.4rem}
 .dtwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);
   gap:.5rem 2rem}
+/* tv: a third group — the test-gate record — when the plan points at any run.
+   `:where()` keeps this at the same specificity as the rule above it, so the
+   single-column rule below still wins on a narrow screen by source order alone
+   and does not need a copy of the modifier to reach it. */
+.dtwrap:where(.dt3){grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.3fr)}
 @media (max-width:52rem){.dtwrap{grid-template-columns:minmax(0,1fr)}}
 .dtcol h4{margin:0 0 .3rem;font-size:var(--t-label);text-transform:uppercase;
   letter-spacing:.08em;color:var(--muted);font-weight:700}
@@ -87,6 +92,16 @@ tr.taskdetail>td{background:var(--surface-2);border-bottom:1px solid var(--borde
   padding:0 .15rem 0 1.5rem;
   background:linear-gradient(90deg,transparent,var(--surface-2) 62%)}
 .dtmore{margin-top:.35rem}
+/* tv: the earlier runs, folded away. `<details>` and not a scripted panel, for
+   the reason the parked proposals below already use one — disclosure is
+   something the platform does, so the record opens with scripting off, and the
+   print sheet already forces every `details.more` open, which means the PDF
+   carries the whole run history without a line of script.
+   The Usage section's `details.more` wears a rule with a top border and a wide
+   margin, which is right for a section divider and wrong inside a drawer row.
+   Descendant-scoped so it wins wherever the two sheets end up ordered. */
+.dtcol details.more{margin-top:var(--sp-1);border-top:none;padding-top:0}
+.dtcol details.more>summary{font-size:.76rem}
 /* Parked proposals (F-P-32). `<details>` rather than a scripted row: disclosure is
    something the platform already does, so the payload opens with scripting off and
    in print, and report.js gains nothing to index. The meta rows reuse `.dt-*` from

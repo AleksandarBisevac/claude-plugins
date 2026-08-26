@@ -66,6 +66,10 @@
     // always matched whole.
     put('a', areaFilter.join(' '));
     put('m', modelFilter);
+    // Two keys, never one. The codec splits on '&' and the FIRST '=', so `tev`
+    // and `tevf` are matched whole and a link can carry either axis alone.
+    put('tev', tevFilter);
+    put('tevf', tevFlag);
     put('from', dFrom);
     put('to', dTo);
     put('au', auFilter);
@@ -113,7 +117,8 @@
     // A phase none of whose tasks survive is not a phase that matches: keeping it
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
-    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== '';
+    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== ''
+                  || tevFilter !== '' || tevFlag !== '';
     const anyFilter = narrows || term !== '' || phaseStatus !== ''
                     || areaFilter.length > 0;
     let visP = 0, visT = 0, totT = 0;
@@ -134,6 +139,11 @@
         t.__hit = (pText || tText)
                   && (!tf || t.getAttribute('data-status') === tf)
                   && (!modelFilter || t.getAttribute('data-model') === modelFilter)
+                  // Two clauses and not one: the status a run reached and the
+                  // observations it made are separate questions, so selecting a
+                  // status must not silently narrow by an observation as well.
+                  && (!tevFilter || t.getAttribute('data-tev') === tevFilter)
+                  && tevFlagOk(t)
                   && dateOk(t);
         if (t.__hit) nMatch++;
       });
@@ -224,7 +234,8 @@
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
       const nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
-                    + (areaFilter.length ? 1 : 0);
+                    + (areaFilter.length ? 1 : 0)
+                    + (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0);
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {

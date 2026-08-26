@@ -505,6 +505,128 @@ def _cases(check):
           and M.any_phase_pinned({}) is False)
 
 
+    # --- tv: the test-gate vocabulary, and the derivation behind the badge ----
+    # THE BADGE IS THE STATUS AND THE MARKERS ARE NOT. Every case below is a
+    # PAIR over one input: change exactly one field and assert the answer moves,
+    # because the failure this whole area guards against is two states rendering
+    # alike.
+    check("tv1 a pointer with no runId points at nothing, so it reads as no "
+          "block at all - and one WITH a runId reads as a pointer, so this is "
+          "not a function that always answers None",
+          M.tev_pointer({"testEvidence": {"status": "passed"}}) is None
+          and M.tev_pointer({"testEvidence": {"runId": "R"}}) == {"runId": "R"}
+          and M.tev_pointer({}) is None
+          and M.tev_pointer("not-a-dict") is None)
+    check("tv2 a gate is configured when the TASK declares one, when its PHASE "
+          "declares one, and not when neither does - absent and empty are one "
+          "answer, exactly as run-test-gate.gate_of takes them",
+          M.tev_configured({"tests": {"gate": ["x"]}}, {}) is True
+          and M.tev_configured({}, {"testGate": ["x"]}) is True
+          and M.tev_configured({"tests": {"gate": []}}, {"testGate": []}) is False
+          and M.tev_configured({}, {}) is False)
+
+    # `ran` / `treeMutated` / `coverage`: one row, one field moved at a time.
+    def _row(**over):
+        obs = {"ranTotal": 3, "treeMutated": [], "coverage": ["a.py"]}
+        obs.update(over)
+        return {"status": "passed", "observations": obs,
+                "treeMutated": obs["treeMutated"]}
+
+    check("tv3 treeMutated None is 'tree unknown' and treeMutated [] is NO "
+          "marker at all - a truthy test would make these one answer, which is "
+          "the merge run-test-gate refuses in its own renderer",
+          ("tree-unknown", "tree unknown") in M.tev_flags(_row(treeMutated=None))
+          and not [k for k, _w in M.tev_flags(_row(treeMutated=[]))
+                   if k.startswith("tree-")])
+    check("tv3b ...and a populated list is the third answer",
+          ("tree-mutated", "tree mutated")
+          in M.tev_flags(_row(treeMutated=["a.py"])))
+    check("tv4 coverage None is 'coverage unknown' and coverage [] is 'no "
+          "overlap' - the question nobody could ask against the question "
+          "answered no",
+          ("coverage-unknown", "coverage unknown")
+          in M.tev_flags(_row(coverage=None))
+          and ("no-overlap", "no overlap") in M.tev_flags(_row(coverage=[]))
+          and not [k for k, _w in M.tev_flags(_row(coverage=["a.py"]))
+                   if k in ("no-overlap", "coverage-unknown")])
+    check("tv5 ranTotal None earns 'checks unknown' and a POSITIVE ZERO does "
+          "not - zero is a count the runner really reported and null is no "
+          "count at all",
+          ("checks-unknown", "checks unknown") in M.tev_flags(_row(ranTotal=None))
+          and "checks-unknown" not in [k for k, _w in M.tev_flags(_row(ranTotal=0))]
+          and "checks-unknown" not in [k for k, _w in M.tev_flags(_row(ranTotal=3))])
+
+    _ptr = {"runId": "R", "status": "passed", "at": "t"}
+    check("tv6 the three no-run states are three keys, three sentences and "
+          "three different sets of words - never one grey blob",
+          [M.tev_view(None, None, True)["key"],
+           M.tev_view(None, None, False)["key"],
+           M.tev_view(_ptr, None, True)["key"]]
+          == ["no-evidence", "no-gate", "dangling"]
+          and len({M.tev_view(None, None, True)["why"],
+                   M.tev_view(None, None, False)["why"],
+                   M.tev_view(_ptr, None, True)["why"]}) == 3)
+    check("tv7 the LEDGER decides the verdict, not the cached pointer: a "
+          "pointer saying passed over a row saying failed renders Failed",
+          M.tev_view({"runId": "R", "status": "passed"},
+                     {"status": "failed"}, True)["key"] == "failed"
+          and M.tev_view({"runId": "R", "status": "failed"},
+                         {"status": "passed"}, True)["key"] == "passed")
+    check("tv8 a word this build does not know is NAMED, never folded into "
+          "failed - the schema promises the enum may gain members",
+          M.tev_view(_ptr, {"status": "sandbagged"}, True)["key"] == "sandbagged"
+          and M.tev_view(_ptr, {"status": "sandbagged"}, True)["known"] is False
+          and M.tev_view(_ptr, {"status": "failed"}, True)["known"] is True)
+    check("tv8b ...and it still renders words a person can read rather than "
+          "an empty badge",
+          M.tev_view(_ptr, {"status": "sandbagged"}, True)["label"] == "Sandbagged"
+          and M.tev_view(_ptr, {"status": ""}, True)["label"]
+          == "Unrecognised status")
+    check("tv9 the badge carries the STATUS and the markers are rendered "
+          "beside it, so a run that failed AND rewrote the tree says both",
+          M._tev_cell(M.tev_view(_ptr, _row(status="failed", treeMutated=["a"]),
+                                 True)).count("<span") == 2
+          and 'data-tev="failed"' in M._tev_cell(
+              M.tev_view(_ptr, dict(_row(treeMutated=["a"]), status="failed"), True))
+          and 'data-tevf="tree-mutated"' in M._tev_cell(
+              M.tev_view(_ptr, dict(_row(treeMutated=["a"]), status="failed"), True)))
+    check("tv9b ...and a clean run carries the badge alone, so tv9 is counting "
+          "a marker and not counting spans",
+          M._tev_cell(M.tev_view(_ptr, _row(), True)).count("<span") == 1)
+    check("tv10 the rollup counts in vocabulary order with an unknown word "
+          "last, rather than alphabetically - `cancelled` above `passed` reads "
+          "as a ranking nobody chose",
+          [k for k, _l, _n in M.tev_rollup(
+              [{"key": "no-gate", "flags": []}, {"key": "zz", "flags": []},
+               {"key": "failed", "flags": []}, {"key": "passed", "flags": []},
+               {"key": "passed", "flags": []}])]
+          == ["passed", "failed", "no-gate", "zz"]
+          and M.tev_rollup([{"key": "passed", "flags": []},
+                            {"key": "passed", "flags": []}])[0][2] == 2)
+    check("tv11 the row's two filter axes are two attributes, and a task with "
+          "no observations carries only the first",
+          M._filter_attrs({}, M.tev_view(_ptr, _row(treeMutated=["a"]), True))
+          == ' data-tev="passed" data-tev-flags="tree-mutated"'
+          and M._filter_attrs({}, M.tev_view(_ptr, _row(), True))
+          == ' data-tev="passed"'
+          and M._filter_attrs({}) == "")
+    check("tv12 a bug borrows its fixing task's view and says so; with no task "
+          "id, and with an id this plan does not carry, it says two different "
+          "things and neither of them is a verdict",
+          M.tev_bug_view({"taskId": "T1"}, {"T1": {"key": "failed"}})[1] == "T1"
+          and M.tev_bug_view({"taskId": None}, {})[0] is None
+          and M.tev_bug_view({"taskId": "T9"}, {})[1] != M.tev_bug_view(
+              {"taskId": None}, {})[1])
+    check("tv13 the chip factory humanises out of the table it is HANDED, so "
+          "the evidence chips read as English while the manifest's own chips "
+          "are untouched by the new argument",
+          ">No checks ran</button>" in M._chip_buttons(
+              ["no-checks"], "data-tev", "fchip", mapping=M.TEV_LABELS)
+          and M._chip_buttons(["done"], "data-ps", "fchip")
+          == M._chip_buttons(["done"], "data-ps", "fchip", mapping=None))
+
+
+
 def _selftest():
     return _harness.run(_cases)
 

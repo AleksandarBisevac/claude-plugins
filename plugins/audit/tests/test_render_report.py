@@ -1601,6 +1601,83 @@ def _cases(check):
           _leftover == set(), repr(sorted(_leftover)))
 
 
+    # --- tv: the test gate reaches the page, and stays out of a plan without it
+    # THE NEGATIVE HALF FIRST, because it is what keeps every committed artifact
+    # equal to a fresh render. This suite's fixture points at no recorded run, so
+    # the whole feature must be absent from its markup - and the STYLE block has
+    # to come out before asking, because `data-tev` and `dt3` are written in the
+    # stylesheet, which ships inline in every document. A negative over the wrong
+    # region is F21, and this one would have been asserting that the CSS exists.
+    _nostyle = re.sub(r"(?is)<style\b.*?</style\s*>", "", _markup(html_out))
+    check("tv-r1 a plan that points at no recorded run renders none of the test "
+          "gate: no attribute, no column, no chip row, no third drawer group",
+          0 < len(_nostyle) < len(html_out)
+          and "data-tev" not in _nostyle and "audit-tev" not in _nostyle
+          and "test evidence" not in _nostyle and "dt3" not in _nostyle
+          and "| tests |" not in md_out)
+    # The filter. TWO AXES, and the point of these is that they are two - a gate
+    # can fail AND rewrite the tree, so a reader hunting rewrites cannot get
+    # there through the status axis at all.
+    _rbody = M._SCRIPT[M._SCRIPT.index("function refresh()"):]
+    _rbody = _rbody[:_rbody.index("\n  function ", 10)] \
+        if "\n  function " in _rbody[10:] else _rbody
+    check("tv-r2 the one filter pass gates on the status axis and on the "
+          "observation axis SEPARATELY, over two attributes",
+          "t.getAttribute('data-tev') === tevFilter" in _rbody
+          and "tevFlagOk(t)" in _rbody
+          and "data-tev-flags" not in _rbody)
+    check("tv-r2b ...and it adds no DOM query doing it - this body runs over "
+          "every task in the plan on every keystroke",
+          "querySelectorAll" not in _rbody and "querySelector(" not in _rbody)
+    check("tv-r3 the two axes are two independent state variables, so neither "
+          "control can clear the other",
+          "let tevFilter = ''" in M._SCRIPT and "let tevFlag = ''" in M._SCRIPT
+          and "tevFilter = (tevFilter === val) ? '' : val;" in M._SCRIPT
+          and "tevFlag = (tevFlag === val) ? '' : val;" in M._SCRIPT)
+    check("tv-r4 an observation is matched as a whole word in the space-joined "
+          "list, not as a substring of a longer marker name",
+          "(' ' + (t.getAttribute('data-tev-flags') || '') + ' ')" in M._SCRIPT
+          and ".indexOf(' ' + tevFlag + ' ')" in M._SCRIPT)
+    check("tv-r5 both axes travel in the link under distinct keys, and both "
+          "come back - a filtered view somebody sends has to arrive filtered",
+          "put('tev', tevFilter);" in M._SCRIPT
+          and "put('tevf', tevFlag);" in M._SCRIPT
+          and "if (HASH.tev) {" in M._SCRIPT and "if (HASH.tevf) {" in M._SCRIPT)
+    check("tv-r6 ...and both are counted by the badge on the folded filter "
+          "panel, so a filter nobody can see still says it is on",
+          "+ (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0)" in M._SCRIPT)
+    # The stylesheet. The badge is a `.chip` and the observation deliberately is
+    # not: two pills side by side read as two verdicts.
+    check("tv-r7 the verdict reuses the one pill grammar this sheet already "
+          "has, and only the hue is new",
+          ':where(.chip,.tevn)[data-tev="passed"]{--st:var(--st-done);'
+          "--st-ink:var(--st-done-ink)}" in M._CSS
+          and ':where(.chip,.tevn)[data-tev="failed"]{--st:var(--st-blocked);'
+          "--st-ink:var(--st-blocked-ink)}" in M._CSS)
+    check("tv-r8 the four states that are NOT a verdict share the amber the "
+          "in-progress status already uses - nothing ran, killed, never "
+          "started, and a pointer at a run this checkout does not hold",
+          all(('[data-tev="%s"]' % k) in M._CSS
+              for k in ("no-checks", "timed-out", "could-not-run", "dangling")))
+    check("tv-r9 ...and the three ways there is NO run are left to the pending "
+          "default. Absence of evidence is not a colour, and tinting it would "
+          "be the report taking a position the plan does not support",
+          not any(('[data-tev="%s"]' % k) in M._CSS
+                  for k in ("no-evidence", "no-gate", "empty-gate")))
+    check("tv-r10 an observation is not a pill: it has its own class, its own "
+          "ink, and no fill to compete with the verdict beside it",
+          ".tevf{display:inline-block" in M._CSS
+          and '.tevf[data-tevf="tree-mutated"],' in M._CSS
+          and ".tevf{" in M._CSS and "background:" not in
+          M._CSS[M._CSS.index(".tevf{"):M._CSS.index(".tevf{") + 200])
+    check("tv-r11 the drawer's third group gets a third grid track at the same "
+          "specificity as the base rule, so the narrow-screen rule below still "
+          "collapses it to one column by source order alone",
+          ".dtwrap:where(.dt3){grid-template-columns:" in M._CSS
+          and M._CSS.index(".dtwrap:where(.dt3)")
+          < M._CSS.index("@media (max-width:52rem){.dtwrap{"))
+
+
 def _selftest():
     return _harness.run(_cases)
 

@@ -17,7 +17,7 @@ lint over a differently-ordered join would clear a palette nobody serves.
 | `shell.css` | Reset, scroll behaviour, the app shell, and how its cards compose as the screen grows. |
 | `summary.css` | The verdict hero, the summary card and the animated progress bar. |
 | `controls.css` | Toolbar, buttons, filter chips, and the More-filters disclosure. |
-| `badges.css` | Status and severity badges. |
+| `badges.css` | Status and severity badges, and the test gate's verdict — which reuses the same pill and adds only a hue, while the observations beside it are deliberately not pills. |
 | `tables.css` | The phase and bug tables. |
 | `gate-rail.css` | The gate rail and its signature. |
 | `empty-state.css` | What the page shows when a filter matches nothing. |

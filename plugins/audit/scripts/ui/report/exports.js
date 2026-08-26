@@ -455,6 +455,14 @@
     modelFilter = HASH.m;
     if (modelBar) highlight(modelBar, 'data-m', modelFilter);
   }
+  if (HASH.tev) {
+    tevFilter = HASH.tev;
+    if (tevBar) highlight(tevBar, 'data-tev', tevFilter);
+  }
+  if (HASH.tevf) {
+    tevFlag = HASH.tevf;
+    if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag);
+  }
   if (HASH.a) {
     areaFilter = HASH.a.split(/\s+/).filter(Boolean);
     paintAreas();

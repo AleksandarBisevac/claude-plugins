@@ -75,14 +75,23 @@ _usage_md = _usage_markdown._usage_md
 
 
 # --- render_md ------------------------------------------------------------------
-def render_md(manifest, summary, usage=None):
+def render_md(manifest, summary, usage=None, evidence=None):
     """Markdown twin of render_html. Only Markdown metacharacters (pipes,
     newlines) are escaped here — raw HTML inside manifest strings is passed
     through and relies on the Markdown renderer (e.g. GitHub) to sanitise it.
     render_html is the hardened, self-contained output; prefer it when the
-    source is untrusted and no sanitising renderer sits in front."""
+    source is untrusted and no sanitising renderer sits in front.
+
+    THE TWIN DOES NOT MIRROR THE HTML AND MUST NOT START. It is a data table read
+    by machines and diffed against earlier renders, so the whole evidence feature
+    reaches it as ONE column carrying ONE machine value - the same `data-tev` key
+    the HTML filters by, so the two surfaces speak one vocabulary. The badge
+    words, the observation markers, the steps and the history stay where a person
+    reads them. The column appears only where the plan points at a recorded run,
+    which is what keeps an older plan's twin byte-identical."""
     meta = manifest.get("meta") or {}
     now = _report_html.stamp_time()
+    tviews = (evidence or {}).get("tasks")
 
     def cell(v):
         return str(v if v is not None else "—").replace("|", "\\|").replace(
@@ -108,8 +117,9 @@ def render_md(manifest, summary, usage=None):
                       cell(psum["status"]), psum["done"], psum["total"]))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
-        out += ["", "| id | title | status | model | risk | commit | done | ADO |",
-                "|---|---|---|---|---|---|---|---|"]
+        out += ["", "| id | title | status | model | risk | commit | done |%s ADO |"
+                % (" tests |" if tviews else ""),
+                "|---|---|---|---|---|---|---|%s---|" % ("---|" if tviews else "")]
         for t in ph.get("tasks") or []:
             if not isinstance(t, dict):
                 continue
@@ -117,10 +127,15 @@ def render_md(manifest, summary, usage=None):
             ado_txt = "#%s" % ado["id"] if ado and ado.get("id") is not None else "—"
             done_txt = _short_date(t.get("completedAt")) or (
                 "started " + _short_date(t.get("startedAt")) if t.get("startedAt") else "—")
-            out.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            tev = ""
+            if tviews:
+                view = tviews.get(str(t.get("id")))
+                tev = " %s |" % cell(view["key"] if view else None)
+            out.append("| %s | %s | %s | %s | %s | %s | %s |%s %s |" % (
                 cell(t.get("id")), cell(t.get("title")), cell(t.get("status")),
                 cell(t.get("model") or "—"), cell(t.get("risk") or "—"),
-                cell((t.get("commit") or "—")[:9]), cell(done_txt), cell(ado_txt)))
+                cell((t.get("commit") or "—")[:9]), cell(done_txt), tev,
+                cell(ado_txt)))
         out.append("")
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if bugs:

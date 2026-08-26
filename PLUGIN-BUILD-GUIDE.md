@@ -178,6 +178,7 @@ claude-plugins/                           # this repo (personal, public)
           _usage_markdown.py              # the Usage section's Markdown twin
           _report_page.py                 # the report as a whole document: vocab, table, render_html
           _report_md.py                   # the report's Markdown twin (render_md), embedded in the page
+          _evidence_view.py               # the evidence-ledger read - the test-gate column's only I/O
         panel/                            # the panel domain: the server, the page it assembles, the read and write sides
           panel-server.py                 # localhost control-panel web UI (config + composition)
           _panel_ui.py                    # reads panel.html + the ordered parts under scripts/ui/panel{,-css}/, assembles UI_HTML
@@ -293,6 +294,7 @@ L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
+  _evidence_view -> _evidence_io, _journal_io, _output, _report_html
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -347,7 +349,7 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  render-report -> _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
@@ -2585,6 +2587,20 @@ as nothing at all rather than as an empty frame. Deliberately not taken from `au
 carried through a payload nobody reads). The comparison window is anchored to the **ledger's own
 last day**, not the wall clock, so a committed example report is byte-stable across re-renders
 and a shipped fixture cannot rot into a staleness warning on its own.
+
+### `plugins/audit/scripts/report/_evidence_view.py`
+The test-gate column's **only** read (layer 3): `load_evidence()` turns the evidence ledger and
+the plan's `testEvidence` pointers into one view per task and per phase, and returns `None` when
+the plan points at no recorded run — the badge column is then not earned, the drawer grows no
+third group, and a manifest written before the field existed renders byte for byte as it did.
+**The ledger is the truth and the pointer is a cache**, so every verdict rendered is read off the
+row the pointer names; a pointer naming a run this checkout does not hold is its own state
+(`Pointer without evidence`) rather than a silence. It hands `_evidence_io` the manifest actually
+being rendered rather than the one the project config names, for `find_ledger_dir`'s reason one
+directory over: resolving off the config would attribute one plan's runs to another plan's tasks.
+The vocabulary and the view derivation itself live in `_report_html.py` — the badge is the STATUS
+and the observations are separate marks beside it, because a gate can fail *and* rewrite the tree
+and one word cannot carry both.
 
 ### `plugins/audit/scripts/report/_usage_overview.py`
 What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric

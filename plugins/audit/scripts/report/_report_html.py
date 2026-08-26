@@ -259,7 +259,7 @@ def _bug_view(b, task_by_id):
     return status, "—"
 
 
-def _chip_buttons(statuses, attr, cls, humanize=True, titles=None):
+def _chip_buttons(statuses, attr, cls, humanize=True, titles=None, mapping=None):
     """Toggle buttons for a set of values — machine value in `attr`, words shown.
 
     `aria-pressed` is what makes a toggle's state readable; without it "which
@@ -275,13 +275,19 @@ def _chip_buttons(statuses, attr, cls, humanize=True, titles=None):
     it to carry the advisory owner. A value without an entry emits EXACTLY the
     bytes it always did: the untitled shape is pinned by name in more than one
     selftest, and an empty title attribute would be a different chip.
+
+    `mapping` is `_ui_theme.label`'s own second argument, forwarded rather than
+    re-expressed: the test-evidence chips are humanised out of a vocabulary that
+    is not the manifest's status set, and `label()` already takes the table to
+    read. Omitted it is `None`, which is what `label()` gets today — so every
+    existing caller emits the same bytes it always has.
     """
     return "".join(
         '<button type="button" class="%s" %s="%s"%s aria-pressed="false">%s</button>'
         % (cls, attr, e(s),
            (' title="%s"' % e((titles or {}).get(s))) if (titles or {}).get(s)
            else "",
-           e(_theme.label(s) if humanize else s))
+           e(_theme.label(s, mapping) if humanize else s))
         for s in statuses)
 
 
@@ -373,7 +379,446 @@ def _commit_cell(task):
             % (e(sha[:9]), e(sha), e(sha)))
 
 
-def _detail_row(task, phase, owners, ncol, seg, pid, workers=None):
+# --- test evidence: the status, and the observations BESIDE it ----------------
+# A BADGE IS THE STATUS AND NOTHING ELSE. `run-test-gate.render` states the rule
+# in its own comments and this is the reading half of it: a gate can fail AND
+# rewrite the tree, and a single word cannot carry both - the reader who fixes
+# the failure would meet the rewrite afterwards, in a commit. So the badge below
+# says what the run ANSWERED, and every observation the run made is a separate
+# mark rendered next to it. Two facts, two marks, never one.
+#
+# The key is the manifest's, spelled here rather than imported: `_evidence_io`
+# owns the WRITING of it and is a layer-mate of this file, which may not be
+# imported sideways. The schema is what both sides read.
+POINTER_KEY = "testEvidence"
+
+# The words a recorded run may answer with - the `testEvidence.status` enum the
+# plan schema declares, spelled out rather than read: this file walks no schema,
+# and `_manifest_vocab`'s own case counts the files that do. Held as a tuple as
+# well as in the label table because the table also holds the three NO-RUN states
+# below, and "is this a status a run reached" is a different question from "is
+# this a word we can render".
+TEV_RUN_STATUSES = ("passed", "failed", "no-checks", "timed-out", "cancelled",
+                    "could-not-run", "empty-gate")
+
+# ...and the three ways a subject has no run to show. THREE SENTENCES, NEVER ONE
+# GREY BLOB: "nothing here can be measured" (no gate is declared at either
+# level), "it can be and never was" (a gate is declared and no run is recorded)
+# and "the plan points at a run this checkout does not hold" are three different
+# states with three different repairs, and rendering them alike would tell a
+# reader to go looking in the wrong place twice out of three times.
+TEV_LABELS = {
+    "passed": "Passed",
+    "failed": "Failed",
+    "no-checks": "No checks ran",
+    "timed-out": "Timed out",
+    "cancelled": "Cancelled",
+    "could-not-run": "Could not run",
+    "empty-gate": "Empty gate",
+    "no-evidence": "No evidence",
+    "no-gate": "No gate configured",
+    "dangling": "Pointer without evidence",
+}
+
+# The observations, which are NOT statuses. Each one is a thing the run noticed
+# about itself; a badge answers "what did it say", these answer "and what else is
+# true about the run that said it".
+TEV_FLAG_LABELS = {
+    "tree-mutated": "tree mutated",
+    "tree-unknown": "tree unknown",
+    "no-overlap": "no overlap",
+    "coverage-unknown": "coverage unknown",
+    "checks-unknown": "checks unknown",
+}
+
+# The order a phase's task rollup counts in: the two verdicts, then the ways a
+# run answered nothing, then the ways there is no run. A dict cannot order
+# itself and sorting alphabetically would put "cancelled" above "passed", which
+# reads as a ranking nobody chose.
+TEV_ORDER = ("passed", "failed", "no-checks", "timed-out", "cancelled",
+             "could-not-run", "empty-gate", "dangling", "no-evidence", "no-gate")
+
+_TEV_WHY = {
+    "no-gate": "this task declares no tests.gate and its phase declares no "
+               "testGate, so no gate would run for it",
+    "no-evidence": "a gate is configured for this task and no run has been "
+                   "recorded against it - absent evidence is not a failure",
+    "dangling": "the plan points at a run this checkout's evidence ledger does "
+                "not carry",
+}
+
+
+def tev_pointer(holder):
+    """The `testEvidence` block a task or a phase carries, or None.
+
+    ABSENT MEANS 'NO RUN WAS RECORDED', NEVER 'FAILED'. The schema says so at
+    length and every surface owes the reader the same reading: a manifest written
+    before the field existed, a task nobody has run, and a block somebody deleted
+    are one state.
+
+    A block with no `runId` points at nothing, so it is read as no block at all -
+    the same reading `_doctor_completions.check_evidence_pointers` takes of the
+    same field, rather than a second opinion about what half a pointer means.
+    """
+    block = holder.get(POINTER_KEY) if isinstance(holder, dict) else None
+    return block if isinstance(block, dict) and block.get("runId") else None
+
+
+def tev_configured(task, phase):
+    """Whether ANY gate would run for this task - its own, or its phase's.
+
+    `run-test-gate.gate_of` is the rule and this is its reading half, taking the
+    same two declarations in the same order: a task's `tests.gate` when it has
+    one, else the phase's `testGate`. ABSENT AND EMPTY ARE ONE ANSWER there, so
+    they are one answer here - otherwise "declares no gate" would mean one thing
+    to the runner and another to the report.
+    """
+    task = task if isinstance(task, dict) else {}
+    phase = phase if isinstance(phase, dict) else {}
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    for entries in (tests.get("gate"), phase.get("testGate")):
+        if isinstance(entries, list) and [x for x in entries if x]:
+            return True
+    return False
+
+
+def tev_flags(row):
+    """The observation markers a recorded run earns: [(key, words), ...].
+
+    THREE-VALUED, EVERY FIELD, AND COMPARED AGAINST `None` FIRST. A truthy test
+    merges "nobody could look" into "nothing was found" - `None` into `[]` - and
+    that merge is the defect `run-test-gate` refuses in its own renderer. Written
+    as an explicit `is None` arm ahead of the empty arm so the two cannot collapse
+    into one branch later by accident.
+
+    `observations` is where the runner puts them and the top-level `treeMutated`
+    is the copy `_evidence_io` keeps for a reader that never opens it; the block
+    WINS when it carries the key, including when it carries it as `None`.
+    """
+    row = row if isinstance(row, dict) else {}
+    obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
+    out = []
+    mutated = obs.get("treeMutated", row.get("treeMutated"))
+    if mutated is None:
+        out.append("tree-unknown")
+    elif mutated:
+        out.append("tree-mutated")
+    coverage = obs.get("coverage")
+    if coverage is None:
+        out.append("coverage-unknown")
+    elif not coverage:
+        out.append("no-overlap")
+    # A POSITIVE ZERO IS NOT A NULL. `ranTotal is None` means this runner does not
+    # report a count; `0` means it reported that nothing ran, which is the status
+    # `no-checks` and not a marker. Printing "0 checks" for a null is the reading
+    # this arm exists to make impossible.
+    if obs.get("ranTotal") is None:
+        out.append("checks-unknown")
+    return [(k, TEV_FLAG_LABELS[k]) for k in out]
+
+
+def tev_view(pointer, row, configured):
+    """What one subject's test evidence says: one status, and the marks beside it.
+
+    `pointer` is the manifest's cached block or None, `row` the ledger row that
+    the pointer's `runId` names or None, `configured` whether any gate would run.
+
+    THE LEDGER IS THE SOURCE OF TRUTH AND THE POINTER IS A CACHE, so the word
+    rendered is the ROW's. The pointer's own `status` is never read for the badge:
+    a cache that disagreed with the record it names would otherwise decide what
+    the report says, and the schema is explicit that the block is disposable.
+
+    AN UNRECOGNISED WORD IS NAMED, NOT FOLDED INTO `failed`. The schema promises
+    the enum may gain members and deliberately does not promise the list is
+    closed, so a reader of an older build must be told which word it did not
+    know rather than shown the worst reading of it.
+    """
+    if pointer is None:
+        key = "no-evidence" if configured else "no-gate"
+        return {"key": key, "label": TEV_LABELS[key], "known": True, "flags": [],
+                "pointer": None, "row": None, "history": [],
+                "why": _TEV_WHY[key]}
+    if row is None:
+        return {"key": "dangling", "label": TEV_LABELS["dangling"], "known": True,
+                "flags": [], "pointer": pointer, "row": None, "history": [],
+                "why": "%s - the plan names run %s"
+                       % (_TEV_WHY["dangling"], pointer.get("runId"))}
+    word = str(row.get("status") or "").strip()
+    if word not in TEV_RUN_STATUSES:
+        return {"key": word or "unrecognised",
+                "label": _theme.label(word) or "Unrecognised status",
+                "known": False, "flags": tev_flags(row), "pointer": pointer,
+                "row": row, "history": [],
+                "why": "this build does not recognise the status %r, so it is "
+                       "shown as written rather than read as a verdict" % (word,)}
+    return {"key": word, "label": TEV_LABELS[word], "known": True,
+            "flags": tev_flags(row), "pointer": pointer, "row": row,
+            "history": [],
+            "why": "run %s recorded %s" % (row.get("runId"), row.get("ts"))}
+
+
+def _tev_badge(view):
+    """The status badge: the run's one word, wearing the basis that produced it.
+
+    IT IS A `.chip`, not a new component. A tinted pill reporting a value is the
+    grammar this report already has for exactly that, and giving the test gate a
+    second one would put two kinds of "here is a value" on one row. `data-tev`
+    supplies the hue the way `data-status` already does; the extra `tev` class is
+    the hook the stylesheet reaches it by, so the vocabulary the colour comes from
+    is explicit rather than implied by an attribute name.
+    """
+    return ('<span class="chip tev" data-tev="%s" title="%s">%s</span>'
+            % (e(view["key"]), e(view.get("why") or ""), e(view["label"])))
+
+
+def _tev_mark_spans(flags):
+    """The observation markers as markup. One definition, two callers - the badge
+    beside a task and the same run listed under Earlier runs - because a second
+    spelling of a mark is a second mark the CSS and the filter would have to
+    learn."""
+    return "".join('<span class="tevf" data-tevf="%s">%s</span>' % (e(k), e(w))
+                   for k, w in flags or [])
+
+
+def _tev_marks(view):
+    """The observation markers, as separate marks beside the badge."""
+    return _tev_mark_spans(view.get("flags"))
+
+
+def _tev_cell(view):
+    """The compact row's cell: the badge, then whatever the run also noticed."""
+    if not view:
+        return '<span class="muted">—</span>'
+    return _tev_badge(view) + _tev_marks(view)
+
+
+def tev_bug_view(bug, tasks):
+    """`(view, why)` - a bug's evidence, DERIVED, never invented.
+
+    A bug carries no gate of its own and never will: what proves a bug fixed is
+    the run over the TASK that fixed it. So the answer here is the linked task's
+    view plus the provenance that makes it readable as borrowed, and `why` is the
+    sentence for the case where there is nothing to borrow.
+
+    THREE OUTCOMES, NOT TWO. A bug with no `taskId` has no fix task yet; a bug
+    naming a task this plan does not carry is a dangling reference the validator
+    already reports; and neither is the same as a fix task whose gate said
+    nothing. Collapsing them would send a reader to look at a task that is not
+    there.
+    """
+    tid = bug.get("taskId") if isinstance(bug, dict) else None
+    if not tid:
+        return None, "no fix task yet"
+    view = (tasks or {}).get(str(tid))
+    if not view:
+        return None, "fix task %s is not in this plan" % (tid,)
+    return view, str(tid)
+
+
+def _tev_bug_cell(bug, tasks):
+    """A bug's evidence cell: the fixing task's badge, wearing where it came from.
+
+    `Failed · via P3.2` is two facts and both are load-bearing - drop the second
+    and a reader believes the BUG was measured, which nothing in this plugin ever
+    does."""
+    view, why = tev_bug_view(bug, tasks)
+    if view is None:
+        return '<span class="muted">%s</span>' % e(why)
+    return ('%s%s <span class="muted">via %s</span>'
+            % (_tev_badge(view), _tev_marks(view), e(why)))
+
+
+def _tev_checks_text(row):
+    """What the run says about how much ran - three answers, never two.
+
+    `None` is "not knowable from this runner" and MUST NOT print as a count.
+    Zero is a number the run really reported, and it is the one that cannot sign
+    anything off."""
+    obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
+    ran = obs.get("ranTotal")
+    basis = obs.get("countsBasis")
+    if ran is None:
+        return "not knowable from this runner"
+    if ran == 0:
+        return "none ran%s" % ((" · %s" % basis) if basis else "")
+    return "%d ran%s" % (ran, (" · %s" % basis) if basis else "")
+
+
+def _tev_paths_text(values, unknown_word, empty_word, basis, dropped):
+    """A three-valued path list as one sentence, with its own basis.
+
+    Shared by the tree and coverage rows because they ARE the same shape: a list
+    of repo-relative paths, an empty list that means something definite, and a
+    `None` that means the question could not be asked. Two copies of this would be
+    two chances to let the third case collapse into the second."""
+    if values is None:
+        return '<span class="muted">%s</span>' % e(
+            unknown_word + ((" — " + basis) if basis else ""))
+    if not values:
+        return e(empty_word + ((" — " + basis) if basis else ""))
+    text = ", ".join(str(v) for v in values)
+    return e("%s%s" % (text, (" (+%d more)" % dropped) if dropped else ""))
+
+
+def _tev_step_rows(row):
+    """One line per step: what ran, what it exited, and how much it checked.
+
+    The COMMAND is shown only where the row carries one - `_evidence_io` stores a
+    command verbatim only when the manifest already publishes it, and hands back a
+    digest plus a program name for anything else. Printing the digest as if it
+    were the command would be a claim this file cannot make, so each is labelled
+    as what it is."""
+    steps = [s for s in (row.get("steps") or []) if isinstance(s, dict)]
+    if not steps:
+        return ""
+    out = []
+    for st in steps:
+        ran = st.get("ran")
+        ran_txt = ("check count not knowable" if ran is None
+                   else "%d check(s)" % ran)
+        what = st.get("command")
+        if what:
+            what = "<code>%s</code>" % e(str(what))
+        elif st.get("program"):
+            what = e("%s · sha256 %s" % (st.get("program"),
+                                              str(st.get("commandSha256") or "")[:12]))
+        else:
+            what = '<span class="muted">command not recorded</span>'
+        outcome = st.get("outcome")
+        # An exit code that was never recorded prints as a question mark rather
+        # than as an empty space after the word "exit": a blank there reads as
+        # zero to anyone scanning the column.
+        out.append('<div class="dt-r"><span class="dt-k">%s</span>'
+                   '<span class="dt-v">exit %s · %s%s<br>%s</span></div>'
+                   % (e(st.get("name")),
+                      "?" if st.get("exit") is None else e(st["exit"]),
+                      e(ran_txt),
+                      (" · " + e(outcome)) if outcome else "", what))
+    dropped = row.get("stepsDropped")
+    if dropped:
+        out.append('<div class="dt-r"><span class="dt-k"></span>'
+                   '<span class="dt-v muted">%s further step(s) were not '
+                   "recorded</span></div>" % e(dropped))
+    return "".join(out)
+
+
+def _tev_history(view):
+    """The runs before this one, folded away.
+
+    `<details class="more">` and not a scripted panel: disclosure is something the
+    platform already does, the print sheet already forces every `details.more`
+    open, so the PDF carries the whole record without a line of script."""
+    older = view.get("history") or []
+    if not older:
+        return ""
+    rows = []
+    for row in older:
+        marks = _tev_mark_spans(tev_flags(row))
+        word = str(row.get("status") or "").strip()
+        rows.append('<div class="dt-r"><span class="dt-k">%s</span>'
+                    '<span class="dt-v"><span class="chip tev" data-tev="%s">%s'
+                    "</span>%s <code>%s</code></span></div>"
+                    % (e(_stamp(row.get("ts"))), e(word),
+                       e(TEV_LABELS.get(word) or _theme.label(word)),
+                       marks, e(row.get("runId"))))
+    return ('<details class="more tevmore"><summary>Earlier runs (%d)</summary>'
+            "%s</details>" % (len(older), "".join(rows)))
+
+
+def _tev_detail_col(view):
+    """The drawer's third group: the whole record behind the badge.
+
+    A third `.dtcol` in the row that already exists rather than a second
+    disclosure mechanism - the drawer is where this report already answers "what
+    happened", and a task's test run is that question with a different subject.
+    """
+    if not view:
+        return ""
+    rows = [('<div class="dt-r"><span class="dt-k">verdict</span>'
+             '<span class="dt-v">%s%s</span></div>'
+             % (_tev_badge(view), _tev_marks(view)))]
+    row = view.get("row")
+    if row is None:
+        rows.append('<div class="dt-r"><span class="dt-v muted">%s</span></div>'
+                    % e(view.get("why") or ""))
+        pointer = view.get("pointer")
+        if pointer:
+            rows.append('<div class="dt-r"><span class="dt-k">run</span>'
+                        '<span class="dt-v"><code>%s</code></span></div>'
+                        % e(pointer.get("runId")))
+        return ('<div class="dtcol"><h4>test evidence</h4>%s</div>'
+                % "".join(rows))
+    obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
+    pairs = [("run", "<code>%s</code>" % e(row.get("runId"))),
+             ("at", e(row.get("ts"))),
+             ("scope", e(row.get("scope"))),
+             ("attempt", e(row.get("attempt")) if row.get("attempt") is not None else ""),
+             ("took", ("%d ms" % row["durationMs"])
+              if isinstance(row.get("durationMs"), int) else ""),
+             ("checks", e(_tev_checks_text(row))),
+             ("tree", _tev_paths_text(
+                 obs.get("treeMutated", row.get("treeMutated")),
+                 "unknown", "unchanged", obs.get("treeBasis"),
+                 row.get("treeMutatedDropped"))),
+             ("coverage", _tev_paths_text(
+                 obs.get("coverage"), "unknown",
+                 "no declared file was named by the run", obs.get("coverageBasis"),
+                 row.get("coverageDropped"))),
+             ("failed", e(", ".join(str(f) for f in (row.get("failed") or []))))]
+    for key, value in pairs:
+        if not value:
+            continue
+        rows.append('<div class="dt-r"><span class="dt-k">%s</span>'
+                    '<span class="dt-v">%s</span></div>' % (e(key), value))
+    rows.append(_tev_step_rows(row))
+    state = row.get("testedState") if isinstance(row.get("testedState"), dict) else {}
+    if state.get("head"):
+        rows.append('<div class="dt-r"><span class="dt-k">tested at</span>'
+                    '<span class="dt-v"><code>%s</code> %s</span></div>'
+                    % (e(str(state["head"])[:9]), e(state.get("headBasis") or "")))
+    rows.append(_tev_history(view))
+    return '<div class="dtcol"><h4>test evidence</h4>%s</div>' % "".join(rows)
+
+
+def tev_rollup(views):
+    """[(key, label, count), ...] over a phase's task views, in TEV_ORDER.
+
+    An AGGREGATE, and it is rendered beside the phase's OWN sign-off run rather
+    than merged with it. The two answer different questions - "did the gate this
+    phase signs off with pass" and "what do the runs inside it say" - and one
+    number carrying both would be a measurement nobody made.
+    """
+    counts = {}
+    for view in views or []:
+        counts[view["key"]] = counts.get(view["key"], 0) + 1
+    ordered = [k for k in TEV_ORDER if k in counts]
+    ordered += sorted(k for k in counts if k not in TEV_ORDER)
+    return [(k, TEV_LABELS.get(k) or _theme.label(k), counts[k]) for k in ordered]
+
+
+def _tev_phase_marks(entry):
+    """A phase row's two evidence marks, LABELLED APART.
+
+    The phase's own sign-off run and the rollup over its tasks are two
+    measurements, and a row that showed one number would be claiming the other."""
+    if not entry:
+        return ""
+    out = ""
+    own = entry.get("own")
+    if own:
+        out += ('<span class="ptev" title="the run the gate this phase signs '
+                'off with last recorded">sign-off %s%s</span>'
+                % (_tev_badge(own), _tev_marks(own)))
+    rollup = entry.get("rollup") or []
+    if rollup:
+        out += ('<span class="ptev" title="the tasks in this phase, by what '
+                'their own last recorded run said">tasks %s</span>'
+                % "".join('<span class="tevn" data-tev="%s">%d %s</span>'
+                          % (e(k), n, e(lab)) for k, lab, n in rollup))
+    return out
+
+
+def _detail_row(task, phase, owners, ncol, seg, pid, workers=None, view=None):
     """The row under a task row: everything the compact row had to leave out.
 
     ex (F-P-4). The table is read at a glance and acted on in detail, and those
@@ -400,6 +845,14 @@ def _detail_row(task, phase, owners, ncol, seg, pid, workers=None):
                    this machine knows who ran the task.
 
     Both are labelled as what they are.
+
+    `view` (when the plan points at any recorded run) adds a THIRD group, `test
+    evidence` — the whole record behind the badge the compact row shows: the run,
+    its steps, what it observed about the tree and the coverage, and every
+    earlier run folded into a `<details>`. A third column in the drawer that
+    already exists rather than a second disclosure mechanism: the drawer is where
+    this report answers "what happened", and a test run is that question with a
+    different subject.
     """
     def clamped(html):
         """Long prose, trimmed to a few lines, with the rest one press away.
@@ -465,18 +918,20 @@ def _detail_row(task, phase, owners, ncol, seg, pid, workers=None):
         ("waits on", e(", ".join(waits))),
         ("tests", e(str(tests.get("mode") or ""))),
     ])
-    if not meta and not details:
+    tev = _tev_detail_col(view)
+    if not meta and not details and not tev:
         details = ('<div class="dt-r"><span class="dt-v muted">Nothing recorded '
                    "for this task yet.</span></div>")
     return ('<tr class="taskdetail" data-phase="%s" data-seg="%s" '
-            'data-detail="%s" hidden><td colspan="%d"><div class="dtwrap">'
+            'data-detail="%s" hidden><td colspan="%d"><div class="dtwrap%s">'
             '<div class="dtcol"><h4>meta</h4>%s</div>'
-            '<div class="dtcol"><h4>task details</h4>%s</div>'
+            '<div class="dtcol"><h4>task details</h4>%s</div>%s'
             "</div></td></tr>"
-            % (e(pid), e(seg), e(task.get("id") or ""), ncol, meta, details))
+            % (e(pid), e(seg), e(task.get("id") or ""), ncol,
+               " dt3" if tev else "", meta, details, tev))
 
 
-def _filter_attrs(task):
+def _filter_attrs(task, view=None):
     """The data a task row is filtered BY, in attributes rather than in its text.
 
     Model and dates are filtered on, and the text search already reads the row's
@@ -494,6 +949,13 @@ def _filter_attrs(task):
     Emitted only when present — an absent value is an absent attribute, so the
     script's `getAttribute(...) || ''` sees the same thing either way and the
     markup does not carry a row of empty strings for a plan that tracks neither.
+
+    `view` is this task's test-evidence view, or None on a plan that points at no
+    run. It carries TWO axes and they are INDEPENDENT: `data-tev` is what the run
+    said, `data-tev-flags` is what else was true about it. A gate can fail and
+    rewrite the tree, so folding the observations into the status would make one
+    of those two facts unfilterable — which is the same collapse the badge itself
+    refuses one function up.
     """
     out = []
     if task.get("model"):
@@ -501,12 +963,19 @@ def _filter_attrs(task):
     for attr, key in (("data-started", "startedAt"), ("data-completed", "completedAt")):
         if task.get(key):
             out.append(' %s="%s"' % (attr, e(_short_date(task[key]))))
+    if view:
+        out.append(' data-tev="%s"' % e(view["key"]))
+        # Space-joined, mirroring `data-area`: one separator rule for every
+        # attribute on this row that carries a list.
+        flags = " ".join(k for k, _ in view.get("flags") or [])
+        if flags:
+            out.append(' data-tev-flags="%s"' % e(flags))
     return "".join(out)
 
 
 # --- filter panel -----------------------------------------------------------
-def _filter_panel(manifest):
-    """The area, model and date controls, server-rendered, or "" with none of them.
+def _filter_panel(manifest, evidence=None):
+    """The area, model, gate and date controls, server-rendered, or "" with none.
 
     Everything here is emitted from the manifest rather than built by the script,
     which is the rule the status chips already follow: built in JS, a filter UI is
@@ -524,7 +993,14 @@ def _filter_panel(manifest):
             if t.get(key):
                 dates.append(_short_date(t[key]))
     tags = _areas.used_tags(manifest)
-    if not models and not dates and not tags:
+    # TWO INDEPENDENT AXES, TWO ROWS. The status a run reached and the
+    # observations it made are not one vocabulary: a reader looking for "which
+    # gates rewrote the tree" is asking a question the status column cannot
+    # answer, whatever it says. Both come from the loaded evidence rather than
+    # from the manifest, because only the ledger knows what a run observed.
+    tev_keys = list((evidence or {}).get("keys") or [])
+    tev_flags = list((evidence or {}).get("flags") or [])
+    if not models and not dates and not tags and not tev_keys and not tev_flags:
         return ""
 
     rows = []
@@ -549,6 +1025,16 @@ def _filter_panel(manifest):
                     '<span id="audit-model">%s</span></div>'
                     % _chip_buttons(sorted(models), "data-m", "fchip",
                                     humanize=False))
+    if tev_keys:
+        rows.append('<div class="frow"><span class="tbl">Test gate:</span>'
+                    '<span id="audit-tev">%s</span></div>'
+                    % _chip_buttons(tev_keys, "data-tev", "fchip",
+                                    mapping=TEV_LABELS))
+    if tev_flags:
+        rows.append('<div class="frow"><span class="tbl">Observed:</span>'
+                    '<span id="audit-tevf">%s</span></div>'
+                    % _chip_buttons(tev_flags, "data-tevf", "fchip",
+                                    mapping=TEV_FLAG_LABELS))
     if dates:
         span = ' min="%s" max="%s"' % (e(min(dates)), e(max(dates)))
         # The presets are relative to the LAST DAY IN THE DATA, not to today.

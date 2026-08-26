@@ -258,6 +258,13 @@
   let dFrom = '';         // panel: ISO dates, compared as plain strings
   let dTo = '';
   let preset = '';        // which relative-span chip is lit, if any
+  // The test gate's TWO axes, and they are independent on purpose. `tevFilter`
+  // is what a task's last recorded run SAID; `tevFlag` is what else was true
+  // about that run. A gate can fail and also rewrite the tree, so a reader
+  // hunting rewrites cannot reach them through the status axis at all, and a
+  // single combined control would need a name for every pairing of the two.
+  let tevFilter = '';     // panel: only tasks whose recorded run reached this
+  let tevFlag = '';       // panel: only tasks whose run carries this observation
 
   // Areas are a PHASE-level gate like phaseStatus, not a task narrower —
   // `data-area` lives on the phase row and tasks carry none. Multi-select,
@@ -270,6 +277,11 @@
 
   const modelBar = document.getElementById('audit-model');
   const areaBar = document.getElementById('audit-areas');
+  // Absent on a plan that points at no recorded run: the renderer emits no chip
+  // row at all rather than an empty one, so these are null and every reader
+  // below already tolerates a missing control.
+  const tevBar = document.getElementById('audit-tev');
+  const tevFlagBar = document.getElementById('audit-tevf');
   const fromInput = document.getElementById('audit-from');
   const toInput = document.getElementById('audit-to');
   const presetBar = document.getElementById('audit-presets');
@@ -573,6 +585,20 @@
     // and <input type=date> hands back exactly that shape — so a range test over
     // four thousand rows costs no Date parsing at all.
     return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
+  };
+
+  /**
+   * @param {HTMLTableRowElement} t a task row
+   * @returns {boolean} whether the task's recorded run carries the selected
+   *   observation; true whenever none is selected
+   */
+  const tevFlagOk = (t) => {
+    if (!tevFlag) return true;
+    // Padded both sides before the search, so a marker name can never match
+    // inside a longer one. The renderer joins these with single spaces, which is
+    // the same rule `data-area` already uses for its list.
+    return (' ' + (t.getAttribute('data-tev-flags') || '') + ' ')
+      .indexOf(' ' + tevFlag + ' ') !== -1;
   };
 
   /**

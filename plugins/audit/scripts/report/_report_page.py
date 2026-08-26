@@ -170,12 +170,18 @@ _GATE_LABELS = {
 # the worst offender in the other direction — a 70-character cut that pushed
 # every row to three lines and still said too little, which is the complaint
 # this whole change came from.
-PRIMARY_COLS = ("risk", "commit", "done")
+# `tests` is earned by a POINTER and by nothing else. Reading a declared gate
+# instead would put a column of `No evidence` on every manifest written before
+# the field existed - and `tools/check-rendered-artifacts.py` compares the
+# committed example byte for byte against a fresh render, so a column that
+# appears on a plan pointing at no run is a red build, correctly.
+PRIMARY_COLS = ("risk", "commit", "done", "tests")
 _OPTIONAL_COLS = (
     ("model", lambda t: t.get("model")),
     ("risk", lambda t: t.get("risk")),
     ("commit", lambda t: t.get("commit")),
     ("done", lambda t: t.get("completedAt") or t.get("startedAt")),
+    ("tests", lambda t: _report_html.tev_pointer(t)),
     ("ADO", lambda t: (t.get("ado") or {}).get("id")
      if isinstance(t.get("ado"), dict) else None),
     ("outcome", lambda t: _outcome_text(t)),
@@ -183,8 +189,16 @@ _OPTIONAL_COLS = (
 
 
 # --- table helpers --------------------------------------------------------------
-def _present_columns(manifest):
-    """The optional columns at least one task actually fills."""
+def _present_columns(manifest, evidence=None):
+    """The optional columns at least one task actually fills.
+
+    `tests` needs BOTH halves and that is why this grew an argument: a task
+    carrying a pointer is what EARNS the column, and a loaded record is what
+    FILLS it. `render-report` supplies the second exactly when the first exists -
+    `load_evidence` answers None on the same predicate - so the two only come
+    apart for a caller that renders a pointered plan with no model, and drawing
+    that reader a column of em dashes would be the report claiming it looked at
+    the record and found nothing there."""
     # Every task, id or not: a column is earned by a task FILLING it, and a task
     # with no `id` fills `ado` or `outcome` exactly as well as one that has an id.
     # `iter_tasks`, therefore, and not `_tasks_by_id` — the index drops id-less
@@ -192,6 +206,8 @@ def _present_columns(manifest):
     tasks = [t for _, t in _manifest_io.iter_tasks(manifest)]
     out = []
     for name, get in _OPTIONAL_COLS:
+        if name == "tests" and evidence is None:
+            continue
         try:
             if any(get(t) not in (None, "", [], {}) for t in tasks):
                 out.append(name)
@@ -215,7 +231,7 @@ def _held_by(ph, done_ids):
 
 # --- phase rows ----------------------------------------------------------------
 def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
-                prank=None):
+                prank=None, evidence=None):
     """One phase's rows — the group row, its task-filter row and its task rows.
 
     Extracted from render_html's former inline loop when segmentation (D1)
@@ -228,8 +244,16 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
     `_priority.ranks` — the number the sort control orders by, rather than a
     rule the script re-derives. `None` means no phase in the plan is pinned and
     the attribute is left off entirely, so the row is byte-identical to what it
-    was before the sort option existed."""
+    was before the sort option existed.
+
+    `evidence` is `_evidence_view.load_evidence`'s answer, or None on a plan that
+    points at no recorded run. The phase row then wears TWO marks and they are
+    labelled apart: the run the gate this phase signs off with recorded, and an
+    aggregate over its tasks' own runs. Merging them into one verdict would claim
+    a measurement nobody made - the phase gate and a task gate are different
+    commands over different files."""
     pid = psum["id"]
+    tviews = (evidence or {}).get("tasks") or {}
     areas = psum["area"] if isinstance(psum.get("area"), list) \
         else _areas_of(ph.get("area"))
     area_tags = "".join(" " + _area_tag_span(a, owners) for a in areas)
@@ -286,7 +310,10 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
            ncol, e(pid), e(psum["title"]),
            area_tags, _chip(psum["status"]), blocked_mark, cancelled_mark,
            held_mark, stamp,
-           _bar(psum["done"], psum["total"]), _phase_meta_div(ph)))
+           _bar(psum["done"], psum["total"])
+           + _report_html._tev_phase_marks(
+               ((evidence or {}).get("phases") or {}).get(str(pid))),
+           _phase_meta_div(ph)))
     # per-phase task-status filter (shown only when the phase is expanded);
     # _SCRIPT fills .tf-chips from this phase's own task statuses.
     _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
@@ -305,9 +332,12 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
             "risk": lambda: "<td>%s</td>" % _risk_chip(t.get("risk")),
             "commit": lambda: "<td class=mono>%s</td>" % _commit_cell(t),
             "done": lambda: "<td class=when>%s</td>" % _timing_cell(t),
+            "tests": lambda: '<td class="tevcell">%s</td>'
+                             % _report_html._tev_cell(tviews.get(str(t.get("id")))),
             "ADO": lambda: "<td>%s</td>" % _ado_cell(t),
             "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
         }
+        tview = tviews.get(str(t.get("id")))
         # ex (F-P-4): the compact row plus a control that opens the rest. The
         # button lives in the id cell and carries the task id, so a keyboard
         # reader tabs id -> detail rather than hunting a bare chevron.
@@ -318,12 +348,12 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
             '%s"></button>%s</td><td>%s</td><td>%s</td>%s</tr>'
             % (e(pid), seg, e(t.get("status")),
                ' data-held="1"' if held else "",
-               _filter_attrs(t),
+               _filter_attrs(t, tview),
                e(t.get("id")), e(t.get("id")),
                e(t.get("id")), e(t.get("title")),
                _chip(t.get("status")),
                "".join(cells[c]() for c in cols)))
-        out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers))
+        out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers, tview))
     return "\n".join(out)
 
 
@@ -574,7 +604,7 @@ def _doc_actions(fragment):
         + '</div>')
 
 
-def _table_tools(manifest, summary):
+def _table_tools(manifest, summary, evidence=None):
     """Search, the status chips, the view select, the sort select and
     expand-all — the controls that act on the phases table and on nothing else.
 
@@ -629,19 +659,19 @@ def _table_tools(manifest, summary):
         "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
         "— every row is shown.</span></noscript></div>"
         % (_chip_buttons(statuses, "data-ps", "fchip"),
-           _filter_panel(manifest), sortpick))
+           _filter_panel(manifest, evidence), sortpick))
 
 
-def _phases_block(manifest, summary, owners, workers=None):
+def _phases_block(manifest, summary, owners, workers=None, evidence=None):
     """One collapsible table: each phase is a group-row (click to expand its task
     rows). Default-collapsed via _SCRIPT; with JS off every row is visible."""
     record = ("phases", "Phases", len(summary["phases"]), False)
     parts = ['<section id="%s" class="sec">' % _anchor(record),
-             _table_tools(manifest, summary)]
+             _table_tools(manifest, summary, evidence)]
     # `present` is every optional column this plan HAS data for; `cols` is the
     # subset the compact row shows. The detail row renders the difference, so
     # nothing is dropped from the page — only from the row.
-    present = _present_columns(manifest)
+    present = _present_columns(manifest, evidence)
     cols = [c for c in present if c in PRIMARY_COLS]
     ncol = 3 + len(cols)
     # vw: 'active' unless there is nothing active or pending to show — a
@@ -652,7 +682,11 @@ def _phases_block(manifest, summary, owners, workers=None):
     defview = "active" if (segs_present & {"active", "pending"}) else "all"
     # tm: the zone is named ONCE, in the header, rather than repeated in every
     # cell or left for a reader to assume.
-    colhead = {"done": 'done <span class="muted">UTC</span>'}
+    # The column header names the SUBJECT, not the verdict: what a cell in it
+    # carries is what the gate for that task last said, and a header reading
+    # "status" beside the task's own status column would be two statuses.
+    colhead = {"done": 'done <span class="muted">UTC</span>',
+               "tests": "test gate"}
     parts.append('<div class="tablewrap"><table class="phases" '
                  'data-defaultview="%s"><thead><tr>'
                  "<th>id</th><th>title</th><th>status</th>%s</tr></thead><tbody>"
@@ -661,7 +695,7 @@ def _phases_block(manifest, summary, owners, workers=None):
                             for c in cols)))
     done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
     parts += _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
-                           workers)
+                           workers, evidence)
     # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
@@ -679,7 +713,7 @@ def _phases_block(manifest, summary, owners, workers=None):
 
 
 def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
-                  workers=None):
+                  workers=None, evidence=None):
     """The table body: one seghead per segment, then that segment's phase rows.
 
     D1: the table renders in SEGMENTS — active (in_progress/blocked) first, then
@@ -728,7 +762,7 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
                    "</td></tr>" % (seg, ncol, head, exports))
         for ph, psum, prank in by_seg[seg]:
             out.append(_phase_rows(ph, psum, seg, ncol, cols, done_ids, owners,
-                                   workers, prank))
+                                   workers, prank, evidence))
     return out
 
 
@@ -833,11 +867,18 @@ def _proposals_block(manifest, show=True):
     return parts, [record]
 
 
-def _bugs_block(manifest, summary):
-    """The bugs table, or nothing at all when the plan tracks none."""
+def _bugs_block(manifest, summary, evidence=None):
+    """The bugs table, or nothing at all when the plan tracks none.
+
+    The evidence column is DERIVED and conditional, for the two reasons the task
+    table's is: a bug has no gate of its own, so its column shows the linked
+    fixing task's verdict with the provenance attached; and it appears only where
+    the plan points at some recorded run, so a manifest that carries none renders
+    the table it always did."""
     bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
     if not bugs:
         return [], []
+    tviews = (evidence or {}).get("tasks")
     record = ("bugs", "Bugs", summary["bugs"]["open"] or None, False)
     task_by_id = _tasks_by_id(manifest)
     # D2: the bugs table is tabular data, so it earns the same CSV control
@@ -849,18 +890,21 @@ def _bugs_block(manifest, summary):
     rows = []
     for b in bugs:
         bstatus, bfixed = _bug_view(b, task_by_id)
+        tev = ('<td class="tevcell">%s</td>'
+               % _report_html._tev_bug_cell(b, tviews)) if tviews else ""
         rows.append(
             '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>'
-            "<td class=mono>%s</td><td class=mono>%s</td><td>%s</td></tr>"
+            "<td class=mono>%s</td><td class=mono>%s</td>%s<td>%s</td></tr>"
             % (e(bstatus), e(b.get("id")), e(b.get("title")),
                _chip(bstatus),
                e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
-               e(bfixed[:9]), _ado_cell(b)))
+               e(bfixed[:9]), tev, _ado_cell(b)))
     parts.append('<div class="tablewrap"><table class="data bugs"><thead><tr>'
                  "<th>id</th><th>title</th>"
                  "<th>status</th><th>severity</th><th>task</th><th>fixedIn</th>"
-                 "<th>ADO</th></tr></thead><tbody>%s</tbody></table></div>"
-                 % "".join(rows))
+                 "%s<th>ADO</th></tr></thead><tbody>%s</tbody></table></div>"
+                 % ('<th data-col="tests">test gate</th>' if tviews else "",
+                    "".join(rows)))
     return parts, [record]
 
 
@@ -895,14 +939,14 @@ def _ready_block(manifest, summary):
                _ready_now_dl(manifest, summary["ready"]))], [record]
 
 
-def _tail_block(manifest, summary, usage, basename, fragment):
+def _tail_block(manifest, summary, usage, basename, fragment, evidence=None):
     """Closing the shell, the embedded Markdown twin, and the one inline script."""
     parts = ["</main></div>"]   # close .content and .shell
     # Embed the Markdown twin as base64 so the "Download .md" button works from a
     # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
     # out of the page and preserves UTF-8 exactly.
     md_b64 = base64.b64encode(
-        render_md(manifest, summary, usage).encode("utf-8")).decode("ascii")
+        render_md(manifest, summary, usage, evidence).encode("utf-8")).decode("ascii")
     # basename is sanitized to [A-Za-z0-9-_], so it is safe in a JS string literal.
     parts.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
                  % (md_b64, basename))
@@ -934,7 +978,8 @@ def _nav_html(sections):
 
 # --- the page -------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False, css=None, verdict=None, show_proposals=True):
+                fragment=False, css=None, verdict=None, show_proposals=True,
+                evidence=None):
     """The HTML report. `fragment=True` emits it for an embedding host.
 
     A Claude Code Artifact wraps what it is given in its own
@@ -973,12 +1018,13 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             _invalid_block(summary),
             _gate_block(meta, summary, verdict),
             _phases_block(manifest, summary, owners,
-                          (usage or {}).get("taskAuthors")),
+                          (usage or {}).get("taskAuthors"), evidence),
             _usage_block(usage),
-            _bugs_block(manifest, summary),
+            _bugs_block(manifest, summary, evidence),
             _proposals_block(manifest, show_proposals),
             _ready_block(manifest, summary),
-            _tail_block(manifest, summary, usage, basename, fragment)):
+            _tail_block(manifest, summary, usage, basename, fragment,
+                        evidence)):
         out += parts
         sections += records
     body = "\n".join(out) + "\n"

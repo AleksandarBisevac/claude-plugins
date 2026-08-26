@@ -359,7 +359,15 @@ LAYERS = (
     # seven doctor modules in one layer would have been a nicer picture and a false
     # one - four of them genuinely sit higher, so the layer would have had to be L5
     # and three modules would carry a position nothing about them requires.
-    ("usage_ledger", "_panel_settings", "_manifest_rules",
+    # `_evidence_view` is the report's only read of the test-execution ledger,
+    # and it lands here the way `_usage_load` lands one layer up: at the FIRST
+    # layer that holds every one of its edges strictly downward. It imports
+    # `_evidence_io` (where a run's record lives) and `_report_html` (the badge
+    # vocabulary and the view derivation), both L2, plus `_journal_io` at L1 for
+    # the project config - so L2 is not available to it and L3 is. It reaches
+    # nothing at L3 and nothing at L3 reaches it; its only consumer is
+    # `render-report` at L7, which reads the disk and hands the answer down.
+    ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
      # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
      # lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",
