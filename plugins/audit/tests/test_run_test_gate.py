@@ -34,6 +34,23 @@ import _loader                                     # noqa: E402  (script_path: r
 M = _loader.load_script("run-test-gate.py", "rtg")
 
 
+def _recorded_rows(directory):
+    """Every row in the evidence directory, in the order they landed.
+
+    Read off the DISK rather than through `_evidence_io.read_rows`, because the
+    question these cases put is what a reader of the committed file sees -- and a
+    reader that went through the writer's own module could not tell a field that
+    was never written from one the reader supplies.
+    """
+    rows = []
+    for name in sorted(os.listdir(directory)):
+        with open(os.path.join(directory, name), encoding="utf-8") as fh:
+            for line in fh.read().splitlines():
+                if line.strip():
+                    rows.append(json.loads(line))
+    return rows
+
+
 def _cases(check):
     # `_harness.fixture_root`, NOT a bare mkdtemp with a trailing rmtree. It exists
     # for F119 and it is the only spelling that survives windows: git writes its
@@ -718,6 +735,58 @@ def _cases(check):
           "it must not move: %r %r" % (cmdsp, sourcep),
           sourcep == "phase" and cmdsp == [("lint", "ruff check .")])
 
+    # --- which attempt, read off the plan ----------------------------------
+    # EVERY TASK HERE RECORDS SOMETHING DIFFERENT, and the values are picked so a
+    # wrong reading cannot land on the right answer: the phase's first task
+    # records a count, so an implementation that answered the phase scope with
+    # "the phase's first task" would return that number instead of nothing.
+    aman = {"meta": {"version": 2},
+            "phases": [{"id": "PA", "title": "a", "tasks": [
+                {"id": "PA.1", "attempts": 3},
+                {"id": "PA.2", "attempts": 0},
+                {"id": "PA.3"},
+                {"id": "PA.4", "attempts": True},
+                {"id": "PA.5", "attempts": "2"}]}]}
+
+    check("ao1 the attempt a run is stamped with comes from the task's own "
+          "`attempts`, unchanged - this runner does not count the execution it "
+          "is part of, because the orchestrator owns that number: %r"
+          % (M.attempt_of(aman, "PA.1"),),
+          M.attempt_of(aman, "PA.1") == 3)
+
+    check("ao2 a recorded 0 travels as 0. The plan takes this count back down on "
+          "a reverted increment and on a reset, so it is a value the plan WROTE "
+          "and reading it as one attempt would report a run the plan denies: %r"
+          % (M.attempt_of(aman, "PA.2"),),
+          M.attempt_of(aman, "PA.2") == 0
+          and M.attempt_of(aman, "PA.2") is not None)
+
+    check("ao3 a task that records NO attempts answers None, which the row "
+          "spells as an absent field - 'the plan does not say how many times "
+          "this ran' has no number, and any number here would be invented: %r"
+          % (M.attempt_of(aman, "PA.3"),),
+          M.attempt_of(aman, "PA.3") is None)
+
+    check("ao4 a PHASE-scope run answers None even where the phase's tasks each "
+          "record a count. `attempts` is a task field, so there is nothing to "
+          "read and nothing to borrow from a neighbour: %r"
+          % (M.attempt_of(aman, None),),
+          M.attempt_of(aman, None) is None)
+
+    check("ao5 `attempts: true` and `attempts: \"2\"` record nothing either - "
+          "`True` is an `int` in Python, so a plan carrying it would otherwise "
+          "read as one attempt: %r"
+          % ((M.attempt_of(aman, "PA.4"), M.attempt_of(aman, "PA.5")),),
+          M.attempt_of(aman, "PA.4") is None
+          and M.attempt_of(aman, "PA.5") is None)
+
+    check("ao6 a task this manifest does not carry answers None rather than "
+          "raising - `gate_of` and `owned_files` have already refused an unknown "
+          "id by the time a row is being assembled, and a recorder that raised "
+          "here would lose a run that DID happen: %r"
+          % (M.attempt_of(aman, "PA.9"),),
+          M.attempt_of(aman, "PA.9") is None)
+
     # --- the measurement boundary, end to end ------------------------------
     # THE HEADLINE OF THE RECORDING CHANGE. The evidence file, the journal and the
     # manifest all live INSIDE the repository this run has just described with
@@ -735,11 +804,20 @@ def _cases(check):
                    "phases": [{"id": "P1", "title": "one",
                                "shard": "phases/P1.json"}]}, fh)
     rshard = os.path.join(recroot, "docs", "audit", "phases", "P1.json")
+    # THE THREE TASKS ARE THE THREE ANSWERS `attempts` HAS, and the values are
+    # chosen so a wrong implementation cannot produce them: P1.2 records TWO, so
+    # the `or 1` shape reads 1 and disagrees; P1.3 records ZERO, which is a value
+    # the plan wrote and not a gap; P1.1 records nothing at all, which no number
+    # may stand in for.
     with open(rshard, "w") as fh:
         json.dump({"id": "P1", "title": "one", "status": "in_progress",
                    "testGate": ["ok"], "tasks": [
                        {"id": "P1.1", "title": "t", "status": "in_progress",
-                        "files": []}]}, fh)
+                        "files": []},
+                       {"id": "P1.2", "title": "retried", "status": "in_progress",
+                        "attempts": 2, "files": []},
+                       {"id": "P1.3", "title": "reset", "status": "pending",
+                        "attempts": 0, "files": []}]}, fh)
     subprocess.run(["git", "init", "-q", recroot], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -773,6 +851,55 @@ def _cases(check):
           % ("\n".join(lines)[:90],),
           code == M.E_OK and "already:" in "\n".join(lines)
           and "moved:" not in "\n".join(lines))
+
+    # --- which attempt the run was, end to end -----------------------------
+    # THE FIELD HAD NO WRITER. `_evidence_io.row_for` has always copied `attempt`
+    # out of the identity and both renderers have always shown it, while the only
+    # thing that ever set it was the demo generator - so every row a user could
+    # produce left the column blank and the demo advertised a capability the
+    # product did not have. These cases are driven through `main` for that reason:
+    # what was missing was the WIRING, and a case against the helper alone would
+    # have passed on the broken build.
+    evdir = os.path.join(recroot, "docs", "audit", "evidence")
+    two = []
+    code_two = M.main([rmpath, "P1", "--task", "P1.2", "--project-dir", recroot,
+                       "--record"], out=two.append)
+    row_two = _recorded_rows(evdir)[-1]
+    check("at1 a task whose plan RECORDS attempts stamps that number on the row, "
+          "beside the `via` no real run could carry it with before: exit=%r %r"
+          % (code_two, (row_two.get("taskId"), row_two.get("attempt"),
+                        row_two.get("via"))),
+          code_two == M.E_OK and row_two.get("taskId") == "P1.2"
+          and row_two.get("attempt") == 2 and row_two.get("via") == "cli")
+
+    zero = []
+    M.main([rmpath, "P1", "--task", "P1.3", "--project-dir", recroot,
+            "--record"], out=zero.append)
+    row_zero = _recorded_rows(evdir)[-1]
+    check("at2 a RECORDED zero is a value and is written as one - the plan takes "
+          "this count back down on a reverted increment and on a reset, so a row "
+          "reading it as 'surely at least one' would report an attempt the plan "
+          "says never happened: %r"
+          % (("attempt" in row_zero, row_zero.get("attempt")),),
+          row_zero.get("taskId") == "P1.3" and "attempt" in row_zero
+          and row_zero["attempt"] == 0)
+
+    none = []
+    M.main([rmpath, "P1", "--task", "P1.1", "--project-dir", recroot,
+            "--record"], out=none.append)
+    row_none = _recorded_rows(evdir)[-1]
+    check("at3 a task whose plan records NO attempts leaves the field off the "
+          "row entirely. Absent means 'the plan does not say how many times this "
+          "ran', and a 0 or a 1 invented here would be a claim with no basis - "
+          "the failure the whole record exists to prevent: %r" % (sorted(row_none),),
+          row_none.get("taskId") == "P1.1" and "attempt" not in row_none)
+
+    check("at4 ...and a PHASE-scope run carries no attempt either, which is the "
+          "plan being read correctly rather than a gap: `attempts` is a task "
+          "field, so a phase has none to report: %r"
+          % (sorted(_recorded_rows(evdir)[0]),),
+          _recorded_rows(evdir)[0].get("scope") == "phase"
+          and "attempt" not in _recorded_rows(evdir)[0])
 
 
 def _selftest():

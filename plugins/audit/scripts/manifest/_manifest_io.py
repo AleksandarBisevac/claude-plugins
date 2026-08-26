@@ -362,6 +362,37 @@ def phase_of_task(manifest):
     return {t["id"]: p.get("id") for p, t in iter_tasks(manifest) if t.get("id")}
 
 
+def recorded_attempt(task):
+    """The attempt count this task RECORDS — zero included, absence not.
+
+    THREE ANSWERS, NOT TWO, and that is the whole shape of this function. A
+    recorded 0 is a value: two documented paths take the count back DOWN — the
+    orchestrator reverts the increment after an infrastructure failure, and
+    `/audit:run` resets a blocked or re-opened task — so zero is a thing the plan
+    SAYS, not a gap in it. A MISSING or non-integer `attempts` is the other
+    answer entirely: this task records nothing, and a number invented for it is a
+    claim with no basis. Those return None, and every caller must spell that as
+    absence rather than as a figure.
+
+    `bool` is excluded explicitly: `True` is an `int` in Python, and a manifest
+    carrying `attempts: true` would otherwise read as one attempt — the same trap
+    the validator's own `id: true` case exists for.
+
+    HERE RATHER THAN IN EITHER CALLER, because both `_usage_routing` (the mean
+    attempts behind a routing recommendation) and the gate runner (the attempt an
+    evidence row is stamped with) must read one field the same way, and they sit
+    in layers that cannot import each other. The rule was written once as
+    `int(t.get("attempts") or 1)` and answered 1 for a task the manifest says has
+    0; a second copy of the repaired reading is how that comes back.
+    """
+    if not isinstance(task, dict):
+        return None
+    value = task.get("attempts")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 # --- readiness ------------------------------------------------------------------
 # The statuses that mean the work will not move again. `cancelled` is the second
 # one and it arrived later, which is exactly how the rule ended up written three

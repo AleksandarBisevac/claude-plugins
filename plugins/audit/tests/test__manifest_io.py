@@ -304,6 +304,48 @@ def _cases(check):
         check("traversal: sharded storage yields the identical id -> phase map",
               M.phase_of_task(trav_sharded) == trav_pot)
 
+        # 10c. recorded_attempt - the field two callers must read one way. The
+        # values below are each a DIFFERENT answer, which is what lets a wrong
+        # reading be told from a right one: 3 is a count, 0 is a count the plan
+        # wrote and took back down, and the rest record nothing at all.
+        check("ra1 recorded_attempt returns the count the task records, "
+              "unchanged: %r" % (M.recorded_attempt({"attempts": 3}),),
+              M.recorded_attempt({"attempts": 3}) == 3)
+        check("ra2 a recorded 0 is a VALUE and comes back as 0, not as absence. "
+              "`/audit:run` resets a blocked task to 0 and the orchestrator "
+              "reverts an increment, so this state is written on purpose and "
+              "`int(x or 1)` reading it as one attempt is the bug this "
+              "function was extracted from: %r"
+              % (M.recorded_attempt({"attempts": 0}),),
+              M.recorded_attempt({"attempts": 0}) == 0
+              and M.recorded_attempt({"attempts": 0}) is not None)
+        check("ra3 a task with no `attempts` key records NOTHING, and that is "
+              "None rather than 0 - a zero here would be this function "
+              "answering a question the plan never answered: %r"
+              % (M.recorded_attempt({"id": "P1.1"}),),
+              M.recorded_attempt({"id": "P1.1"}) is None)
+        check("ra4 `attempts: true` records nothing either - `True` is an `int` "
+              "in Python, so the type check alone would count it as one attempt: "
+              "%r" % (M.recorded_attempt({"attempts": True}),),
+              M.recorded_attempt({"attempts": True}) is None
+              and M.recorded_attempt({"attempts": False}) is None)
+        check("ra5 a non-integer `attempts` and a non-dict task both record "
+              "nothing, without raising: a lookup that raised would take down a "
+              "recorder holding a run that really happened: %r"
+              % ([M.recorded_attempt(v)
+                  for v in ({"attempts": "2"}, {"attempts": 1.5},
+                            {"attempts": None}, None, "not-a-task")],),
+              all(M.recorded_attempt(v) is None
+                  for v in ({"attempts": "2"}, {"attempts": 1.5},
+                            {"attempts": None}, None, "not-a-task")))
+        check("ra6 a NEGATIVE count is carried as recorded rather than "
+              "sanitised. The schema constrains the TYPE and not the sign, so "
+              "this function has no basis to correct one - and quietly reading "
+              "it as 0 or as absence would hide what the plan actually holds "
+              "from every reader downstream: %r"
+              % (M.recorded_attempt({"attempts": -1}),),
+              M.recorded_attempt({"attempts": -1}) == -1)
+
         # 11b. unsatisfied - the rule that had THREE homes, one of them wrong.
         _st = {"P1.1": "done", "P1.2": "cancelled", "P1.3": "pending",
                "P1.4": "in_progress", "P1": "blocked"}
