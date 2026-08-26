@@ -159,6 +159,7 @@ def _cases(record):
     os.close(fd2)
     try:
         _cases_output(record, path2)
+        _cases_test_evidence(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -252,6 +253,103 @@ def _cases_output(record, path):
            "still the usage error it was, so the flag cannot be mistaken for a "
            "manifest and silently validate nothing",
            M.main(["--verbose"]) == 2)
+
+
+def _cases_test_evidence(record, path):
+    """`testEvidence` through the front door: what the command says about a key
+    nothing writes yet.
+
+    The block is a POINTER at the append-only evidence ledger kept beside the
+    manifest, cached on a task or a phase, and the command's whole involvement in
+    it is the typo-catcher. That is worth driving from here rather than from the
+    set: "the key is in `_manifest_vocab.KNOWN_TASK`" is a fact about a literal,
+    while "a real key draws no warning and a misspelt one does" is the consequence
+    a user sees, and only the second fails when the level stops consulting the set.
+    """
+    good = {"runId": "2026-08-26T14:03:11Z.7f3a91", "status": "failed",
+            "at": "2026-08-26T14:03:11Z"}
+
+    def _out(plan):
+        """`(exit code, FINDING lines, WARNING lines)` for one manifest."""
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        code, text = _run([path])
+        return (code,
+                [ln for ln in text.splitlines() if ln.startswith("FINDING: ")],
+                [ln for ln in text.splitlines() if ln.startswith("WARNING: ")])
+
+    bare = _out(_valid_manifest())
+
+    _task_ok = _valid_manifest()
+    _task_ok["phases"][0]["tasks"][0]["testEvidence"] = dict(good)
+    task_ok = _out(_task_ok)
+    # A CASE collision, because that is the hint's mechanism: `_unknown_keys` folds
+    # case and looks the key up, so `testevidence` names the key it was meant to be
+    # and `testEvidenc` would only get the generic line. The generic line is the one
+    # this key already drew before it was declared, so it proves nothing.
+    _task_typo = _valid_manifest()
+    _task_typo["phases"][0]["tasks"][0]["testevidence"] = dict(good)
+    task_typo = _out(_task_typo)
+    record("c18 a task carrying `testEvidence` validates in silence, and a "
+           "misspelling of it draws a did-you-mean naming the real key - the PAIR, "
+           "because silence on its own is also what a validator that has stopped "
+           "looking produces, and a hint on its own would fire for a set that holds "
+           "the key at the wrong level: %r / %r" % (task_ok, task_typo),
+           task_ok == (0, [], [])
+           and task_typo[0] == 0 and task_typo[1] == []
+           and len(task_typo[2]) == 1
+           and "task P0.1" in task_typo[2][0]
+           and "did you mean 'testEvidence'" in task_typo[2][0])
+
+    _phase_ok = _valid_manifest()
+    _phase_ok["phases"][0]["testEvidence"] = dict(good)
+    phase_ok = _out(_phase_ok)
+    _phase_typo = _valid_manifest()
+    _phase_typo["phases"][0]["testevidence"] = dict(good)
+    phase_typo = _out(_phase_typo)
+    record("c19 ...and the same pair holds one level up, on the phase - the key is "
+           "declared at both levels and the two sets are separate literals, so a "
+           "task-only case would pass over a phase that never learned the word: "
+           "%r / %r" % (phase_ok, phase_typo),
+           phase_ok == (0, [], [])
+           and phase_typo[0] == 0 and phase_typo[1] == []
+           and len(phase_typo[2]) == 1
+           and "phase P0" in phase_typo[2][0]
+           and "did you mean 'testEvidence'" in phase_typo[2][0])
+
+    _both = _valid_manifest()
+    _both["phases"][0]["testEvidence"] = dict(good)
+    _both["phases"][0]["tasks"][0]["testEvidence"] = dict(good)
+    both = _out(_both)
+    record("c20 a manifest carrying NO `testEvidence` anywhere gets the same "
+           "verdict as one carrying it at both levels - which is the whole "
+           "back-compat claim, since absent means 'no evidence recorded' and the "
+           "field is additive. The misspelt run is what stops that equality being "
+           "a validator that answers the same thing to everything: %r / %r"
+           % (bare, both),
+           bare == (0, [], []) and both == bare and task_typo != bare)
+
+    # CURRENT BEHAVIOUR, asserted so a later fix changes a case on purpose rather
+    # than discovering one - the same reason mv12 pins `bool` being an `int`.
+    # `additionalProperties` is permissive at this level and no `_unknown_keys()`
+    # call descends into the block, so the command cannot see a cached `attempt`
+    # (cut on purpose: a count beside the thing that produces it is this repo's
+    # most-repeated defect) or a `status` the schema does not declare. ajv over
+    # `audit-plan.schema.json` is what refuses both.
+    _inside = _valid_manifest()
+    _inside["phases"][0]["tasks"][0]["testEvidence"] = dict(good, attempt=3,
+                                                            status="green")
+    _inside["phases"][0]["tasks"][0]["zzzProbe"] = 1
+    inside = _out(_inside)
+    record("c21 the command sees nothing INSIDE the block - a cached `attempt` and "
+           "a `status` no enum declares both pass here - while the sibling probe on "
+           "the same task draws its one warning in the same run. That pairing is "
+           "what makes this a fact about the level rather than about the "
+           "typo-catcher being off, and it is why the enum is ajv's to enforce: %r"
+           % (inside,),
+           inside[0] == 0 and inside[1] == []
+           and len(inside[2]) == 1 and "'zzzProbe'" in inside[2][0]
+           and "testEvidence" not in inside[2][0])
 
 
 def _selftest():

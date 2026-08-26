@@ -872,6 +872,10 @@
             "type": "string"
           }
         },
+        "testEvidence": {
+          "$ref": "#/$defs/testEvidence",
+          "description": "The last recorded run of THIS phase's `testGate`, as a pointer into the evidence ledger plus the verdict it reached. Optional and absent by default: a phase nobody has gated carries nothing here, which is not the same as a phase whose gate failed, and the ledger — never this block — is what a count or a history is read from."
+        },
         "parentBranch": {
           "type": [
             "string",
@@ -1025,6 +1029,10 @@
         },
         "tests": {
           "$ref": "#/$defs/tests"
+        },
+        "testEvidence": {
+          "$ref": "#/$defs/testEvidence",
+          "description": "The last recorded run of THIS task's tests, as a pointer into the evidence ledger plus the verdict it reached. Optional and absent by default: a task nobody has run carries nothing here, which is not the same as a task whose tests failed, and `tests` above stays the CONTRACT the run was held to while this is the evidence that a run happened."
         },
         "outcome": {
           "$ref": "#/$defs/outcome"
@@ -1267,6 +1275,38 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "testEvidence": {
+      "type": "object",
+      "required": [
+        "runId",
+        "status",
+        "at"
+      ],
+      "additionalProperties": true,
+      "description": "A POINTER at the run that last exercised this task (or this phase's gate), together with the verdict that run reached. IT IS A CACHE AND NOT THE SOURCE OF TRUTH: the truth is the append-only evidence ledger kept beside the manifest, every run is in it, and anything a reader wants to COUNT or COMPARE is derived by reading it. That is what makes this block disposable — deleting it is always safe, the ledger still holds the run, and the next run writes it back. ABSENT MEANS 'NO EVIDENCE RECORDED', NEVER 'FAILED': a manifest written before this field existed, a task nobody has run yet, and a block somebody deleted are one and the same state, and every surface must say so rather than render the worst reading of a silence. Optional at both levels, and additive — a manifest that carries none validates exactly as it did before this field was declared. `attempt` and a run COUNT are deliberately NOT here. A count cached beside the thing that produces it is the defect this repo has now fixed under three separate numbers, and 'how many times has this run' is a question the ledger answers without a second copy that can disagree with it; a block that cannot go stale is worth more than one that can carry more. additionalProperties stays permissive, which is this document's policy at every object level and not an oversight here: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote, and the keys below are what a consumer may READ rather than a refusal of a fourth. What IS required is all of them at once — a block missing `runId` points at nothing, one missing `status` caches nothing, one missing `at` cannot be aged, and since dropping the whole block is always safe there is never a reason to write half of one.",
+      "properties": {
+        "runId": {
+          "type": "string",
+          "description": "Which run in the evidence ledger this points at. OPAQUE, AND THAT IS THE CONTRACT: the format is not a schema, it is not parsed, and nothing may read a timestamp, an ordinal or an attempt number out of it — a consumer that did would be deriving a fact from a string that is free to change spelling, and would go quietly wrong the day it does. Use it to LOOK THE RUN UP, then read the fact off what the ledger holds."
+        },
+        "status": {
+          "description": "What that run said, cached so a reader that does not open the ledger still has a verdict to render. 'passed' and 'failed' are the ordinary two; 'no-checks' means the gate ran and found nothing to check; 'empty-gate' means no gate was configured at all; 'timed-out' and 'cancelled' mean the run was stopped rather than answered; 'could-not-run' means the runner never started (no interpreter, an unreadable command), which is emphatically not a failing test and must never be rendered as one. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'failed'.",
+          "enum": [
+            "passed",
+            "failed",
+            "no-checks",
+            "timed-out",
+            "cancelled",
+            "could-not-run",
+            "empty-gate"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO timestamp of the run this block points at, so a reader can tell a fresh verdict from a stale one without opening the ledger. It dates the RUN, not the moment the cache was written; the two are the same today and would stop being so the first time this block is rebuilt from the ledger."
         }
       }
     },
