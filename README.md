@@ -30,7 +30,7 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 | Plugin | What it does |
 |---|---|
-| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:layout` switches the manifest between one file and one file per phase — the sharded shape gives **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges) and the command goes back the other way too, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off, every gate run written to a committed evidence ledger), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:layout` switches the manifest between one file and one file per phase — the sharded shape gives **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges) and the command goes back the other way too, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
 
 ## What is enforced and what is followed
 
@@ -44,10 +44,10 @@ model does not comply.
 The left column has two kinds of row. Most are a hook refusing a tool call **before** it
 happens. The last few are a script returning an exit code **after** it did —
 `scripts/governance/verify-invariants.py`, which re-derives those rules from git, the
-phase shard, the journal and the usage ledger, and which Phase sign-off and
-`/audit:status --gate --fail-on invariant-breach` both run. A rule nothing can refuse in
-advance is still enforced if a breach cannot pass a gate; a rule nothing checks at all is
-policy, and that is what the right column is.
+phase shard, the journal, the usage ledger and the test-evidence record, and which Phase
+sign-off and `/audit:status --gate --fail-on invariant-breach` both run. A rule nothing
+can refuse in advance is still enforced if a breach cannot pass a gate; a rule nothing
+checks at all is policy, and that is what the right column is.
 
 | Enforced by a hook (before) or a script (after) | Followed from `orchestrator.md` |
 |---|---|
@@ -66,10 +66,12 @@ policy, and that is what the right column is.
 | Every plan and config write — journalled, hash-chained | `git -C <gitRoot>`; gate commands from the project dir |
 | Token spend — attributed to a phase and a task | Spawn the executor with the task id in its description |
 | Unaccounted shell writes in the watched tree — reported in-band, where a plan exists to be outside of | Skills invoked before any code is written |
-| Source changed with no test — nudged |  |
+| Source changed with no test — nudged | Every gate run goes through the recorder, not by hand |
 | Explorer cannot write, reviewer cannot edit, executor has no web tools |  |
 | The manifest — referentially validated, by exit code |  |
-| *(after)* A task commit staged that task's files, its phase's shard and the journal — never the index |  |
+| *(after)* A task commit staged that task's files, its phase's shard, the journal and the evidence record — never the index |  |
+| *(after)* An audit-state commit carried the record of a run and none of the work |  |
+| *(after)* A committed `testEvidence` pointer names a run the repository actually holds |  |
 | *(after)* No `push` reached a remote from the phase branch |  |
 | *(after)* No forced update and no `git stash` touched the phase branch |  |
 | *(after)* A `risk: "high"` task ran on neither a declared nor a metered `haiku` |  |
