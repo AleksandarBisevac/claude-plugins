@@ -344,7 +344,7 @@ L7:
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
-  run-test-gate -> _manifest_io, _output
+  run-test-gate -> _journal_io, _manifest_io, _output
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
@@ -2146,6 +2146,43 @@ until a session forgets, a harness runs a different orchestrator, or somebody ad
 hand next year. It does NOT narrow the gate to the task's files — that changes what a per-task
 gate means for every manifest already written, so the refusal names the option and a human
 decides.
+
+**Whose gate ran is answered, not assumed.** `gate_of` takes an optional task id and returns the
+resolved commands *plus the scope they came from*. A task declaring `tests.gate` is run through its
+own commands; one declaring none falls back to the phase's and **says so**, because "this task's
+gate passed" and "the phase's gate passed while pointed at this task's files" are different claims
+for a record to make. Absent and empty are one answer; an unknown task id is an error rather than a
+quiet fallback, the distinction `owned_files` already draws.
+
+**What did not finish is separated from what failed.** A timeout and a failure to *start* used to
+be one answer — both were swallowed into `except Exception` and reported as exit 127, so "the suite
+hung" and "the binary is missing" arrived identical. They are different repairs, so they are
+different words, and neither is read out of an exit code: 124 and 127 are codes a real command may
+return on its own, so the category comes from what the wrapper observed and travels beside the code.
+A missing binary under `shell=True` is therefore still a *failure* — the shell started fine — and
+that limit is pinned by a case rather than papered over.
+
+**The process GROUP is torn down, not just the child.** `subprocess.run(timeout=)` kills the direct
+child, and under `shell=True` that child is the shell: `npx` → `node` → its workers outlive it, keep
+running and keep **writing** — into the very tree this script is about to describe. So a step is
+spawned into its own session (or process group on Windows) and stopped with `killpg`, a grace
+period, then `SIGKILL`; `taskkill /T /F` where `killpg` does not exist. `shares_our_group()` guards
+the one way that goes badly wrong: where the child shares this process's group, signalling it would
+kill the caller, so the narrow kill is taken and the teardown reports itself **unconfirmed** rather
+than implying a clean stop. Consequently **an interrupted run makes no tree comparison at all** —
+`treeMutated` is `None` with a basis naming the race, the same refusal `_porcelain` already makes
+for a tree git will not describe.
+
+**`head` no longer claims what it cannot.** A task gate runs *before* the task commit, so a run
+executes against HEAD plus staged edits plus unstaged ones plus untracked files — two failed
+retries at one HEAD were indistinguishable. `testedState` carries a `scopeDigest` over the files the
+work **declares**, taken **before the first command** (a fix-in-place gate rewrites exactly those
+files, so a digest read afterwards would answer a different question than the one asked), and a
+`dirtyDigest` over the pre-run porcelain lines, which costs no extra git call. Both reuse
+`_journal_io`'s `canonical` and `file_hash` rather than starting a second way to hash. The limit is
+stated and pinned: `dirtyDigest` records *which* paths were dirty, not their contents, so editing an
+already-dirty file outside the declared scope moves neither digest. It discriminates retries; it is
+not a reproducible snapshot of the repository.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
