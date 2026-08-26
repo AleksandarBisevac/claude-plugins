@@ -284,6 +284,85 @@ describe('the area-column cases would catch any of the three wrong predicates', 
   });
 });
 
+describe('the prototype-key cases would catch a bare table read', () => {
+  // One mutation, five sites. `lookup()` is the whole of the fix, so turning it
+  // back into the bare `t[k]` it replaced restores the shipped defect exactly —
+  // and every case in prototype-keys.test.mjs that matters goes wrong at once.
+  // That is the claim the helper is making, so it is the claim to break.
+  const BARE = mutateOnce(
+    'const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;',
+    'const lookup=(t,k)=>t[k];');
+
+  // The other direction: a guard weakened until it over-fires. This one answers
+  // "miss" for every key, which is what a `hasOwnProperty` call written against
+  // the wrong object would do — and it is invisible to any case that only ever
+  // asks about a key the table does not have.
+  const ALWAYS_MISS = mutateOnce(
+    'const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;',
+    'const lookup=(t,k)=>undefined;');
+
+  // `wontfix` and `unattributed` on purpose: most of the shipped table humanises
+  // to the same word it maps to ('done' -> 'Done'), so a guard that answered
+  // "miss" for everything would be invisible to a case built on those. These two
+  // are the keys where the table and the humaniser disagree.
+  const TABLE = { wontfix: 'Won’t fix', unattributed: 'Uncategorized', done: 'Done' };
+
+  const load = (mutate) => loadPanel({
+    mutate,
+    placeholders: { __LABELS__: JSON.stringify(TABLE) },
+  }).ctx;
+
+  it('label() goes back to returning a function for "constructor"', () => {
+    const { label } = reach(load(BARE), ['label']);
+    expect(typeof label('constructor')).toBe('function');
+    expect(typeof label('toString')).toBe('function');
+    expect(typeof label('__proto__')).toBe('object');
+  });
+
+  it('a palette lookup goes back to stringifying Object.prototype', () => {
+    const { uCol } = reach(load(BARE), ['uCol']);
+    expect(uCol('constructor')).not.toBe('var(--bar-neutral)');
+    expect(uCol('constructor')).toContain('native code');
+  });
+
+  it('the fragment decoder goes back to accepting a key it does not know', () => {
+    const ctx = load(BARE);
+    const { uApplyFragment } = reach(ctx, ['uApplyFragment']);
+    expect(uApplyFragment('constructor=x')).toBe(true);
+    // ...and it puts a FUNCTION on the filter order, which the empty-state
+    // banner renders.
+    expect(vm.runInContext('typeof UORDER[0]', ctx)).toBe('function');
+  });
+
+  it('the density preview goes back to painting NaN onto :root', () => {
+    const ctx = load(BARE);
+    vm.runInContext(
+      "globalThis.__written=[];"
+      + "document.documentElement.style.setProperty=(n,v)=>{__written.push([n,v]);};"
+      + "TBASE['--sp-1']='1rem';TLAY={density:'constructor',order:{}};", ctx);
+    reach(ctx, ['tPaintLayout']).tPaintLayout();
+    expect(vm.runInContext('__written', ctx)).toEqual([['--sp-1', 'NaNrem']]);
+  });
+
+  it('...and a guard that answers "miss" for everything loses the real labels', () => {
+    const { label } = reach(load(ALWAYS_MISS), ['label']);
+    // It fails the way an over-firing guard does: the humaniser answers where
+    // the table should have.
+    expect(label('wontfix')).toBe('Wontfix');
+    expect(label('unattributed')).toBe('Unattributed');
+  });
+
+  it('...and unmutated, every one of those is the fixed behaviour', () => {
+    const ctx = load(undefined);
+    const { label, uCol, uApplyFragment } = reach(ctx, ['label', 'uCol', 'uApplyFragment']);
+    expect(label('constructor')).toBe('Constructor');
+    expect(label('wontfix')).toBe('Won’t fix');
+    expect(label('unattributed')).toBe('Uncategorized');
+    expect(uCol('constructor')).toBe('var(--bar-neutral)');
+    expect(uApplyFragment('constructor=x')).toBe(false);
+  });
+});
+
 describe('the sandbox pins would catch a source that moved', () => {
   it('refuses a mutation whose target is gone', () => {
     expect(() => loadReport({ mutate: mutateOnce('no such text here', 'x') }))

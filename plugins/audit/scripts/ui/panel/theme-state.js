@@ -174,7 +174,8 @@ function tPaintLayout(){
  // disguise everywhere else in this file, and one exception is how the rule
  // stops being read.
  const d=tLayout().density;
- const f=TDENSITY[d]===undefined?1:TDENSITY[d];
+ const mult=lookup(TDENSITY,d);
+ const f=mult===undefined?1:mult;
  if(f===1)return;
  const tf=1+(f-1)/3;
  const cs=getComputedStyle(root);

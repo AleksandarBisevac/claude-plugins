@@ -217,7 +217,7 @@ function renderAppearance(){closeCombo();
    const cur=(lay.order||{})[view]||known.slice();
    const list=cur.filter(x=>known.includes(x))
      .concat(known.filter(x=>!cur.includes(x)));
-   card.append(el('h3',{class:'sub2'},'Order — '+(LABELS[view]||view)));
+   card.append(el('h3',{class:'sub2'},'Order — '+(lookup(LABELS,view)||view)));
    list.forEach((name,i)=>{
     /**
      * Move this card to another index and redraw.

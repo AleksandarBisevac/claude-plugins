@@ -400,7 +400,7 @@ function uSlots(field,present,by){
  *   neutral bar token for a key that got no slot — never a raw colour, so the
  *   theme still owns it
  */
-function uCol(k){return USLOTS[k]?'var(--viz-'+USLOTS[k]+')':'var(--bar-neutral)';}
+function uCol(k){const s=lookup(USLOTS,k);return s?'var(--viz-'+s+')':'var(--bar-neutral)';}
 
 /**
  * The colour for one MODEL, from the model-only map, so a model keeps its hue
@@ -409,7 +409,7 @@ function uCol(k){return USLOTS[k]?'var(--viz-'+USLOTS[k]+')':'var(--bar-neutral)
  * @returns {string} a reference to the palette token for its slot, or to the
  *   neutral bar token
  */
-function uMCol(k){return MSLOTS[k]?'var(--viz-'+MSLOTS[k]+')':'var(--bar-neutral)';}
+function uMCol(k){const s=lookup(MSLOTS,k);return s?'var(--viz-'+s+')':'var(--bar-neutral)';}
 
 /**
  * Set one filter slot and redraw the tab. The single entry point for every

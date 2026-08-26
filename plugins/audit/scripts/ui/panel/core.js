@@ -61,6 +61,36 @@ const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.
  else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null)e.setAttribute(n,v);}
  for(const c of k.flat()){if(c!=null)e.append(c.nodeType?c:document.createTextNode(c));}return e;};
 /**
+ * One entry of a lookup table, read as an OWN property.
+ *
+ * A bare `TABLE[k]` walks the prototype chain, so a key that happens to name
+ * something on `Object.prototype` answers with THAT instead of with a miss, and
+ * the `||` fallback written beside the read is unreachable for exactly those
+ * names. `label('constructor')` returned a function from a helper documented to
+ * return a string; `label('toString')`, `'valueOf'`, `'hasOwnProperty'` did the
+ * same, and `'__proto__'` returned an object.
+ *
+ * The keys are not hypothetical. `testEvidence.status` is enum-constrained in
+ * the JSON Schema and restated nowhere on the Python side, so a hand-written or
+ * third-party manifest carries whatever it likes; `area` tags, `model` names and
+ * `review.status` are documented free text; and the usage tab decodes its filter
+ * dimensions straight out of the URL fragment.
+ *
+ * A miss answers `undefined` — which is what the bare read answered — so an
+ * existing `||`, `??` or `===undefined` beside the call keeps behaving exactly
+ * as it did for every key that is not an inherited property name.
+ *
+ * This guards READING a table. A map the code BUILDS from outside keys needs
+ * `Object.create(null)` as well, because `m['__proto__']=v` on a plain object
+ * re-points the prototype instead of storing the value, and no read helper can
+ * recover what was never written.
+ *
+ * @param {Object<string, *>} t - the table to read
+ * @param {string|number|null|undefined} k - the key, from wherever it came
+ * @returns {*} the table's own value for `k`, or undefined when it has none
+ */
+const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;
+/**
  * One call to the panel's own API, carrying the session token.
  *
  * Every request goes through here, so the token header is written once. The
@@ -240,7 +270,7 @@ const LABELS=__LABELS__;
  * @returns {string} the shared label, the humanised value, or the em dash every
  *   other empty cell uses when there is no value at all
  */
-const label=v=>LABELS[v]||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
+const label=v=>lookup(LABELS,v)||(v?String(v).replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase()):'—');
 /**
  * The ledger's storage key for spend with no phase or task behind it — ad-hoc
  * edits, `#no-plan`, sessions outside the plan.

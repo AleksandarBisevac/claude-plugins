@@ -64,7 +64,7 @@ function browseRows(dim,facts){
   // Slot order, not token order: the palette was validated on THAT adjacency, so
   // drawing segments in any other sequence puts unvalidated pairs side by side.
   const per=mix[k]||{};
-  const models=Object.keys(per).sort((a,b)=>(MSLOTS[a]||99)-(MSLOTS[b]||99))
+  const models=Object.keys(per).sort((a,b)=>(lookup(MSLOTS,a)||99)-(lookup(MSLOTS,b)||99))
     .map(m=>({model:m,tokens:per[m],pct:uShare(per[m],v[0])}));
   const top=[...models].sort((a,b)=>b.tokens-a.tokens)[0];
   return {id:k,
