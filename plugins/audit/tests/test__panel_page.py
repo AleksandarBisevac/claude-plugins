@@ -489,6 +489,29 @@ def _cases(check):
           and "label(ph.status)" in M.UI_HTML and "label(t.status)" in M.UI_HTML
           and "label(p.status)" in M.UI_HTML
           and "},ph.status||'—')" not in M.UI_HTML)
+    # A property of the SOURCE, and only that: there is ONE guarded reader for
+    # every table a value from outside the code can key. What the guard DOES —
+    # that `label('constructor')` is the word "Constructor" and not
+    # Object.prototype.constructor — is asserted where it can be executed, in
+    # tools/ui-tests/prototype-keys.test.mjs. A substring pin cannot see a
+    # prototype walk, which is exactly how this survived every pin in this file.
+    check("labels: every table keyed from outside the code is read as an OWN "
+          "property, through one helper rather than a guard per reader",
+          "const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;"
+          in M.UI_HTML
+          and "const label=v=>lookup(LABELS,v)||" in M.UI_HTML
+          and "lookup(UFDIM,k)" in M.UI_HTML
+          and "lookup(TDENSITY,d)" in M.UI_HTML
+          and "lookup(USLOTS,k)" in M.UI_HTML
+          and "lookup(MSLOTS,k)" in M.UI_HTML
+          # ...and no reader left behind. The declaration of UFDIM builds itself
+          # by element assignment from UFKEY's own keys, which is the one bare
+          # bracket any of these tables is allowed.
+          and M.UI_HTML.count("LABELS[") == 0
+          and M.UI_HTML.count("TDENSITY[") == 0
+          and M.UI_HTML.count("USLOTS[") == 0
+          and M.UI_HTML.count("MSLOTS[") == 0
+          and M.UI_HTML.count("UFDIM[") == 1)
     check("labels: Overview colours its status the same way Composition does - "
           "same data, one treatment",
           "el('span',{class:'badge'},p.status" not in M.UI_HTML)
@@ -2442,9 +2465,14 @@ def _cases(check):
           "['models','models']" in M.UI_HTML
           and M.UI_HTML.count("['models','models']") == 3
           and "model:[['model','id'],['tokens','tokens']" in M.UI_HTML)
+    # The slot read goes through `lookup()` — a bare `MSLOTS[a]` answered with
+    # Object.prototype's member for a model literally named `constructor` or
+    # `toString`, and `||99` could not see it. That is a BEHAVIOUR, and it is
+    # asserted as one in tools/ui-tests/prototype-keys.test.mjs; the clause here
+    # stays a construct pin on the sort key, which is what source text can check.
     check("mix segments are emitted in slot order (validated adjacency), and the "
           "dominant model is named rather than left to colour",
-          "(MSLOTS[a]||99)-(MSLOTS[b]||99)" in M.UI_HTML
+          "(lookup(MSLOTS,a)||99)-(lookup(MSLOTS,b)||99)" in M.UI_HTML
           and "el('span',{class:'mdom'},r.dominant" in M.UI_HTML
           and "cell.title=r.models.map(" in M.UI_HTML)
     check("a mix has no natural order, so that column sorts by dominant model",

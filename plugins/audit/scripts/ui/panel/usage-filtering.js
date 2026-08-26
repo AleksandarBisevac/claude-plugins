@@ -78,7 +78,7 @@ function uApplyFragment(frag){
   let v=i<0?'':pair.slice(i+1);
   try{v=decodeURIComponent(v);}catch(e){v='';}
   if(!v)return;
-  const d=UFDIM[k];
+  const d=lookup(UFDIM,k);
   if(d){UF[d]=v;UORDER=UORDER.filter(x=>x!==d);UORDER.push(d);any=true;return;}
   if(k==='from'||k==='to'){
    const cur=(UF.day||'').split('..'),a=k==='from'?v:(cur[0]||''),
