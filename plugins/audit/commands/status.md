@@ -17,7 +17,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> $A
 It already renders the whole report: an overall line with a progress bar, the usage
 line when metering is on, one aligned table across every phase (markers `[x]` done ·
 `[~]` in_progress · `[!]` blocked · `[ ]` pending), what each pending task is waiting
-on, the ready-now list with a copy-pasteable `/audit:run <id>`, open bugs, parked
+on, a `tests` column carrying the verdict of the run that last exercised each task
+exactly as the manifest recorded it — shown only when a task in view has recorded
+one, so a plan that has never run a gate renders exactly as it did before the column
+existed, and `-` inside it means no run was recorded, which is not a failure — the
+ready-now list with a copy-pasteable `/audit:run <id>`, open bugs, parked
 proposals when `/audit:init` parked any (plus a one-line footer counting free-form
 legacy proposals, which `/audit:propose list` still reads), a `BY AREA` rollup when the
 plan tags areas (per tag: phases and done/total tasks, ` - <owner>` when the area
@@ -63,10 +67,35 @@ meanings, rendered from the same tuple the gate evaluates:
 - `invariant-breach` — a started phase breaks one of the orchestrator's invariants,
   checked **after the fact** by `scripts/governance/verify-invariants.py` against git,
   the phase shard, the journal and the usage ledger
+- `failing-tests` — a task or phase whose recorded `testEvidence.status` cannot sign
+  work off: `failed`, `no-checks` (exit 0, and still not a verdict — the gate ran and
+  found nothing to check), `timed-out`, `cancelled` (both stopped rather than
+  answered) or `could-not-run` (the runner never started). `passed` and `empty-gate`
+  do not trip it
+- `no-test-evidence` — a `done` task **or phase** carrying no `testEvidence` at
+  all. Both scopes, exactly like `failing-tests`: a phase's sign-off gate records a
+  run of its own, and no task's pointer stands in for it
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
 commitment rather than an estimate.
+
+**Neither test-evidence condition is in the default either, and both refuse to read a
+silence as a failure.** A manifest written before the field existed, a task nobody has
+run and a block somebody deleted are one state — *no run was recorded* — so a plan
+that has never recorded a run trips neither condition and a default holding them would
+fail every build on the day the plugin was upgraded. `no-test-evidence` is the way to
+ask for the opposite reading, and it asks it of every subject the plan already calls
+`done` — a phase as readily as a task, because a phase is signed off by a gate run of
+its own. A `status` word this build does not recognise trips nothing: the enum may gain
+members, so it is reported as itself rather than folded into `failed`.
+
+**Both report what the manifest says, and nothing more.** The block is a *cache* of a
+run recorded in the evidence file beside the plan; neither condition opens that file,
+so neither can tell you whether the `runId` still resolves. That question belongs to
+`/audit:doctor` and to `--fail-on invariant-breach`. The `tests` column in the render
+carries the same word where a task has one, and a phase's own verdict is a `tests
+<word>` clause on its head line.
 
 `invariant-breach` is out of the default for a different reason: it reads git several
 times per started phase, and a default that slow is a default somebody replaces. What

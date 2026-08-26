@@ -122,6 +122,12 @@ unmet_refs = _status_facts.unmet_refs
 evaluate_gate = _status_facts.evaluate_gate
 budget_breaches = _status_facts.budget_breaches
 invariant_breaches = _status_facts.invariant_breaches
+NO_SIGN_OFF_EVIDENCE = _status_facts.NO_SIGN_OFF_EVIDENCE
+KNOWN_EVIDENCE = _status_facts.KNOWN_EVIDENCE
+evidence_status = _status_facts.evidence_status
+evidence_rows = _status_facts.evidence_rows
+test_evidence_summary = _status_facts.test_evidence_summary
+evidence_subjects = _status_facts.evidence_subjects
 
 
 def invariants_block(manifest, manifest_path):
@@ -151,6 +157,64 @@ def _invariant_detail(summary):
     found = invariant_breaches(summary) or []
     return "%d breach(es): %s" % (len(found),
                                   _output.some_of(found, sep="; "))
+
+
+def _subject_id(row):
+    """An evidence row's id for a gate line, or `-` when the subject has none.
+
+    `_status_facts.evidence_rows` carries an id-less subject ON PURPOSE: a subject
+    with no id is the validator's finding to report, and dropping it here would
+    quietly shrink a gate the reader believes covers the plan. So the row reaches
+    these two renderers with `id: None`, and `%s` over that printed the WORD `None`
+    into the one sentence somebody reads while a build is red.
+
+    THE REPAIR IS THE RENDERING BOUNDARY AND NOTHING ELSE. The row is still walked,
+    still counted and still trips its condition; only the text changes. `-` is the
+    mark this same command already spells an absent `commit` and an absent `model`
+    with, so the reader meets one vocabulary for "nothing here" rather than two.
+    """
+    sid = row.get("id")
+    return "-" if sid is None or sid == "" else str(sid)
+
+
+def _failing_tests_detail(summary):
+    """What `GATE FAILED: failing-tests (...)` says after the name.
+
+    NAMES THE SUBJECTS AND REPRODUCES THE WORD, never a bare count -- the same call
+    `_budget_detail` makes below and for the same reason: the whole point of caching
+    a verdict beside the task is that "which one, and what did it say" is already
+    known, so a line that only counted would send the reader back into the plan.
+
+    THE WORD IS COPIED, NOT TRANSLATED. `no-checks` prints as `no-checks`, so it can
+    never be mistaken for the pass it is not, and a status this build has never seen
+    would print as itself. `some_of` keeps the line bounded and says how many it
+    left out, so the count in front and the list behind it cannot disagree.
+    """
+    rows = evidence_subjects(summary, "failing")
+    return "%d subject(s): %s" % (
+        len(rows),
+        _output.some_of(["%s %s %s" % (r.get("scope"), _subject_id(r),
+                                       r.get("status")) for r in rows],
+                        sep="; "))
+
+
+def _no_evidence_detail(summary):
+    """What `GATE FAILED: no-test-evidence (...)` says after the name.
+
+    Worded as an ABSENCE throughout -- "no run recorded", never "failed" -- because
+    that is the whole distinction this condition exists to keep, and a gate line is
+    the one place a reader meets it under time pressure.
+
+    NAMES THE SCOPE, exactly as `_failing_tests_detail` above does and for the same
+    reason: the condition reads phases as well as tasks, and `phase PE` and `task
+    PE.1` send a reader to two different places in the plan. "done subject" is the
+    word that covers both without claiming the wrong one.
+    """
+    rows = evidence_subjects(summary, "missingOnDone")
+    return "%d done subject(s) with no run recorded: %s" % (
+        len(rows),
+        _output.some_of(["%s %s" % (r.get("scope"), _subject_id(r))
+                         for r in rows], sep=", "))
 
 
 def _budget_detail(summary, threshold_pct):
@@ -326,6 +390,37 @@ def _short(sha):
     return s[:7] if s else "-"
 
 
+# The `tests` column's cap, DERIVED from the vocabulary rather than typed: every
+# word the enum declares today fits whole, and a longer one a later release adds is
+# elided with a visible marker instead of widening every row in the table.
+EVIDENCE_CELL_MAX = max(len(w) for w in KNOWN_EVIDENCE)
+
+
+def _evidence_cell(holder):
+    """The `tests` cell: the word the manifest recorded, or `-` for no record.
+
+    THE RAW WORD, NEVER A TRANSLATION OF IT, and the three distinctions that survive
+    because of that are each a defect this repository has already fixed once:
+
+      * `no-checks` is exit 0 and is NOT a pass, so it prints as `no-checks` and
+        cannot be read as one -- nothing here maps a status onto a nicer word, and
+        no cell is ever painted;
+      * an ABSENT block is `-`, the same mark `commit` already uses for a task that
+        has not landed. It means "no run recorded", which is not a failure and is
+        not worded like one;
+      * a status this build has never seen prints as itself, because the enum may
+        gain members and folding one into a word it is not is the reading the schema
+        forbids by name.
+
+    AND IT CLAIMS NOTHING ABOUT THE RUN. `runId` is not resolved -- whether this
+    checkout's evidence ledger holds it is `verify-invariants.py`'s question and
+    `/audit:doctor`'s -- so this cell reports what the manifest SAYS and is worded
+    as no more than that.
+    """
+    status = evidence_status(holder)
+    return _clip(status, EVIDENCE_CELL_MAX) if status else "-"
+
+
 def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
@@ -425,6 +520,18 @@ def _phase_table_lines(manifest, summary, only_phase=None):
         out.append("  scoped to phase %s - totals above are whole-plan"
                    % only_phase)
 
+    # THE `tests` COLUMN IS EARNED, the rule `_report_page._present_columns`
+    # already applies to the report's optional columns and for the same reason: a
+    # plan that has never recorded a run must render exactly as it did before this
+    # feature existed, rather than pay a header and a `-` on every task row for a
+    # column no task in it fills. Asked of the TASKS in the rendered scope, because
+    # the cells are theirs -- a phase's own verdict has its own clause on the phase
+    # head below, which is conditional in its own right.
+    show_tests = any(evidence_status(t)
+                     for pe in shown_phases
+                     for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
+                     if isinstance(t, dict))
+
     all_rows = {}
     for pe in shown_phases:
         ph = by_id.get(pe.get("id")) or {}
@@ -433,18 +540,26 @@ def _phase_table_lines(manifest, summary, only_phase=None):
             if not isinstance(t, dict):
                 continue
             tid = t.get("id") or "?"
-            rows.append([
+            cells = [
                 "%s %s" % (_marker(t.get("status")), tid),
                 _clip(_one_line(t.get("title")), 44),
                 _theme.label(t.get("status")) or "?",
                 t.get("model") or "-",
                 _clip(", ".join(unmet.get(tid, [])) or "-", 26),
-                _short(t.get("commit")),
-                "READY" if tid in ready else "",
-            ])
+            ]
+            if show_tests:
+                cells.append(_evidence_cell(t))
+            cells += [_short(t.get("commit")),
+                      "READY" if tid in ready else ""]
+            rows.append(cells)
         all_rows[pe.get("id")] = rows
 
-    cols = ("task", "title", "status", "model", "waiting on", "commit", "")
+    # `tests` sits beside `commit` because they are the same kind of fact -- what
+    # HAPPENED to this task -- and because both spell "nothing recorded" as `-`.
+    # The column is as wide as the longest word actually present.
+    cols = (("task", "title", "status", "model", "waiting on")
+            + (("tests",) if show_tests else ())
+            + ("commit", ""))
     widths = [len(c) for c in cols]
     for rows in all_rows.values():
         for r in rows:
@@ -487,6 +602,14 @@ def _phase_table_lines(manifest, summary, only_phase=None):
             head += "  prio %d" % pe["priority"]
         if ph.get("branch"):
             head += "  %s" % ph["branch"]
+        # A PHASE carries a pointer too, and `--fail-on failing-tests` reads it. A
+        # render that showed only the task column would leave a tripped gate with
+        # nothing on screen explaining it. Printed only when the phase records
+        # something: absent is the ordinary case, and a `tests -` on every phase
+        # head would be noise for every plan that has never run a gate.
+        phase_tests = evidence_status(ph)
+        if phase_tests:
+            head += "  tests %s" % _clip(phase_tests, EVIDENCE_CELL_MAX)
         out.append(head)
         if pe.get("desiredOutcome"):
             out.append("       desired: %s"
@@ -849,6 +972,37 @@ CONDITION_HELP = {
                         "(scripts/governance/verify-invariants.py reads git, the "
                         "shard, the journal and the ledger; several git calls per "
                         "phase, so it is opt-in)",
+    # THE MEMBERSHIP AND ITS REASONING TRAVEL TOGETHER, because the set is a
+    # judgement and a user gating a pipeline on it is entitled to the argument
+    # rather than to the list. `passed` is the only verdict that signs anything off;
+    # `empty-gate` says no gate was configured, which is a plan's choice and not a
+    # result. `no-checks` is the one worth spelling out: it is exit 0, and a reader
+    # who assumed exit 0 meant "tests passed" would be reading a green build with no
+    # tests in it as a signed-off one. `timed-out`, `cancelled` and `could-not-run`
+    # reached no verdict at all - the first two were stopped, the third never
+    # started - and a gate whose job is to refuse to sign off on unfinished evidence
+    # must refuse those too.
+    "failing-tests": "a recorded test run that cannot sign work off "
+                     "(`testEvidence.status` on a task or phase is `failed`, "
+                     "`no-checks` - exit 0, and still not a verdict - "
+                     "`timed-out`, `cancelled` or `could-not-run`, which never "
+                     "started at all; `passed` and `empty-gate` do not trip it, "
+                     "an ABSENT block never does because absent means no run was "
+                     "recorded rather than a failure, and a word this build does "
+                     "not recognise is reported as itself and judged by nothing, "
+                     "since the enum may gain members. It reports what the "
+                     "manifest says; whether the ledger holds that run is "
+                     "/audit:doctor's question)",
+    "no-test-evidence": "a `done` task OR PHASE carrying no `testEvidence` at "
+                        "all (both scopes, exactly like failing-tests above: a "
+                        "phase's sign-off gate records a run of its own and no "
+                        "task's pointer stands in for it, so a task-only reading "
+                        "would go quiet on the one sign-off this condition exists "
+                        "to ask about. It is opt-in, and deliberately out of "
+                        "the --gate default: a plan that has never recorded a "
+                        "run carries no "
+                        "pointers anywhere, so a default holding this would fail "
+                        "every build on the day the plugin was upgraded)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -877,6 +1031,13 @@ def _conditions_epilog():
         "Neither budget condition is in the --gate default: spend is a signal, "
         "not a defect, and a phase at 105% of budget may be entirely justified. "
         "Opt in when a budget is a commitment.", width=78))
+    lines.append("")
+    lines.append(textwrap.fill(
+        "Neither test-evidence condition is in it either. A plan carries no "
+        "`testEvidence` until something records a run, so a default holding "
+        "them would fail builds on the day the plugin was upgraded rather than "
+        "on the day anything went wrong. Absent evidence is never read as a "
+        "failure by either one.", width=78))
     lines.append("")
     lines.append(textwrap.fill(
         "exit codes: 0 pass | 1 gate failed | 2 usage error / unreadable "
@@ -1074,6 +1235,8 @@ def main(argv):
                     "over-budget": _budget_detail(summary, 100.0),
                     "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
                     "invariant-breach": _invariant_detail(summary),
+                    "failing-tests": _failing_tests_detail(summary),
+                    "no-test-evidence": _no_evidence_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1
