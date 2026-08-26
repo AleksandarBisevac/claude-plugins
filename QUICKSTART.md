@@ -68,9 +68,12 @@ Shows which task it would pick and why, and mutates nothing. When it looks right
 /audit:next
 ```
 
-One task: a branch, the work, the test gate, one commit. It stops after that task and
-tells you what is ready next, so the first thing you approve is small enough to
-judge. `/audit:phase P0` runs a whole phase the same way once you trust it.
+One task: a branch, the work, the test gate, one commit. The gate run is recorded — what
+ran, when, and what it answered — into a file committed beside the plan, so the report in
+the next step can say whether the tests actually ran rather than only that the task is
+marked done. It stops after that task and tells you what is ready next, so the first thing
+you approve is small enough to judge. `/audit:phase P0` runs a whole phase the same way
+once you trust it.
 
 ## 5. Read the report
 
