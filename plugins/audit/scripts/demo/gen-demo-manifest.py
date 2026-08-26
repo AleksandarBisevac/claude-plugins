@@ -90,6 +90,7 @@ _output.install_path()
 
 import _evidence_io  # noqa: E402  (the recorder's own row writer and pointer shape)
 import _journal_io  # noqa: E402  (the canonical line spelling, and which month a row lands in)
+import _manifest_io as _mio  # noqa: E402  (recorded_attempt: one reading of `attempts`, shared with the recorder)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
 
@@ -1364,8 +1365,14 @@ def _evidence_specs(manifest):
             # always on and a marker that is never on are the same marker.
             mutated = owns if (pi + ti) % 4 == 0 else []
             overlap = [] if (pi + ti) % 5 == 0 else list(owns)
+            # THE SAME READING THE RECORDER USES, and not a number written here.
+            # A generator may only emit rows the recorder could have produced, so
+            # `attempts` is read through the one rule rather than defaulted: a
+            # task recording nothing gets a row with NO attempt, and a task
+            # recording 0 gets no row at all, because it has not run.
+            recorded = _mio.recorded_attempt(task)
             if tstatus == "done":
-                out.append(("task", ids, _at(task.get("completedAt")), 1,
+                out.append(("task", ids, _at(task.get("completedAt")), recorded,
                             _run_result(resolved, owns, head,
                                         "%s-done" % ids["taskId"],
                                         mutated=mutated, overlap=overlap)))
@@ -1373,7 +1380,7 @@ def _evidence_specs(manifest):
                 # NOTHING RAN, AND THE GATE STILL EXITED 0. Nothing printed a path
                 # either, so coverage is UNKNOWN rather than empty - the two are
                 # different answers and this is where the fixture shows it.
-                out.append(("task", ids, _at(task.get("startedAt"), 2), 1,
+                out.append(("task", ids, _at(task.get("startedAt"), 2), recorded,
                             _run_result(resolved, owns, head,
                                         "%s-live" % ids["taskId"],
                                         zero=True, overlap=None)))
@@ -1381,7 +1388,7 @@ def _evidence_specs(manifest):
                 # One row per attempt, because the task records three of them and
                 # a ledger that showed the last would make `Earlier runs` a
                 # disclosure with nothing behind it.
-                for attempt in range(1, int(task.get("attempts") or 1) + 1):
+                for attempt in range(1, (recorded or 0) + 1):
                     out.append(("task", ids, _at(task.get("startedAt"),
                                                  8 * (attempt - 1)), attempt,
                                 _run_result(resolved, owns, head,

@@ -343,7 +343,7 @@ L7:
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _output
+  gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
