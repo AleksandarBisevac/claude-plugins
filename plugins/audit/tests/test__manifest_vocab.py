@@ -603,6 +603,106 @@ def _cases(check):
           and "_output" in _hreach and not _hculprits,
           repr((sorted(_hook_roots), _hook_unparsed, _hbroken, sorted(_hreach))))
 
+    # --- testEvidence, the pointer both levels may carry --------------------------
+    # A CACHE and not a source of truth: the run itself lives in the append-only
+    # evidence ledger beside the manifest, so this block is disposable and an ABSENT
+    # one means "no evidence recorded" rather than "failed". Nothing in this tree
+    # writes one yet, which is precisely why the declaration is worth a case - a key
+    # added to the schema and not to the set, or the other way round, is silent
+    # until somebody reads a warning about a real key.
+    _te_schema = _help.load_schema("manifest")
+    _te_def = (_te_schema.get("$defs") or {}).get("testEvidence") or {}
+    _te_props = _te_def.get("properties") or {}
+    _te_phase_lv = set(_levels.get("KNOWN_PHASE") or ())
+    _te_task_lv = set(_levels.get("KNOWN_TASK") or ())
+    check("mv38 `testEvidence` is declared by audit-plan.schema.json at the phase "
+          "level AND at the task level, and held by KNOWN_PHASE AND KNOWN_TASK - "
+          "asserted positively, because mv18's silence is what BOTH sides missing "
+          "the key looks like, and because a key excused by OFF_SCHEMA would read "
+          "the same from there: %r" % (sorted(_te_props),),
+          "testEvidence" in _te_phase_lv and "testEvidence" in _te_task_lv
+          and "testEvidence" in M.KNOWN_PHASE and "testEvidence" in M.KNOWN_TASK
+          and "testEvidence" not in (M.OFF_SCHEMA.get("KNOWN_PHASE") or {})
+          and "testEvidence" not in (M.OFF_SCHEMA.get("KNOWN_TASK") or {}),
+          repr((sorted(_te_phase_lv), sorted(_te_task_lv))))
+    # Red-first in BOTH directions, on COPIES - the shipped sets and the shipped
+    # schema are untouched, so the tree is never one exception away from carrying
+    # the mutation. This is the case that fails if mv18 has stopped reaching this
+    # key rather than agreeing about it.
+    _te_sets = dict(_help.vocab_sets(M))
+    _te_sets["KNOWN_TASK"] = set(M.KNOWN_TASK) - {"testEvidence"}
+    _te_dropped = _help.vocab_drift(_levels, _te_sets, M.SCHEMA_ANCHORS,
+                                    M.OFF_SCHEMA)
+    _te_lv = dict(_levels)
+    _te_lv["KNOWN_PHASE"] = _te_phase_lv - {"testEvidence"}
+    _te_undeclared = _help.vocab_drift(_te_lv, _help.vocab_sets(M),
+                                       M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
+    check("mv39 ...and both directions of that agreement really land: dropping the "
+          "key from a copy of KNOWN_TASK names `phases[].tasks[].testEvidence`, and "
+          "a copy of the schema levels that stops declaring it at `phases[]` names "
+          "the set still holding it. Whole problem lists rather than 'at least "
+          "one', so a mutation that also broke something else cannot pass for this",
+          [p for _n, p in _te_dropped] ==
+          ["phases[].tasks[].testEvidence is in the schema and not in the set - "
+           "add it, or the typo-catcher warns about a real key"]
+          and [p for _n, p in _te_undeclared] ==
+          ["'testEvidence' is in the set and not in the schema - add it to the "
+           "schema, or to OFF_SCHEMA with the reason it is accepted anyway"],
+          repr((_te_dropped, _te_undeclared)))
+    # The `status` vocabulary is the SCHEMA's alone. There is no tuple for it on
+    # this module and no `_unknown_keys()` call that could read one, which is this
+    # module's own KNOWN_CLAIM argument one nesting level over: a set here would be
+    # anchored, drift-checked and green while a wrong word stayed exactly as
+    # accepted. So ajv over this document is what refuses `status: "green"`, and
+    # this case is what keeps the list it refuses against honest.
+    _te_enum = list(((_te_props.get("status") or {}).get("enum")) or [])
+    _te_near = [v for v in ("green", "red", "fail", "failure", "error", "skipped",
+                            "no_checks", "empty gate", "Passed", "timedout")
+                if v in _te_enum]
+    check("mv40 the `status` enum is exactly the words a run may report, and no "
+          "near-miss spelling is among them - %r, with %r of the near-misses "
+          "accepted. The enum is the ONLY thing that refuses a wrong word here "
+          "(nothing under scripts/ reads a vocabulary at this level), so an unknown "
+          "status is reported by ajv over audit-plan.schema.json and by nothing "
+          "else; COMPATIBILITY.md leaves the list open, so a consumer switching on "
+          "it still owes a default arm" % (_te_enum, _te_near),
+          sorted(_te_enum) == sorted(("passed", "failed", "no-checks", "timed-out",
+                                      "cancelled", "could-not-run", "empty-gate"))
+          and _te_near == [])
+    check("mv41 the block is PERMISSIVE inside and whole-or-absent outside - "
+          "additionalProperties %r is this document's stated policy at every object "
+          "level, so an unrecognised key INSIDE a block is accepted rather than "
+          "refused: the schema ships with the plugin and an older copy of it must "
+          "keep accepting a manifest a newer one wrote. `required` %r is the other "
+          "half - a block pointing at no run, caching no verdict or carrying no "
+          "date is worse than the absence, and the absence is always available "
+          "because deleting the block is safe. `type` is %r and not nullable, "
+          "because two spellings of 'no evidence recorded' would be two answers"
+          % (_te_def.get("additionalProperties"), _te_def.get("required"),
+             _te_def.get("type")),
+          _te_def.get("additionalProperties") is True
+          and sorted(_te_def.get("required") or ()) == ["at", "runId", "status"]
+          and _te_def.get("type") == "object")
+    # The descriptions are the only thing standing between a cache and a reader who
+    # trusts it, so the load-bearing half of each is pinned rather than left to a
+    # tidy-up. Not the wording - the claims.
+    _te_body = str(_te_def.get("description") or "").lower()
+    _te_runid = str((_te_props.get("runId") or {}).get("description") or "").lower()
+    _te_says = [w for w in ("ledger", "deleting it is always safe",
+                            "absent means 'no evidence recorded'", "attempt",
+                            "count")
+                if w not in _te_body]
+    _te_blank = sorted(k for k, v in _te_props.items()
+                       if not str((v or {}).get("description") or "").strip())
+    check("mv42 ...and the schema SAYS all of that where a consumer will read it: "
+          "the block's own description names the ledger it caches, that deleting it "
+          "is always safe, that an absent one is 'no evidence recorded' rather than "
+          "a failure, and that `attempt` and a run count were cut on purpose - "
+          "while `runId` says it is opaque, which is what stops somebody parsing a "
+          "date out of it. Missing claims: %r; undescribed properties: %r"
+          % (_te_says, _te_blank),
+          _te_says == [] and _te_blank == [] and "opaque" in _te_runid)
+
 
 def _selftest():
     return _harness.run(_cases)

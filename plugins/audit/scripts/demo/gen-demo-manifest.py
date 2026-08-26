@@ -647,6 +647,30 @@ SCHEMA_REL = ("schema", "audit-plan.schema.json")
 OPAQUE_FIELDS = frozenset(["proposal.payload"])
 
 SCHEMA_EXEMPTIONS = {
+    "phase.testEvidence":
+        "a POINTER at the run that last exercised this phase's gate - and "
+        "NOTHING writes one yet: the recorder that produces a run does not exist "
+        "in this release, so no ledger anywhere holds a row for a `runId` this "
+        "fixture could stamp. A hand-written block would publish an id that "
+        "resolves to no run, which is the one thing a pointer at evidence must "
+        "never do, and the demo is exactly where such a claim would be "
+        "photographed. REVISIT the day the test gate records: the report's "
+        "screenshot comes from this fixture, so it should carry a REAL block "
+        "then - generated the way every other field here is - and this row "
+        "should go with it.",
+    "task.testEvidence":
+        "the task-level twin of the phase key above, exempt for the same reason "
+        "and due back on the same day. Named separately rather than folded into "
+        "one row because the two are separate schema fields and the coverage "
+        "check reads them separately: a single row would leave whichever level "
+        "was written second uncovered.",
+    "testEvidence.runId":
+        "inside a block this fixture does not carry, so it is unreachable rather "
+        "than skipped. It comes back when the block does.",
+    "testEvidence.status":
+        "unreachable while the block above is exempt - see `phase.testEvidence`.",
+    "testEvidence.at":
+        "unreachable while the block above is exempt - see `phase.testEvidence`.",
     "<root>.$schema":
         "names a URL so an EDITOR can validate a document while a human types it. "
         "This fixture is generated into a temp directory, rendered, and thrown "

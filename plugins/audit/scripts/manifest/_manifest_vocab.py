@@ -243,6 +243,17 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # a dependency always wins, so a pinned phase that is blocked is
                # skipped and the skip is reported.
                "priority",
+               # A POINTER at the run that last exercised this phase's
+               # `testGate`, plus the verdict it cached. Declared here so the
+               # typo-catcher stops warning about a real key; the schema's
+               # `$defs/testEvidence` owns the shape and the `status`
+               # vocabulary, and NOTHING in this module restates either. There
+               # is no `_unknown_keys()` call at that level to read a set from,
+               # so a set of literals for it would be anchored, drift-checked
+               # and green from the moment it appeared while an unknown key
+               # inside a block stayed exactly as silent - which is this
+               # module's own KNOWN_CLAIM argument, one nesting level over.
+               "testEvidence",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a
@@ -262,6 +273,10 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
               "movedFrom",
+              # The task-level twin of the phase key above: the same $def, the
+              # same pointer-not-truth rule, and the same reason no vocabulary
+              # for its contents lives here. See the comment on KNOWN_PHASE.
+              "testEvidence",
               # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
