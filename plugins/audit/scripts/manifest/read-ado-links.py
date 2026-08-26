@@ -38,6 +38,15 @@ the entry is left UNSTAMPED and both claimants are printed, because picking the
 one the walk reached first would push one item's status onto a card the other one
 owns, silently and from a table that looks ordinary.
 
+DELIBERATELY OFF THE BOARD IS NOT THE SAME AS MISSING, and the connector line used
+to print it as if it were. `unlinked` was a SUBTRACTION - everything the manifest
+holds, minus everything that carries a link - so a phase whose plan says it does
+not belong on a shared board reported as unlinked on every run, for ever, and so
+did every task under it. That is a false positive with no expiry, and a lens
+carrying permanent rows stops being read. `_ado_tracked` owns the rules and the
+task inheritance; this file counts a THIRD class off them, never a fourth reading
+of the key.
+
 WHAT IT DOES NOT DO. It never calls a board: `fetch-ado-items.py` reads the ADO side
 and `explain-ado-drift.py` joins the two. It is read-only, so `meta.ado.enabled:
 false` does not gate it - that flag stops writes, and `status` is the lens you need
@@ -91,6 +100,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _ado_drift as _drift  # noqa: E402  (link_inventory: the ONE walk over links)
+import _ado_tracked as _tracked  # noqa: E402  (the ONE answer about belonging)
 import _manifest_io as _mio  # noqa: E402  (the loader, the task index, bug status)
 
 USAGE = ("usage: read-ado-links.py <manifest> [--items <file.json|-> "
@@ -241,6 +251,95 @@ def kind_totals(manifest):
                         if isinstance(b, dict)])}
 
 
+# --- the third class: what the plan says does not belong on a board ---------------
+def _linked_keys(rows):
+    """`{(kind, id)}` for every item `link_inventory` found a work item on.
+
+    Keyed by (kind, id) rather than by id alone for `status_by_key`'s reason: a
+    phase and a bug may legitimately share a numeral in their ids.
+    """
+    return set([(row["kind"], row["id"]) for row in rows])
+
+
+def untracked_by_kind(plan_rows, linked_keys):
+    """`{kind: how many items the plan keeps off the board and no card claims}`.
+
+    ITS OWN CLASS, never a smaller kind of `unlinked`. An item whose plan says
+    it does not belong on a shared board has no link and never will, so folding
+    it into `unlinked` grows one permanent false-positive row per such item -
+    and a lens carrying permanent rows stops being read, which costs it the real
+    drift it exists for.
+
+    A LINK BEATS A DECLARATION HERE, and that is forced rather than preferred:
+    `link_inventory` is the authority on what `linked` means on this surface, so
+    an item declared off the board while a work item still carries its id is
+    counted LINKED - the card exists whatever the plan now says. Counting it in
+    both classes would make the three overshoot the total, and a split a reader
+    cannot add up is a split they stop checking. The leftover is not lost:
+    `untracked_but_linked` is what it becomes, printed on its own line.
+
+    A BUG IS NEVER IN HERE. The declaration is a property of a PHASE and answers
+    about no bug at all, so every bug row comes back unanswered - and unanswered
+    is not untracked.
+
+    NOR IS AN UNANSWERED ROW, which is the direction that matters: this asks
+    `is_untracked`, never `not is_tracked()`. Being counted untracked is a
+    licence to stop reporting a gap, and a row nothing had a basis to answer has
+    not earned one.
+
+    `_ado_tracked` is where the rules and the task inheritance live. Nothing
+    here re-reads the key, because a second reading would be the second policy
+    whose disagreement this whole feature exists to end.
+    """
+    out = {kind: 0 for kind in KINDS}
+    for row in (plan_rows or []):
+        kind = row.get("kind")
+        if kind not in out or not _tracked.is_untracked(row):
+            continue
+        if (kind, row.get("id")) in linked_keys:
+            continue
+        out[kind] += 1
+    return out
+
+
+def untracked_but_linked(plan_rows, linked_keys):
+    """`[{kind, id, basis}]` - declared off the board, still carrying a card.
+
+    The one item the per-kind split cannot show, because a link beats a
+    declaration there. It is a leftover somebody has to unpick by hand: the plan
+    says the work does not belong on the board and a work item for it is sitting
+    on one anyway, so nothing will push it again and nothing will take it down.
+    Named rather than counted alone, for `SHARED`'s reason one question over.
+    """
+    return [{"kind": row.get("kind"), "id": row.get("id"),
+             "basis": row.get("basis")}
+            for row in (plan_rows or [])
+            if _tracked.is_untracked(row)
+            and (row.get("kind"), row.get("id")) in linked_keys]
+
+
+def unanswered_items(plan_rows):
+    """`[{kind, id, basis}]` for every PHASE or TASK nothing could answer for.
+
+    WHERE THE THIRD VALUE GOES, said out loud rather than folded in. The
+    declaration is three-valued: on the board, deliberately off it, and `no
+    basis to answer` - a key that is not a boolean, or a sharded index handed
+    over un-assembled. An item in that third state is counted UNLINKED above and
+    never untracked, because untracked is a licence to stop reporting a gap and
+    nothing here earned one; it is listed here so that choice is visible instead
+    of silent, which is what separates a decision from a default.
+
+    BUGS ARE LEFT OUT, for `_ado_tracked.counts`' reason: every bug is
+    unanswered by construction, so folding them in would make this a number that
+    can never reach zero and would report the ordinary state of every bug as a
+    gap in the plan.
+    """
+    return [{"kind": row.get("kind"), "id": row.get("id"),
+             "basis": row.get("basis")}
+            for row in (plan_rows or [])
+            if row.get("kind") != "bug" and row.get("tracked") is None]
+
+
 def manifest_side(manifest):
     """Every link, its status, its target state, and the counts over the lot.
 
@@ -248,6 +347,17 @@ def manifest_side(manifest):
     `fetch-ado-items.py` asks which ids to fetch, so the two can never disagree
     about what "linked" means. This function adds the STATUS half, which that walk
     deliberately does not carry.
+
+    THE PER-KIND SPLIT IS A PARTITION OF `total`: linked, unlinked, untracked,
+    and `unlinked` is what is left after the other two rather than a class of its
+    own. It was `total - linked` alone, which is why every item a plan keeps off
+    the board read as a gap for ever. `_ado_tracked` supplies the third class.
+
+    THE MANIFEST MUST ARRIVE ASSEMBLED. `main` loads it through
+    `_manifest_io.load_manifest` for the links, and the declaration needs the
+    same read for a stronger reason: on the sharded layout both the key and the
+    tasks live in the shard BODY, so a raw read reports a whole plan tracked by
+    default with no task rows at all.
     """
     configured = state_map_of(manifest)
     status = status_by_key(manifest)
@@ -261,10 +371,17 @@ def manifest_side(manifest):
         rows.append(row)
     totals = kind_totals(manifest)
     linked = {kind: len([r for r in rows if r["kind"] == kind]) for kind in KINDS}
+    keys = _linked_keys(rows)
+    plan_rows = _tracked.inventory(manifest)["rows"]
+    untracked = untracked_by_kind(plan_rows, keys)
+    still_linked = untracked_but_linked(plan_rows, keys)
+    unanswered = unanswered_items(plan_rows)
     shared = claims_shared_by_several(rows)
     return {"rows": rows,
             "kinds": {kind: {"linked": linked[kind],
-                             "unlinked": totals[kind] - linked[kind],
+                             "unlinked": (totals[kind] - linked[kind]
+                                          - untracked[kind]),
+                             "untracked": untracked[kind],
                              "total": totals[kind]} for kind in KINDS},
             "counts": {"links": len(rows),
                        "withState": len([r for r in rows
@@ -273,7 +390,12 @@ def manifest_side(manifest):
                        "noState": len([r for r in rows if r["state"] is None
                                        and not r["never"]]),
                        "derived": len([r for r in rows if _is_derived(r)]),
+                       "untracked": sum(untracked.values()),
+                       "untrackedLinked": len(still_linked),
+                       "unanswered": len(unanswered),
                        "sharedTargets": len(shared)},
+            "untrackedLinked": still_linked,
+            "unanswered": unanswered,
             "sharedTargets": shared,
             "stateMapKinds": sorted(configured)}
 
@@ -430,11 +552,16 @@ def inventory_lines(side, manifest_path, layout):
     """
     out = ["manifest: %s (%s layout, read assembled through "
            "_manifest_io.load_manifest)" % (manifest_path, layout)]
+    # The third figure prints for every kind INCLUDING `bug`, where it is always
+    # zero: the declaration is a property of a phase and answers about no bug, so
+    # a bug line missing the column would read as a kind nobody asked about
+    # rather than as a kind the question does not cover.
     for kind in KINDS:
         counts = side["kinds"][kind]
-        out.append("  %-5s %d linked, %d unlinked (%d in the manifest)"
+        out.append("  %-5s %d linked, %d unlinked, %d deliberately untracked "
+                   "(%d in the manifest)"
                    % (kind, counts["linked"], counts["unlinked"],
-                      counts["total"]))
+                      counts["untracked"], counts["total"]))
     # Printed even when they are zero, every one of them. A count that appears only
     # when it is interesting cannot be told apart from a count nobody computed, and
     # `withState` reaching zero is the whole shape this command exists to expose.
@@ -463,6 +590,28 @@ def inventory_lines(side, manifest_path, layout):
             out.append("  DERIVED: %s %s reads %r - %s"
                        % (row["kind"], row["id"], row["status"],
                           row["statusBasis"]))
+    # Also at zero. The declaration is three-valued and the third value is "no
+    # basis to answer" - a key that is not a boolean, a shard stub nobody
+    # assembled. Those items are counted UNLINKED above and never untracked,
+    # because untracked is a licence to stop reporting a gap; printing the figure
+    # is what keeps that choice from being a silent fold, and a reader who cannot
+    # see it reads every unlinked row as drift.
+    out.append("%d plan item(s) whose %s could not be answered - counted as "
+               "unlinked, never as untracked"
+               % (side["counts"]["unanswered"], _tracked.FIELD))
+    for item in side["unanswered"]:
+        out.append("  NOT ANSWERED: %s %s - %s"
+                   % (item["kind"], item["id"], item["basis"]))
+    # And at zero as well, for the reason above one question over: an item its
+    # plan keeps off the board while a card for it still exists is counted
+    # LINKED, because the card is there whatever the plan now says. That is the
+    # one item the per-kind line cannot show, and it is the one somebody has to
+    # unlink by hand - nothing will push it again and nothing will take it down.
+    out.append("%d item(s) declared off the board that still carry a link"
+               % (side["counts"]["untrackedLinked"],))
+    for item in side["untrackedLinked"]:
+        out.append("  STILL LINKED: %s %s - %s"
+                   % (item["kind"], item["id"], item["basis"]))
     if not side["stateMapKinds"]:
         out.append("meta.ado.stateMap: not configured - every state above is a "
                    "built-in Agile default")

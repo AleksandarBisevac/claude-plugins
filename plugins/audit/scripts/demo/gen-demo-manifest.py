@@ -737,6 +737,17 @@ SCHEMA_EXEMPTIONS = {
         "meta.ado.phaseWorkItems is false. Same reason and same revisit "
         "trigger as phase.adoParent: without a meta.ado there is no project "
         "for an id to mean anything in.",
+    "phase.adoTracked":
+        "whether a phase belongs on the shared board. The fixture carries no "
+        "meta.ado, so there is no board for a phase to be kept off - the field "
+        "would render as a distinction without a difference on every surface, "
+        "and the report's phase list would show one phase marked 'not tracked' "
+        "against a plan that tracks nothing anywhere. It is also the one ADO "
+        "field with a VISIBLE default: absent means tracked, so a fixture that "
+        "omits it is already demonstrating the common case. Coverage is "
+        "tests/test__ado_tracked.py (the resolution and the inheritance) and "
+        "tests/test_resolve_ado_tracked.py (the door). REVISIT on the same "
+        "trigger as phase.adoParent - a demo that grows a connector card.",
     "adoParent.id":
         "a field of adoParent, which this fixture does not take. An id is the "
         "one part that cannot be invented: it names a real work item on a real "

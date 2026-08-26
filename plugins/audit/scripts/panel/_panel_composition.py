@@ -38,6 +38,7 @@ import _areas                 # noqa: E402  (meta.areas registry + shared resolu
 import _branch                # noqa: E402  (the naming convention, one expansion path)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
+import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
 import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
@@ -613,6 +614,52 @@ def _board_parent(phase):
             "refresh": _PARENT_OBSERVE}
 
 
+# --- whether a phase is on the board AT ALL, as the Composition table shows it --
+# A DIFFERENT QUESTION FROM THE ONE ABOVE, and it comes first in the reading
+# order: where a phase hangs is only a question once it belongs on the board.
+# `_ado_tracked` owns the rule and nothing here re-derives it - the push plan,
+# the status lens and `resolve-ado-tracked.py` all ask that module, and a panel
+# holding its own opinion about what belongs on a shared board would be a second
+# policy wearing a control.
+def _ado_tracked_of(phase):
+    """One phase's own declaration, with ABSENT spelled `null`.
+
+    NULL IS SAFE HERE AND IS NOT SAFE FOR `adoParent`, which is why this is not
+    `_ado_parent_of` with another field name. There, `null` is a VALUE - "hangs
+    under nothing, on purpose" - so absent needed a marker of its own or the two
+    answers that differ most would have reached the browser as one. `adoTracked`
+    is `"type": "boolean"` in the schema, so `null` is not a value it can carry
+    and the key's absence is the only thing it can mean. The patch spelling is
+    the same `null`, which is what makes the round trip readable: what the row
+    shows for "nothing declared" is exactly what a save sends to put it back.
+
+    A value that is neither boolean nor absent travels VERBATIM rather than
+    being folded into either. `declared()` refuses to read it and `resolve`
+    answers "no basis", so the control has to be able to say the same - and a
+    payload that had already flattened it to absent would have the control
+    painting the default over somebody's broken declaration, which is the
+    confident wrong answer this whole key exists to remove.
+    """
+    if _ado_tracked.FIELD in phase:
+        return phase.get(_ado_tracked.FIELD)
+    return None
+
+
+def _resolved_tracked(phase, ado):
+    """`{tracked, basis}` for one phase - `resolve`'s answer, minus what a row
+    cannot use.
+
+    `_resolved_parent`'s shape and its reason: the declaration is already on the
+    row and the warnings belong to the push plan, so what is left is the answer
+    and the sentence behind it. `tracked` is THREE-VALUED and stays that way all
+    the way to the browser - True, False, and None for "nothing here has a basis
+    to say" - because a None rendered as either boolean is the false confidence
+    the feature was built to end.
+    """
+    res = _ado_tracked.resolve(phase, ado)
+    return {"tracked": res["tracked"], "basis": res["basis"]}
+
+
 def _composition_view(manifest):
     meta = manifest.get("meta") or {}
     ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
@@ -650,7 +697,16 @@ def _composition_view(manifest):
                            # pixels - which is the shape this repo has recorded
                            # under several other names. This says which of the
                            # two it is, without asking a board.
-                           "adoParentBoard": _board_parent(ph)})
+                           "adoParentBoard": _board_parent(ph),
+                           # THE QUESTION BEFORE ALL THREE OF THOSE: does this
+                           # phase belong on the board at all. Both halves for
+                           # `adoParent`'s reason - the DECLARATION is what the
+                           # control edits and what a save sends back, and the
+                           # RESOLUTION is the answer in force, which for an
+                           # absent declaration is the default said out loud and
+                           # for an unreadable one is nothing at all.
+                           "adoTracked": _ado_tracked_of(ph),
+                           "adoTrackedResolved": _resolved_tracked(ph, ado)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),

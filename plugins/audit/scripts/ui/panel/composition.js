@@ -28,6 +28,15 @@
  *   third question again. Both fields above are read out of the manifest, so
  *   without this one a phase the board agrees with and a phase nobody has ever
  *   compared paint the same cell
+ * @property {boolean|null|*} adoTracked - the phase's own `adoTracked`
+ *   declaration, and `null` is the ABSENCE of one. Null is safe here where it
+ *   was not for `adoParent`: the schema types this field `boolean`, so null is
+ *   not a value it can carry. Anything else that reaches this field is a stored
+ *   value that is neither, and it travels verbatim so the control can say so
+ * @property {{tracked: (boolean|null), basis: string}} adoTrackedResolved - the
+ *   answer in force, from `_ado_tracked.resolve`. `tracked` is THREE-VALUED and
+ *   `null` means nothing here has a basis to answer - read it with `atAnswer`,
+ *   never with truthiness
  */
 
 /**
@@ -197,11 +206,36 @@ function apIsFallback(v){return !!v&&typeof v==='object'&&!Array.isArray(v)
  * said outright, rather than left as an option that looks the same either way.
  *
  * @param {{id: (number|null)}} fb - `adoParents.fallback`
- * @returns {string} the words after the dash
+ * @returns {string} the words after the label
  */
 function apFallbackWords(fb){
  return (fb&&fb.id!=null)?('#'+fb.id)
   :'nothing is set (meta.ado.parentWorkItem is empty)';}
+// How many characters an option in a phase-row cell may SHOW. F211: those cells
+// carry ONE width declaration, in `panel-css/composition.css` under the
+// `td.phparent` selector — the selector is not quoted here, because a pin counts
+// that literal and a comment reproducing it makes the page carry it twice. A
+// closed <select> clips — it does not wrap and it does not ellipsise — so a
+// longer label is a phrase cut off mid-word. The committed screenshot is where
+// the figure comes from: the
+// parent picker rendered `use the fallback —` out of a label three times that,
+// which is eighteen characters of a nine-rem control.
+//
+// IT IS A CHARACTER COUNT AND THEREFORE APPROXIMATE, which is a limit worth
+// stating rather than dressing up: the panel's face is proportional, so `#111`
+// and `WWWW` do not occupy the same width. It is deliberately set at what was
+// OBSERVED to fit rather than at a computed ideal, and its job is to stop a label
+// written as a sentence — the mistake that actually happened, twice — not to
+// settle a two-character argument. The full text is never lost: `fillOptions`
+// moves it to the option's `title`.
+//
+// THE LABELS LEAD WITH WHAT DECIDES, which is what makes truncation safe rather
+// than merely tidy. `apCandidateLabel` opens with the id and the type — the two
+// things the hierarchy check grades on — and the work item's title, which is
+// unbounded because somebody else typed it, is the part that gets cut. The
+// fallback option was reordered for the same reason: it used to open with `use
+// the fallback — ` and spend the whole budget before reaching the id.
+const PHCELL_OPTION_CHARS=18;
 /**
  * One cached candidate as an option label.
  *
@@ -308,7 +342,7 @@ function apPatchValue(choice,cache,typed){
  */
 function apOptions(cache){
  const c=cache||{};
- return [['fallback','use the fallback — '+apFallbackWords(c.fallback)],
+ return [['fallback','fallback: '+apFallbackWords(c.fallback)],
    ...(c.candidates||[]).map(x=>[String(x.id),apCandidateLabel(x)]),
    ['none','none — uncategorised on purpose'],
    ['other','other id…']];}
@@ -353,6 +387,149 @@ function apBoardWords(b){
  if(st==='unlinked')return 'board: no work item yet';
  if(st==='never-asked')return 'board: not asked';
  return 'board: not reported';}
+
+// ---------- whether a phase is on the board at all (at) ----------
+// THE QUESTION ONE STEP BEFORE THE ONE ABOVE, and that is why both levers share
+// a cell with this one on top: where a phase hangs is only a question once it
+// belongs on the board, and an operator who has just said "keep this off the
+// board" should not read a parent picker as the next thing to fill in.
+//
+// IT IS A DECLARATION AND NOT A LINK, which is the whole reason the key exists.
+// `phase.ado` is an `adoLink` that sync writes, and the `imported` half of
+// `adoParent` is a record of somebody's board; a phase declaring an intention
+// in either would be authoring into a record it does not own. So this control
+// offers the three answers a PERSON can give, and never anything a fetch found.
+//
+// Pure functions of the payload, for the reason the `ap` block gives: which
+// option a stored value selects and which patch value a choice stands for are
+// the parts that can be wrong without looking wrong, so they are reachable from
+// tools/ui-tests/ado-panel.test.mjs rather than asserted as source text.
+
+// The three answers `_ado_tracked` can give, spelled once: `atAnswer` normalises
+// against this list and `atWords` renders off that, so the attribute a gate
+// reads and the words a person reads can never name different answers. Same
+// arrangement as AP_BOARD, and for the same failure.
+const AT_ANSWERS=['tracked','untracked','unanswered'];
+// The option value for a stored declaration that is neither true nor false.
+// Named because two places compare against it and a retyped literal in the
+// second is how a control comes to offer an option nothing selects.
+const AT_UNREADABLE='unreadable';
+// The words for an absent declaration, spelled ONCE: the menu offers it as an
+// option and the confirm dialog renders it as a `from` value, and those are two
+// readers of one sentence. Retyped, the two would be free to disagree about
+// which way an absent declaration goes — and the direction a reader could get
+// wrong is the one that puts work on somebody's shared board.
+const AT_DEFAULT_WORDS='no declaration';
+// The same answer with room to breathe, DERIVED so the two cannot disagree about
+// which way an absent declaration goes. Two readers, two width budgets: the menu
+// sits in a 9rem select and the confirm dialog has a whole row. The first version
+// used one long sentence in both and the screenshot showed why — the closed
+// control read `no declaration — t`, clipped mid-word into something that says
+// nothing. Every other option here is short for the same reason; the full
+// sentence rides the control's `title` and the muted line under it.
+const AT_DEFAULT_SENTENCE=AT_DEFAULT_WORDS+' — tracked, the default';
+/**
+ * Which of the three answers a resolved row carries.
+ *
+ * `tracked` IS THREE-VALUED AND IS READ BY IDENTITY. `null` means nothing here
+ * has a basis to answer — a stored value that is neither true nor false, or an
+ * index stub whose body was never read — and a truthiness test would file it
+ * under "untracked", which is a claim nobody made and exactly the false
+ * confidence this key was added to remove. Anything outside the three reports
+ * `not-reported` rather than borrowing the commonest one's word: the payload
+ * comes from the process serving this page, so an absent block is a defect and
+ * not an old server.
+ *
+ * @param {{tracked: (boolean|null)}} r - the row's `adoTrackedResolved`
+ * @returns {string} one of AT_ANSWERS, or 'not-reported'
+ */
+function atAnswer(r){
+ const t=(r||{}).tracked;
+ if(t===true)return AT_ANSWERS[0];
+ if(t===false)return AT_ANSWERS[1];
+ if(t===null)return AT_ANSWERS[2];
+ return 'not-reported';}
+/**
+ * The answer in force, in one short line under the control.
+ *
+ * WHAT IT INHERITED FROM IS HALF THE SENTENCE. A phase that declares nothing is
+ * tracked, and a phase that declares `true` is tracked, and those are the same
+ * answer from two different places — so a line that printed only the answer
+ * would show the default as if somebody had chosen it. The qualifier is read
+ * off the DECLARATION and never off the rule: it says where the answer came
+ * from, and `atAnswer` alone says what the answer is, so the two cannot
+ * disagree about a row.
+ *
+ * The server's full sentence rides the control's `title`; this is the part that
+ * fits under a 9rem control.
+ *
+ * @param {{tracked: (boolean|null)}} r - the row's `adoTrackedResolved`
+ * @param {*} decl - the row's `adoTracked`, for where the answer came from
+ * @returns {string} the words for the muted line under the control
+ */
+function atWords(r,decl){
+ const a=atAnswer(r);
+ if(a==='unanswered')return 'tracking: not answered — nothing here has a basis';
+ if(a==='not-reported')return 'tracking: not reported';
+ const how=(decl===true||decl===false)?'declared':'the default';
+ return 'tracking: '+(a==='tracked'?'on the board':'off the board')+' — '+how;}
+/**
+ * Which option a stored declaration selects.
+ *
+ * A value that is neither boolean nor absent lands on its OWN option rather
+ * than on the default's, which is the degrade this needs: `adoTracked: 1` is a
+ * typo, and a menu that showed it as "no declaration" would paint the default
+ * over somebody's attempt to keep a phase off a board.
+ *
+ * @param {*} decl - the row's `adoTracked`
+ * @returns {string} an option value: 'default', 'true', 'false' or AT_UNREADABLE
+ */
+function atChoiceOf(decl){
+ if(decl===true)return 'true';
+ if(decl===false)return 'false';
+ if(decl===null||decl===undefined)return 'default';
+ return AT_UNREADABLE;}
+/**
+ * The option list, in the order the menu shows it.
+ *
+ * THE THREE ARE FIXED because each is a real answer about every phase: nothing
+ * here is cached, fetched or scoped, so unlike the parent menu there is no
+ * state in which one of them is unavailable. The unreadable option is added
+ * only for the row that is in it, and it is not an answer — picking it writes
+ * nothing, and the note under the control says so.
+ *
+ * @param {*} decl - the row's `adoTracked`
+ * @returns {Array<[string, string]>} [value, label] pairs for `fillOptions`
+ */
+function atOptions(decl){
+ const fixed=[['default',AT_DEFAULT_WORDS],
+   ['true','on the board'],
+   ['false','off the board']];
+ return atChoiceOf(decl)===AT_UNREADABLE
+  ?[[AT_UNREADABLE,'unreadable value'],...fixed]
+  :fixed;}
+/**
+ * The patch value one choice stands for — or the reason there is none.
+ *
+ * `null` IS THE CLEAR HERE, AND IT IS A VALUE ON THE PARENT ROW. The difference
+ * is a fact about the schema rather than a convention: `adoTracked` is typed
+ * `boolean`, so null is not a value it can hold and the key's absence is the
+ * only thing it can mean — which is why this needs no marker where `adoParent`
+ * did. `_apply_ado_tracked` pops the key on null, and the payload spells an
+ * absent declaration `null` too, so what the row shows for "nothing declared"
+ * is exactly what a save sends to put it back.
+ *
+ * @param {string} choice - the select's value
+ * @returns {{write: boolean, value: *, why: string}} `value` is only meaningful
+ *   when `write` is true
+ */
+function atPatchValue(choice){
+ if(choice==='default')return{write:true,value:null,why:''};
+ if(choice==='true')return{write:true,value:true,why:''};
+ if(choice==='false')return{write:true,value:false,why:''};
+ return{write:false,value:undefined,
+  why:'this phase declares something that is neither true nor false — pick one '
+   +'of the three; nothing is saved for this phase until you do'};}
 
 function modelItems(){
  if(MITEMS)return MITEMS;
@@ -730,10 +907,18 @@ function renderComp(){closeCombo();
    flabel('review model',MDESC.phaseReviewModel,
      {comp:'phaseReviewModel',label:'Phase review model'}),
    flabel('priority',MDESC.phasePriority,
-     {comp:'phasePriority',label:'Phase priority'})));
- // The sixth column holds a PHASE lever and nothing else, so its ⓘ names that
- // lever rather than a task one - which is why that heading carries its own
- // reference instead of joining the legend above the table. It is written HERE,
+     {comp:'phasePriority',label:'Phase priority'}),
+   // The THIRD phase lever, and it is here for the same reason the other two
+   // are rather than for a new one: a <th> carries one ⓘ, and the sixth column
+   // now holds two phase levers. The heading explains the parent; this explains
+   // the lever above it, which is the question the parent only matters after.
+   flabel('on the board',MDESC.phaseAdoTracked,
+     {comp:'phaseAdoTracked',label:'Phase ADO tracked'})));
+ // The sixth column holds PHASE levers and no task one, so its ⓘ names one of
+ // them rather than a task lever - which is why that heading carries its own
+ // reference instead of joining the legend above the table. It names the parent;
+ // the lever ABOVE the parent in the same cell is in that legend, because a <th>
+ // carries one ⓘ and this column now holds two things. It is written HERE,
  // outside the head array: a comma inside that array is how a column is
  // separated from the next one, so a comment in there reads as a seventh column
  // to anything counting them.
@@ -850,9 +1035,14 @@ function renderComp(){closeCombo();
   // in `resolve`'s own words. It is supplementary — the control's accessible
   // name is its aria-label and does not depend on this — and it is the one place
   // a reader can see that an absent declaration is already doing something.
+  // BOUNDED BY `PHCELL_OPTION_CHARS` (F211). A candidate's label is built from a
+  // work item's TITLE, so nothing here can promise it is short; the id and the
+  // type are what the hierarchy check grades on, they lead the label, and the
+  // whole sentence stays on the option's `title`.
   const ap=fillOptions(el('select',{'data-adoparent':ph.id||'',
     'aria-label':'ADO parent for phase '+(ph.id||''),
-    title:(ph.adoParentResolved||{}).basis||null}),apOptions(apc),apChoice);
+    title:(ph.adoParentResolved||{}).basis||null}),apOptions(apc),apChoice,
+    PHCELL_OPTION_CHARS);
   const apApply=()=>{
    apId.hidden=(ap.value!=='other');
    const out=apPatchValue(ap.value,apc,apId.value);
@@ -866,6 +1056,49 @@ function renderComp(){closeCombo();
   apId.hidden=(apChoice!=='other');
   ap.onchange=apApply;apId.oninput=apApply;
   ap.onclick=e=>e.stopPropagation();apId.onclick=e=>e.stopPropagation();
+  // at: whether THIS phase is on the board at all, ABOVE the parent for the
+  // reading order — the parent is a question only once the answer here is yes.
+  // The two controls STACK rather than sitting side by side, and that is a
+  // measurement rather than a preference: `td.phparent :is(select,input)` caps
+  // this column at the parent control's own width because the browser gate
+  // measured the table filling its 1200px frame exactly, so a second control
+  // BESIDE it would put the table past its frame and scroll the panel
+  // sideways. The line between them is what breaks the flow, and the CSS says
+  // so too rather than depending on it.
+  const atChoice=atChoiceOf(ph.adoTracked);
+  const atSaved=atWords(ph.adoTrackedResolved,ph.adoTracked);
+  // ONE LINE WEARING THREE STATES, unlike the parent's two spans — and the
+  // reason is that both facts here are about the same movable thing. The board
+  // line beside `ap` is an observation no save can move, so it is written once
+  // and left alone; the answer in force IS what this control edits, so a line
+  // that kept quoting the saved answer beside a changed menu would be the
+  // stale-reads-as-current defect one control lower down. It never RECOMPUTES
+  // the answer: the resolution is the server's, and a browser deriving it would
+  // be the second implementation of the one rule this key exists to have one of.
+  const atLine=el('span',{class:'mut small apnote',
+    'data-atstate':atAnswer(ph.adoTrackedResolved),
+    title:(ph.adoTrackedResolved||{}).basis||null},atSaved);
+  // Through the SAME bound as the parent picker, though every label here is
+  // already inside it: one rule for one cell. Left unbounded, this control would
+  // be the one place a future long label could be added without anything saying
+  // so — and the vitest case bounding these labels would then be checking a
+  // promise nothing kept.
+  const at=fillOptions(el('select',{'data-adotracked':ph.id||'',
+    'aria-label':'on the ADO board for phase '+(ph.id||''),
+    title:(ph.adoTrackedResolved||{}).basis||null}),
+    atOptions(ph.adoTracked),atChoice,PHCELL_OPTION_CHARS);
+  const atApply=()=>{
+   const out=atPatchValue(at.value);
+   // An option that writes nothing says why, rather than saving nothing
+   // quietly — `apApply`'s rule, and the only such option here is the one a
+   // broken declaration put on the menu.
+   if(out.write)pp.adoTracked=out.value;else delete pp.adoTracked;
+   atLine.textContent=out.write
+     ?(at.value===atChoice?atSaved:('tracking: unsaved edit · saved: '+atSaved))
+     :out.why;
+   if(Object.keys(pp).length)patch.phases[ph.id]=pp;};
+  at.onchange=atApply;
+  at.onclick=e=>e.stopPropagation();
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
     rev.value=name;setRev(name);close();});
   // The STOP moved from the input to its combo WRAPPER: the phase row toggles
@@ -914,7 +1147,7 @@ function renderComp(){closeCombo();
     // the accessible name never depended on the words removed.
     el('td',{class:'tmodel'},revCombo),
     el('td',{class:'phprio'},prio),
-    el('td',{class:'phparent'},ap,apId,apBoard,apNote));
+    el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote));
   // The row still TOGGLES when it is frozen — a closed phase is the one you most
   // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};

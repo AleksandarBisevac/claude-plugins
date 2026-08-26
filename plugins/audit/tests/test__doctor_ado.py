@@ -14,6 +14,15 @@ report through `check_manifest`. Nothing here re-checks it; a non-dict block is
 asserted to be SILENT, because a second row for one defect is the "second place
 status lives" problem one size down.
 
+The `da24`–`da30` family is the same rule applied one question earlier: an item a
+plan deliberately keeps off the board carries no link and never will, so the
+links row owes that figure or it reports a plan working as designed as a plan
+half of which was never pushed. `_ado_tracked` owns the answer and the task
+inheritance — `da30` pins that this file holds no literal of the key at all, so
+there is no second reading here to drift from the one `/audit:sync status`
+prints. `da27` is the other direction, and `da29` holds the third value apart
+from both of the others.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
@@ -24,6 +33,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _ado_tracked as TRACKED                     # noqa: E402  (FIELD, spelled once)
 import _doctor_ado as M                            # noqa: E402
 import _doctor_report as base                      # noqa: E402  (the collector)
 
@@ -53,6 +63,31 @@ def _manifest(ado=None, task_link=None, phase_link=None, bug_link=None):
         meta["ado"] = ado
     return {"meta": meta, "phases": [phase], "bugs": bugs,
             "fileIndex": {"a.py": ["P1.1"]}}
+
+
+# A value no author would write, so `declared=None` can still mean "the key is
+# present and holds null" if a case ever needs it. A plain default would make the
+# absent case and the null case one case wearing two names.
+_ABSENT = object()
+
+
+def _plus_phase(manifest, pid, tasks=2, declared=_ABSENT):
+    """`manifest` with one more phase, optionally declaring the key.
+
+    `declared` is written through UNTOUCHED so a case can hand it a value that is
+    not a boolean - the readable version of the third answer, where nothing has a
+    basis to say either way. The phase carries TASKS because inheritance is the
+    half that separates a row reading the module from a row reading the key.
+    """
+    phase = {"id": pid, "title": pid, "status": "pending",
+             "tasks": [{"id": "%s.%d" % (pid, n + 1), "title": "t",
+                        "status": "pending", "files": ["b.py"],
+                        "tests": {"mode": "regression"}, "risk": "low"}
+                       for n in range(tasks)]}
+    if declared is not _ABSENT:
+        phase[TRACKED.FIELD] = declared
+    manifest["phases"].append(phase)
+    return manifest
 
 
 # --- cases --------------------------------------------------------------------
@@ -333,6 +368,97 @@ def _cases(check):
           "quietly dropped into a category that is not printed",
           "3 phase(s)" not in _links
           and "1 task(s), 1 bug(s), 1 phase(s) linked" in _links)
+
+    # --- who the plan keeps off the board, which links alone cannot show -------
+    #
+    # An item a plan deliberately keeps off a shared board carries no link and
+    # never will, so a row printing links alone reports a plan working exactly as
+    # designed as a plan half of which was never pushed. That is the figure
+    # nobody would otherwise see, which is why it belongs on this row.
+    _ado_on = {"organization": "o", "project": "p"}
+    rep = run(_plus_phase(_manifest(ado=dict(_ado_on)), "P2", tasks=2,
+                          declared=False))
+    check("da24 a phase the plan keeps off the board is reported as its OWN "
+          "figure, and its TASKS are counted with it - the inheritance comes "
+          "from `_ado_tracked`, so a row that read the key on phases alone "
+          "reports two fewer than the plan declares: %r"
+          % (_detail(rep, "ado links"),),
+          "3 item(s) the PLAN declares off the board" in _detail(rep, "ado links"))
+    check("da25 ...and the row NAMES the key, so a reader who wants the other "
+          "half of the plan off the board knows what to set rather than being "
+          "told a number and left to search for it: %r"
+          % (_detail(rep, "ado links"),),
+          "phases[].%s: false" % (TRACKED.FIELD,) in _detail(rep, "ado links")
+          and "tasks inherit" in _detail(rep, "ado links"))
+
+    rep = run(_plus_phase(_manifest(ado=dict(_ado_on),
+                                    task_link={"id": 1},
+                                    phase_link={"id": 2},
+                                    bug_link={"id": 3}),
+                          "P2", tasks=2, declared=False))
+    check("da26 the figure rides the LINKED branch too, not only the empty one - "
+          "a plan that has pushed some of itself and keeps the rest off the "
+          "board is exactly the reader this row is for: %r"
+          % (_detail(rep, "ado links"),),
+          "1 task(s), 1 bug(s), 1 phase(s) linked" in _detail(rep, "ado links")
+          and "3 item(s) the PLAN declares off the board"
+              in _detail(rep, "ado links"))
+
+    rep = run(_plus_phase(_manifest(ado=dict(_ado_on)), "P2", tasks=2))
+    check("da27 THE SECOND DIRECTION: a plan that declares nothing prints the "
+          "figure at ZERO rather than omitting it. A count that appears only "
+          "when it is non-zero cannot be told from a count nobody took - and "
+          "this is the case that goes red if the class ever widens until every "
+          "unpushed item reads as deliberate: %r" % (_detail(rep, "ado links"),),
+          "0 item(s) the PLAN declares off the board" in _detail(rep, "ado links")
+          and "0 nothing could answer for" in _detail(rep, "ado links"))
+
+    _bug_declares = _manifest(ado=dict(_ado_on))
+    _bug_declares["bugs"] = [{"id": "BUG-1", "title": "b", "status": "open",
+                              TRACKED.FIELD: False}]
+    rep = run(_bug_declares)
+    check("da28 a BUG carrying the key does not move the figure: the declaration "
+          "is a property of a PHASE, a bug is owned by none, and answering "
+          "`off the board` for one would be this plugin claiming a card it never "
+          "created: %r" % (_detail(rep, "ado links"),),
+          "0 item(s) the PLAN declares off the board" in _detail(rep, "ado links"))
+
+    rep = run(_plus_phase(_plus_phase(_manifest(ado=dict(_ado_on)), "P2",
+                                      tasks=2, declared=False),
+                          "P3", tasks=1, declared="nope"))
+    check("da29 an item nothing could answer for is counted APART and never as "
+          "off the board: the key is three-valued, and folding the third value "
+          "into either of the other two is the false confidence this whole "
+          "feature removes. Both figures print, so a reader shown one cannot "
+          "read it as the whole: %r" % (_detail(rep, "ado links"),),
+          "3 item(s) the PLAN declares off the board" in _detail(rep, "ado links")
+          and "2 nothing could answer for" in _detail(rep, "ado links"))
+
+    # da31 exists because two surfaces print a number under the same word and the
+    # numbers legitimately DIFFER. `read-ado-links` partitions by link, so a phase
+    # declared off the board that still carries a work item is `linked` there and
+    # off-board here; the gap is exactly the still-linked items. Measured on a
+    # three-phase fixture where one is declared off and already carries #4242: the
+    # connector line reported one untracked phase, this figure reported four items.
+    # Both are right about their own question, and a reader comparing them with no
+    # basis on either side would be right to call it a bug — so the basis is the
+    # thing under test, not the count.
+    _reconcile = _detail(rep, "ado links")
+    check("da31 the figure names WHAT IT COUNTS and where the other partition "
+          "lives, because `read-ado-links` answers the same word by link and gets "
+          "a different number: %r" % (_reconcile,),
+          "the PLAN declares off the board" in _reconcile
+          and "counted from the declaration, not from links" in _reconcile
+          and "read-ado-links.py" in _reconcile)
+
+    _src = _harness.module_source(M)
+    check("da30 and the ANSWER is not re-derived here, the way the link walk "
+          "above is not: this file spells the key through the module's own "
+          "constant and holds no literal of it, so there is no second reading to "
+          "drift from the one `/audit:sync status` prints: %r"
+          % (TRACKED.FIELD in _src,),
+          TRACKED.FIELD not in _src
+          and "_tracked.inventory(" in _src and "_tracked.counts(" in _src)
 
 
 def _selftest():

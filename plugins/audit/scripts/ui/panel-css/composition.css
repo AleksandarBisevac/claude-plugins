@@ -115,6 +115,14 @@ td.phprio select{width:4rem}
    because a layout that overflows is still a layout that parses. */
 td.phparent :is(select,input){width:9rem}
 td.phparent input[hidden]{display:none}
+/* The two levers in this cell STACK, and this is what says so. `on the board`
+   sits above the parent because the parent is a question only once the answer
+   above it is yes - and it cannot sit BESIDE it: the rule above measured 9rem as
+   this column's whole budget at 1200px, with the table already filling its frame
+   exactly, so two controls on one line would put it 9rem over and scroll the
+   panel sideways. A block element already separates them today; stating it here
+   means the day that line is moved or removed the controls still stack. */
+td.phparent select[data-adotracked]{display:block}
 /* The unfinished-edit note sits UNDER the control it is about, on its own line,
    because it appears and disappears as the menu changes and a note that
    reflowed the row beside it would move the control out from under the cursor.
@@ -139,12 +147,14 @@ td.phparent input[hidden]{display:none}
    attribute the JS sets carries the words. */
 tr[data-frozen] :where(input,select,textarea,button):disabled{
  opacity:.5;cursor:not-allowed;background:var(--surface-2)}
-/* The phase-row legend: the two words and their ⓘ, once, above the end of the
-   table they label. Right-aligned because the two columns those levers sit in
-   are at the right-hand end, so the reference reads over the controls rather
-   than over the phase titles. */
-.phlegend{display:flex;justify-content:flex-end;align-items:center;gap:var(--sp-2);
- margin:0 0 var(--sp-0);font-size:.72rem;color:var(--muted)}
+/* The phase-row legend: the words and their ⓘ, once, above the end of the
+   table they label. Right-aligned because the columns those levers sit in are
+   at the right-hand end, so the reference reads over the controls rather than
+   over the phase titles. It wraps, because it grew: `on the board` joined it
+   when the sixth column came to hold two phase levers and a <th> can only carry
+   one ⓘ. */
+.phlegend{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;
+ gap:var(--sp-2);margin:0 0 var(--sp-0);font-size:.72rem;color:var(--muted)}
 .phlegend-t{font-style:italic}
 /* The model combos (mc) size to their hosts, not to the .combo default of
    18rem. One rule for both row types now that both are in the same cell. */

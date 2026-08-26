@@ -168,23 +168,28 @@ LOCKED_TEMPLATE = (
     "`audit-lock.py status` shows who holds what."
 )
 
-# The same finding as WARN_TEMPLATE with the authorship claim removed, because
-# the evidence for that claim is missing: another session was writing in this
-# checkout inside the same window, and nothing on disk names an author for these
-# paths. Still said rather than swallowed — an unplanned source write is worth a
-# line whoever made it — but what it reports is what IS established, which is the
-# only version of the line a reader can act on. Telling somebody they wrote a
+# The same finding as WARN_TEMPLATE with the authorship claim removed, because the
+# evidence for that claim is missing and something else in the window could account
+# for the paths. Still said rather than swallowed — an unplanned source write is
+# worth a line whoever made it — but what it reports is what IS established, which
+# is the only version of the line a reader can act on. Telling somebody they wrote a
 # file they did not is how a guard teaches people to route around it.
+#
+# THE SECOND SLOT IS A CLAUSE, NOT A SESSION LIST, and it became one when a second
+# kind of other-author turned up. It used to read "session(s) %s were writing",
+# which is the right sentence for a peer session and the wrong one for this
+# session's OWN background job — a job that belongs to nobody else and so has no
+# sibling state file to name. Two evidence kinds, one message shape: whoever built
+# the clause says what it found, and this template stops needing to know.
 UNPROVEN_TEMPLATE = (
     "[bash-write-guard] Source file(s) with no plan coverage became dirty while "
-    "that shell command ran: %s. This guard CANNOT say the command wrote them: "
-    "session(s) %s were writing in this checkout during the same window, and "
-    "nothing on disk names an author for these paths. What is established: the "
+    "that shell command ran: %s. This guard CANNOT say the command wrote them: %s. "
+    "What is established: the "
     "file(s) were clean at this session's previous look and are dirty now, and "
     "no in_progress task covers them. If the change is yours, put the file(s) on "
     "an in_progress task or use the Edit/Write tools (which the plan gate "
-    "reviews); if it is not, it belongs to the other session. This is a "
-    "non-blocking notice; nothing was reverted."
+    "reviews); if it is not, it belongs to whatever the clause above names. This "
+    "is a non-blocking notice; nothing was reverted."
 )
 
 # A command that ran in a WORKING TREE this guard is not watching, said once per
@@ -215,12 +220,21 @@ _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # anything unrecognised stays attributable. `sed` and `find` are here because they
 # are overwhelmingly used to read, and the flag check below removes the spellings
 # that write.
+#
+# `cd`/`pushd`/`popd` MOVE THE SHELL, NOT A FILE, and their absence was the single
+# most productive false positive this guard has had. Every segment is judged on its
+# own, so a `cd` in front of a read left the WHOLE command unproven: `cd <dir> &&
+# grep -n foo FILE` - the most ordinary shape in a session that works across two
+# repositories - came back watched, and then inherited the blame for a write it had
+# nothing to do with. Adding them removes an attribution and never a refusal:
+# `cd x && rm -rf f` is still watched, because `rm` is still not on this list.
 _READ_ONLY_CMDS = frozenset((
     "git", "grep", "rg", "ag", "cat", "head", "tail", "sed", "awk", "cut", "sort",
     "uniq", "wc", "tr", "jq", "find", "ls", "stat", "file", "basename", "dirname",
     "echo", "printf", "pwd", "true", "false", "test", "which", "type", "env",
     "date", "du", "df", "nl", "column", "comm", "diff", "cmp", "shasum", "md5sum",
     "xxd", "od", "realpath", "readlink", "seq", "yes", "tee", "xargs",
+    "cd", "pushd", "popd",
 ))
 # `xargs` was the absence that started F51. It runs another command, and the
 # segment split already puts that command in a segment of its own —
@@ -511,11 +525,12 @@ def _load_state(state_dir, session_id):
                     "warned": list(data.get("warned") or []),
                     "baselined": bool(data.get("baselined")),
                     "gitTimeout": bool(data.get("gitTimeout")),
-                    "otherTrees": list(data.get("otherTrees") or [])}
+                    "otherTrees": list(data.get("otherTrees") or []),
+                    "bgLaunches": list(data.get("bgLaunches") or [])}
     except Exception:
         pass
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
-            "gitTimeout": False, "otherTrees": []}
+            "gitTimeout": False, "otherTrees": [], "bgLaunches": []}
 
 
 def _save_state(state_dir, session_id, state):
@@ -570,6 +585,89 @@ def _plugin_wrote(state_dir, session_id):
     for key in (sid, PANEL_WRITER):
         out |= _sidecar_rels(state_dir, key)
     return out
+
+
+_BG_LAUNCH_CAP = 20
+
+
+def _now():
+    """Wall clock, as its own function so a case can hand in a fixed one.
+
+    `time` is a builtin C module, so this costs the hook import budget nothing
+    measurable — re-derive with `tools/bench-hooks.py` rather than trusting that.
+    """
+    import time
+    return time.time()
+
+
+def record_background_launch(state, tool_input, now):
+    """Note a detached Bash launch this session made, if it could write. -> bool.
+
+    THE BLIND SPOT THIS CLOSES is the mirror of the one `_other_sessions` names, and
+    it is invisible to that function by construction: a background job belongs to
+    THIS session, so there is no sibling state file to claim its writes and
+    `_other_sessions` skips `mine` on purpose. PostToolUse fires when the job is
+    LAUNCHED, minutes before it writes, so the dirt lands inside a later pass's
+    window and the blame goes to whatever foreground command ran next. Observed
+    twice in one session, both times on a read in a different repository, while
+    `tools/prove-gates.py` mutated this one in the background.
+
+    ONLY A PROGRAM NAME IS KEPT, never the command text. `_journal_io` settled this
+    for the same channel one file over (CWE-532, F136/F153): a command line carries
+    paths, hostnames and occasionally a token, and this state file is not a place a
+    redactor reaches. The first token answers the only question the verdict asks.
+
+    WHERE `run_in_background` COMES FROM, AND WHAT IS STILL UNPROVEN ABOUT IT. It
+    rides in `tool_input` beside `command` and `timeout` - read off a real session
+    transcript on 2026-08-26 rather than assumed, since this whole branch is dead if
+    the key arrives somewhere else. What that does NOT establish is delivery: the
+    hooks that fire in a session come from the INSTALLED plugin, and this repo's
+    marketplace entry is a `github` source, so a working-tree edit is not live and
+    the end-to-end path could not be exercised here. The cases below drive `decide`
+    with the transcript's shape, which is the strongest proof available without
+    publishing. To close it after a release: reinstall, `/reload-plugins`, launch one
+    backgrounded writer, and read `bgLaunches` out of this session's state file. If
+    it is empty, the key does not survive the hook boundary and this branch is inert
+    - which would be a finding, not a mystery.
+
+    NOT BOUNDED BY `timeout`, WHICH WAS MEASURED RATHER THAN ASSUMED. The obvious
+    window is the `timeout` the launch carries, and it does not hold: on 2026-08-26
+    a background `prove-gates.py` launched with `timeout: 600000` ran 627 seconds and
+    completed normally. A background job outlives its timeout, so a window closed on
+    it would go quiet exactly while the job was still writing. There is no hook when
+    a background job ends, so no honest end exists - which is why the launches are
+    reported with their age and never silently expired.
+    """
+    if not isinstance(tool_input, dict) or not tool_input.get("run_in_background"):
+        return False
+    command = tool_input.get("command") or ""
+    if _command_is_read_only(command):
+        return False              # it cannot write later either
+    toks = _tokenize(command.strip()) or []
+    program = toks[0] if toks else "?"
+    state["bgLaunches"] = (list(state.get("bgLaunches") or [])
+                           + [{"program": program, "at": now}])[-_BG_LAUNCH_CAP:]
+    return True
+
+
+def background_basis(state, now):
+    """The clause naming this session's unaccounted background jobs, or None.
+
+    AGE IS IN IT BECAUSE NOTHING CAN REPORT COMPLETION. A bare count reads as "a job
+    is running"; a count with an age lets the reader answer that themselves, which is
+    the only version of the claim that is true. Ages are rendered whole-minute and
+    the oldest is named, so a launch from an hour ago is visibly not an explanation.
+    """
+    launches = list(state.get("bgLaunches") or [])
+    if not launches:
+        return None
+    ages = sorted(max(0, int(now - float(row.get("at") or now))) for row in launches)
+    programs = sorted(set(str(row.get("program") or "?") for row in launches))
+    return ("%d background job(s) this session launched (%s) are unaccounted for - "
+            "no hook fires when one ends, so they cannot be ruled out; newest "
+            "launched %dm ago, oldest %dm"
+            % (len(launches), ", ".join(programs[:4]),
+               ages[0] // 60, ages[-1] // 60))
 
 
 def _state_mtime(state_dir, session_id):
@@ -734,6 +832,15 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # branch 2: Bash — diff the working tree against what we last saw.
     # Run git in the configured gitRoot (subdir-aware) and translate the
     # gitRoot-relative paths back to project-relative to match everything else.
+    #
+    # THE LAUNCH IS NOTED BEFORE ANYTHING ELSE IN THIS BRANCH, and before any early
+    # return. A detached job that could write must be on the record even when this
+    # pass goes on to say nothing — git unusable, a baseline seed, a read-only
+    # command — because what it explains is a LATER pass's dirt, not this one's.
+    now = _now()
+    if record_background_launch(state, data.get("tool_input") or {}, now):
+        _save_state(sd, session_id, state)
+
     reason = None
     if dirty is None:
         dirty, reason = _git_dirty(_config.git_root_dir(root, cfg))
@@ -927,10 +1034,22 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         parts.append(JOURNAL_TEMPLATE % ", ".join(journalled))
     if suspicious:
         state["warned"].extend(suspicious)
+        # BOTH KINDS OF OTHER-AUTHOR, joined rather than ranked. A peer session and
+        # this session's own background job are independent explanations and can be
+        # true at once; picking one would drop evidence the reader needs to tell
+        # which it was.
         active = (others or {}).get("active") or []
+        clauses = []
         if active:
+            clauses.append("session(s) %s were writing in this checkout during the "
+                           "same window, and nothing on disk names an author for "
+                           "these paths" % (", ".join(active),))
+        bg = background_basis(state, now)
+        if bg:
+            clauses.append(bg)
+        if clauses:
             parts.append(UNPROVEN_TEMPLATE % (", ".join(suspicious),
-                                              ", ".join(active)))
+                                              "; and ".join(clauses)))
         else:
             parts.append(WARN_TEMPLATE % ", ".join(suspicious))
 

@@ -95,7 +95,7 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # CREATION. Nothing wrote it afterwards. A registry you can curate while nothing
 # can be assigned to it is half a feature, and the missing half is the one every
 # reader of an area total depends on.
-_PHASE_KEYS = ("reviewModel", "priority", "adoParent", "area")
+_PHASE_KEYS = ("reviewModel", "priority", "adoParent", "adoTracked", "area")
 _TASK_KEYS = ("model", "skills")
 
 
@@ -296,6 +296,23 @@ COMPOSITION_HELP = {
                       "item this phase hangs under there and when that was "
                       "seen - and where nobody has asked, it says that instead "
                       "of reading as agreement.",
+    "phaseAdoTracked": "Whether this phase belongs on the shared board at all - "
+                       "the question one step BEFORE the parent, which is why "
+                       "it sits above it in the same cell. Three answers and "
+                       "they differ: no declaration (tracked, which is what "
+                       "every plan written before this key existed says), "
+                       "adoTracked: true (the same answer, written down), and "
+                       "adoTracked: false - the phase is DELIBERATELY off the "
+                       "board, so push creates nothing for it or its tasks and "
+                       "sync status reports it as intentionally untracked "
+                       "instead of counting it unlinked for ever. Tasks "
+                       "inherit the phase's answer and have no lever of their "
+                       "own. The muted line beneath the control is the ANSWER "
+                       "IN FORCE with the sentence behind it, and it is not "
+                       "editable: an absent declaration says the default out "
+                       "loud, and a stored value that is neither true nor "
+                       "false is reported as unanswered rather than quietly "
+                       "read as the default.",
     "taskModel": "Model the executor uses to implement this task.",
     "taskSkills": "Skills the executor loads (via the Skill tool) before writing code "
                   "for this task.",

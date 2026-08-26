@@ -48,6 +48,7 @@ import _panel_settings                             # noqa: E402  (as _panel_page
 import _panel_ui                                   # noqa: E402  (the raw template, uncached)
 import _ui_theme as _theme                         # noqa: E402  (as _panel_page imports it)
 import _ado_parent as _adop                        # noqa: E402  (the marker, in the other language)
+import _ado_tracked as _adot                       # noqa: E402  (the field name, in the other language)
 import _panel_page as M                            # noqa: E402
 
 
@@ -1275,9 +1276,15 @@ def _cases(check):
           and "colspan" not in _comp_trow
           and "el('td',{class:'tmodel'},revCombo)" in _comp_prow
           and "el('td',{class:'phprio'},prio)" in _comp_prow
-          # A task has no parent lever, so its cell is EMPTY - and empty is the
-          # answer, not a missing cell.
-          and "el('td',{class:'phparent'},ap,apId,apBoard,apNote)" in _comp_prow
+          # A task has no lever of its own in this column - it inherits its
+          # phase's tracking and its parent IS the phase's work item - so its
+          # cell is EMPTY, and empty is the answer, not a missing cell.
+          #
+          # The sixth cell holds TWO phase levers now, and their ORDER is part
+          # of the claim: `at` is above `ap` because where a phase hangs is a
+          # question only once it belongs on the board at all.
+          and "el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote)"
+          in _comp_prow
           and "el('td',{class:'phparent'})" in _comp_trow,
           repr((_comp_prow.count("el('td',"), _comp_trow.count("el('td',"),
                 _comp_head_cols)))
@@ -1304,7 +1311,10 @@ def _cases(check):
           "is a convenience, so naming an id by hand can never stop being "
           "possible",
           "'data-adoparent':ph.id||''" in M.UI_HTML
-          and "['fallback','use the fallback — '+apFallbackWords(c.fallback)]"
+          # F211 reordered this label: it used to open with `use the fallback — `
+          # and spend the whole 9rem budget before reaching the id, so a
+          # truncation lost the one thing the option is about.
+          and "['fallback','fallback: '+apFallbackWords(c.fallback)]"
           in M.UI_HTML
           and "['none','none — uncategorised on purpose']" in M.UI_HTML
           and "['other','other id…']" in M.UI_HTML
@@ -1433,6 +1443,184 @@ def _cases(check):
           "board" in M.COMPOSITION_HELP["phaseAdoParent"].lower()
           and "not editable" in M.COMPOSITION_HELP["phaseAdoParent"]
           and "function apBoardWords(b)" in M.UI_HTML)
+    # --- at: whether a phase is on the board at all (phases[].adoTracked) ------
+    # THE LEVER ABOVE THE PARENT IN THE SAME CELL, and the order is the claim:
+    # where a phase hangs is a question only once it belongs on the board. What
+    # is asserted below is what SOURCE can hold - that the three-valued answer
+    # is read by identity, that no two answers share a rendering, and that the
+    # declaration is offered as a declaration. What a person SEES is a browser
+    # claim and is not made here.
+    check("at1 the phase row carries an adoTracked SELECT offering the three "
+          "answers a PERSON can give - and none of them is cached, fetched or "
+          "scoped, which is why unlike the parent menu the three are fixed",
+          "'data-adotracked':ph.id||''" in M.UI_HTML
+          and "['default',AT_DEFAULT_WORDS]" in M.UI_HTML
+          and "['true','on the board']" in M.UI_HTML
+          and "['false','off the board']" in M.UI_HTML
+          and M.UI_HTML.count("'data-adotracked'") == 1,
+          repr(M.UI_HTML.count("'data-adotracked'")))
+    check("at2 THE THREE-VALUED ANSWER IS READ BY IDENTITY, never by "
+          "truthiness: null means nothing here has a basis, and a falsy read "
+          "would file it under 'not on the board' - a claim nobody made, and "
+          "the exact collapse this key was added to undo",
+          "const t=(r||{}).tracked;" in M.UI_HTML
+          and "if(t===true)return AT_ANSWERS[0];" in M.UI_HTML
+          and "if(t===false)return AT_ANSWERS[1];" in M.UI_HTML
+          and "if(t===null)return AT_ANSWERS[2];" in M.UI_HTML
+          # A value outside the three is a DEFECT and not an old server - the
+          # payload comes from the process serving this page - so it reports
+          # itself rather than borrowing the commonest answer's word.
+          and "return 'not-reported';}" in M.UI_HTML)
+    check("at3 the answer a gate reads and the words a person reads come from "
+          "ONE list through ONE normaliser - AP_BOARD's arrangement, for the "
+          "same failure: an attribute taken straight off `.tracked` could name "
+          "an answer the words had already fallen back from",
+          "const AT_ANSWERS=['tracked','untracked','unanswered'];" in M.UI_HTML
+          and M.UI_HTML.count("const AT_ANSWERS") == 1
+          and M.UI_HTML.count("const a=atAnswer(r);") == 1
+          and "'data-atstate':atAnswer(ph.adoTrackedResolved)" in M.UI_HTML
+          and M.UI_HTML.count("'data-atstate'") == 1,
+          repr((M.UI_HTML.count("const AT_ANSWERS"),
+                M.UI_HTML.count("'data-atstate'"))))
+    # A PROPERTY OF THE SOURCE, ap10's claim for this lever: that no two answers
+    # paint the same line. Counted rather than found, because a branch falling
+    # back to a neighbour's wording is the same defect with more code.
+    _at_words = ["'tracking: not answered — nothing here has a basis'",
+                 "'tracking: not reported'", "'tracking: '+(a==='tracked'",
+                 "'tracking: unsaved edit · saved: '"]
+    check("at4 every answer renders WORDS OF ITS OWN, and so does an unsaved "
+          "edit - counted rather than found, because two answers painting one "
+          "line is the whole fault class this lever was added to end",
+          all(w in M.UI_HTML for w in _at_words)
+          and M.UI_HTML.count("'tracking: ") == len(_at_words),
+          repr((M.UI_HTML.count("'tracking: "),
+                [w for w in _at_words if w not in M.UI_HTML])))
+    check("at5 the line says WHAT THE ANSWER CAME FROM, which is half the "
+          "sentence: an absent declaration and `true` are ONE answer from two "
+          "places, so a line printing only the answer would show the default "
+          "as if somebody had chosen it. The qualifier is read off the "
+          "DECLARATION and never off the rule, so it can only qualify",
+          "const how=(decl===true||decl===false)?'declared':'the default';"
+          in M.UI_HTML
+          and "atWords(ph.adoTrackedResolved,ph.adoTracked)" in M.UI_HTML)
+    check("at6 `null` IS THE CLEAR here and it is a VALUE one control down - "
+          "the difference is the schema typing this field boolean, so null is "
+          "not a value it can hold. Absent reaches the row as null and null is "
+          "what a save sends to put it back, which is what makes the round "
+          "trip readable rather than a marker to remember",
+          "if(choice==='default')return{write:true,value:null,why:''};"
+          in M.UI_HTML
+          and "if(decl===null||decl===undefined)return 'default';" in M.UI_HTML)
+    check("at7 a stored value that is NEITHER true nor false lands on an "
+          "option of its own that WRITES NOTHING and says why - a menu showing "
+          "it as 'no declaration' would paint the default over somebody's "
+          "attempt to keep a phase off a shared board, which is the one "
+          "direction that puts work on it",
+          "return AT_UNREADABLE;}" in M.UI_HTML
+          and "[AT_UNREADABLE,'unreadable value']" in M.UI_HTML
+          and "if(out.write)pp.adoTracked=out.value;else delete pp.adoTracked;"
+          in M.UI_HTML
+          and "neither true nor false — pick one " in M.UI_HTML)
+    check("at8 an EDIT never recomputes the answer - it says it is unsaved and "
+          "goes on quoting the saved one. The resolution is the server's, and "
+          "a browser deriving it would be the second implementation of the one "
+          "rule this key exists to have exactly one of; a line that kept "
+          "showing the saved answer beside a changed menu would be the "
+          "stale-reads-as-current defect one lever down (F101)",
+          "at.value===atChoice?atSaved:('tracking: unsaved edit · saved: '"
+          in M.UI_HTML
+          and M.UI_HTML.count("atSaved=atWords(") == 1
+          # ONE writer of that line: the render sets it and `atApply` replaces
+          # it, and nothing else may.
+          and M.UI_HTML.count("atLine.textContent=") == 1,
+          repr(M.UI_HTML.count("atLine.textContent=")))
+    check("at9 the lever has a reference OF ITS OWN, in the legend rather than "
+          "the head - a <th> carries one ⓘ and this column now holds two phase "
+          "levers - and the help says what the muted line is and that it is not "
+          "editable, which is the one thing the cell itself cannot say",
+          "{comp:'phaseAdoTracked'" in M.UI_HTML
+          and _help.COMPOSITION_PATHS.get("phaseAdoTracked")
+          == "phases[].adoTracked"
+          and "not editable" in M.COMPOSITION_HELP["phaseAdoTracked"]
+          # The two things a reader cannot get from the cell: which way an
+          # absent declaration goes, and that a task has no lever of its own.
+          and "default" in M.COMPOSITION_HELP["phaseAdoTracked"]
+          and "inherit" in M.COMPOSITION_HELP["phaseAdoTracked"],
+          repr(_help.COMPOSITION_PATHS.get("phaseAdoTracked")))
+    # A SOURCE PROPERTY, and the only instrument for it: that the two controls
+    # in this cell are declared to STACK. The column is capped at one control's
+    # width because the browser gate measured the table filling its frame
+    # exactly at 1200px, so a second control BESIDE it scrolls the panel
+    # sideways - and no selftest can see that, because a layout that overflows
+    # is still a layout that parses.
+    check("at10 the two levers sharing this cell are stacked by a RULE, not by "
+          "whatever happens to sit between them: a block element separates "
+          "them today, and the day that line moves the controls would still "
+          "have to stack or the column takes the table past its frame",
+          "td.phparent select[data-adotracked]{display:block}" in M.UI_HTML
+          and M.UI_HTML.count("td.phparent select[data-adotracked]") == 1)
+    check("at11 THE FIELD NAME IS WRITTEN IN TWO LANGUAGES AND THIS IS THE "
+          "CHECK: the key the browser puts in the patch, the key it computes a "
+          "dialog row for and `_ado_tracked.FIELD` are one string. A comment "
+          "saying they agree is a comment - and if they ever did not, the "
+          "dialog would list nothing for a real change and the echo would then "
+          "report the save as drift against a dialog that never looked",
+          "pp.%s=out.value;else delete pp.%s;" % (_adot.FIELD, _adot.FIELD)
+          in M.UI_HTML
+          and "if(('%s' in pv)&&!cfSame(p.%s,pv.%s))"
+          % (_adot.FIELD, _adot.FIELD, _adot.FIELD) in M.UI_HTML
+          and "rows.push(cfRow(pid,'%s'," % (_adot.FIELD,) in M.UI_HTML,
+          repr(_adot.FIELD))
+    check("at12 ...and the dialog renders THIS field's null as what it is - "
+          "the ABSENCE of a declaration, which resolves to tracked. It is the "
+          "third meaning of null in one dialog (skills: opted out, adoParent: "
+          "the declared nowhere) and the only one whose absence has a "
+          "consequence, so 'not set' would leave the reader to work out which "
+          "way it goes",
+          "if(none&&field==='%s')" % (_adot.FIELD,) in M.UI_HTML
+          # ONE SENTENCE, TWO READERS: the menu offers the option and the dialog
+          # renders the value, and the literal exists once - so the two cannot
+          # come to disagree about which way an absent declaration goes. The
+          # identifier is what both sites carry.
+          # TWO WIDTH BUDGETS, ONE ANSWER, AND THE LONG FORM IS DERIVED. The
+          # menu sits in a 9rem select and the dialog has a whole row; one
+          # sentence in both clipped the closed control to `no declaration — t`,
+          # which a screenshot showed and no substring pin could. So the short
+          # words are the constant and the sentence is BUILT from them - the
+          # concatenation is what makes a disagreement about direction
+          # unspellable, which is what the single literal used to buy.
+          and "const AT_DEFAULT_WORDS='no declaration';" in M.UI_HTML
+          and "const AT_DEFAULT_SENTENCE=AT_DEFAULT_WORDS+"
+              "' — tracked, the default';" in M.UI_HTML
+          and M.UI_HTML.count("' — tracked, the default'") == 1
+          # Both readers named, rather than counted: an identifier is a word a
+          # comment may also carry, and a count over the page would be pinning
+          # how the prose beside it is worded.
+          and "['default',AT_DEFAULT_WORDS]" in M.UI_HTML
+          and "el('span',{class:'cfv '+cls+' unset'},AT_DEFAULT_SENTENCE)"
+          in M.UI_HTML,
+          repr(M.UI_HTML.count("' — tracked, the default'")))
+    # F211. BOTH selects in the phase cell must be filled THROUGH the width
+    # bound, and this is a property of the assembled text rather than of any
+    # function's behaviour - so it is pinned here and deliberately not in
+    # `ado-panel.test.mjs`, whose point is running the code instead of re-reading
+    # it. The failure it guards is silent by construction: a control left
+    # unbounded paints a clipped label while every other pin about it passes,
+    # which is the whole of F211 and cost a screenshot to find the first time.
+    #
+    # The `fillOptions` SIGNATURE is pinned beside them, because a bound the
+    # callers pass and the filler ignores is the same defect one layer down and
+    # would leave both call sites looking correct.
+    check("at13 both phase-cell selects are filled through PHCELL_OPTION_CHARS, "
+          "and the filler takes a limit at all: %r"
+          % (M.UI_HTML.count("PHCELL_OPTION_CHARS"),),
+          "const fillOptions=(sel,pairs,cur,limit)=>{" in M.UI_HTML
+          and "atOptions(ph.adoTracked),atChoice,PHCELL_OPTION_CHARS"
+          in M.UI_HTML
+          and "apOptions(apc),apChoice,\n    PHCELL_OPTION_CHARS" in M.UI_HTML
+          # the bound reaches the option through ONE rule, not two spellings
+          and "const optionText=(label,limit)=>{" in M.UI_HTML
+          and "const {text,title}=optionText(t,limit);" in M.UI_HTML)
     # --- adf: the per-type field template on the connector card ---------------
     # A PROPERTY OF THE SOURCE, and text is the only instrument for it: that no
     # dotted-path writer is anywhere near a map whose KEYS carry dots. A browser

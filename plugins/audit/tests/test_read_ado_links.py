@@ -33,6 +33,18 @@ for:
   the duplicate is named anyway, or there is no duplicate and neither line fires.
   Nothing validates uniqueness of a work-item id, so this is the only surface that
   ever counts it.
+- **Deliberately off the board is a CLASS, not a smaller kind of missing.** The
+  `rl18`–`rl23` family is that partition: an item its plan keeps off a shared
+  board is not counted unlinked, its tasks inherit that answer from
+  `_ado_tracked` rather than from a second reading here, a bug is never in the
+  class at all, and the three figures add up to the total for every kind so a
+  reader can check the arithmetic instead of trusting it. `rl18d`, `rl21b` and
+  `rl22b` are the other direction — the cases that go red when the class is
+  widened until it swallows ordinary gaps, or a line becomes unconditional.
+- **The third value is three-valued on purpose.** `rl21` holds where an
+  unanswerable item goes: `unlinked`, never `untracked`, and named out loud.
+  Being counted untracked is a licence to stop reporting a gap, and an item
+  nothing had a basis to answer for has not earned one.
 - **The command file is the other half of the fix.** `rl17` reads
   `commands/sync.md` and asserts every invocation of the drift door there is
   handed the STAMPED payload. The original defect was entirely in the prose, and
@@ -52,6 +64,7 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (the anchor: PLUGIN_ROOT)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _ado_tracked as TRACKED                     # noqa: E402  (FIELD, spelled once)
 import _manifest_io as MIO                         # noqa: E402  (the sharded WRITER)
 
 # THE DEFECT WAS THE PROSE. Every function below was already right when the drift
@@ -143,6 +156,26 @@ def _write(tmp, name, payload):
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
     return path
+
+
+def _declaring_source():
+    """SOURCE plus one phase declared OFF the board and one ordinary control.
+
+    Neither new phase carries an `ado` link, so `linked` cannot move and every
+    difference the cases below measure is the declaration's. P3 carries two
+    tasks because INHERITANCE is the half a surface re-deriving the rule gets
+    wrong - a version that read the key on phases only leaves them unlinked
+    for ever - and P4 is the paired control: the same shape, no declaration,
+    and it must stay `unlinked` or the class is swallowing whatever it reaches.
+    """
+    out = json.loads(json.dumps(SOURCE))
+    out["phases"].append({"id": "P3", "title": "internal", "status": "pending",
+                          TRACKED.FIELD: False,
+                          "tasks": [{"id": "T3.1", "status": "pending"},
+                                    {"id": "T3.2", "status": "pending"}]})
+    out["phases"].append({"id": "P4", "title": "ordinary", "status": "pending",
+                          "tasks": [{"id": "T4.1", "status": "pending"}]})
+    return out
 
 
 def _with_state_map(manifest, state_map):
@@ -249,11 +282,11 @@ def _cases(check):
               "see read as unlinked, not as missing: %r"
               % (sharded_side["kinds"],),
               sharded_side["kinds"]["phase"] == {"linked": 2, "unlinked": 0,
-                                                 "total": 2}
+                                                 "untracked": 0, "total": 2}
               and sharded_side["kinds"]["task"] == {"linked": 2, "unlinked": 1,
-                                                    "total": 3}
+                                                    "untracked": 0, "total": 3}
               and sharded_side["kinds"]["bug"] == {"linked": 2, "unlinked": 1,
-                                                   "total": 3})
+                                                   "untracked": 0, "total": 3})
         code, printed, _err = _run([man, "--json"])
         single_side = json.loads(printed)
         check("rl5 the two layouts are asserted to AGREE, not assumed to: one "
@@ -534,6 +567,190 @@ def _cases(check):
               code == 0
               and printed.count("0 work item(s) claimed by more than one") == 1
               and printed.count("SHARED:") == 0)
+
+        # --- deliberately off the board is not the same as missing --------------
+        #
+        # `unlinked` was a SUBTRACTION - everything the manifest holds minus
+        # everything carrying a link - so an item whose plan says it does not
+        # belong on a shared board reported as a gap on every run, for ever. The
+        # fixture's two new phases carry no link at all, so nothing below can
+        # move because a link moved.
+        declaring = _write(tmp, "declaring.json", _declaring_source())
+        code, printed, _err = _run([declaring, "--json"])
+        declaring_side = json.loads(printed)
+        check("rl18 a phase declared off the board is NOT counted unlinked - it "
+              "is its own class, and the subtraction that produced `unlinked` is "
+              "what made one permanent false-positive row per such phase: %r"
+              % (declaring_side["kinds"]["phase"],),
+              code == 0
+              and declaring_side["kinds"]["phase"] == {"linked": 2, "unlinked": 1,
+                                                       "untracked": 1,
+                                                       "total": 4})
+        check("rl18b ...and its TASKS are not either, which is the half a second "
+              "reading of the key gets wrong: the answer is inherited in "
+              "`_ado_tracked`, so both of P3's tasks land in the third class "
+              "while T1.2 and T4.1 stay ordinary gaps: %r"
+              % (declaring_side["kinds"]["task"],),
+              declaring_side["kinds"]["task"] == {"linked": 2, "unlinked": 2,
+                                                  "untracked": 2, "total": 6})
+        check("rl18c the three classes PARTITION the total for every kind, so a "
+              "reader can add them up instead of trusting them - and an item "
+              "counted in two classes at once makes this go red rather than "
+              "quietly overshoot: %r" % (declaring_side["kinds"],),
+              all(declaring_side["kinds"][k]["linked"]
+                  + declaring_side["kinds"][k]["unlinked"]
+                  + declaring_side["kinds"][k]["untracked"]
+                  == declaring_side["kinds"][k]["total"] for k in M.KINDS))
+        check("rl18d THE SECOND DIRECTION, which goes red if the class is ever "
+              "widened until it over-fires: a manifest where nothing is declared "
+              "reports ZERO untracked for every kind and the same unlinked "
+              "figures it always did - an exemption that swallowed ordinary gaps "
+              "would be the false negative traded for the false positive: %r"
+              % ({k: single_side["kinds"][k] for k in M.KINDS},),
+              all(single_side["kinds"][k]["untracked"] == 0 for k in M.KINDS)
+              and sum(single_side["kinds"][k]["unlinked"] for k in M.KINDS) == 2)
+
+        bug_declares = _declaring_source()
+        # BUG-9 is the manifest's only unlinked bug, so if a bug could ever be
+        # untracked this is the row that would move.
+        bug_declares["bugs"][2][TRACKED.FIELD] = False
+        bug_man = _write(tmp, "bug-declares.json", bug_declares)
+        code, printed, _err = _run([bug_man, "--json"])
+        bug_side = json.loads(printed)
+        check("rl19 a BUG is never untracked, even carrying the key: the "
+              "declaration is a property of a PHASE and a bug is owned by none, "
+              "so `_ado_tracked` answers about no bug at all - and `kind_totals` "
+              "still counts it, so the row stays a gap rather than vanishing: %r"
+              % (bug_side["kinds"]["bug"],),
+              code == 0
+              and bug_side["kinds"]["bug"] == {"linked": 2, "unlinked": 1,
+                                               "untracked": 0, "total": 3}
+              and bug_side["kinds"]["bug"] == declaring_side["kinds"]["bug"])
+
+        code, printed, _err = _run([man])
+        check("rl20 the third figure is PRINTED for every kind including at "
+              "zero - `bug` included, where the question does not apply, because "
+              "a column that appears only when it is non-zero cannot be told "
+              "from a column nobody computed: %r"
+              % ([ln for ln in printed.splitlines() if "linked," in ln],),
+              code == 0 and printed.count("deliberately untracked") == 3
+              and "  phase 2 linked, 0 unlinked, 0 deliberately untracked "
+                  "(2 in the manifest)" in printed
+              and "  task  2 linked, 1 unlinked, 0 deliberately untracked "
+                  "(3 in the manifest)" in printed
+              and "  bug   2 linked, 1 unlinked, 0 deliberately untracked "
+                  "(3 in the manifest)" in printed)
+        code, declaring_printed, _err = _run([declaring])
+        check("rl20b ...and it carries the real figures where there are some, on "
+              "the same three lines - the number a reader sees is the number the "
+              "JSON holds, not a second derivation: %r"
+              % ([ln for ln in declaring_printed.splitlines()
+                  if "linked," in ln],),
+              code == 0
+              and "  phase 2 linked, 1 unlinked, 1 deliberately untracked "
+                  "(4 in the manifest)" in declaring_printed
+              and "  task  2 linked, 2 unlinked, 2 deliberately untracked "
+                  "(6 in the manifest)" in declaring_printed
+              and "  bug   2 linked, 1 unlinked, 0 deliberately untracked "
+                  "(3 in the manifest)" in declaring_printed)
+
+        # --- the third value: an item nothing could answer for ------------------
+        #
+        # `adoTracked` is THREE-valued, and a key that is not a boolean is the
+        # readable version of the third one. Such an item is NOT untracked: the
+        # exemption is a licence to stop reporting a gap, and nothing here has a
+        # basis to grant it. So it stays `unlinked` and is NAMED.
+        unanswerable = _declaring_source()
+        unanswerable["phases"].append({"id": "P5", "title": "typo",
+                                       "status": "pending",
+                                       TRACKED.FIELD: "nope",
+                                       "tasks": [{"id": "T5.1",
+                                                  "status": "pending"}]})
+        unanswerable_man = _write(tmp, "unanswerable.json", unanswerable)
+        code, printed, _err = _run([unanswerable_man])
+        unanswerable_side = json.loads(_run([unanswerable_man, "--json"])[1])
+        check("rl21 an item nothing could answer for is NOT given the untracked "
+              "exemption - it stays counted as unlinked and is named on its own "
+              "line, because a default chosen where the basis is missing is the "
+              "confident wrong answer this feature exists to remove: %r"
+              % (unanswerable_side["kinds"]["phase"],),
+              code == 0
+              and unanswerable_side["kinds"]["phase"] == {"linked": 2,
+                                                          "unlinked": 2,
+                                                          "untracked": 1,
+                                                          "total": 5}
+              and unanswerable_side["counts"]["unanswered"] == 2
+              and printed.count("NOT ANSWERED: phase P5") == 1
+              and printed.count("NOT ANSWERED: task T5.1") == 1
+              and "2 plan item(s) whose %s could not be answered"
+                  % (TRACKED.FIELD,) in printed)
+        check("rl21b THE SECOND DIRECTION for that line: a manifest where every "
+              "item IS answerable prints the figure at zero with nothing under "
+              "it. A line that always fires says as little as one that never "
+              "does, and this is the only case that catches it",
+              "0 plan item(s) whose %s could not be answered"
+              % (TRACKED.FIELD,) in declaring_printed
+              and declaring_printed.count("NOT ANSWERED:") == 0)
+
+        # --- declared off the board, and a card for it exists anyway ------------
+        #
+        # `link_inventory` is the authority on what `linked` means here, so the
+        # link WINS and the item is counted linked - the card is there whatever
+        # the plan now says. Counting it in both classes would make them
+        # overshoot the total, so the leftover gets a line of its own instead.
+        stale = _declaring_source()
+        stale["phases"][2]["ado"] = _link(4003)
+        stale_man = _write(tmp, "stale.json", stale)
+        code, printed, _err = _run([stale_man])
+        stale_side = json.loads(_run([stale_man, "--json"])[1])
+        check("rl22 an item declared off the board that still carries a card is "
+              "counted LINKED and named on its own line - a leftover nothing "
+              "will push again and nothing will take down, and the one item the "
+              "per-kind split cannot show: %r" % (stale_side["kinds"]["phase"],),
+              code == 0
+              and stale_side["kinds"]["phase"] == {"linked": 3, "unlinked": 1,
+                                                   "untracked": 0, "total": 4}
+              and stale_side["counts"]["untrackedLinked"] == 1
+              and printed.count("STILL LINKED: phase P3") == 1
+              and "1 item(s) declared off the board that still carry a link"
+                  in printed
+              and stale_side["kinds"]["phase"]["linked"]
+                  + stale_side["kinds"]["phase"]["unlinked"]
+                  + stale_side["kinds"]["phase"]["untracked"]
+                  == stale_side["kinds"]["phase"]["total"])
+        check("rl22b THE SECOND DIRECTION for that one too: the declaring "
+              "manifest, whose off-board phase carries no card, prints the "
+              "figure at zero with no line under it - so the line cannot become "
+              "an unconditional note on every declared item",
+              "0 item(s) declared off the board that still carry a link"
+              in declaring_printed
+              and declaring_printed.count("STILL LINKED:") == 0)
+
+        # --- and all of it through the sharded layout ---------------------------
+        declaring_dir = os.path.join(tmp, "declaring-sharded")
+        os.makedirs(declaring_dir)
+        declaring_sharded = os.path.join(declaring_dir, "audit-plan.json")
+        MIO.save_sharded(declaring_sharded, _declaring_source())
+        with open(declaring_sharded, "r", encoding="utf-8") as fh:
+            declaring_index = fh.read()
+        check("rl23 THE FIXTURE'S PREMISE, checked rather than assumed: the "
+              "sharded INDEX carries neither the declaration nor one task id, so "
+              "a reader reaching for `json.load` sees a phase that declares "
+              "nothing and owns nothing. Without this the case below would stay "
+              "green over a stub that happened to hold the key: %r"
+              % (TRACKED.FIELD in declaring_index,),
+              TRACKED.FIELD not in declaring_index
+              and "T3.1" not in declaring_index
+              and "T3.2" not in declaring_index
+              and "P3" in declaring_index)
+        code, printed, _err = _run([declaring_sharded, "--json"])
+        check("rl23b ...and read through the loader the sharded layout reaches "
+              "the tasks: the same document stored either way answers "
+              "identically, which is what stops a raw read reporting a whole "
+              "plan tracked by default with no task rows at all: %r"
+              % (json.loads(printed)["kinds"]["task"],),
+              code == 0 and json.loads(printed) == declaring_side
+              and json.loads(printed)["kinds"]["task"]["untracked"] == 2)
 
         # --- no connector configured at all, and one switched off ---------------
         bare = _write(tmp, "bare.json", {"meta": {"version": 2},

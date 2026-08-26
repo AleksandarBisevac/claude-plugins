@@ -963,6 +963,10 @@
         "adoParent": {
           "$ref": "#/$defs/adoParent",
           "description": "The existing work item THIS phase hangs under, overriding meta.ado.parentWorkItem for this phase alone. A sibling of `ado`, never a field inside it: `ado` is written only by sync, this is authored."
+        },
+        "adoTracked": {
+          "type": "boolean",
+          "description": "Whether this phase belongs on the shared board at all. Absent means yes, so nothing moves for a plan that never sets it. `false` means DELIBERATELY not tracked: `/audit:sync push` creates nothing for it (its tasks included, when meta.ado.phaseWorkItems is on), and `sync status` reports it as intentionally untracked rather than counting it unlinked. The distinction is the point — an internal refactor phase reported as unlinked forever turns the drift lens into a permanent false positive and stops being read. Authored, never written by sync."
         }
       }
     },

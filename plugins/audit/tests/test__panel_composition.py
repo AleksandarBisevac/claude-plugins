@@ -18,6 +18,7 @@ from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
 import _ado_parent as _adop                    # noqa: E402  (the marker + resolve)
+import _ado_tracked as _adot               # noqa: E402  (the three-valued answer + its basis)
 import _ado_drift as _drift                    # noqa: E402  (link_inventory: the walk the banner counts)
 import _loader                                 # noqa: E402  (read-ado-links.py is an entry point; only a load reaches it)
 import _panel_composition as M      # noqa: E402
@@ -495,6 +496,110 @@ def _cases(check):
           and sorted(_bp_rows[0].get("adoParentBoard") or {})
           == ["basis", "id", "observedAt", "refresh", "state"],
           repr(_bp_rows[0].get("adoParentBoard")))
+
+    # --- u-board: whether a phase is on the board AT ALL, as the row carries it -
+    # THE QUESTION ONE STEP BEFORE `adoParent`, and the three DECLARATION states
+    # are not the three ANSWERS: absent and `true` are one answer from two
+    # places, and a stored value that is neither boolean is no answer at all.
+    # The fixture carries all four inputs so a payload that folded any pair
+    # together has a row that tells them apart.
+    _at_ado = {"organization": "o"}
+    _at_phases = [{"id": "P1", "title": "silent", "status": "pending"},
+                  {"id": "P2", "title": "off", "status": "pending",
+                   "adoTracked": False},
+                  {"id": "P3", "title": "on", "status": "pending",
+                   "adoTracked": True},
+                  {"id": "P4", "title": "junk", "status": "pending",
+                   "adoTracked": "yes"}]
+    _at_view = M._composition_view({"meta": {"ado": _at_ado},
+                                    "phases": _at_phases})
+    _at_rows = dict((r.get("id"), r) for r in _at_view["phases"])
+    check("at1 the DECLARATION reaches the row in all four of its shapes, and "
+          "`null` is the absence of one: the schema types this field boolean, "
+          "so null is not a value it can carry and needs no marker - which is "
+          "the one way it differs from adoParent, where null IS a value: %r"
+          % ([_at_rows.get(p, {}).get("adoTracked") for p in
+              ("P1", "P2", "P3", "P4")],),
+          _at_rows.get("P1", {}).get("adoTracked") is None
+          and _at_rows.get("P2", {}).get("adoTracked") is False
+          and _at_rows.get("P3", {}).get("adoTracked") is True
+          # VERBATIM, not folded into absent: a payload that flattened this
+          # would have the control painting the default over somebody's attempt
+          # to keep a phase off a board, which is the one direction that puts
+          # work on it.
+          and _at_rows.get("P4", {}).get("adoTracked") == "yes",
+          repr([_at_rows.get(p, {}).get("adoTracked")
+                for p in ("P1", "P2", "P3", "P4")]))
+    check("at2 every phase row carries the RESOLUTION beside the declaration, "
+          "and it is `_ado_tracked.resolve`'s own answer - the one function the "
+          "push plan, the status lens and the door all ask, so the panel cannot "
+          "hold a second opinion about what belongs on a shared board",
+          # Compared against the module rather than against a literal: a second
+          # implementation here would agree with a hand-typed expectation and
+          # disagree with the rule the day the rule learns something.
+          not [ph for ph in _at_phases
+               if _at_rows.get(ph["id"], {}).get("adoTrackedResolved")
+               != dict((k, v) for k, v in _adot.resolve(ph, _at_ado).items()
+                       if k in ("tracked", "basis"))],
+          repr([_at_rows.get(ph["id"], {}).get("adoTrackedResolved")
+                for ph in _at_phases]))
+    check("at3 `tracked` STAYS THREE-VALUED all the way to the row: True, "
+          "False, and None for the declaration nothing can read. A payload that "
+          "answered the third one either way would be the false confidence this "
+          "key exists to remove, and False is the direction that reads as a "
+          "deliberate choice nobody made",
+          _at_rows.get("P1", {}).get("adoTrackedResolved", {}).get("tracked")
+          is True
+          and _at_rows.get("P2", {}).get("adoTrackedResolved", {}).get("tracked")
+          is False
+          and _at_rows.get("P3", {}).get("adoTrackedResolved", {}).get("tracked")
+          is True
+          and _at_rows.get("P4", {}).get("adoTrackedResolved", {}).get("tracked")
+          is None,
+          repr([_at_rows.get(p, {}).get("adoTrackedResolved", {}).get("tracked")
+                for p in ("P1", "P2", "P3", "P4")]))
+    check("at4 ...and the resolution is the WHOLE answer or none of it: the "
+          "basis rides along, and an absent declaration says the default OUT "
+          "LOUD in `_ado_tracked`'s own words rather than arriving as a bare "
+          "true a reader would take for somebody's choice",
+          sorted(_at_rows.get("P1", {}).get("adoTrackedResolved") or {})
+          == ["basis", "tracked"]
+          and _at_rows.get("P1", {}).get("adoTrackedResolved", {}).get("basis")
+          == _adot.DEFAULT_BASIS
+          and _adot.FIELD in (_at_rows.get("P2", {})
+                              .get("adoTrackedResolved", {}).get("basis") or ""),
+          repr((sorted(_at_rows.get("P1", {}).get("adoTrackedResolved") or {}),
+                _at_rows.get("P1", {}).get("adoTrackedResolved", {})
+                .get("basis"))))
+    check("at5 both halves ride EVERY phase row, which is the half that cannot "
+          "be derived: the rule can be perfect and the cell still show nothing, "
+          "and that IS what F101 was one lever down - the answer existed a "
+          "surface away and never reached the row: %r"
+          % (sorted(set(tuple(sorted(k for k in r if k.startswith("adoTracked")))
+                        for r in _at_view["phases"])),),
+          not [r for r in _at_view["phases"]
+               if "adoTracked" not in r or "adoTrackedResolved" not in r]
+          and len(_at_view["phases"]) == 4,
+          repr([sorted(k for k in r if k.startswith("adoTracked"))
+                for r in _at_view["phases"][:1]]))
+    # THE SHARDED TRAP, and it is the reason this is not a `.get(FIELD)` in the
+    # view. On the layout parallel worktrees use, the file at manifestPath is an
+    # INDEX whose phases are stubs - `adoTracked` lives in the shard BODY - so a
+    # reader that answered off the stub would report a whole plan TRACKED by
+    # default. `_ado_tracked` refuses a stub, and the panel gets that refusal
+    # only because it asks the module rather than the dict.
+    _at_stub = M._composition_view({
+        "meta": {"ado": _at_ado},
+        "phases": [{"id": "P9", "title": "stub", "status": "pending",
+                    "shard": "phases/P9.json"}]})["phases"]
+    check("at6 an un-assembled index STUB is reported UNANSWERED and names the "
+          "loader, rather than reading 'declares nothing, so tracked' - the "
+          "confident wrong answer, on the layout parallel worktrees use",
+          [r.get("adoTrackedResolved", {}).get("tracked") for r in _at_stub]
+          == [None]
+          and "load_manifest" in (_at_stub[:1] or [{}])[0].get(
+              "adoTrackedResolved", {}).get("basis", ""),
+          repr([r.get("adoTrackedResolved") for r in _at_stub[:1]]))
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with.

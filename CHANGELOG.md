@@ -4,6 +4,90 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.8.0] - 2026-08-26
+
+**A minor rather than a patch, by this repo's own table**: the manifest gains a key the plugin
+reads, which is new behaviour and not only fixes. Adding a key is always free — a plan that never
+sets `phases[].adoTracked` resolves exactly as it did before — so nothing moves for anybody who
+does not opt in.
+
+### Added
+
+**`/audit:sync status` could not tell a deliberate exclusion from drift, so an internal phase
+reported as `unlinked` forever.** A phase that has no business on a shared board — an internal
+refactor, a spike, work that never leaves this repository — had nowhere to say so. The only ADO
+field a phase carried was `phase.ado`, the link sync writes when it creates a work item, and an
+absent link means *not created yet*. The drift lens therefore grew a row no push would ever clear,
+and a backlog that cannot reach zero is a lens people stop reading — which costs the rows that
+were real. `phases[].adoTracked` is the missing declaration: `false` keeps the phase, and every
+task that inherits from it, out of the push plan; `true` or absent is tracked, so a plan that never
+writes the key produces the plan it produced before.
+
+**The obvious spelling was `phases[].ado: false`, and it is the wrong one.** `phase.ado` is an
+`adoLink` written only by sync. Overloading it would make one field hold an object when the board
+has the phase and a boolean when it never will, so every reader — the validator, the panel's ADO
+card, the orchestrator echo, the drift table — would have to test the type before it could read the
+value, and the first one that forgot would treat `false` as a link. A declaration the operator makes
+and a link the tool writes are different facts with different owners; they are different keys.
+
+**One door answers it, and every answer carries its basis.** The rule lives in
+`resolve-ado-tracked.py` and the module behind it, the same split as the parent resolver and for
+the same reason: prose cannot be tested, and a second copy of a precedence is a second answer. Its
+report never returns a bare boolean — it says whether the phase declared it, whether a task
+inherited it and from which phase, or that nothing declared anything and the default is tracked.
+**Bugs are outside it entirely** and are told so rather than answered `tracked`: a bug is not owned
+by a phase, and `bug.ado` is usually written by a pull, off the board. "Nothing here is tracked" is
+an answer and exits 0; there is no exit code for a phase being off the board, because that is a
+normal state and not a violation.
+
+**What a run skips is counted where the operator can see it.** The push plan gives untracked items
+their own line, printed even at zero, instead of quietly lowering the create count — *nothing to
+create here* and *deliberately skipped this phase* want opposite reactions, and a single number
+folds them into one. `status`'s inventory reports untracked as a class beside linked and unlinked
+rather than as a shortfall in the second. Absence keeping its meaning is a promise, not a
+convenience: `COMPATIBILITY.md` now carries the key, so it keeps being read and `adoTracked`
+absent keeps meaning tracked for the rest of the major line.
+
+### Fixed
+
+**The panel's phase-row menus clipped their own labels, and every check passed while they did.** A
+closed `<select>` renders one line and clips it — no wrap, no ellipsis — so a label longer than the
+control is a phrase cut off mid-word. The parent picker painted `use the fallback —` out of a label
+three times that, which reads as a whole option meaning nothing. No substring assertion could see
+it: the full literal *was* in the page, and only the paint was wrong. It took a screenshot.
+
+The fix is one rule rather than shorter strings. `fillOptions` takes an optional character bound and
+moves the full text to the option's `title`, so nothing is lost and the ellipsis makes the
+truncation visible. The bound is a parameter and not a constant, because it is a property of the
+control — the panel's other selects are wider, and a global bound would truncate labels that already
+fit. And the fallback option was reordered to lead with the work item id: a label whose first words
+are prose spends the whole budget before reaching the thing the option is about, so truncating it
+loses exactly the wrong half.
+
+**`guard-bash-writes` blamed a reader for somebody else's write, twice in one session, and the
+first cause was one missing word.** `cd` was not on the read-only allowlist. Every segment of a
+shell command is judged on its own, so a `cd` in front of a read left the whole command unproven —
+`cd <dir> && grep -n foo FILE`, the ordinary shape in any session that works across two
+repositories, came back watched and then inherited the blame for dirt it had nothing to do with.
+`cd`, `pushd` and `popd` move the shell and cannot touch a file. Adding them removes an
+attribution and never a refusal: `cd x && rm -rf f` is still watched, because `rm` is still not on
+the list, and that direction is a case rather than a claim.
+
+**And a background job of your own session had nobody to blame but the next command.** The guard
+already asks whether a PEER session wrote the file — and cannot ask it here, because
+`_other_sessions()` skips `mine` on purpose, so a detached job launched by this session has no
+sibling state file to claim its writes. `PostToolUse` fires when such a job is *launched*, minutes
+before it writes, so the dirt lands inside a later pass's window. The launch is now recorded —
+program name only, never the command text (CWE-532, the rule `_journal_io` already holds) — and
+while any launch is unaccounted for, the verdict drops its authorship claim and names them with
+their age, the same shape the guard already uses for a peer session. It is **not** silenced: an
+unplanned source write is worth a line whoever made it.
+
+*Not bounded by `timeout`, which was measured rather than assumed*: a background `prove-gates.py`
+launched with `timeout: 600000` ran 627 seconds and completed normally. No hook fires when a
+background job ends, so no honest window exists — which is why the launches are reported with an
+age instead of being silently expired.
+
 ## [1.7.0] - 2026-08-26
 
 **A minor rather than a patch, by this repo's own table**: the test-gate runner gains a flag and a new
