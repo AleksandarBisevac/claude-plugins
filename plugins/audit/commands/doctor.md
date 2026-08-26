@@ -35,6 +35,48 @@ exits 0 today still exits 0 with `--deep`. Reach for it when the question is abo
 **audit trail** rather than the setup: the journal's git anchor only pins the journal files
 the task commits actually carry, and the default run never looks at that.
 
+## The `evidence` line — the plan's pointers against the ledger, both ways
+
+In every run, no flag. A `testEvidence` block is a *cache*: it names a `runId`, and the run
+itself lives in the append-only evidence ledger beside the manifest. Those two can come apart
+in two directions, and they are different problems with different repairs, so the check asks
+both and never folds them together:
+
+- **A pointer naming a run no row in this checkout carries** — `the plan refers to evidence
+  that is not here`. A clone that received the plan without the evidence directory, a file
+  that was removed, or a block written by hand. The plan is claiming a record it cannot show.
+- **A recorded run whose subject's pointer does not name it** — `the record is ahead of the
+  plan`. This is not damage: it is exactly what a **refused pointer** leaves behind when
+  another live session held the phase lock while the gate was recorded. The repair is one
+  pass over the ledger, and the warning names it:
+
+  ```
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
+      <manifestPath> <phaseId> --reconcile
+  ```
+
+  The phase id is required by the parser and **not read by this pass** — reconcile re-derives
+  the pointer of every subject the ledger names, whatever phase it was handed, and runs no
+  gate and no subprocess. It exits non-zero only when a pointer was refused again, naming
+  which subjects it left behind. It also **writes**: it edits the phase shard, which is why
+  it is a command to hand the user rather than something this read-only command does for
+  them.
+
+**Everything here is a WARNING at most, and that is the division of labour rather than
+leniency.** The working tree is where a mismatch is routine and repairable, so a run that
+exits 0 today still exits 0 with this line present. The same question asked of what is
+**committed** — does the plan HEAD carries name runs HEAD holds, as a clone would receive
+them — is `evidence-committed` in `verify-invariants.py`, and there a mismatch is a breach;
+`/audit:status --gate --fail-on invariant-breach` is the CI spelling of it.
+
+A ledger this command could not read is a **WARNING that says so**, and it clears nothing —
+the same class as the `sandbox` and `secret rules` rows below: a fact that could not be
+established is not a clean bill of health. Rows that could not be parsed are counted and
+reported rather than dropped, so an evidence directory nobody ever wrote is never confused
+with one whose lines are torn. When neither direction has anything to say, the OK line names
+both sides — how many pointers the plan carries and how many runs this checkout holds — so
+the reader can see that the comparison was actually made.
+
 ## What to do with the result
 
 Exit code is the summary: **0** healthy (warnings allowed), **1** one or more findings,

@@ -350,7 +350,7 @@ report, because `git switch -c` is about to fail anyway.
      back to the phase's otherwise, saying which — so a task with no gate of its own is never
      credited with having passed one.
 
-     **Read the two lines it prints under the verdict.** `evidence: recorded <runId>` is the row;
+     **Read the two lines it prints ABOVE the verdict block.** `evidence: recorded <runId>` is the row;
      `pointer:` is whether the plan now names it. A pointer can be **refused** — another live
      session may hold the phase lock — and that is a designed state, not an error: the run is
      recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to

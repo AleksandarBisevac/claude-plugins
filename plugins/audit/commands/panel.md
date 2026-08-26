@@ -124,8 +124,9 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   glance away (v0.34). The topbar names the identity the write is
   recorded under (`viewing as …`, resolved exactly as the token ledger resolves a spender —
   see `usage.authorMode`), and Usage has a **my spend** chip that filters on that same name.
-  The panel also refreshes **itself**: a fingerprint of the manifest, shards, config and
-  ledger rides the run-status poll, and when a file moves on disk clean views re-render
+  The panel also refreshes **itself**: a fingerprint of the config, the manifest, its shards,
+  the usage ledger and the evidence ledger rides the run-status poll, and when a file moves
+  on disk clean views re-render
   within a few seconds — a form holding unsaved edits is left alone and gets a persistent
   notice instead (Save is still checked against the file on disk; Discard reloads it), and
   refreshes hold while any dialog is open.
@@ -140,6 +141,34 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   or the graded ladder), shows whether a bypass is armed right now, and lists the latest
   gate events from `<logsDir>/plan-gate-events.jsonl` as they land — refreshed by the same
   poll that tracks running phases.
+- **Recorded test runs** — inside a phase's detail on Overview, and read-only like the rest of
+  that tab: the panel never records a run and never writes a pointer. Two lines, **labelled
+  apart** because they are two measurements: `phase sign-off` is the run the gate this phase
+  signs off with last recorded, and `tasks` counts the phase's tasks by what each one's *own*
+  last run said. One badge for both would claim a measurement nobody made. The task table then
+  ends with a `tests` column, in the report's column order, so the two tables read the same
+  way. A badge is a **button only where there is a run to open** — behind the silences there
+  is nothing, and a button onto an empty box is a promise the page cannot keep; opened, it
+  gives the run id and stamp, the attempt, the duration, how much ran, the tree / coverage /
+  check-count **bases as sentences**, and a row per step (step, exit, checks, took, outcome).
+  A run that recorded no steps says so rather than drawing an empty table.
+  Four answers and they are not one grey blob: **`No gate configured`** (nothing could have
+  run — neither this subject nor its phase declares a gate), **`No evidence`** (a gate is
+  declared and nothing has been recorded, which is never *failed*), **`Pointer without
+  evidence`** (the plan names a run the ledger here does not hold — and that sentence names how
+  many ledger files were read and how many lines could not be parsed, so a record that was
+  never written is not confused with one whose rows are torn, and it quotes the verdict the
+  plan had cached), and otherwise the verdict the **ledger row** carries — never the plan's
+  cached copy of it. A word this build does not know is shown as itself rather than folded
+  into `failed`; the manifest schema leaves that enum open.
+  Unlike the report, which omits the whole surface on a plan that points at no run, the panel
+  draws these lines on every plan — this is the live view, and *nothing has run yet* is the
+  answer an operator opened it for. It is also why the refresh fingerprint stamps the
+  **evidence directory** and not only the shards: a gate finishing mid-phase normally moves a
+  pointer in its shard, which is watched already — but a run recorded while another session
+  holds the phase lock writes the row and has its pointer refused, so nothing in the plan
+  moves at all, and watching the plan alone would leave that badge waiting for a manual
+  reload.
 - **Usage** — what the plan cost, recomputed in the browser on every filter change. KPI tiles
   carry a sparkline and a trend against the window before (all-time compares the ledger's last
   30 days with the 30 before them — anchored on the data, so a finished project still shows a
