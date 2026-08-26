@@ -526,6 +526,16 @@ LAYERS = (
      # Bash, and a `python3 -c` naming a source path is the shape
      # `guard-secrets-read` refuses (F20/F22).
      "verify-invariants",
+     # `commit-audit-state` is the WRITE that `verify-invariants` then grades: it
+     # commits the phase's manifest file, the journal and the evidence, and
+     # nothing else, so a run whose task never commits still leaves its failed
+     # gate in git. An entry point for the reason every command in this layer is
+     # one - the caller is orchestrator PROSE reaching Python through Bash - and
+     # here that is load-bearing rather than conventional: the staging rule is
+     # exactly the thing prose cannot be trusted to remember on the path where the
+     # gate went red. It reaches `_invariants` (L4) for the phase lookup, the git
+     # root and the action name the pair share.
+     "commit-audit-state",
      # `run-test-gate` (F193) is the same shape one step earlier: a door the
      # orchestrator PROSE reaches through Bash, doing the thing prose cannot be
      # trusted to remember. It brackets a phase's gate with a working-tree
