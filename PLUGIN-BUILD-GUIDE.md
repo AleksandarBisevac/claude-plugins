@@ -268,7 +268,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _output
+  _evidence_io -> _journal_io, _locks, _manifest_io, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
@@ -346,7 +346,7 @@ L7:
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
-  run-test-gate -> _journal_io, _manifest_io, _output
+  run-test-gate -> _evidence_io, _journal_io, _manifest_io, _output
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
@@ -2164,6 +2164,31 @@ departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for t
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
 and a bare list could not tell them apart.
 
+**The manifest pointer is a cache, and the write that updates it is the one allowed to fail.**
+`write_pointer()` puts three keys — `runId`, `status`, `at` — on the task or the phase, **in the
+shard and never the index**: a phase run that touched the index is what makes two parallel phases
+conflict on merge. Every `written: False` is a designed outcome carrying a sentence, not an error
+path. `pointer_lock_state()` answers `free` / `ours` / `held` / `stale` / `unlockable`, and **`ours`
+exists because `_locks.acquire` is not re-entrant** — a gate recorded from inside its own phase run
+meets the lock that run already holds, so the holder's session is *compared* rather than the lock
+re-taken. A stale lock is not taken over here; that is a decision a human makes with
+`audit-lock --takeover`. A refused pointer leaves the ledger row standing and names `--reconcile`,
+which is the only reachable partial state and the harmless one.
+
+**`reconcile()` is that repair**, and it is why the refusal is affordable: it re-derives every
+pointer from the ledger, newest run per subject **by `ts` and never by file position** (rows land in
+one file per writer per month, so two worktrees concatenate in no meaningful order). Running it
+over an already-correct plan moves nothing and says so — a repair that rewrote a correct pointer
+would put a fresh journal row on every invocation, a trail of transitions that never happened. A
+reconcile that could not finish reports the subjects it left behind rather than returning a smaller
+number.
+
+**The plan-movement row is the second of C4's two events.** `task.testEvidence` /
+`phase.testEvidence` is written **only after the pointer lands**, naming both ends of the move; a
+refused write returns before reaching it, so the chain can never assert a transition that did not
+happen. That is why it is a separate action from the anchor below, whose subject is the evidence
+file and which was true the moment it was written.
+
 **`record()` writes the ledger row first and anchors it second**, so the only reachable partial
 state is the harmless one — a run that happened with nothing yet pointing at it. The reverse would
 put a claim into a hash chain about a row that does not exist. The anchor's subject is the evidence
@@ -2209,6 +2234,15 @@ until a session forgets, a harness runs a different orchestrator, or somebody ad
 hand next year. It does NOT narrow the gate to the task's files — that changes what a per-task
 gate means for every manifest already written, so the refusal names the option and a human
 decides.
+
+**Recording is opt-in and lands strictly after the verdict.** `--record` writes the evidence row,
+the journal anchor and the manifest pointer — all three inside the repository this run has just
+described with `git status --porcelain`, which is why every one of them happens in `main()` after
+`run_gate()` has returned. A write above that line would appear in the very comparison it is being
+judged by, and the runner would accuse itself of the rewrite it exists to catch; a case drives the
+whole path and goes red the moment anything moves above the snapshot. `--reconcile` runs the ledger
+against the plan and nothing else — no gate, no subprocess — so it is safe to hand a human who has
+just been told their pointer did not land.
 
 **Whose gate ran is answered, not assumed.** `gate_of` takes an optional task id and returns the
 resolved commands *plus the scope they came from*. A task declaring `tests.gate` is run through its

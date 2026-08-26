@@ -32,6 +32,7 @@ manifest layout exists to avoid. The writer id and the month come from
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__evidence_io.py` -- see `plugins/audit/tests/_harness.py`.
 """
+import binascii
 import json
 import os
 import sys
@@ -60,6 +61,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
+import _locks  # noqa: E402  (whose phase lock, and is it live)
+import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
 from _journal_io import command_facts, repo_relative_or_token  # noqa: E402
 
 DEFAULT_DIRNAME = "evidence"
@@ -340,6 +343,278 @@ def record(project, result, scope, ids, identity, published=None, config=None):
         "details": details,
     }, config=config)
     return {"row": row, "path": path, "appended": appended}
+
+
+# --- the pointer: a cache the manifest keeps ----------------------------------
+# THE LEDGER IS THE SOURCE OF TRUTH AND THIS IS A CACHE, which is what makes the
+# write below the one allowed to fail. `COMPATIBILITY.md` already states that
+# contract for `meta.ado`'s caches: deleting the block is always safe, absent
+# means "never recorded", and every reader is written to that. So a refusal here
+# costs a reader one lookup, never a fact.
+POINTER_KEY = "testEvidence"
+ACTION_MOVED = {"task": "task.testEvidence", "phase": "phase.testEvidence"}
+RECONCILE_HINT = ("the run is recorded; re-run with --reconcile once the holder "
+                  "is done to point the plan at it")
+
+
+def pointer_for(row):
+    """The three keys the manifest caches: identity, verdict, time.
+
+    NOTHING COUNTABLE. An attempt number and a count of runs were both cut: the
+    attempt is on the row where it is written once, and a count is derived by
+    reading the ledger. A cached count is this repository's most repeated defect.
+    """
+    return {"runId": row.get("runId"), "status": row.get("status"),
+            "at": row.get("ts")}
+
+
+def pointer_lock_state(project, phase_id, session_id=None):
+    """`(state, detail)` -- may this session write the phase's shard, and if not why.
+
+    `free` | `ours` | `held` | `stale` | `unlockable`.
+
+    `ours` EXISTS BECAUSE `_locks.acquire` IS NOT RE-ENTRANT. A gate recorded from
+    inside its own phase run meets the lock that run already holds, and acquiring
+    would refuse it -- which is every in-phase recording there is. So the holder's
+    session is COMPARED rather than the lock re-taken.
+
+    `unlockable` is the panel's documented third answer, kept for its reason: a
+    project with no `.git` has no lock scheme and never had one, and refusing
+    every such project would refuse a case that has an answer.
+
+    A STALE LOCK IS NOT TAKEN OVER HERE. Taking one over is a decision a human
+    makes with `audit-lock --takeover` after confirming the holder is dead; a
+    cache write must not make it quietly.
+    """
+    try:
+        if not _locks.available(project):
+            return "unlockable", "this project has no lock scheme"
+        path = os.path.join(_locks.lock_dir(project), "phase-%s.lock" % (phase_id,))
+        if not os.path.exists(path):
+            return "free", ""
+        info = _locks.read_lock(path)
+        holder = info.get("sessionId")
+        if holder and session_id and str(holder) == str(session_id):
+            return "ours", "held by this session"
+        live, basis = _locks.judge(info, path)
+        if live:
+            return "held", ("the phase lock is held by another live run (%s); %s"
+                            % (basis, RECONCILE_HINT))
+        return "stale", ("the phase lock looks abandoned (%s); confirm with a "
+                         "human and use audit-lock --takeover, then %s"
+                         % (basis, RECONCILE_HINT))
+    except Exception as exc:
+        return "held", ("the phase lock could not be read (%s); %s"
+                        % (exc, RECONCILE_HINT))
+
+
+def _phase_file(manifest_path, phase_id):
+    """`(path, sharded)` -- the file a phase's runtime fields live in.
+
+    Read off the RAW index rather than derived, because `_shard_name` is the
+    writer's rule and a reader that re-derived it would drift the first time it
+    changed."""
+    index = _mio.read_json(manifest_path)
+    for stub in (index.get("phases") or []):
+        if isinstance(stub, dict) and str(stub.get("id")) == str(phase_id):
+            shard = stub.get("shard")
+            if shard:
+                return os.path.join(os.path.dirname(os.path.abspath(manifest_path)),
+                                    str(shard)), True
+            return os.path.abspath(manifest_path), False
+    return None, _mio.is_sharded(index)
+
+
+def _set_pointer(body, scope, ids, pointer, sharded):
+    """`(previous, problem)` -- put the pointer in place, and say what it replaced.
+
+    The previous value is returned because the journal row that records the move
+    names both ends: a row saying only where a field landed cannot be read as a
+    transition, and this field moves repeatedly over one task's life.
+    """
+    phases = [body] if sharded else [
+        p for p in (body.get("phases") or [])
+        if isinstance(p, dict) and str(p.get("id")) == str(ids.get("phaseId"))]
+    if not phases:
+        return None, "no phase %r in this manifest" % (ids.get("phaseId"),)
+    phase = phases[0]
+    if scope == "phase":
+        previous = phase.get(POINTER_KEY)
+        phase[POINTER_KEY] = pointer
+        return previous, None
+    for task in (phase.get("tasks") or []):
+        if isinstance(task, dict) and str(task.get("id")) == str(ids.get("taskId")):
+            previous = task.get(POINTER_KEY)
+            task[POINTER_KEY] = pointer
+            return previous, None
+    return None, "no task %r in phase %r" % (ids.get("taskId"), ids.get("phaseId"))
+
+
+def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
+                  config=None):
+    """Point the plan at a recorded run. `{"written", "reason", "path"}`.
+
+    WRITES THE SHARD AND NEVER THE INDEX. A task commit that carried the index is
+    what makes two parallel phases conflict on merge, and the pointer is a runtime
+    field, so it belongs in the phase body exactly as `status` and `attempts` do.
+
+    Every `written: False` here is a DESIGNED outcome carrying a sentence, not an
+    error path: a refused cache write leaves the ledger row standing, which is the
+    only reachable partial state and the harmless one.
+    """
+    pointer = pointer_for(row)
+    state, detail = pointer_lock_state(project, ids.get("phaseId"),
+                                       session_id=session_id)
+    if state in ("held", "stale"):
+        return {"written": False, "reason": detail, "path": None}
+    path, sharded = _phase_file(manifest_path, ids.get("phaseId"))
+    if not path or not os.path.exists(path):
+        return {"written": False,
+                "reason": "no phase %r in this manifest" % (ids.get("phaseId"),),
+                "path": None}
+    try:
+        body = _mio.read_json(path)
+    except Exception as exc:
+        return {"written": False, "reason": "cannot read %s: %s"
+                % (_journal_io.repo_relative_or_token(project, path), exc),
+                "path": None}
+    previous, problem = _set_pointer(body, scope, ids, pointer, sharded)
+    if problem:
+        return {"written": False, "reason": problem, "path": None}
+    taken = False
+    if state == "free":
+        taken = _locks.held(_locks.acquire(project, "phase-%s" % (ids.get("phaseId"),),
+                                           note="recording test evidence",
+                                           session=session_id,
+                                           out=lambda *_a: None))
+        if not taken:
+            return {"written": False,
+                    "reason": "the phase lock could not be taken; " + RECONCILE_HINT,
+                    "path": None}
+    try:
+        _mio.atomic_write_json(path, body)
+    finally:
+        if taken:
+            _locks.release(project, "phase-%s" % (ids.get("phaseId"),),
+                           session=session_id, out=lambda *_a: None)
+    # ONLY NOW. This row says the PLAN moved, and it is written after the move
+    # rather than beside the attempt: a refused write above returns before
+    # reaching here, so the chain can never assert a transition that did not
+    # happen. That is the whole reason this is a second action and not the row
+    # `record()` already wrote -- that one's subject is the evidence file and it
+    # was true the moment it was written.
+    details = {"runId": pointer.get("runId"), "field": POINTER_KEY,
+               "from": (previous or {}).get("runId"), "to": pointer.get("runId")}
+    for key in ("taskId", "phaseId"):
+        if ids.get(key) is not None:
+            details[key] = str(ids[key])
+    _journal_io.append(project, {
+        "action": ACTION_MOVED.get(scope, ACTION_MOVED["phase"]),
+        "actor": {"sessionId": session_id, "via": "evidence"},
+        "target": _journal_io.repo_relative_or_token(project, path),
+        "summary": "%s %s now points at run %s (%s)"
+                   % (scope, ids.get("taskId") or ids.get("phaseId"),
+                      pointer.get("runId"), pointer.get("status")),
+        "details": details,
+    }, config=config)
+    return {"written": True, "reason": None, "path": path}
+
+
+def latest_by_subject(rows):
+    """The newest recorded run per `(scope, id)`, keyed for a pointer write.
+
+    NEWEST BY `ts` AND NOT BY FILE ORDER. Rows land in one file per writer per
+    month, so two worktrees produce two files whose concatenation is in no
+    meaningful order at all; reading position would make "the latest run" depend
+    on a directory listing.
+
+    A row missing the id its own scope needs is skipped rather than guessed at -
+    it cannot be pointed at anything, and inventing a subject for it would put a
+    pointer on a task that never ran.
+    """
+    best = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        scope = row.get("scope")
+        subject = row.get("taskId") if scope == "task" else row.get("phaseId")
+        if not scope or not subject or not row.get("runId"):
+            continue
+        key = (scope, str(subject))
+        current = best.get(key)
+        if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
+            best[key] = row
+    return best
+
+
+def reconcile(project, manifest_path, session_id=None, config=None):
+    """Re-derive every pointer from the ledger. The repair `write_pointer` names.
+
+    THIS IS WHY THE POINTER MAY BE REFUSED AT ALL. A cache write that loses a race
+    with another live session leaves the plan behind the record, and this is the
+    pass that catches it up - so the refusal costs a reader one command and never a
+    fact. The ledger is the source of truth; nothing here reads the manifest to
+    decide what is true, only to decide what still needs saying.
+
+    Returns `{"moved", "refused", "already", "unreadable", "subjects"}`. `moved`
+    and `refused` carry sentences, because a reconcile that could not finish must
+    say which subjects it left behind rather than reporting a smaller number.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    read = read_rows(project, config=config)
+    best = latest_by_subject(read["rows"])
+    moved, refused, already = [], [], []
+    for (scope, subject), row in sorted(best.items()):
+        if scope == "task":
+            ids = {"taskId": subject, "phaseId": row.get("phaseId")}
+        else:
+            ids = {"phaseId": subject}
+        current = _current_pointer(manifest_path, scope, ids)
+        if current and current.get("runId") == row.get("runId"):
+            already.append("%s %s" % (scope, subject))
+            continue
+        out = write_pointer(project, manifest_path, scope, ids, row,
+                            session_id=session_id, config=config)
+        if out["written"]:
+            moved.append("%s %s -> %s" % (scope, subject, row.get("runId")))
+        else:
+            refused.append("%s %s: %s" % (scope, subject, out.get("reason")))
+    return {"moved": moved, "refused": refused, "already": already,
+            "unreadable": read["unreadable"], "subjects": len(best)}
+
+
+def _current_pointer(manifest_path, scope, ids):
+    """The pointer a subject carries now, or None. Never raises."""
+    try:
+        path, sharded = _phase_file(manifest_path, ids.get("phaseId"))
+        if not path or not os.path.exists(path):
+            return None
+        body = _mio.read_json(path)
+        phases = [body] if sharded else [
+            p for p in (body.get("phases") or [])
+            if isinstance(p, dict) and str(p.get("id")) == str(ids.get("phaseId"))]
+        if not phases:
+            return None
+        if scope == "phase":
+            return phases[0].get(POINTER_KEY)
+        for task in (phases[0].get("tasks") or []):
+            if isinstance(task, dict) and str(task.get("id")) == str(ids.get("taskId")):
+                return task.get(POINTER_KEY)
+    except Exception:
+        return None
+    return None
+
+
+def new_run_id():
+    """A fresh, opaque run id: a stamp plus randomness.
+
+    THE STAMP IS A CONVENIENCE FOR A HUMAN READING THE RAW FILE AND NOTHING MORE.
+    The id is documented as OPAQUE and the schema says so, because the moment a
+    reader parses it the format becomes an interface nobody agreed to - which is
+    why `at` is a field of its own rather than something a consumer slices out of
+    here.
+    """
+    return "%s.%s" % (_now(), binascii.hexlify(os.urandom(3)).decode("ascii"))
 
 
 if __name__ == "__main__":

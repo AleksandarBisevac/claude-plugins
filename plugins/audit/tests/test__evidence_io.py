@@ -21,8 +21,10 @@ asserting a literal, because a literal would keep agreeing after they diverged.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import io
 import json
 import os
+import subprocess
 import shutil
 import sys
 
@@ -30,6 +32,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _evidence_io as M                           # noqa: E402
 import _journal_io                                 # noqa: E402
+import _locks                                      # noqa: E402
 
 
 def _project(root, config=None):
@@ -356,6 +359,212 @@ def _cases(check):
               raised is True and len(after_anchor) == before_anchor
               and not any(r["details"].get("runId") == "R9"
                           for r in after_anchor))
+
+        # --- the pointer: a cache, and one that may be refused -------------
+        # The ledger is the source of truth and this block is a CACHE, so the
+        # write that updates it is the one that is allowed to fail. Every state
+        # below is a designed outcome with a sentence, not an error path.
+        import json as _json
+
+        def _manifest_project(name, git=False):
+            """A fresh sharded project. FRESH, never copied from another case: a
+            copied one inherits that case's journal rows, and a case counting
+            rows then reads somebody else's history as its own."""
+            root = os.path.join(tmp, name)
+            os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+            os.makedirs(os.path.join(root, ".claude"))
+            with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+                _json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+            with open(os.path.join(root, "docs", "audit", "audit-plan.json"),
+                      "w") as fh:
+                _json.dump({"meta": {"version": 3}, "phases": [
+                    {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+            with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                      "w") as fh:
+                _json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                            "testGate": [], "tasks": [
+                                {"id": "P1.1", "title": "t",
+                                 "status": "in_progress"}]}, fh)
+            if git:
+                subprocess.run(["git", "init", "-q", root], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return root, os.path.join(root, "docs", "audit", "audit-plan.json")
+
+        proj, mpath = _manifest_project("ptr")
+        spath = os.path.join(proj, "docs", "audit", "phases", "P1.json")
+        index_before = io.open(mpath, encoding="utf-8").read()
+
+        prow = {"runId": "R7", "status": "failed", "ts": "2026-08-26T10:00:00Z"}
+        res = M.write_pointer(proj, mpath, "task", {"taskId": "P1.1",
+                                                    "phaseId": "P1"}, prow)
+        shard = _json.loads(io.open(spath, encoding="utf-8").read())
+        check("ed1 the pointer lands on the task, in the SHARD, and carries "
+              "exactly the three keys the manifest caches - identity, verdict, "
+              "time, and nothing countable: %r"
+              % (shard["tasks"][0].get("testEvidence"),),
+              res["written"] is True
+              and shard["tasks"][0]["testEvidence"] == {
+                  "runId": "R7", "status": "failed", "at": "2026-08-26T10:00:00Z"})
+
+        check("ed2 ...and the INDEX is byte-identical afterwards. A phase run "
+              "that touched the index is what makes two parallel phases conflict "
+              "on merge, which is the property the sharded layout exists to buy",
+              io.open(mpath, encoding="utf-8").read() == index_before)
+
+        res_ph = M.write_pointer(proj, mpath, "phase", {"phaseId": "P1"}, prow)
+        shard = _json.loads(io.open(spath, encoding="utf-8").read())
+        check("ed3 a phase-scoped run points at the PHASE, beside the task "
+              "pointer rather than instead of it - the sign-off gate and a "
+              "task's own gate are different measurements and a reader has to "
+              "be able to see both: %r"
+              % ((shard.get("testEvidence"), shard["tasks"][0].get("testEvidence")),),
+              res_ph["written"] is True
+              and shard["testEvidence"]["runId"] == "R7"
+              and shard["tasks"][0]["testEvidence"]["runId"] == "R7")
+
+        missing = M.write_pointer(proj, mpath, "task",
+                                  {"taskId": "P9.9", "phaseId": "P1"}, prow)
+        check("ed4 a pointer at a task that is not there is REFUSED with a "
+              "reason, never written somewhere else - 'no such task' and 'the "
+              "pointer moved' must not print the same way: %r"
+              % (missing.get("reason"),),
+              missing["written"] is False and "P9.9" in (missing.get("reason") or ""))
+
+        # --- the lock states ----------------------------------------------
+        state, _detail = M.pointer_lock_state(proj, "P1", session_id="me")
+        check("ed5 with no lock scheme at all the write proceeds under the "
+              "weaker guarantee and SAYS which - the panel's documented "
+              "fallback, and the same reason: refusing every non-git project "
+              "would refuse a case that has an answer: %r" % (state,),
+              state == "unlockable")
+
+        gitproj = os.path.join(tmp, "gitptr")
+        os.makedirs(gitproj)
+        subprocess.run(["git", "init", "-q", gitproj], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        free, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        check("ed6 an unheld lock reads FREE - the state a normal standalone run "
+              "meets, and the one that must not be confused with the two below",
+              free == "free")
+
+        _locks.acquire(gitproj, "phase-P1", session="me", out=lambda *_a: None)
+        mine, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        check("ed7 THE RE-ENTRANCY CASE: a lock held by OUR OWN session reads "
+              "`ours`, not `held`. `_locks.acquire` is not re-entrant, so a run "
+              "inside its own phase would otherwise be refused by the lock it "
+              "already holds - which is every in-phase recording there is: %r"
+              % (mine,),
+              mine == "ours")
+
+        theirs, detail = M.pointer_lock_state(gitproj, "P1", session_id="someone-else")
+        check("ed8 ...and the SAME lock read by a different session is `held`, "
+              "with a sentence naming the repair. The pair is the point: either "
+              "half alone passes with the identity check deleted: %r"
+              % ((theirs, detail),),
+              theirs == "held" and "reconcile" in (detail or ""))
+
+        blocked = M.write_pointer(gitproj, mpath, "task",
+                                  {"taskId": "P1.1", "phaseId": "P1"}, prow,
+                                  session_id="someone-else")
+        check("ed9 THE DESIGNED PARTIAL STATE: a pointer refused by another live "
+              "session leaves the LEDGER ROW standing and says so. That is the "
+              "only reachable partial write, and it is the harmless one - a run "
+              "that happened with nothing yet pointing at it, which `--reconcile` "
+              "repairs. The reverse would be a claim with no basis: %r"
+              % (blocked.get("reason"),),
+              blocked["written"] is False
+              and "reconcile" in (blocked.get("reason") or ""))
+        _locks.release(gitproj, "phase-P1", session="me", out=lambda *_a: None)
+
+        # --- C4: two events, and the second only if the move happened ------
+        jproj, jpath = _manifest_project("c4")
+        moved = M.write_pointer(jproj, jpath,
+                                "task", {"taskId": "P1.1", "phaseId": "P1"},
+                                {"runId": "R8", "status": "passed",
+                                 "ts": "2026-08-26T11:00:00Z"})
+        jr = [r for r in _journal_io.read_all(jproj)
+              if r.get("action") == "task.testEvidence"]
+        check("ed10 a pointer that LANDED writes the plan-movement row, and it "
+              "names both ends - a row saying only where a field arrived cannot "
+              "be read as a transition, and this field moves repeatedly over one "
+              "task's life: %r" % (jr[0]["details"] if jr else None,),
+              moved["written"] is True and len(jr) == 1
+              and jr[0]["details"]["to"] == "R8"
+              and jr[0]["details"]["field"] == "testEvidence")
+
+        held_proj, held_path = _manifest_project("c4held", git=True)
+        _locks.acquire(held_proj, "phase-P1", session="other", out=lambda *_a: None)
+        refused = M.write_pointer(held_proj, held_path,
+                                  "task", {"taskId": "P1.1", "phaseId": "P1"},
+                                  {"runId": "R9", "status": "failed",
+                                   "ts": "2026-08-26T12:00:00Z"},
+                                  session_id="me")
+        jr2 = [r for r in _journal_io.read_all(held_proj)
+               if r.get("action") == "task.testEvidence"]
+        check("ed11 THE C4 RULE: a pointer that was REFUSED writes NO "
+              "plan-movement row. The chain must never assert a transition "
+              "before it exists - and a refused cache write is a designed state "
+              "here, so this is the ordinary path and not an error one: "
+              "written=%r rows=%r" % (refused["written"], len(jr2)),
+              refused["written"] is False and jr2 == [])
+        _locks.release(held_proj, "phase-P1", session="other", out=lambda *_a: None)
+
+        # --- reconcile: the repair the refusal names ------------------------
+        rproj, rpath = _manifest_project("recon")
+        for rid, ts, status in (("RA", "2026-08-26T09:00:00Z", "failed"),
+                                ("RB", "2026-08-26T10:00:00Z", "passed")):
+            M.append_row(rproj, {"v": 1, "runId": rid, "ts": ts, "scope": "task",
+                                 "taskId": "P1.1", "phaseId": "P1",
+                                 "status": status, "steps": []})
+        M.append_row(rproj, {"v": 1, "runId": "RP", "ts": "2026-08-26T11:00:00Z",
+                             "scope": "phase", "phaseId": "P1",
+                             "status": "no-checks", "steps": []})
+        rep = M.reconcile(rproj, rpath)
+        body = _json.loads(io.open(os.path.join(rproj, "docs", "audit",
+                                                "phases", "P1.json"),
+                                   encoding="utf-8").read())
+        check("ed12 reconcile points every subject at its NEWEST run, task and "
+              "phase apart - and newest is by `ts`, never by position: rows land "
+              "in one file per writer per month, so two worktrees concatenate in "
+              "no meaningful order and reading position would make 'the latest' "
+              "depend on a directory listing: %r"
+              % ((body["tasks"][0].get("testEvidence", {}).get("runId"),
+                  body.get("testEvidence", {}).get("runId")),),
+              body["tasks"][0]["testEvidence"]["runId"] == "RB"
+              and body["testEvidence"]["runId"] == "RP"
+              and sorted(rep["moved"]) == ["phase P1 -> RP", "task P1.1 -> RB"])
+
+        again = M.reconcile(rproj, rpath)
+        check("ed13 ...and running it again moves NOTHING and says so. A repair "
+              "that rewrote an already-correct pointer would put a fresh journal "
+              "row on every invocation, which is a trail of transitions that "
+              "never happened: %r" % ((again["moved"], again["already"]),),
+              again["moved"] == []
+              and sorted(again["already"]) == ["phase P1", "task P1.1"])
+
+        orphan = _manifest_project("orphan")[0]
+        M.append_row(orphan, {"v": 1, "runId": "RX", "ts": "2026-08-26T09:00:00Z",
+                              "scope": "task", "status": "passed", "steps": []})
+        best = M.latest_by_subject(M.read_rows(orphan)["rows"])
+        check("ed14 a row that names no subject is SKIPPED, never guessed at - "
+              "it cannot be pointed at anything, and inventing one would put a "
+              "pointer on a task that never ran: %r" % (list(best),),
+              best == {})
+
+        held2, held2_path = _manifest_project("recon-held", git=True)
+        M.append_row(held2, {"v": 1, "runId": "RH", "ts": "2026-08-26T09:00:00Z",
+                             "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+                             "status": "failed", "steps": []})
+        _locks.acquire(held2, "phase-P1", session="other", out=lambda *_a: None)
+        blocked_rep = M.reconcile(held2, held2_path, session_id="me")
+        _locks.release(held2, "phase-P1", session="other", out=lambda *_a: None)
+        check("ed15 a reconcile that could not finish REPORTS the subjects it "
+              "left behind rather than returning a smaller number - a count of "
+              "what moved, read alone, would say the plan is caught up: %r"
+              % (blocked_rep["refused"],),
+              blocked_rep["moved"] == [] and len(blocked_rep["refused"]) == 1
+              and "P1.1" in blocked_rep["refused"][0]
+              and blocked_rep["subjects"] == 1)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

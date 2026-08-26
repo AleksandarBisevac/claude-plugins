@@ -92,6 +92,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _journal_io  # noqa: E402  (the ONE canonical spelling and file digest)
+import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
@@ -697,6 +698,43 @@ def render(res, out=print):
     return code
 
 
+def _record_run(project, args, res, source, commands, out=print):
+    """Record the run, then try to point the plan at it. Reports both outcomes.
+
+    THE POINTER IS ALLOWED TO FAIL AND THE ROW IS NOT. The ledger is the source of
+    truth; the manifest block is a cache, so a pointer refused by another live
+    session leaves the record standing and names the repair. That asymmetry is
+    printed rather than folded into one word, because "your run was not recorded"
+    and "your plan has not caught up yet" are different problems.
+    """
+    ids = {"phaseId": args.phase}
+    if source == "task" or args.task:
+        ids["taskId"] = args.task
+    identity = {"runId": _ev.new_run_id(), "via": "cli",
+                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None}
+    # FROM `gate_of`, NEVER FROM THE STEPS. `published` is what decides whether a
+    # command is stored verbatim or as a digest, and the steps carry the very
+    # commands being judged - deriving it from them would make every command its
+    # own permission and the rule vacuous. `commands` is the manifest-resolved
+    # list by construction, which is exactly the claim the rule rests on.
+    published = [command for _name, command in (commands or [])]
+    try:
+        recorded = _ev.record(project, res, source, ids, identity,
+                              published=published)
+    except Exception as exc:
+        out("  evidence: NOT recorded - %s" % (exc,))
+        return {"recorded": False, "pointer": False}
+    out("  evidence: recorded %s" % (identity["runId"],))
+    pointer = _ev.write_pointer(project, args.manifest, source, ids,
+                                recorded["row"],
+                                session_id=identity["sessionId"])
+    if pointer["written"]:
+        out("  pointer:  %s now names it" % (ids.get("taskId") or args.phase,))
+    else:
+        out("  pointer:  NOT updated - %s" % (pointer["reason"],))
+    return {"recorded": True, "pointer": bool(pointer["written"])}
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -712,6 +750,14 @@ def main(argv, out=print):
     # a reader to guess which limit was hit.
     p.add_argument("--timeout", dest="timeout", type=int,
                    default=DEFAULT_TIMEOUT_SECONDS)
+    # RECORDING IS OPT-IN FOR NOW. The orchestrator is what will pass it; until
+    # that instruction exists, a flag nothing sets is better than a default that
+    # writes into every repository the gate has ever been run in.
+    p.add_argument("--record", dest="record", action="store_true")
+    # The repair a refused pointer names. It runs the ledger against the plan and
+    # nothing else - no gate, no subprocess - so it is safe to hand a human who
+    # has just been told their pointer did not land.
+    p.add_argument("--reconcile", dest="reconcile", action="store_true")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
@@ -723,6 +769,21 @@ def main(argv, out=print):
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
         return E_ASK
+    if args.reconcile:
+        report = _ev.reconcile(project, args.manifest,
+                               session_id=os.environ.get("CLAUDE_CODE_SESSION_ID"))
+        out("[run-test-gate] reconcile: %d subject(s) in the ledger"
+            % (report["subjects"],))
+        for line in report["moved"]:
+            out("  moved:    %s" % (line,))
+        for line in report["already"]:
+            out("  already:  %s" % (line,))
+        for line in report["refused"]:
+            out("  REFUSED:  %s" % (line,))
+        if report["unreadable"]:
+            out("  %d unreadable row(s) were skipped - a torn line is counted "
+                "here rather than dropped in silence" % (report["unreadable"],))
+        return E_FAIL if report["refused"] else E_OK
     commands, source, err = gate_of(manifest, args.phase, args.task)
     if err:
         out("[run-test-gate] %s" % err)
@@ -744,6 +805,14 @@ def main(argv, out=print):
     res = run_gate(project, commands, owns=owns, timeout=args.timeout)
     res["gateSource"] = source
     res["subject"] = subject
+    # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the
+    # evidence file, the journal and the manifest all live inside the repository
+    # this run has just described with `git status --porcelain`, so a write above
+    # this line would appear in the very comparison it is being judged by. Every
+    # measurement `run_gate` makes is complete before anything here writes.
+    if args.record:
+        res["recorded"] = _record_run(project, args, res, source, commands,
+                                      out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # The overlap is absent from this expression ON PURPOSE: it is reported,

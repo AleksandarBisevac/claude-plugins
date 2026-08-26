@@ -22,6 +22,7 @@ installed, which is to say there would be no cases.
 faking that would test the arithmetic rather than the question -- so the fixture
 is an actual repository and the "mutation" is an actual file appearing in it.
 """
+import json
 import os
 import subprocess
 import sys
@@ -299,7 +300,6 @@ def _cases(check):
 
     # --- the empty gate is a designed state, not a pass -------------------
     mpath = os.path.join(tmp, "audit-plan.json")
-    import json
     with open(mpath, "w") as fh:
         json.dump(man, fh)
     lines = []
@@ -717,6 +717,62 @@ def _cases(check):
           "unchanged - this is the call site the script has had all along and "
           "it must not move: %r %r" % (cmdsp, sourcep),
           sourcep == "phase" and cmdsp == [("lint", "ruff check .")])
+
+    # --- the measurement boundary, end to end ------------------------------
+    # THE HEADLINE OF THE RECORDING CHANGE. The evidence file, the journal and the
+    # manifest all live INSIDE the repository this run has just described with
+    # `git status --porcelain`. A write above the post-run snapshot would appear
+    # in the very comparison it is being judged by, and the gate would report
+    # itself as having rewritten the tree.
+    recroot = _harness.fixture_root("run-test-gate-record-")
+    os.makedirs(os.path.join(recroot, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(recroot, ".claude"))
+    with open(os.path.join(recroot, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    rmpath = os.path.join(recroot, "docs", "audit", "audit-plan.json")
+    with open(rmpath, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {"ok": "true"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    rshard = os.path.join(recroot, "docs", "audit", "phases", "P1.json")
+    with open(rshard, "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["ok"], "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": []}]}, fh)
+    subprocess.run(["git", "init", "-q", recroot], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    lines = []
+    code = M.main([rmpath, "P1", "--project-dir", recroot, "--record"],
+                  out=lines.append)
+    text = "\n".join(lines)
+    shard_after = json.loads(open(rshard).read())
+    ev_files = os.listdir(os.path.join(recroot, "docs", "audit", "evidence"))
+    check("rc1 THE BOUNDARY: recording writes the row, the journal and the "
+          "pointer during this invocation, and the gate still reports the tree "
+          "UNCHANGED. Move any of those writes above the post-run snapshot and "
+          "the runner accuses itself of the rewrite it exists to catch: exit=%r "
+          "green=%r" % (code, "GATE GREEN" in text),
+          code == M.E_OK and "GATE GREEN" in text
+          and "MUTATED" not in text and len(ev_files) == 1)
+
+    check("rc2 ...and the pointer landed on the phase, naming the run just "
+          "recorded - the two halves are asserted together because a recorded "
+          "run nothing points at and a pointer at no run are both half-done: %r"
+          % (shard_after.get("testEvidence"),),
+          shard_after.get("testEvidence", {}).get("status") == "passed"
+          and shard_after["testEvidence"]["runId"] in text)
+
+    lines = []
+    code = M.main([rmpath, "P1", "--project-dir", recroot, "--reconcile"],
+                  out=lines.append)
+    check("rc3 reconcile over an already-correct plan moves nothing, says so, "
+          "and exits 0 - the repair a refused pointer names has to be safe to "
+          "run when nothing is wrong, or nobody will run it: %r"
+          % ("\n".join(lines)[:90],),
+          code == M.E_OK and "already:" in "\n".join(lines)
+          and "moved:" not in "\n".join(lines))
 
 
 def _selftest():
