@@ -348,6 +348,35 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
+def attempt_of(manifest, task_id):
+    """Which attempt this run is, when the plan RECORDS one -- else None.
+
+    THE ROW COPIES WHAT THE PLAN SAYS AND COUNTS NOTHING ITSELF. `attempts` is
+    the orchestrator's field: it increments per execution, and two documented
+    paths take it back DOWN -- a reverted increment after an infrastructure
+    failure, and `/audit:run` resetting a blocked or re-opened task. A runner
+    that added one of its own, or that read a recorded 0 as "surely at least
+    one", would put a number on a committed record that no field of the plan
+    holds. `_manifest_io.recorded_attempt` is where that reading lives, once.
+
+    NO TASK IN QUESTION MEANS NO ANSWER, and that is the plan being read
+    correctly rather than a gap: `attempts` is a TASK field
+    (`_manifest_vocab.KNOWN_TASK`), so a phase-scope run has nothing to read and
+    an absent `attempt` is the only true thing to say about it. The same holds
+    for a `--task` naming something this manifest does not carry, which
+    `owned_files` and `gate_of` have already refused by the time this is asked.
+
+    WHAT IT DOES NOT EVIDENCE. This answers "was this task run more than once?"
+    across the retries the orchestrator drives. It is NOT a red-then-green
+    record: `reference/orchestrator.md` runs the recorded gate AFTER the executor
+    subagent returns, so a correct TDD cycle records one row and it is green.
+    Nothing downstream may read a failing attempt into its absence.
+    """
+    if task_id is None:
+        return None
+    return _mio.recorded_attempt(_mio.tasks_by_id(manifest).get(task_id))
+
+
 def _resolved(entries, build):
     """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
@@ -698,7 +727,7 @@ def render(res, out=print):
     return code
 
 
-def _record_run(project, args, res, source, commands, out=print):
+def _record_run(project, args, res, source, commands, manifest, out=print):
     """Record the run, then try to point the plan at it. Reports both outcomes.
 
     THE POINTER IS ALLOWED TO FAIL AND THE ROW IS NOT. The ledger is the source of
@@ -710,8 +739,13 @@ def _record_run(project, args, res, source, commands, out=print):
     ids = {"phaseId": args.phase}
     if source == "task" or args.task:
         ids["taskId"] = args.task
+    # ABSENT IS AN ANSWER HERE, and `row_for` is what keeps it one: it drops an
+    # identity key whose value is None, so a task whose plan records no attempts
+    # leaves the field OFF the row instead of defaulting it to a number nobody
+    # wrote. `sessionId` is spelled the same way one line up, for the same reason.
     identity = {"runId": _ev.new_run_id(), "via": "cli",
-                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None}
+                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                "attempt": attempt_of(manifest, args.task)}
     # FROM `gate_of`, NEVER FROM THE STEPS. `published` is what decides whether a
     # command is stored verbatim or as a digest, and the steps carry the very
     # commands being judged - deriving it from them would make every command its
@@ -812,7 +846,7 @@ def main(argv, out=print):
     # measurement `run_gate` makes is complete before anything here writes.
     if args.record:
         res["recorded"] = _record_run(project, args, res, source, commands,
-                                      out=out)
+                                      manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # The overlap is absent from this expression ON PURPOSE: it is reported,

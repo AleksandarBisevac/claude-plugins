@@ -259,6 +259,28 @@ def _cases(check):
               and ru["observations"]["coverage"] is None
               and ru["treeMutated"] is None)
 
+        # THE OTHER DIRECTION OF ev11, and the contract the gate runner leans on:
+        # `run-test-gate.attempt_of` hands this an explicit None for a task whose
+        # plan records no `attempts`, so if a None identity value were carried
+        # instead of dropped, every such row would read `attempt: null` and both
+        # renderers would print a field the plan never wrote. A recorded 0 is the
+        # value that separates the rules - it must survive, and it is asserted in
+        # the same case so a writer that dropped every falsy value cannot pass.
+        quiet = dict(IDENT)
+        quiet["attempt"] = None
+        rq = M.row_for(plain, RESULT, "task", {"taskId": "P1.2"}, quiet,
+                       published=["pytest -q"])
+        zeroed = dict(IDENT)
+        zeroed["attempt"] = 0
+        rz = M.row_for(plain, RESULT, "task", {"taskId": "P1.2"}, zeroed,
+                       published=["pytest -q"])
+        check("ev29 an identity attempt of None leaves the field OFF the row, "
+              "while a recorded 0 is written as 0. Absent means 'the plan does "
+              "not say how many times this ran' and 0 means it says none - two "
+              "answers a null would flatten into one: %r"
+              % (("attempt" in rq, rz.get("attempt")),),
+              "attempt" not in rq and "attempt" in rz and rz["attempt"] == 0)
+
         # --- appending, and reading back ----------------------------------
         edir = M.evidence_dir(plain)
         path = M.append_row(plain, row)

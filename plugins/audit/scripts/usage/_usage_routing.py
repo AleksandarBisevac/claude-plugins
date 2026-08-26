@@ -55,6 +55,7 @@ _output.install_path()
 import _usage_core as _core  # noqa: E402  (the arithmetic under every pass here)
 from _usage_core import (  # noqa: E402  (the rate table, and the plan index)
     DEFAULT_PRICING, TOKEN_KEYS, price, rates_for, task_index)
+import _manifest_io as _mio  # noqa: E402  (one reading of a task's `attempts`)
 
 # Thin module-level aliases, not copies: the bodies below moved out of
 # `_usage_analytics.py` by line range, and an alias keeps them reading the same
@@ -77,21 +78,18 @@ def _recorded_attempts(tasks):
     over one such task and one that ran twice, the mean read 1.5 where the recorded
     values average 1.0.
 
-    THREE ANSWERS, NOT TWO, and that is the whole shape of this function. A
-    recorded 0 is a value and is counted. A MISSING or non-integer `attempts` is
-    not a zero — it is "this task records nothing", and inventing a number for it
-    is the same defect one step quieter. Those are dropped, so a cell where nothing
-    records attempts yields an empty list, and the caller already spells that
-    `None` rather than a figure.
-
-    `bool` is excluded explicitly: `True` is an `int` in Python, and a manifest
-    carrying `attempts: true` would otherwise count as one attempt — the same trap
-    the validator's own `id: true` case exists for.
+    WHAT COUNTS AS RECORDED IS `_manifest_io.recorded_attempt`'s, not restated
+    here: the evidence row that stamps an attempt on a run reads the same field,
+    and two readings of one field is how the repaired version of the bug above
+    comes back through the other door. What belongs to THIS function is the
+    filter — a task that records nothing is DROPPED, so a cell where nothing
+    records attempts yields an empty list and the caller spells that `None`
+    rather than a figure.
     """
     out = []
     for task in tasks:
-        value = task.get("attempts")
-        if isinstance(value, bool) or not isinstance(value, int):
+        value = _mio.recorded_attempt(task)
+        if value is None:
             continue
         out.append(value)
     return out

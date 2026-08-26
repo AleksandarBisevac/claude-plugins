@@ -286,7 +286,7 @@ L2:
   _status_facts -> _areas, _manifest_io, _output, _priority
   _usage_coverage -> _output, _usage_core
   _usage_economics -> _output, _usage_core
-  _usage_routing -> _output, _usage_core
+  _usage_routing -> _manifest_io, _output, _usage_core
   _usage_spend -> _output, _usage_core
   _warning_groups -> _fmt, _manifest_io, _output
 
