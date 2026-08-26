@@ -60,11 +60,14 @@ Exit codes:
   2  the gate could not be asked (no manifest, no such phase)
 """
 import argparse
+import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -88,9 +91,28 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _journal_io  # noqa: E402  (the ONE canonical spelling and file digest)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
+
+# --- what did not finish ------------------------------------------------------
+# The two ways a step produces no verdict, kept APART because they are different
+# repairs. Before this they were one: `_shell` caught `TimeoutExpired` and
+# `FileNotFoundError` in one `except Exception` and reported exit 127 for both, so
+# "the suite hung" and "the binary is missing" arrived identical.
+#
+# NOT SPELLED AS EXIT CODES. 124 and 127 are conventions a real command may also
+# return on its own, so reading a category out of the number would let a child
+# claim a category by exiting with it. The category comes from what the WRAPPER
+# observed and travels beside the code.
+TIMED_OUT = "timed-out"
+CANNOT_RUN = "could-not-run"
+
+DEFAULT_TIMEOUT_SECONDS = 3600
+# How long a torn-down group is given to die politely before SIGKILL. Small on
+# purpose: this runs after a step has already overrun its whole budget.
+GRACE_SECONDS = 5
 
 # --- how much did it do -------------------------------------------------------
 # Runners that report their own step count, and the words they end a step with.
@@ -121,6 +143,120 @@ def _porcelain(project):
         return None
     return set(ln for ln in out.stdout.decode("utf-8", "replace").splitlines()
                if ln.strip())
+
+
+# --- what state was actually tested -------------------------------------------
+# `head` cannot answer this and never could. A TASK gate runs BEFORE the task
+# commit, so a run executes against HEAD plus staged edits plus unstaged ones plus
+# untracked files: two failed retries at one HEAD were indistinguishable, which
+# defeats the point of recording retries. So `head` is demoted to what it actually
+# is and a digest of the DECLARED work is recorded beside it.
+#
+# NOT A SECOND HASHING SUBSYSTEM. `_journal_io.canonical` is the one spelling this
+# tree hashes with and `_journal_io.file_hash` is the one file digest; both are
+# reused verbatim. What is new here is only WHICH bytes get fed to them.
+HEAD_BASIS = ("repository HEAD at execution time; it does not identify the "
+              "tested state, because a task gate runs before the task commit")
+
+
+def _head(project):
+    """The short HEAD sha, or None when git will not say.
+
+    None rather than a placeholder, for `_porcelain`'s reason: a repository git
+    cannot describe has not got a HEAD this run can name, and inventing one would
+    put a false anchor on a real row."""
+    try:
+        out = subprocess.run(["git", "-C", project, "rev-parse", "--short", "HEAD"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=60)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.decode("utf-8", "replace").strip() or None
+
+
+def _digest(payload):
+    """`sha256:<hex>` over one canonical spelling of `payload`, or None.
+
+    The prefix is `file_hash`'s, so a reader meets one shape for every digest a
+    row carries rather than having to know which field wears one."""
+    try:
+        return "sha256:" + hashlib.sha256(
+            _journal_io.canonical(payload).encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
+def scope_digest(project, owns):
+    """`(digest, basis)` for the DECLARED work as it stands right now.
+
+    EXACT FOR THE DECLARED SCOPE and nothing wider, which is the whole claim: two
+    runs sharing this digest measured identical declared-file contents, and a
+    differing one means the declared work changed between them.
+
+    A MISSING FILE HASHES AS NULL RATHER THAN BEING DROPPED. Absent is itself
+    evidence about the state under test, and skipping it would let a scope of
+    three files and a scope of two share a digest.
+
+    None when nothing is declared, the shape `coverage()` already uses one
+    question over: a digest of an empty list is a real digest that would compare
+    equal across every such run and read as agreement.
+    """
+    declared = [f for f in (owns or []) if isinstance(f, str) and f.strip()]
+    if not declared:
+        return None, ("the work under test declares no files, so there is "
+                      "nothing to fingerprint")
+    entries, missing = [], 0
+    for rel in sorted(set(declared)):
+        digest = _journal_io.file_hash(os.path.join(project, rel))
+        if digest is None:
+            missing += 1
+        entries.append([rel, digest])
+    return _digest(entries), ("%d declared file(s); %d read, %d missing"
+                              % (len(entries), len(entries) - missing, missing))
+
+
+def dirty_digest(before):
+    """`(digest, basis)` over the porcelain lines taken BEFORE the run.
+
+    Reuses the snapshot the mutation bracket already takes, so this costs no
+    extra git call at all.
+
+    WHAT IT DOES AND DOES NOT SAY: it records WHICH paths were dirty, never their
+    contents. Editing an already-dirty file outside the declared scope moves
+    neither this nor `scope_digest`, and that limit is stated here and pinned by a
+    case rather than left for a reader to discover. This is a retry
+    discriminator, not a reproducible snapshot of the repository.
+    """
+    if before is None:
+        return None, "git could not describe the tree, so it has no fingerprint"
+    return (_digest(sorted(before)),
+            "git described the tree before the run; %d dirty path(s)"
+            % (len(before),))
+
+
+def tested_state(project, owns, before):
+    """The three identity fields, each with the basis that bounds it."""
+    scope, sbasis = scope_digest(project, owns)
+    dirty, dbasis = dirty_digest(before)
+    return {"head": _head(project), "headBasis": HEAD_BASIS,
+            "scopeDigest": scope, "scopeBasis": sbasis,
+            "dirtyDigest": dirty, "dirtyBasis": dbasis}
+
+
+def _elapsed_ms(started):
+    """Whole milliseconds since a `time.monotonic()` reading.
+
+    Monotonic rather than wall clock because this measures a DURATION: a wall
+    clock can step backwards mid-run and produce one that reads as negative.
+
+    NO CLAMP, deliberately. `max(0, ...)` was here and guarded nothing a case
+    could reach - `time.monotonic()` is non-decreasing by contract, so the branch
+    was unreachable defence that would have read as covered. The mutation battery
+    is what said so: deleting it changed no verdict.
+    """
+    return int((time.monotonic() - started) * 1000)
 
 
 def ran_count(command, text):
@@ -211,55 +347,278 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
-def gate_of(manifest, phase_id):
-    """`(commands, error)` -- `[(name, command)]` for one phase's resolved gate.
+def _resolved(entries, build):
+    """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
-    Resolved through `meta.buildCommands` exactly as the orchestrator resolves it;
-    a second resolution here would be a second answer to "what is this phase's
-    gate". An entry naming no build command is carried through verbatim, because
-    it may be a literal shell command and refusing it would make this script
-    decide what a gate is allowed to be.
+    THE ONE RESOLUTION, shared by both scopes on purpose. A task gate and a phase
+    gate are two declarations of the same kind, and resolving them in two places
+    would be two answers to "what is a gate entry" the first time the map grew a
+    rule. An entry naming no build command is carried VERBATIM, because it may be
+    a literal shell command and refusing it would make this script decide what a
+    gate is allowed to be.
+    """
+    return [(e, build.get(e, e)) for e in entries
+            if isinstance(e, str) and e.strip()]
+
+
+def gate_of(manifest, phase_id, task_id=None):
+    """`(commands, source, error)` -- the gate to run, and WHOSE it is.
+
+    `source` is `"task"` or `"phase"`, and it is returned rather than inferred by
+    the caller because the fallback must not be silent: a task that declares no
+    gate of its own is measured by the PHASE's, and "this task's gate passed" and
+    "the phase's gate passed while pointed at this task's files" are different
+    claims for a record to make.
+
+    ABSENT AND EMPTY ARE ONE ANSWER. A task with no `tests` block and a task with
+    `tests.gate: []` both declare no gate, so they take one path; making them two
+    would be two chances to disagree about the same question.
+
+    AN UNKNOWN TASK IS AN ERROR, never a quiet fall back to the phase - the
+    distinction `owned_files` already draws, and for its reason: "declares no
+    gate" and "there is no such task" must not print the same way.
     """
     phases = [p for p in (manifest.get("phases") or [])
               if isinstance(p, dict) and p.get("id") == phase_id]
     if not phases:
-        return None, "no phase %r in this manifest" % (phase_id,)
-    entries = [e for e in (phases[0].get("testGate") or [])
-               if isinstance(e, str) and e.strip()]
+        return None, None, "no phase %r in this manifest" % (phase_id,)
     build = ((manifest.get("meta") or {}).get("buildCommands") or {})
     if not isinstance(build, dict):
         build = {}
-    return [(e, build.get(e, e)) for e in entries], None
+    if task_id is not None:
+        tasks = [t for t in (phases[0].get("tasks") or [])
+                 if isinstance(t, dict) and t.get("id") == task_id]
+        if not tasks:
+            return None, None, "no task %r in phase %r" % (task_id, phase_id)
+        tests = tasks[0].get("tests")
+        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
+        resolved = _resolved(entries, build)
+        if resolved:
+            return resolved, "task", None
+    return _resolved(phases[0].get("testGate") or [], build), "phase", None
 
 
-def _shell(project, command):
+def _spawn_kwargs():
+    """Popen kwargs that put the child in a group we can tear down whole.
+
+    POSIX gets `start_new_session` (setsid), so the shell becomes a process-group
+    LEADER and `killpg` reaches everything it started. Windows gets its own
+    process group for the same purpose. A platform offering neither is left alone
+    rather than guessed at - `_tear_down` then reports that it could not confirm.
+
+    THE TRADE IS DELIBERATE AND IS THE REASON THE HANDLER IN `main` EXISTS.
+    Detaching from the controlling terminal means a Ctrl-C no longer reaches the
+    children BY ACCIDENT; we give that up to gain a teardown that is the same on
+    all three paths - timeout, SIGINT and SIGTERM - instead of one that happens to
+    work on one of them.
+    """
+    kwargs = {"shell": True, "stdout": subprocess.PIPE,
+              "stderr": subprocess.STDOUT}
+    if hasattr(os, "setsid"):
+        kwargs["start_new_session"] = True
+    elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    return kwargs
+
+
+def shares_our_group(pid):
+    """Whether `pid` sits in THIS process's group - i.e. whether signalling that
+    group would signal us.
+
+    A NAMED PREDICATE RATHER THAN AN INLINE COMPARISON, because the branch it
+    guards cannot be covered by observing the alternative: a case that removed
+    the guard and called `_tear_down` would signal its own runner and die, which
+    reads as infrastructure trouble rather than as a caught defect. The decision
+    is testable here, and `_tear_down`'s use of it is reached by swapping this
+    name - the same seam `test__journal_io` uses on `_git_anchor_finding`.
+
+    True on any error, which is the safe direction: unable to tell whether we
+    would hit ourselves means do not aim at the group.
+    """
     try:
-        out = subprocess.run(command, shell=True, cwd=project,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=3600)
+        return os.getpgid(pid) == os.getpgid(0)
+    except Exception:
+        return True
+
+
+def _tear_down(proc):
+    """Kill the process GROUP. True when that could be confirmed, False when not.
+
+    THE FAULT THIS EXISTS FOR: `subprocess.run(timeout=)` kills the DIRECT child,
+    and under `shell=True` the direct child is the shell. `npx` -> `node` -> its
+    workers outlive it, keep running, and keep WRITING - into the very tree this
+    script is about to describe with `git status --porcelain`. A survivor does not
+    merely leak a process; it turns the after-snapshot into a race.
+
+    SIGTERM, a grace period, then SIGKILL, because a test runner asked to stop
+    politely usually flushes its output and a runner that ignores that is not
+    going to be reasoned with. The return value is what the row records: a
+    teardown that could not be confirmed is a fact about the run, and reporting it
+    as a clean stop would be a claim with nothing behind it.
+    """
+    try:
+        if hasattr(os, "killpg"):
+            gid = os.getpgid(proc.pid)
+            if shares_our_group(proc.pid):
+                # THE CHILD IS IN OUR OWN GROUP, so `killpg` here would signal
+                # THIS process - the caller - and not the child's tree. That is
+                # not hypothetical: with `start_new_session` removed the whole
+                # test runner died mid-suite, which is how this branch was found.
+                # A platform with no `setsid` reaches the same state honestly, so
+                # the narrow kill is taken and the answer is `False`: the direct
+                # child goes, its descendants are not accounted for, and the row
+                # says the teardown could not be confirmed rather than implying a
+                # clean stop.
+                proc.kill()
+                try:
+                    proc.wait(timeout=GRACE_SECONDS)
+                except Exception:
+                    pass
+                return False
+            os.killpg(gid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=GRACE_SECONDS)
+            except Exception:
+                os.killpg(gid, signal.SIGKILL)
+                proc.wait(timeout=GRACE_SECONDS)
+            return True
+        completed = subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return completed.returncode == 0
+    except Exception:
+        return False
+
+
+def _drain(proc):
+    """Whatever the child had already written, after the group is gone.
+
+    Called AFTER the kill and never instead of it: a timed-out child is often
+    blocked on a full pipe, so reading first would wait on a process nothing is
+    going to stop. Failure here costs a diagnostic, never the teardown."""
+    try:
+        out, _err = proc.communicate(timeout=GRACE_SECONDS)
+        return (out or b"").decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _shell(project, command, timeout=None):
+    """`(exit, text, facts)` - one gate command, with its whole tree accounted for.
+
+    `facts` is what the wrapper OBSERVED that the exit code cannot carry: which
+    of the two no-verdict outcomes happened, the bound that was hit, and whether
+    the teardown could be confirmed. `{}` for a step that simply ran and finished,
+    which is the overwhelming majority and pays nothing for the rest.
+    """
+    timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
+    try:
+        proc = subprocess.Popen(command, cwd=project, **_spawn_kwargs())
     except Exception as exc:
-        return 127, "could not run: %s" % (exc,)
-    return out.returncode, out.stdout.decode("utf-8", "replace")
+        return 127, "could not run: %s" % (exc,), {"outcome": CANNOT_RUN}
+    try:
+        out, _err = proc.communicate(timeout=timeout)
+        return proc.returncode, (out or b"").decode("utf-8", "replace"), {}
+    except subprocess.TimeoutExpired:
+        confirmed = _tear_down(proc)
+        text = _drain(proc)
+        facts = {"outcome": TIMED_OUT, "timeoutSeconds": timeout}
+        if not confirmed:
+            facts["teardown"] = "unconfirmed"
+        code = proc.returncode if proc.returncode is not None else 124
+        return code, text, facts
+    except BaseException:
+        # SIGINT and SIGTERM land here too, and the group has to go before this
+        # leaves: an interrupted run that left its children running is the one
+        # state in which every later answer this script gives is a guess.
+        _tear_down(proc)
+        _drain(proc)
+        raise
 
 
-def run_gate(project, commands, runner=None, owns=None):
+def failed_steps(steps):
+    """The steps that ran to completion and came back non-zero.
+
+    A STEP WITH A NO-VERDICT OUTCOME IS NOT ONE OF THEM, and that exclusion is the
+    point. A timed-out step's exit code is an artefact of the kill that stopped it
+    - `-9`, or 124 where the platform gave nothing better - and counting it as a
+    failure would report "your tests are red" about a suite that never finished.
+    """
+    return [st["name"] for st in steps
+            if st["exit"] != 0 and not st.get("outcome")]
+
+
+def run_status(steps, failed, ran_total):
+    """The run's one word, from what its steps did.
+
+    PRECEDENCE, AND WHY IT IS THIS ORDER. `failed` sits ABOVE the two no-verdict
+    words deliberately: a step that ran and exited non-zero is a CERTAIN red, and
+    reporting that as "timed out" downgrades a finding a reader can act on into
+    one they have to reproduce first. Nothing is lost by the ordering, because
+    every step keeps its own `outcome` - a run that failed AND timed out says both,
+    one level down. That is the same rule `render` already follows for a gate that
+    failed and also rewrote the tree: two facts, two sentences, never one.
+
+    `no-checks` sits below `failed` for that reason and above `passed` for the
+    opposite one - it is exit 0 and it is still not a verdict.
+
+    AND IT IS READ FROM A POSITIVE ZERO ONLY. `ran_total is None` means the runner
+    does not report a count; it is not evidence that nothing ran, so it leaves the
+    status alone. Spelling that `not ran_total` would merge the two.
+    """
+    outcomes = [st.get("outcome") for st in steps]
+    if failed:
+        return "failed"
+    if TIMED_OUT in outcomes:
+        return TIMED_OUT
+    if CANNOT_RUN in outcomes:
+        return CANNOT_RUN
+    if ran_total == 0:
+        return "no-checks"
+    return "passed"
+
+
+def run_gate(project, commands, runner=None, owns=None, timeout=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
     function that only returned a verdict could not be tested without building a
     repository around it, and `runner` is the seam the cases drive.
+
+    NOTHING HERE WRITES. The snapshot pair and the verdict are complete before the
+    caller records anything, which is what keeps a recorder out of the measurement
+    it is recording - an evidence file written inside this function would appear in
+    the very `git status --porcelain` it is being judged by.
     """
     runner = runner or _shell
     before = _porcelain(project)
+    # PRE-EXECUTION, and the placement is load-bearing: a fix-in-place gate
+    # rewrites the very files it checks, so a fingerprint taken after the run
+    # would describe what the gate PRODUCED rather than what it was asked to
+    # judge. Both digests are spent from `before`, above the first command.
+    state = tested_state(project, owns, before)
+    started = time.monotonic()
     steps, texts = [], []
     for name, command in commands:
-        code, text = runner(project, command)
+        step_started = time.monotonic()
+        code, text, facts = runner(project, command, timeout)
         texts.append(text or "")
-        steps.append({"name": name, "command": command, "exit": code,
-                      "ran": ran_count(command, text)})
+        step = {"name": name, "command": command, "exit": code,
+                "ran": ran_count(command, text),
+                "durationMs": _elapsed_ms(step_started)}
+        step.update(facts or {})
+        steps.append(step)
     after = _porcelain(project)
-    if before is None or after is None:
-        mutated = []
+    interrupted = any(st.get("outcome") == TIMED_OUT for st in steps)
+    if interrupted:
+        # A torn-down group is not a stopped one: a descendant that escaped the
+        # kill keeps writing, so comparing the two snapshots would be a race whose
+        # answer changes with timing. `_porcelain` already refuses to call a tree
+        # it cannot describe clean; this is the same refusal, one cause over.
+        mutated = None
+        basis = "the run was interrupted, so a tree comparison would be a race"
+    elif before is None or after is None:
+        mutated = None
         basis = "git could not describe the tree, so mutation is UNKNOWN"
     else:
         mutated = sorted(after - before)
@@ -267,10 +626,14 @@ def run_gate(project, commands, runner=None, owns=None):
     counts = [s["ran"] for s in steps if s["ran"] is not None]
     named = files_named("".join(texts)) if texts else None
     overlap, cbasis = coverage(owns, named)
-    return {"steps": steps, "mutated": mutated, "treeBasis": basis,
-            "ranTotal": sum(counts) if counts else None,
+    ran_total = sum(counts) if counts else None
+    failed = failed_steps(steps)
+    return {"steps": steps, "testedState": state,
+            "treeMutated": mutated, "treeBasis": basis,
+            "ranTotal": ran_total, "durationMs": _elapsed_ms(started),
+            "status": run_status(steps, failed, ran_total),
             "overlap": overlap, "coverageBasis": cbasis,
-            "failed": [s["name"] for s in steps if s["exit"] != 0]}
+            "failed": failed}
 
 
 def render(res, out=print):
@@ -285,10 +648,13 @@ def render(res, out=print):
     if res["failed"]:
         out("GATE RED: %s" % ", ".join(res["failed"]))
         code = E_FAIL
-    if res["mutated"]:
+    if res["treeMutated"]:
         # Said even when the gate also failed: two different facts, and a reader
         # who fixed the failure would otherwise meet the rewrite afterwards.
-        out("GATE MUTATED THE TREE: %s" % ", ".join(res["mutated"]))
+        # `None` and `[]` are both silent HERE because neither names a file - the
+        # difference between them is a claim about the tree, and it is printed by
+        # the basis line below rather than being read out of a falsy value.
+        out("GATE MUTATED THE TREE: %s" % ", ".join(res["treeMutated"]))
         out("  a gate is a measurement. Do NOT commit on this run - the diff now "
             "carries work no task owns and no review saw. Revert those files, "
             "then either use the read-only spelling of the check (`--check` "
@@ -301,7 +667,11 @@ def render(res, out=print):
             "verified everything are the same exit code, and this is the one that "
             "cannot sign anything off.")
         code = E_FAIL
-    if res["treeBasis"].startswith("git could not"):
+    if res["treeMutated"] is None:
+        # STRUCTURAL, not a string prefix. The old test read `treeBasis` for the
+        # words "git could not", which stopped covering the case the moment a
+        # second reason to skip the comparison existed - an interrupted run.
+        # `None` IS the claim "no comparison was made"; the basis says which.
         out("  basis: %s" % res["treeBasis"])
     # F204. SAID, NEVER ENFORCED, and said in three distinguishable ways: the
     # overlap is empty, the overlap is real, or the question could not be asked.
@@ -337,6 +707,11 @@ def main(argv, out=print):
     # of the PHASE, which is where this script is invoked from - the live F204
     # incident was a task-level gate, but a flag with no caller states nothing.
     p.add_argument("--task", dest="task", default=None)
+    # The bound a step is held to, recorded on the row that reports a timeout so
+    # "timed out" carries the number that makes it actionable rather than leaving
+    # a reader to guess which limit was hit.
+    p.add_argument("--timeout", dest="timeout", type=int,
+                   default=DEFAULT_TIMEOUT_SECONDS)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
@@ -348,14 +723,17 @@ def main(argv, out=print):
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
         return E_ASK
-    commands, err = gate_of(manifest, args.phase)
+    commands, source, err = gate_of(manifest, args.phase, args.task)
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
+    subject = args.task if source == "task" else args.phase
     if not commands:
         # The EMPTY gate is a designed state (`audit-task.py:_phase_gate`), so it
         # is reported as itself rather than as a pass: sign-off rests on review
         # alone, and saying "green" here would claim a measurement nobody made.
+        # It names the PHASE even under `--task`, because an empty answer here is
+        # always the phase's: a task with a gate of its own never reaches this.
         out("[run-test-gate] %s declares an EMPTY gate: nothing here can prove it "
             "done, so sign-off rests on review alone" % (args.phase,))
         return E_OK
@@ -363,15 +741,21 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
-    res = run_gate(project, commands, owns=owns)
+    res = run_gate(project, commands, owns=owns, timeout=args.timeout)
+    res["gateSource"] = source
+    res["subject"] = subject
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # The overlap is absent from this expression ON PURPOSE: it is reported,
         # not enforced, and a machine reader that wants to act on it has the
         # field. Folding it in here would make the decision this entry declined.
-        return E_FAIL if (res["failed"] or res["mutated"]
-                          or res["ranTotal"] == 0) else E_OK
-    out("[run-test-gate] %s: %d command(s)" % (args.phase, len(commands)))
+        return E_OK if res["status"] == "passed" and not res["treeMutated"] \
+            else E_FAIL
+    # WHOSE gate ran is printed, not left to be inferred from the id: under
+    # `--task` a task with no gate of its own is measured by the PHASE's, and a
+    # reader who assumed otherwise would credit the wrong declaration.
+    out("[run-test-gate] %s: %d command(s), %s gate"
+        % (subject, len(commands), source))
     return render(res, out=out)
 
 

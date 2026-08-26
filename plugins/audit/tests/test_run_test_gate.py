@@ -59,48 +59,48 @@ def _cases(check):
                        "testGate": [], "tasks": []},
                       {"id": "P3", "title": "three", "status": "pending",
                        "testGate": ["echo literal"], "tasks": []}]}
-    cmds, err = M.gate_of(man, "P1")
+    cmds, _srcA, err = M.gate_of(man, "P1")
     check("rg1 the gate resolves each entry through meta.buildCommands, "
           "because a second resolution here would be a second answer to "
           "'what is this phase's gate': %r" % (cmds,),
           err is None
           and cmds == [("lint", "pre-commit run --all-files"),
                        ("test", "pytest -q")])
-    cmds3, _e3 = M.gate_of(man, "P3")
+    cmds3, _srcB, _errB = M.gate_of(man, "P3")
     check("rg2 ...and an entry naming no build command is carried VERBATIM - "
           "it may be a literal shell command, and refusing it would make this "
           "script decide what a gate is allowed to be: %r" % (cmds3,),
           cmds3 == [("echo literal", "echo literal")])
-    _none, err_none = M.gate_of(man, "P9")
+    _none, _srcC, err_none = M.gate_of(man, "P9")
     check("rg3 an unknown phase is an error rather than an empty gate - "
           "'this phase has no gate' and 'there is no such phase' are two "
           "different answers: %r" % (err_none,),
           _none is None and "no phase" in (err_none or ""))
 
     # --- the mutation bracket, against a REAL repository -------------------
-    def _quiet(_project, _command):
-        return 0, "all good\n"
+    def _quiet(_project, _command, _timeout=None):
+        return 0, "all good\n", {}
 
     res = M.run_gate(tmp, [("lint", "true")], runner=_quiet)
     check("rg4 a gate that changes nothing reports no mutation, and the basis "
           "says git was actually asked: %r"
-          % ((res["mutated"], res["treeBasis"]),),
-          res["mutated"] == [] and res["failed"] == []
+          % ((res["treeMutated"], res["treeBasis"]),),
+          res["treeMutated"] == [] and res["failed"] == []
           and res["treeBasis"].startswith("git described"))
 
-    def _fix_in_place(project, _command):
+    def _fix_in_place(project, _command, _timeout=None):
         # `isort`/`black`'s shape: it rewrites and then reports success.
         with open(os.path.join(project, "rewritten.py"), "w") as fh:
             fh.write("import os\n")
-        return 0, "Passed\n"
+        return 0, "Passed\n", {}
 
     res = M.run_gate(tmp, [("lint", "pre-commit run --all-files")],
                      runner=_fix_in_place)
     check("rg5 THE FAULT: a gate that passed BECAUSE it rewrote the tree is "
           "caught, with the file named - exit 0 said nothing was wrong and "
-          "five source files had changed: %r" % (res["mutated"],),
+          "five source files had changed: %r" % (res["treeMutated"],),
           res["failed"] == []
-          and any("rewritten.py" in line for line in res["mutated"]))
+          and any("rewritten.py" in line for line in res["treeMutated"]))
     lines = []
     code = M.render(res, out=lines.append)
     text = "\n".join(lines)
@@ -114,16 +114,16 @@ def _cases(check):
     os.remove(os.path.join(tmp, "rewritten.py"))
 
     # --- the other failure mode: nothing ran -------------------------------
-    def _all_skipped(_project, _command):
+    def _all_skipped(_project, _command, _timeout=None):
         return 0, ("check yaml.....................Skipped\n"
-                   "black.........................Skipped\n")
+                   "black.........................Skipped\n"), {}
 
     res = M.run_gate(tmp, [("lint", "pre-commit run --files a.md")],
                      runner=_all_skipped)
     check("rg7 THE OTHER FAULT: a gate where every hook SKIPPED is exit 0 "
           "with zero checks, and the count is read rather than assumed: %r"
           % (res["ranTotal"],),
-          res["failed"] == [] and res["mutated"] == []
+          res["failed"] == [] and res["treeMutated"] == []
           and res["ranTotal"] == 0)
     lines = []
     code = M.render(res, out=lines.append)
@@ -133,10 +133,10 @@ def _cases(check):
           "same exit code: %r" % (text[:110],),
           code == M.E_FAIL and "NO CHECK RAN" in text)
 
-    def _two_ran(_project, _command):
+    def _two_ran(_project, _command, _timeout=None):
         return 0, ("check yaml.....................Passed\n"
                    "black.........................Passed\n"
-                   "mypy..........................Skipped\n")
+                   "mypy..........................Skipped\n"), {}
 
     res = M.run_gate(tmp, [("lint", "pre-commit run --all-files")],
                      runner=_two_ran)
@@ -165,10 +165,10 @@ def _cases(check):
           and "not knowable from this runner" in "\n".join(lines))
 
     # --- a failing gate, and both facts at once ---------------------------
-    def _fail_and_rewrite(project, _command):
+    def _fail_and_rewrite(project, _command, _timeout=None):
         with open(os.path.join(project, "also.py"), "w") as fh:
             fh.write("x = 1\n")
-        return 1, "Failed\n"
+        return 1, "Failed\n", {}
 
     res = M.run_gate(tmp, [("lint", "pre-commit run --all-files")],
                      runner=_fail_and_rewrite)
@@ -186,11 +186,12 @@ def _cases(check):
     notrepo = _harness.fixture_root("run-test-gate-norepo-")
     if True:
         res = M.run_gate(notrepo, [("lint", "true")], runner=_quiet)
-        check("rg14 where git cannot describe the tree, mutation is UNKNOWN "
-              "and said so - reporting it as 'nothing changed' would be the "
-              "false clean sheet this file exists to prevent: %r"
-              % (res["treeBasis"],),
-              res["mutated"] == []
+        check("rg14 where git cannot describe the tree, mutation is UNKNOWN - "
+              "and unknown is None, NOT an empty list. The empty list was the "
+              "conflation: it reads as 'nothing changed' to every truthy test, "
+              "so the third state survived only in the prose beside it: %r"
+              % ((res["treeMutated"], res["treeBasis"]),),
+              res["treeMutated"] is None
               and res["treeBasis"].startswith("git could not"))
         lines = []
         M.render(res, out=lines.append)
@@ -209,10 +210,10 @@ def _cases(check):
     # both options named. The overlap comes from paths a runner HAPPENS to print,
     # so it is a heuristic; a heuristic that refuses manufactures false refusals,
     # and the exit code deliberately does not read it.
-    def _vitest_green(_project, _command):
+    def _vitest_green(_project, _command, _timeout=None):
         return 0, ("\u2713 tools/ui-tests/panel.test.js (5 tests)\n"
                    "\u2713 tools/ui-tests/report.test.js (4 tests)\n"
-                   "Test Files  2 passed (2)\n")
+                   "Test Files  2 passed (2)\n"), {}
 
     res = M.run_gate(tmp, [("test", "npx vitest run")], runner=_vitest_green,
                      owns=["docs/audit/audit-plan.json"])
@@ -245,8 +246,8 @@ def _cases(check):
           and res["overlap"] == ["tools/ui-tests/panel.test.js"]
           and "NO OVERLAP" not in text and "coverage: 1 declared file" in text)
 
-    def _no_paths(_project, _command):
-        return 0, "OK\n9 tests passed\n"
+    def _no_paths(_project, _command, _timeout=None):
+        return 0, "OK\n9 tests passed\n", {}
 
     res = M.run_gate(tmp, [("test", "make check")], runner=_no_paths,
                      owns=["docs/audit/audit-plan.json"])
@@ -314,6 +315,408 @@ def _cases(check):
     check("rg17 ...and a phase that does not exist is exit 2, the code for "
           "'could not be asked' rather than 'failed'",
           code == M.E_ASK and "no phase" in "\n".join(lines))
+
+    # --- lifecycle: what did not finish, and what it cost ------------------
+    # A timeout and a failure to START were ONE answer before this: `_shell`
+    # swallowed both into `except Exception` and reported exit 127 for each, so
+    # "the suite hung" and "the binary is missing" were the same row. They are
+    # different repairs, so they are different words - and `lc2` is the pair that
+    # says so, because either alone passes with the two collapsed.
+    def _timed_out(_project, _command, timeout=None):
+        return -9, "partial output\n", {"outcome": M.TIMED_OUT,
+                                        "timeoutSeconds": timeout}
+
+    def _cannot_run(_project, _command, _timeout=None):
+        return 127, "could not run: no such file\n", {"outcome": M.CANNOT_RUN}
+
+    res_t = M.run_gate(tmp, [("test", "pytest -q")], runner=_timed_out,
+                       timeout=7)
+    check("lc1 a step that did not finish is `timed-out`, not `failed` - a "
+          "verdict was never reached, and spelling that as red would claim a "
+          "measurement nobody completed: %r"
+          % ((res_t.get("status"), res_t["steps"][0].get("outcome")),),
+          res_t.get("status") == "timed-out"
+          and res_t["steps"][0].get("outcome") == M.TIMED_OUT)
+
+    res_c = M.run_gate(tmp, [("test", "pytest -q")], runner=_cannot_run)
+    check("lc2 ...and a step that never STARTED is a third word again. The two "
+          "are asserted as DIFFERENT rather than each against a literal, which "
+          "is the half that fails while both are exit 127: %r vs %r"
+          % (res_t.get("status"), res_c.get("status")),
+          res_c.get("status") == "could-not-run"
+          and res_c.get("status") != res_t.get("status"))
+
+    check("lc3 the timeout that applied is recorded on the step, so `timed-out` "
+          "carries the basis that makes it actionable rather than leaving a "
+          "reader to guess which bound was hit: %r"
+          % (res_t["steps"][0].get("timeoutSeconds"),),
+          res_t["steps"][0].get("timeoutSeconds") == 7)
+
+    def _fail_then_timeout(project, command, timeout=None):
+        if "first" in command:
+            return 1, "boom\n", {}
+        return -9, "", {"outcome": M.TIMED_OUT, "timeoutSeconds": timeout}
+
+    res_ft = M.run_gate(tmp, [("a", "first"), ("b", "second")],
+                        runner=_fail_then_timeout)
+    check("lc4 a run that FAILED and also timed out reads `failed` - a certain "
+          "red must not be downgraded to an uncertain one - and the timeout "
+          "survives on its own step, so neither fact is lost: %r"
+          % ((res_ft.get("status"), [st.get("outcome") for st in res_ft["steps"]]),),
+          res_ft.get("status") == "failed" and res_ft["failed"] == ["a"]
+          and res_ft["steps"][1].get("outcome") == M.TIMED_OUT)
+
+    check("lc5 ON A TIMEOUT THE TREE COMPARISON IS NOT MADE: `treeMutated` is "
+          "None and the basis names the race, because a survivor of a torn-down "
+          "group keeps writing. `_porcelain` already refuses to call an "
+          "unanswerable tree clean; this is the same refusal one cause over: %r"
+          % ((res_t.get("treeMutated"), res_t.get("treeBasis")),),
+          res_t.get("treeMutated") is None
+          and "interrupted" in (res_t.get("treeBasis") or ""))
+
+    res_ok = M.run_gate(tmp, [("lint", "true")], runner=_quiet)
+    check("lc6 ...and the pair that keeps that honest: a run that COMPLETED "
+          "reports `treeMutated == []`, a list. Empty and None are the two "
+          "readings a truthy test would merge, which is the whole reason the "
+          "field is three-valued: %r" % (res_ok.get("treeMutated"),),
+          res_ok.get("treeMutated") == []
+          and res_ok.get("treeMutated") is not None)
+
+    check("lc7 a completed run with every step at exit 0 is `passed`, and an "
+          "unknowable check count does NOT make it `no-checks` - None is 'not "
+          "knowable', and only a POSITIVE zero earns that word: %r"
+          % ((res_ok.get("status"), res_ok["ranTotal"]),),
+          res_ok.get("status") == "passed" and res_ok["ranTotal"] is None)
+
+    res_zero = M.run_gate(tmp, [("lint", "pre-commit run --files a.md")],
+                          runner=_all_skipped)
+    check("lc8 ...while a count that is POSITIVELY zero is `no-checks`, which "
+          "is the one status that is exit 0 and still not a verdict: %r"
+          % ((res_zero.get("status"), res_zero["ranTotal"]),),
+          res_zero.get("status") == "no-checks" and res_zero["ranTotal"] == 0)
+
+    check("lc9 the run and every step carry a duration, as non-negative "
+          "integers - `run_gate` measures around the seam, so a fixture runner "
+          "needs to know nothing about time: %r"
+          % ((res_ok.get("durationMs"), res_ok["steps"][0].get("durationMs")),),
+          isinstance(res_ok.get("durationMs"), int)
+          and res_ok.get("durationMs") >= 0
+          and all(isinstance(st.get("durationMs"), int)
+                  and st["durationMs"] >= 0 for st in res_ok["steps"]))
+
+    # --- the REAL runner, against a real process tree ----------------------
+    # The one case that cannot be written with a fixture: `subprocess.run`'s own
+    # timeout kills the direct child, and with `shell=True` that child is the
+    # shell. A backgrounded grandchild outlives it, keeps writing, and is exactly
+    # what makes the after-snapshot a race. Proven by PID, not by prose.
+    pidfile = os.path.join(tmp, "grandchild.pid")
+    code, text, facts = M._shell(
+        tmp, "sleep 30 & echo $! > %s; sleep 30" % (pidfile,), timeout=2)
+    child_pid = None
+    try:
+        with open(pidfile) as fh:
+            child_pid = int(fh.read().strip())
+    except Exception:
+        child_pid = None
+    alive = None
+    if child_pid:
+        import time as _t
+        _t.sleep(0.4)
+        try:
+            os.kill(child_pid, 0)
+            alive = True
+        except OSError:
+            alive = False
+        if alive:
+            try:
+                os.kill(child_pid, 9)
+            except OSError:
+                pass
+    # The guard the mutation battery found, covered WITHOUT the suite ever
+    # signalling its own group. An earlier case called the real `_tear_down` on a
+    # same-group child; with the guard defeated that killpg reaches this runner,
+    # so the suite DIED instead of going red - detection of the worst kind, since
+    # a dead suite reads as infrastructure trouble. The decision and its use site
+    # are covered separately below, and neither can take this process with it.
+    plain = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    detached = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        check("lc11 the predicate tells the two apart: a child of our own group "
+              "WOULD signal us, one given its own session would not. Both ends "
+              "asserted, because a predicate stuck at either constant is half "
+              "right and wholly useless: same=%r detached=%r"
+              % (M.shares_our_group(plain.pid), M.shares_our_group(detached.pid)),
+              M.shares_our_group(plain.pid) is True
+              and M.shares_our_group(detached.pid) is False)
+        check("lc12 ...and an unanswerable pid is True, the SAFE direction: not "
+              "knowing whether we would hit ourselves must never read as "
+              "permission to aim at the group",
+              M.shares_our_group(-1) is True)
+
+        real = M.shares_our_group
+        try:
+            M.shares_our_group = lambda _pid: True
+            narrow = M._tear_down(detached)
+        finally:
+            M.shares_our_group = real
+        check("lc13 ...and `_tear_down` READS it: told the child shares our "
+              "group, it takes the narrow kill and reports UNCONFIRMED, even "
+              "though this child had a session of its own. The use site, "
+              "covered by swapping the name rather than by signalling "
+              "ourselves - `test__journal_io` uses the same seam: %r" % (narrow,),
+              narrow is False and detached.returncode is not None)
+    finally:
+        for proc in (plain, detached):
+            if proc.poll() is None:
+                proc.kill()
+            try:
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+
+    check("lc10 THE FAULT: the real runner tears down the process GROUP, so a "
+          "backgrounded grandchild does not outlive the timeout. "
+          "`subprocess.run(timeout=)` kills the shell alone and leaves this pid "
+          "running - and a survivor keeps writing into the tree the gate is "
+          "about to describe: pid=%r alive_after=%r" % (child_pid, alive),
+          facts.get("outcome") == M.TIMED_OUT
+          and child_pid is not None and alive is False)
+    if os.path.exists(pidfile):
+        os.remove(pidfile)
+
+    # --- the real runner's other two answers -------------------------------
+    code, text, facts = M._shell(os.path.join(tmp, "no-such-dir"), "true")
+    check("lc14 a command that could not be STARTED is `could-not-run` from the "
+          "real runner, not only from a fixture - this is the Popen failure "
+          "itself, and it is the half that never reaches a stub: %r"
+          % ((code, facts.get("outcome")),),
+          facts.get("outcome") == M.CANNOT_RUN and code == 127
+          and "could not run" in text)
+
+    code, text, facts = M._shell(tmp, "echo marker; sleep 30", timeout=2)
+    check("lc15 ...and a timed-out step still returns what the child had "
+          "already written. The drain runs AFTER the kill, never instead of it: "
+          "a timed-out child is often blocked on a full pipe, so reading first "
+          "would wait on a process nothing is going to stop: %r"
+          % ((text.strip()[:24], facts.get("timeoutSeconds")),),
+          facts.get("outcome") == M.TIMED_OUT and "marker" in text
+          and facts.get("timeoutSeconds") == 2)
+
+    res_127 = M.run_gate(tmp, [("x", "definitely-not-a-real-binary-xyz")])
+    check("lc16 THE LIMIT, PINNED: a MISSING BINARY under `shell=True` is "
+          "reported as a failure, not as `could-not-run`. The shell started "
+          "fine and exited 127, and 127 is a code a real command may return - "
+          "so reading the category out of the number would let a child claim "
+          "one by exiting with it. The wrapper names only what IT observed: %r"
+          % ((res_127["status"], res_127["steps"][0].get("outcome")),),
+          res_127["status"] == "failed"
+          and res_127["steps"][0].get("outcome") is None)
+
+
+    # --- what state was actually tested ------------------------------------
+    # `head` alone cannot answer this and never could: a TASK gate runs BEFORE the
+    # task commit, so a run executes against HEAD plus staged edits plus unstaged
+    # ones plus untracked files. Two failed retries at one HEAD were
+    # indistinguishable, which defeats the point of recording retries at all.
+    # The fixture had staged `tracked.txt` and never committed, so `rev-parse
+    # HEAD` had nothing to answer with - and "the two runs share a head" would
+    # then have been None == None, true with the field absent. One commit gives
+    # the comparison something real to be about. Identity is passed per command
+    # rather than written into the repo config, so the fixture keeps no state a
+    # later case could read.
+    subprocess.run(["git", "-C", tmp, "-c", "user.email=fixture@example.com",
+                    "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                    "commit", "-q", "-m", "base"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    scope_a = os.path.join(tmp, "scope_a.py")
+    owns = ["scope_a.py"]
+
+    def _write(path, text):
+        with open(path, "w") as fh:
+            fh.write(text)
+
+    _write(scope_a, "v = 1\n")
+    r1 = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    _write(scope_a, "v = 2\n")
+    r2 = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    st1, st2 = r1.get("testedState") or {}, r2.get("testedState") or {}
+    check("ts1 THE REQUIREMENT: two runs at the SAME head against different "
+          "declared content are told apart by `scopeDigest`. Asserted as a pair "
+          "- the heads equal AND the digests differing - because either half "
+          "alone passes with the field absent: head=%r digests differ=%r"
+          % (st1.get("head") == st2.get("head"),
+             st1.get("scopeDigest") != st2.get("scopeDigest")),
+          st1.get("head") is not None
+          and st1.get("head") == st2.get("head")
+          and st1.get("scopeDigest") is not None
+          and st1.get("scopeDigest") != st2.get("scopeDigest"))
+
+    _write(scope_a, "v = 1\n")
+
+    def _rewrites_scope(project, _command, _timeout=None):
+        # `isort`/`black`'s shape again, but aimed at a file the work DECLARES.
+        with open(os.path.join(project, "scope_a.py"), "w") as fh:
+            fh.write("v = 999\n")
+        return 0, "Passed\n", {}
+
+    r_mut = M.run_gate(tmp, [("lint", "true")], runner=_rewrites_scope, owns=owns)
+    r_post = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    st_mut, st_post = r_mut.get("testedState") or {}, r_post.get("testedState") or {}
+    check("ts2 THE PLACEMENT: a gate that REWRITES a declared file leaves "
+          "`scopeDigest` at the content it was asked to judge, not the content "
+          "it produced. Taken before the first command for exactly this - a "
+          "fix-in-place runner rewrites the files it checks, and a digest read "
+          "afterwards would answer a different question than the one asked: "
+          "pre==mut %r, post!=mut %r"
+          % (st_mut.get("scopeDigest") == st1.get("scopeDigest"),
+             st_post.get("scopeDigest") != st_mut.get("scopeDigest")),
+          st_mut.get("scopeDigest") == st1.get("scopeDigest")
+          and st_post.get("scopeDigest") != st_mut.get("scopeDigest"))
+
+    _write(scope_a, "v = 1\n")
+    r_before = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    stray = os.path.join(tmp, "stray_outside_scope.txt")
+    _write(stray, "x\n")
+    r_after = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    sb, sa = r_before.get("testedState") or {}, r_after.get("testedState") or {}
+    check("ts3 a file appearing OUTSIDE the declared scope moves `dirtyDigest` "
+          "while `scopeDigest` holds still - the two answer different questions "
+          "and are asserted apart, since one field doing both would hide "
+          "whichever it was not looking at: scope same=%r dirty differs=%r"
+          % (sb.get("scopeDigest") == sa.get("scopeDigest"),
+             sb.get("dirtyDigest") != sa.get("dirtyDigest")),
+          sb.get("scopeDigest") == sa.get("scopeDigest")
+          and sb.get("dirtyDigest") is not None
+          and sb.get("dirtyDigest") != sa.get("dirtyDigest"))
+
+    _write(stray, "x changed but still untracked\n")
+    r_limit = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=owns)
+    sl = r_limit.get("testedState") or {}
+    check("ts4 THE LIMIT, PINNED RATHER THAN HIDDEN: editing an ALREADY-DIRTY "
+          "file outside the declared scope moves NEITHER digest. `dirtyDigest` "
+          "records which paths were dirty, not their contents - so this evidence "
+          "distinguishes the realistic retry and must never be sold as a "
+          "reproducible snapshot of the repository: %r"
+          % ((sl.get("scopeDigest") == sa.get("scopeDigest"),
+              sl.get("dirtyDigest") == sa.get("dirtyDigest")),),
+          sl.get("scopeDigest") is not None
+          and sl.get("dirtyDigest") is not None
+          and sl.get("scopeDigest") == sa.get("scopeDigest")
+          and sl.get("dirtyDigest") == sa.get("dirtyDigest"))
+    os.remove(stray)
+
+    r_missing = M.run_gate(tmp, [("lint", "true")], runner=_quiet,
+                           owns=["scope_a.py", "no_such_file.py"])
+    sm = r_missing.get("testedState") or {}
+    check("ts5 a declared file that is NOT THERE is hashed as null and counted "
+          "in the basis - absent is itself evidence about the state under test, "
+          "and dropping it would let two different scopes share a digest: %r"
+          % (sm.get("scopeBasis"),),
+          sm.get("scopeDigest") is not None
+          and sm.get("scopeDigest") != st1.get("scopeDigest")
+          and "1 missing" in (sm.get("scopeBasis") or ""))
+
+    r_noscope = M.run_gate(tmp, [("lint", "true")], runner=_quiet, owns=[])
+    sn = r_noscope.get("testedState") or {}
+    check("ts6 work that declares no files has no scope digest and SAYS so - "
+          "the shape `coverage` already uses for the same question, because a "
+          "digest of nothing would compare equal across every such run: %r"
+          % ((sn.get("scopeDigest"), sn.get("scopeBasis")),),
+          sn.get("scopeDigest") is None
+          and "declares no files" in (sn.get("scopeBasis") or ""))
+
+    r_norepo = M.run_gate(notrepo, [("lint", "true")], runner=_quiet, owns=owns)
+    sr = r_norepo.get("testedState") or {}
+    check("ts7 where git cannot describe the tree, `dirtyDigest` is None - not "
+          "a hash of an empty set, which is a real digest that would compare "
+          "equal to any other unanswerable run and read as agreement: %r"
+          % ((sr.get("dirtyDigest"), sr.get("dirtyBasis")),),
+          sr.get("dirtyDigest") is None
+          and sr.get("head") is None
+          and "git could not" in (sr.get("dirtyBasis") or "")
+          and sr.get("scopeDigest") is not None)
+
+    check("ts8 `head` carries the basis that says what it is NOT. It is the "
+          "repository HEAD at execution time and it does not identify the "
+          "tested state, because a task gate runs before the task commit - a "
+          "field that claimed otherwise would be the overclaim this block "
+          "exists to retire: %r" % (st1.get("headBasis"),),
+          "does not identify the tested state" in (st1.get("headBasis") or ""))
+
+    # --- whose gate is this, anyway ----------------------------------------
+    # `--task` narrowed only the COVERAGE question before this: `gate_of` read
+    # `phase.testGate` whatever it was handed, so a task declaring its own
+    # `tests.gate` had no way to be run through this bracket at all. That is the
+    # level every question the evidence has to answer actually lives at.
+    gman = {"meta": {"version": 2,
+                     "buildCommands": {"unit": "pytest -q tests/unit",
+                                       "lint": "ruff check ."}},
+            "phases": [{"id": "PG", "title": "g", "status": "in_progress",
+                        "testGate": ["lint"], "tasks": [
+                            {"id": "PG.1", "files": ["a.py"],
+                             "tests": {"mode": "tdd", "gate": ["unit"]}},
+                            {"id": "PG.2", "files": ["b.py"],
+                             "tests": {"mode": "gate-only", "gate": []}},
+                            {"id": "PG.3", "files": ["c.py"],
+                             "tests": {"mode": "gate-only",
+                                       "gate": ["echo literal-task"]}},
+                            {"id": "PG.4", "files": ["d.py"]}]},
+                       {"id": "PH", "title": "h", "status": "pending",
+                        "testGate": [], "tasks": [
+                            {"id": "PH.1", "files": ["e.py"],
+                             "tests": {"mode": "tdd", "gate": ["unit"]}}]}]}
+
+    cmds, source, err = M.gate_of(gman, "PG", "PG.1")
+    check("gs1 a task that declares `tests.gate` is run through ITS commands, "
+          "resolved by the same `meta.buildCommands` pass the phase gate uses - "
+          "a second resolution would be a second answer to what a gate is: "
+          "%r %r" % (cmds, source),
+          err is None and source == "task"
+          and cmds == [("unit", "pytest -q tests/unit")])
+
+    cmds, source, err = M.gate_of(gman, "PG", "PG.2")
+    check("gs2 ...and a task declaring an EMPTY gate falls back to the phase's, "
+          "SAYING which it used. The fallback is the half that must not be "
+          "silent: a phase gate measured against one task's files is a "
+          "different claim from that task's own gate: %r %r" % (cmds, source),
+          err is None and source == "phase"
+          and cmds == [("lint", "ruff check .")])
+
+    cmds4, source4, _e4 = M.gate_of(gman, "PG", "PG.4")
+    check("gs3 ...and so does a task with no `tests` block at all - absent and "
+          "empty are the same answer to 'does this task declare a gate', and "
+          "they must not be two code paths: %r %r" % (cmds4, source4),
+          source4 == "phase" and cmds4 == cmds)
+
+    cmds3, source3, _e3 = M.gate_of(gman, "PG", "PG.3")
+    check("gs4 a task gate entry naming no build command is carried VERBATIM, "
+          "exactly as rg2 draws it for a phase - refusing it here would make "
+          "this script decide what a task's gate may be: %r" % (cmds3,),
+          source3 == "task" and cmds3 == [("echo literal-task",
+                                           "echo literal-task")])
+
+    cmdsh, sourceh, _eh = M.gate_of(gman, "PH", "PH.1")
+    check("gs5 a task gate wins even where the PHASE declares nothing - the "
+          "empty phase gate is a designed state for sign-off, not a veto over "
+          "the task that ran under it: %r %r" % (cmdsh, sourceh),
+          sourceh == "task" and cmdsh == [("unit", "pytest -q tests/unit")])
+
+    _cn, _sn, errn = M.gate_of(gman, "PG", "PG.9")
+    check("gs6 an unknown task is an ERROR, never a silent fall back to the "
+          "phase - 'this task declares no gate' and 'there is no such task' are "
+          "two different answers, the distinction rg3 already draws one noun "
+          "up: %r" % (errn,),
+          _cn is None and "no task" in (errn or ""))
+
+    cmdsp, sourcep, _ep = M.gate_of(gman, "PG")
+    check("gs7 ...and with no task named at all the answer is the phase's gate, "
+          "unchanged - this is the call site the script has had all along and "
+          "it must not move: %r %r" % (cmdsp, sourcep),
+          sourcep == "phase" and cmdsp == [("lint", "ruff check .")])
 
 
 def _selftest():
