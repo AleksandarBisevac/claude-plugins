@@ -696,13 +696,19 @@ def _cases(check):
         # and it runs over EVERY row rather than a representative one, so an arm
         # only some rows take cannot slip through.
         _gate = _loader.load_script("run-test-gate.py", modname="run_test_gate")
-        _disagreed = [(r["runId"], r["status"],
-                       _gate.run_status(r["steps"], r["failed"],
-                                        r["observations"]["ranTotal"]))
-                      for r in _rows_b
-                      if r["status"] != _gate.run_status(
-                          r["steps"], r["failed"],
-                          r["observations"]["ranTotal"])]
+        # The cancellation basis is READ OFF THE ROW rather than passed as None:
+        # `run_status` grew a fourth input when the interrupt path learned to
+        # record, and hardcoding absence here would assert that this generator
+        # never fabricates a cancelled run instead of comparing what it did
+        # fabricate. `cancelledBy` is absent on every row today, and the day one
+        # carries it this comparison still holds it to the real rule.
+        def _real(r):
+            return _gate.run_status(r["steps"], r["failed"],
+                                    r["observations"]["ranTotal"],
+                                    r.get("cancelledBy"))
+
+        _disagreed = [(r["runId"], r["status"], _real(r))
+                      for r in _rows_b if r["status"] != _real(r)]
         check("every verdict the fixture publishes is the one the REAL "
               "`run_status` reads off the same steps - the demo spells that "
               "precedence itself and this is what stops the copy drifting: %r"
