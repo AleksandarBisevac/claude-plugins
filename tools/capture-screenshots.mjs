@@ -6542,7 +6542,16 @@ async function main() {
            + 'and the areas shot cannot be refreshed');
       } else {
         const pick = await page.evaluate(() => {
-          const rows = [...document.querySelectorAll('table.phases tbody tr.phase')];
+          // COUNTED OVER THE ROWS THAT ARE ACTUALLY ON SCREEN, not over every row
+          // in the table. The report hides completed phases by default, so a tag
+          // carried by a done phase counts rows the area filter can never show,
+          // and `kept` would then be a different measurement from the `shown` it
+          // is compared against below. That held only while no tag spanned a done
+          // phase and a visible one; the day one did, this gate failed and the
+          // page was innocent.
+          const vis0 = (r) => r.style.display !== 'none';
+          const rows = [...document.querySelectorAll('table.phases tbody tr.phase')]
+            .filter(vis0);
           const tagsOf = (r) => (r.getAttribute('data-area') || '')
             .split(/\s+/).filter(Boolean);
           let best = null;
