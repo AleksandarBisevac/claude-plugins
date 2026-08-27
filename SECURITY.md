@@ -415,6 +415,19 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      against the plan at all. Opening a session **in** the worktree (what
      `/audit:worktree` prints) restores full coverage, because the hooks then
      resolve their project directory to it.
+     **The working directory the payload carries is the SESSION's, not the
+     shell's**, and that is the limit of the sentence above. A command that walks
+     into another tree inside one call — `cd <worktree> && …` — leaves the
+     payload naming the tree the session started in, so it matches the watched
+     tree and the notice never fires. That shape is the ordinary one for an agent
+     reaching a phase worktree, whose shell starts in the session's directory on
+     every call. There the `cd` itself is the evidence (F212): the finding is
+     still reported, and the authorship claim is withdrawn instead of guessed at.
+     The claim survives only where every directory change in the command names a
+     literal path landing inside the watched tree; a destination the payload
+     cannot resolve withdraws it too. Reading a destination out of the command
+     text to *stop* accusing is free if it is wrong — reading one to accuse would
+     not be, and this never does that.
    - **A NEW dirty path**, relative to a baseline the session's first Bash pass
      seeds silently — not every unplanned write, only one that appears between
      two of this hook's own looks at the tree.
