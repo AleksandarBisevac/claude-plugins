@@ -56,7 +56,8 @@ is that no outcome is silent.
 
 Exit codes:
   0  every command passed, the tree is unchanged, and at least one check ran
-  1  a command failed, or the gate mutated the tree, or nothing ran
+  1  a command failed, or the gate mutated the tree, or nothing ran, or a stop
+     signal cut the run short before every step had reported
   2  the gate could not be asked (no manifest, no such phase)
 """
 import argparse
@@ -109,6 +110,26 @@ E_OK, E_FAIL, E_ASK = 0, 1, 2
 # observed and travels beside the code.
 TIMED_OUT = "timed-out"
 CANNOT_RUN = "could-not-run"
+
+# ...and the third one, which is NOT a step's. A stop signal arrives at THIS
+# process rather than at one command, so it has no step to hang off, and the step
+# it cut short reported nothing: the run keeps the steps that FINISHED and stops
+# there rather than inventing a row for work that never came back.
+#
+# THE WORD SHIPPED FOR RELEASES WITH NOTHING PRODUCING IT. It was in the plan
+# schema's enum, in both renderers, and in two documents listing what gets
+# written -- and `run_status` could only ever answer the four words above it. That
+# made the fourth commit point of the negative-evidence policy, the sweep at
+# `/audit:resume`, a sweep with nothing to sweep: an interrupted run left no
+# record at all, which is the exact hole the policy was written to close.
+CANCELLED = "cancelled"
+
+# What a cancelled run names as its cause when the interrupt carried no name.
+# REACHABLE, not defensive: `run_gate` is a library function, and a caller that
+# never armed the handlers below meets Python's own bare `KeyboardInterrupt`. A
+# `cancelled` status with no basis beside it is the one thing this record may not
+# write, so the gap is filled by SAYING it is a gap.
+UNNAMED_SIGNAL = "an unnamed interrupt"
 
 DEFAULT_TIMEOUT_SECONDS = 3600
 # How long a torn-down group is given to die politely before SIGKILL. Small on
@@ -578,10 +599,10 @@ def failed_steps(steps):
             if st["exit"] != 0 and not st.get("outcome")]
 
 
-def run_status(steps, failed, ran_total):
-    """The run's one word, from what its steps did.
+def run_status(steps, failed, ran_total, cancelled_by):
+    """The run's one word, from what its steps did and what stopped it.
 
-    PRECEDENCE, AND WHY IT IS THIS ORDER. `failed` sits ABOVE the two no-verdict
+    PRECEDENCE, AND WHY IT IS THIS ORDER. `failed` sits ABOVE the no-verdict
     words deliberately: a step that ran and exited non-zero is a CERTAIN red, and
     reporting that as "timed out" downgrades a finding a reader can act on into
     one they have to reproduce first. Nothing is lost by the ordering, because
@@ -592,9 +613,29 @@ def run_status(steps, failed, ran_total):
     `no-checks` sits below `failed` for that reason and above `passed` for the
     opposite one - it is exit 0 and it is still not a verdict.
 
+    AND THAT REASONING EXTENDS TO AN INTERRUPT, WHICH IS WHY `cancelled` SITS AT
+    THE BOTTOM OF THE NO-VERDICT GROUP. A signal does not retract a measurement
+    that already completed, so a run whose first step failed and whose second was
+    cut short is still `failed` - and the same holds one step weaker for the other
+    two: a step that timed out and a runner that never started are each a finding
+    with a repair attached (raise the bound or fix the hang; fix
+    `meta.buildCommands`, and do not burn a retry). `cancelled` is the ONLY word
+    in this set that names no repair and says nothing whatever about the work
+    under test - it is a fact about the operator - so anything that does name one
+    outranks it. What it does not sit below is `no-checks`: a count of zero taken
+    over a TRUNCATED run is not the "the gate ran and skipped everything" claim
+    that word makes, and reading it as one would sign off a gate that never
+    finished. `cancelledBy` travels on the run for the same reason every step
+    keeps its `outcome` - the fact the precedence hides is still on the record.
+
     AND IT IS READ FROM A POSITIVE ZERO ONLY. `ran_total is None` means the runner
     does not report a count; it is not evidence that nothing ran, so it leaves the
     status alone. Spelling that `not ran_total` would merge the two.
+
+    `cancelled_by` HAS NO DEFAULT. There is one production caller, and a fourth
+    argument nobody has to pass is a fourth argument a later caller forgets - which
+    would spell an interrupted run `passed` and lose it silently. Missing is a
+    TypeError; None is the caller SAYING nothing stopped this run.
     """
     outcomes = [st.get("outcome") for st in steps]
     if failed:
@@ -603,6 +644,8 @@ def run_status(steps, failed, ran_total):
         return TIMED_OUT
     if CANNOT_RUN in outcomes:
         return CANNOT_RUN
+    if cancelled_by is not None:
+        return CANCELLED
     if ran_total == 0:
         return "no-checks"
     return "passed"
@@ -629,17 +672,42 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     state = tested_state(project, owns, before)
     started = time.monotonic()
     steps, texts = [], []
-    for name, command in commands:
-        step_started = time.monotonic()
-        code, text, facts = runner(project, command, timeout)
-        texts.append(text or "")
-        step = {"name": name, "command": command, "exit": code,
-                "ran": ran_count(command, text),
-                "durationMs": _elapsed_ms(step_started)}
-        step.update(facts or {})
-        steps.append(step)
+    cancelled_by = None
+    try:
+        for name, command in commands:
+            step_started = time.monotonic()
+            code, text, facts = runner(project, command, timeout)
+            texts.append(text or "")
+            step = {"name": name, "command": command, "exit": code,
+                    "ran": ran_count(command, text),
+                    "durationMs": _elapsed_ms(step_started)}
+            step.update(facts or {})
+            steps.append(step)
+    except KeyboardInterrupt as exc:
+        # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
+        # child's group is already gone - `_shell`'s own `except BaseException`
+        # tears it down before re-raising, which is why the exception arrives here
+        # with nothing still running - and what was missing was a verdict and a
+        # write. So the exception is turned into a fact ON THE RESULT and the
+        # function returns normally; `main` records it, and NOTHING HERE COMMITS.
+        # Git durability arrives later, at the `/audit:resume` sweep. A commit made
+        # while stopping is a half-made one nobody reviewed, on the one path where
+        # nobody is going to look.
+        #
+        # THE STEP THAT WAS IN FLIGHT GETS NO ROW, and the steps after it get none
+        # either. It reported nothing, so a row for it would be a fabricated entry
+        # in the one record that exists to be true; `status` is what says the list
+        # is short.
+        #
+        # AND THE CATCH IS `KeyboardInterrupt`, NOT `BaseException`. `_shell` needs
+        # the wide arm because its job there is teardown, which every escape owes;
+        # this one assigns a MEANING, and calling a `MemoryError` or a `SystemExit`
+        # "cancelled" would be the silent mislabel the rest of this file exists to
+        # prevent. Anything else still escapes, loudly.
+        cancelled_by = str(exc) or UNNAMED_SIGNAL
     after = _porcelain(project)
-    interrupted = any(st.get("outcome") == TIMED_OUT for st in steps)
+    interrupted = (cancelled_by is not None
+                   or any(st.get("outcome") == TIMED_OUT for st in steps))
     if interrupted:
         # A torn-down group is not a stopped one: a descendant that escaped the
         # kill keeps writing, so comparing the two snapshots would be a race whose
@@ -661,7 +729,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     return {"steps": steps, "testedState": state,
             "treeMutated": mutated, "treeBasis": basis,
             "ranTotal": ran_total, "durationMs": _elapsed_ms(started),
-            "status": run_status(steps, failed, ran_total),
+            "status": run_status(steps, failed, ran_total, cancelled_by),
+            # ALWAYS PRESENT, None WHEN NOTHING STOPPED THE RUN - the shape
+            # `treeMutated` and `overlap` already use. A key that appeared only on
+            # an interrupted run could not be told from a build that does not
+            # write it, which is the reading that would let a `cancelled` row
+            # arrive with no basis at all.
+            "cancelledBy": cancelled_by,
             "overlap": overlap, "coverageBasis": cbasis,
             "failed": failed}
 
@@ -677,6 +751,21 @@ def render(res, out=print):
     code = E_OK
     if res["failed"]:
         out("GATE RED: %s" % ", ".join(res["failed"]))
+        code = E_FAIL
+    if res.get("cancelledBy") is not None:
+        # SAID EVEN WHEN THE GATE ALSO FAILED, and printed from the FACT rather
+        # than from the status word: `run_status` puts `failed` above `cancelled`,
+        # so a run that is both says `failed` - and a reader who only saw that
+        # would believe the remaining steps had their say. Two facts, two
+        # sentences, which is the rule the mutated-tree line one block down has
+        # followed all along.
+        out("GATE CANCELLED: %s stopped this run. The steps after it never "
+            "reported, so this record is SHORT, not green - nothing was measured "
+            "past the signal and no verdict here covers it."
+            % (res["cancelledBy"],))
+        out("  the row is written locally and committed by nobody: git belongs to "
+            "the orchestrator, and commit-audit-state.py at the next "
+            "/audit:resume is what makes this durable.")
         code = E_FAIL
     if res["treeMutated"]:
         # Said even when the gate also failed: two different facts, and a reader
@@ -725,6 +814,66 @@ def render(res, out=print):
                "" if res["ranTotal"] is None
                else ", %d check(s) ran" % res["ranTotal"]))
     return code
+
+
+# --- stopping this process ----------------------------------------------------
+# A TERMINAL'S Ctrl-C DOES NOT REACH THE CHILDREN, by construction rather than by
+# accident: `_spawn_kwargs` puts every step in a session of its own, so the signal
+# arrives HERE and nowhere else. That trade is stated there - one teardown that is
+# the same on all three paths instead of one that happens to work on one of them -
+# and these two functions are the half of it that was never written. SIGTERM has
+# no default that could stand in either: with no handler the interpreter simply
+# dies, the detached group outlives it, and the run leaves neither a record nor a
+# stopped child.
+INTERRUPT_SIGNALS = ("SIGINT", "SIGTERM")
+
+
+def _raiser(word):
+    """A handler that raises the interrupt NAMING the signal it was installed for.
+
+    The name is bound at install time because that is the only place it is known
+    without a second table to keep in step - and a `cancelled` row owes its reader
+    the thing that stopped the run, which is the whole of that row's basis.
+
+    `KeyboardInterrupt` rather than an exception of this file's own: SIGINT already
+    raises it, so ONE arm in `run_gate` covers both signals instead of two that can
+    drift apart. It is a `BaseException`, which is what carries it past every
+    `except Exception` between here and there.
+    """
+    def _handler(_signum, _frame):
+        raise KeyboardInterrupt(word)
+    return _handler
+
+
+def _arm_interrupt():
+    """Install the handlers; return what they displaced, for `_disarm_interrupt`.
+
+    NOT GUARDED AGAINST `ValueError`. `signal.signal` refuses off the main thread,
+    and this file is an entry point - a caller that reaches that state has a
+    defect, and swallowing it would hide the one fact that matters here, which is
+    that the interrupt path is NOT armed.
+    """
+    previous = []
+    for name in INTERRUPT_SIGNALS:
+        sig = getattr(signal, name)
+        previous.append((sig, signal.signal(sig, _raiser(name))))
+    return previous
+
+
+def _disarm_interrupt(previous):
+    """Put back exactly what `_arm_interrupt` displaced.
+
+    A handler left installed outlives the call, and `main` is a function the
+    suites drive many times in one process - so this is a `finally`, not a
+    courtesy.
+
+    `None` is what `signal.signal` returns for a handler that was not set from
+    Python, and it cannot be handed back: `signal.signal(sig, None)` is a
+    TypeError. The default is restored in that case, which is the honest reading -
+    there is no Python handler to return to.
+    """
+    for sig, handler in previous:
+        signal.signal(sig, signal.SIG_DFL if handler is None else handler)
 
 
 def _record_run(project, args, res, source, commands, manifest, out=print):
@@ -836,7 +985,15 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
-    res = run_gate(project, commands, owns=owns, timeout=args.timeout)
+    # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
+    # signal actually lands in - a gate step is where the wall clock goes - and
+    # arming it wider would mean holding a handler over the recording below, where
+    # a second Ctrl-C should be free to stop a session that is already stopping.
+    previous = _arm_interrupt()
+    try:
+        res = run_gate(project, commands, owns=owns, timeout=args.timeout)
+    finally:
+        _disarm_interrupt(previous)
     res["gateSource"] = source
     res["subject"] = subject
     # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the

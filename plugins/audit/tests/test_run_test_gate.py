@@ -24,8 +24,10 @@ is an actual repository and the "mutation" is an actual file appearing in it.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -901,6 +903,362 @@ def _cases(check):
           _recorded_rows(evdir)[0].get("scope") == "phase"
           and "attempt" not in _recorded_rows(evdir)[0])
 
+    # --- a run that was STOPPED, not answered ------------------------------
+    # `cancelled` was a `testEvidence.status` member with NO WRITER: it sat in the
+    # schema enum, in both renderers and in two documents listing what gets
+    # written, while `run_status` could answer only the four words around it. The
+    # cost was not cosmetic - the negative-evidence policy's fourth commit point,
+    # the sweep at `/audit:resume`, existed to make an interrupted run durable and
+    # had nothing to sweep, because the local write it was meant to sweep was
+    # never built.
+    def _interrupt_second(_project, command, _timeout=None):
+        if "first" in command:
+            return 0, "all good\n", {}
+        raise KeyboardInterrupt("SIGTERM")
+
+    res_i = M.run_gate(tmp, [("a", "first"), ("b", "second")],
+                       runner=_interrupt_second)
+    check("ic1 a run a stop signal cut short is `cancelled`, and it carries the "
+          "steps that FINISHED and no others - the step that was in flight "
+          "reported nothing, so a row for it would be an invented entry in the "
+          "one record that exists to be true: %r"
+          % ((res_i.get("status"), [st["name"] for st in res_i["steps"]],
+              res_i.get("cancelledBy")),),
+          res_i.get("status") == M.CANCELLED
+          and [st["name"] for st in res_i["steps"]] == ["a"]
+          and res_i.get("cancelledBy") == "SIGTERM")
+
+    def _fail_then_interrupt(_project, command, _timeout=None):
+        if "first" in command:
+            return 1, "boom\n", {}
+        raise KeyboardInterrupt("SIGINT")
+
+    res_fi = M.run_gate(tmp, [("a", "first"), ("b", "second")],
+                        runner=_fail_then_interrupt)
+    check("ic2 THE PRECEDENCE DECISION: a run whose first step FAILED and whose "
+          "second was interrupted reads `failed`. A signal does not retract a "
+          "measurement that already completed, and spelling a certain red "
+          "`cancelled` would downgrade a finding a reader can act on into one "
+          "they have to reproduce - the same rule lc4 pins for a timeout. Both "
+          "facts survive, one level down: %r"
+          % ((res_fi.get("status"), res_fi.get("failed"),
+              res_fi.get("cancelledBy")),),
+          res_fi.get("status") == "failed" and res_fi.get("failed") == ["a"]
+          and res_fi.get("cancelledBy") == "SIGINT")
+
+    def _timeout_then_interrupt(_project, command, timeout=None):
+        if "first" in command:
+            return -9, "", {"outcome": M.TIMED_OUT, "timeoutSeconds": timeout}
+        raise KeyboardInterrupt("SIGINT")
+
+    res_ti = M.run_gate(tmp, [("a", "first"), ("b", "second")],
+                        runner=_timeout_then_interrupt)
+    check("ic3 ...and a step that TIMED OUT outranks the interrupt too, one "
+          "step weaker and for the same reason: a timeout is a finding with a "
+          "repair attached (raise the bound, or fix the hang), and `cancelled` "
+          "names none - it is a fact about the operator, not about the work: %r"
+          % ((res_ti.get("status"), res_ti.get("cancelledBy")),),
+          res_ti.get("status") == M.TIMED_OUT
+          and res_ti.get("cancelledBy") == "SIGINT")
+
+    def _cannot_then_interrupt(_project, command, _timeout=None):
+        if "first" in command:
+            return 127, "could not run: no such file\n", {"outcome": M.CANNOT_RUN}
+        raise KeyboardInterrupt("SIGINT")
+
+    res_ci = M.run_gate(tmp, [("a", "first"), ("b", "second")],
+                        runner=_cannot_then_interrupt)
+    check("ic4 ...and so does a runner that never STARTED, which points at "
+          "`meta.buildCommands` and at not burning a retry. Every word that "
+          "names a repair sits above the one that names none: %r"
+          % ((res_ci.get("status"), res_ci.get("cancelledBy")),),
+          res_ci.get("status") == M.CANNOT_RUN
+          and res_ci.get("cancelledBy") == "SIGINT")
+
+    def _skipped_then_interrupt(_project, command, _timeout=None):
+        if "first" in command:
+            return 0, ("check yaml.....................Skipped\n"
+                       "black.........................Skipped\n"), {}
+        raise KeyboardInterrupt("SIGINT")
+
+    res_zi = M.run_gate(tmp, [("a", "pre-commit run --files first.md"),
+                              ("b", "second")], runner=_skipped_then_interrupt)
+    check("ic5 THE OTHER END OF THAT PRECEDENCE: a completed step reporting "
+          "positively zero checks does NOT make an interrupted run `no-checks`. "
+          "A zero taken over a TRUNCATED run is not the 'the gate ran and "
+          "skipped everything' claim that word makes, and reading it as one "
+          "would sign off a gate that never finished: %r"
+          % ((res_zi.get("status"), res_zi.get("ranTotal")),),
+          res_zi.get("status") == M.CANCELLED and res_zi["ranTotal"] == 0)
+
+    res_ni = M.run_gate(tmp, [("lint", "true")], runner=_quiet)
+    check("ic6 SECOND DIRECTION, and it is the case that looks vacuous: a run "
+          "NOTHING stopped reports `cancelledBy` None and a real tree "
+          "comparison. It passes on the build that has no interrupt path at "
+          "all, and it is the only case that fails when the interrupt arm "
+          "becomes unconditional: %r"
+          % ((res_ni.get("cancelledBy"), res_ni.get("status"),
+              res_ni.get("treeMutated")),),
+          res_ni.get("cancelledBy") is None
+          and res_ni.get("status") == "passed"
+          and res_ni.get("treeMutated") == [])
+
+    check("ic7 ON AN INTERRUPT THE TREE COMPARISON IS NOT MADE EITHER, and the "
+          "value is None and not `[]`. `[]` is the one value that means KNOWN "
+          "CLEAN, and a killed child may still have been writing - this "
+          "repository has conflated null with empty three times and this is the "
+          "fourth place it could have: %r"
+          % ((res_i.get("treeMutated"), res_i.get("treeBasis")),),
+          res_i.get("treeMutated") is None and res_i.get("treeMutated") != []
+          and "interrupted" in (res_i.get("treeBasis") or ""))
+
+    def _interrupt_unnamed(_project, _command, _timeout=None):
+        raise KeyboardInterrupt()
+
+    res_un = M.run_gate(tmp, [("a", "first")], runner=_interrupt_unnamed)
+    check("ic8 an interrupt carrying no name still says so rather than writing "
+          "`cancelled` with nothing beside it. `run_gate` is a library function, "
+          "so a caller that never armed the handlers meets Python's own bare "
+          "KeyboardInterrupt - and a status whose basis is missing must say THAT "
+          "is what is missing: %r" % (res_un.get("cancelledBy"),),
+          res_un.get("status") == M.CANCELLED
+          and res_un.get("cancelledBy") == M.UNNAMED_SIGNAL)
+
+    check("ic9 ...and that run has NO steps at all, which is where the status "
+          "has to come from `cancelledBy` rather than from a step's `outcome`: "
+          "an interrupt lands on this process, not on one command, so there is "
+          "nothing for it to hang off: %r" % (res_un.get("steps"),),
+          res_un.get("steps") == [])
+
+    def _explodes(_project, _command, _timeout=None):
+        raise MemoryError("not an interrupt")
+
+    _ok_mem, _mem = _harness.attempt(M.run_gate, tmp, [("a", "first")],
+                                     runner=_explodes)
+    check("ic10 ...and something that is NOT an interrupt still escapes. The "
+          "catch is `KeyboardInterrupt` and not `BaseException` on purpose: "
+          "`_shell`'s wide arm is doing TEARDOWN, which every escape owes, while "
+          "this one assigns a MEANING, and calling a MemoryError `cancelled` "
+          "would be the silent mislabel the rest of this file exists to end: %r"
+          % (_mem,),
+          _ok_mem is False and "MemoryError" in str(_mem))
+
+    rl = []
+    code_i = M.render(res_i, out=rl.append)
+    rtext = "\n".join(rl)
+    check("ic11 render REFUSES a cancelled run, and the refusal is the point: "
+          "with no failed step and no mutation this run is exit 0 everywhere "
+          "else, so a missing arm here spells a stopped gate GREEN: exit=%r %r"
+          % (code_i, rtext[:60]),
+          code_i == M.E_FAIL and "GATE CANCELLED" in rtext
+          and "GATE GREEN" not in rtext and "SIGTERM" in rtext)
+
+    check("ic12 ...and it says the row is written locally and committed by "
+          "nobody. Git belongs to the orchestrator: a commit made while stopping "
+          "is a half-made one nobody reviewed, on the one path where nobody is "
+          "going to look - so the sentence names the sweep that makes it durable "
+          "instead: %r" % (rtext[-90:],),
+          "committed by nobody" in rtext and "commit-audit-state.py" in rtext
+          and "/audit:resume" in rtext)
+
+    rl2 = []
+    M.render(res_fi, out=rl2.append)
+    check("ic13 ...and a run that FAILED and was also stopped prints BOTH "
+          "sentences, from the fact rather than from the status word. "
+          "Precedence gives `failed` the one word; a reader who saw only that "
+          "would believe the remaining steps had their say: %r"
+          % ("\n".join(rl2)[:70],),
+          "GATE RED" in "\n".join(rl2) and "GATE CANCELLED" in "\n".join(rl2))
+
+    # --- the handlers that make a signal reachable at all ------------------
+    # `_spawn_kwargs` detaches every step into a session of its own, so a
+    # terminal's Ctrl-C arrives HERE and at nothing else - its docstring has named
+    # "the handler in `main`" as the other half of that trade since before one
+    # existed. SIGTERM had no default that could stand in: with no handler the
+    # interpreter dies, the detached group outlives it, and the run leaves neither
+    # a record nor a stopped child.
+    def _fires(handler, sig):
+        """What the installed handler raises, as a word.
+
+        NOT `_harness.attempt`: that catches `Exception`, and the whole point of
+        raising a `KeyboardInterrupt` is that it is a `BaseException` and travels
+        past every such arm between the handler and `run_gate`. Caught here by the
+        name the production code catches it by.
+        """
+        try:
+            handler(sig, None)
+        except KeyboardInterrupt as exc:
+            return str(exc)
+        return "no interrupt raised"
+
+    before_int = signal.getsignal(signal.SIGINT)
+    before_term = signal.getsignal(signal.SIGTERM)
+    armed = M._arm_interrupt()
+    try:
+        during_int = signal.getsignal(signal.SIGINT)
+        during_term = signal.getsignal(signal.SIGTERM)
+        _raised_i = _fires(during_int, signal.SIGINT)
+        _raised_t = _fires(during_term, signal.SIGTERM)
+    finally:
+        M._disarm_interrupt(armed)
+    check("ia1 arming installs a handler for each stop signal and disarming puts "
+          "back exactly what it displaced - `main` is a function the suites drive "
+          "many times in one process, so a handler left behind outlives its run: "
+          "%r" % ((during_int is not before_int,
+                   signal.getsignal(signal.SIGINT) is before_int),),
+          during_int is not before_int and during_term is not before_term
+          and signal.getsignal(signal.SIGINT) is before_int
+          and signal.getsignal(signal.SIGTERM) is before_term)
+
+    check("ia2 ...and each handler raises an interrupt NAMING its own signal. "
+          "Both ends are asserted because a handler stuck on one word is half "
+          "right and wholly useless - the name is the whole of a cancelled row's "
+          "basis: %r vs %r" % (_raised_i, _raised_t),
+          _raised_i == "SIGINT" and _raised_t == "SIGTERM")
+
+    M._disarm_interrupt([(signal.SIGTERM, None)])
+    restored = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, before_term)
+    check("ia3 a displaced handler of None is restored as the DEFAULT rather "
+          "than handed back: None is what `getsignal` answers for a handler that "
+          "was not set from Python, and `signal.signal(sig, None)` is a "
+          "TypeError - which would take the whole run down inside a `finally`: %r"
+          % (restored,),
+          restored == signal.SIG_DFL)
+
+    # --- a REAL signal, through a real process tree -------------------------
+    # THE CASE THAT CANNOT BE WRITTEN WITH A FIXTURE. Every case above drives the
+    # `runner` seam, which proves the decision and nothing about delivery: whether
+    # a signal sent to this program actually reaches `run_gate` as an interrupt,
+    # whether the detached group dies with it, and whether the row lands. So this
+    # one spawns the script, waits until a step is genuinely running, and signals
+    # it.
+    sigroot = _harness.fixture_root("run-test-gate-signal-")
+    os.makedirs(os.path.join(sigroot, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(sigroot, ".claude"))
+    with open(os.path.join(sigroot, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    # The marker carries the GRANDCHILD's pid, so the case can wait for the step
+    # to be genuinely under way instead of sleeping and hoping, and can then ask
+    # whether the interrupt took the whole group with it.
+    marker = os.path.join(sigroot, "grandchild.pid")
+    slow = "sleep 45 & echo $! > '%s'; wait" % (marker,)
+    smpath = os.path.join(sigroot, "docs", "audit", "audit-plan.json")
+    with open(smpath, "w") as fh:
+        json.dump({"meta": {"version": 3,
+                            "buildCommands": {"quick": "true", "slow": slow}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(sigroot, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["quick", "slow"],
+                   "tasks": [{"id": "P1.1", "title": "t",
+                              "status": "in_progress", "files": []}]}, fh)
+    subprocess.run(["git", "init", "-q", sigroot], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", sigroot, "add", "--", "docs", ".claude"],
+                   check=True, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", sigroot, "-c", "user.email=fixture@example.com",
+                    "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                    "commit", "-q", "-m", "base"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    head_before = subprocess.run(["git", "-C", sigroot, "rev-parse", "HEAD"],
+                                 stdout=subprocess.PIPE).stdout.decode().strip()
+
+    child = subprocess.Popen(
+        [sys.executable, _loader.script_path("run-test-gate.py"),
+         smpath, "P1", "--project-dir", sigroot, "--record"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        start_new_session=True)
+    grandchild, waited = None, 0.0
+    while waited < 40.0:
+        try:
+            with open(marker) as fh:
+                grandchild = int(fh.read().strip())
+            break
+        except Exception:
+            # Bounded, and the failure is REPORTED rather than skipped: a marker
+            # that never arrives leaves `grandchild` None and every case below
+            # goes red naming it.
+            time.sleep(0.05)
+            waited += 0.05
+    if grandchild is not None:
+        os.kill(child.pid, signal.SIGINT)
+    else:
+        child.kill()
+    child_out = (child.communicate(timeout=90)[0] or b"").decode("utf-8",
+                                                                 "replace")
+    alive = None
+    if grandchild is not None:
+        time.sleep(0.4)
+        try:
+            os.kill(grandchild, 0)
+            alive = True
+        except OSError:
+            alive = False
+        if alive:
+            _harness.attempt(os.kill, grandchild, 9)
+    sig_rows = _recorded_rows(os.path.join(sigroot, "docs", "audit", "evidence"))
+    sig_row = sig_rows[-1] if sig_rows else {}
+
+    check("is1 A REAL SIGINT, SENT TO A REAL RUN MID-STEP, LANDS A ROW: the "
+          "signal reaches `run_gate` as an interrupt, the run is recorded as "
+          "`cancelled`, and before this an interrupted run left no record at all "
+          "- which made the /audit:resume sweep a sweep with nothing to sweep: "
+          "rows=%r %r" % (len(sig_rows), sig_row.get("status")),
+          len(sig_rows) == 1 and sig_row.get("status") == M.CANCELLED
+          and sig_row.get("cancelledBy") == "SIGINT")
+
+    check("is2 ...and the row carries the step that FINISHED and not the one the "
+          "signal cut off. The list is short because the run was short, which is "
+          "the difference between a record and a reconstruction: %r"
+          % ([st.get("name") for st in (sig_row.get("steps") or [])],),
+          [st.get("name") for st in (sig_row.get("steps") or [])] == ["quick"])
+
+    check("is3 ...with `treeMutated` null and the basis naming the race. A "
+          "torn-down group may still have been writing, so `[]` - the one value "
+          "that means KNOWN CLEAN - would be a claim nobody measured: %r"
+          % ((sig_row.get("treeMutated"),
+              (sig_row.get("observations") or {}).get("treeBasis")),),
+          sig_row.get("treeMutated") is None
+          and "interrupted" in str((sig_row.get("observations")
+                                    or {}).get("treeBasis")))
+
+    check("is4 ...and the detached group went with it: the grandchild the step "
+          "backgrounded is DEAD. A survivor keeps writing into the tree this "
+          "record describes, which is the state in which every answer here is a "
+          "guess: pid=%r alive_after=%r" % (grandchild, alive),
+          grandchild is not None and alive is False)
+
+    check("is5 ...the process exits the code a stopped gate earns and SAYS it "
+          "was cancelled, rather than dying with a traceback and no verdict: "
+          "exit=%r %r" % (child.returncode, child_out[-70:]),
+          child.returncode == M.E_FAIL and "GATE CANCELLED" in child_out
+          and "GATE GREEN" not in child_out)
+
+    head_after = subprocess.run(["git", "-C", sigroot, "rev-parse", "HEAD"],
+                                stdout=subprocess.PIPE).stdout.decode().strip()
+    porcelain = subprocess.run(["git", "-C", sigroot, "status", "--porcelain"],
+                               stdout=subprocess.PIPE).stdout.decode()
+    check("is6 AND NOTHING WAS COMMITTED. The interrupt path writes and returns; "
+          "HEAD has not moved and the row is sitting in the working tree, which "
+          "is exactly the state `commit-audit-state.py` sweeps at the next "
+          "/audit:resume. A commit made while stopping is the half-made one "
+          "nobody reviews: %r" % (head_after == head_before,),
+          head_after == head_before and head_before
+          and "docs/audit/evidence" in porcelain)
+
+    shard_sig = json.loads(open(os.path.join(sigroot, "docs", "audit",
+                                             "phases", "P1.json")).read())
+    check("is7 ...while the PLAN did catch up locally: the pointer names the "
+          "cancelled run, so `/audit:status` refuses sign-off on it rather than "
+          "reading an absent pointer as nothing having happened: %r"
+          % (shard_sig.get("testEvidence"),),
+          (shard_sig.get("testEvidence") or {}).get("status") == M.CANCELLED
+          and (shard_sig.get("testEvidence") or {}).get("runId")
+          == sig_row.get("runId"))
 
 def _selftest():
     return _harness.run(_cases)

@@ -225,6 +225,14 @@ def row_for(project, result, scope, ids, identity, published=None):
             "coverageBasis": result.get("coverageBasis"),
         },
     }
+    # THE BASIS FOR THE ONE STATUS WORD THAT HAS NO OTHER. `failed` is read back
+    # off the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
+    # `no-checks` off `ranTotal` -- but a run stopped by a signal keeps only the
+    # steps that FINISHED, so nothing else on the row would say what happened to
+    # the rest. Written only when there is something to write: a key present on
+    # every row could not be told from one a build does not produce.
+    if result.get("cancelledBy") is not None:
+        row["cancelledBy"] = str(result["cancelledBy"])
     for key in ("taskId", "phaseId"):
         if ids.get(key) is not None:
             row[key] = str(ids[key])
