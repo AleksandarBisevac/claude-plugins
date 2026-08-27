@@ -421,6 +421,23 @@ fi
 #R
 #R CAPTURE FOLLOWS THE BUMP. Capturing first and bumping afterwards invalidates
 #R every picture and the shutter runs twice. That is not a hypothetical.
+#R
+#R AND ONE STEP THAT IS NOT A FOLLOWER, because it happens AFTER the push rather
+#R than before it: a Release is created FOR a tag, so once `v<version>` is pushed,
+#R
+#R   5. the GitHub Release for the tag you just pushed.
+#R        gh release create v<version> --title v<version> --notes-file <notes>
+#R        ...with the notes taken from that version's CHANGELOG.md section.
+#R
+#R A tag is a git object; a Release is the page a reader lands on, and the README's
+#R fetch pins make the tag a published claim. Nothing in this procedure created one
+#R for a long time, so the Releases page drifted until it presented a
+#R long-superseded version as Latest while the README pinned a far newer tag
+#R (F222). The row below asks the REMOTE whether the newest published tag has a
+#R Release and whether Latest names it - and at this moment that tag is the
+#R PREVIOUS release, so it is the drift detector rather than a check of the release
+#R you are about to cut. It needs the network and says so when it cannot ask;
+#R "could not ask" is never printed as "clean".
 if [ "$RELEASE" -eq 1 ]; then
   echo "verify: release preflight"
   version=$(python3 -c 'import json,io;print(json.load(io.open("plugins/audit/.claude-plugin/plugin.json",encoding="utf-8"))["version"])')
@@ -462,6 +479,11 @@ PYEOF
   # number stales, which is why they sit below the numbered list instead of in it.
   run "CHANGELOG has a [$version] section" changelog_has_section
   run "tag v$version does not exist yet" tag_is_free
+  # THE ONLY GATE IN THIS FILE THAT ASKS A REMOTE, which is why it is here and not
+  # in the per-commit set above: what it reads changes once per release, and CI has
+  # no business calling GitHub's API on every push to learn it.
+  run "the newest published tag has a Release" \
+    python3 tools/check-release-published.py
 fi
 
 # --- the whole truth, at once --------------------------------------------------

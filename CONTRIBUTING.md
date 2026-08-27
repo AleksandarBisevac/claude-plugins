@@ -406,6 +406,36 @@ commit. Verify that commit specifically — `gh workflow run ci.yml --ref main`
 addresses a run by ref, so a commit whose push never produced one can still be
 checked without an empty commit (which changes the sha you would tag).
 
+**The push is not the last step: create the GitHub Release for the tag.** A
+Release is created *for* a tag, so this is the one part of the procedure that
+comes after `git push --follow-tags` rather than before it — which is exactly
+why it sat outside the follower list above and why nothing noticed it going
+undone. A tag is a git object a reader has to know to look for; a Release is the
+page GitHub shows them, and the README's `curl` pins make the tag a published
+claim. Nothing here created one for a long time, and the Releases page drifted
+until it presented a long-superseded version as Latest while the README told
+readers to fetch from a far newer tag (F222). The notes come from that version's
+`CHANGELOG.md` section, which is what every backfilled entry carries:
+
+```bash
+gh release create v<version> --title v<version> --notes-file <that version's section>
+python3 tools/check-release-published.py
+```
+
+**That check belongs to the release set and to nothing else.** It asks a remote,
+which no other gate here does, so a plain `tools/verify.sh` never needs the
+network for it and `ci.yml` never runs it — what it reads changes once per
+release, and a repository's CI has no business calling GitHub's API on every push
+to learn it. `tools/verify.sh --release` runs it at *preflight*, where the newest
+published tag is still the **previous** release: that makes it the drift detector
+rather than a check of the release being cut, which is the only thing it can
+honestly be before the tag exists. And **it refuses rather than passing when it
+cannot ask** — no `gh`, no authentication, no network, a rate limit, an origin
+that is not a GitHub remote, and any failure shape it does not recognise are each
+a named refusal with a non-zero exit and a closing line saying nothing was
+checked. That is `check-committed-pii.py`'s `domain-unavailable` rule, applied to
+a question that has to leave the machine.
+
 **A tag that has been pushed is never moved or deleted** — the `v0.2.0` tag/main
 mismatch is documented in the changelog and fixed forward, not rewritten. The
 rule is about what other people may already have fetched, so it starts at the

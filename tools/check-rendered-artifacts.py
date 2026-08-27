@@ -67,7 +67,6 @@ import calendar
 import io
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -390,7 +389,8 @@ def drifted(artifacts=None, generated=None):
                                  "this is real drift"
                             % (len(committed), len(fresh))))
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(work)
     return out
 
 
@@ -625,7 +625,8 @@ def _cases(check):
         _ra_unreadable = copy_check_missing(os.path.join(_probe_root,
                                                          "no-such-root"))
     finally:
-        shutil.rmtree(_probe_root, ignore_errors=True)
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_probe_root)
     check("ra6 a render is handed ABSOLUTE paths - the relative pair this replaces "
           "was rejoined to REPO by the callee, which is a no-op under the repo and "
           "a ValueError across drives: %r" % ((_ra_manifest, _ra_project),),
@@ -856,7 +857,8 @@ def _head_cases(check):
               and _absent["compared"] == 0
               and "is not in HEAD" in _absent["unlooked"][0][1])
     finally:
-        shutil.rmtree(root, ignore_errors=True)
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(root)
 
     # A DIRECTORY THAT IS NOT A REPOSITORY, allocated rather than named, for the
     # reason the probe root above `ra6` is allocated: a fixed name is a name another
@@ -866,7 +868,8 @@ def _head_cases(check):
     try:
         _refused = uncommitted(_no_git, subjects=[_HEAD_FX_REL, _HEAD_FX_ABSENT])
     finally:
-        shutil.rmtree(_no_git, ignore_errors=True)
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_no_git)
     check("ra19 a tree git cannot be asked about produces one refusal per page and "
           "NO comparisons - and the reason is asked once, so a single cause does not "
           "arrive wearing as many findings as the table is long: %r" % (_refused,),

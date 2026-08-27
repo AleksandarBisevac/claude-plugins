@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: print manifest status — phases, tasks, bugs, the ready-now list and what each pending task is waiting on; or, with --gate, turn that same state into a CI pass/fail verdict over conditions you pick with --fail-on. Read-only, no locks, no mutations.'
-argument-hint: '[--gate] [--fail-on <c1,c2,...>] [--json] [--color auto|always|never]'
+argument-hint: '[--gate] [--fail-on <c1,c2,...>] [--phase <id>] [--json] [--color auto|always|never]'
 allowed-tools: Bash
 ---
 
@@ -37,6 +37,15 @@ is in the output already.
 
 Pass `$ARGUMENTS` through unchanged. `--json` emits the machine-readable rollup
 instead, for CI or another tool.
+
+`--phase <id>` scopes the **human render** to one phase - the table lists that phase
+alone, and the render says so on a line of its own. **Totals stay whole-plan**: the
+overall line, the usage line and the bug counts are the project's, not the phase's,
+because a phase view that silently rescoped them would misreport the project. **And it
+does not scope the other modes** - `--gate` evaluates its conditions over the whole
+manifest and `--json` emits the whole rollup, whatever `--phase` says, so
+`--phase P3 --gate` still gates on a task in P7. That last reading has already been got
+wrong here. An id no phase carries is a usage error (exit 2) naming the ids there are.
 
 ## Gate mode (`--gate`, `--fail-on`)
 
