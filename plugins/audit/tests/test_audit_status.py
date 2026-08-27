@@ -1259,8 +1259,13 @@ def _cases(_record):
         json.dump(_fixture(), fh)
     _m_dv = _mio.load_manifest(dpath)
     _f_dv, _w_dv = vm.validate(_m_dv)
+    # The boundary is part of the payload now, so it is part of what dv1 pins.
+    # Computed HERE through the same door the command uses rather than pasted as
+    # a literal: a case comparing the payload against a hand-written block would
+    # go green on a command that stopped reading the ledger at all.
     _exp_dv = json.dumps(M.rollup(_m_dv, _f_dv, _w_dv,
-                                usage=M.usage_summary(_m_dv, dpath)),
+                                usage=M.usage_summary(_m_dv, dpath),
+                                boundary=M.boundary_for(dpath)),
                          indent=2) + "\n"
     _c_dj, _o_dj = _cli_out([dpath, "--json"])
     check("dv1 bare --json output is byte-identical to the pure rollup dump - "
@@ -1476,6 +1481,28 @@ def _cases(_record):
                                   "at": "2026-01-01T00:00:00Z"}
         return {"meta": {"version": 2}, "phases": [ph]}
 
+    def _ev_recording(plan, since="2026-01-01T00:00:00Z",
+                      finished="2026-02-01T00:00:00Z"):
+        """The same plan, with the recorder already in place when it finished.
+
+        Without this the gate cases below ask nothing: a plan stating nothing
+        about when recording began, beside a ledger with nothing in it, has no
+        boundary at all - and every gap in it is then EXCUSED, correctly and not
+        at all what ev10 and ev21 are about. Stamping `evidenceSince` and dating
+        the DONE subjects after it puts those cases back on their own question,
+        and bd1 below is the case that owns the excused shape.
+        """
+        plan["meta"]["evidenceSince"] = {
+            "at": since, "runId": "R-first",
+            "basis": "fixture: the first run this plan recorded"}
+        for ph in plan["phases"]:
+            if ph.get("status") == "done":
+                ph["mergedAt"] = finished
+            for t in ph["tasks"]:
+                if t.get("status") == "done":
+                    t["completedAt"] = finished
+        return plan
+
     def _ev_row(text, tid):
         """The task's line in the phase table, found through its status MARKER.
 
@@ -1555,11 +1582,13 @@ def _cases(_record):
     # and the phase sign-off is not, which is the shape ev21 is about.
     fd, _ev_phgap = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(_ev_manifest([("PE.1", "done", "passed")]), fh)
+        json.dump(_ev_recording(
+            _ev_manifest([("PE.1", "done", "passed")])), fh)
     fd, _ev_gap = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(_ev_manifest([("PE.1", "done", None),
-                                ("PE.2", "pending", None)]), fh)
+        json.dump(_ev_recording(
+            _ev_manifest([("PE.1", "done", None),
+                          ("PE.2", "pending", None)])), fh)
     try:
         _c_er, _o_er, _e_er = _cli_io([_ev_red, "--gate", "--fail-on",
                                        "failing-tests"])
@@ -1586,7 +1615,9 @@ def _cases(_record):
                                        "no-test-evidence"])
         check("ev10 --fail-on no-test-evidence exits 1 naming the DONE task and "
               "not the pending one, and the line is worded as an ABSENCE - `no "
-              "run recorded`, never a failure",
+              "run recorded`, never a failure. Both subjects finished AFTER the "
+              "boundary this plan states, so the recorder existed for them and "
+              "the excuse does not reach either",
               _c_em == 1 and "GATE FAILED: no-test-evidence" in _o_em
               and "no run recorded: phase PE, task PE.1" in _o_em
               and "PE.2" not in _o_em,
@@ -1725,6 +1756,182 @@ def _cases(_record):
           in _ev_kept_txt.splitlines()
           and "     [x] P1.1  first task  Done    -      -           passed  "
               "abc1234" in _ev_kept_txt.splitlines())
+
+
+    # --- (bd) the evidence boundary, driven end to end -------------------------
+    # Plans on disk, each in its own project directory with its own evidence
+    # directory beside it, so `boundary_for` resolves a REAL ledger instead of
+    # being handed a block. CLAUDE_PROJECT_DIR is pinned per plan and restored
+    # afterwards: left to the ambient environment every one of these resolves the
+    # record of whatever repository the suite happens to be running inside, and
+    # the case would then be measuring that repository.
+    import shutil as _sh_bd
+
+    _bd_root = tempfile.mkdtemp(prefix="audit-status-boundary-")
+    _bd_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        def _bd_project(name, tasks, since=None, ledger=None, merged=None,
+                        torn=False):
+            """A plan of DONE, unevidenced subjects in its own project directory.
+
+            `tasks` is `(id, completedAt or None)`; `since` writes
+            `meta.evidenceSince`; `ledger` writes a recorded run into the
+            evidence directory beside the plan; `torn` adds a line nothing can
+            parse. The two sources are optional and independent, which is the
+            property the boundary is built on.
+            """
+            proj = os.path.join(_bd_root, name)
+            os.makedirs(os.path.join(proj, "evidence"))
+            plan = {"meta": {"version": 2},
+                    "phases": [{"id": "PE", "title": "Evidence",
+                                "status": "done", "mergedAt": merged,
+                                "tasks": [{"id": tid, "title": "t",
+                                           "status": "done",
+                                           "completedAt": done}
+                                          for tid, done in tasks]}]}
+            if since is not None:
+                plan["meta"]["evidenceSince"] = {
+                    "at": since, "runId": "R-key",
+                    "basis": "fixture: the first run this plan recorded"}
+            path = os.path.join(proj, "audit-plan.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(plan, fh)
+            if ledger is not None or torn:
+                with open(os.path.join(proj, "evidence", "2026-06.w.jsonl"),
+                          "w", encoding="utf-8") as fh:
+                    if ledger is not None:
+                        fh.write(json.dumps({"runId": "R-ledger", "ts": ledger,
+                                             "scope": "task",
+                                             "status": "passed"}) + "\n")
+                    if torn:
+                        fh.write("{not json at all\n")
+            return proj, path
+
+        def _bd_gate(proj, path):
+            """`--gate --fail-on no-test-evidence` over one plan, project pinned."""
+            os.environ["CLAUDE_PROJECT_DIR"] = proj
+            return _cli_io([path, "--gate", "--fail-on", "no-test-evidence"])
+
+        _bd_p1, _bd_f1 = _bd_project("nothing-recorded",
+                                     [("PE.1", "2026-05-01T00:00:00Z")])
+        _bd_c1, _bd_o1, _bd_e1 = _bd_gate(_bd_p1, _bd_f1)
+        check("bd1 A PLAN WITH NO BOUNDARY AT ALL passes, and says why. No "
+              "`evidenceSince`, an empty ledger beside it, so nothing in it "
+              "could have carried evidence - which is the whole state a "
+              "mid-flight adopter is in on day one. The basis is PRINTED, "
+              "because a gate that passed for a reason nobody can read is a "
+              "gate nobody can audit: %r" % (_bd_o1.strip()[:200],),
+              _bd_c1 == 0 and "GATE PASSED: no-test-evidence" in _bd_o1
+              and "nothing says when recording began" in _bd_o1
+              and "phase PE, task PE.1" in _bd_o1 and _bd_e1 == "")
+        _bd_p2, _bd_f2 = _bd_project("pre-boundary",
+                                     [("PE.1", "2026-05-01T00:00:00Z")],
+                                     ledger="2026-06-02T15:38:00Z",
+                                     merged="2026-05-01T00:00:00Z")
+        _bd_c2, _bd_o2, _bd_e2 = _bd_gate(_bd_p2, _bd_f2)
+        check("bd2 PRE-BOUNDARY DONE WORK is excused off a REAL ledger row - no "
+              "key in the plan, the boundary derived from the earliest run this "
+              "checkout actually holds - and the run's own stamp is in the "
+              "sentence, so the excuse names the evidence it rests on: %r"
+              % (_bd_o2.strip()[:200],),
+              _bd_c2 == 0 and "GATE PASSED: no-test-evidence" in _bd_o2
+              and "2026-06-02T15:38:00Z" in _bd_o2
+              and "phase PE, task PE.1" in _bd_o2)
+        _bd_p3, _bd_f3 = _bd_project("post-boundary",
+                                     [("PE.1", "2026-07-01T00:00:00Z")],
+                                     ledger="2026-06-02T15:38:00Z",
+                                     merged="2026-07-01T00:00:00Z")
+        _bd_c3, _bd_o3, _bd_e3 = _bd_gate(_bd_p3, _bd_f3)
+        check("bd3 POST-BOUNDARY DONE WORK WITH NO POINTER still fails, over "
+              "the SAME ledger bd2 was excused by. The recorder existed when "
+              "this work finished, so its absence is a lapse rather than an "
+              "impossibility - and nothing is excused, which is what stops bd2 "
+              "reading as 'the boundary excuses everything': %r"
+              % (_bd_o3.strip()[:200],),
+              _bd_c3 == 1 and "GATE FAILED: no-test-evidence" in _bd_o3
+              and "no run recorded: phase PE, task PE.1" in _bd_o3
+              and "excused" not in _bd_o3)
+        _bd_p4, _bd_f4 = _bd_project("undated", [("PE.1", None)],
+                                     ledger="2026-06-02T15:38:00Z",
+                                     merged="2026-05-01T00:00:00Z")
+        _bd_c4, _bd_o4, _bd_e4 = _bd_gate(_bd_p4, _bd_f4)
+        check("bd4 a DONE SUBJECT THE PLAN CANNOT DATE fails in its own "
+              "sentence: the repair is to set the stamp, not to run the gate, "
+              "and a reader under a red build must be able to tell those apart "
+              "without opening the manifest. The phase beside it IS dated and "
+              "IS excused in the same output, so both halves are on screen at "
+              "once: %r" % (_bd_o4.strip()[:240],),
+              _bd_c4 == 1 and "cannot date" in _bd_o4 and "task PE.1" in _bd_o4
+              and "excused (phase PE)" in _bd_o4
+              and "no run recorded" not in _bd_o4)
+        _bd_p5, _bd_f5 = _bd_project("both-sources",
+                                     [("PE.1", "2026-05-15T00:00:00Z")],
+                                     since="2026-06-02T15:38:00Z",
+                                     ledger="2026-05-01T00:00:00Z",
+                                     merged="2026-04-01T00:00:00Z")
+        _bd_c5, _bd_o5, _bd_e5 = _bd_gate(_bd_p5, _bd_f5)
+        check("bd5 TWO SOURCES, AND THE EARLIER ONE WINS. The key states a "
+              "later moment than the earliest run in the ledger, and PE.1 sits "
+              "between them: excused under the key alone, and not excused under "
+              "the boundary, because an excuse is what a wrong answer here "
+              "GIVES AWAY. The phase, older than both, is still excused - so "
+              "this is `min` and not 'the ledger replaced the key': %r"
+              % (_bd_o5.strip()[:240],),
+              _bd_c5 == 1 and "no run recorded: task PE.1" in _bd_o5
+              and "excused (phase PE)" in _bd_o5
+              and "2026-05-01T00:00:00Z" in _bd_o5)
+        _bd_p6, _bd_f6 = _bd_project("torn-ledger",
+                                     [("PE.1", "2026-05-01T00:00:00Z")],
+                                     ledger="2026-06-02T15:38:00Z", torn=True,
+                                     merged="2026-05-01T00:00:00Z")
+        _bd_c6, _bd_o6, _bd_e6 = _bd_gate(_bd_p6, _bd_f6)
+        check("bd6 A SOURCE THAT COULD NOT BE ASKED FAILS THE EXCUSE IT "
+              "SUPPORTS. This is bd2's plan and bd2's ledger with one torn line "
+              "added: the lost row may name an EARLIER run, which would move the "
+              "boundary back and un-excuse work bd2 waved through - so the gate "
+              "refuses instead of passing quietly. bd2 is the case that fails if "
+              "this starts firing on every ledger: %r" % (_bd_o6.strip()[:240],),
+              _bd_c6 == 1 and "GATE FAILED: no-test-evidence" in _bd_o6
+              and "cannot be trusted" in _bd_o6
+              and "could not be parsed" in _bd_o6
+              and "no run recorded" not in _bd_o6)
+        os.environ["CLAUDE_PROJECT_DIR"] = _bd_p3
+        _bd_cj, _bd_oj, _bd_ej = _cli_io([_bd_f3, "--json", "--gate",
+                                          "--fail-on", "no-test-evidence"])
+        _bd_blob = _parses(_bd_oj) or {}
+        check("bd7 the --json payload carries the boundary WHOLE - the moment, "
+              "both sources named apart, the basis and `unknown` - and the "
+              "classified subject lists beside it, so the report and the panel "
+              "render the same answer the gate acted on rather than each "
+              "deriving one. stdout is still exactly one document: %r"
+              % (_bd_oj[-60:],),
+              _bd_cj == 1
+              and (_bd_blob.get("evidenceBoundary") or {}).get("at")
+              == "2026-06-02T15:38:00Z"
+              and _bd_blob["evidenceBoundary"]["sources"]
+              == {"key": None, "ledger": "2026-06-02T15:38:00Z"}
+              and _bd_blob["evidenceBoundary"]["unknown"] == []
+              and [r["id"] for r in _bd_blob["testEvidence"]["sinceBoundary"]]
+              == ["PE", "PE.1"]
+              and _bd_blob["testEvidence"]["beforeBoundary"] == []
+              and "GATE FAILED" in _bd_ej)
+        os.environ["CLAUDE_PROJECT_DIR"] = _bd_p2
+        _bd_cd, _bd_od, _bd_ed = _cli_io([_bd_f2, "--gate"])
+        check("bd8 SECOND DIRECTION on the flag: the DEFAULT gate reads no "
+              "boundary sentence at all. The excuse note is emitted only when "
+              "somebody asked for the condition, so a pipeline that never set "
+              "--fail-on sees the output it has always seen - and _bd_f2 is the "
+              "plan bd2 printed a note for, which is what makes this a "
+              "suppression rather than an empty fixture: %r"
+              % (_bd_od.strip()[:120],),
+              _bd_cd == 0 and "excused" not in _bd_od
+              and "GATE PASSED" in _bd_od and _bd_ed == "")
+    finally:
+        if _bd_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _bd_env
+        _sh_bd.rmtree(_bd_root, ignore_errors=True)
 
 
 def _selftest():

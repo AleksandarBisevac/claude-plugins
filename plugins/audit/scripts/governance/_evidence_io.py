@@ -771,6 +771,67 @@ def evidence_boundary(project, manifest_path, config=None):
     return boundary_of(block, earliest_recorded(read["rows"]), unknown=unknown)
 
 
+def project_config_for(manifest_path, project_dir=None):
+    """`(project, config)` for this module, pointed at THIS manifest's record.
+
+    `manifestPath` is overridden with the file actually being read, and that is
+    not a shortcut. A surface reads the manifest it was HANDED, which is not
+    always the one a project's config names -- `examples/acme-store/audit-plan.json`
+    inside this very repository is exactly that case -- and resolving the record
+    off the config's manifest would attribute one plan's runs to another plan's
+    tasks. That is the failure `usage_ledger.find_ledger_dir` was written to
+    avoid, one directory over.
+
+    IT MATTERS MOST TO THE BOUNDARY, which is why this sits here rather than in
+    the report where it was written. Reading the wrong plan's ledger USUALLY only
+    moves the boundary earlier -- `min` over more rows -- and an earlier boundary
+    excuses less, loudly. But missing this plan's ledger entirely leaves nothing
+    to date the boundary with, and a boundary of None excuses EVERYTHING. So the
+    gate needs the same answer the report already had, and two expressions of it
+    would be two ledgers for one plan.
+
+    `evidence.dir` is deliberately left alone: a project that declares one has
+    said where its record lives, and this has no better answer than the
+    declaration.
+    """
+    project = (project_dir or os.environ.get("CLAUDE_PROJECT_DIR")
+               or os.path.dirname(os.path.abspath(manifest_path)) or ".")
+    try:
+        config = dict(_journal_io.load_config(project) or {})
+    except Exception:
+        config = {}
+    try:
+        config["manifestPath"] = os.path.relpath(
+            os.path.abspath(manifest_path), os.path.abspath(project))
+    except Exception:
+        pass
+    return project, config
+
+
+def boundary_for(manifest_path, project_dir=None):
+    """The boundary for the plan at `manifest_path`, wherever that plan sits.
+
+    The one line a caller above layer 2 writes to hand `rollup` a boundary. It
+    resolves the record the way every other reader of this module does and then
+    asks the same `evidence_boundary`, so the gate's boundary and the report's
+    ledger cannot come from two different directories.
+
+    NEVER RAISES, AND NEVER ANSWERS "no boundary" BY INVENTING ONE. A read that
+    fell over comes back as a block whose `unknown` names it, because a source
+    that could not be ASKED may have held an EARLIER moment: calling it absent
+    moves the boundary later and widens the excuse in silence, while naming it
+    leaves the caller holding a boundary it can refuse to excuse anything on.
+    """
+    try:
+        project, config = project_config_for(manifest_path, project_dir)
+        return evidence_boundary(project, manifest_path, config=config)
+    except Exception as exc:
+        return boundary_of(None, None, unknown=[
+            "the evidence boundary could not be read (%s), so neither %s nor "
+            "the ledger could be asked when recording began"
+            % (exc, SINCE_KEY)])
+
+
 def _since_from_rows(rows):
     """`{"at", "runId"}` for the earliest recorded run, or None when there is none.
 

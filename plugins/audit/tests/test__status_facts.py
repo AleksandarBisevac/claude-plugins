@@ -29,6 +29,12 @@ import _status_facts as M                          # noqa: E402
 # the report's own call, and a rank compared with itself could not fail.
 import _priority as _prio                          # noqa: E402
 import _report_html as _rhtml                      # noqa: E402
+# The boundary blocks the `eb` cases classify against are built by the module
+# that BUILDS them in production, never hand-written here. A fixture typed out
+# beside the reader encodes the reader's idea of the shape, so a `sources` key
+# that moved would leave every case green while the gate read `None` off a dict
+# that no longer carried it.
+import _evidence_io as _ebio                       # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -70,7 +76,12 @@ def _cases(check):
                "areas_of", "effective_bug_status", "TERMINAL", "rollup",
                "unmet_refs", "evaluate_gate", "budget_breaches",
                "NO_SIGN_OFF_EVIDENCE", "KNOWN_EVIDENCE", "evidence_status",
-               "evidence_rows", "test_evidence_summary", "evidence_subjects")
+               "evidence_rows", "test_evidence_summary", "evidence_subjects",
+               # The boundary's half. `evidence_gap` and `GAP_CLASSES` are NOT
+               # here: the command does not alias them, deliberately, and a
+               # shared-name case that named them would be asserting an alias
+               # nothing calls rather than that there is one implementation.
+               "unevidenced", "GAP_BEFORE", "GAP_SINCE", "GAP_UNDATED")
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
     check("b1 audit-status.py re-exports all %d shared names as THIS module's "
@@ -349,9 +360,12 @@ def _cases(check):
     _te_empty = M.rollup({"meta": {"version": 2}, "phases": []}, [], [])
     check("te14 the block is ALWAYS in the rollup and always whole, even over a "
           "plan with no phases - an empty `failing` list and a block nobody "
-          "computed must not look alike to a consumer",
+          "computed must not look alike to a consumer. The boundary classes are "
+          "in the list SPELLED OUT, so adding or dropping one is a deliberate "
+          "edit here rather than a shape that changes under a consumer",
           sorted(_te_empty["testEvidence"])
-          == ["byStatus", "failing", "missingOnDone", "recorded", "unrecognised"]
+          == ["beforeBoundary", "byStatus", "failing", "missingOnDone",
+              "recorded", "sinceBoundary", "undated", "unrecognised"]
           and _te_empty["testEvidence"]["recorded"] == 0,
           repr(_te_empty.get("testEvidence")))
     # THROUGH `attempt` FROM HERE DOWN: both cases are about a call NOT raising, and
@@ -401,7 +415,8 @@ def _cases(check):
           "later is accepted without an edit here, and `recorded` cannot be "
           "written into it by hand",
           sorted(M.EVIDENCE_SUBJECT_KEYS)
-          == ["failing", "missingOnDone", "unrecognised"]
+          == ["beforeBoundary", "failing", "missingOnDone", "sinceBoundary",
+              "undated", "unrecognised"]
           and all(M.evidence_subjects(_te_new, k) is _te_new["testEvidence"][k]
                   for k in M.EVIDENCE_SUBJECT_KEYS)
           and [(r["id"], r["status"])
@@ -456,6 +471,258 @@ def _cases(check):
           and M.evaluate_gate(_te_ph_run_s, ("no-test-evidence",)) == []
           and _te_ph_run_s["testEvidence"]["recorded"] == 1,
           repr(_te_ph_run_s["testEvidence"]))
+
+    # --- (eb) the evidence boundary: which gaps COULD have been recorded ------
+    # `no-test-evidence` asked whether finished work is backed by a recorded run
+    # and never whether it COULD have been, so a plan adopted mid-flight failed
+    # on every subject finished before the recorder existed. The boundary is the
+    # earliest moment anything says recording existed at all, and it arrives
+    # here FROM A CALLER: `_evidence_io` is this module's layer-mate, a
+    # layer-mate may not be imported, and `rollup` therefore takes the block the
+    # way it already takes `usage`.
+    _EB_AT = "2026-06-02T15:38:00Z"
+    _eb_asked = _ebio.boundary_of({"at": _EB_AT}, None)
+    _eb_silent = _ebio.boundary_of(None, None)
+
+    def _eb_plan(tasks, merged=None):
+        """A one-phase plan of DONE subjects that record NOTHING.
+
+        `tasks` is `(id, completedAt or None)`. No subject carries a pointer, so
+        every one of them is a gap and the only question left is which side of
+        the boundary it sits on.
+        """
+        rows = [{"id": tid, "title": "t", "status": "done",
+                 "completedAt": done} for tid, done in tasks]
+        return {"meta": {"version": 2},
+                "phases": [{"id": "PE", "title": "e", "status": "done",
+                            "mergedAt": merged, "tasks": rows}]}
+
+    def _eb_ids(summary, key):
+        return [r.get("id") for r in M.evidence_subjects(summary, key)]
+
+    _eb_pre = _eb_plan([("PE.1", "2026-05-01T00:00:00Z")],
+                       merged="2026-05-01T00:00:00Z")
+    _eb_post = _eb_plan([("PE.1", "2026-07-01T00:00:00Z")],
+                        merged="2026-07-01T00:00:00Z")
+    _eb_unasked_s = M.rollup(_eb_post, [], [])
+    check("eb1 NOBODY ASKED and NOTHING WAS RECORDED are different answers. "
+          "With no boundary handed in, the done subjects still trip the "
+          "condition and land in `%s`, nothing is excused, and the rollup "
+          "carries no `evidenceBoundary` key at all - the seam `usage` already "
+          "sits on, so a consumer reads 'no key' as 'nobody computed one' "
+          "without a second probe" % (M.GAP_SINCE,),
+          M.evaluate_gate(_eb_unasked_s, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and _eb_ids(_eb_unasked_s, M.GAP_SINCE) == ["PE", "PE.1"]
+          and _eb_ids(_eb_unasked_s, M.GAP_BEFORE) == []
+          and _eb_ids(_eb_unasked_s, M.GAP_UNDATED) == []
+          and "evidenceBoundary" not in _eb_unasked_s,
+          repr(_eb_unasked_s.get("testEvidence")))
+    _eb_silent_s = M.rollup(_eb_post, [], [], boundary=_eb_silent)
+    # BOUND, NOT INDEXED INSIDE THE CHECK. A rollup that stopped carrying the key
+    # raises out of a `check()` argument and takes every case after it with it -
+    # te15's hazard - so the block is read once here and judged by isinstance,
+    # which fails THIS case by name and lets the rest run.
+    _eb_silent_b = _eb_silent_s.get("evidenceBoundary")
+    check("eb2 ...and a boundary that WAS asked and answers nothing excuses "
+          "everything: no key states a moment and no run is readable, so no "
+          "work in this plan could have carried evidence. The gate passes and "
+          "the basis travels in the payload to say why - a null with no "
+          "sentence beside it would leave the reader to infer the reason",
+          M.evaluate_gate(_eb_silent_s, ("no-test-evidence",)) == []
+          and _eb_ids(_eb_silent_s, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and _eb_ids(_eb_silent_s, M.GAP_SINCE) == []
+          and isinstance(_eb_silent_b, dict)
+          and _eb_silent_b.get("at") is None
+          and "no run is readable" in str(_eb_silent_b.get("basis")),
+          repr(_eb_silent_b))
+    _eb_mix = _eb_plan([("PE.1", "2026-05-01T00:00:00Z"),
+                        ("PE.2", "2026-07-01T00:00:00Z")],
+                       merged="2026-05-01T00:00:00Z")
+    _eb_mix_s = M.rollup(_eb_mix, [], [], boundary=_eb_asked)
+    check("eb3 pre-boundary work is EXCUSED and post-boundary work in the SAME "
+          "plan is not - one fixture, both directions, which is what stops "
+          "this reading as 'the boundary excuses everything' or as 'it excuses "
+          "nothing'",
+          _eb_ids(_eb_mix_s, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and _eb_ids(_eb_mix_s, M.GAP_SINCE) == ["PE.2"]
+          and M.evaluate_gate(_eb_mix_s, ("no-test-evidence",))
+          == ["no-test-evidence"],
+          repr(_eb_mix_s["testEvidence"]))
+    _eb_on_s = M.rollup(_eb_plan([("PE.1", _EB_AT)], merged=_EB_AT), [], [],
+                        boundary=_eb_asked)
+    check("eb4 the boundary MOMENT is inside recording, not before it: a "
+          "subject finished at the very instant of the earliest evidence is "
+          "NOT excused. `<` and `<=` disagree on this fixture and nowhere "
+          "else, which is why it is written as its own case",
+          _eb_ids(_eb_on_s, M.GAP_BEFORE) == []
+          and _eb_ids(_eb_on_s, M.GAP_SINCE) == ["PE", "PE.1"],
+          repr(_eb_on_s["testEvidence"]))
+    _eb_undated_s = M.rollup(_eb_plan([("PE.1", None)],
+                                      merged="2026-05-01T00:00:00Z"),
+                             [], [], boundary=_eb_asked)
+    check("eb5 a done subject the plan cannot date FAILS, and is named APART "
+          "from one the recorder existed for. The repairs differ - run the "
+          "gate, versus set the stamp - so a reader must be able to tell which "
+          "they have without opening the manifest. The phase beside it IS "
+          "dated and IS excused, which is what proves the walk saw both",
+          _eb_ids(_eb_undated_s, M.GAP_UNDATED) == ["PE.1"]
+          and _eb_ids(_eb_undated_s, M.GAP_SINCE) == []
+          and _eb_ids(_eb_undated_s, M.GAP_BEFORE) == ["PE"]
+          and M.evaluate_gate(_eb_undated_s, ("no-test-evidence",))
+          == ["no-test-evidence"],
+          repr(_eb_undated_s["testEvidence"]))
+    # LEXICALLY LATER, CHRONOLOGICALLY EARLIER. `_evidence_io.earliest_recorded`
+    # compares ledger stamps as TEXT and says why it may: every row is written
+    # by one formatter in one UTC spelling. `completedAt` is a PLAN field a
+    # human writes, so the same shortcut here excuses the wrong subjects - these
+    # two sit a minute either side of the boundary and sort the other way round
+    # as text.
+    _eb_tz_s = M.rollup(_eb_plan([("PE.1", "2026-06-02T17:37:00+02:00"),
+                                  ("PE.2", "2026-06-02T13:39:00-02:00")],
+                                 merged="2026-05-01T00:00:00Z"),
+                        [], [], boundary=_eb_asked)
+    check("eb6 an offset stamp is compared AS A MOMENT and not as text: PE.1 "
+          "reads 17:37+02:00, later than the boundary as a string and a minute "
+          "earlier as a time, so it is excused; PE.2 reads 13:39-02:00, "
+          "earlier as a string and a minute later as a time, so it is not. A "
+          "text comparison gets both of them backwards",
+          _eb_ids(_eb_tz_s, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and _eb_ids(_eb_tz_s, M.GAP_SINCE) == ["PE.2"],
+          repr(_eb_tz_s["testEvidence"]))
+    _eb_junk_s = M.rollup(_eb_plan([("PE.1", "last Tuesday")],
+                                   merged="2026-05-01T00:00:00Z"),
+                          [], [], boundary=_eb_asked)
+    check("eb7 a stamp nothing can read DATES NOTHING, so it is `%s` and never "
+          "excused - a parser answering the epoch for an unreadable string "
+          "would put every one of them before the boundary, which is the "
+          "direction that widens an excuse in silence" % (M.GAP_UNDATED,),
+          _eb_ids(_eb_junk_s, M.GAP_UNDATED) == ["PE.1"]
+          and _eb_ids(_eb_junk_s, M.GAP_BEFORE) == ["PE"],
+          repr(_eb_junk_s["testEvidence"]))
+    _eb_bad_b = _ebio.boundary_of({"at": "whenever"}, None)
+    _eb_bad_s = M.rollup(_eb_pre, [], [], boundary=_eb_bad_b)
+    check("eb8 ...and a BOUNDARY stating a moment nothing can read excuses "
+          "nothing either. This is eb3's excused fixture exactly, so the case "
+          "is the comparison failing rather than the plan being post-boundary",
+          _eb_bad_b["at"] == "whenever"
+          and _eb_ids(_eb_bad_s, M.GAP_BEFORE) == []
+          and _eb_ids(_eb_bad_s, M.GAP_SINCE) == ["PE", "PE.1"]
+          and M.evaluate_gate(_eb_bad_s, ("no-test-evidence",))
+          == ["no-test-evidence"],
+          repr(_eb_bad_s["testEvidence"]))
+    _eb_torn = _ebio.boundary_of(
+        {"at": _EB_AT}, None,
+        unknown=["a ledger row could not be parsed, and it may carry an "
+                 "earlier run than any that could"])
+    _eb_torn_s = M.rollup(_eb_pre, [], [], boundary=_eb_torn)
+    check("eb9 A SOURCE THAT COULD NOT BE ASKED WIDENS THE EXCUSE, and the "
+          "gate says so by FAILING. The unaskable source may have held an "
+          "EARLIER moment, so the boundary may be later than the truth and the "
+          "work excused on it may not deserve to be. Nothing here is `%s` and "
+          "nothing is `%s`, so without this arm the build goes green on an "
+          "excuse nobody could check" % (M.GAP_SINCE, M.GAP_UNDATED),
+          M.evaluate_gate(_eb_torn_s, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and _eb_ids(_eb_torn_s, M.GAP_SINCE) == []
+          and _eb_ids(_eb_torn_s, M.GAP_UNDATED) == []
+          and _eb_ids(_eb_torn_s, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and M.unevidenced(_eb_torn_s)["unsound"] == _eb_torn["unknown"],
+          repr(M.unevidenced(_eb_torn_s)))
+    _eb_torn_ok = M.rollup(_ev_plan([("PE.1", "done", "passed")],
+                                    phase_ev="passed"), [], [],
+                           boundary=_eb_torn)
+    check("eb10 SECOND DIRECTION for eb9: the SAME unaskable source over a "
+          "plan the boundary excused nothing in adds no failure of its own - "
+          "nothing rested on it. Without this half eb9 is satisfied by a "
+          "condition that fails whenever `unknown` is non-empty, which would "
+          "red every build carrying one torn ledger line",
+          M.unevidenced(_eb_torn_ok)["unsound"] == []
+          and _eb_ids(_eb_torn_ok, M.GAP_BEFORE) == []
+          and _eb_torn_ok["testEvidence"]["recorded"] == 2
+          and M.evaluate_gate(_eb_torn_ok, ("no-test-evidence",)) == [],
+          repr(M.unevidenced(_eb_torn_ok)))
+    _eb_part_s = M.rollup(_eb_plan([("PE.1", "2026-05-01T00:00:00Z"),
+                                    ("PE.2", "2026-07-01T00:00:00Z"),
+                                    ("PE.3", None)],
+                                   merged="2026-07-01T00:00:00Z"),
+                          [], [], boundary=_eb_asked)
+    _eb_all = [r for k in M.GAP_CLASSES
+               for r in M.evidence_subjects(_eb_part_s, k)]
+    check("eb11 the classes PARTITION `missingOnDone`: every gap lands in "
+          "exactly one of them and none lands in two, so a count over the "
+          "classes and a count over the gaps can never disagree. Every class "
+          "is non-empty on this fixture, which is what stops the case passing "
+          "over a plan that exercises one arm",
+          sorted(r["id"] for r in _eb_all)
+          == sorted(r["id"]
+                    for r in _eb_part_s["testEvidence"]["missingOnDone"])
+          and len(_eb_all)
+          == len(_eb_part_s["testEvidence"]["missingOnDone"])
+          and all(M.evidence_subjects(_eb_part_s, k) for k in M.GAP_CLASSES),
+          repr(_eb_part_s["testEvidence"]))
+    _eb_ph = _eb_plan([("PE.1", "2026-05-01T00:00:00Z")],
+                      merged="2026-07-01T00:00:00Z")
+    _eb_ph["phases"][0]["completedAt"] = "2026-05-01T00:00:00Z"
+    _eb_ph_s = M.rollup(_eb_ph, [], [], boundary=_eb_asked)
+    check("eb12 a PHASE is dated by `mergedAt` and a TASK by `completedAt`. "
+          "This phase carries BOTH - a pre-boundary `completedAt` that would "
+          "excuse it and a post-boundary `mergedAt` that does not - so a "
+          "reader of the wrong field excuses a phase nobody may excuse. The "
+          "task beside it is excused off its own stamp, so the rule this pins "
+          "is not 'a phase is never excused'",
+          _eb_ids(_eb_ph_s, M.GAP_SINCE) == ["PE"]
+          and _eb_ids(_eb_ph_s, M.GAP_BEFORE) == ["PE.1"],
+          repr(_eb_ph_s["testEvidence"]))
+    _eb_door = _eb_plan([("PE.1", "2026-05-01T00:00:00Z"),
+                         ("PE.2", "2026-07-01T00:00:00Z"),
+                         ("PE.3", None)],
+                        merged="2026-07-01T00:00:00Z")["phases"][0]
+    check("eb13 `evidence_gap` is the door the report and the panel call, and "
+          "it is the SAME rule the summary bucketed by rather than a second "
+          "opinion about it: asked subject by subject it reproduces the class "
+          "each one landed in above",
+          M.evidence_gap(_eb_door, "phase", _eb_asked) == M.GAP_SINCE
+          and [M.evidence_gap(t, "task", _eb_asked) for t in _eb_door["tasks"]]
+          == [M.GAP_BEFORE, M.GAP_SINCE, M.GAP_UNDATED])
+    _eb_covered = _ev_plan([("PE.1", "done", "passed")], phase_ev="passed")
+    _eb_running = _eb_plan([("PE.1", "2026-05-01T00:00:00Z")])
+    _eb_running["phases"][0]["tasks"][0]["status"] = "in_progress"
+    check("eb14 SECOND DIRECTION: a subject with nothing to explain answers "
+          "None and not a class - one that CARRIES a pointer, and one nobody "
+          "has finished. A door answering `%s` for either would paint 'before "
+          "recording' over a task somebody is running right now"
+          % (M.GAP_BEFORE,),
+          M.evidence_gap(_eb_covered["phases"][0], "phase", _eb_asked) is None
+          and M.evidence_gap(_eb_covered["phases"][0]["tasks"][0], "task",
+                             _eb_asked) is None
+          and M.evidence_gap(_eb_running["phases"][0]["tasks"][0], "task",
+                             _eb_asked) is None)
+    _eb_ok_sc, _eb_sc = _harness.attempt(M.evidence_gap, _eb_door, "tasks",
+                                         _eb_asked)
+    check("eb15 a scope this module does not know is REFUSED BY NAME rather "
+          "than answered. An unknown scope reads no stamp, so a quiet None "
+          "would date nothing and call every subject undated - a mistyped word "
+          "silently changing a verdict, which is te17's rule one argument "
+          "over. The legal set is in the message: %r" % (_eb_sc,),
+          not _eb_ok_sc and "tasks" in str(_eb_sc) and "phase" in str(_eb_sc))
+    _eb_hand = {"testEvidence": {"missingOnDone": [{"scope": "task",
+                                                    "id": "PE.9"}]}}
+    check("eb16 a hand-built summary that names gaps and classifies NONE of "
+          "them is not a pass. `rollup` always classifies, so this shape can "
+          "only come from a caller that never built one - and the empty class "
+          "lists it presents read exactly like a clean plan, which is the "
+          "silent pass g5 refuses for the injected invariant block",
+          M.evaluate_gate(_eb_hand, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and M.unevidenced(_eb_hand)["unsound"] != [],
+          repr(M.unevidenced(_eb_hand)))
+    check("eb17 `evidenceBoundary` is carried VERBATIM - basis, sources and "
+          "unknown whole. The surfaces render the sentence and the gate reads "
+          "`unknown`, and neither is served by a block this function "
+          "summarised on its way past",
+          _eb_torn_s.get("evidenceBoundary") == _eb_torn,
+          repr(_eb_torn_s.get("evidenceBoundary")))
 
     # --- the submodule preflight ---------------------------------------------
     check("s1 .gitmodules paths are read out of `path =` lines, whatever the "

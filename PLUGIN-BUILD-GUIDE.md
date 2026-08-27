@@ -283,7 +283,7 @@ L2:
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _manifest_io, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
-  _status_facts -> _areas, _manifest_io, _output, _priority
+  _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
   _usage_coverage -> _output, _usage_core
   _usage_economics -> _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
@@ -294,7 +294,7 @@ L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
-  _evidence_view -> _evidence_io, _journal_io, _output, _report_html
+  _evidence_view -> _evidence_io, _output, _report_html
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -322,7 +322,7 @@ L4:
   _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
 
 L5:
-  _panel_state -> _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
+  _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
@@ -336,7 +336,7 @@ L7:
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-status -> _areas, _cli_fmt, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _manifest_io, _output, _panel_write, _proposals, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -349,7 +349,7 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  render-report -> _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output

@@ -73,8 +73,10 @@ meanings, rendered from the same tuple the gate evaluates:
   answered) or `could-not-run` (the runner never started). `passed` and `empty-gate`
   do not trip it
 - `no-test-evidence` — a `done` task **or phase** carrying no `testEvidence` at
-  all. Both scopes, exactly like `failing-tests`: a phase's sign-off gate records a
-  run of its own, and no task's pointer stands in for it
+  all **that could have carried one**. Both scopes, exactly like `failing-tests`: a
+  phase's sign-off gate records a run of its own, and no task's pointer stands in
+  for it. Work that finished before the *evidence boundary* is excused rather than
+  failed — see below
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
@@ -90,9 +92,39 @@ ask for the opposite reading, and it asks it of every subject the plan already c
 its own. A `status` word this build does not recognise trips nothing: the enum may gain
 members, so it is reported as itself rather than folded into `failed`.
 
-**Both report what the manifest says, and nothing more.** The block is a *cache* of a
-run recorded in the evidence file beside the plan; neither condition opens that file,
-so neither can tell you whether the `runId` still resolves. That question belongs to
+**The evidence boundary is what makes `no-test-evidence` usable for a plan adopted
+mid-flight.** A project that starts using the plugin part-way through carries tasks
+that were finished before the recorder existed, and without a boundary every one of
+them fails this condition with no setting that helps — `--phase` scopes the human
+render, and says so in its own help, not the gate. The boundary is the earliest
+moment anything says recording existed at all: the **earlier** of
+`meta.evidenceSince.at` and the first run in the evidence file beside the plan.
+Earlier, because excused work is *before* the boundary, so the earlier value is the
+safer one — delete the key and the file still answers, archive the file and the key
+still answers. Work that finished before it is **excused**, and the gate prints the
+basis it excused on, on a passing run as well as a failing one.
+
+**The other states are named apart because the repairs differ.** A subject the plan
+cannot date — no `completedAt` on a task, no `mergedAt` on a phase — fails in its
+own sentence, because the repair there is to set the stamp rather than to run the
+gate. A plan where *nothing* says when recording began excuses everything in it,
+which is the state a mid-flight adopter is in before anything has run. And when a
+source of the boundary could not be **read** — an unparseable plan, a torn line in
+the evidence file — work excused on it **fails** instead of passing: the unreachable
+source may have held an earlier moment, which would make the excuse wider than it
+should be, and a widened excuse turns a build green where nobody is looking.
+
+**No backfill is offered, and that is a decision rather than an omission.** A gate
+run today measures one tree once, so writing a pointer onto every historical subject
+would manufacture claims out of a single measurement — the shape recorded evidence
+exists to remove, not one to add. `/audit:run-gate` is for a subject or a few; it is
+not a history tool.
+
+**Neither condition resolves a pointer.** The block is a *cache* of a run recorded
+in the evidence file beside the plan; `failing-tests` opens nothing at all, and
+`no-test-evidence` opens that file only to date the boundary above — for the
+earliest run in it, never to ask whether a subject's own `runId` still resolves.
+That question belongs to
 `/audit:doctor` and to `--fail-on invariant-breach`. The `tests` column in the render
 carries the same word where a task has one, and a phase's own verdict is a `tests
 <word>` clause on its head line.

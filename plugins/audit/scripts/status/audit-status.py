@@ -87,6 +87,8 @@ import _proposals  # noqa: E402  (the proposal READ side: one derivation of the 
 #                                  all print - F93)
 import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, the gate)
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
+import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
+#                                   plan could first have recorded one at all)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -128,6 +130,18 @@ evidence_status = _status_facts.evidence_status
 evidence_rows = _status_facts.evidence_rows
 test_evidence_summary = _status_facts.test_evidence_summary
 evidence_subjects = _status_facts.evidence_subjects
+unevidenced = _status_facts.unevidenced
+GAP_BEFORE = _status_facts.GAP_BEFORE
+GAP_SINCE = _status_facts.GAP_SINCE
+GAP_UNDATED = _status_facts.GAP_UNDATED
+# `evidence_gap` and `GAP_CLASSES` are deliberately NOT aliased here: this
+# command renders a gate LINE, not a per-subject badge, and an alias nothing
+# below spells is a name a reader has to check for a caller that does not exist.
+# The report and the panel import `_status_facts` directly for that door.
+# ...and the boundary's own door, aliased for the same reason: `main` below
+# spells it unqualified and the suite drives it by hand to reproduce the exact
+# payload the command prints.
+boundary_for = _evidence_io.boundary_for
 
 
 def invariants_block(manifest, manifest_path):
@@ -198,6 +212,12 @@ def _failing_tests_detail(summary):
                         sep="; "))
 
 
+def _subject_list(rows):
+    """`scope id` for each row, bounded, in the one spelling both details use."""
+    return _output.some_of(["%s %s" % (r.get("scope"), _subject_id(r))
+                            for r in rows], sep=", ")
+
+
 def _no_evidence_detail(summary):
     """What `GATE FAILED: no-test-evidence (...)` says after the name.
 
@@ -209,12 +229,51 @@ def _no_evidence_detail(summary):
     reason: the condition reads phases as well as tasks, and `phase PE` and `task
     PE.1` send a reader to two different places in the plan. "done subject" is the
     word that covers both without claiming the wrong one.
+
+    ONE CONDITION, UP TO THREE SENTENCES, because the repairs differ and a reader
+    under a red build must be able to tell which one they have without opening the
+    manifest: run the gate for a subject the recorder existed for, set the stamp
+    for one the plan cannot date, and make the unreadable source readable when the
+    excuse itself is what failed. Rendered off `unevidenced`, which is the same
+    call the gate's verdict is taken from -- a line derived a second way is a
+    second opinion that can contradict the exit code.
     """
-    rows = evidence_subjects(summary, "missingOnDone")
-    return "%d done subject(s) with no run recorded: %s" % (
-        len(rows),
-        _output.some_of(["%s %s" % (r.get("scope"), _subject_id(r))
-                         for r in rows], sep=", "))
+    bits = unevidenced(summary)
+    parts = []
+    if bits[GAP_SINCE]:
+        parts.append("%d done subject(s) with no run recorded: %s"
+                     % (len(bits[GAP_SINCE]), _subject_list(bits[GAP_SINCE])))
+    if bits[GAP_UNDATED]:
+        parts.append("%d done subject(s) this plan cannot date, so whether a run "
+                     "was possible cannot be told: %s"
+                     % (len(bits[GAP_UNDATED]),
+                        _subject_list(bits[GAP_UNDATED])))
+    if bits["unsound"]:
+        parts.append("the boundary that would excuse them cannot be trusted: %s"
+                     % (_output.some_of(bits["unsound"], sep="; "),))
+    return "; ".join(parts)
+
+
+def _evidence_excuse_note(summary):
+    """What the gate says about work the boundary EXCUSED, or None when it excused
+    nothing.
+
+    ON THE PASSING PATH TOO, AND THAT IS THE POINT. `GATE PASSED` carries no
+    per-condition detail, so a boundary that turned a red build green would say
+    nothing at all -- and a silently widened excuse is the failure this whole
+    mechanism exists to prevent. The claim ("this work could not have been
+    recorded") travels with the basis that makes it true, which is the block's own
+    sentence rather than one written again here.
+    """
+    excused = evidence_subjects(summary, GAP_BEFORE)
+    if not excused:
+        return None
+    boundary = summary.get("evidenceBoundary")
+    basis = (boundary or {}).get("basis")
+    return ("no-test-evidence: %d done subject(s) excused (%s) - %s"
+            % (len(excused), _subject_list(excused),
+               basis or "no basis was recorded for the boundary, which is "
+                        "itself a reason not to rely on it"))
 
 
 def _budget_detail(summary, threshold_pct):
@@ -994,7 +1053,9 @@ CONDITION_HELP = {
                      "manifest says; whether the ledger holds that run is "
                      "/audit:doctor's question)",
     "no-test-evidence": "a `done` task OR PHASE carrying no `testEvidence` at "
-                        "all (both scopes, exactly like failing-tests above: a "
+                        "all (that COULD have carried one - see the boundary "
+                        "below. Both scopes, exactly "
+                        "like failing-tests above: a "
                         "phase's sign-off gate records a run of its own and no "
                         "task's pointer stands in for it, so a task-only reading "
                         "would go quiet on the one sign-off this condition exists "
@@ -1002,7 +1063,19 @@ CONDITION_HELP = {
                         "the --gate default: a plan that has never recorded a "
                         "run carries no "
                         "pointers anywhere, so a default holding this would fail "
-                        "every build on the day the plugin was upgraded)",
+                        "every build on the day the plugin was upgraded). Work "
+                        "finished BEFORE the evidence boundary - the earlier of "
+                        "`meta.evidenceSince.at` and the earliest run in the "
+                        "ledger - is EXCUSED, because a plan adopted mid-flight "
+                        "finished it before the recorder existed and no setting "
+                        "could tell that apart from neglect; the gate prints the "
+                        "basis it excused on. A subject the plan cannot date is "
+                        "named apart, since the repair is to set `completedAt` / "
+                        "`mergedAt` rather than to run the gate. And when a "
+                        "source of the boundary could not be READ, work excused "
+                        "on it fails instead: an unaskable source may have held "
+                        "an earlier moment, which would make the excuse wider "
+                        "than it should be",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -1169,8 +1242,15 @@ def main(argv):
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
 
+    # The boundary is read UNCONDITIONALLY, beside the usage ledger and for the
+    # same reason: the payload must not describe a different plan depending on
+    # which flags were passed. A consumer reading `beforeBoundary` off `--json`
+    # gets the same classification the gate acted on, and the invariant block's
+    # opt-in shape is not a precedent here -- that one costs several git calls per
+    # started phase, this one is a directory listing and a JSON read.
     summary = rollup(manifest, findings, warnings,
-                     usage=usage_summary(manifest, manifest_path))
+                     usage=usage_summary(manifest, manifest_path),
+                     boundary=boundary_for(manifest_path))
 
     if want_discovery:
         # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
@@ -1221,6 +1301,15 @@ def main(argv):
         # Without --json this is `print` unchanged: stdout is what CI has always
         # grepped, and moving it there too would break that for no gain.
         say = (lambda line: sys.stderr.write(line + "\n")) if want_json else print
+        # SAID ON BOTH PATHS, before the verdict. An excuse that only printed
+        # under a red build would be invisible in exactly the case it decided,
+        # since the whole point of the boundary is to turn a fail into a pass -
+        # and it is emitted only when `no-test-evidence` was actually asked for,
+        # so a gate that never read the boundary stays byte-for-byte as it was.
+        if "no-test-evidence" in conditions:
+            note = _evidence_excuse_note(summary)
+            if note:
+                say(note)
         failed = summary["gate"]["failed"]
         if failed:
             for c in failed:

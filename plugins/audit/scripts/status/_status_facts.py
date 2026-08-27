@@ -65,6 +65,7 @@ _output.install_path()
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
+import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at layer 1)
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -375,13 +376,164 @@ def evidence_status(holder):
     return status if isinstance(status, str) and status else None
 
 
+# --- the evidence boundary --------------------------------------------------------
+# WHAT THE CONDITION COULD NOT ASK. `no-test-evidence` asks whether finished work
+# is backed by a recorded run, and never whether it COULD have been. For a plan
+# adopted mid-flight the answer is no for every subject finished before the
+# recorder existed, and no setting helps -- `--phase` scopes the human render and
+# says so in its own help, not the gate. That work is not a lapse, it is an
+# impossibility, and what separates the two is a moment:
+#
+#     boundary = min( meta.evidenceSince.at , the earliest ts in the ledger )
+#
+# THE BOUNDARY IS PASSED IN, NEVER READ HERE, and that is a layer fact rather
+# than a preference: `_evidence_io` computes it and sits on THIS module's layer,
+# where a layer-mate may not be imported. `rollup` therefore takes it the way it
+# already takes `usage` -- computed by a caller above layer 2 (`audit-status.py`
+# and `render-report.py` at 7, `_panel_state` at 5) and handed down, so this file
+# stays a pure dict -> dict transform and there is exactly one implementation of
+# where the boundary comes from.
+#
+# THREE-VALUED, AND EVERY READER SPELLS IT `is None`.
+#
+#   boundary is None            nobody asked. Nothing may be excused, because
+#                               nothing was established -- this is the shape
+#                               every caller that predates the feature still
+#                               passes, and its verdict is unchanged.
+#   boundary["at"] is None      asked, and neither source said anything. Nothing
+#                               in this plan could have carried evidence, so
+#                               every gap is excused and the block's `basis` is
+#                               the sentence that says why.
+#   boundary["at"] is a stamp   the moment to compare against.
+#
+# A truthiness test flattens the first two into each other AND reads a boundary
+# at the epoch as no boundary at all. The distinction is the whole feature.
+GAP_BEFORE = "beforeBoundary"
+GAP_SINCE = "sinceBoundary"
+GAP_UNDATED = "undated"
+# The three classes a gap can fall in, and the three keys the summary buckets
+# them under -- ONE vocabulary, so the word `evidence_gap` answers a surface with
+# is the same word `evidence_subjects` is asked for. Two spellings of this list
+# would be two chances for a class to exist in one and not the other.
+GAP_CLASSES = (GAP_BEFORE, GAP_SINCE, GAP_UNDATED)
+
+# Which field DATES a subject, per scope. A phase is dated by the merge that
+# landed it and a task by its own completion; neither field stands in for the
+# other, and reading `completedAt` off a phase would date it by a key the schema
+# does not give it.
+FINISHED_KEY = {"phase": "mergedAt", "task": "completedAt"}
+
+
+def finished_at(holder, scope):
+    """The stamp that dates a subject's completion, or None when it carries none.
+
+    Blank and non-string answer None: the schema declares both stamps nullable and
+    the population this feature targets is the hand-maintained plan, so a key
+    present and empty is the same silence as a key absent. WHICH silence it is
+    does not matter here, because both lead to the same class and the same repair.
+    """
+    key = FINISHED_KEY.get(scope)
+    value = holder.get(key) if (key and isinstance(holder, dict)) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _gap_of(row, boundary):
+    """Which class a done subject carrying NO pointer falls in.
+
+    Total over `GAP_CLASSES` -- every gap gets exactly one word, so the buckets a
+    caller builds from it are a partition by construction rather than by
+    assertion.
+
+    THE STAMPS ARE PARSED, NOT COMPARED AS TEXT, and `_evidence_io` comparing its
+    ledger stamps as text is not a precedent for doing the same here: it says why
+    it may, which is that every row it reads was written by one formatter in one
+    UTC spelling. `completedAt` and `mergedAt` are PLAN fields a human writes, so
+    `2026-06-02T17:37:00+02:00` sorts after a `...15:38:00Z` boundary as text and
+    falls a minute before it as a time -- and getting that backwards excuses the
+    wrong subjects.
+
+    A STAMP NOTHING CAN READ DATES NOTHING. Neither an unreadable `at` nor an
+    unreadable subject stamp is ever resolved in favour of the excuse: an excuse
+    granted on a comparison that did not happen is the silent widening this whole
+    mechanism exists to prevent, and the other direction merely fails work loudly,
+    where somebody sees it.
+    """
+    if not isinstance(boundary, dict):
+        # Nobody asked. The subject's stamp cannot change the answer, so it is
+        # not consulted and the reader is not sent to set a stamp that would
+        # excuse nothing -- the repair here is to compute a boundary.
+        return GAP_SINCE
+    at = boundary.get("at")
+    if at is None:
+        return GAP_BEFORE
+    started = _usage_core.parse_ts(at)
+    if started is None:
+        return GAP_SINCE
+    finished = _usage_core.parse_ts(row.get("finishedAt"))
+    if finished is None:
+        return GAP_UNDATED
+    # AT the boundary is INSIDE recording, not before it: the boundary is the
+    # earliest moment we have evidence that recording existed, so a subject
+    # finished at that instant could have been recorded.
+    return GAP_BEFORE if finished < started else GAP_SINCE
+
+
+def evidence_gap(holder, scope, boundary):
+    """Which evidence gap one phase or task has, or None when it has none.
+
+    THE DOOR THE REPORT AND THE PANEL CALL, so that "is this absence excused" is
+    answered by the rule the gate bucketed by rather than by a second opinion
+    rendered beside it. `scope` is `"phase"` or `"task"`; `boundary` is
+    `_evidence_io.boundary_of`'s block, or None when nobody computed one.
+
+    None means there is nothing to explain -- the subject carries a pointer, or
+    the plan does not call it done. Otherwise one of `GAP_CLASSES`.
+
+    AN UNKNOWN SCOPE IS REFUSED BY NAME rather than answered, for
+    `evidence_subjects`' reason one argument over: an unrecognised scope reads no
+    stamp, so a quiet fall-through would date nothing and call every subject
+    undated -- a mistyped word silently changing a verdict.
+    """
+    if scope not in FINISHED_KEY:
+        raise ValueError("%r is not a subject scope; the scopes are %s"
+                         % (scope, ", ".join(sorted(FINISHED_KEY))))
+    row = evidence_row(holder, scope)
+    if row["status"] is not None or row["subjectStatus"] != "done":
+        return None
+    return _gap_of(row, boundary)
+
+
+def evidence_row(holder, scope):
+    """The `evidence_rows` row for ONE phase or task.
+
+    EXTRACTED SO THE ROW HAS ONE SHAPE. The walk below built it twice, once per
+    scope, and `evidence_gap` needs the same row for a single subject a surface
+    is rendering — three spellings of one dict is how a key gets added to two of
+    them.
+
+    A non-dict holder answers a row of silences rather than raising: `evidence_gap`
+    is called from surfaces that must render a broken plan, and the row it gets
+    back says "nothing recorded, not done", which is the reading that excuses
+    nothing and claims nothing.
+    """
+    holder = holder if isinstance(holder, dict) else {}
+    return {"scope": scope, "id": holder.get("id"),
+            "status": evidence_status(holder),
+            "subjectStatus": holder.get("status"),
+            # The stamp that DATES the subject, carried on the row rather than
+            # looked up again later: the boundary comparison and the walk that
+            # finds the gaps are the same pass, and a second read of the plan is
+            # a second chance to read a different field.
+            "finishedAt": finished_at(holder, scope)}
+
+
 def evidence_rows(manifest):
     """One row per phase and per task the plan carries, in document order.
 
-    `{"scope", "id", "status", "subjectStatus"}`. `status` is the recorded verdict,
-    None where none is recorded; `subjectStatus` is the subject's OWN workflow
-    status, which is what lets a caller ask about `done` tasks specifically without
-    walking the plan a second time.
+    `{"scope", "id", "status", "subjectStatus", "finishedAt"}`. `status` is the
+    recorded verdict, None where none is recorded; `subjectStatus` is the subject's
+    OWN workflow status, which is what lets a caller ask about `done` tasks
+    specifically without walking the plan a second time.
 
     EVERY subject is a row, including every one carrying nothing. A walk that
     yielded only the subjects holding a pointer could not answer "which done task
@@ -397,19 +549,15 @@ def evidence_rows(manifest):
     for ph in (manifest.get("phases") or []):
         if not isinstance(ph, dict):
             continue
-        rows.append({"scope": "phase", "id": ph.get("id"),
-                     "status": evidence_status(ph),
-                     "subjectStatus": ph.get("status")})
+        rows.append(evidence_row(ph, "phase"))
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
-            rows.append({"scope": "task", "id": t.get("id"),
-                         "status": evidence_status(t),
-                         "subjectStatus": t.get("status")})
+            rows.append(evidence_row(t, "task"))
     return rows
 
 
-def test_evidence_summary(manifest):
+def test_evidence_summary(manifest, boundary=None):
     """What the plan's `testEvidence` pointers SAY -- the block `rollup` carries.
 
     ALWAYS PRESENT AND ALWAYS COMPLETE, every list included even when empty, for the
@@ -437,23 +585,42 @@ def test_evidence_summary(manifest):
     into `failed` is the reading the schema forbids -- and a consumer that wants to
     act on one now can, without this file having guessed what it means.
 
+    `missingOnDone` IS SPLIT THREE WAYS, and the split is a partition of it rather
+    than a second walk: every gap lands in exactly one of `GAP_CLASSES`, so a count
+    taken over the classes and a count taken over the gaps can never disagree.
+    `missingOnDone` stays whole beside them because "which done subject records
+    nothing" is true whatever the boundary says, and a surface that only wants that
+    should not have to add three lists back together to get it.
+
+    `boundary` DEFAULTS TO None AND THAT IS A THIRD STATE, not a convenience. A
+    caller that never computed one excuses nothing -- which is exactly the verdict
+    every caller reached before this parameter existed -- while a boundary that WAS
+    computed and answers `at: None` excuses everything, because nothing in that
+    plan could have carried evidence. Collapsing the two would make an upgrade
+    silently pass builds nobody asked it to pass.
+
     NOTHING IS RESOLVED AGAINST THE LEDGER. Every row is what the manifest says
     about itself; whether a `runId` names a run this checkout holds is asked by
     `verify-invariants.py` and `_doctor_completions`, and answered nowhere near here.
     """
     rows = evidence_rows(manifest)
     recorded = [r for r in rows if r["status"] is not None]
-    return {
+    missing = [r for r in rows
+               if r["status"] is None and r["subjectStatus"] == "done"]
+    gaps = dict((name, []) for name in GAP_CLASSES)
+    for row in missing:
+        gaps[_gap_of(row, boundary)].append(row)
+    out = {
         "recorded": len(recorded),
         "byStatus": _by_status_values([r["status"] for r in recorded]),
         "failing": [r for r in recorded
                     if r["status"] in NO_SIGN_OFF_EVIDENCE],
         "unrecognised": [r for r in recorded
                          if r["status"] not in KNOWN_EVIDENCE],
-        "missingOnDone": [r for r in rows
-                          if r["status"] is None
-                          and r["subjectStatus"] == "done"],
+        "missingOnDone": missing,
     }
+    out.update(gaps)
+    return out
 
 
 # Which of the block's keys name a subject list, DERIVED from the block itself
@@ -500,11 +667,62 @@ def evidence_subjects(summary, key):
     return value if isinstance(value, list) else []
 
 
-def rollup(manifest, findings, warnings, usage=None):
+def unevidenced(summary):
+    """What `no-test-evidence` FAILS on, split by the repair each part needs.
+
+    `{GAP_SINCE: [...], GAP_UNDATED: [...], "unsound": [...]}`, and the condition
+    trips when any of the three is non-empty. ONE FUNCTION, because the gate's
+    verdict and the sentence a human reads under a red build have to be the same
+    answer -- a renderer that re-derived "which subjects failed" is a second
+    opinion that can disagree with the exit code.
+
+    THE TWO SUBJECT LISTS ARE ONE CONDITION AND TWO SENTENCES. `sinceBoundary` is
+    "the recorder existed and this was not recorded" and the repair is to run the
+    gate; `undated` is "we cannot tell when this finished" and the repair is to set
+    the stamp. Folding them together sends half the readers to the wrong one.
+
+    `unsound` IS THE EXCUSE ITSELF FAILING, and it exists because the dangerous
+    direction here is silence. A source that could not be ASKED may have held an
+    EARLIER moment, so a boundary computed without it may be LATER than the truth
+    and the excuse WIDER than it should be -- and a widened excuse turns a build
+    GREEN, where nobody reads the log. So when work was actually excused and a
+    source was actually unaskable, the verdict the excuse rests on is refused and
+    the unreachable source is named. When nothing was excused, nothing rested on
+    it and it changes no verdict: an `unknown` alone must not red a build.
+
+    ...and a summary that names gaps and classifies NONE of them is refused for
+    `invariant_breaches`' reason. `rollup` always classifies, so empty class lists
+    beside a non-empty `missingOnDone` mean a caller that never computed one --
+    and that shape reads exactly like a clean plan, which is the silent pass.
+    """
+    excused = evidence_subjects(summary, GAP_BEFORE)
+    out = {GAP_SINCE: evidence_subjects(summary, GAP_SINCE),
+           GAP_UNDATED: evidence_subjects(summary, GAP_UNDATED),
+           "unsound": []}
+    gaps = evidence_subjects(summary, "missingOnDone")
+    if gaps and not excused and not out[GAP_SINCE] and not out[GAP_UNDATED]:
+        out["unsound"].append(
+            "%d done subject(s) record no run and none of them was classified "
+            "against an evidence boundary, so nothing here has been excused and "
+            "this is not a pass" % (len(gaps),))
+    unknown = ((summary or {}).get("evidenceBoundary") or {}).get("unknown")
+    if excused and isinstance(unknown, list) and unknown:
+        out["unsound"].extend(unknown)
+    return out
+
+
+def rollup(manifest, findings, warnings, usage=None, boundary=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
     `usage` is the optional block from `usage_summary()`; it is passed in rather
-    than read here so this stays a pure dict -> dict transform."""
+    than read here so this stays a pure dict -> dict transform.
+
+    `boundary` is `_evidence_io`'s block and arrives the same way for the same
+    reason, with one extra: that module is this one's LAYER-MATE, so reading it
+    here is not merely impure, it is an import the layer lint refuses. It is
+    carried into the payload VERBATIM -- the surfaces render its `basis` and the
+    gate reads its `unknown`, and neither is served by a block summarised on the
+    way past."""
     if not isinstance(manifest, dict):
         manifest = {}  # non-object root -> empty rollup, never an AttributeError
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
@@ -597,7 +815,7 @@ def rollup(manifest, findings, warnings, usage=None):
         # empty `failing` list and a block nobody computed must not look alike, and
         # the CLI, the report and the panel all read the one key rather than each
         # walking the plan for it.
-        "testEvidence": test_evidence_summary(manifest),
+        "testEvidence": test_evidence_summary(manifest, boundary),
         # "parked" is every entry whose status AS WRITTEN is 'proposed', payload
         # or not — `is_parked_proposal` holds the decision and says why. It used
         # to require a payload as well, which is a count of what
@@ -620,6 +838,13 @@ def rollup(manifest, findings, warnings, usage=None):
     # "metering not in use" without a second probe.
     if usage:
         out["usage"] = usage
+    # The same seam, spelled `is not None` rather than by truthiness: a boundary
+    # block is always a populated dict, so the two spellings agree today -- and
+    # the one that keeps agreeing is the one that cannot read a future empty
+    # block as "nobody asked". No key means nobody computed one, which is the
+    # state `unevidenced` refuses to excuse anything in.
+    if boundary is not None:
+        out["evidenceBoundary"] = boundary
     return out
 
 
@@ -693,8 +918,13 @@ def evaluate_gate(summary, conditions):
         # arm above reads, because a phase's sign-off records its own run. Opt-in,
         # and never folded into the one above - "the run was red" and "there is no
         # run" are different news with different repairs.
-        elif c == "no-test-evidence" and evidence_subjects(summary,
-                                                           "missingOnDone"):
+        #
+        # NOT `missingOnDone` ANY MORE, and the difference is the whole boundary
+        # feature: a gap that could not have been recorded is not a lapse. What
+        # remains after the excuse is `unevidenced`, which is also what the gate
+        # LINE is rendered from - one answer, so the sentence and the exit code
+        # cannot disagree.
+        elif c == "no-test-evidence" and any(unevidenced(summary).values()):
             failed.append(c)
     return failed
 

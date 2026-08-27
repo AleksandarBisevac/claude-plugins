@@ -96,6 +96,7 @@ import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files 
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
+import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 
@@ -157,6 +158,15 @@ load_usage = _report_usage.load_usage
 # know where a ledger lives. It answers None when the plan points at no run, and
 # the page then renders as it did before any of this existed.
 load_evidence = _evidence_view.load_evidence
+
+# ...and WHEN this plan could first have recorded a run at all, on that same
+# footing again. `_status_facts` computes the rollup and may not read it: that
+# module is `_evidence_io`'s layer-mate, so the boundary is an entry point's job
+# to fetch and hand down, exactly like the two loads above. `_evidence_view`
+# reaches the same ledger for the run VIEWS and answers None when the plan points
+# at nothing, which is why the boundary cannot be taken off it - a plan with no
+# pointers anywhere is precisely the plan whose boundary matters most.
+boundary_for = _evidence_io.boundary_for
 
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that
@@ -292,7 +302,8 @@ def main(argv):
         findings, warnings = vm.validate(manifest)
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
-    summary = lib.rollup(manifest, findings, warnings)
+    summary = lib.rollup(manifest, findings, warnings,
+                         boundary=boundary_for(manifest_path))
     usage = load_usage(manifest, manifest_path)
     evidence = load_evidence(manifest, manifest_path)
 

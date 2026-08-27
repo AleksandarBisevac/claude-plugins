@@ -116,6 +116,8 @@ import _panel_runstate as _runstate    # noqa: E402  (locks, stamp, gate, at lay
 import _panel_usage as _usage          # noqa: E402  (the Usage tab's facts, at layer 4)
 import _proposals                      # noqa: E402  (proposals, rule AND read side, at layer 4)
 import _report_html                    # noqa: E402  (the report's naming rule, at layer 2)
+import _evidence_io                    # noqa: E402  (WHEN this plan could first
+#                                        have recorded a run at all, at layer 2)
 
 discover = _panel_discovery.discover
 CONFIG_REL = _paths.CONFIG_REL
@@ -413,7 +415,15 @@ def build_state(project):
             m_findings = ["cannot parse manifest: %s" % exc]
         if isinstance(manifest, dict):
             m_findings, m_warn = vm.validate(manifest)
-            rollup = as_.rollup(manifest, m_findings, m_warn)
+            # The boundary is READ HERE and handed down, for the reason
+            # `usage` is: `_status_facts` is `_evidence_io`'s layer-mate
+            # and cannot import it. Pointed at the manifest this panel is
+            # serving rather than at whatever the config names, so a
+            # project whose plan moved does not date its evidence off
+            # another plan's ledger.
+            rollup = as_.rollup(
+                manifest, m_findings, m_warn,
+                boundary=_evidence_io.boundary_for(mpath, project))
             composition = _composition_view(manifest)
             # AFTER the composition and off its rows, not off the manifest: the
             # pointers are already on those rows, and the runs worth shipping are

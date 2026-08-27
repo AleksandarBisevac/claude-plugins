@@ -53,43 +53,18 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _evidence_io  # noqa: E402  (where a run's record lives, and how to read it)
-import _journal_io  # noqa: E402  (the project config, loaded the one way)
 import _report_html  # noqa: E402  (the vocabulary and the view, decided once)
 
 
 # --- where this manifest's record lives ---------------------------------------
-def _project_and_config(manifest_path, project_dir):
-    """`(project, config)` for `_evidence_io`, pointed at THIS manifest's record.
-
-    `manifestPath` is overridden with the file actually being rendered, and that
-    is not a shortcut. The report renders the manifest it was HANDED, which is not
-    always the one a project's config names - `examples/acme-store/audit-plan.json`
-    inside this very repository is exactly that case - and resolving the record off
-    the config's manifest would attribute one plan's runs to another plan's tasks.
-    That is the failure `usage_ledger.find_ledger_dir` was written to avoid, one
-    directory over.
-
-    `evidence.dir` is deliberately left alone: a project that declares one has said
-    where its record lives, and this has no better answer than the declaration.
-
-    WHERE THE DIRECTORY IS, THOUGH, IS STILL `_evidence_io`'s to decide. Nothing
-    here joins a path from the manifest's own directory; it hands the resolver the
-    manifest and lets the one implementation of "where does this plan keep its
-    committed record" answer, so the trail and the evidence cannot end up in
-    different places.
-    """
-    project = (project_dir or os.environ.get("CLAUDE_PROJECT_DIR")
-               or os.path.dirname(os.path.abspath(manifest_path)) or ".")
-    try:
-        config = dict(_journal_io.load_config(project) or {})
-    except Exception:
-        config = {}
-    try:
-        config["manifestPath"] = os.path.relpath(
-            os.path.abspath(manifest_path), os.path.abspath(project))
-    except Exception:
-        pass
-    return project, config
+# THE RESOLUTION MOVED DOWN TO `_evidence_io`, where its own docstring already
+# said it belonged ("where the directory is is still `_evidence_io`'s to
+# decide"). `audit-status.py` needs the same answer to date this plan's evidence
+# boundary, and a second expression of "which project and which config point at
+# THIS manifest's record" would let the gate and the report read two different
+# ledgers for one plan. The name is kept here because it is what this module's
+# own cases and its one caller below spell.
+_project_and_config = _evidence_io.project_config_for
 
 
 # --- reading the plan ---------------------------------------------------------
