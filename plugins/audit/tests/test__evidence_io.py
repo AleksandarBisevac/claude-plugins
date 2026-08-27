@@ -259,6 +259,32 @@ def _cases(check):
               and ru["observations"]["coverage"] is None
               and ru["treeMutated"] is None)
 
+        # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
+        # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
+        # `no-checks` off `ranTotal` -- but a run a stop signal cut short keeps
+        # only the steps that FINISHED, so without this field the row would say
+        # `cancelled` with nothing beside it saying why. That word had no writer
+        # at all until the interrupt path was built.
+        stopped = dict(RESULT)
+        stopped["status"] = "cancelled"
+        stopped["cancelledBy"] = "SIGINT"
+        stopped["treeMutated"] = None
+        rc = M.row_for(plain, stopped, "phase", {"phaseId": "P1"}, IDENT,
+                       published=["pytest -q"])
+        check("ev31 a cancelled run carries the signal that stopped it, beside "
+              "the one status word that has no other basis on the row: %r"
+              % ((rc.get("status"), rc.get("cancelledBy")),),
+              rc.get("status") == "cancelled"
+              and rc.get("cancelledBy") == "SIGINT")
+
+        check("ev32 SECOND DIRECTION: a run nothing stopped leaves the key OFF "
+              "entirely. `run_gate` carries the field on EVERY result and sets "
+              "it None, so a writer that copied it unconditionally would stamp "
+              "`cancelledBy: null` on every ordinary row - and a key present "
+              "everywhere cannot be told from one a build does not write: %r"
+              % (sorted(k for k in row if k.startswith("cancel")),),
+              "cancelledBy" not in row and "cancelledBy" not in ru)
+
         # THE OTHER DIRECTION OF ev11, and the contract the gate runner leans on:
         # `run-test-gate.attempt_of` hands this an explicit None for a task whose
         # plan records no `attempts`, so if a None identity value were carried
