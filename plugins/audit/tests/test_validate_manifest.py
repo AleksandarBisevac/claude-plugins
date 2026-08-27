@@ -256,13 +256,19 @@ def _cases_output(record, path):
 
 
 def _cases_test_evidence(record, path):
-    """`testEvidence` through the front door: what the command says about a key
-    nothing writes yet.
+    """The evidence recorder's manifest keys through the front door.
 
-    The block is a POINTER at the append-only evidence ledger kept beside the
-    manifest, cached on a task or a phase, and the command's whole involvement in
-    it is the typo-catcher. That is worth driving from here rather than from the
-    set: "the key is in `_manifest_vocab.KNOWN_TASK`" is a fact about a literal,
+    Two of them now, at three levels: `testEvidence` on a task and on a phase,
+    and `meta.evidenceSince` on the document's header. They share a suite because
+    they share the command's entire involvement in them - the typo-catcher, and
+    the back-compat claim that a plan carrying neither validates identically -
+    and because the three level sets are separate literals, so a case at one
+    level says nothing about the other two.
+
+    `testEvidence` is a POINTER at the append-only evidence ledger kept beside
+    the manifest; `meta.evidenceSince` says when that ledger could first have
+    held anything at all. Both are worth driving from here rather than from the
+    sets: "the key is in `_manifest_vocab.KNOWN_TASK`" is a fact about a literal,
     while "a real key draws no warning and a misspelt one does" is the consequence
     a user sees, and only the second fails when the level stops consulting the set.
     """
@@ -350,6 +356,39 @@ def _cases_test_evidence(record, path):
            inside[0] == 0 and inside[1] == []
            and len(inside[2]) == 1 and "'zzzProbe'" in inside[2][0]
            and "testEvidence" not in inside[2][0])
+
+
+    # `meta.evidenceSince` through the same door, one level up. The command's
+    # whole involvement is the typo-catcher here too, and the level is a SEPARATE
+    # literal from the two above - so a task-and-phase pair would pass over a
+    # `meta` that never learned the word.
+    _meta_ok = _valid_manifest()
+    _meta_ok["meta"]["evidenceSince"] = {
+        "at": "2026-06-02T15:38:00Z",
+        "runId": "2026-06-02T15:38:00Z.4c1ba7",
+        "basis": "the first run this plan recorded"}
+    meta_ok = _out(_meta_ok)
+    _meta_typo = _valid_manifest()
+    _meta_typo["meta"]["evidencesince"] = {"at": "2026-06-02T15:38:00Z"}
+    meta_typo = _out(_meta_typo)
+    record("c22 a plan stating `meta.evidenceSince` validates in silence, and a "
+           "misspelling draws a did-you-mean naming the real key - the PAIR, for "
+           "c18's reason, and at a level with its own literal set. The key says "
+           "when this plan could FIRST have recorded a run, so a warning about a "
+           "correct one would push somebody to delete the thing that excuses "
+           "their pre-recorder work: %r / %r" % (meta_ok, meta_typo),
+           meta_ok == (0, [], [])
+           and meta_typo[0] == 0 and meta_typo[1] == []
+           and len(meta_typo[2]) == 1
+           and "did you mean 'evidenceSince'" in meta_typo[2][0])
+
+    record("c23 ...and a plan carrying NO boundary gets the same verdict as one "
+           "carrying it, which is the whole back-compat claim: the key is "
+           "additive, absent means 'nothing here says when recording began', and "
+           "every plan written before it existed validates exactly as it did. "
+           "The misspelt run is what stops that equality being a validator "
+           "answering the same thing to everything: %r / %r" % (bare, meta_ok),
+           bare == (0, [], []) and meta_ok == bare and meta_typo != bare)
 
 
 def _selftest():

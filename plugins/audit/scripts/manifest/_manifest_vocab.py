@@ -119,6 +119,13 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # v0.28: the registry a phase's `area` tag can name (_areas.py).
               # Registration is optional in both directions — see _check_areas.
               "areas",
+              # When this plan could first have recorded a test run at all, so a
+              # plan adopted mid-flight reads its pre-recorder work as impossible
+              # to evidence rather than as unevidenced. Written ONCE by
+              # `_evidence_io.write_evidence_since` on the first `--record` that
+              # finds it missing; the evidence ledger is the second, independent
+              # source, and the boundary is the EARLIER of the two.
+              "evidenceSince",
               # token metering, read by the COMMANDS (the hooks read their own
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.

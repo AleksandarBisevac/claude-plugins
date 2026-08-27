@@ -289,6 +289,13 @@ The journal's **completion-record actions**:
   taskId?, phaseId, field, from, to). Written **only after the pointer actually lands**: a pointer
   refused by another live session leaves the row above standing and no row here, because the chain
   must never assert a transition that did not happen
+- `meta.evidenceSince` — the plan stated its evidence boundary for the first time, i.e. when it
+  could first have recorded a run at all (details: field, from, to, runId?, phaseId?). Written by
+  the recorder on the first `--record` that finds the key absent, and **only after the key actually
+  lands** — a stamp a lock refused leaves no row, for the reason one bullet up. It is a row of its
+  OWN rather than a detail on `test.evidence.recorded`: that row is written before the plan is
+  touched and stays true whatever happens to it afterwards, so a plan-movement claim hung on it
+  would assert a transition that had not happened yet and might never happen
 - `audit.state.committed` — an audit-state commit was made for work no task commit will carry
   (details: commit, phaseId)
 
@@ -296,7 +303,7 @@ The journal's **completion-record actions**:
 because two writers means duplicate rows and a doctor that can no longer trust the count.
 The `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
 records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `ado.link`.
-`task.move` is written by `/audit:task move` via the journal CLI. The three evidence actions are
+`task.move` is written by `/audit:task move` via the journal CLI. The evidence actions are
 written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
 *tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`
 already works around.

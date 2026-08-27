@@ -614,6 +614,349 @@ def _cases(check):
               and "P1.1" in blocked_rep["refused"][0]
               and blocked_rep["subjects"] == 1)
 
+
+        # --- the boundary: when could a run have been recorded at all -------
+        # THE GATE'S QUESTION IS NOT "IS THIS EVIDENCED" BUT "COULD IT HAVE
+        # BEEN". Excused work is BEFORE the boundary, so an EARLIER boundary is
+        # the safer answer and every case below is built around that asymmetry:
+        # the failure direction that matters is a boundary that drifts LATER and
+        # widens the excuse in silence.
+        check("eb1 with neither source present the boundary is None and the "
+              "sentence says nothing was ever recorded - never the epoch, and "
+              "never a value a truthiness test could flatten into 'no boundary': "
+              "%r" % (M.boundary_of(None, None),),
+              M.boundary_of(None, None)["at"] is None
+              and M.boundary_of(None, None)["sources"] == {"key": None,
+                                                           "ledger": None}
+              and "no run is readable" in M.boundary_of(None, None)["basis"])
+
+        _key_only = M.boundary_of({"at": "2026-06-02T15:38:00Z"}, None)
+        _led_only = M.boundary_of(None, "2026-06-02T15:38:00Z")
+        check("eb2 either source ALONE answers, and each says which one did. "
+              "The pair is the point: delete the key and the ledger still dates "
+              "the boundary, archive the ledger and the key still does - only "
+              "destroying both widens the excuse: %r / %r"
+              % (_key_only["sources"], _led_only["sources"]),
+              _key_only["at"] == "2026-06-02T15:38:00Z"
+              and _led_only["at"] == "2026-06-02T15:38:00Z"
+              and _key_only["sources"] == {"key": "2026-06-02T15:38:00Z",
+                                           "ledger": None}
+              and _led_only["sources"] == {"key": None,
+                                           "ledger": "2026-06-02T15:38:00Z"})
+
+        # THE VALUES SEPARATE `min` FROM EVERY OTHER RULE, which is what a
+        # fixture has to do here: with the two stamps a year apart, `max`, "the
+        # key wins" and "the ledger wins" each produce a DIFFERENT answer from
+        # `min`, so no wrong implementation can satisfy both halves.
+        _key_first = M.boundary_of({"at": "2025-01-04T08:00:00Z"},
+                                   "2026-06-02T15:38:00Z")
+        _led_first = M.boundary_of({"at": "2026-06-02T15:38:00Z"},
+                                   "2025-01-04T08:00:00Z")
+        check("eb3 with BOTH sources the EARLIER one wins, whichever it is - "
+              "asserted from both sides, because 'the key wins' and 'the ledger "
+              "wins' each pass one half, and `max` passes neither. Excused work "
+              "is before the boundary, so the earlier value is the safer one and "
+              "a later one would widen the excuse without saying so: %r / %r"
+              % (_key_first["at"], _led_first["at"]),
+              _key_first["at"] == "2025-01-04T08:00:00Z"
+              and _led_first["at"] == "2025-01-04T08:00:00Z")
+
+        _blank_key = M.boundary_of({"at": "   "}, "2026-06-02T15:38:00Z")
+        _no_key = M.boundary_of(None, "2026-06-02T15:38:00Z")
+        check("eb4 a key that is THERE but states no usable moment is not the "
+              "same state as no key at all, and the two sentences differ - the "
+              "repairs differ too (fix the key, versus write one), and a reader "
+              "handed only the moment could not tell them apart: %r"
+              % (_blank_key["basis"],),
+              _blank_key["at"] == "2026-06-02T15:38:00Z"
+              and _blank_key["sources"]["key"] is None
+              and "states no usable moment" in _blank_key["basis"]
+              and _blank_key["basis"] != _no_key["basis"])
+
+        _rows = [{"ts": "2026-06-02T15:38:00Z", "runId": "RA"},
+                 {"ts": "2026-08-26T09:00:00Z", "runId": "RB"},
+                 {"runId": "RC"}, {"ts": 17, "runId": "RD"}, "not a row"]
+        check("eb5 the ledger's contribution is its EARLIEST row, not its "
+              "newest - the boundary is when recording BEGAN - and a row with no "
+              "usable `ts` contributes nothing rather than an empty string that "
+              "would sort ahead of every real stamp: %r"
+              % (M.earliest_recorded(_rows),),
+              M.earliest_recorded(_rows) == "2026-06-02T15:38:00Z"
+              and M.earliest_recorded([]) is None
+              and M.earliest_recorded([{"runId": "RC"}]) is None)
+
+        # --- what could not be ASKED is not what is absent ------------------
+        _guessed = M.boundary_of(None, "2026-06-02T15:38:00Z",
+                                 unknown=["the plan could not be read"])
+        check("eb6 a source that could not be ASKED is NAMED, never folded into "
+              "'absent'. An unreadable plan may hold an EARLIER moment, so "
+              "treating it as missing moves the boundary later - the one "
+              "direction that widens an excuse in silence: %r"
+              % (_guessed["unknown"],),
+              _guessed["unknown"] == ["the plan could not be read"]
+              and M.boundary_of(None, None)["unknown"] == [])
+
+        empty_proj = _project(os.path.join(tmp, "no-boundary"), {})
+        _nothing = M.evidence_boundary(empty_proj,
+                                       os.path.join(empty_proj, "nope.json"))
+        check("eb7 the door answers on a project with no plan and no ledger "
+              "rather than raising - it is asked on every gate verdict, and it "
+              "names the plan it could not read instead of reporting a boundary "
+              "it did not derive: at=%r unknown=%r"
+              % (_nothing["at"], _nothing["unknown"]),
+              _nothing["at"] is None and len(_nothing["unknown"]) == 1
+              and "could not be read" in _nothing["unknown"][0])
+
+        # --- stamping it, once ----------------------------------------------
+        sproj, spath = _manifest_project("since")
+        for rid, ts in (("RB", "2026-08-26T11:00:00Z"),
+                        ("RA", "2026-06-02T15:38:00Z")):
+            M.append_row(sproj, {"v": 1, "runId": rid, "ts": ts, "scope": "task",
+                                 "taskId": "P1.1", "phaseId": "P1",
+                                 "status": "passed", "steps": []})
+        s_shard = os.path.join(sproj, "docs", "audit", "phases", "P1.json")
+        s_shard_before = io.open(s_shard, encoding="utf-8").read()
+        stamped = M.write_evidence_since(sproj, spath, "P1", session_id="me")
+        s_meta = _json.loads(io.open(spath, encoding="utf-8").read())["meta"]
+        check("eb8 the first stamp dates the boundary from the EARLIEST row in "
+              "the ledger and names THAT run - the rows are appended "
+              "newest-first here so a writer reading the last row, or the wall "
+              "clock, produces a different answer from this one: %r"
+              % (s_meta.get(M.SINCE_KEY),),
+              stamped["written"] is True
+              and s_meta[M.SINCE_KEY]["at"] == "2026-06-02T15:38:00Z"
+              and s_meta[M.SINCE_KEY]["runId"] == "RA"
+              and s_meta[M.SINCE_KEY]["basis"] == M.SINCE_BASIS)
+
+        check("eb9 ...and it lands on the INDEX, where `meta` lives, leaving the "
+              "phase shard byte-identical. The pointer beside it is the opposite "
+              "rule and for the opposite reason: this is written ONCE in a "
+              "plan's life, so it cannot be what puts two parallel phases in "
+              "each other's way",
+              io.open(s_shard, encoding="utf-8").read() == s_shard_before
+              and stamped["at"] == "2026-06-02T15:38:00Z")
+
+        s_rows = [r for r in _journal_io.read_all(sproj)
+                  if r.get("action") == M.ACTION_SINCE]
+        check("eb10 the stamp is anchored in the hash chain by a row of its "
+              "own, naming both ends of the transition - `from` null is the "
+              "claim that the plan carried no boundary before, which is the "
+              "only thing that makes this row readable as a transition: %r"
+              % (s_rows[0]["details"] if s_rows else None,),
+              len(s_rows) == 1 and s_rows[0]["details"]["field"] == M.SINCE_KEY
+              and s_rows[0]["details"]["from"] is None
+              and s_rows[0]["details"]["to"] == "2026-06-02T15:38:00Z"
+              and s_rows[0]["details"]["runId"] == "RA")
+
+        # THE OVER-FIRE ARM, and it reads vacuous by design: a writer that
+        # stamped on EVERY run would pass every case above and fail only this
+        # one. The boundary is derived once and then written down; one that were
+        # re-derived would move LATER as the ledger's earliest row aged out of a
+        # reader's reach, which is the silent widening this whole feature exists
+        # to prevent.
+        M.append_row(sproj, {"v": 1, "runId": "RC", "ts": "2026-09-01T09:00:00Z",
+                             "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+                             "status": "passed", "steps": []})
+        again_since = M.write_evidence_since(sproj, spath, "P1", session_id="me")
+        s_meta2 = _json.loads(io.open(spath, encoding="utf-8").read())["meta"]
+        s_rows2 = [r for r in _journal_io.read_all(sproj)
+                   if r.get("action") == M.ACTION_SINCE]
+        check("eb11 a plan that already states a boundary is LEFT ALONE, says "
+              "so, and draws no second journal row - a stamp taken on every run "
+              "would put a trail of transitions that never happened beside a "
+              "value that moves: %r" % (again_since.get("reason"),),
+              again_since["written"] is False
+              and again_since["at"] == "2026-06-02T15:38:00Z"
+              and s_meta2[M.SINCE_KEY]["at"] == "2026-06-02T15:38:00Z"
+              and s_meta2[M.SINCE_KEY]["runId"] == "RA"
+              and len(s_rows2) == 1)
+
+        bare_proj, bare_path = _manifest_project("since-empty")
+        bare_since = M.write_evidence_since(bare_proj, bare_path, "P1")
+        bare_meta = _json.loads(io.open(bare_path, encoding="utf-8").read())["meta"]
+        check("eb12 a plan with NO recorded run is not stamped at all, and the "
+              "missing basis is what gets said. A wall-clock stamp here would "
+              "date the boundary from the moment somebody happened to run the "
+              "gate and excuse every task finished before that - a claim with "
+              "nothing behind it: %r" % (bare_since.get("reason"),),
+              bare_since["written"] is False and bare_since["at"] is None
+              and M.SINCE_KEY not in bare_meta
+              and "no recorded run" in bare_since["reason"]
+              and not [r for r in _journal_io.read_all(bare_proj)
+                       if r.get("action") == M.ACTION_SINCE])
+
+        anon_proj, anon_path = _manifest_project("since-anon")
+        M.append_row(anon_proj, {"v": 1, "runId": "", "ts": "2026-06-02T15:38:00Z",
+                                 "scope": "task", "taskId": "P1.1",
+                                 "phaseId": "P1", "status": "passed", "steps": []})
+        M.write_evidence_since(anon_proj, anon_path, "P1")
+        anon_meta = _json.loads(io.open(anon_path, encoding="utf-8").read())["meta"]
+        check("eb13 a row naming no run still DATES the boundary, and the "
+              "provenance key is left OFF rather than written empty - `runId` is "
+              "looked up in the ledger, so an empty one would be a pointer at "
+              "nothing while `at` is a fact in its own right: %r"
+              % (anon_meta.get(M.SINCE_KEY),),
+              (anon_meta.get(M.SINCE_KEY) or {}).get("at") == "2026-06-02T15:38:00Z"
+              and "runId" not in (anon_meta.get(M.SINCE_KEY) or {"runId": 1})
+              and (anon_meta.get(M.SINCE_KEY) or {}).get("basis") == M.SINCE_BASIS)
+
+        gone = M.write_evidence_since(sproj, os.path.join(sproj, "gone.json"), "P1")
+        check("eb14 a plan that cannot be read is refused with the reason, and "
+              "nothing is written anywhere - the read comes before the first "
+              "mutation, so there is no half-applied state to recover from: %r"
+              % (gone.get("reason"),),
+              gone["written"] is False and gone["at"] is None
+              and "cannot read" in gone["reason"])
+
+        # --- the locks, and what a refusal costs here -----------------------
+        lockproj, lockpath = _manifest_project("since-locked", git=True)
+        M.append_row(lockproj, {"v": 1, "runId": "RL", "ts": "2026-06-02T15:38:00Z",
+                                "scope": "task", "taskId": "P1.1",
+                                "phaseId": "P1", "status": "passed", "steps": []})
+        _locks.acquire(lockproj, "index", session="other", out=lambda *_a: None)
+        idx_held = M.write_evidence_since(lockproj, lockpath, "P1",
+                                          session_id="me")
+        _locks.release(lockproj, "index", session="other", out=lambda *_a: None)
+        check("eb15 the INDEX lock is what guards this write, because `meta` is "
+              "the index's - a stamp taken while another live session holds it "
+              "is refused, and the sentence does NOT send the human to "
+              "`--reconcile`: that repair re-derives POINTERS and cannot write "
+              "this key, while nothing here needs a repair at all because the "
+              "ledger still dates the boundary: %r" % (idx_held.get("reason"),),
+              idx_held["written"] is False
+              and "index lock is held" in idx_held["reason"]
+              and "reconcile" not in idx_held["reason"]
+              and M.SINCE_KEY not in _json.loads(
+                  io.open(lockpath, encoding="utf-8").read())["meta"])
+
+        _locks.acquire(lockproj, "phase-P1", session="other", out=lambda *_a: None)
+        ph_held = M.write_evidence_since(lockproj, lockpath, "P1", session_id="me")
+        _locks.release(lockproj, "phase-P1", session="other", out=lambda *_a: None)
+        check("eb16 ...and the PHASE lock refuses it too, which is not "
+              "belt-and-braces: in the SINGLE-FILE layout the index and the "
+              "phase body are the same bytes, and `write_pointer` rewrites that "
+              "whole file under this very lock - so a stamp ignoring it would be "
+              "the second writer of one file. A refusal costs nothing here; a "
+              "lost update costs somebody's pointer: %r" % (ph_held.get("reason"),),
+              ph_held["written"] is False
+              and "phase lock is held" in ph_held["reason"]
+              and M.SINCE_KEY not in _json.loads(
+                  io.open(lockpath, encoding="utf-8").read())["meta"])
+
+        # THE SECOND DIRECTION, and it is the case that fails when the lock
+        # check is tightened until it refuses everything: a lock held by OUR OWN
+        # session is the ordinary state of an in-phase recording, and refusing
+        # it would refuse every gate run inside a phase.
+        _locks.acquire(lockproj, "phase-P1", session="me", out=lambda *_a: None)
+        ours = M.write_evidence_since(lockproj, lockpath, "P1", session_id="me")
+        _locks.release(lockproj, "phase-P1", session="me", out=lambda *_a: None)
+        check("eb17 a lock held by THIS session does not refuse the stamp - "
+              "`_locks.acquire` is not re-entrant and an in-phase run already "
+              "holds its phase lock, so the holder is compared rather than the "
+              "lock re-taken: %r" % ((ours["written"], ours["at"]),),
+              ours["written"] is True
+              and ours["at"] == "2026-06-02T15:38:00Z")
+
+        _locks.acquire(lockproj, "index", session="other", out=lambda *_a: None)
+        _locks.acquire(lockproj, "phase-P1", session="other", out=lambda *_a: None)
+        _istate, _idetail = M.lock_state(lockproj, "index", "index",
+                                         session_id="me", hint="HINT-SENTINEL")
+        _pstate, _pdetail = M.pointer_lock_state(lockproj, "P1", session_id="me")
+        _locks.release(lockproj, "index", session="other", out=lambda *_a: None)
+        _locks.release(lockproj, "phase-P1", session="other", out=lambda *_a: None)
+        check("eb18 `lock_state` names the lock it was ASKED about and carries "
+              "the CALLER's repair, while `pointer_lock_state` still produces "
+              "the phase's own sentence through it. Two writers with two "
+              "repairs: a shared hint would send half of them to a command that "
+              "cannot help them, and a shared label would name the wrong lock: "
+              "%r / %r" % (_idetail, _pdetail),
+              _istate == "held" and _pstate == "held"
+              and "the index lock is held" in _idetail
+              and _idetail.endswith("HINT-SENTINEL")
+              and "the phase lock is held" in _pdetail
+              and _pdetail.endswith(M.RECONCILE_HINT))
+
+
+        # THE OVER-FIRE ARM WHERE THE VALUE ITSELF SEPARATES THE TWO WRITERS.
+        # eb11's ledger could only produce the stamp the plan already carried, so
+        # a writer that re-derived every run left the block looking untouched and
+        # was caught by the journal alone. Here the plan states a boundary EARLIER
+        # than anything in the ledger - a hand-written one, or one whose first
+        # runs have since been archived - and re-deriving would replace it with a
+        # LATER moment. Later is WIDER, because excused work is BEFORE the
+        # boundary: that write would silently excuse every task finished in
+        # between, which is the whole failure this feature is built around.
+        hand_proj, hand_path = _manifest_project("since-handwritten")
+        M.append_row(hand_proj, {"v": 1, "runId": "RN", "scope": "task",
+                                 "ts": "2026-06-02T15:38:00Z", "taskId": "P1.1",
+                                 "phaseId": "P1", "status": "passed", "steps": []})
+        hand_body = _json.loads(io.open(hand_path, encoding="utf-8").read())
+        hand_block = {"at": "2025-01-04T08:00:00Z", "runId": "HAND",
+                      "basis": "stated by the team when the plan was adopted"}
+        hand_body["meta"][M.SINCE_KEY] = dict(hand_block)
+        io.open(hand_path, "w", encoding="utf-8").write(_json.dumps(hand_body))
+        hand_out = M.write_evidence_since(hand_proj, hand_path, "P1")
+        hand_after = _json.loads(io.open(hand_path,
+                                         encoding="utf-8").read())["meta"]
+        check("eb19 a boundary the plan ALREADY states is never re-derived, not "
+              "even when the ledger would produce a different one - and the "
+              "difference here is the direction that matters: re-deriving would "
+              "move it from %s to the ledger's %s, and a LATER boundary excuses "
+              "everything finished in between. `min` is what makes the two "
+              "sources safe; re-deriving is what would make them dangerous: %r"
+              % (hand_block["at"], "2026-06-02T15:38:00Z",
+                 hand_after.get(M.SINCE_KEY)),
+              hand_out["written"] is False
+              and hand_out["at"] == "2025-01-04T08:00:00Z"
+              and hand_after[M.SINCE_KEY] == hand_block
+              and not [r for r in _journal_io.read_all(hand_proj)
+                       if r.get("action") == M.ACTION_SINCE])
+
+
+        # THE SINGLE-FILE LAYOUT, where the two writes land in ONE file. `meta`
+        # is the index's and the pointer is the phase body's, which are separate
+        # files only when the plan is sharded; in the v2 layout the boundary
+        # write is a read-modify-write of the very document the pointer has just
+        # been written into. A stamp that wrote back anything other than the whole
+        # document it had just read would take the pointer out with it, and every
+        # sharded case above would stay green while it did.
+        flat = _project(os.path.join(tmp, "since-flat"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        os.makedirs(os.path.join(flat, "docs", "audit"), exist_ok=True)
+        flat_path = os.path.join(flat, "docs", "audit", "audit-plan.json")
+        io.open(flat_path, "w", encoding="utf-8").write(_json.dumps(
+            {"meta": {"version": 2},
+             "phases": [{"id": "P1", "title": "one", "status": "in_progress",
+                         "testGate": [], "tasks": [{"id": "P1.1", "title": "t",
+                                                    "status": "done"}]}]}))
+        M.append_row(flat, {"v": 1, "runId": "RF", "ts": "2026-06-02T15:38:00Z",
+                            "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+                            "status": "passed", "steps": []})
+        M.write_pointer(flat, flat_path, "task", {"taskId": "P1.1",
+                                                  "phaseId": "P1"},
+                        {"runId": "RF", "status": "passed",
+                         "ts": "2026-06-02T15:38:00Z"})
+        M.write_evidence_since(flat, flat_path, "P1")
+        flat_body = _json.loads(io.open(flat_path, encoding="utf-8").read())
+        # READ DEFENSIVELY, because the bug this case exists for DELETES the keys
+        # the assertion would otherwise index: a subscript would raise here and be
+        # reported as "the body raised" rather than as this case failing by name,
+        # which is a case that cannot say what it caught.
+        flat_phase = (flat_body.get("phases") or [{}])[0]
+        flat_task = (flat_phase.get("tasks") or [{}])[0]
+        check("eb20 in the SINGLE-FILE layout both writes land in one document "
+              "and BOTH survive - the boundary is written after the pointer, "
+              "into the same file, so a stamp that wrote back less than the whole "
+              "document it read would silently delete the pointer beside it. "
+              "Every sharded case above passes with that bug in place, because "
+              "there the two live in different files: %r"
+              % (((flat_body.get("meta") or {}).get(M.SINCE_KEY),
+                  flat_task.get("testEvidence"), flat_phase.get("title")),),
+              (flat_body.get("meta") or {}).get(M.SINCE_KEY, {}).get("at")
+              == "2026-06-02T15:38:00Z"
+              and (flat_task.get("testEvidence") or {}).get("runId") == "RF"
+              and flat_phase.get("title") == "one")
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

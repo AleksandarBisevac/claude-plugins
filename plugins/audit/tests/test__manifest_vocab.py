@@ -704,6 +704,74 @@ def _cases(check):
           _te_says == [] and _te_blank == [] and "opaque" in _te_runid)
 
 
+    # --- evidenceSince, the boundary the plan states about itself -----------------
+    # WHEN THIS PLAN COULD FIRST HAVE RECORDED A RUN AT ALL. It is one of TWO
+    # independent sources - the other is the earliest row in the evidence ledger -
+    # and the boundary is the EARLIER of them, because excused work is BEFORE the
+    # boundary and a later one widens the excuse. Declared here for mv38's reason:
+    # a key added to the schema and not to the set (or the reverse) is silent until
+    # somebody reads a did-you-mean about a real key.
+    _es_props = ((_te_schema.get("$defs") or {}).get("meta")
+                 or {}).get("properties") or {}
+    _es_def = _es_props.get("evidenceSince") or {}
+    _es_meta_lv = set(_levels.get("KNOWN_META") or ())
+    check("mv43 `evidenceSince` is declared by audit-plan.schema.json at `meta` "
+          "AND held by KNOWN_META, asserted positively - mv18's silence is what "
+          "BOTH sides missing the key looks like, and a key excused by OFF_SCHEMA "
+          "would read the same from there: %r" % (sorted(_es_def.get("properties") or {}),),
+          "evidenceSince" in _es_meta_lv and "evidenceSince" in M.KNOWN_META
+          and "evidenceSince" not in (M.OFF_SCHEMA.get("KNOWN_META") or {}),
+          repr(sorted(_es_meta_lv)))
+    # Red-first in BOTH directions, on COPIES - the shipped set and the shipped
+    # schema are untouched, so the tree is never one exception away from carrying
+    # the mutation.
+    _es_sets = dict(_help.vocab_sets(M))
+    _es_sets["KNOWN_META"] = set(M.KNOWN_META) - {"evidenceSince"}
+    _es_dropped = _help.vocab_drift(_levels, _es_sets, M.SCHEMA_ANCHORS,
+                                    M.OFF_SCHEMA)
+    _es_lv = dict(_levels)
+    _es_lv["KNOWN_META"] = _es_meta_lv - {"evidenceSince"}
+    _es_undeclared = _help.vocab_drift(_es_lv, _help.vocab_sets(M),
+                                       M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
+    check("mv44 ...and both directions of that agreement really land: dropping "
+          "the key from a copy of KNOWN_META names `meta.evidenceSince`, and a "
+          "copy of the schema levels that stops declaring it names the set still "
+          "holding it. Whole problem lists rather than 'at least one', so a "
+          "mutation that also broke something else cannot pass for this",
+          [p for _n, p in _es_dropped] ==
+          ["meta.evidenceSince is in the schema and not in the set - "
+           "add it, or the typo-catcher warns about a real key"]
+          and [p for _n, p in _es_undeclared] ==
+          ["'evidenceSince' is in the set and not in the schema - add it to the "
+           "schema, or to OFF_SCHEMA with the reason it is accepted anyway"],
+          repr((_es_dropped, _es_undeclared)))
+    # The claims, not the wording. Each of these is a way a reader could go wrong
+    # about a block whose whole job is to EXCUSE finished work from a gate.
+    _es_body = str(_es_def.get("description") or "").lower()
+    _es_says = [w for w in ("ledger", "earlier", "written once",
+                            "absent means", "recorder")
+                if w not in _es_body]
+    _es_blank = sorted(k for k, v in (_es_def.get("properties") or {}).items()
+                       if not str((v or {}).get("description") or "").strip())
+    _es_runid = str(((_es_def.get("properties") or {}).get("runId")
+                     or {}).get("description") or "").lower()
+    check("mv45 the schema SAYS what a consumer has to know: that this block is "
+          "one of two sources and the EARLIER wins, that absent means 'nothing "
+          "here says when recording began' rather than the epoch, that the "
+          "recorder writes it once - and that `runId` is opaque, which is what "
+          "stops somebody parsing a date out of it instead of reading `at`. "
+          "`required` is %r: `at` because a block dating nothing excuses "
+          "nothing, `basis` because a claim that excuses finished work with no "
+          "basis is the shape this document exists to refuse - and `runId` is "
+          "NOT required, because a ledger row naming no run still dates a "
+          "boundary. Missing claims: %r; undescribed properties: %r"
+          % (_es_def.get("required"), _es_says, _es_blank),
+          _es_says == [] and _es_blank == [] and "opaque" in _es_runid
+          and sorted(_es_def.get("required") or ()) == ["at", "basis"]
+          and _es_def.get("additionalProperties") is True
+          and _es_def.get("type") == "object")
+
+
 def _selftest():
     return _harness.run(_cases)
 

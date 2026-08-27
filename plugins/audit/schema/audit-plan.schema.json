@@ -700,6 +700,29 @@
             }
           }
         },
+        "evidenceSince": {
+          "type": "object",
+          "description": "WHEN THIS PLAN COULD FIRST HAVE RECORDED A TEST RUN AT ALL, so that work finished before it is read as impossible to evidence rather than as unevidenced. A plan adopted mid-flight carries tasks that were done before the recorder existed; without this the `no-test-evidence` gate condition fails every one of them and no setting helps. THE BOUNDARY IS NOT THIS BLOCK ALONE. It is the EARLIER of `at` and the earliest timestamp in the evidence ledger beside the manifest, because excused work is BEFORE the boundary and the earlier value is therefore the safer one: delete this block and the ledger still answers, archive the ledger and this block still answers, and only destroying both widens the excuse. ABSENT MEANS 'NOTHING HERE SAYS WHEN RECORDING BEGAN', never 'recording began at the epoch' and never 'nothing was recorded' - the ledger is asked separately and a reader must compare explicitly rather than testing this block for truthiness. WRITTEN ONCE, BY THE RECORDER, on the first `--record` that finds it missing, and never re-derived afterwards: a boundary that moved would move LATER, which widens an excuse in silence. additionalProperties stays permissive, which is this document's policy at every object level: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote.",
+          "additionalProperties": true,
+          "required": [
+            "at",
+            "basis"
+          ],
+          "properties": {
+            "at": {
+              "type": "string",
+              "description": "ISO timestamp of the first run this plan recorded. Work completed before it could not have carried evidence; work completed at or after it could. `completedAt` (task) and `mergedAt` (phase) are what a subject is placed against, and a subject carrying neither is UNPLACEABLE - which is a third answer, not a pass and not a silent failure."
+            },
+            "runId": {
+              "type": "string",
+              "description": "Which run in the evidence ledger dated this boundary. OPAQUE, AND THAT IS THE CONTRACT, exactly as in testEvidence.runId: it is carried as provenance and nothing may parse a timestamp, an ordinal or an attempt out of it - `at` is a field of its own precisely so no consumer has to. Optional: a ledger row that names no run still dates the boundary, and an empty string here would be a pointer at nothing."
+            },
+            "basis": {
+              "type": "string",
+              "description": "The sentence that makes `at` checkable - which run it came from and what it licenses - because every claim this plugin writes down carries the thing that makes it true. Required: a boundary excuses finished work from a gate, so one asserted with no basis is the shape of claim this document exists to refuse."
+            }
+          }
+        },
         "usage": {
           "type": "object",
           "description": "Where the report/panel/status commands read token-usage data from. The hooks read their own copy from .claude/audit.config.json - that split (commands from manifest meta, hooks from the config file) is the plugin's standing convention. Both default to '.claude/usage', so the two only need to agree when a project moves the ledger.",

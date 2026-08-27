@@ -877,13 +877,18 @@ def _disarm_interrupt(previous):
 
 
 def _record_run(project, args, res, source, commands, manifest, out=print):
-    """Record the run, then try to point the plan at it. Reports both outcomes.
+    """Record the run, point the plan at it, and date the plan's first recording.
 
     THE POINTER IS ALLOWED TO FAIL AND THE ROW IS NOT. The ledger is the source of
     truth; the manifest block is a cache, so a pointer refused by another live
     session leaves the record standing and names the repair. That asymmetry is
     printed rather than folded into one word, because "your run was not recorded"
     and "your plan has not caught up yet" are different problems.
+
+    THE BOUNDARY IS ALLOWED TO FAIL AND OWES NO REPAIR AT ALL, which is the third
+    outcome and not a variation on the second. It is written once in a plan's life
+    and only when absent, and both of its sources are independent -- so a refused
+    stamp leaves the ledger dating the boundary exactly as it did a moment before.
     """
     ids = {"phaseId": args.phase}
     if source == "task" or args.task:
@@ -906,7 +911,8 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
                               published=published)
     except Exception as exc:
         out("  evidence: NOT recorded - %s" % (exc,))
-        return {"recorded": False, "pointer": False}
+        return {"recorded": False, "pointer": False, "boundary": None,
+                "boundaryWritten": False}
     out("  evidence: recorded %s" % (identity["runId"],))
     pointer = _ev.write_pointer(project, args.manifest, source, ids,
                                 recorded["row"],
@@ -915,7 +921,26 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
         out("  pointer:  %s now names it" % (ids.get("taskId") or args.phase,))
     else:
         out("  pointer:  NOT updated - %s" % (pointer["reason"],))
-    return {"recorded": True, "pointer": bool(pointer["written"])}
+    # ASKED ON ITS OWN TERMS, NEVER OFF THE POINTER'S ANSWER. The two writes have
+    # different subjects and different guards - a pointer refused because the plan
+    # has no such task says nothing about whether this plan has ever recorded a run
+    # - so reading `pointer["written"]` here would make one refusal cause another
+    # for a reason that was never true.
+    since = _ev.write_evidence_since(project, args.manifest, ids.get("phaseId"),
+                                     session_id=identity["sessionId"])
+    if since["written"]:
+        out("  boundary: recording began %s - work finished before it could not "
+            "carry evidence" % (since["at"],))
+    elif since["at"] is not None:
+        out("  boundary: %s, already stated by the plan" % (since["at"],))
+    else:
+        # THREE OUTCOMES, THREE SENTENCES. "Written now", "already there" and
+        # "could not be written" are three different facts about the plan, and a
+        # reader who saw one word for all three would have to open the manifest to
+        # find out which.
+        out("  boundary: NOT stamped - %s" % (since["reason"],))
+    return {"recorded": True, "pointer": bool(pointer["written"]),
+            "boundary": since["at"], "boundaryWritten": bool(since["written"])}
 
 
 def main(argv, out=print):

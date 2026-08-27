@@ -32,6 +32,7 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
+import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 
@@ -902,6 +903,99 @@ def _cases(check):
           % (sorted(_recorded_rows(evdir)[0]),),
           _recorded_rows(evdir)[0].get("scope") == "phase"
           and "attempt" not in _recorded_rows(evdir)[0])
+
+    # --- the evidence boundary, end to end ---------------------------------
+    # THE MID-FLIGHT ADOPTER'S SHAPE, built rather than described: a plan with no
+    # `meta.evidenceSince` and an empty ledger, which is every repository the day
+    # it upgrades. A FRESH fixture, never `recroot`: that one has recorded runs
+    # by now, so a boundary case against it would be reading somebody else's
+    # first run as its own.
+    bdroot = _harness.fixture_root("run-test-gate-boundary-")
+    os.makedirs(os.path.join(bdroot, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(bdroot, ".claude"))
+    with open(os.path.join(bdroot, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    bdpath = os.path.join(bdroot, "docs", "audit", "audit-plan.json")
+    with open(bdpath, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {"ok": "true"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(bdroot, "docs", "audit", "phases", "P1.json"), "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["ok"], "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": []}]}, fh)
+    subprocess.run(["git", "init", "-q", bdroot], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # AND THE FIXTURE IS COMMITTED, which `recroot` above is not - here it is
+    # load-bearing rather than tidy. `git status --porcelain` collapses an
+    # UNTRACKED directory to one `?? docs/` line, so on an uncommitted fixture a
+    # write into `docs/audit/audit-plan.json` inside the measurement window
+    # changes no porcelain line at all and bd2 could never go red. Measured with
+    # the write injected between the two snapshots: the suite stayed green.
+    for arg in (["add", "-A"],
+                ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", bdroot] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    bd_before = json.loads(open(bdpath).read())["meta"]
+
+    bd1_lines = []
+    bd1_code = M.main([bdpath, "P1", "--project-dir", bdroot, "--record"],
+                      out=bd1_lines.append)
+    bd1_text = "\n".join(bd1_lines)
+    bd_meta = json.loads(open(bdpath).read())["meta"]
+    bd_row = _recorded_rows(os.path.join(bdroot, "docs", "audit", "evidence"))[0]
+    check("bd1 a plan with no boundary and no ledger gets one from its FIRST "
+          "recorded run: the key names that run, dates it from that run's own "
+          "stamp, and carries the sentence that licenses it. Before this, "
+          "`no-test-evidence` had no setting for a plan adopted mid-flight - "
+          "every task finished before the recorder existed failed a condition "
+          "it could not have passed: %r -> %r" % (bd_before, bd_meta.get("evidenceSince")),
+          bd1_code == M.E_OK and "evidenceSince" not in bd_before
+          and (bd_meta.get("evidenceSince") or {}).get("at") == bd_row["ts"]
+          and (bd_meta.get("evidenceSince") or {}).get("runId") == bd_row["runId"]
+          and str((bd_meta.get("evidenceSince") or {}).get("basis") or "").strip() != ""
+          and "boundary: recording began" in bd1_text)
+
+    check("bd2 ...and the gate STILL reports the tree unchanged, which is the "
+          "same boundary rc1 pins one write over: this one touches the INDEX, "
+          "the file the run has just described with `git status --porcelain`. "
+          "Move it above the post-run snapshot and the runner accuses itself of "
+          "the rewrite it exists to catch: green=%r" % ("GATE GREEN" in bd1_text,),
+          "GATE GREEN" in bd1_text and "MUTATED" not in bd1_text)
+
+    bd_j = [r for r in _journal_io.read_all(bdroot)
+            if r.get("action") == "meta.evidenceSince"]
+    check("bd3 the stamp is anchored in the hash chain by a row of its own, "
+          "naming both ends. A DETAIL on the row that anchors the RUN would not "
+          "do: that row is written before the plan is touched and stays true "
+          "whatever happens to it, so hanging a plan-movement claim on it would "
+          "put a transition in the chain that had not happened yet: %r"
+          % (bd_j[0]["details"] if bd_j else None,),
+          len(bd_j) == 1 and bd_j[0]["details"]["field"] == "evidenceSince"
+          and bd_j[0]["details"]["from"] is None
+          and bd_j[0]["details"]["to"] == (bd_meta.get("evidenceSince") or {}).get("at")
+          and bd_j[0]["details"]["runId"] == bd_row["runId"])
+
+    bd2_lines = []
+    M.main([bdpath, "P1", "--project-dir", bdroot, "--record"],
+           out=bd2_lines.append)
+    bd_meta2 = json.loads(open(bdpath).read())["meta"]
+    bd_j2 = [r for r in _journal_io.read_all(bdroot)
+             if r.get("action") == "meta.evidenceSince"]
+    check("bd4 a SECOND recorded run does not move it, says the plan already "
+          "states it, and draws no second row. THE ROW COUNT IS THE SEPARATOR "
+          "here and the value is not: a writer that re-derived on every run "
+          "would compute the same earliest stamp and leave the block looking "
+          "untouched, while quietly asserting a transition in the chain each "
+          "time (eb19 is where the VALUE tells them apart): %r"
+          % (bd_meta2.get("evidenceSince"),),
+          bd_meta2.get("evidenceSince") == bd_meta.get("evidenceSince")
+          and bd_meta2.get("evidenceSince") is not None and len(bd_j2) == 1
+          and "already stated by the plan" in "\n".join(bd2_lines)
+          and len(_recorded_rows(os.path.join(bdroot, "docs", "audit",
+                                              "evidence"))) == 2)
 
     # --- a run that was STOPPED, not answered ------------------------------
     # `cancelled` was a `testEvidence.status` member with NO WRITER: it sat in the

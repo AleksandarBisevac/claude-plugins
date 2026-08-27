@@ -766,6 +766,17 @@ SCHEMA_EXEMPTIONS = {
         "coverage is `tests/test__branch.py`, which composes names, and "
         "`test_resolve_branch.py`, which runs the door. REVISIT when the panel "
         "grows a meta.branch card: the demo is where its screenshot comes from.",
+    "meta.evidenceSince":
+        "when this plan could FIRST have recorded a run, which exists so that "
+        "work finished before the recorder is read as impossible to evidence "
+        "rather than as unevidenced. It changes the `no-test-evidence` GATE's "
+        "verdict and nothing any surface renders today, so a fixture carrying it "
+        "would demonstrate nothing a reader could see - and this fixture's runs "
+        "are all generated in one pass from the plan's own statuses, so the "
+        "boundary would sit before every task in it and excuse none of them. "
+        "REVISIT with the surface that tells `Before recording` apart from `No "
+        "evidence`: a pre-boundary subject is the only thing that renders it, and "
+        "this fixture is where those screenshots come from.",
     "phase.parentBranch":
         "which branch THIS phase forks from and merges into. Absent means "
         "`meta.developmentBranch`, which is the answer for every phase in this "

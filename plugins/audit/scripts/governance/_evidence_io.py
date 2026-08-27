@@ -376,8 +376,8 @@ def pointer_for(row):
             "at": row.get("ts")}
 
 
-def pointer_lock_state(project, phase_id, session_id=None):
-    """`(state, detail)` -- may this session write the phase's shard, and if not why.
+def lock_state(project, name, label, session_id=None, hint=""):
+    """`(state, detail)` -- may this session write what `name` guards, and if not why.
 
     `free` | `ours` | `held` | `stale` | `unlockable`.
 
@@ -393,11 +393,16 @@ def pointer_lock_state(project, phase_id, session_id=None):
     A STALE LOCK IS NOT TAKEN OVER HERE. Taking one over is a decision a human
     makes with `audit-lock --takeover` after confirming the holder is dead; a
     cache write must not make it quietly.
+
+    `hint` IS THE CALLER'S REPAIR AND NOT THIS FUNCTION'S. Two writers ask this
+    question now and the repairs differ -- a refused pointer is caught up by
+    `--reconcile`, a refused boundary needs nothing at all -- so a shared sentence
+    here would send half the callers somewhere that cannot help them.
     """
     try:
         if not _locks.available(project):
             return "unlockable", "this project has no lock scheme"
-        path = os.path.join(_locks.lock_dir(project), "phase-%s.lock" % (phase_id,))
+        path = os.path.join(_locks.lock_dir(project), "%s.lock" % (name,))
         if not os.path.exists(path):
             return "free", ""
         info = _locks.read_lock(path)
@@ -406,14 +411,26 @@ def pointer_lock_state(project, phase_id, session_id=None):
             return "ours", "held by this session"
         live, basis = _locks.judge(info, path)
         if live:
-            return "held", ("the phase lock is held by another live run (%s); %s"
-                            % (basis, RECONCILE_HINT))
-        return "stale", ("the phase lock looks abandoned (%s); confirm with a "
+            return "held", ("the %s lock is held by another live run (%s); %s"
+                            % (label, basis, hint))
+        return "stale", ("the %s lock looks abandoned (%s); confirm with a "
                          "human and use audit-lock --takeover, then %s"
-                         % (basis, RECONCILE_HINT))
+                         % (label, basis, hint))
     except Exception as exc:
-        return "held", ("the phase lock could not be read (%s); %s"
-                        % (exc, RECONCILE_HINT))
+        return "held", ("the %s lock could not be read (%s); %s"
+                        % (label, exc, hint))
+
+
+def pointer_lock_state(project, phase_id, session_id=None):
+    """`(state, detail)` -- may this session write the phase's shard, and if not why.
+
+    The pointer's spelling of `lock_state`: the phase lock, and the repair a
+    refused pointer names. It stays a named function because the phase lock is
+    what the POINTER is about, and a call site spelling the lock name itself is
+    one that can spell it differently next year.
+    """
+    return lock_state(project, "phase-%s" % (phase_id,), "phase",
+                      session_id=session_id, hint=RECONCILE_HINT)
 
 
 def _phase_file(manifest_path, phase_id):
@@ -611,6 +628,284 @@ def _current_pointer(manifest_path, scope, ids):
     except Exception:
         return None
     return None
+
+
+# --- the boundary: when could a run have been recorded at all ------------------
+# WHAT THE GATE COULD NOT ASK. `no-test-evidence` asks whether finished work is
+# backed by a recorded run, and never whether it COULD have been. For a plan
+# adopted mid-flight -- hundreds of tasks finished before this recorder existed --
+# the answer is no for every one of them, and no setting helps: `--phase` scopes
+# the human render and says so in its own help, not the gate. That work is not a
+# lapse, it is an impossibility, and what separates the two is a moment:
+#
+#     boundary = min( meta.evidenceSince.at , the earliest ts in the ledger )
+#
+# EXCUSED WORK IS BEFORE THE BOUNDARY, SO THE EARLIER VALUE IS THE SAFER ONE, and
+# that is the whole reason this is a `min` rather than either source alone. A
+# boundary that moved LATER would silently widen the excuse, which is the failure
+# direction that matters for a gate; one that moves earlier only ever fails work
+# it used to excuse, loudly, where somebody sees it. Delete the key and the ledger
+# still answers, archive the ledger and the key still answers -- only destroying
+# both widens the excuse, and that is deliberate destruction rather than an
+# accident.
+#
+# BOTH SOURCES ARE READ BY EXPLICIT COMPARISON, never by truthiness. "No key",
+# "no ledger" and "a boundary at the epoch" are three different states, and the
+# one thing that could flatten them is a reader spelling `if not boundary`.
+SINCE_KEY = "evidenceSince"
+ACTION_SINCE = "meta.evidenceSince"
+# The sentence the block carries about itself. It is written ONLY on the path that
+# derives `at` from the earliest row in the ledger, so it is true of every block
+# this module writes; a second derivation would owe a second sentence rather than
+# reusing this one.
+SINCE_BASIS = ("the first run this plan recorded; work completed before it "
+               "could not carry evidence")
+# ...and what a refused stamp costs, which is not what a refused POINTER costs.
+# `--reconcile` re-derives pointers from the ledger and does not touch this key,
+# so naming it here would send a human to a repair that cannot make the write.
+# Nothing has to: the ledger row is already standing, the boundary still derives
+# from it, and the next recorded run with the lock free writes the key down.
+SINCE_HINT = ("nothing is lost - the ledger still dates the boundary, and the "
+              "next --record taken with the lock free writes the key")
+
+
+def since_block(manifest):
+    """`meta.evidenceSince` exactly as the plan states it, or None when it has none.
+
+    THE BLOCK AND THE MOMENT ARE TWO QUESTIONS. A plan carrying no key and a plan
+    carrying one that states no usable moment are different states with different
+    repairs -- write the key, versus fix the key that is there -- and a reader
+    handed only the moment could not tell them apart.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    block = meta.get(SINCE_KEY) if isinstance(meta, dict) else None
+    return block if isinstance(block, dict) else None
+
+
+def stated_at(block):
+    """The moment a `meta.evidenceSince` block states, or None when it states none.
+
+    A non-string or blank `at` answers None rather than raising: this is read on
+    every gate verdict, and a hand-edited plan must not take the surface down. The
+    caller is told which of the two silences it met by `boundary_of`'s basis.
+    """
+    at = block.get("at") if isinstance(block, dict) else None
+    return at.strip() if isinstance(at, str) and at.strip() else None
+
+
+def earliest_recorded(rows):
+    """The earliest `ts` any recorded run carries, or None when none carries one.
+
+    COMPARED AS STRINGS, which is `latest_by_subject`'s rule at the other end of
+    the same list and correct for the same reason: every row is stamped by `_now`
+    in one fixed UTC spelling, so lexical order IS chronological order and parsing
+    would add a way to fail without adding an answer.
+    """
+    stamps = [r.get("ts") for r in rows or []
+              if isinstance(r, dict) and isinstance(r.get("ts"), str)
+              and r.get("ts").strip()]
+    return min(stamps) if stamps else None
+
+
+def boundary_of(block, ledger_at, unknown=None):
+    """The boundary from two already-read sources. The pure half of the question.
+
+    `{"at", "sources", "basis", "unknown"}`. `at` is None when NEITHER source
+    answered, which is the state of a repository that has never recorded anything
+    -- everything in it predates recording, and the basis says exactly that rather
+    than leaving a reader to infer it from a null.
+
+    `unknown` is the half that must not be folded into "absent". A source that
+    could not be ASKED -- an unreadable plan, a torn ledger line -- may have held
+    an EARLIER moment, so treating it as absent moves the boundary later and
+    widens the excuse in silence. Every such source is named here, and a caller
+    with a non-empty list is holding a boundary that may be later than the truth.
+    """
+    key_at = stated_at(block)
+    stamps = [s for s in (key_at, ledger_at) if s is not None]
+    at = min(stamps) if stamps else None
+    if key_at is not None and ledger_at is not None:
+        basis = ("the plan states recording began %s and the earliest recorded "
+                 "run is %s; the earlier of the two is the boundary, because "
+                 "work before it could not have been recorded" % (key_at, ledger_at))
+    elif key_at is not None:
+        basis = ("the plan states recording began %s; no run is readable in the "
+                 "ledger to confirm it" % (key_at,))
+    elif ledger_at is not None and block is not None:
+        basis = ("the plan carries %s but it states no usable moment, so the "
+                 "boundary is the earliest recorded run, %s"
+                 % (SINCE_KEY, ledger_at))
+    elif ledger_at is not None:
+        basis = ("this plan carries no %s, so the boundary is the earliest "
+                 "recorded run, %s" % (SINCE_KEY, ledger_at))
+    else:
+        basis = ("nothing says when recording began: this plan carries no %s and "
+                 "no run is readable in its ledger, so no work in it could have "
+                 "carried evidence" % (SINCE_KEY,))
+    return {"at": at, "sources": {"key": key_at, "ledger": ledger_at},
+            "basis": basis, "unknown": list(unknown or [])}
+
+
+def evidence_boundary(project, manifest_path, config=None):
+    """The boundary, read from the plan and the ledger. Never raises.
+
+    The door `boundary_of` sits behind: this is the one that touches disk, so a
+    surface asking "may this subject be excused" gets an answer on a repository
+    with no plan, no ledger, or neither.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    unknown, block = [], None
+    try:
+        block = since_block(_mio.read_json(manifest_path))
+    except Exception as exc:
+        # NOT "no key". An unreadable plan may hold an EARLIER moment than the
+        # ledger's, and calling that absent moves the boundary later -- the one
+        # direction that widens an excuse without saying anything.
+        unknown.append("the plan could not be read (%s), so anything %s states "
+                       "is unknown" % (exc, SINCE_KEY))
+    read = read_rows(project, config=config)
+    if read["unreadable"]:
+        unknown.append("%d ledger row(s) could not be parsed, and one of them may "
+                       "carry an earlier run than any that could"
+                       % (read["unreadable"],))
+    return boundary_of(block, earliest_recorded(read["rows"]), unknown=unknown)
+
+
+def _since_from_rows(rows):
+    """`{"at", "runId"}` for the earliest recorded run, or None when there is none.
+
+    THE PROVENANCE AND THE MOMENT COME OFF THE SAME ROW, which is what makes the
+    block's `basis` true: `at` is when the first recorded run happened and `runId`
+    names that run, rather than naming whichever run happened to be writing the
+    key. `runId` is dropped when the row carries none -- an empty string would be
+    a pointer at nothing, and this block is read as provenance.
+    """
+    at = earliest_recorded(rows)
+    if at is None:
+        return None
+    first = [r for r in rows if isinstance(r, dict) and r.get("ts") == at]
+    run_id = str(first[0].get("runId") or "") if first else ""
+    out = {"at": at}
+    if run_id:
+        out["runId"] = run_id
+    out["basis"] = SINCE_BASIS
+    return out
+
+
+def _refused(reason, at=None):
+    """The shape every declined stamp answers with, so a caller reads one dict."""
+    return {"written": False, "reason": reason, "at": at, "path": None}
+
+
+def _since_locks(phase_id):
+    """Which locks a stamp must clear, in one fixed order.
+
+    BOTH, AND THE REASON IS THE LAYOUT. `meta` lives on the INDEX, which is the
+    `index` lock's subject -- that one is the write's own guard. The phase lock is
+    here because in the SINGLE-FILE layout the index and the phase body are the
+    same bytes: `write_pointer` takes `phase-<id>` and rewrites the whole
+    document, so a stamp that ignored it would be the second writer of one file.
+    In the sharded layout that second check can only ever cost a refusal, and a
+    refusal costs nothing here while a lost update costs somebody's pointer --
+    which is `_locks`'s own bias, one caller over.
+    """
+    names = [("index", "index")]
+    if phase_id is not None:
+        names.append(("phase-%s" % (phase_id,), "phase"))
+    return names
+
+
+def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
+                         config=None):
+    """Stamp `meta.evidenceSince` the first time this plan records a run.
+
+    `{"written", "reason", "at", "path"}`. Every `written: False` is a designed
+    outcome carrying a sentence -- an already-stamped plan, a plan with nothing to
+    date the boundary from, a lock another session is holding -- and none of them
+    is an error path, because the ledger row is standing in every one of them.
+
+    WRITTEN ONCE, AND NEVER RE-DERIVED. A key already present is left exactly as
+    it is: re-deriving it every run would make the boundary a value that MOVES,
+    and the direction it would move is later, which widens the excuse. Once a
+    human or a run has written it down it is the plan's own claim.
+
+    IT IS THE INDEX THIS WRITES, unlike the pointer beside it, and that is
+    affordable for one reason only: it happens once in a plan's life. `meta` lives
+    on the index in the sharded layout, so a per-run write here would put every
+    parallel phase back in each other's way -- the conflict the layout exists to
+    avoid. One write, once, is not that.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    try:
+        body = _mio.read_json(manifest_path)
+    except Exception as exc:
+        return _refused("cannot read %s: %s"
+                        % (repo_relative_or_token(project, manifest_path), exc))
+    meta = body.get("meta") if isinstance(body, dict) else None
+    if not isinstance(meta, dict):
+        return _refused("this manifest has no meta object to carry the boundary")
+    standing = since_block(body)
+    if standing is not None:
+        return _refused("%s already states %s; a boundary is derived once and "
+                        "never moved" % (SINCE_KEY, stated_at(standing)),
+                        at=stated_at(standing))
+    derived = _since_from_rows(read_rows(project, config=config)["rows"])
+    if derived is None:
+        # THE BASIS IS THE THING THAT IS MISSING, so this is what gets said. A
+        # stamp taken from the wall clock here would date the boundary from the
+        # moment somebody happened to run the gate, and every task finished after
+        # that moment and before this one would be excused by a claim with
+        # nothing behind it.
+        return _refused("no recorded run to date the boundary from")
+    taken, refusal = [], None
+    for name, label in _since_locks(phase_id):
+        state, detail = lock_state(project, name, label, session_id=session_id,
+                                   hint=SINCE_HINT)
+        if state in ("held", "stale"):
+            refusal = detail
+            break
+        if state == "free":
+            if not _locks.held(_locks.acquire(project, name,
+                                              note="stamping the evidence boundary",
+                                              session=session_id,
+                                              out=lambda *_a: None)):
+                refusal = "the %s lock could not be taken; %s" % (label, SINCE_HINT)
+                break
+            taken.append(name)
+    try:
+        if refusal is not None:
+            return _refused(refusal)
+        meta[SINCE_KEY] = derived
+        try:
+            _mio.atomic_write_json(manifest_path, body)
+        except Exception as exc:
+            return _refused("cannot write %s: %s"
+                            % (repo_relative_or_token(project, manifest_path), exc))
+    finally:
+        for name in taken:
+            _locks.release(project, name, session=session_id, out=lambda *_a: None)
+    # ONLY NOW, and for `write_pointer`'s reason one field over: this row asserts
+    # that the PLAN moved, so it is written after the move and never beside the
+    # attempt. A refused stamp returns above without reaching here, which is what
+    # keeps the chain from claiming a transition that did not happen.
+    details = {"field": SINCE_KEY, "from": None, "to": derived["at"]}
+    if derived.get("runId"):
+        details["runId"] = derived["runId"]
+    if phase_id is not None:
+        details["phaseId"] = str(phase_id)
+    _journal_io.append(project, {
+        "action": ACTION_SINCE,
+        "actor": {"sessionId": session_id, "via": "evidence"},
+        "target": repo_relative_or_token(project, manifest_path),
+        # THE SENTENCE IS THE BLOCK'S OWN, spent out of the same constant the
+        # plan carries rather than paraphrased here: a summary that restated the
+        # basis in its own words would be a second copy free to drift from the
+        # one a reader of the manifest sees.
+        "summary": "the evidence boundary is %s: %s" % (derived["at"], SINCE_BASIS),
+        "details": details,
+    }, config=config)
+    return {"written": True, "reason": None, "at": derived["at"],
+            "path": manifest_path}
 
 
 def new_run_id():
