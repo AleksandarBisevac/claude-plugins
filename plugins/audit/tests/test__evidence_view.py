@@ -28,6 +28,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _evidence_view as M                         # noqa: E402
+import _evidence_io                                # noqa: E402  (the boundary door render-report calls)
 import _manifest_io                                # noqa: E402
 import _output                                     # noqa: E402
 import _report_html                                # noqa: E402
@@ -150,6 +151,86 @@ def _rows():
                     "command": "make test"}],
          "observations": {"ranTotal": 99, "treeMutated": [], "treeBasis": "b",
                           "coverage": ["a.py"], "coverageBasis": "c"},
+         "treeMutated": []},
+    ]
+
+
+def _boundary_plan():
+    """A plan adopted MID-FLIGHT - the population the evidence boundary is for.
+
+    A SECOND FIXTURE RATHER THAN THREE MORE TASKS IN THE FIRST, and the reason is
+    not blast radius. The plan above exists to separate three-valued OBSERVATIONS,
+    so every one of its subjects carries a run; this one exists to separate the
+    five ways there is no run at all, so almost none of them does. Folding them
+    would make each case read against a fixture built for the other question.
+
+    Every subject below is one row of the table in `_report_html.TEV_GAP_KEYS`,
+    plus the two the boundary does not classify:
+
+      Q1     done and merged before the boundary, no pointer -> Before recording
+      Q1.1   done before the boundary, no pointer            -> Before recording
+      Q1.2   done, no completion stamp at all                -> Completion undated
+      Q2.1   done AFTER the boundary, no pointer             -> No evidence
+      Q2.2   the one recorded run, which is what DATES the boundary -> Passed
+      Q2.3   not done, so there is nothing to excuse         -> No evidence
+      Q2.4   done before the boundary and graded by nothing  -> No gate configured
+    """
+    return {
+        "meta": {"version": 2, "title": "mid-flight", "repo": "r"},
+        "phases": [
+            {"id": "Q1", "title": "Before the recorder", "status": "done",
+             "testGate": ["make test"], "mergedAt": "2026-06-01T09:00:00Z",
+             "tasks": [
+                 {"id": "Q1.1", "title": "finished by hand", "status": "done",
+                  "completedAt": "2026-05-30T12:00:00Z",
+                  "tests": {"mode": "tdd", "gate": ["pytest"]}},
+                 {"id": "Q1.2", "title": "finished, nobody wrote down when",
+                  "status": "done",
+                  "tests": {"mode": "tdd", "gate": ["pytest"]}},
+             ]},
+            {"id": "Q2", "title": "Since the recorder", "status": "in_progress",
+             "testGate": ["make test"],
+             "tasks": [
+                 {"id": "Q2.1", "title": "done and never run", "status": "done",
+                  "completedAt": "2026-08-05T12:00:00Z",
+                  "tests": {"mode": "tdd", "gate": ["pytest"]}},
+                 {"id": "Q2.2", "title": "the first recorded run",
+                  "status": "done", "completedAt": "2026-08-01T12:00:00Z",
+                  "tests": {"mode": "tdd", "gate": ["pytest"]},
+                  "testEvidence": {"runId": "BR1", "status": "passed",
+                                   "at": "2026-08-01T00:00:00Z"}},
+                 {"id": "Q2.3", "title": "not done yet", "status": "pending",
+                  "tests": {"mode": "tdd", "gate": ["pytest"]}},
+             ]},
+            # The ungated subject needs a phase declaring no `testGate` either,
+            # because `tev_configured` falls back to the phase's - a task with no
+            # gate inside Q1 or Q2 would still be graded by theirs.
+            {"id": "Q3", "title": "Graded by nothing", "status": "done",
+             "mergedAt": "2026-05-02T09:00:00Z",
+             "tasks": [
+                 {"id": "Q3.1", "title": "done before the boundary, ungated",
+                  "status": "done", "completedAt": "2026-05-01T12:00:00Z"},
+             ]},
+        ],
+    }
+
+
+def _boundary_rows():
+    """The one recorded run behind that plan - and therefore the boundary itself.
+
+    ONE ROW, because the boundary is the EARLIEST recorded run and a second row
+    would only move it if it were earlier. Its `ts` is what every `completedAt`
+    in the fixture is placed either side of.
+    """
+    return [
+        {"v": 1, "runId": "BR1", "ts": "2026-08-01T00:00:00Z", "scope": "task",
+         "taskId": "Q2.2", "phaseId": "Q2", "status": "passed", "attempt": 1,
+         "durationMs": 900, "failed": [],
+         "steps": [{"name": "unit", "exit": 0, "ran": 4, "durationMs": 800,
+                    "command": "pytest"}],
+         "observations": {"ranTotal": 4, "countsBasis": "the summary line",
+                          "treeMutated": [], "treeBasis": "git described it",
+                          "coverage": ["a.py"], "coverageBasis": "paths printed"},
          "treeMutated": []},
     ]
 
@@ -452,7 +533,126 @@ def _cases(check):
           "button cannot drift from the page it was downloaded off",
           base64.b64decode(_blob).decode("utf-8") == md)
 
+    _boundary_cases(check)
     _shipped_cases(check)
+
+
+# --- the evidence boundary, as the report tells it ----------------------------
+def _boundary_cases(check):
+    """`Before recording` is its own sentence, and it reaches the page.
+
+    THE GATE AND THE BADGE MUST NOT DISAGREE. The class every case below reads is
+    `_status_facts.evidence_gap`'s, which is the same function `rollup` buckets
+    the gate's verdict with - so a plan the gate reports green cannot render as a
+    column of neglect, which is exactly what it did before this.
+    """
+    root = _harness.fixture_root("evidence-view-boundary")
+    plan, rows = _boundary_plan(), _boundary_rows()
+    path = _write_project(root, plan, rows)
+    # The boundary is read the way `render-report.py` reads it - through the
+    # door, off THIS plan's record - rather than hand-built here. A fixture that
+    # asserted against a dict typed in this file would be testing the renderer
+    # against a shape nothing produces.
+    bd = _evidence_io.boundary_for(path, root)
+    check("eb-r1 the fixture's boundary is the one recorded run, derived rather "
+          "than declared - every case below is placed either side of it",
+          bd["at"] == "2026-08-01T00:00:00Z" and bd["sources"]["key"] is None
+          and bd["sources"]["ledger"] == "2026-08-01T00:00:00Z"
+          and bd["unknown"] == [], repr(bd))
+    ev = M.load_evidence(plan, path, project_dir=root, boundary=bd)
+    T, P = ev["tasks"], ev["phases"]
+    check("eb-r2 a done subject finished BEFORE the boundary reads `Before "
+          "recording`, at task scope and at phase scope - the phase is dated by "
+          "its merge and the task by its own completion",
+          (T["Q1.1"]["key"], T["Q1.1"]["label"])
+          == ("before-recording", "Before recording")
+          and P["Q1"]["own"]["label"] == "Before recording")
+    check("eb-r3 PAIRED: the same shape of subject finished AFTER it reads `No "
+          "evidence`, so eb-r2 is about the stamp and not about the absent "
+          "pointer they share",
+          (T["Q2.1"]["key"], T["Q2.1"]["label"]) == ("no-evidence", "No evidence")
+          and T["Q1.1"]["label"] != T["Q2.1"]["label"])
+    check("eb-r4 ...and the two carry different SENTENCES as well as different "
+          "words, both of them wearing the basis that placed them",
+          T["Q1.1"]["why"] != T["Q2.1"]["why"]
+          and bd["basis"] in T["Q1.1"]["why"]
+          and bd["basis"] in T["Q2.1"]["why"])
+    check("eb-r5 a done subject with NO completion stamp is the third answer - "
+          "`undated` is a failure the gate names apart, and a reader shown `No "
+          "evidence` for it is sent to run a gate when the repair is the stamp",
+          T["Q1.2"]["key"] == "undated"
+          and T["Q1.2"]["label"] == "Completion undated"
+          and T["Q1.2"]["label"] not in (T["Q1.1"]["label"], T["Q2.1"]["label"]))
+    check("eb-r6 a subject NOTHING GRADES stays `No gate configured` even when "
+          "it finished before the boundary - a gate never declared could not "
+          "have run either side of it, and calling that excused would imply "
+          "running something would have helped",
+          T["Q3.1"]["key"] == "no-gate"
+          and P["Q3"]["own"]["key"] == "no-gate")
+    check("eb-r7 a subject that is not done is not excused and not failed - it "
+          "carries no gap at all, so it reads the way it always did",
+          T["Q2.3"]["key"] == "no-evidence"
+          and _status_facts.evidence_gap(plan["phases"][1]["tasks"][2],
+                                         "task", bd) is None)
+    check("eb-r8 ...and a subject that DOES point at a run still renders its "
+          "run's word, so the boundary reaches only the silences",
+          T["Q2.2"]["key"] == "passed")
+    _excused = sorted(r["id"] for r in _status_facts.evidence_subjects(
+        _status_facts.rollup(plan, [], [], boundary=bd),
+        _status_facts.GAP_BEFORE))
+    _badged = sorted(k for k, v in list(T.items())
+                     + [(q, e["own"]) for q, e in P.items()]
+                     if v["key"] == "before-recording")
+    check("eb-r9 every subject the badge calls `Before recording` is one the "
+          "GATE excused, because both read `evidence_gap` - a badge that "
+          "compared timestamps itself would be a second opinion free to "
+          "disagree with the exit code a reader is holding: %r vs %r"
+          % (_badged, _excused),
+          bool(_badged) and set(_badged) <= set(_excused))
+    check("eb-r10 ...and the gate excuses MORE than the badge says, in one "
+          "direction and on purpose: a subject nothing grades is excused by a "
+          "condition that never asked about gates, and the badge answers the "
+          "stronger `No gate configured` because telling that reader their work "
+          "is 'excused' would imply running something would have helped",
+          sorted(set(_excused) - set(_badged)) == ["Q3", "Q3.1"]
+          and T["Q3.1"]["key"] == "no-gate")
+    check("eb-r11 WITHOUT a boundary the same plan renders exactly the words it "
+          "rendered before this feature existed - nothing is excused, nothing "
+          "is undated, and no caller that predates it sees a sentence change",
+          [v["key"] for _k, v in sorted(
+              M.load_evidence(plan, path, project_dir=root)["tasks"].items())]
+          == ["no-evidence", "no-evidence", "no-evidence", "passed",
+              "no-evidence", "no-gate"])
+    check("eb-r12 the filter offers the classes this plan REACHED, in "
+          "vocabulary order, so `Before recording` can be separated from `No "
+          "evidence` by a reader rather than only by a gate",
+          ev["keys"] == ["passed", "undated", "no-evidence", "before-recording",
+                         "no-gate"], repr(ev["keys"]))
+
+    summ = _status_facts.rollup(plan, [], [], boundary=bd)
+    doc = _report_page.render_html(plan, summ, "b", None, evidence=ev)
+    mk = _markup(doc)
+    check("eb-r13 all four sentences reach the rendered page, each as its own "
+          "word and its own filter value",
+          'data-tev="before-recording"' in mk and ">Before recording<" in mk
+          and 'data-tev="no-evidence"' in mk and ">No evidence<" in mk
+          and 'data-tev="no-gate"' in mk and ">No gate configured<" in mk
+          and 'data-tev="undated"' in mk and ">Completion undated<" in mk)
+    check("eb-r14 ...and the chip row carries them as controls, humanised out "
+          "of the vocabulary rather than shown as the machine keys",
+          'class="fchip" data-tev="before-recording"' in mk
+          and ">Before recording</button>" in mk
+          and ">before-recording</button>" not in mk)
+    check("eb-r15 the drawer's `test evidence` group explains the excuse with "
+          "the boundary's own basis, so the claim is checkable in the place a "
+          "reader opens to check it",
+          mk.count("<h4>test evidence</h4>") == 6
+          and _report_html.e(bd["basis"]) in mk)
+    md = _report_md.render_md(plan, summ, None, ev)
+    check("eb-r16 the Markdown twin carries the same machine value in its one "
+          "column, so the two surfaces speak one vocabulary",
+          "| before-recording |" in md and "| undated |" in md
+          and "| no-evidence |" in md and "| no-gate |" in md)
 
 
 # --- the artifact this repository actually ships ------------------------------
@@ -480,7 +680,12 @@ def _shipped_cases(check):
               True)
         return
     plan = _manifest_io.load_manifest(plan_path)
-    shipped = M.load_evidence(plan, plan_path, project_dir=root)
+    # Through the boundary, the way `render-report.py` reads it - the example is
+    # a MID-FLIGHT ADOPTER now, and without this every case below would judge it
+    # by the reading it had before that was true of it.
+    shipped_bd = _evidence_io.boundary_for(plan_path, root)
+    shipped = M.load_evidence(plan, plan_path, project_dir=root,
+                              boundary=shipped_bd)
     check("ev18 the shipped example points at a ledger that is actually there - "
           "`load_evidence` returns None when no subject points at a run at all, "
           "and every claim below would then be about an empty document",
@@ -495,6 +700,32 @@ def _shipped_cases(check):
                      if e["own"]["key"] == "dangling"])
     check("ev18b ...and NOT ONE of its pointers dangles: %r" % (_bad,),
           _bad == [])
+    # THE EXAMPLE HAS TO SHOW THE STATE OR IT IS NOT AN EXAMPLE OF IT. The demo
+    # generator's own exemption argued exactly this about `meta.evidenceSince`:
+    # a plan carrying the key and excusing nobody publishes a field without
+    # publishing what it is for. The worked example is the other published plan,
+    # and nothing here would have noticed it losing either half.
+    _shipped_since = ((plan.get("meta") or {}).get("evidenceSince") or {})
+    _shipped_excused = sorted(
+        [t for t, v in shipped["tasks"].items()
+         if v["key"] == "before-recording"]
+        + [q for q, e in shipped["phases"].items()
+           if e["own"]["key"] == "before-recording"])
+    _shipped_after = sorted(t for t, v in shipped["tasks"].items()
+                            if v["key"] == "no-evidence")
+    check("ev18c the shipped example is a MID-FLIGHT ADOPTER, and both halves "
+          "of that are here: it states when recording began, and it carries "
+          "finished work on BOTH sides of that moment - %r excused, %r not"
+          % (_shipped_excused, _shipped_after),
+          _shipped_since.get("at") == shipped_bd["at"]
+          and str(_shipped_since.get("basis") or "").strip() != ""
+          and bool(_shipped_excused) and bool(_shipped_after))
+    check("ev18d ...and the two are DIFFERENT WORDS on the page, which is the "
+          "whole feature: a reader of this example can tell excused from "
+          "neglected without running the gate",
+          len({shipped["tasks"][t]["label"] for t in _shipped_after}
+              | {shipped["tasks"][t]["label"]
+                 for t in _shipped_excused if t in shipped["tasks"]}) == 2)
 
 
 def _selftest():

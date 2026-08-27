@@ -51,6 +51,7 @@ import _panel_ui                                   # noqa: E402  (the raw templa
 import _ui_theme as _theme                         # noqa: E402  (as _panel_page imports it)
 import _ado_parent as _adop                        # noqa: E402  (the marker, in the other language)
 import _ado_tracked as _adot                       # noqa: E402  (the field name, in the other language)
+import _status_facts as _facts                     # noqa: E402  (the gap classes, in the other language)
 import _panel_page as M                            # noqa: E402
 
 
@@ -786,16 +787,45 @@ def _cases(check):
           # carry none, and without this guard they render the contained
           # failure sentinel instead of their own sentence.
           and "function evMarks(run){\n if(!run)return [];" in _evsrc)
-    check("ev10 the three silences are THREE BRANCHES WITH THREE SENTENCES, "
+    check("ev10 the silences are SEPARATE BRANCHES WITH SEPARATE SENTENCES, "
           "never one grey blob: no gate declared anywhere, a gate with no run "
-          "recorded, and a pointer the ledger cannot answer. The middle one "
-          "says out loud that it is not a failure",
-          "?{key:'none',run:null," in _evsrc
-          and ":{key:'no-gate',run:null," in _evsrc
+          "recorded, work finished before this plan could record anything, work "
+          "the plan calls done without saying when, and a pointer the ledger "
+          "cannot answer. Each names its own repair",
+          "{key:'none',run:null," in _evsrc
+          and "{key:'no-gate',run:null," in _evsrc
+          and "{key:'before-recording',run:null," in _evsrc
+          and "{key:'undated',run:null," in _evsrc
           and "if(!run)return {key:'dangling',run:null," in _evsrc
           and "an absent record is not a failure." in _evsrc
           and "no test gate is declared here or on the phase" in _evsrc
+          and "excused, not missing" in _evsrc
+          and "The repair is the completion stamp, not a gate run." in _evsrc
           and "the evidence ledger does not hold it" in _evsrc)
+    # THE VOCABULARY WRITTEN IN TWO LANGUAGES AGAIN, one field over from ev2 and
+    # for the same reason. The class on a composition row is `evidence_gap`'s
+    # answer, spelled in Python and compared in JavaScript, and a rename on
+    # either side would leave the page reading a word the server never sends -
+    # which renders as `No evidence` and looks exactly like a working page.
+    check("ev10b the page compares the class against the SERVER's own spelling "
+          "of it, so a rename cannot leave the excuse silently unreachable",
+          ("const EVGAP_BEFORE='%s';" % _facts.GAP_BEFORE) in _evsrc
+          and ("const EVGAP_UNDATED='%s';" % _facts.GAP_UNDATED) in _evsrc
+          and "row.evidenceGap===EVGAP_BEFORE" in _evsrc
+          and "row.evidenceGap===EVGAP_UNDATED" in _evsrc,
+          "%r / %r" % (_facts.GAP_BEFORE, _facts.GAP_UNDATED))
+    check("ev10c ...and the excuse carries the boundary's own basis, read ONCE "
+          "off the rollup and handed down rather than copied onto every row - "
+          "an excuse with no moment behind it is a claim nobody can check",
+          "const evbas=((STATE.rollup||{}).evidenceBoundary||{}).basis||'';"
+          in M.UI_HTML
+          and "no basis for the boundary reached this page" in _evsrc
+          and "function evState(node,ev,basis){" in _evsrc)
+    check("ev10d a subject NOTHING GRADES is answered before the boundary is "
+          "consulted, so `No gate configured` cannot be overwritten by an "
+          "excuse - a gate never declared could not have run either side of it",
+          _evsrc.index("if(!src)return {key:'no-gate'")
+          < _evsrc.index("row.evidenceGap===EVGAP_BEFORE"))
     check("ev11 ...and the dangling sentence carries its BASIS - how many "
           "evidence files were read and how many lines could not be parsed - so "
           "a ledger that was never written and one that could not be understood "
@@ -832,14 +862,14 @@ def _cases(check):
           "sign-off run, and a roll-up over its tasks. One badge for the two "
           "would claim a measurement nobody made",
           "evLine('phase sign-off',pcell.badge)" in _evdet_src
-          and "evLine('tasks',evRollCells(tasks,ev))" in _evdet_src
+          and "evLine('tasks',evRollCells(tasks,ev,evbas))" in _evdet_src
           and _evdet_src.count("evLine(") == 2
           and "const evLine=(lbl,...parts)=>el('div',{class:'evline'," in _evsrc)
     check("ev15 the roll-up counts the phase's OWN tasks and leads with what "
           "needs a human - EVORDER, which is OVORDER's rule one vocabulary "
           "over - and says so rather than showing an empty line when a phase "
           "has none",
-          "function evTaskRoll(tasks,ev){" in _evsrc
+          "function evTaskRoll(tasks,ev,basis){" in _evsrc
           and "ovRank(EVORDER,a)-ovRank(EVORDER,b)" in _evsrc
           and "EVORDER=['failed'," in _evsrc
           and "'no tasks to count'" in _evsrc)

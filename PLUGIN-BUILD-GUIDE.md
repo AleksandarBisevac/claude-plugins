@@ -294,7 +294,7 @@ L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _locks, _output
-  _evidence_view -> _evidence_io, _output, _report_html
+  _evidence_view -> _evidence_io, _output, _report_html, _status_facts
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -309,7 +309,7 @@ L4:
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _evidence_io, _journal_io, _locks, _output, _panel_paths
@@ -1270,6 +1270,15 @@ plan and the record are written together for one reason: a pointer whose `runId`
 answers to renders as `Pointer without evidence`, and the demo is the one page that state must
 never reach by accident. `generate()` itself still writes nothing — the rows are a value it
 returns none of, and `write_evidence()` is the only part that meets a disk.
+
+**The fixture is a mid-flight adopter**, which is what makes the evidence boundary visible in
+what ships. `_pre_recorder_phase()` holds the first finished phase back from the run plan, so
+nothing in it carries a pointer; `_stamp_since()` then derives `meta.evidenceSince` off the
+remaining rows through the recorder's own `_evidence_io.since_from_rows`, and the subjects behind
+that moment render `Before recording` rather than `No evidence`. It is held back only when a
+later phase still records — a fixture with no runs at all would name no boundary and take the
+ledger, the pointers and every state that depends on them down with it at the smallest sizes.
+`SCHEMA_EXEMPTIONS` used to hold the key back on exactly this argument, and that row is gone.
 
 ### `plugins/audit/scripts/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
@@ -2619,6 +2628,15 @@ directory over: resolving off the config would attribute one plan's runs to anot
 The vocabulary and the view derivation itself live in `_report_html.py` — the badge is the STATUS
 and the observations are separate marks beside it, because a gate can fail *and* rewrite the tree
 and one word cannot carry both.
+
+It also takes the **evidence boundary** as an argument and hands it, unread, to
+`_status_facts.evidence_gap` — the same function `rollup` buckets the `no-test-evidence` verdict
+with. That is what puts `Before recording` and `Completion undated` on the badge without letting
+them disagree with the exit code: a renderer comparing `completedAt` against the boundary itself
+would be a second opinion, and the direction it would drift in is the silent one, because a page
+that excuses more than the gate does reads as green while the build is red. `render-report.py`
+fetches one block and gives the same object to both halves; `None` is the third state and means
+nobody computed one, which is exactly what every caller rendered before the parameter existed.
 
 ### `plugins/audit/scripts/report/_usage_overview.py`
 What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric

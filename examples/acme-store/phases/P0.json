@@ -1,0 +1,104 @@
+{
+  "id": "P0",
+  "title": "Framework upgrade",
+  "area": "storefront",
+  "status": "done",
+  "model": "sonnet",
+  "budgetUSD": 25,
+  "blockedBy": [],
+  "desiredOutcome": "The storefront runs on the supported framework line, so the security fixes the audit depends on are actually available.",
+  "testGate": [
+    "lint",
+    "test"
+  ],
+  "baseRef": "3c7be40",
+  "branch": "audit/p0-framework-upgrade",
+  "mergedAt": "2026-05-28T10:15:00Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": []
+  },
+  "summary": "The storefront moved to the supported framework line. This phase was finished BEFORE the audit plugin was adopted here, so nothing in it carries a recorded run — the surfaces say `Before recording` rather than `No evidence`, and the no-test-evidence gate excuses it rather than failing it.",
+  "tasks": [
+    {
+      "id": "P0.1",
+      "title": "Move the app bootstrap onto the new framework entry point",
+      "status": "done",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "src/app/bootstrap.ts"
+      ],
+      "docs": [],
+      "description": "Replace the deprecated bootstrap call with the supported entry point and drop the compatibility shim.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "boots the app against the new entry point"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": "New entry point; compatibility shim deleted; 1 regression test.",
+        "descriptive": "The storefront boots on the supported framework line."
+      },
+      "commit": "5e1a77c",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-05-26T09:00:00Z",
+      "completedAt": "2026-05-27T14:30:00Z",
+      "risk": "med",
+      "verifiedBy": [
+        "boots the app against the new entry point"
+      ]
+    },
+    {
+      "id": "P0.2",
+      "title": "Port the route table to the new router API",
+      "status": "done",
+      "model": "haiku",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "P0.1"
+      ],
+      "files": [
+        "src/app/routes.ts"
+      ],
+      "docs": [],
+      "description": "Rewrite the route declarations against the new router API; behaviour is unchanged.",
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "every declared route still resolves"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "lint",
+          "test"
+        ]
+      },
+      "outcome": {
+        "technical": "Route table ported; 1 regression test over the resolved route list.",
+        "descriptive": "Every page still resolves to the same route it did before."
+      },
+      "commit": "d40b91e",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "startedAt": "2026-05-27T15:00:00Z",
+      "completedAt": "2026-05-28T09:40:00Z",
+      "risk": "low",
+      "verifiedBy": [
+        "every declared route still resolves"
+      ]
+    }
+  ]
+}

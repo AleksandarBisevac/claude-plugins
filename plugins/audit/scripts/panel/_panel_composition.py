@@ -41,6 +41,7 @@ import _ado_parent            # noqa: E402  (where ONE item hangs, and the marke
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
 import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
 import _evidence_io as _ev    # noqa: E402  (the pointer's key and the ONE ledger read, at layer 2)
+import _status_facts as _facts  # noqa: E402  (evidence_gap: whether an absence is EXCUSED, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -684,6 +685,31 @@ def _pointer_of(node):
     return node.get(_ev.POINTER_KEY)
 
 
+def _evidence_gap_of(holder, scope, boundary):
+    """Which evidence gap this subject has, or None when it has none.
+
+    THE CLASSIFIER IS CALLED, NEVER RE-DERIVED. `_status_facts.evidence_gap` is
+    the same function `rollup` buckets the `no-test-evidence` verdict with, so
+    the badge this panel paints and the verdict `/audit:status --gate` exits on
+    are the one answer. A rule spelled again here would be a second comparison of
+    two timestamps, free to disagree with the gate in the direction nobody
+    notices: a page that excuses more than the gate does reads as green.
+
+    THE ROW CARRIES IT AS A FACT AND THE BROWSER RENDERS IT, which is this
+    payload's standing rule -- `_evidence_facts` ships what a run OBSERVED rather
+    than a verdict somebody wrote, and this is the same discipline one field over.
+    The alternative is `completedAt`, `mergedAt` and the boundary all crossing to
+    the client so it can do the arithmetic, which is three fields and a rule
+    instead of one word.
+
+    None IS A THIRD STATE. It means there is nothing to explain -- the subject
+    carries a pointer, or the plan does not call it done -- and it is what a panel
+    serving a plan nobody computed a boundary for answers everywhere, because
+    `evidence_gap` excuses nothing without one.
+    """
+    return _facts.evidence_gap(holder, scope, boundary)
+
+
 def _gate_source(phase, task=None):
     """`"task"`, `"phase"` or None -- whose gate would grade this subject.
 
@@ -846,7 +872,16 @@ def evidence_view(project, composition, config=None):
     return out
 
 
-def _composition_view(manifest):
+def _composition_view(manifest, boundary=None):
+    """The plan as the Composition and Overview tabs read it.
+
+    `boundary` is `_evidence_io`'s block, or None when nobody computed one. It
+    ARRIVES AS AN ARGUMENT for `_panel_state`'s reason: this module sits at layer
+    4 and `_evidence_io` at 2, so reading it here would be affordable but wrong -
+    the state builder computes ONE block and hands the same object to the rollup
+    and to this walk, so the panel's badges and its gate verdict cannot rest on
+    two reads of a ledger a parallel run may have grown between.
+    """
     meta = manifest.get("meta") or {}
     ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
     phases_out, tasks_out = [], []
@@ -901,7 +936,16 @@ def _composition_view(manifest):
                            # different places -- one is work not done, the other
                            # is a plan that can never prove itself done.
                            "testEvidence": _pointer_of(ph),
-                           "gateSource": _gate_source(ph)})
+                           "gateSource": _gate_source(ph),
+                           # ...AND THE THIRD SILENCE, which the two above
+                           # cannot tell apart. A done phase with a gate and no
+                           # pointer is either work nobody recorded or work that
+                           # FINISHED BEFORE this plan could record anything,
+                           # and a panel that painted those alike would show a
+                           # mid-flight adopter a wall of neglect while the gate
+                           # it is looking at reports green.
+                           "evidenceGap": _evidence_gap_of(ph, "phase",
+                                                           boundary)})
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),
@@ -924,6 +968,10 @@ def _composition_view(manifest):
             # this is whether anything measured it.
             "testEvidence": _pointer_of(t),
             "gateSource": _gate_source(ph, t),
+            # Same third silence one level down, and dated by this task's own
+            # `completedAt` rather than by its phase's merge - neither stamp
+            # stands in for the other, which is `FINISHED_KEY`'s whole point.
+            "evidenceGap": _evidence_gap_of(t, "task", boundary),
         })
     # Every skill name the AREAS declare, deduped in registry order — the other
     # half of what the manifest spells (task rows carry their own). Shipped so

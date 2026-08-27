@@ -152,14 +152,23 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   gives the run id and stamp, the attempt, the duration, how much ran, the tree / coverage /
   check-count **bases as sentences**, and a row per step (step, exit, checks, took, outcome).
   A run that recorded no steps says so rather than drawing an empty table.
-  Four answers and they are not one grey blob: **`No gate configured`** (nothing could have
-  run — neither this subject nor its phase declares a gate), **`No evidence`** (a gate is
-  declared and nothing has been recorded, which is never *failed*), **`Pointer without
-  evidence`** (the plan names a run the ledger here does not hold — and that sentence names how
-  many ledger files were read and how many lines could not be parsed, so a record that was
-  never written is not confused with one whose rows are torn, and it quotes the verdict the
-  plan had cached), and otherwise the verdict the **ledger row** carries — never the plan's
-  cached copy of it. A word this build does not know is shown as itself rather than folded
+  Every way there is no run gets its own answer, and they are not one grey blob:
+  **`No gate configured`** (nothing could have run — neither this subject nor its phase
+  declares a gate, which is answered before the boundary is consulted), **`No evidence`**
+  (a gate is declared and nothing has been recorded, which is never *failed*),
+  **`Before recording`** (the work finished before this plan could first have recorded
+  anything, so the `no-test-evidence` gate **excuses** it — the sentence carries the
+  boundary's own basis, and without this word a plan adopted mid-flight would show a wall
+  of `No evidence` while the gate reported green), **`Completion undated`** (done, no run,
+  and no completion stamp to place it against that moment — the gate **fails** this one and
+  the repair is the stamp, not a gate run), **`Pointer without evidence`** (the plan names a
+  run the ledger here does not hold — and that sentence names how many ledger files were read
+  and how many lines could not be parsed, so a record that was never written is not confused
+  with one whose rows are torn, and it quotes the verdict the plan had cached), and otherwise
+  the verdict the **ledger row** carries — never the plan's cached copy of it. Which class a
+  silence falls in is computed on the server by the same function the gate buckets its verdict
+  with, and shipped on the row: the browser renders a fact rather than comparing two stamps of
+  its own. A word this build does not know is shown as itself rather than folded
   into `failed`; the manifest schema leaves that enum open.
   Unlike the report, which omits the whole surface on a plan that points at no run, the panel
   draws these lines on every plan — this is the live view, and *nothing has run yet* is the

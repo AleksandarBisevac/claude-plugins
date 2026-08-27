@@ -711,7 +711,14 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     # byte generated above can move because this exists. It writes nothing either -
     # the rows are a VALUE here, and `write_evidence()` is the only thing that
     # meets a disk, which is what keeps this function as pure as its docstring says.
-    _stamp_pointers(manifest, evidence_rows(manifest, EVIDENCE_POINTER_ROOT))
+    pointer_rows = evidence_rows(manifest, EVIDENCE_POINTER_ROOT)
+    _stamp_pointers(manifest, pointer_rows)
+    # ...and WHEN this plan could first have recorded a run at all, off the same
+    # rows. Second, because it is derived from them exactly as the recorder
+    # derives it on the first `--record`: the fixture must be a plan the plugin
+    # could have produced, and a boundary typed here would be a second answer to
+    # what `meta.evidenceSince` is.
+    _stamp_since(manifest, pointer_rows)
     return manifest
 
 
@@ -750,6 +757,15 @@ SCHEMA_EXEMPTIONS = {
     # exists now, so the rows are gone and the fixture carries the block for real.
     # See the `recorded runs` section: the pointers and the ledger beside the
     # manifest are generated together, from the plan's own statuses.
+    #
+    # `meta.evidenceSince` was the seventh, and its trigger has fired the same
+    # way. It read "REVISIT with the surface that tells `Before recording` apart
+    # from `No evidence`", because a key that changed a GATE verdict and nothing
+    # a reader could see would have been a field published without its state.
+    # That surface exists, so the fixture is a mid-flight adopter now: its first
+    # finished phase records nothing (`_pre_recorder_phase`), the key is derived
+    # off the remaining rows by the recorder's own `since_from_rows`, and the
+    # subjects behind it render the sentence the exemption was waiting for.
     "<root>.$schema":
         "names a URL so an EDITOR can validate a document while a human types it. "
         "This fixture is generated into a temp directory, rendered, and thrown "
@@ -766,17 +782,6 @@ SCHEMA_EXEMPTIONS = {
         "coverage is `tests/test__branch.py`, which composes names, and "
         "`test_resolve_branch.py`, which runs the door. REVISIT when the panel "
         "grows a meta.branch card: the demo is where its screenshot comes from.",
-    "meta.evidenceSince":
-        "when this plan could FIRST have recorded a run, which exists so that "
-        "work finished before the recorder is read as impossible to evidence "
-        "rather than as unevidenced. It changes the `no-test-evidence` GATE's "
-        "verdict and nothing any surface renders today, so a fixture carrying it "
-        "would demonstrate nothing a reader could see - and this fixture's runs "
-        "are all generated in one pass from the plan's own statuses, so the "
-        "boundary would sit before every task in it and excuse none of them. "
-        "REVISIT with the surface that tells `Before recording` apart from `No "
-        "evidence`: a pre-boundary subject is the only thing that renders it, and "
-        "this fixture is where those screenshots come from.",
     "phase.parentBranch":
         "which branch THIS phase forks from and merges into. Absent means "
         "`meta.developmentBranch`, which is the answer for every phase in this "
@@ -1338,6 +1343,34 @@ def _status_of(failed, ran_total):
     return "passed"
 
 
+def _pre_recorder_phase(manifest):
+    """The phase whose work finished BEFORE this plan started recording, or None.
+
+    THE FIXTURE HAS TO BE A MID-FLIGHT ADOPTER OR IT DEMONSTRATES NOTHING. Every
+    run below is generated from the plan's own statuses in one pass, so without
+    this the earliest run would sit at or before the earliest `completedAt` and
+    the boundary would excuse nothing - which is exactly the reason
+    `SCHEMA_EXEMPTIONS` held `meta.evidenceSince` back until the surface that
+    tells `Before recording` apart from `No evidence` existed. A fixture that
+    carried the key and no subject it excused would publish the field without
+    publishing the state, which is the same shape of gap the exemption was
+    written against.
+
+    THE FIRST PHASE, AND ONLY WHEN IT IS FINISHED AND SOMETHING ELSE RECORDS. A
+    plan adopted mid-flight has its earliest work behind the boundary, so the
+    first phase is the honest one to hold back - and it is held back only when a
+    LATER phase still records, because a fixture with no runs at all would name
+    no boundary, stamp no key, and take the ledger, the pointers and every state
+    that depends on them down with it at the small sizes the shape cases use.
+    """
+    phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
+    recordable = [p for p in phases
+                  if p.get("status") in ("done", "in_progress")]
+    if len(recordable) < 2 or phases[0].get("status") != "done":
+        return None
+    return phases[0].get("id")
+
+
 def _evidence_specs(manifest):
     """`[(scope, ids, identity, result)]` -- every run this fixture publishes.
 
@@ -1354,10 +1387,18 @@ def _evidence_specs(manifest):
     started yet points at no run at all.
     """
     build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    pre_recorder = _pre_recorder_phase(manifest)
     out = []
     for pi, phase in enumerate(manifest.get("phases") or [], start=1):
         pstatus = phase.get("status")
         if pstatus not in ("done", "in_progress"):
+            continue
+        # The phase that finished before this plan could record anything. Its
+        # subjects earn no rows and therefore no pointers, which is what makes
+        # `Before recording` a state a reader of the demo can actually see -
+        # `pi` is NOT renumbered around it, so the observation slices below land
+        # on the same phases they landed on before this existed.
+        if phase.get("id") == pre_recorder:
             continue
         head = phase.get("baseRef")
         for ti, task in enumerate(phase.get("tasks") or [], start=1):
@@ -1462,6 +1503,26 @@ def _stamp_pointers(manifest, rows):
                 task[_evidence_io.POINTER_KEY] = _evidence_io.pointer_for(row)
                 stamped.append(task.get("id"))
     return stamped
+
+
+def _stamp_since(manifest, rows):
+    """Stamp `meta.evidenceSince` the way the recorder would; returns the block.
+
+    THE RECORDER'S OWN DERIVATION, borrowed rather than re-decided, for the
+    reason every row here goes through `_evidence_io.row_for`: the moment and the
+    `runId` have to come off the SAME row or the block's own `basis` is false,
+    and a fixture that got that wrong would publish provenance pointing at a run
+    that did not date anything.
+
+    None WHEN THERE ARE NO ROWS, and then no key is written - which is the
+    honest state for a plan that has recorded nothing, and is what the smallest
+    fixtures answer. `write_evidence_since` refuses on the same condition and
+    says so; here there is nobody to say it to.
+    """
+    block = _evidence_io.since_from_rows(rows)
+    if block is not None:
+        manifest["meta"][_evidence_io.SINCE_KEY] = block
+    return block
 
 
 def write_evidence(manifest, out_dir):

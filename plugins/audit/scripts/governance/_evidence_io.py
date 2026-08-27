@@ -832,14 +832,20 @@ def boundary_for(manifest_path, project_dir=None):
             % (exc, SINCE_KEY)])
 
 
-def _since_from_rows(rows):
-    """`{"at", "runId"}` for the earliest recorded run, or None when there is none.
+def since_from_rows(rows):
+    """`{"at", "runId", "basis"}` for the earliest recorded run, or None for none.
 
     THE PROVENANCE AND THE MOMENT COME OFF THE SAME ROW, which is what makes the
     block's `basis` true: `at` is when the first recorded run happened and `runId`
     names that run, rather than naming whichever run happened to be writing the
     key. `runId` is dropped when the row carries none -- an empty string would be
     a pointer at nothing, and this block is read as provenance.
+
+    PUBLIC BECAUSE IT HAS TWO CALLERS. The recorder stamps a real plan with it;
+    `gen-demo-manifest.py` stamps the fixture with it, for the reason every row
+    in that fixture already goes through `row_for` - a demo that spelled the
+    block itself would be a second answer to what `meta.evidenceSince` IS, and
+    the first thing it would get wrong is which row the `runId` names.
     """
     at = earliest_recorded(rows)
     if at is None:
@@ -910,7 +916,7 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
         return _refused("%s already states %s; a boundary is derived once and "
                         "never moved" % (SINCE_KEY, stated_at(standing)),
                         at=stated_at(standing))
-    derived = _since_from_rows(read_rows(project, config=config)["rows"])
+    derived = since_from_rows(read_rows(project, config=config)["rows"])
     if derived is None:
         # THE BASIS IS THE THING THAT IS MISSING, so this is what gets said. A
         # stamp taken from the wall clock here would date the boundary from the

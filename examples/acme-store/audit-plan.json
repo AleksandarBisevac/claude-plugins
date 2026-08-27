@@ -32,11 +32,16 @@
       }
     },
     "reportBasename": "acme-store-audit",
-    "reportSummary": "Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on \u2014 documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.",
+    "reportSummary": "Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one \u2014 the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on \u2014 documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.",
     "usage": {
       "ledgerDir": ".claude/usage",
       "showCost": true,
       "pricingAsOf": "2026-08-06"
+    },
+    "evidenceSince": {
+      "at": "2026-06-02T15:38:00Z",
+      "runId": "2026-06-02T15:38:00Z.4c1ba7",
+      "basis": "the first run this plan recorded; work completed before it could not carry evidence"
     },
     "areas": {
       "auth": {
@@ -51,6 +56,11 @@
     }
   },
   "phases": [
+    {
+      "id": "P0",
+      "title": "Framework upgrade",
+      "shard": "phases/P0.json"
+    },
     {
       "id": "P1",
       "title": "Auth hardening",
@@ -78,6 +88,12 @@
     }
   ],
   "fileIndex": {
+    "src/app/bootstrap.ts": [
+      "P0.1"
+    ],
+    "src/app/routes.ts": [
+      "P0.2"
+    ],
     "src/auth/hash.ts": [
       "P1.1"
     ],

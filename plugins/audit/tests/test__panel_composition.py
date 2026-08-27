@@ -22,6 +22,7 @@ import _ado_tracked as _adot               # noqa: E402  (the three-valued answe
 import _ado_drift as _drift                    # noqa: E402  (link_inventory: the walk the banner counts)
 import _loader                                 # noqa: E402  (read-ado-links.py + run-test-gate.py are entry points; only a load reaches them)
 import _evidence_io as _evidence           # noqa: E402  (where the run ledger lives, for the fixture)
+import _status_facts as _facts         # noqa: E402  (evidence_gap: the ONE classifier the rows carry)
 import _panel_composition as M      # noqa: E402
 
 
@@ -826,6 +827,59 @@ def _cases(check):
           and _ev_phases["P2"]["gateSource"] is None
           and _ev_tasks["P2.1"]["testEvidence"] is None,
           repr((_ev_tasks["P1.3"]["gateSource"], _ev_tasks["P2.1"]["gateSource"])))
+    # --- the evidence boundary, as a FACT on the row --------------------------
+    # THE CLASS IS CLASSIFIED ON THE SERVER AND NEVER IN THE BROWSER. It is
+    # `_status_facts.evidence_gap`'s answer, the same function the gate buckets
+    # its verdict with, so the badge the panel paints and the verdict `--gate`
+    # exits on cannot come from two different comparisons of two timestamps.
+    _eb_manifest = {
+        "phases": [
+            {"id": "Q1", "title": "before", "status": "done",
+             "testGate": ["lint"], "mergedAt": "2026-06-01T09:00:00Z",
+             "tasks": [
+                 {"id": "Q1.1", "title": "a", "status": "done",
+                  "completedAt": "2026-05-30T12:00:00Z"},
+                 {"id": "Q1.2", "title": "b", "status": "done"},
+                 {"id": "Q1.3", "title": "c", "status": "done",
+                  "completedAt": "2026-08-05T12:00:00Z"},
+                 {"id": "Q1.4", "title": "d", "status": "pending"}]}]}
+    _eb_bd = {"at": "2026-08-01T00:00:00Z",
+              "sources": {"key": None, "ledger": "2026-08-01T00:00:00Z"},
+              "basis": "the earliest recorded run", "unknown": []}
+    _eb_rows = M._composition_view(_eb_manifest, boundary=_eb_bd)
+    _eb_t = dict((t["id"], t) for t in _eb_rows["tasks"])
+    _eb_p = dict((p["id"], p) for p in _eb_rows["phases"])
+    check("ev3b every phase and task row carries the evidence-gap CLASS the "
+          "server computed, so the browser renders a fact rather than deriving "
+          "a second opinion out of two stamps: %r"
+          % (sorted((k, v["evidenceGap"]) for k, v in _eb_t.items()),),
+          [_eb_t[k]["evidenceGap"] for k in ("Q1.1", "Q1.2", "Q1.3", "Q1.4")]
+          == [_facts.GAP_BEFORE, _facts.GAP_UNDATED, _facts.GAP_SINCE, None]
+          and _eb_p["Q1"]["evidenceGap"] == _facts.GAP_BEFORE)
+    check("ev3c ...and it is the classifier's own answer, subject by subject, "
+          "rather than a rule spelled a second time here",
+          all(_eb_t[t["id"]]["evidenceGap"]
+              == _facts.evidence_gap(t, "task", _eb_bd)
+              for t in _eb_manifest["phases"][0]["tasks"])
+          and _eb_p["Q1"]["evidenceGap"]
+          == _facts.evidence_gap(_eb_manifest["phases"][0], "phase", _eb_bd))
+    _eb_none = dict((t["id"], t)
+                    for t in M._composition_view(_eb_manifest)["tasks"])
+    check("ev3d NO BOUNDARY IS A THIRD STATE, not a default: a panel serving a "
+          "plan nobody computed one for excuses nothing and undates nothing, "
+          "which is the payload every caller before this feature received",
+          [_eb_none[k]["evidenceGap"]
+           for k in ("Q1.1", "Q1.2", "Q1.3", "Q1.4")]
+          == [_facts.GAP_SINCE, _facts.GAP_SINCE, _facts.GAP_SINCE, None],
+          repr(sorted((k, v["evidenceGap"]) for k, v in _eb_none.items())))
+    check("ev3e ...and the key is on EVERY row, present as null rather than "
+          "absent, for `empty_evidence`'s reason: a key spelled on some rows "
+          "and not others is an `undefined` only the reader least placed to "
+          "report it ever meets",
+          all("evidenceGap" in r
+              for r in _ev_view["tasks"] + _ev_view["phases"])
+          and _ev_tasks["P1.1"]["evidenceGap"] is None)
+
     # THE ONE VALUE EXPRESSED IN TWO PLACES, pinned rather than commented.
     # `_gate_source` mirrors `run-test-gate.gate_of`'s resolution because that
     # file is an entry point at layer 7 and this module sits at 4. A comment

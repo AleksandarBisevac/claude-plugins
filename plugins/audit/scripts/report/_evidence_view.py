@@ -54,6 +54,7 @@ _output.install_path()
 
 import _evidence_io  # noqa: E402  (where a run's record lives, and how to read it)
 import _report_html  # noqa: E402  (the vocabulary and the view, decided once)
+import _status_facts  # noqa: E402  (evidence_gap: the ONE rule that says whether an absence is excused)
 
 
 # --- where this manifest's record lives ---------------------------------------
@@ -116,19 +117,30 @@ def _rows_for(rows, scope, subject_id):
     return sorted(mine, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
 
-def _view_for(holder, phase, scope, by_run, rows):
+def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     """One holder's view, with the runs before it attached.
 
     The current run is dropped from the history by RUN ID rather than by position:
     the pointer does not have to name the newest row - a refused pointer write
     leaves the plan behind the record on purpose, and `--reconcile` is the repair -
     so slicing the list would hide a run or repeat one.
+
+    `boundary` is `_evidence_io`'s block, or None when nobody computed one. IT IS
+    NOT READ HERE - it is handed straight to `_status_facts.evidence_gap`, which
+    is the SAME function `rollup` buckets the gate's verdict with. A renderer that
+    compared `completedAt` against `at` itself would be a second opinion about
+    which absences are excused, free to disagree with the exit code the reader is
+    holding; and the direction it would disagree in is silent, because a badge
+    that excuses more than the gate does turns neglect into a green-looking page.
     """
     pointer = _report_html.tev_pointer(holder)
     row = by_run.get(str(pointer.get("runId"))) if pointer else None
     configured = (_report_html.tev_configured(holder, phase) if scope == "task"
                   else bool(holder.get("testGate")))
-    view = _report_html.tev_view(pointer, row, configured)
+    view = _report_html.tev_view(
+        pointer, row, configured,
+        gap=_status_facts.evidence_gap(holder, scope, boundary),
+        basis=(boundary or {}).get("basis"))
     subject = holder.get("id")
     if subject:
         current = str((row or {}).get("runId") or "")
@@ -138,7 +150,7 @@ def _view_for(holder, phase, scope, by_run, rows):
 
 
 # --- the load -----------------------------------------------------------------
-def load_evidence(manifest, manifest_path, project_dir=None):
+def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
     """Everything the report says about test execution, or None when it says none.
 
     `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable"}`:
@@ -158,6 +170,14 @@ def load_evidence(manifest, manifest_path, project_dir=None):
     Fail-soft in one direction only. A ledger that cannot be read leaves every
     pointer DANGLING rather than silently clean, because "the plan names a run"
     and "the run is here" are different claims and only the second one failed.
+
+    `boundary` ARRIVES AS AN ARGUMENT AND IS NEVER DERIVED HERE, which is the rule
+    `rollup` already follows one module over and it matters more here. The caller
+    computes ONE block and hands the same object to both, so the badge a reader
+    sees and the verdict the gate reached rest on the same moment rather than on
+    two reads of a ledger that a parallel run may have grown between. None is the
+    third state, not a default: a caller that computed no boundary excuses
+    nothing, which is exactly what every caller rendered before this existed.
     """
     tasks, phases = subjects(manifest)
     if not _pointed_at_anything(tasks, phases):
@@ -177,7 +197,8 @@ def load_evidence(manifest, manifest_path, project_dir=None):
     for task, phase in tasks:
         tid = task.get("id")
         if tid:
-            task_views[str(tid)] = _view_for(task, phase, "task", by_run, rows)
+            task_views[str(tid)] = _view_for(task, phase, "task", by_run, rows,
+                                             boundary)
     phase_views = {}
     for phase in phases:
         pid = phase.get("id")
@@ -186,7 +207,7 @@ def load_evidence(manifest, manifest_path, project_dir=None):
         mine = [task_views[str(t.get("id"))] for t in (phase.get("tasks") or [])
                 if isinstance(t, dict) and str(t.get("id")) in task_views]
         phase_views[str(pid)] = {
-            "own": _view_for(phase, phase, "phase", by_run, rows),
+            "own": _view_for(phase, phase, "phase", by_run, rows, boundary),
             "rollup": _report_html.tev_rollup(mine),
         }
     return {

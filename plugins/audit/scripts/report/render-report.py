@@ -302,10 +302,15 @@ def main(argv):
         findings, warnings = vm.validate(manifest)
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
-    summary = lib.rollup(manifest, findings, warnings,
-                         boundary=boundary_for(manifest_path))
+    # ONE BLOCK, TWO CONSUMERS. The gate's verdict and the badge beside each
+    # subject are bucketed by the same `evidence_gap`, so they have to be given
+    # the same boundary object - two calls to `boundary_for` would read the
+    # ledger twice, and a run recorded between them would excuse a subject in one
+    # half of the page and not the other.
+    boundary = boundary_for(manifest_path)
+    summary = lib.rollup(manifest, findings, warnings, boundary=boundary)
     usage = load_usage(manifest, manifest_path)
-    evidence = load_evidence(manifest, manifest_path)
+    evidence = load_evidence(manifest, manifest_path, boundary=boundary)
 
     # th (F-P-6): resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme

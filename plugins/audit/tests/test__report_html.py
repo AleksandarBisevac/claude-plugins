@@ -23,6 +23,11 @@ import _report_html as M                           # noqa: E402
 import _ui_theme as _theme                         # noqa: E402  (as _report_html imports it)
 import _areas                                      # noqa: E402
 import _manifest_io                                # noqa: E402
+# `_report_html` may NOT import this - the two are layer-mates and the import
+# graph refuses the edge - so the evidence-gap vocabulary is spelled in both and
+# compared HERE. A suite may import anything, which is what makes this the only
+# place the two spellings can be held equal.
+import _status_facts                                # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
@@ -566,6 +571,76 @@ def _cases(check):
           and len({M.tev_view(None, None, True)["why"],
                    M.tev_view(None, None, False)["why"],
                    M.tev_view(_ptr, None, True)["why"]}) == 3)
+    # --- tv6b..tv6g: the evidence boundary, as the badge tells it ------------
+    # FOUR SENTENCES WHERE THERE WERE THREE. `No evidence` used to answer for
+    # work finished before this plan could record anything, which is the state a
+    # mid-flight adopter's plan is FULL of - and it reads as neglect while the
+    # gate reports green. The class is `_status_facts.evidence_gap`'s, never
+    # re-derived here, so the badge and the gate's verdict cannot disagree.
+    check("tv6b the gap classes and the badge keys are ONE table, total over "
+          "`_status_facts.GAP_CLASSES` - a class added there without a word "
+          "here would render as a class this build silently calls `no-evidence`",
+          sorted(M.TEV_GAP_KEYS) == sorted(_status_facts.GAP_CLASSES),
+          "%r vs %r" % (sorted(M.TEV_GAP_KEYS),
+                        sorted(_status_facts.GAP_CLASSES)))
+    check("tv6b2 ...and so is the table of REASONS, which is keyed by the class "
+          "and not by the badge key precisely because two classes share one word",
+          sorted(M._TEV_GAP_WHY) == sorted(_status_facts.GAP_CLASSES),
+          repr(sorted(M._TEV_GAP_WHY)))
+    check("tv6c each class earns a different SENTENCE, and two of the three a "
+          "different word - `sinceBoundary` shares `No evidence` on purpose, "
+          "because its repair is the same one and its reason is not",
+          len(set(M._TEV_GAP_WHY.values())) == len(M._TEV_GAP_WHY)
+          and sorted(set(M.TEV_GAP_KEYS.values())) == ["before-recording",
+                                                       "no-evidence", "undated"])
+    check("tv6c2 ...and the class that shares the word does not share the "
+          "sentence with the subject NOBODY classified - 'why was my neighbour "
+          "excused and this one not' is the question a mid-flight reader has",
+          M.tev_view(None, None, True,
+                     gap=_status_facts.GAP_SINCE, basis="B")["why"]
+          != M.tev_view(None, None, True, gap=None)["why"]
+          and M.tev_view(None, None, True,
+                         gap=_status_facts.GAP_SINCE,
+                         basis="B")["label"]
+          == M.tev_view(None, None, True, gap=None)["label"])
+    check("tv6d a done subject with a gate and no pointer reads `Before "
+          "recording` when the boundary excused it and `No evidence` when it "
+          "did not - the two are what a reader acts on differently",
+          M.tev_view(None, None, True,
+                     gap=_status_facts.GAP_BEFORE)["label"] == "Before recording"
+          and M.tev_view(None, None, True,
+                         gap=_status_facts.GAP_SINCE)["label"] == "No evidence"
+          and M.tev_view(None, None, True, gap=None)["label"] == "No evidence")
+    check("tv6e ...and the third class is said too: `undated` is a FAILURE the "
+          "gate names apart, and a reader shown `No evidence` for it is sent to "
+          "run a gate when the repair is to set the completion stamp",
+          M.tev_view(None, None, True,
+                     gap=_status_facts.GAP_UNDATED)["key"] == "undated"
+          and M.tev_view(None, None, True,
+                         gap=_status_facts.GAP_UNDATED)["label"]
+          != M.TEV_LABELS["no-evidence"])
+    check("tv6f a subject NOTHING GRADES stays `No gate configured` whatever "
+          "the boundary says - a gate that was never declared could not have "
+          "run before OR after recording began, so the boundary changes no "
+          "repair here",
+          [M.tev_view(None, None, False, gap=g)["key"]
+           for g in _status_facts.GAP_CLASSES] == ["no-gate"] * 3)
+    check("tv6g the excuse carries the BASIS that licenses it, and says so when "
+          "it was handed none - an excuse with nothing behind it is the claim "
+          "this whole mechanism exists to refuse",
+          "the earliest recorded run is X" in M.tev_view(
+              None, None, True, gap=_status_facts.GAP_BEFORE,
+              basis="the earliest recorded run is X")["why"]
+          and "no basis" in M.tev_view(
+              None, None, True, gap=_status_facts.GAP_BEFORE)["why"])
+    check("tv6h a gap class this build does not know is NAMED rather than "
+          "folded into `no-evidence`, the same reading tv8 takes of a status "
+          "word from a newer plugin",
+          M.tev_view(None, None, True, gap="afterTheHeatDeath")["known"] is False
+          and M.tev_view(None, None, True,
+                         gap="afterTheHeatDeath")["key"] == "afterTheHeatDeath"
+          and M.tev_view(None, None, True,
+                         gap=_status_facts.GAP_BEFORE)["known"] is True)
     check("tv7 the LEDGER decides the verdict, not the cached pointer: a "
           "pointer saying passed over a row saying failed renders Failed",
           M.tev_view({"runId": "R", "status": "passed"},

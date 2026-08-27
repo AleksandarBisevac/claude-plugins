@@ -95,6 +95,50 @@ def _cases(check):
                     "tasks": [{"id": "P1.1", "title": "T", "status": "pending"},
                               {"id": "P1.2", "title": "T2", "status": "pending"}]}]})
 
+    # --- the boundary, handed to BOTH consumers by this builder ----------------
+    # THE ONE THING NOTHING ELSE CAN ASK. `test__panel_composition.py` proves the
+    # rows carry the class when a boundary is passed in, and this is the case
+    # that proves one is - the wiring survived a mutation that stopped handing it
+    # over, because every suite either side of `build_state` was testing a
+    # function rather than the door.
+    _bd = tempfile.mkdtemp(prefix="panel-state-boundary-")
+    try:
+        _atomic_write_json(M._config_path(_bd),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+        _bdm = os.path.join(_bd, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(_bdm), exist_ok=True)
+        _atomic_write_json(_bdm, {
+            "meta": {"version": 2, "repo": "x",
+                     "evidenceSince": {
+                         "at": "2026-08-01T00:00:00Z",
+                         "basis": "the first run this plan recorded"}},
+            "phases": [{"id": "Q1", "title": "before", "status": "done",
+                        "testGate": ["lint"], "mergedAt": "2026-06-01T09:00:00Z",
+                        "tasks": [
+                            {"id": "Q1.1", "title": "a", "status": "done",
+                             "completedAt": "2026-05-30T12:00:00Z"},
+                            {"id": "Q1.2", "title": "b", "status": "done",
+                             "completedAt": "2026-08-05T12:00:00Z"}]}]})
+        _bst = M.build_state(_bd)
+        _bgap = dict((t["id"], t["evidenceGap"])
+                     for t in _bst["composition"]["tasks"])
+        check("eb-s1 the state builder hands ONE evidence boundary to the rollup "
+              "AND to the composition walk, so the page's badges and its gate "
+              "verdict rest on the same moment - and the rows really are "
+              "classified, either side of it: %r" % (_bgap,),
+              (_bst["rollup"].get("evidenceBoundary") or {}).get("at")
+              == "2026-08-01T00:00:00Z"
+              and _bgap == {"Q1.1": "beforeBoundary", "Q1.2": "sinceBoundary"}
+              and dict((p["id"], p["evidenceGap"])
+                       for p in _bst["composition"]["phases"])
+              == {"Q1": "beforeBoundary"})
+        check("eb-s2 ...and the sentence the page renders the excuse from "
+              "travels with it, on the rollup rather than copied onto each row",
+              str((_bst["rollup"].get("evidenceBoundary")
+                   or {}).get("basis") or "").strip() != "")
+    finally:
+        shutil.rmtree(_bd, ignore_errors=True)
+
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
     # from the project's own config, so there is nothing to traverse with.

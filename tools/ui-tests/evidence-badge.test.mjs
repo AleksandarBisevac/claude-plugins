@@ -17,6 +17,7 @@ import { loadPanel, reach } from './sandbox.mjs';
 
 const P = reach(loadPanel().ctx, [
   'evState', 'evMarks', 'evChecks', 'evWord', 'evRow', 'evTaskRoll', 'EVWORD',
+  'EVGAP_BEFORE', 'EVGAP_UNDATED',
 ]);
 
 // The column list the server ships beside its rows — `_panel_composition`'s
@@ -185,6 +186,81 @@ describe('the silences are three sentences, never one grey blob', () => {
   });
 });
 
+// The evidence boundary makes the second silence THREE. Driven rather than
+// pinned for this file's own reason: `test__panel_page.py` can say the source
+// contains `row.evidenceGap===EVGAP_BEFORE`, and it cannot say that a subject
+// carrying that class comes out with a DIFFERENT word from one that does not.
+describe('a silence the boundary explains is not the same silence', () => {
+  const ev = ledger();
+  const BASIS = 'the earliest recorded run is 2026-08-01T00:00:00Z';
+  const gapped = (gap) => ({ testEvidence: null, gateSource: 'task',
+    evidenceGap: gap });
+
+  it('work finished before recording began is EXCUSED, and says so', () => {
+    const s = P.evState(gapped(P.EVGAP_BEFORE), ev, BASIS);
+    expect(P.evWord(s.key)).toBe('Before recording');
+    expect(s.why).toContain('excused, not missing');
+    // The excuse carries the moment it was granted against, or it is a claim
+    // nobody can check.
+    expect(s.why).toContain(BASIS);
+  });
+
+  it('...and work finished AFTER it is not — same shape of row, other word', () => {
+    // `sinceBoundary` is the arm with no constant of its own, which is exactly
+    // what this asserts: anything that is not one of the two named classes
+    // falls through to the sentence a subject nobody classified gets.
+    const s = P.evState(gapped('sinceBoundary'), ev, BASIS);
+    expect(P.evWord(s.key)).toBe('No evidence');
+    expect(s.why).toContain('an absent record is not a failure');
+  });
+
+  it('work the plan calls done without saying WHEN is the third, and its '
+    + 'repair is the stamp rather than a gate run', () => {
+    const s = P.evState(gapped(P.EVGAP_UNDATED), ev, BASIS);
+    expect(P.evWord(s.key)).toBe('Completion undated');
+    expect(s.why).toContain('The repair is the completion stamp');
+    expect(s.why).toContain(BASIS);
+  });
+
+  it('an excuse handed NO basis says that, rather than asserting itself bare', () => {
+    const s = P.evState(gapped(P.EVGAP_BEFORE), ev, '');
+    expect(P.evWord(s.key)).toBe('Before recording');
+    expect(s.why).toContain('no basis for the boundary reached this page');
+  });
+
+  it('a subject NOTHING GRADES stays No gate configured, whatever the class '
+    + 'says — the gate condition excuses it and the badge must not imply that '
+    + 'running something would have helped', () => {
+    const s = P.evState({ testEvidence: null, gateSource: null,
+      evidenceGap: P.EVGAP_BEFORE }, ev, BASIS);
+    expect(P.evWord(s.key)).toBe('No gate configured');
+    expect(s.why).not.toContain(BASIS);
+  });
+
+  it('a class this build does not know renders the plain silence rather than '
+    + 'a badge nothing can explain', () => {
+    expect(wordFor(gapped('afterTheHeatDeath'), ev)).toBe('No evidence');
+  });
+
+  it('...and a subject that POINTS at a run ignores the class entirely', () => {
+    const s = P.evState(Object.assign({ evidenceGap: P.EVGAP_BEFORE }, pointed),
+      ev, BASIS);
+    expect(P.evWord(s.key)).toBe('Passed');
+  });
+
+  it('the four sentences are four different words', () => {
+    const words = [
+      wordFor(gapped(P.EVGAP_BEFORE), ev),
+      wordFor(gapped('sinceBoundary'), ev),
+      wordFor(gapped(P.EVGAP_UNDATED), ev),
+      wordFor({ testEvidence: null, gateSource: null }, ev),
+    ];
+    expect(words).toEqual(['Before recording', 'No evidence',
+      'Completion undated', 'No gate configured']);
+    expect(new Set(words).size).toBe(4);
+  });
+});
+
 describe('the ledger is read against the columns it shipped', () => {
   it('a row is decoded by NAME, so a reordered payload cannot shift a field', () => {
     const shuffled = ['status', 'runId'];
@@ -224,5 +300,18 @@ describe('a phase counts its tasks apart from its own sign-off run', () => {
 
   it('a phase with no tasks rolls up to nothing rather than to a verdict', () => {
     expect(P.evTaskRoll([], ledger())).toEqual([]);
+  });
+
+  it('an excused class counts APART from an unexcused one, and sorts below it '
+    + '— a phase of pre-recorder work must not read as a phase of neglect', () => {
+    const ev = ledger();
+    const tasks = [
+      { testEvidence: null, gateSource: 'task', evidenceGap: 'beforeBoundary' },
+      { testEvidence: null, gateSource: 'task', evidenceGap: 'sinceBoundary' },
+      { testEvidence: null, gateSource: 'task', evidenceGap: 'undated' },
+      { testEvidence: null, gateSource: 'task', evidenceGap: 'beforeBoundary' },
+    ];
+    expect(P.evTaskRoll(tasks, ev, 'because').map((r) => r.n + ' ' + P.evWord(r.key)))
+      .toEqual(['1 Completion undated', '1 No evidence', '2 Before recording']);
   });
 });

@@ -401,12 +401,19 @@ POINTER_KEY = "testEvidence"
 TEV_RUN_STATUSES = ("passed", "failed", "no-checks", "timed-out", "cancelled",
                     "could-not-run", "empty-gate")
 
-# ...and the three ways a subject has no run to show. THREE SENTENCES, NEVER ONE
+# ...and the FIVE ways a subject has no run to show. FIVE SENTENCES, NEVER ONE
 # GREY BLOB: "nothing here can be measured" (no gate is declared at either
-# level), "it can be and never was" (a gate is declared and no run is recorded)
-# and "the plan points at a run this checkout does not hold" are three different
-# states with three different repairs, and rendering them alike would tell a
-# reader to go looking in the wrong place twice out of three times.
+# level), "it can be and never was" (a gate is declared and no run is recorded),
+# "it finished before this plan could record anything", "we cannot tell when it
+# finished" and "the plan points at a run this checkout does not hold" are five
+# different states with five different repairs, and rendering them alike would
+# tell a reader to go looking in the wrong place four times out of five.
+#
+# THE LAST TWO ARRIVED WITH THE EVIDENCE BOUNDARY, and they are the reason it is
+# visible at all. A plan adopted mid-flight carries hundreds of subjects the gate
+# EXCUSES - work finished before the recorder existed - and until they had a word
+# of their own the surface said `No evidence` on every one of them while the gate
+# reported green. Excused and neglected are not one fact.
 TEV_LABELS = {
     "passed": "Passed",
     "failed": "Failed",
@@ -416,8 +423,29 @@ TEV_LABELS = {
     "could-not-run": "Could not run",
     "empty-gate": "Empty gate",
     "no-evidence": "No evidence",
+    "before-recording": "Before recording",
+    "undated": "Completion undated",
     "no-gate": "No gate configured",
     "dangling": "Pointer without evidence",
+}
+
+# Which badge key each of `_status_facts.evidence_gap`'s classes renders as.
+#
+# ONE TABLE, TOTAL OVER `GAP_CLASSES`, AND SPELLED RATHER THAN IMPORTED.
+# `_status_facts` is this file's LAYER-MATE, so the import graph refuses the
+# edge - the same reason `POINTER_KEY` and `TEV_RUN_STATUSES` are spelled here
+# rather than read off the modules that own them. What keeps the two honest is
+# not this paragraph: `tests/test__report_html.py` holds these keys equal to
+# `GAP_CLASSES` and fails when a class gains a spelling in one and not the other.
+#
+# THE KEYS ARE THE GATE'S WORDS AND THE VALUES ARE THIS REPORT'S. They are
+# deliberately different vocabularies: `beforeBoundary` is the class a verdict is
+# bucketed under, `before-recording` is the hyphen-lowercase spelling every other
+# no-run key on this surface already uses and the one `data-tev` filters by.
+TEV_GAP_KEYS = {
+    "beforeBoundary": "before-recording",
+    "sinceBoundary": "no-evidence",
+    "undated": "undated",
 }
 
 # The observations, which are NOT statuses. Each one is a thing the run noticed
@@ -435,8 +463,16 @@ TEV_FLAG_LABELS = {
 # run answered nothing, then the ways there is no run. A dict cannot order
 # itself and sorting alphabetically would put "cancelled" above "passed", which
 # reads as a ranking nobody chose.
+#
+# THE NO-RUN TAIL READS AS A GRADIENT, and the two boundary states take their
+# places in it rather than being appended: the record itself is wrong
+# (`dangling`), then it cannot be placed (`undated`), then nothing was recorded
+# (`no-evidence`), then nothing COULD have been recorded yet (`before-recording`),
+# then nothing can ever be (`no-gate`). Each step down is one less thing a reader
+# has to do about it.
 TEV_ORDER = ("passed", "failed", "no-checks", "timed-out", "cancelled",
-             "could-not-run", "empty-gate", "dangling", "no-evidence", "no-gate")
+             "could-not-run", "empty-gate", "dangling", "undated",
+             "no-evidence", "before-recording", "no-gate")
 
 _TEV_WHY = {
     "no-gate": "this task declares no tests.gate and its phase declares no "
@@ -446,6 +482,35 @@ _TEV_WHY = {
     "dangling": "the plan points at a run this checkout's evidence ledger does "
                 "not carry",
 }
+
+# ...and the sentence for a subject an evidence boundary DID place, keyed by the
+# class rather than by the badge key. TWO CLASSES SHARE ONE WORD AND NOT ONE
+# SENTENCE: `sinceBoundary` renders `No evidence`, which is also what a subject
+# nobody classified renders, and the difference between them is exactly the fact
+# a reader of a mid-flight plan is looking for - "why was my NEIGHBOUR excused
+# and this one not". A table keyed by the badge key could not hold both.
+#
+# Total over `_status_facts.GAP_CLASSES`, checked in `tests/test__report_html.py`
+# for `TEV_GAP_KEYS`' reason and by the same comparison.
+_TEV_GAP_WHY = {
+    "beforeBoundary": "this finished before the moment this plan could first "
+                      "have recorded a run, so no gate result could exist for "
+                      "it - excused, not missing",
+    "sinceBoundary": "a gate is configured for this subject, recording had "
+                     "already begun when it finished, and no run was recorded "
+                     "against it - absent evidence is not a failure",
+    "undated": "this is done and records no run, and the plan carries no "
+               "completion stamp to place it against the moment recording "
+               "began - the repair is the stamp, not a gate run",
+}
+
+# Every classified subject's sentence carries the boundary's own basis, because
+# `_TEV_GAP_WHY` says what the CLASS means and only the basis says which moment
+# produced it and where that moment came from. Absence is said out loud rather
+# than papered over: a subject excused by a boundary nobody can name is the shape
+# of claim this whole mechanism exists to refuse.
+_TEV_NO_BASIS = ("no basis for the boundary reached this render, so the moment "
+                 "it was placed against cannot be shown here")
 
 
 def tev_pointer(holder):
@@ -517,11 +582,55 @@ def tev_flags(row):
     return [(k, TEV_FLAG_LABELS[k]) for k in out]
 
 
-def tev_view(pointer, row, configured):
+def _tev_gap_view(gap, basis):
+    """The no-run view for a subject an evidence boundary has something to say about.
+
+    `gap` is `_status_facts.evidence_gap`'s answer - None when it had nothing to
+    say, one of `TEV_GAP_KEYS` otherwise. THE CLASS IS NEVER RE-DERIVED HERE: the
+    gate buckets its verdict with that same function, and a badge that compared
+    timestamps on its own would be a second opinion free to disagree with the exit
+    code a reader is looking at.
+
+    None IS NOT `sinceBoundary`, even though both render `No evidence`. None means
+    nobody computed a boundary, which is every caller that predates the feature;
+    `sinceBoundary` means one WAS computed and this subject sits on the far side
+    of it. One word, because the repair is the same one - run the gate - and two
+    sentences, because "why was my neighbour excused and this one not" is the
+    question a reader of a mid-flight plan actually arrives with.
+
+    A CLASS THIS BUILD DOES NOT KNOW IS NAMED, for `tev_view`'s reason one arm
+    over: folding it into `no-evidence` would be this file quietly deciding that
+    an unrecognised excuse is no excuse, which is a verdict it has no basis for.
+    """
+    if gap is None:
+        return {"key": "no-evidence", "label": TEV_LABELS["no-evidence"],
+                "known": True, "why": _TEV_WHY["no-evidence"]}
+    key = TEV_GAP_KEYS.get(gap)
+    if key is None:
+        word = str(gap)
+        return {"key": word, "label": _theme.label(word) or "Unrecognised gap",
+                "known": False,
+                "why": "this build does not recognise the evidence-gap class "
+                       "%r, so it is shown as written rather than read as an "
+                       "excuse" % (word,)}
+    sentence = basis.strip() if isinstance(basis, str) and basis.strip() else None
+    return {"key": key, "label": TEV_LABELS[key], "known": True,
+            "why": "%s - %s" % (_TEV_GAP_WHY[gap],
+                                sentence if sentence is not None
+                                else _TEV_NO_BASIS)}
+
+
+def tev_view(pointer, row, configured, gap=None, basis=None):
     """What one subject's test evidence says: one status, and the marks beside it.
 
     `pointer` is the manifest's cached block or None, `row` the ledger row that
     the pointer's `runId` names or None, `configured` whether any gate would run.
+
+    `gap` is `_status_facts.evidence_gap`'s class for this subject and `basis` the
+    sentence the boundary carries about itself. BOTH DEFAULT TO None, and that is
+    the pre-feature reading rather than a convenience: a caller that computed no
+    boundary renders exactly the words it rendered before this parameter existed,
+    which is what keeps a report of an old plan byte-identical.
 
     THE LEDGER IS THE SOURCE OF TRUTH AND THE POINTER IS A CACHE, so the word
     rendered is the ROW's. The pointer's own `status` is never read for the badge:
@@ -534,10 +643,22 @@ def tev_view(pointer, row, configured):
     know rather than shown the worst reading of it.
     """
     if pointer is None:
-        key = "no-evidence" if configured else "no-gate"
-        return {"key": key, "label": TEV_LABELS[key], "known": True, "flags": [],
-                "pointer": None, "row": None, "history": [],
-                "why": _TEV_WHY[key]}
+        # A SUBJECT NOTHING GRADES IS ANSWERED BEFORE THE BOUNDARY IS CONSULTED.
+        # `no-gate` is a fact about the PLAN - no gate is declared at either
+        # level, so nothing could have been recorded before recording began OR
+        # after it - and the boundary changes neither the sentence nor the
+        # repair. `evidence_gap` classifies a done subject whether or not it
+        # declares a gate, which is right for a GATE CONDITION and wrong for a
+        # badge: telling a reader their untested task is "excused" would imply
+        # that running something would have helped.
+        if not configured:
+            return {"key": "no-gate", "label": TEV_LABELS["no-gate"],
+                    "known": True, "flags": [], "pointer": None, "row": None,
+                    "history": [], "why": _TEV_WHY["no-gate"]}
+        found = _tev_gap_view(gap, basis)
+        return {"key": found["key"], "label": found["label"],
+                "known": found["known"], "flags": [], "pointer": None,
+                "row": None, "history": [], "why": found["why"]}
     if row is None:
         return {"key": "dangling", "label": TEV_LABELS["dangling"], "known": True,
                 "flags": [], "pointer": pointer, "row": None, "history": [],

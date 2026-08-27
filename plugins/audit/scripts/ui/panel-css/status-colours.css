@@ -28,14 +28,24 @@
    must never be rendered as one. */
 [data-evstatus="no-checks"],[data-evstatus="timed-out"],
 [data-evstatus="could-not-run"],[data-evstatus="dangling"],
+[data-evstatus="undated"],
 [data-evstatus="unknown"]{--st:var(--warn)}
 /* Settled, not achieved — the bucket `cancelled` already sits in one vocabulary
    over, and `empty-gate` joins it for the same reason: the run finished and
    there was nothing for it to do. */
 [data-evstatus="empty-gate"],[data-evstatus="cancelled"]{--st:var(--st-cancelled)}
-/* THE TWO SILENCES ARE NOT ONE GREY BLOB. They share the quietest ink because
-   neither is a finding, and they are told apart by their WORDS and by the dashed
-   outline below: `No gate configured` is a fact about the plan and `No evidence`
-   a fact about the ledger, and a reader goes to different places for them. */
-[data-evstatus="none"],[data-evstatus="no-gate"]{--st:var(--muted)}
+/* THE SILENCES ARE NOT ONE GREY BLOB. They share the quietest ink because none
+   of them is a finding, and they are told apart by their WORDS and by the dashed
+   outline below: `No gate configured` is a fact about the plan, `No evidence` a
+   fact about the ledger, and `Before recording` a fact about WHEN — work that
+   finished before this plan could record anything, which the gate excuses. A
+   reader goes to a different place for each.
+   `Completion undated` is deliberately NOT here: it is the one of the four the
+   gate FAILS, so it wears the warning ink above beside the other things somebody
+   still has to go and do. */
+[data-evstatus="none"],[data-evstatus="no-gate"],
+[data-evstatus="before-recording"]{--st:var(--muted)}
+/* The dashed outline is what separates the two muted words a reader can act on
+   from the one nobody can: `No evidence` is outstanding work, `Before recording`
+   is settled, and `No gate configured` is neither. */
 .st[data-evstatus="none"]{border-style:dashed}

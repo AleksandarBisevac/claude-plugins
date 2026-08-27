@@ -52,16 +52,35 @@ never decides what the report prints. A ledger this checkout cannot read therefo
 every pointer reading `Pointer without evidence` rather than reading clean: *the plan names
 a run* and *the run is here* are two claims, and only the second one failed.
 
-**Three sentences, never one grey blob** — they send a reader to three different places:
+**A separate sentence for each way there is no run, never one grey blob** — they send a
+reader to different places:
 
 - **`No gate configured`** — neither the task's `tests.gate` nor its phase's `testGate`
   declares anything, so nothing could have run. A fact about the plan, not about the work.
+  It is answered *before* the evidence boundary below is consulted: a gate that was never
+  declared could not have run either side of the moment recording began, so calling that
+  work *excused* would imply running something would have helped.
 - **`No evidence`** — a gate is configured and no run has been recorded against it. Absent
   means *no run was recorded*, never *failed*: a manifest written before the field existed,
   a task nobody has run and a block somebody deleted are one state.
+- **`Before recording`** — the work finished before the moment this plan could first have
+  recorded anything (`meta.evidenceSince`, or the earliest run in the ledger, whichever is
+  earlier). This is the state a plan adopted **mid-flight** is full of, and it is the one the
+  `no-test-evidence` gate condition **excuses** rather than fails — so without a word of its
+  own the surface would have shown a wall of `No evidence` while the gate reported green, and
+  no reader could tell *excused* from *neglected*. The badge carries the boundary's own basis,
+  so the excuse is checkable where it is claimed.
+- **`Completion undated`** — the plan calls the work done, records no run, and says nothing
+  about *when* it finished, so it cannot be placed against that moment at all. The gate
+  **fails** this one and names it apart from the case above, because the repair differs: set
+  the completion stamp, rather than run the gate.
 - **`Pointer without evidence`** — the plan names a run this checkout's ledger does not
-  carry. That is the one of the three saying the record itself is missing, and
-  `/audit:doctor` is what says which direction it broke in.
+  carry. That is the one saying the record itself is missing, and `/audit:doctor` is what
+  says which direction it broke in.
+
+The class each subject falls in comes from the same function the gate buckets its verdict
+with, so the badge and the exit code cannot disagree. Each is a value of `data-tev`, so the
+`Test gate` filter row separates them.
 
 **The badge is the verdict and nothing else; the observations sit beside it** as separate
 marks — `tree mutated`, `tree unknown`, `no overlap`, `coverage unknown`, `checks unknown`.

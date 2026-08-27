@@ -628,9 +628,15 @@ def _cases(check):
         # directory beside them, so nothing `generate()` returns on its own can
         # say whether the two agree on disk. This is the report's OWN reader,
         # pointed at the fixture the generator just wrote.
+        # THROUGH THE BOUNDARY, the way `render-report.py` reads it. Without it
+        # every gap classifies as `sinceBoundary` and the fixture's pre-recorder
+        # phase renders `No evidence` - which is exactly the state this fixture
+        # now exists to show is NOT what a mid-flight adopter's plan says.
+        _ev_bd = M._evidence_io.boundary_for(os.path.join(tmp,
+                                                          "audit-plan.json"), tmp)
         _ev = _evidence_view.load_evidence(back, os.path.join(tmp,
                                                               "audit-plan.json"),
-                                           project_dir=tmp)
+                                           project_dir=tmp, boundary=_ev_bd)
         check("the written fixture carries a ledger the report can read at all - "
               "`load_evidence` returns None when nothing points at a run, and "
               "every case below would then be judging an empty dict",
@@ -650,10 +656,42 @@ def _cases(check):
         _keys = sorted(set(v["key"] for v in _ev["tasks"].values()))
         check("...and the fixture reaches the states A ships: a verdict either "
               "way, a gate that exited 0 having checked nothing, work not run "
-              "yet, and a subject nothing grades - four different sentences with "
-              "four different repairs: %r" % (_keys,),
-              _keys == ["failed", "no-checks", "no-evidence", "no-gate",
-                        "passed"])
+              "yet, work that finished before this plan could record anything, "
+              "and a subject nothing grades - five different sentences with "
+              "five different repairs: %r" % (_keys,),
+              _keys == ["before-recording", "failed", "no-checks", "no-evidence",
+                        "no-gate", "passed"])
+        # THE KEY AND THE STATE, PINNED TOGETHER. `SCHEMA_EXEMPTIONS` held
+        # `meta.evidenceSince` back until a surface could tell `Before recording`
+        # apart from `No evidence`, on the argument that a field published
+        # without its state demonstrates nothing. Carrying the key and excusing
+        # nobody would be that same gap wearing a covered field, so the two are
+        # asserted in one place: the boundary is DERIVED off the ledger rather
+        # than typed, and there are subjects on both sides of it.
+        _since = (back.get("meta") or {}).get("evidenceSince") or {}
+        _excused = sorted(t for t, v in _ev["tasks"].items()
+                          if v["key"] == "before-recording")
+        _after = sorted(t for t, v in _ev["tasks"].items()
+                        if v["key"] == "no-evidence")
+        check("the fixture is a MID-FLIGHT ADOPTER, which is what makes the "
+              "boundary visible: `meta.evidenceSince` names the first run the "
+              "ledger holds, and the plan carries done subjects on both sides "
+              "of it - %d excused, %d not" % (len(_excused), len(_after)),
+              _since.get("at") == _ev_bd["at"]
+              and _since.get("at") == M._evidence_io.earliest_recorded(
+                  M.evidence_rows(back, tmp))
+              and str(_since.get("basis") or "").strip() != ""
+              and bool(_excused) and bool(_after),
+              repr((_since.get("at"), _excused[:3], _after[:3])))
+        check("...and the phase those subjects sit in records NOTHING, which is "
+              "the fact that puts them before the boundary - a fixture whose "
+              "every phase recorded would carry the key and excuse nobody",
+              _ev["phases"][back["phases"][0]["id"]]["own"]["key"]
+              == "before-recording"
+              and back["phases"][0].get("testEvidence") is None
+              and not [r for r in M.evidence_rows(back, tmp)
+                       if r.get("phaseId") == back["phases"][0]["id"]],
+              repr(back["phases"][0]["id"]))
         _flags = sorted(set(k for v in _ev["tasks"].values()
                             for k, _w in v["flags"]))
         check("...with the observations beside them, each of which is a thing a "

@@ -421,10 +421,15 @@ def build_state(project):
             # serving rather than at whatever the config names, so a
             # project whose plan moved does not date its evidence off
             # another plan's ledger.
-            rollup = as_.rollup(
-                manifest, m_findings, m_warn,
-                boundary=_evidence_io.boundary_for(mpath, project))
-            composition = _composition_view(manifest)
+            # ONE BLOCK, TWO CONSUMERS. The rollup buckets the gate's verdict
+            # with it and the composition rows carry the per-subject class off
+            # it, both through `_status_facts.evidence_gap` - so they are handed
+            # the SAME object rather than each asking the ledger, which a
+            # parallel `--record` could grow between two reads.
+            boundary = _evidence_io.boundary_for(mpath, project)
+            rollup = as_.rollup(manifest, m_findings, m_warn,
+                                boundary=boundary)
+            composition = _composition_view(manifest, boundary=boundary)
             # AFTER the composition and off its rows, not off the manifest: the
             # pointers are already on those rows, and the runs worth shipping are
             # exactly the ones they name.

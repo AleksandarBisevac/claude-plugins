@@ -300,14 +300,30 @@ function ovExcerpt(text,term,width){
 const EVWORD={passed:'Passed',failed:'Failed','no-checks':'No checks ran',
  'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
  'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
+ 'before-recording':'Before recording',undated:'Completion undated',
  dangling:'Pointer without evidence'};
+/**
+ * @type {string} the class `_status_facts.evidence_gap` answers with for work
+ * that finished before this plan could record anything. Spelled here because
+ * nothing crosses from Python to the browser but the payload;
+ * `test__panel_page.py` holds this literal equal to `_status_facts.GAP_BEFORE`,
+ * so the two cannot drift into two vocabularies.
+ */
+const EVGAP_BEFORE='beforeBoundary';
+/**
+ * @type {string} ...and for work the plan calls done without saying WHEN, which
+ * cannot be placed against the boundary at all. `sinceBoundary` needs no
+ * constant of its own: it is the arm that renders exactly what a subject nobody
+ * classified renders, which is what makes it the default rather than a case.
+ */
+const EVGAP_UNDATED='undated';
 /**
  * @type {string[]} verdicts, most-in-need-of-a-human first. OVORDER's rule one
  * vocabulary over, so a phase's roll-up leads with what is wrong rather than
  * with whatever its first task happened to say.
  */
 const EVORDER=['failed','could-not-run','timed-out','cancelled','no-checks',
- 'dangling','empty-gate','none','no-gate','passed'];
+ 'dangling','undated','empty-gate','none','before-recording','no-gate','passed'];
 /**
  * The word for a verdict.
  * @param {string} k - a verdict key, from the ledger or from evState
@@ -345,29 +361,61 @@ function evRow(row,fields){
 /**
  * What one subject's test evidence amounts to — as facts, not as a rendered cell.
  *
- * FOUR ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
+ * SIX ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
  * fact about the PLAN: nothing could have run. No pointer is a fact about the
- * LEDGER: nothing has run yet, which is never "failed". A pointer whose run the
- * ledger does not hold is a third thing, and the only one that says the record
- * itself is wrong. Only the fourth reads a verdict.
- * @param {{testEvidence: *, gateSource: (string|null|undefined)}} node - the
- *   composition row for a task or a phase
+ * LEDGER — and it is three facts, not one, because a subject finished BEFORE
+ * this plan could record anything is excused, one finished after it is not, and
+ * one the plan calls done without saying when cannot be placed at all. A pointer
+ * whose run the ledger does not hold says the record itself is wrong. Only the
+ * last reads a verdict.
+ *
+ * THE CLASS IS THE SERVER'S. `node.evidenceGap` is what
+ * `_status_facts.evidence_gap` answered, which is the same function the
+ * `no-test-evidence` gate buckets its verdict with. Comparing `completedAt`
+ * against the boundary here would be a second opinion, and the direction it
+ * would drift in is the silent one: a page that excuses more than the gate does
+ * reads as green while the build is red.
+ * @param {{testEvidence: *, gateSource: (string|null|undefined),
+ *   evidenceGap: (string|null|undefined)}} node - the composition row for a
+ *   task or a phase
  * @param {{runs: (Object<string, Array<*>>|undefined), fields: (string[]|undefined),
  *   files: (number|undefined), unreadable: (number|undefined)}} ev -
  *   `STATE.evidence`
+ * @param {string} [basis] - the sentence the evidence boundary carries about
+ *   itself, from `STATE.rollup.evidenceBoundary.basis`. Passed in rather than
+ *   read here so this stays a function of its arguments
  * @returns {{key: string, why: string, run: (Object<string, *>|null)}} `run` is
- *   null for all three silences, which is what makes a marker beside them
+ *   null for every silence, which is what makes a marker beside them
  *   impossible: an observation needs a run that made it
  */
-function evState(node,ev){
+function evState(node,ev,basis){
  const row=node||{},pointer=row.testEvidence,src=row.gateSource;
- if(pointer==null)return src
-  ?{key:'none',run:null,
-    why:'no run has been recorded for this subject. The '+src+"'s gate is what "
-      +'would grade it — an absent record is not a failure.'}
-  :{key:'no-gate',run:null,
+ if(pointer==null){
+  // Answered BEFORE the boundary is consulted: `no-gate` is a fact about the
+  // plan, and a gate that was never declared could not have run either side of
+  // the moment recording began. `evidence_gap` classifies a done subject whether
+  // or not it declares a gate — right for a gate CONDITION, wrong for a badge,
+  // because telling this reader their work is "excused" implies that running
+  // something would have helped.
+  if(!src)return {key:'no-gate',run:null,
     why:'no test gate is declared here or on the phase, so no run could have '
       +'been recorded. Nothing has been proven either way.'};
+  // ...and every classified subject wears the basis that placed it, because
+  // "excused" without the moment it was excused against is a claim nobody can
+  // check. Absence of the basis is said rather than papered over.
+  const why=basis||'no basis for the boundary reached this page, so the moment '
+    +'it was placed against cannot be shown here';
+  if(row.evidenceGap===EVGAP_BEFORE)return {key:'before-recording',run:null,
+    why:'this finished before the moment this plan could first have recorded a '
+      +'run, so no gate result could exist for it — excused, not missing. '+why};
+  if(row.evidenceGap===EVGAP_UNDATED)return {key:'undated',run:null,
+    why:'this is done and records no run, and the plan says nothing about when '
+      +'it finished, so it cannot be placed against the moment recording began. '
+      +'The repair is the completion stamp, not a gate run. '+why};
+  return {key:'none',run:null,
+    why:'no run has been recorded for this subject. The '+src+"'s gate is what "
+      +'would grade it — an absent record is not a failure.'};
+ }
  const rid=(typeof pointer==='object'&&typeof pointer.runId==='string')
    ?pointer.runId:'';
  const run=rid?evRow(((ev||{}).runs||{})[rid],(ev||{}).fields):null;
@@ -487,12 +535,14 @@ function evDetail(run){
  * repo names silent.
  * @param {string} id - the subject id, which is the key `OVF.evOpen` holds
  * @param {object} node - the composition row carrying testEvidence/gateSource
+ *   and the evidence-gap class the server put on it
  * @param {object} ev - `STATE.evidence`
+ * @param {string} [basis] - the evidence boundary's own sentence
  * @returns {{badge: HTMLElement, detail: (HTMLElement|null)}}
  */
-function evCell(id,node,ev){
+function evCell(id,node,ev,basis){
  try{
-  const s=evState(node,ev),badge=evBadge(s);
+  const s=evState(node,ev,basis),badge=evBadge(s);
   if(!s.run)return {badge:badge,detail:null};
   const open=!!OVF.evOpen[id];
   return {badge:el('button',{class:'evtog',type:'button','data-evtog':id,
@@ -510,24 +560,27 @@ function evCell(id,node,ev){
  * measurement nobody made.
  * @param {Array<object>} tasks - the phase's composition rows
  * @param {object} ev - `STATE.evidence`
+ * @param {string} [basis] - the evidence boundary's own sentence
  * @returns {Array<{key: string, n: number}>} most-in-need-of-a-human first
  */
-function evTaskRoll(tasks,ev){
+function evTaskRoll(tasks,ev,basis){
  const counts=new Map();
- tasks.forEach(t=>{const k=evState(t,ev).key;counts.set(k,(counts.get(k)||0)+1);});
+ tasks.forEach(t=>{const k=evState(t,ev,basis).key;
+   counts.set(k,(counts.get(k)||0)+1);});
  return [...counts.keys()].sort((a,b)=>ovRank(EVORDER,a)-ovRank(EVORDER,b))
   .map(k=>({key:k,n:counts.get(k)}));}
 /**
  * The roll-up as cells, contained for `evCell`'s reason and with its own sentinel.
  * @param {Array<object>} tasks - the phase's composition rows
  * @param {object} ev - `STATE.evidence`
+ * @param {string} [basis] - the evidence boundary's own sentence
  * @returns {Node|Array<Node>} a sentence when there is nothing to count, one
  *   pill per verdict otherwise
  */
-function evRollCells(tasks,ev){
+function evRollCells(tasks,ev,basis){
  try{
   if(!tasks.length)return el('span',{class:'mut'},'no tasks to count');
-  return evTaskRoll(tasks,ev).map(r=>el('span',{class:'st','data-evstatus':r.key,
+  return evTaskRoll(tasks,ev,basis).map(r=>el('span',{class:'st','data-evstatus':r.key,
     title:plural(r.n,'task in this phase says','tasks in this phase say')+' '
       +evWord(r.key).toLowerCase()},r.n+' '+evWord(r.key)));
  }catch(cause){console.error('evidence roll-up failed',cause);
@@ -564,6 +617,10 @@ const evLine=(lbl,...parts)=>el('div',{class:'evline','data-evline':lbl},
 function ovDetail(p){
  const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id);
  const ev=STATE.evidence||{};
+ // The boundary's own sentence, read ONCE here and handed down. It is the same
+ // block `/audit:status --gate` reads, carried on the rollup rather than copied
+ // onto every row — one fact, one place in the payload.
+ const evbas=((STATE.rollup||{}).evidenceBoundary||{}).basis||'';
  // The ROLLUP phase carries the progress bar; the COMPOSITION phase carries the
  // pointer and the gate. Looked up rather than assumed present: a phase the
  // rollup knows and the composition does not gets the same honest "no evidence"
@@ -575,16 +632,16 @@ function ovDetail(p){
  // BOTH, LABELLED APART. The phase's own sign-off run and the roll-up over its
  // tasks measure different things over different files, and a reader shown one
  // of them alone would take it for the other.
- const pcell=evCell(p.id,cph,ev);
+ const pcell=evCell(p.id,cph,ev,evbas);
  box.append(evLine('phase sign-off',pcell.badge));
  if(pcell.detail)box.append(pcell.detail);
- box.append(evLine('tasks',evRollCells(tasks,ev)));
+ box.append(evLine('tasks',evRollCells(tasks,ev,evbas)));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{
   const tb=el('tbody');
   tasks.forEach(t=>{
    const when=ovStamp(t.completedAt||t.startedAt);
-   const cell=evCell(t.id||'',t,ev);
+   const cell=evCell(t.id||'',t,ev,evbas);
    tb.append(el('tr',{'data-ovtask':t.id||''},
     el('td',{class:'mono'},t.id||''),
     el('td',{class:'ovt'},t.title||''),

@@ -1508,6 +1508,58 @@ def _cases(check):
           and not os.path.exists(os.path.join(bdir2, "audit-report.html"))
           and not os.path.exists(os.path.join(tmp, "etc", "passwd.html")))
 
+    # --- eb: the boundary the ENTRY POINT fetches and hands to both halves -----
+    # THE ONE CLAIM NO OTHER SUITE CAN MAKE. `test__evidence_view.py` proves the
+    # badge changes when a boundary is passed in, and `test__status_facts.py`
+    # proves the gate buckets by the same rule - neither can say this file
+    # actually hands one over. It survived a mutation that dropped the argument,
+    # because every case either side of `main()` was testing a function rather
+    # than the door.
+    _ebd = os.path.join(tmp, "midflight")
+    os.makedirs(os.path.join(_ebd, ".claude", "audit", "evidence"), exist_ok=True)
+    _ebm = os.path.join(_ebd, ".claude", "audit", "audit-plan.json")
+    with open(_ebm, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 2, "repo": "x",
+                            "reportBasename": "midflight"},
+                   "phases": [{"id": "Q1", "title": "before", "status": "done",
+                               "testGate": ["make test"],
+                               "mergedAt": "2026-06-01T09:00:00Z",
+                               "tasks": [
+                                   {"id": "Q1.1", "title": "a", "status": "done",
+                                    "completedAt": "2026-05-30T12:00:00Z",
+                                    "tests": {"gate": ["pytest"]}},
+                                   {"id": "Q1.2", "title": "b", "status": "done",
+                                    "completedAt": "2026-08-05T12:00:00Z",
+                                    "tests": {"gate": ["pytest"]}},
+                                   {"id": "Q1.3", "title": "c", "status": "done",
+                                    "completedAt": "2026-08-02T12:00:00Z",
+                                    "tests": {"gate": ["pytest"]},
+                                    "testEvidence": {
+                                        "runId": "BR1", "status": "passed",
+                                        "at": "2026-08-01T00:00:00Z"}}]}]}, fh)
+    with open(os.path.join(_ebd, ".claude", "audit", "evidence",
+                           "2026-08.t.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"v": 1, "runId": "BR1",
+                             "ts": "2026-08-01T00:00:00Z", "scope": "task",
+                             "taskId": "Q1.3", "phaseId": "Q1",
+                             "status": "passed", "failed": [],
+                             "steps": [], "observations": {}}) + "\n")
+    M.main([_ebm, "--out-dir", _ebd, "--format", "html"])
+    with open(os.path.join(_ebd, "midflight.html"), encoding="utf-8") as fh:
+        _ebhtml = fh.read()
+    check("eb1 a plan adopted mid-flight renders `Before recording` for the work "
+          "that finished before it could record anything, and `No evidence` for "
+          "the work that did not - which means main() fetched a boundary and "
+          "handed it to the badge, not only to the gate's rollup",
+          'data-tev="before-recording"' in _ebhtml
+          and ">Before recording<" in _ebhtml
+          and 'data-tev="no-evidence"' in _ebhtml
+          and ">No evidence<" in _ebhtml)
+    check("eb2 ...and the excuse wears the boundary's own basis, so the claim is "
+          "checkable on the page rather than only in the gate's log",
+          "the boundary is the earliest recorded run, 2026-08-01T00:00:00Z"
+          in _ebhtml)
+
     # --- bn: the bench harness measures what it claims -------------------------
     # A bench that silently measures the wrong thing is worse than none. These run
     # at the smallest scale the fixture supports; the numbers are not asserted (a
