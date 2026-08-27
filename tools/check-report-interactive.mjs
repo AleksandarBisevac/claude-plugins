@@ -9,11 +9,19 @@
  * real file in a real browser and asserts on what a reader would see.
  *
  *   node tools/check-report-interactive.mjs <report.html>
+ *   node tools/check-report-interactive.mjs <report.html> --record
  *
  * Exit 0 = every interaction behaved. Exit 1 = something is inert; the failing
  * assertion names which. Exit 2 = could not run (no browser, bad arguments, or a
  * report older than these checks) — distinct on purpose, so a missing dependency
  * is never read as a passing check.
+ *
+ * `--record` is the only thing here that WRITES, and it writes one thing: this
+ * document's row in `tools/ui-checks/report-layout-baseline.json`, the recorded
+ * figures the relative layout arm compares against. It refuses on a report with
+ * any other failure. `ui-checks/layout-baseline.mjs` carries the reasoning — why
+ * a relative arm exists beside an absolute bar, what the two measure, and how far
+ * a figure may move before somebody has to say the move was meant.
  *
  * It also drives the one output nobody opens before shipping. The print rules
  * are checked under `emulateMedia('print')` and the orientation is read back out
@@ -51,10 +59,31 @@ import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
 // file. Imported by both gates so there is one copy of it.
 import { HEATMAP_NAV, USAGE_DETAIL_CHARTS, readDisclosure,
          disclosureSummary } from './ui-checks/disclosures.mjs';
+// The RELATIVE arm of the phone-layout question, beside the absolute bar this file
+// has always carried. That file says why there are two, why they measure different
+// quantities and how far a figure may move; this one measures and reports.
+import { PHONE_VIEWPORT, applyRecording, documentKey, emptyBaseline, judge,
+         readBaseline, share, writeBaseline } from './ui-checks/layout-baseline.mjs';
 
-const file = process.argv[2];
+// FLAGS ARE VALIDATED AND POSITIONALS ARE NOT, which is not an oversight. A
+// mistyped flag is silently nothing — `--recrod` would leave a run that was asked
+// to bless a figure quietly not blessing it — so an unknown one stops the tool. A
+// second positional has always been ignored here and one caller relies on it: CI
+// drives `/tmp/one-status/*.html`, a glob the shell expands, and rejecting the
+// extra would turn a green step red for a reason that has nothing to do with the
+// report.
+const args = process.argv.slice(2);
+const flags = args.filter((a) => a.startsWith('--'));
+const unknown = flags.filter((a) => a !== '--record');
+if (unknown.length) {
+  console.error(`unknown option(s): ${unknown.join(' ')}`);
+  console.error('usage: check-report-interactive.mjs <report.html> [--record]');
+  process.exit(2);
+}
+const RECORDING = flags.indexOf('--record') >= 0;
+const file = args.find((a) => !a.startsWith('--'));
 if (!file) {
-  console.error('usage: check-report-interactive.mjs <report.html>');
+  console.error('usage: check-report-interactive.mjs <report.html> [--record]');
   process.exit(2);
 }
 const path = resolve(file);
@@ -1999,8 +2028,40 @@ await page.waitForTimeout(400);
 //    entirely off the left of the screen. document.scrollWidth stayed 390, so
 //    there was no scroll that reached them either: the date filter simply did not
 //    exist on a phone. Every string pin in the suite was green throughout.
-await page.setViewportSize({ width: 390, height: 780 });
+//    The size comes from layout-baseline.mjs rather than from a literal here,
+//    because every figure recorded below is a SHARE of it: two spellings of this
+//    viewport is a recorded percentage of one screen compared against a
+//    measurement of another, with nothing able to say so.
+await page.setViewportSize(PHONE_VIEWPORT);
 await page.waitForTimeout(250);
+//    The first of the two recorded figures, taken BEFORE anything is opened. It is
+//    read back with the disclosure's own state so a run cannot record the open bar
+//    under the shut figure's name: everything above this line opens and closes
+//    disclosures for a living, and a measurement of the wrong state is a baseline
+//    that is wrong in the quiet direction forever.
+//    ...and measured with EVERY phase status in view, which is the tallest the
+//    chip row gets and so the state worth recording. Measured on the example: the
+//    Done chip alone wraps the row and adds 28px to the bar. The script has
+//    already reached this state by here on every report CI drives, so the line
+//    changes nothing today — it is here so an edit ABOVE cannot quietly move the
+//    basis under a number recorded from it, which is a shift a tolerance would
+//    absorb rather than report.
+const measured = {};
+if (await page.$('#audit-view option[value="all"]')) {
+  await page.selectOption('#audit-view', 'all');
+  await page.waitForTimeout(250);
+}
+const barState = await page.evaluate(() => {
+  const st = document.querySelector('.sectools');
+  const d = document.querySelector('.fdetails');
+  return { h: st.getBoundingClientRect().height, open: d ? d.open : null };
+});
+if (barState.open === true) {
+  failures.push('FAIL the More-filters disclosure is already open where the shut filter '
+    + 'bar is measured, so the recorded shut figure would be a measurement of the open one');
+} else {
+  measured.filterBarShutShare = share(barState.h, PHONE_VIEWPORT.height);
+}
 //    Same pairing as step 6: the <details> without the panel inside it is a
 //    contradiction in one document, so it is named rather than dereferenced.
 if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
@@ -2025,6 +2086,19 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
     phone.offscreen.join(',') || 'none', 'none');
   expect('...without pushing the document sideways to get there', phone.pageOverflows, false);
 
+  //    The second recorded figure, and the one F219 moves. Read with the
+  //    disclosure's state for the same reason the shut one is.
+  const openState = await page.evaluate(() => {
+    const st = document.querySelector('.sectools');
+    return { h: st.getBoundingClientRect().height, open: document.querySelector('.fdetails').open };
+  });
+  if (openState.open !== true) {
+    failures.push('FAIL clicking the More-filters summary did not open the disclosure, so '
+      + 'the open filter bar could not be measured at all');
+  } else {
+    measured.filterBarOpenShare = share(openState.h, PHONE_VIEWPORT.height);
+  }
+
   //    In flow the panel's height IS the bar's height, and the bar is sticky: 156px
   //    shut, 481px open, on a 780px screen. Pinned, that is 62% of the viewport
   //    covering the table it filters. Open, it has to scroll away like the block of
@@ -2043,6 +2117,23 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
+
+// --- the relative arm: what this document's layout was recorded at ------------
+//
+// The bar above is ABSOLUTE and stays exactly as it is: an open panel may not pin
+// more than its share of the screen over the table, whatever it did yesterday.
+// This asks the other question — has THIS document's filter chrome moved from the
+// figure this repository recorded — and the two are reported on separate lines so
+// a reader knows which they have.
+//
+// It is here rather than beside the bar because it judges figures taken on both
+// sides of the disclosure, and because a document with no More-filters panel still
+// has a shut bar worth recording: the `else` above skips a check, not a document.
+// `file` and not `path`: both resolve to the same document, and the one the caller
+// typed is the one that belongs in a command printed back to them.
+const layout = judge({ reportPath: file, measured, viewport: PHONE_VIEWPORT });
+for (const f of layout.failures) failures.push(`FAIL ${f}`);
+for (const n of layout.notes) notes.push(`ok   ${n}`);
 
 //    Portrait paper is ~688px, INSIDE the 52rem breakpoint — so every rule added
 //    for a phone above is also a rule about paper. These two are inert there only
@@ -2292,6 +2383,76 @@ await browser.close();
 
 for (const n of notes) console.log(n);
 for (const f of failures) console.log(f);
+
+// --- blessing a layout move, the one thing this tool may WRITE ----------------
+//
+// EASY TO BLESS: the command is printed under the finding that asks for it, and it
+// is this same gate with one flag, so a figure can only be recorded by a run that
+// actually measured it.
+//
+// HARD TO BLESS BY ACCIDENT, in three ways that cost nothing to keep:
+//   * a plain run never writes. The measurement and the recording are the same
+//     code, but only the flag reaches the filesystem;
+//   * a run with any OTHER failure refuses. A figure blessed off a report whose
+//     interactions are broken is a figure recorded from a page nobody has seen
+//     working, and that is the state a regression is most likely to be in;
+//   * one document per invocation, so each blessing is one row in one diff, with
+//     the old value on the line above the new one.
+// What it deliberately does NOT do is decide whether the move was legitimate. That
+// is a judgement, the diff is where it is reviewed, and a tool that made it would
+// be the arm switching itself off.
+if (RECORDING) {
+  const cmdFailures = new Set(layout.failures.map((f) => `FAIL ${f}`));
+  const others = failures.filter((f) => !cmdFailures.has(f));
+  const key = documentKey(path);
+  const { baseline, problem } = readBaseline();
+  const table = problem === null ? baseline : emptyBaseline(PHONE_VIEWPORT);
+  const sameViewport = table.viewport.width === PHONE_VIEWPORT.width
+    && table.viewport.height === PHONE_VIEWPORT.height;
+  if (layout.refusal !== null) {
+    // A POSITIVE reason not to record, never "nothing to record". The two are
+    // different sentences and only one of them is true here: a document the
+    // baseline is not about has no row to match, so "every figure already matches"
+    // would be a cheerful way of saying nothing happened.
+    console.log(`\nREFUSING TO RECORD: ${layout.refusal}. Nothing was written.`);
+    process.exit(1);
+  }
+  if (key === null) {
+    console.log(`\nREFUSING TO RECORD: ${file} is not in this checkout, and the baseline `
+      + 'records the committed reports of this repository. Nothing was written.');
+    process.exit(1);
+  }
+  if (others.length) {
+    console.log(`\nREFUSING TO RECORD: ${others.length} failure(s) above are not layout `
+      + 'figures, so this report is not a page to take a measurement from. Fix those '
+      + 'first. Nothing was written.');
+    process.exit(1);
+  }
+  if (!sameViewport && Object.keys(table.documents).length) {
+    console.log(`\nREFUSING TO RECORD: the baseline was recorded at ${table.viewport.width}x`
+      + `${table.viewport.height} and this run measured at ${PHONE_VIEWPORT.width}x`
+      + `${PHONE_VIEWPORT.height}. Recording one document would leave every other row a `
+      + 'share of a screen nothing measured at. Delete the file and record each document '
+      + 'again. Nothing was written.');
+    process.exit(1);
+  }
+  if (layout.recordable === null) {
+    console.log(`\nnothing to record: every figure recorded for ${key} already matches `
+      + 'this run, so the file is unchanged.');
+    process.exit(0);
+  }
+  const applied = applyRecording(table, key, layout.recordable, PHONE_VIEWPORT);
+  writeBaseline(applied.baseline);
+  console.log(`\nrecorded ${key}:`);
+  for (const c of applied.changes) {
+    console.log(`  ${c.metric}: ${c.from === undefined ? '(none)' : `${c.from}%`}`
+      + ` -> ${c.to === undefined ? '(gone)' : `${c.to}%`}`);
+  }
+  console.log('Commit tools/ui-checks/report-layout-baseline.json with the change that '
+    + 'moved it: the recorded figure is a claim that the move was meant.');
+  process.exit(0);
+}
+
 console.log(
   failures.length
     ? `\nREPORT IS INERT: ${failures.length} interaction(s) did not work in ${file}`

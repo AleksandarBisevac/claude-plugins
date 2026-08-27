@@ -220,6 +220,18 @@ python3 tools/check-committed-pii.py
 # the browser gates. NOTHING ELSE can prove the report paints and stays interactive,
 # or that the panel's controls do what their labels say: a selftest asserts what the
 # CSS SAYS. The panel leg is the long one.
+#
+# The report gate carries TWO arms over the phone layout and they fail apart. The
+# absolute one bounds the share of the screen an open filter panel may pin over the
+# table; the relative one compares this document's filter chrome against the figure
+# recorded for it in `tools/ui-checks/report-layout-baseline.json`, so a fixture that
+# moves a long way is reported even where the absolute bar is not crossed — which is
+# what F219 was: one shipped example grew to nearly four times its height under a bar
+# it never reached, and only its neighbour failing gave it away. A move you meant is
+# blessed by re-running that gate on the one document with `--record` and committing
+# the line that changed; the failure prints the command. Recording refuses on a report
+# with any other failure, and `ui-checks/layout-baseline.mjs` is where the tolerance
+# and its defence live.
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 node tools/capture-screenshots.mjs --check
 ```
