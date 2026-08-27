@@ -56,6 +56,13 @@ the one that needed no precedent at all: nothing here had ever asked whether a d
 *reachable*, so a page could be added, linked once, and silently orphaned by the next edit to
 whatever linked it.
 
+`handbook_drift()` is the same shape asked of a PUBLISHED page, and it is here because
+`docs/handbook.html` is the one published artifact with no generator behind it: every
+other one is compared with something that regenerates it, and this one could assert
+what the code had stopped doing and stay green. It is not a byte comparison and does
+not want to be - what it asks is whether the verbs, options and schema paths the page
+tells a reader to type are still there, and whether its own internal links land.
+
 KNOWN LIMIT, STATED RATHER THAN HIDDEN. Matching is per line, so a path split across two
 adjacent string literals is invisible — `_deps.py` spells one as `"...plugins/audit/
 scripts/" "_deps.py --render..."` and this module does not see it. Joining the file first
@@ -73,6 +80,7 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 """
 
 import hashlib
+import html
 import json
 import os
 import posixpath
@@ -837,6 +845,342 @@ def command_flag_drift(repo_root=None):
             if flag not in row_flags:
                 missing.append((cmd, flag))
     return {"missing": missing, "checked": checked}
+
+
+# --- what the published handbook claims about the product ---------------------
+# `docs/handbook.html` is served by GitHub Pages beside `docs/index.html` and is the
+# one published page with NO GENERATOR BEHIND IT. Every other published artifact is
+# held by something: the rendered reports are compared byte for byte, the live demo is
+# proven a byte copy, the screenshots record the version they were shot at. Nothing
+# read this page at all - `artifact_version_drift()` walks past it and finds no stamp
+# to compare, which is correct and says nothing - so it could assert something the
+# code had stopped doing and stay green for ever. It already had: before it was
+# rewritten it described none of the test-evidence feature, its masthead and its
+# footer named two different and both-stale versions, and it described a command as
+# interactive when every answer is a flag.
+#
+# NOT A BYTE COMPARISON, AND THAT IS THE DECISION. A byte check needs a generator to
+# compare against, and writing one to hold a hand-written page is a bigger commitment
+# than the gap deserves. What is checkable without one is the page's STRUCTURAL
+# claims, and the page makes them explicitly: "every command, flag and default here is
+# the same wherever it is installed". So the rule asks whether the things it names are
+# still there - a verb with a command file, an option spelling the product still
+# carries, a configuration path the schemas still declare - and whether its own
+# internal links land on something.
+#
+# THE REGION IT READS IS THE TEXT A READER READS. Markup is stripped, and the
+# stylesheet and the inline diagrams are dropped before that: a CSS custom property is
+# spelled exactly like a command-line option, and a rule that read the `<style>` block
+# would report this page's own design tokens as options the plugin does not accept. That is the F116 trap in its usual clothing, and the repair is the
+# narrowing rather than a looser needle - a pattern widened until the tokens passed
+# would stop catching an option that was really removed.
+HANDBOOK_REL = "docs/handbook.html"
+
+# Elements whose CONTENT is not prose about the product. Dropped whole, before the
+# tags come off, because their text survives tag-stripping and reads exactly like the
+# things being looked for.
+_HB_OPAQUE_RE = re.compile(r"(?is)<(style|svg|script)\b[^>]*>.*?</\1>")
+_HB_TAG_RE = re.compile(r"(?s)<[^>]*>")
+
+_HB_VERB_RE = re.compile(r"/audit:([a-z][a-z0-9-]*)")
+_HB_HREF_RE = re.compile(r'href="#([^"]*)"')
+_HB_ID_RE = re.compile(r'\sid="([^"]*)"')
+
+# A dotted path the page ANCHORS at the root of one of the schemas. The lookbehind is
+# what keeps a hyphenated filename out of it: a basename like `audit-journal.py` ends
+# in a word boundary after the hyphen, so a bare `\b` reads the tail as a two-segment
+# path and reports it against a schema it was never a claim about.
+_HB_DOTTED_RE = re.compile(
+    r"(?<![\w./$-])[a-z][A-Za-z0-9]*(?:\.[a-zA-Z][A-Za-z0-9]*)+(?![\w/-])")
+
+# The schemas that own the paths this page names, each with the words a finding uses
+# for it. Both, because the page names the configuration file's keys and the
+# manifest's in the same prose and a reader does not sort them by document.
+_HB_SCHEMAS = (("the config file", PLUGIN_REL + "/schema/audit-config.schema.json"),
+               ("the manifest", PLUGIN_REL + "/schema/audit-plan.schema.json"))
+
+# ...and every path this rule reads, as one flat set, so `tools/affected.py` can derive
+# a narrowed run's selection from the rule rather than keep a copy of it.
+#
+# NEITHER PATH IS UNDER-SELECTED TODAY, and saying so is the point of declaring them
+# rather than adding a branch. The page is reached by the extension set ANOTHER rule
+# owns (`STAMP_EXT`, the version stamp), and both schemas because `plugins/audit/schema`
+# is one of the SURFACES above. A branch was written first and a mutation of it survived
+# - it could be deleted with every case still green - so what carries the guarantee is a
+# case over this constant instead, and taking either of those two away goes red there.
+HANDBOOK_SOURCES = (HANDBOOK_REL,) + tuple(rel for _label, rel in _HB_SCHEMAS)
+
+_MIN_HANDBOOK_REASON = 80   # a reason short enough to be a label is not a reason
+
+# The two characters an option starts with, as a constant rather than as a literal
+# anywhere below. `_plugin_options()` reads every `.py` under the plugin and this file
+# is one of them, so an option spelled out here would enter the very set it is
+# excused from - the house repair of building a forbidden literal instead of writing
+# one, in the one module that is inside its own corpus.
+_OPT_PREFIX = "-" * 2
+
+# A VERB THE PAGE NAMES IN ORDER TO SAY IT DOES NOT EXIST. The handbook tells a reader
+# there is no such command and hands them the script invocation instead, which is
+# useful writing and is not a claim that the verb is there. Declared rather than
+# pattern-matched, because "there is no X" and "run X" are one sentence apart in prose
+# and no needle separates them - and checked in BOTH directions below, so the day the
+# verb IS built this row is reported rather than going on excusing it.
+HANDBOOK_ABSENT_VERBS = (
+    ("run-gate",
+     "the page says in so many words that this verb is not built, and points at "
+     "`scripts/governance/run-test-gate.py` instead. A row here rather than a "
+     "sentence in a regex: the day somebody builds the verb, this stops being a "
+     "true thing to write and the check says so"),
+)
+
+# ...and an option that belongs to the HOST rather than to this plugin. Stored
+# WITHOUT its leading dashes on purpose: the truth set below reads every `.py` under
+# `scripts/`, this file among them, so spelling the option here would put it into the
+# set and the row would clear itself.
+HANDBOOK_FOREIGN_OPTIONS = (
+    ("scope",
+     "Claude Code's own `/plugin install` takes it, and the page documents where the "
+     "enabling record is written. It is not this plugin's option to keep, so it "
+     "cannot rot with this plugin - and if a command here ever grows one by this "
+     "name, the row is reported instead of quietly covering it"),
+)
+
+
+def _page_text(page):
+    """The words a reader reads: no markup, no stylesheet, no inline diagram.
+
+    THE ORDER IS LOAD-BEARING. Opaque elements go first, then the tags, then the
+    entities - unescaping earlier would turn every `&lt;org&gt;` into something the
+    tag stripper then eats, and stripping tags earlier would leave a `style="…"`
+    attribute's design tokens in the text as if a reader had been told to type them.
+    """
+    return html.unescape(_HB_TAG_RE.sub(" ", _HB_OPAQUE_RE.sub(" ", page)))
+
+
+def _plugin_verbs(root):
+    """(the verbs `commands/` declares, problem) -- exactly one is None."""
+    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
+    try:
+        names = os.listdir(cdir)
+    except OSError as exc:
+        return None, "the command directory cannot be listed: %s" % (exc,)
+    verbs = set(n[:-3] for n in names if n.endswith(".md"))
+    if not verbs:
+        return None, ("the command directory holds no `.md`, so every verb the page "
+                      "names would be reported against an empty set")
+    return verbs, None
+
+
+def _plugin_options(root):
+    """(every option spelling the plugin's own source carries, problem).
+
+    A TEXT SCAN OVER THE PRODUCT, and the limit is stated rather than hidden: a
+    comment that still mentions a retired option keeps it alive here, so this
+    UNDER-reports. That is the safe direction - the failure it exists for is an
+    option removed from the product while the page still tells a reader to type it,
+    and removing one takes the declaration, the parser and the command doc with it.
+
+    `scripts/ui/` holds no `.py`, so this reads none of the stylesheets; the design
+    tokens that share the option spelling are not in the corpus at all.
+    """
+    found = set()
+    read = 0
+    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
+    for name in sorted(os.listdir(cdir) if os.path.isdir(cdir) else []):
+        if not name.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(cdir, name), "r", encoding="utf-8") as fh:
+                found |= set(_FLAG.findall(fh.read()))
+            read += 1
+        except (OSError, UnicodeDecodeError):
+            continue
+    for sub in ("scripts", "hooks"):
+        for _rel, path in _output.py_files(
+                os.path.join(root, PLUGIN_REL.replace("/", os.sep), sub)):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    found |= set(_FLAG.findall(fh.read()))
+                read += 1
+            except (OSError, UnicodeDecodeError):
+                continue
+    if not read:
+        return None, ("not one command document or script could be read, so the "
+                      "options the page names would be judged against nothing")
+    return found, None
+
+
+def _schema_paths(node, doc, path="", depth=0):
+    """Every dotted property path a JSON Schema declares, `$ref`s followed.
+
+    Depth-capped rather than cycle-tracked: a schema that refers to itself is a legal
+    shape here (a phase holds tasks that hold the same sub-objects), and the paths
+    below the cap are not claims this page makes anyway.
+    """
+    out = set()
+    if depth > 12 or not isinstance(node, dict):
+        return out
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/"):
+        target = doc
+        for seg in ref[2:].split("/"):
+            target = target.get(seg) if isinstance(target, dict) else None
+        return _schema_paths(target, doc, path, depth + 1)
+    props = node.get("properties")
+    if isinstance(props, dict):
+        for key, sub in props.items():
+            here = path + "." + key if path else key
+            out.add(here)
+            out |= _schema_paths(sub, doc, here, depth + 1)
+    for key in ("items", "additionalProperties", "propertyNames", "contains",
+                "if", "then", "else"):
+        if isinstance(node.get(key), dict):
+            out |= _schema_paths(node[key], doc, path, depth + 1)
+    for key in ("oneOf", "anyOf", "allOf"):
+        for sub in node.get(key) or []:
+            out |= _schema_paths(sub, doc, path, depth + 1)
+    return out
+
+
+def _declared_paths(root):
+    """({path: which schema}, problem) over both schemas the plugin publishes."""
+    known = {}
+    for label, rel in _HB_SCHEMAS:
+        try:
+            doc = _read_json(os.path.join(root, rel.replace("/", os.sep)))
+        except (OSError, UnicodeDecodeError, ValueError):
+            doc = None
+        if not isinstance(doc, dict):
+            return None, "%s schema cannot be read, so no path the page names can " \
+                         "be resolved" % (label,)
+        for path in _schema_paths(doc, doc):
+            known.setdefault(path, label)
+    if not known:
+        return None, ("neither schema declares a property, so every path the page "
+                      "names would be reported against an empty set")
+    return known, None
+
+
+def handbook_drift(repo_root=None, absent=None, foreign=None):
+    """{"findings", "counts", "problem"} -- claims the published handbook has outlived.
+
+    THE TWO DECLARED TABLES ARE PARAMETERS, for the reason `gate-parity.compare()`
+    takes its own: they are claims about the LIVE page, so a fixture judged under them
+    reports rows that have gone stale against a document they were never about - and
+    showing that each direction of a row is really checked needs one planted on
+    purpose, which in the live table would be a case editing the thing it asserts.
+
+    Four arms, and each reports the size of what it examined beside its findings. That
+    is not decoration: every one of them narrows a large page down to a small set, and
+    a narrowing that reaches zero produces the same empty finding list as a page that
+    is entirely correct. `counts` is the only thing that tells those apart, and the
+    cases hold a floor under each.
+
+    `problem` is the whole-run version of the same distinction - the page missing, or
+    a truth set that could not be built - and it is never spelled as "no findings".
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    try:
+        with open(os.path.join(root, HANDBOOK_REL.replace("/", os.sep)),
+                  "r", encoding="utf-8") as fh:
+            page = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return {"findings": [], "counts": {},
+                "problem": "%s cannot be read, so nothing here judged it: %s"
+                           % (HANDBOOK_REL, exc)}
+    text = _page_text(page)
+    verbs, problem = _plugin_verbs(root)
+    if problem is not None:
+        return {"findings": [], "counts": {}, "problem": problem}
+    options, problem = _plugin_options(root)
+    if problem is not None:
+        return {"findings": [], "counts": {}, "problem": problem}
+    declared, problem = _declared_paths(root)
+    if problem is not None:
+        return {"findings": [], "counts": {}, "problem": problem}
+
+    out = []
+    absent = dict(HANDBOOK_ABSENT_VERBS if absent is None else absent)
+    foreign_rows = HANDBOOK_FOREIGN_OPTIONS if foreign is None else foreign
+    named_verbs = sorted(set(_HB_VERB_RE.findall(text)))
+    for verb in named_verbs:
+        if verb in absent:
+            if verb in verbs:
+                out.append(("exemption", verb,
+                            "is declared as a verb the page says does not exist, and "
+                            "it exists now - the sentence saying so has stopped "
+                            "being true"))
+            continue
+        if verb not in verbs:
+            out.append(("command", verb,
+                        "is named as a command and there is no `commands/%s.md` - "
+                        "either the verb was renamed or the page is telling a reader "
+                        "to type something that does nothing" % (verb,)))
+    for verb in sorted(absent):
+        if verb not in named_verbs:
+            out.append(("exemption", verb,
+                        "is declared as a verb the page says does not exist, and the "
+                        "page does not mention it any more - the row excuses nothing"))
+
+    foreign = dict((_OPT_PREFIX + name, why) for name, why in foreign_rows)
+    named_options = sorted(set(_FLAG.findall(text)))
+    for opt in named_options:
+        if opt in foreign:
+            if opt in options:
+                out.append(("exemption", opt,
+                            "is declared as an option belonging to the host rather "
+                            "than to this plugin, and this plugin now carries one by "
+                            "that name - the row is covering a real claim"))
+            continue
+        if opt not in options:
+            out.append(("flag", opt,
+                        "is named as something to type and no command document and "
+                        "no script under the plugin carries that spelling any more"))
+    for opt in sorted(foreign):
+        if opt not in named_options:
+            out.append(("exemption", opt,
+                        "is declared as the host's option and the page does not name "
+                        "it any more - the row excuses nothing"))
+
+    anchored = [p for p in sorted(set(_HB_DOTTED_RE.findall(text)))
+                if p.split(".")[0] in declared]
+    for path in anchored:
+        if path not in declared:
+            out.append(("key", path,
+                        "is written from the root of a document this plugin "
+                        "publishes and no schema declares it - the key was renamed, "
+                        "or the page invented a nesting"))
+
+    ids = set(_HB_ID_RE.findall(page))
+    targets = sorted(set(_HB_HREF_RE.findall(page)))
+    for target in targets:
+        if not target:
+            out.append(("anchor", "(empty)",
+                        "is a link to no fragment at all, which scrolls a reader to "
+                        "the top of the page rather than to the section named"))
+        elif target not in ids:
+            out.append(("anchor", target,
+                        "is linked and nothing on the page carries that id - the "
+                        "section was renamed or removed under its own table of "
+                        "contents"))
+
+    counts = {"commands": len(named_verbs), "flags": len(named_options),
+              "keys": len(anchored), "anchors": len(targets)}
+    for arm in sorted(counts):
+        if not counts[arm]:
+            out.append(("nothing-examined", arm,
+                        "matched nothing on the page, so this arm cleared nothing "
+                        "rather than clearing the page - either the reader stopped "
+                        "working or the page stopped saying it"))
+    return {"findings": sorted(out), "counts": counts, "problem": None}
+
+
+def reasonless_handbook_rows():
+    """Declared rows whose reason is too short to be a decision anyone can weigh."""
+    rows = ([("verb", n, w) for n, w in HANDBOOK_ABSENT_VERBS]
+            + [("option", n, w) for n, w in HANDBOOK_FOREIGN_OPTIONS])
+    return [(kind, name) for kind, name, why in rows
+            if not isinstance(why, str) or len(why.strip()) < _MIN_HANDBOOK_REASON]
 
 
 # --- the selftest sweep -------------------------------------------------------

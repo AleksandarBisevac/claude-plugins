@@ -1169,6 +1169,196 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- the published handbook, and what it claims about the product ---------------
+    # F216. The one published page with no generator behind it and, until this, no
+    # reader in front of it. Every fixture below is a MIRROR tree - its own commands,
+    # its own scripts, its own schemas - because the rule compares the page with the
+    # product beside it, and a fixture page judged against the LIVE product would go
+    # red the next time somebody renames a command.
+    _hb_dash = "-" * 2
+    _hb_opt = _hb_dash + "probe-option"
+    _hb_dead = _hb_dash + "probe-retired"
+
+    def _hb_tree(root, page):
+        """A mirror plugin: one command, one script, both schemas, and `page`."""
+        _write(root, _FX_COMMANDS + "probe.md",
+               "---\nargument-hint: '[%s]'\n---\n# probe\n" % (_hb_opt,))
+        _write(root, _FX_SCRIPTS + "probe_entry.py",
+               '"""A mirror script."""\nFLAGS = ("%s",)\n' % (_hb_opt,))
+        _write(root, _FX_HOOKS + "probe_hook.py", '"""A mirror hook."""\n')
+        _write(root, M.PLUGIN_REL + "/schema/audit-config.schema.json",
+               json.dumps({"properties": {"evidence": {"properties":
+                                                       {"dir": {"type": "string"}}}}}))
+        _write(root, M.PLUGIN_REL + "/schema/audit-plan.schema.json",
+               json.dumps({"properties": {"meta": {"properties":
+                                                   {"areas": {"type": "object"}}}}}))
+        _write(root, M.HANDBOOK_REL, page)
+
+    def _hb_page(body):
+        """A page carrying `body`, plus one of everything every arm needs.
+
+        EVERY ARM IS FED, in every fixture, for the reason `handbook_drift` counts
+        what it examined at all: an arm that matched nothing reports that it cleared
+        nothing, so a fixture written to exercise one arm would otherwise arrive with
+        three complaints from the other three and no case could read its own result.
+        """
+        return ('<h2 id="probe-section">probe</h2>\n'
+                '<p><a href="#probe-section">jump</a></p>\n'
+                "<p>Run <code>/audit:probe</code> with <code>%s</code>; it reads "
+                "<code>meta.areas</code>.</p>\n%s" % (_hb_opt, body))
+
+    _hb_live = M.handbook_drift()
+    check("hb1 the published handbook names no command, option, configuration path "
+          "or internal anchor the product has stopped carrying: %r"
+          % (_hb_live["findings"],),
+          _hb_live["findings"] == [] and _hb_live["problem"] is None)
+    # THE VACUITY HALF, and it is the one that matters here: every arm narrows a
+    # 2,000-line page down to a small set, and a reader that stopped matching produces
+    # the same empty finding list as a page that is entirely correct. The floors are a
+    # floor under the READER rather than a description of the page - each sits far
+    # below what the page carries today, so editing the page cannot trip them and a
+    # regex that stopped matching cannot hide behind them.
+    check("hb2 ...and it says how much it looked at, so an extractor that quietly "
+          "stopped matching cannot be read as a clean page: %r" % (_hb_live["counts"],),
+          _hb_live["counts"]["commands"] >= 10
+          and _hb_live["counts"]["flags"] >= 20
+          and _hb_live["counts"]["keys"] >= 5
+          and _hb_live["counts"]["anchors"] >= 5)
+    check("hb3 every declared row carries a reason a reader could disagree with - a "
+          "row with a label for a reason is an exemption nobody can weigh: %r"
+          % (M.reasonless_handbook_rows(),),
+          M.reasonless_handbook_rows() == []
+          and M.HANDBOOK_ABSENT_VERBS != () and M.HANDBOOK_FOREIGN_OPTIONS != ())
+
+    # The narrowing that makes hb1 mean anything, driven on its own. A design token is
+    # spelled exactly like a command-line option, so a reader that took the whole file
+    # would report this page's own stylesheet as options the plugin does not accept -
+    # and a needle loosened until they passed would stop catching a real removal.
+    _hb_token = _hb_dash + "ink-faint"
+    _hb_markup = (
+        "<style>:root { %s: #777; }</style>\n"
+        '<svg><text fill="var(%s)">d</text></svg>\n'
+        '<script>const t = "%s";</script>\n'
+        '<p style="color:var(%s)">plain <code>%s</code> prose &amp; more</p>\n'
+        % (_hb_token, _hb_token, _hb_token, _hb_token, _hb_opt))
+    _hb_read = M._page_text(_hb_markup)
+    check("hb4 the region read is the text a READER reads: the stylesheet, the inline "
+          "diagram, the inline script and every tag attribute are gone, entities are "
+          "resolved, and the words between the tags survive: %r" % (_hb_read,),
+          _hb_token not in _hb_read and _hb_opt in _hb_read
+          and "plain" in _hb_read and "prose & more" in _hb_read
+          and "<p" not in _hb_read and "style" not in _hb_read)
+
+    tmp = tempfile.mkdtemp(prefix="qg-hbk-")
+    try:
+        _hb_tree(tmp, _hb_page(""))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        # The second-direction case for every arm at once, and it is the one that
+        # looks vacuous: a rule that fired unconditionally would satisfy every red
+        # case below for ever while refusing a page that is entirely right.
+        check("hb5 the mirror fixture is clean, so each case below fails for the "
+              "reason it names rather than because the fixture was already red: %r"
+              % (_hb,), _hb["findings"] == [] and _hb["problem"] is None)
+
+        _hb_tree(tmp, _hb_page("<p>then <code>/audit:vanished</code></p>"))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb6 a verb the page tells a reader to type, with no command file "
+              "behind it, is reported by name: %r" % (_hb["findings"],),
+              [(k, s) for k, s, _p in _hb["findings"]] == [("command", "vanished")])
+
+        _hb_tree(tmp, _hb_page("<p>then <code>%s</code></p>" % (_hb_dead,)))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb7 an option the page tells a reader to type, that no command "
+              "document and no script under the plugin carries any more, is reported "
+              "by name: %r" % (_hb["findings"],),
+              [(k, s) for k, s, _p in _hb["findings"]] == [("flag", _hb_dead)])
+
+        _hb_tree(tmp, _hb_page("<p>set <code>meta.nosuchkey</code></p>"))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb8 a path written from the root of a document this plugin publishes, "
+              "which no schema declares, is reported - and the finding says which "
+              "nesting was invented: %r" % (_hb["findings"],),
+              [(k, s) for k, s, _p in _hb["findings"]] == [("key", "meta.nosuchkey")])
+
+        # THE NARROWING, as its own case. A dotted word that is not anchored at a
+        # schema root is not a claim about a document this plugin publishes, and a
+        # rule that judged every dotted word would report `os.replace`, a hostname and
+        # half the filenames on the page.
+        _hb_tree(tmp, _hb_page("<p>it calls <code>os.replace</code> and reads "
+                               "<code>audit-journal.py</code> and "
+                               "<code>stateMap.bug</code></p>"))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb9 ...and a dotted word that is NOT anchored at a schema root is not "
+              "judged at all - a call, a hyphenated filename whose tail looks like a "
+              "path, and a fragment written relative to its parent are none of this "
+              "rule's business: %r" % (_hb,),
+              _hb["findings"] == [] and _hb["counts"]["keys"] == 1)
+
+        _hb_tree(tmp, _hb_page('<p><a href="#gone">jump</a> '
+                               '<a href="#">nowhere</a></p>'))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb10 an internal link landing on no id is reported, and so is one "
+              "naming no fragment at all - a table of contents whose section was "
+              "renamed under it scrolls a reader to the top and says nothing: %r"
+              % (_hb["findings"],),
+              sorted((k, s) for k, s, _p in _hb["findings"])
+              == [("anchor", "(empty)"), ("anchor", "gone")])
+
+        # An arm whose extractor matched nothing must say so. Written as a page with
+        # no anchors at all, which is what a renamed markup convention leaves behind.
+        _hb_tree(tmp, "<p>Run <code>/audit:probe</code> with <code>%s</code>; it "
+                      "reads <code>meta.areas</code>.</p>" % (_hb_opt,))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb11 an arm that matched NOTHING reports that it cleared nothing "
+              "rather than clearing the page - which is the shape a renamed markup "
+              "convention takes, and it is indistinguishable from a correct page "
+              "everywhere except here: %r" % (_hb["findings"],),
+              [(k, s) for k, s, _p in _hb["findings"]]
+              == [("nothing-examined", "anchors")])
+
+        # Both directions of the declared rows, on a fixture, because proving them on
+        # the live tree would mean editing the page this rule is about.
+        _hb_tree(tmp, _hb_page(""))
+        _hb = M.handbook_drift(
+            tmp, absent=(("probe", "a verb the page says is not built"),),
+            foreign=(("probe-option", "the host's, not ours"),))
+        check("hb12 a row excusing a verb the page says does not exist, and a row "
+              "excusing an option said to be the host's, are BOTH reported once the "
+              "product carries them - a row that has stopped describing the system "
+              "stays green for ever under a check that only asks whether it still "
+              "fires: %r" % (_hb["findings"],),
+              sorted((k, s) for k, s, _p in _hb["findings"])
+              == [("exemption", _hb_opt), ("exemption", "probe")])
+
+        _hb = M.handbook_drift(
+            tmp, absent=(("never-written", "a verb nobody named"),),
+            foreign=(("never-typed", "an option nobody named"),))
+        check("hb13 ...and the other way: a row for something the page has stopped "
+              "naming excuses nothing, which is where the next real claim would "
+              "hide: %r" % (_hb["findings"],),
+              sorted((k, s) for k, s, _p in _hb["findings"])
+              == [("exemption", _hb_dash + "never-typed"),
+                  ("exemption", "never-written")])
+
+        os.remove(os.path.join(tmp, M.HANDBOOK_REL.replace("/", os.sep)))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb14 a page nobody could read is a PROBLEM and not an empty finding "
+              "list - 'there is nothing wrong with it' and 'nobody opened it' are the "
+              "two answers this whole rule exists to keep apart: %r" % (_hb,),
+              _hb["findings"] == [] and _hb["problem"] is not None
+              and M.HANDBOOK_REL in _hb["problem"])
+
+        _hb_tree(tmp, _hb_page(""))
+        shutil.rmtree(os.path.join(tmp, _FX_COMMANDS.replace("/", os.sep)))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb15 ...and so is a product the truth sets could not be built from: "
+              "judging the page against an empty command set would report every verb "
+              "on it, which is a finding about the fixture rather than about the "
+              "page: %r" % (_hb,),
+              _hb["findings"] == [] and _hb["problem"] is not None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     # --- the document graph ---------------------------------------------------------
     check("dl1 every root-level document is reachable by a link and every link in the "
           "tree names a file that is there: %r" % (M.doc_link_drift(),),

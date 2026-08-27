@@ -184,6 +184,15 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 
 # the rendered artifacts, byte for byte against a fresh render, and the demo GIF's
 # preconditions — the plan gate still refusing an unplanned edit, in its own words.
+#
+# TWO ARMS, AND THEY ANSWER DIFFERENT QUESTIONS. The fresh render is compared with the
+# file ON DISK, which is right for the iteration loop; the second arm compares the disk
+# with what HEAD tracks, because nothing asked that and it is where this repository has
+# actually been bitten. Re-render, forget to stage, and the first arm is satisfied while
+# a `git archive` of the commit still carries the old bytes — four published documents
+# at once, and the live demo went a month stale by the same route. A page nobody could
+# look up in HEAD is named as that rather than counted either way; a run that could look
+# up none of them fails saying so.
 python3 tools/check-rendered-artifacts.py
 
 # ...and the half that tool deliberately does NOT make. docs/index.html is a byte

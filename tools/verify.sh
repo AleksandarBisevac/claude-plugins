@@ -298,7 +298,8 @@ run "claude plugin validate (marketplace)" claude plugin validate .
 run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
-run "committed artifacts match a fresh render" python3 tools/check-rendered-artifacts.py
+run "committed artifacts match a fresh render AND what HEAD carries" \
+  python3 tools/check-rendered-artifacts.py
 # THE HALF OF THAT CLAIM THE TOOL ABOVE DELIBERATELY DOES NOT MAKE, and the only gate
 # CI ran that this file did not — so "every gate CI runs, in one command" was false by
 # exactly one step, and it was the step that catches a release follower. docs/index.html

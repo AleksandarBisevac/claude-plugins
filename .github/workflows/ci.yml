@@ -482,6 +482,12 @@ jobs:
           # COMMITTED file drift. It did: examples/acme-store kept the pre-F28
           # aria-labels -- the ones a speech user cannot reach -- long after the
           # source was fixed. This compares the file a user actually opens.
+          #
+          # It also asks the OTHER question, which nothing did: does the COMMIT
+          # carry what the working tree holds. On a runner the two are the same
+          # thing, so this arm is a no-op here and is not why it exists -- it is
+          # for the machine where somebody re-renders and forgets to stage, which
+          # is the state every check in this file was blind to.
           python3 tools/check-rendered-artifacts.py
       - name: Example renders its Usage section (asserts content, not just a file)
         shell: bash
