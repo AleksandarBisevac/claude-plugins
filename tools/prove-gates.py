@@ -400,6 +400,21 @@ TABLE = (
  ("artifact_version_drift", "docs/demo-large.html", "sub",
   r">audit [0-9]+\.[0-9]+\.[0-9]+</span>",
   (r">audit [0-9]+\.[0-9]+\.[0-9]+</span>", ">audit 0.0.1</span>"), REF, "av1"),
+ # F216. THE PUBLISHED PAGE NOTHING READ. `docs/handbook.html` is hand-written, has
+ # no generator to be compared against and is served beside the live demo, so it could
+ # assert something the code had stopped doing and stay green for ever - and it had.
+ # The PAGE is mutated rather than a source file, for the reason the row above mutates
+ # the artifact: the claim lives in the published bytes. A table of contents whose
+ # section was renamed under it is the quietest way this page can be wrong - it still
+ # renders, it still looks right, and the link puts a reader back at the top.
+ ("handbook_drift", "docs/handbook.html", "sub", r'^\s*<li><a href="#install"',
+  (r'href="#install"', 'href="#installation"'), REF, "hb1"),
+ # ...and the arm that catches a claim about the PRODUCT rather than about the page.
+ # A verb that has been renamed away leaves a page telling a reader to type something
+ # that does nothing, which is the shape the whole rule exists for.
+ ("handbook_drift", "docs/handbook.html", "sub", r"<code>/audit:doctor</code>",
+  (r"/audit:doctor", "/audit:doktor"), REF, "hb1"),
+
  # TWO ROWS FOR THE SCREENSHOT RULE, because it now answers two questions through
  # two code paths and only one of them was ever proved. This one is the SOURCE side
  # (F85): a picture whose UI has moved under it, which no version stamp can see. A
@@ -745,6 +760,22 @@ ALLOW = (
  ("panel_route_violations", S + "_deps.py", "replace",
   '_PANEL_BROWSER_ROUTES = frozenset(("/", "/favicon.ico"))',
   "_PANEL_BROWSER_ROUTES = frozenset()", DEP, "pr4"),
+ # F216. The narrowing that makes the handbook rule readable at all: a CSS custom
+ # property is spelled exactly like a command-line option, so a reader that took the
+ # whole file would report this page's own design tokens as options the plugin does
+ # not accept. Stop dropping the opaque elements and the rule convicts the page for
+ # having a stylesheet - which is the shape of over-firing that gets a lint switched
+ # off rather than fixed.
+ ("handbook_drift", S + "_refs.py", "replace",
+  '    return html.unescape(_HB_TAG_RE.sub(" ", _HB_OPAQUE_RE.sub(" ", page)))',
+  '    return html.unescape(_HB_TAG_RE.sub(" ", page))', REF, "hb1"),
+ # ...and the other narrowing, in the arm that reads configuration paths. A dotted
+ # word is only a claim about a document this plugin publishes when it is written
+ # from that document's ROOT; judge every dotted word and a call, a hyphenated
+ # filename and half the page become invented keys.
+ ("handbook_drift", S + "_refs.py", "replace",
+  '                if p.split(".")[0] in declared]',
+  "                if True]", REF, "hb9"),
  # A reach is judged absolute; the relative spelling is the REPAIR. Drop the test
  # and the rule forbids its own remedy, which is the failure that gets a lint
  # switched off rather than fixed.

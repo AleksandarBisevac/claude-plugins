@@ -133,6 +133,18 @@ SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
 # selects the full set.
 STAMP_EXT = tuple(_refs.STAMP_EXT)
 
+# ...and the paths `_refs.handbook_drift()` reads: the published handbook, and the two
+# schemas that settle the configuration paths it names. NO BRANCH GOES WITH THIS
+# CONSTANT, and that is a finding rather than an omission. One was written, and a
+# mutation of it SURVIVED: the rules above already answer True for all three - the
+# page through the stamp rule's extension set, both schemas because `plugins/audit/
+# schema` is a `_refs` surface - so the branch could be deleted with every case still
+# passing, which is a check asserting nothing in the file whose whole subject is a run
+# that skipped something. What the constant is for is the CASE: it pins the property
+# this rule needs, so narrowing the stamp set or dropping that surface goes red here
+# instead of quietly dropping a suite from a narrowed run.
+HANDBOOK_SOURCES = frozenset(p.replace(os.sep, "/") for p in _refs.HANDBOOK_SOURCES)
+
 
 def refs_reads(posix):
     """True when `_refs` scans this path, so `test__refs.py` can go red for it.
@@ -590,6 +602,17 @@ def _cases(check):
           "rule and not a widening to everything",
           refs_reads("docs/design/audit-concurrency-report.md") is True
           and refs_reads("docs/screenshots/panel-blocks.png") is False)
+
+    _hb_sources = sorted(HANDBOOK_SOURCES)
+    check("a5c every path the handbook rule reads selects its suite - the published "
+          "page and the two schemas that settle the keys it names. The stamp "
+          "extension and the schema surface deliver this rather than a branch of its "
+          "own, so this case is what stops that being an accident: take either away "
+          "and a narrowed run would skip the only suite that reads the page: %r"
+          % (_hb_sources,),
+          _hb_sources != []
+          and all(refs_reads(p) is True for p in _hb_sources)
+          and _refs.HANDBOOK_REL in _hb_sources)
 
     check("a6 AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
           "whole file rests on; if it ever narrowed, every other case here "

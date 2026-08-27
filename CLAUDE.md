@@ -186,7 +186,7 @@ python3 tools/check-git-pipeline.py        # the write half, against a REAL git 
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
-python3 tools/check-rendered-artifacts.py  # the committed artifacts, byte for byte
+python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND vs HEAD
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
 python3 tools/capture-demo-gif.py --check  # the demo GIF's preconditions
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
@@ -282,6 +282,18 @@ checked in both directions.
 One release is **one commit** that bumps `plugin.json`, finalizes the `CHANGELOG.md` section, and
 carries the annotated `v<version>` tag. Push only after CI is green **on that commit**. A pushed
 tag is never moved or deleted — fix forward.
+
+A Release is created **for** a tag, so it comes after the push. The tag is a git object;
+the Release is the page a reader lands on, and the README's `curl` pins make the tag a
+published claim — the Releases page had drifted to presenting a long-superseded version
+as Latest while the README pinned a far newer tag (F222). `CONTRIBUTING.md` carries the
+step; what belongs here is that it is now checked, that the check lives in the **release**
+set alone because it asks a remote, and that it refuses rather than passing when it cannot
+ask:
+
+```bash
+python3 tools/check-release-published.py   # the newest published tag has a Release, and Latest names it
+```
 
 **Do not commit, push, tag or release without being asked.** Permission to commit is not
 permission to push.

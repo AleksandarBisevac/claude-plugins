@@ -1162,6 +1162,38 @@ one, and the repair is the capture rather than a default filled in here. The dig
 runs **after** the version comparison, because both repairs are the same command and one finding
 per picture is what a reader can act on.
 
+`handbook_drift()` (F216) asks it of the one published page with **no generator behind it**.
+`docs/handbook.html` is served by GitHub Pages beside the live demo and nothing read it: the
+rendered reports are compared byte for byte, `docs/index.html` is proven a byte copy, every
+screenshot records the version it was shot at, and the handbook walked past
+`artifact_version_drift()` carrying no stamp to compare — correctly, and saying nothing. So it
+could assert something the code had stopped doing and stay green for ever, and it had: before it
+was rewritten it described none of the test-evidence feature, its masthead and its footer named
+two different and both-stale versions, and it described a command as interactive when every
+answer is a flag.
+
+**Deliberately not a byte comparison**, which is the decision rather than a shortcut: a byte
+check needs a generator to compare against, and writing one to hold a hand-written page is a
+bigger commitment than the gap deserves. What is checkable without one is the page's
+**structural** claims, and the page makes them out loud — "every command, flag and default here
+is the same wherever it is installed". Four arms, each reporting the size of what it examined
+beside its findings: a verb that has a command file, an option spelling the product still
+carries, a dotted path written from the root of a document this plugin publishes that a schema
+still declares, and an internal link that lands on an `id`. The counts are not decoration —
+every arm narrows a long page down to a small set, and a narrowing that reaches zero produces
+the same empty finding list as a page that is entirely correct.
+
+**The region it reads is the text a reader reads**, and that narrowing is the whole reason the
+rule is quiet enough to keep. A CSS custom property is spelled exactly like a command-line
+option, so a reader over the whole file would report this page's own design tokens as options
+the plugin does not accept; the stylesheet, the inline diagrams and the inline scripts are
+dropped whole, then the tags, then the entities are resolved. The repair for that class is the
+narrowing and never a looser needle — a pattern widened until the tokens passed would stop
+catching an option that was really removed. The one place a page may name something the product
+does not carry is `HANDBOOK_ABSENT_VERBS` / `HANDBOOK_FOREIGN_OPTIONS`, each row carrying a
+reason and checked in **both** directions: a row for a verb that has since been built, or for
+something the page no longer names, is reported exactly as a violation is.
+
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`

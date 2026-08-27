@@ -185,6 +185,19 @@ ABSENT_BY_DESIGN = (
      "the change budget for an edit under scripts/ui/, which is a thing to read "
      "before starting and not a thing to fail. Its own cases run in the sweep, "
      "which covers tools/"),
+    # THE ONLY GATE HERE THAT LEAVES THE MACHINE, and the row says which side it is
+    # absent from and why rather than leaving the absence to be read as an oversight.
+    ("tools/check-release-published.py", ("ci.yml",),
+     "it asks GitHub's API whether the newest published tag has a Release and "
+     "whether Latest names it, and what that answers changes once per release. A "
+     "workflow calling the API on every push would spend the repository's rate "
+     "limit re-deriving a fact that cannot have moved, and would go red for a "
+     "network it does not control on changes that have nothing to do with "
+     "releasing. It belongs to the release set: verify.sh runs it under --release "
+     "alone, and both documents name it in their Releasing sections. This row goes "
+     "stale the day a workflow that runs at release time - a tag-triggered one - "
+     "adopts it, which is the shape that would make it a CI gate honestly"),
+
     ("tools/prove-gates.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
      "minutes rather than seconds, and it MUTATES the tree while it runs, so it is "
      "not a per-commit gate. This was once the argument for no row at all: a gate no "
