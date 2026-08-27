@@ -2409,12 +2409,24 @@ commit that happened must not be reported as not having happened.
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
 Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).
 
-**Did the gate change the tree?** `git status --porcelain` before and after. A gate is a
+**Did the gate change the tree?** `git status --porcelain -uall` before and after. A gate is a
 MEASUREMENT; one with side effects has answered a different question than the one asked, and
 a commit built on it carries work no task owns and no review saw. Any difference prints
 `GATE MUTATED THE TREE: <files>` and refuses **regardless of the gate's own exit code**.
 Measured live: a docs task's `pre-commit run --all-files` rewrote five backend source files —
 `isort` and `black` are fix-in-place and reported `Passed` *because* they had.
+
+**`-uall` is load-bearing, and its limit is stated rather than left to be assumed** (F224).
+Without it git collapses a **wholly untracked** directory to one `?? dir/` entry, so a
+fix-in-place gate that *creates* a file inside one moves no porcelain line and the bracket
+answers `treeMutated: []` — the value that means KNOWN CLEAN. That is the day-one shape of a
+subject tree nobody has committed yet, and of a new source directory in one that has; the three
+other porcelain readers here (`_journal_io._git_status_sets`, `commit-audit-state`,
+`guard-bash-writes`) already pass it. What the flag does **not** buy is content awareness:
+porcelain reports status, never bytes, so a *rewrite* of a file that was already untracked keeps
+its one `?? path` entry and is invisible to this comparison with the flag exactly as without it —
+the same limit `dirtyDigest` states for an already-dirty tracked file. Both directions are pinned
+by cases, so the flag cannot be read as having repaired what it did not touch.
 
 **Did anything actually run?** Runners that report their own step count are read and the count
 printed; zero is `NO CHECK RAN`, which is not the word green. The same live run, narrowed to

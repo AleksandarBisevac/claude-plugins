@@ -17,11 +17,14 @@ FROM A REAL VERDICT: a gate that did too much, and a gate that did nothing. This
 script exists because the two questions that tell them apart are cheap and
 nobody was asking either:
 
-  * DID THE GATE CHANGE THE TREE? `git status --porcelain` before and after. A
-    gate is a MEASUREMENT; one with side effects has answered a different
-    question than the one asked, and a commit built on it carries work nobody
-    reviewed. Any difference refuses the commit step regardless of the gate's own
-    exit code.
+  * DID THE GATE CHANGE THE TREE? `git status --porcelain -uall` before and
+    after. A gate is a MEASUREMENT; one with side effects has answered a
+    different question than the one asked, and a commit built on it carries work
+    nobody reviewed. Any difference refuses the commit step regardless of the
+    gate's own exit code. The flag is load-bearing and its limit is stated at
+    `_porcelain`: it expands a wholly untracked directory into its files, so a
+    file CREATED in one is seen; it does not make the bracket content-aware, so a
+    REWRITE of a file that was already untracked is invisible to it.
   * DID ANYTHING ACTUALLY RUN? Runners that say so are read and the count is
     reported. `pre-commit` prints one line per hook and says `Skipped`; nothing
     read it. A count of zero is reported as `NO CHECK RAN`, which is not the same
@@ -149,14 +152,34 @@ _STEP_WORDS = {
 
 
 def _porcelain(project):
-    """`git status --porcelain` as a set of lines, or None when git cannot answer.
+    """`git status --porcelain -uall` as a set of lines, or None when git cannot answer.
 
     None is NOT an empty tree. A repository git refuses to describe is a basis
     this script does not have, and reporting that as "nothing changed" would be
     the false clean sheet the whole file exists to prevent.
+
+    `-uall` IS THAT SAME REFUSAL, ONE CAUSE OVER (F224). Git collapses a WHOLLY
+    UNTRACKED directory to a single `?? dir/` entry, so without the flag a
+    fix-in-place gate that CREATES a file inside one moves no line at all and the
+    bracket answers `treeMutated == []` -- the value that means KNOWN CLEAN. That
+    is not a corner: a subject tree nobody has committed yet, a first audit run,
+    a brand-new source directory are all exactly it. Every other porcelain reader
+    in this plugin already passes the flag and says why beside it
+    (`_journal_io._git_status_sets`, `commit-audit-state`, `guard-bash-writes`);
+    this was the reader that did not.
+
+    AND IT DOES NOT MAKE THE BRACKET CONTENT-AWARE, which is the reading the flag
+    invites and the one to refuse. Porcelain reports STATUS, never bytes: a file
+    that was ALREADY untracked keeps its one `?? path` entry when a gate REWRITES
+    it, with the flag exactly as without it. So a rewrite of an already-untracked
+    file is invisible to this comparison either way -- `dirty_digest` states the
+    matching limit for an already-dirty TRACKED file further down -- and the
+    limit is pinned by a case of its own, so nobody can read the flag as having
+    repaired what it did not touch.
     """
     try:
-        out = subprocess.run(["git", "-C", project, "status", "--porcelain"],
+        out = subprocess.run(["git", "-C", project, "status", "--porcelain",
+                              "-uall"],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              timeout=60)
     except Exception:

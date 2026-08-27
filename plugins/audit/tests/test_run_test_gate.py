@@ -134,6 +134,86 @@ def _cases(check):
     # Leave the fixture as it was: the next case asserts on a clean tree.
     os.remove(os.path.join(tmp, "rewritten.py"))
 
+    # --- the bracket over a WHOLLY UNTRACKED directory (F224) --------------
+    # A SEPARATE FIXTURE, and that is the point rather than tidiness. `tmp` above
+    # holds nothing untracked, so every one of rg4-rg6 is green whether the
+    # porcelain carries `-uall` or not -- which is how the flag came to be missing
+    # here while three sibling readers passed it. What tells the two versions
+    # apart is a subject tree with an untracked DIRECTORY in it before the
+    # measurement window opens: the day-one shape of a repository nobody has
+    # committed yet, and of a new source directory in one that has.
+    unt = _harness.fixture_root("run-test-gate-untracked-")
+    subprocess.run(["git", "init", "-q", unt], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(os.path.join(unt, "committed.txt"), "w") as fh:
+        fh.write("base\n")
+    for arg in (["add", "--", "committed.txt"],
+                ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", unt] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.makedirs(os.path.join(unt, "newdir"))
+    with open(os.path.join(unt, "newdir", "already-here.txt"), "w") as fh:
+        fh.write("present before the window\n")
+
+    def _writes_into_untracked_dir(project, _command, _timeout=None):
+        # The fix-in-place shape again, aimed where the collapsed porcelain hid
+        # it: a file the gate CREATES inside a directory git has never tracked.
+        with open(os.path.join(project, "newdir", "made-by-the-gate.txt"),
+                  "w") as fh:
+            fh.write("the gate wrote this\n")
+        return 0, "Passed\n", {}
+
+    res = M.run_gate(unt, [("lint", "pre-commit run --all-files")],
+                     runner=_writes_into_untracked_dir)
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("ud1 THE FAULT: a gate that CREATES a file inside a wholly untracked "
+          "directory is caught and refused. Without `-uall` git collapses that "
+          "directory to one `?? newdir/` entry, which is the SAME entry before "
+          "and after - so the file appears in no diff, `treeMutated` comes back "
+          "the empty list that means KNOWN CLEAN, and the run signs off carrying "
+          "work the gate wrote: %r exit=%r" % (res["treeMutated"], code),
+          any("newdir/made-by-the-gate.txt" in line
+              for line in res["treeMutated"])
+          and res["treeMutated"] != [] and res["failed"] == []
+          and code == M.E_FAIL and "GATE MUTATED THE TREE" in text)
+    os.remove(os.path.join(unt, "newdir", "made-by-the-gate.txt"))
+
+    def _rewrites_untracked_file(project, _command, _timeout=None):
+        with open(os.path.join(project, "newdir", "already-here.txt"),
+                  "w") as fh:
+            fh.write("REWRITTEN by the gate\n")
+        return 0, "Passed\n", {}
+
+    res = M.run_gate(unt, [("lint", "pre-commit run --all-files")],
+                     runner=_rewrites_untracked_file)
+    check("ud2 THE LIMIT `-uall` DOES NOT LIFT, pinned so the flag cannot be "
+          "read as a fix for it: porcelain reports STATUS, never bytes, so a "
+          "file that was ALREADY untracked keeps its one `?? newdir/"
+          "already-here.txt` entry when the gate REWRITES it - identical before "
+          "and after, with the flag exactly as without it. This bracket sees "
+          "paths appearing and disappearing; `dirty_digest` states the matching "
+          "limit for an already-dirty TRACKED file. Asserted as the EMPTY LIST "
+          "and not merely as falsy, because None here would be git having "
+          "refused rather than this limit: %r" % (res["treeMutated"],),
+          res["treeMutated"] == [] and res["treeMutated"] is not None)
+    with open(os.path.join(unt, "newdir", "already-here.txt"), "w") as fh:
+        fh.write("present before the window\n")
+
+    res = M.run_gate(unt, [("lint", "true")], runner=_quiet)
+    check("ud3 ...and an untracked directory the gate never touches still "
+          "reports NO mutation. THE SECOND-DIRECTION CASE, and it looks vacuous "
+          "on purpose: it is the one that goes red when the bracket learns to "
+          "over-fire - a `-uall` reaching only the AFTER snapshot, or a delta "
+          "widened past `after - before` - either of which accuses a gate of "
+          "writing files that were sitting there when it started. rg4 cannot "
+          "see that mutation at all, because its fixture has no untracked "
+          "directory to expand: %r" % (res["treeMutated"],),
+          res["treeMutated"] == [] and res["failed"] == []
+          and res["treeBasis"].startswith("git described"))
+
     # --- the other failure mode: nothing ran -------------------------------
     def _all_skipped(_project, _command, _timeout=None):
         return 0, ("check yaml.....................Skipped\n"
