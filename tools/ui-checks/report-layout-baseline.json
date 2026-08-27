@@ -1,0 +1,21 @@
+{
+  "about": "Recorded layout figures for the committed reports, as whole percentages of the viewport below. The gate that reads them is tools/check-report-interactive.mjs; re-record one document with `node tools/check-report-interactive.mjs <report.html> --record`. Blessing a move here is a claim that the move was meant.",
+  "viewport": {
+    "width": 390,
+    "height": 780
+  },
+  "documents": {
+    "docs/demo-large.html": {
+      "filterBarOpenShare": 79,
+      "filterBarShutShare": 33
+    },
+    "docs/index.html": {
+      "filterBarOpenShare": 76,
+      "filterBarShutShare": 30
+    },
+    "examples/acme-store/acme-store-audit.html": {
+      "filterBarOpenShare": 76,
+      "filterBarShutShare": 30
+    }
+  }
+}
