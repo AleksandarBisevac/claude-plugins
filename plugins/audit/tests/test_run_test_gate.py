@@ -823,6 +823,21 @@ def _cases(check):
                         "attempts": 0, "files": []}]}, fh)
     subprocess.run(["git", "init", "-q", recroot], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # AND THE FIXTURE IS COMMITTED, which is load-bearing here rather than tidy
+    # (F223). `git status --porcelain` collapses an UNTRACKED directory to one
+    # `?? docs/` line, so on an uncommitted fixture a write into
+    # `docs/audit/audit-plan.json` inside the measurement window changes no
+    # porcelain line at all: rc1's `"MUTATED" not in text` clause then has
+    # nothing to compare and the case stands on its exit code alone, which is
+    # green whatever the placement. Measured both ways with a recording write
+    # injected between the two snapshots - uncommitted rc1 stayed GREEN, and on
+    # this committed fixture it goes red naming the write.
+    for arg in (["add", "--", "docs", ".claude"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", recroot] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     lines = []
     code = M.main([rmpath, "P1", "--project-dir", recroot, "--record"],
@@ -927,12 +942,10 @@ def _cases(check):
                         "files": []}]}, fh)
     subprocess.run(["git", "init", "-q", bdroot], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # AND THE FIXTURE IS COMMITTED, which `recroot` above is not - here it is
-    # load-bearing rather than tidy. `git status --porcelain` collapses an
-    # UNTRACKED directory to one `?? docs/` line, so on an uncommitted fixture a
-    # write into `docs/audit/audit-plan.json` inside the measurement window
-    # changes no porcelain line at all and bd2 could never go red. Measured with
-    # the write injected between the two snapshots: the suite stayed green.
+    # AND THE FIXTURE IS COMMITTED, for the reason spelled out at `recroot`'s
+    # own commit above: an uncommitted fixture is one `?? docs/` line, so a write
+    # inside the measurement window moves no porcelain line and bd2 could never
+    # go red.
     for arg in (["add", "-A"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "commit", "-qm", "fixture"]):
