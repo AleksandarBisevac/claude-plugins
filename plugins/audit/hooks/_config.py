@@ -545,11 +545,19 @@ def command_tree(data, root, cfg):
     empty-cwd branch above is therefore defensive: no payload without the field was
     observed, and the branch exists because a hook must not raise over one.
 
-    RESIDUAL, and the probe is what names it correctly: a command is placed where
-    the shell ENDED UP. One that walks INTO a tree and writes there is placed
-    right; one that writes and then walks OUT - `sed -i x && cd ../elsewhere` - is
-    reported against `../elsewhere`. Nothing in the payload separates those, and
-    inferring it from the command text is the raw-string reading F51 was about."""
+    RESIDUAL, AND THE FIRST PROBE READ IT TOO NARROWLY. It said a command is
+    placed where the shell ENDED UP, so one that walks INTO a tree and writes
+    there is placed right and only one that writes and then walks OUT is
+    misplaced. That is true of the MAIN session, where a `cd` moves the session's
+    directory and therefore this field. It is NOT true of an agent, whose shell
+    starts back in the session's directory on every call: `cd <worktree> && x`
+    moves nothing this field can see, the paths compare equal, and the short
+    circuit above answers "watched" without asking git at all (F212). Reaching a
+    phase worktree that way is the ordinary shape here, not an exotic one.
+
+    `guard-bash-writes.directory_change_basis` is what reads the `cd` in that
+    case, and it only ever WITHDRAWS an attribution - inferring a tree from the
+    command text in order to MAKE one is the raw-string reading F51 was about."""
     watching = git_root_dir(root, cfg)
     cwd = str((data or {}).get("cwd") or "")
     if not cwd:

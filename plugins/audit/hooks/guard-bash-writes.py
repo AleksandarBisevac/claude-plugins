@@ -28,9 +28,14 @@ Attribution is PER TREE, and the tree is git's own answer rather than an env var
 lives; it does not say which tree a command touched, and it stays pinned to the
 primary checkout while an agent works inside a worktree. So `git status` used to run
 in one tree while the command ran in another, and that tree's dirt was handed to this
-command (F84). `_config.command_tree` asks git from the command's own working
-directory; a command from a tree this guard does not watch gets a notice naming both
-trees, once per tree, instead of an attribution.
+command (F84). `_config.command_tree` asks git from the working directory the
+payload names; a command from a tree this guard does not watch gets a notice naming
+both trees, once per tree, instead of an attribution. That directory is the
+SESSION's and not the shell's, so a command that only WALKS into another tree -
+`cd <worktree> && x`, which is how an agent reaches one, its shell starting back in
+the session's directory on every call - compares equal to the watched tree and slips
+past the notice. There the `cd` is the evidence: `directory_change_basis` withdraws
+the authorship claim and keeps the finding (F212).
 
 Attribution reads the OTHER sessions in this checkout before it blames this one.
 Parallel phases in one working tree are a feature of this product, so "new since
@@ -292,6 +297,20 @@ _EXEC_FLAGS = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
 # splitter used to eat the `;` before this set was consulted, so a lone trailing
 # backslash had to count as an ending; there is no longer a stage that can eat it.
 _EXEC_END = frozenset((";", "+"))
+# The `cd` family again, asked a DIFFERENT question. They are on the allowlist
+# above because they cannot touch a file; here they matter because they move the
+# shell, and where the shell was is what decides which tree a write landed in
+# (F212). One name, two questions, and the answers point opposite ways: `cd` makes
+# a command safer to ignore and its LOCATION harder to establish.
+_DIR_CHANGE_CMDS = frozenset(("cd", "pushd", "popd"))
+# Marks that stop a `cd` argument being read as a literal directory. Every one of
+# them is something the SHELL resolves and the payload does not carry: parameter
+# and command substitution, a glob, a home reference. `-` (the previous directory)
+# needs no entry - it is filtered out with the other option-looking words, which
+# leaves no target at all, which is the same answer.
+_UNRESOLVED_MARKS = ("$", "`", "*", "?", "~")
+
+
 def _tokenize(text):
     """Shell words and operators, or None when the text cannot be parsed.
 
@@ -428,6 +447,91 @@ def _split_exec_clauses(toks):
     return clauses, rest
 
 
+def _segments(toks):
+    """The token stream cut into COMMANDS at the shell's operators, each stripped
+    of the prefixes that are not the command name.
+
+    ONE CUT, TWO QUESTIONS. The read-only proof asks what each command IS; the
+    directory question below asks whether it MOVES THE SHELL. Both need the same
+    notion of where a command begins, and the second was written after the first,
+    so a second copy of the split would have been a second opinion about `FOO=1 cd
+    /x` waiting to disagree.
+
+    `(` goes with the assignments: a subshell's first word is the command, and a
+    `cd` inside one still moves the shell the rest of that subshell runs in. It
+    changes nothing for the read-only proof, which refuses a `(` outright before
+    this is ever reached.
+    """
+    segments, current = [], []
+    for tok in toks:
+        if tok in _OP_TOKENS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(tok)
+    segments.append(current)
+    out = []
+    for words in segments:
+        # Leading VAR=value assignments are not the command.
+        while words and (words[0] == "("
+                         or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
+            words = words[1:]
+        out.append(words)
+    return out
+
+
+def directory_change_basis(command, cwd, watching):
+    """Why the payload's working directory is no longer evidence for where this
+    command ran - or None when it still is.
+
+    -> a clause for UNPROVEN_TEMPLATE's second slot, or None
+
+    F212. `_config.command_tree` asks git which tree the command ran in, FROM THE
+    PAYLOAD'S cwd - and that field is the SESSION's directory, not the shell's. The
+    two agree for a session that sits in a worktree, which is the shape F84 was
+    reported and fixed for. They come apart for a session that only VISITS one:
+    `cd <worktree> && <writer>` leaves the payload naming the tree the session
+    started in, `command_tree` matches it against the watched tree, and the
+    equal-path short circuit answers "watched" without asking git anything. The
+    watched tree's dirt is then handed to a command that never touched it.
+
+    That shape is not exotic here. An agent's Bash calls each start in the
+    session's directory - the harness resets the shell between them - so every
+    command an agent runs in a phase worktree carries a `cd` in front of it, and
+    the payload never learns.
+
+    WHAT THIS RETURNS IS A WITHDRAWAL, NOT A NEW CLAIM, and the asymmetry is the
+    design. It never says the command wrote somewhere; it says this guard cannot
+    place the command, so the authorship half of the notice comes off while the
+    finding stays. Reading a destination out of the command text to ACCUSE
+    somebody would be the raw-string inference F51 was about; reading it to stop
+    accusing costs nothing if it is wrong.
+
+    So the claim survives only on positive evidence that the shell stayed put:
+    every directory change in the command names a literal path that lands inside
+    the watched tree. A change whose target the payload cannot resolve - an
+    expansion, a substitution, a bare `cd`, a `popd` - is not guessed at.
+    """
+    toks = _tokenize((command or "").strip())
+    if not toks:
+        return None
+    for words in _segments(toks):
+        if not words or words[0] not in _DIR_CHANGE_CMDS:
+            continue
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if len(args) != 1 or any(m in args[0] for m in _UNRESOLVED_MARKS):
+            return ("the command moved the shell with `%s` and this guard cannot "
+                    "tell where to, so it cannot place the command in a working "
+                    "tree at all; what is dirty in the tree it watches belongs to "
+                    "whoever is working there" % words[0])
+        dest = os.path.realpath(os.path.join(str(cwd or "."), args[0]))
+        if not _config.within_root(watching, dest):
+            return ("the command moved the shell to %s, which is not the tree "
+                    "this guard watches, so what is dirty here belongs to "
+                    "whoever is working in this tree" % dest)
+    return None
+
+
 def _command_is_read_only(command):
     """Can this shell command be proven unable to write? Default: NO.
 
@@ -474,20 +578,10 @@ def _tokens_are_read_only(toks):
     for argv in clauses:
         if not argv or not _tokens_are_read_only(argv):
             return False
-    segments, current = [], []
-    for tok in toks:
-        if tok in _OP_TOKENS:
-            segments.append(current)
-            current = []
-        else:
-            current.append(tok)
-    segments.append(current)
+    segments = _segments(toks)
     if not any(segments):
         return False
     for words in segments:
-        # Leading VAR=value assignments are not the command.
-        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
-            words = words[1:]
         if not words:
             return False
         name = os.path.basename(words[0])
@@ -1040,6 +1134,15 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         # which it was.
         active = (others or {}).get("active") or []
         clauses = []
+        # THE THIRD KIND OF OTHER-AUTHOR, and the one the payload hides. The two
+        # below name somebody who could have written these paths; this one says
+        # the command cannot be placed in this tree at all, so nobody has been
+        # named yet. It goes first because it is about the command in hand.
+        moved = directory_change_basis(
+            (data.get("tool_input") or {}).get("command"), data.get("cwd"),
+            tree["watching"])
+        if moved:
+            clauses.append(moved)
         if active:
             clauses.append("session(s) %s were writing in this checkout during the "
                            "same window, and nothing on disk names an author for "

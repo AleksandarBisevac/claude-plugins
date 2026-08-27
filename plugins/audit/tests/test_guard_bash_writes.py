@@ -95,6 +95,12 @@ RWP_CASES = (("gitstatus", "git status --porcelain", True),
              ("tee", "cat a | tee b", False),
              ("finddelete", "find . -name x -delete", False),
              ("npminstall", "npm install", False),
+             # Leading VAR=value words are not the command, and nothing covered
+             # that until the segment cut became shared: a mutation that dropped
+             # the strip turned no case red, so `LC_ALL=C grep …` was read as a
+             # command named `LC_ALL=C` and inherited the blame for whatever
+             # appeared meanwhile.
+             ("varassign", "FOO=1 cat a.py", True),
              ("empty", "", False))
 
 # `cd` moves the shell and cannot touch a file, and its absence from the allowlist
@@ -646,6 +652,7 @@ def _cases(check):
     # does not, and CI runs both platforms.
     _detail_wt = ""
     _wt_ok = _wt_named = _wt_own = _wt_once = _wt_ro = _wt_sep = False
+    _cd_out = _cd_in = _cd_blind = _cd_sub = _cd_arg = False
     wta = tmp / "wt-primary"
     (wta / "src").mkdir(parents=True, exist_ok=True)
     plant_plan(wta)
@@ -713,6 +720,74 @@ def _cases(check):
         _wt("bw-wt4", wta)
         _v4, _d4 = _wt("bw-wt4", wtsep)
         _wt_sep = _v4 == "warn" and "separate git repository" in _d4
+        # F212. THE PAYLOAD'S cwd IS THE SESSION'S DIRECTORY, NOT THE SHELL'S.
+        # `command_tree` reads it and short-circuits on an equal path without
+        # asking git at all, so a command that walks into another tree INSIDE ONE
+        # CALL - `cd <worktree> && <writer>` - is placed in the watched tree and
+        # handed its dirt. Observed in this repository: an agent's Bash calls all
+        # start in the primary checkout (the harness resets the shell's directory
+        # between calls), and reaching a phase worktree therefore means a `cd` in
+        # front of every command. wt1 above covers the session that IS in the
+        # worktree; nothing covered the session that only goes there.
+        _wt("bw-cd", wta)
+        (wta / "src" / "walked.ts").write_text("export const w=1\n",
+                                               encoding="utf-8")
+        _v5, _d5 = _wt("bw-cd", wta,
+                       command="cd %s && python3 tools/gen.py" % wtb)
+        # The FINDING survives and only the AUTHORSHIP claim goes: the file is
+        # still named, so this is not the guard going quiet. Counted rather than
+        # found - the pre-fix notice names the path exactly once too, so presence
+        # cannot tell the two versions apart, and the phrase is what does.
+        _cd_out = (_v5 == "warn" and _d5.count("src/walked.ts") == 1
+                   and "CANNOT say the command wrote them" in _d5
+                   and "not the tree this guard watches" in _d5)
+        # ...and a target the payload cannot resolve to a directory - an
+        # expansion, a substitution, a bare `cd` - is not guessed at. Without
+        # this case the resolvable branch alone could be shipped and every
+        # `cd "$WT" && …` would keep inheriting the blame.
+        _wt("bw-cdx", wta)
+        (wta / "src" / "expanded.ts").write_text("export const e=1\n",
+                                                 encoding="utf-8")
+        _v6, _d6 = _wt("bw-cdx", wta,
+                       command='cd "$PHASE_WT" && python3 tools/gen.py')
+        _cd_blind = (_v6 == "warn" and _d6.count("src/expanded.ts") == 1
+                     and "CANNOT say the command wrote them" in _d6
+                     and "cannot tell where to" in _d6)
+        # THE OTHER DIRECTION, and it is the one that looks vacuous: a fix that
+        # withdrew the claim from every command carrying a `cd` would pass both
+        # cases above and retire the guard for the commonest shape there is. A
+        # `cd` INTO the watched tree leaves the shell in it, so the plain claim
+        # stands.
+        _wt("bw-cdin", wta)
+        (wta / "src" / "stayed.ts").write_text("export const s=1\n",
+                                               encoding="utf-8")
+        _v7, _d7 = _wt("bw-cdin", wta,
+                       command="cd %s && python3 tools/gen.py" % (wta / "src"))
+        _cd_in = (_v7 == "warn" and "src/stayed.ts" in _d7
+                  and "modified source file(s)" in _d7)
+        # A subshell is the other spelling of the same walk, and the shell it
+        # moves is the one the rest of the subshell runs in. The `(` has to leave
+        # the segment with the assignments or the `cd` behind it is not the
+        # command word and the walk goes unseen.
+        _wt("bw-cdsub", wta)
+        (wta / "src" / "subshell.ts").write_text("export const q=1\n",
+                                                 encoding="utf-8")
+        _v8, _d8 = _wt("bw-cdsub", wta,
+                       command="(cd %s && python3 tools/gen.py)" % wtb)
+        _cd_sub = (_v8 == "warn" and _d8.count("src/subshell.ts") == 1
+                   and "CANNOT say the command wrote them" in _d8)
+        # THE NARROW OVER-FIRE, which the two unconditional cases above miss: a
+        # withdrawal that read EVERY command's first argument as a destination
+        # would still be quiet for arguments inside the tree, so only a command
+        # naming a path OUTSIDE it can tell that version apart. It carries no
+        # `cd`, so the shell never moved and the plain claim stands.
+        _wt("bw-cdarg", wta)
+        (wta / "src" / "argonly.ts").write_text("export const a=1\n",
+                                                encoding="utf-8")
+        _v9, _d9 = _wt("bw-cdarg", wta,
+                       command="python3 %s" % (wtb / "gen.py"))
+        _cd_arg = (_v9 == "warn" and "src/argonly.ts" in _d9
+                   and "modified source file(s)" in _d9)
     except Exception as exc:  # pragma: no cover
         _detail_wt = "worktree integration error: %s" % exc
     finally:
@@ -734,6 +809,22 @@ def _cases(check):
     check("wt6 an unrelated checkout is called a separate repository, not a "
           "worktree - the branch `--git-common-dir` decides",
           _wt_sep, _detail_wt)
+    check("wt7 F212: a command that WALKS into another tree inside one call is "
+          "not blamed for the watched tree's dirt either - the payload's cwd is "
+          "the session's directory, not the shell's, so the `cd` is the evidence",
+          _cd_out, _detail_wt)
+    check("wt8 ...and a `cd` target the payload cannot resolve withdraws the "
+          "claim rather than guessing a tree", _cd_blind, _detail_wt)
+    check("wt9 the plain claim survives a `cd` INTO the watched tree - the "
+          "second-direction case for wt7 and wt8, which a fix that withdrew on "
+          "any `cd` would fail", _cd_in, _detail_wt)
+    check("wt10 ...and a `cd` inside a SUBSHELL is the same walk - the `(` "
+          "leaves the segment with the assignments, or the command word is a "
+          "bracket and the walk goes unseen", _cd_sub, _detail_wt)
+    check("wt11 a command that merely NAMES a path outside the watched tree "
+          "moved no shell, so the plain claim stands - the case that separates "
+          "the withdrawal from one that reads any argument as a destination",
+          _cd_arg, _detail_wt)
 
     # (dn) `2>/dev/null` is the most ordinary read idiom there is, and the
     # blanket "any `>` is hostile" check read it as a write - which put
