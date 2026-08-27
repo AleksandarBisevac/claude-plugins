@@ -1,44 +1,51 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-08-26 21:20 UTC
+repo: acme-store · generated 2026-08-26 23:59 UTC
 
-> Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
+> Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 
-**Overall:** 4/10 tasks done · 1/4 phases signed off · 3 open bug(s) · 1 ready now
+**Overall:** 4/11 tasks done · 1/5 phases signed off · 3 open bug(s) · 2 ready now
 
 ## P1 — Auth hardening (done, 2/2)
 _Credentials are stored and checked safely: modern password hashing and a rate-limited login path._
 
-| id | title | status | model | risk | commit | done | ADO |
-|---|---|---|---|---|---|---|---|
-| P1.1 | Hash passwords with Argon2id | done | opus | high | 9a1f0c2 | 2026-06-02 | #1421 |
-| P1.2 | Rate-limit the login endpoint | done | sonnet | med | b2d7e58 | 2026-06-09 | — |
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P1.1 | Hash passwords with Argon2id | done | opus | high | 9a1f0c2 | 2026-06-02 | passed | #1421 |
+| P1.2 | Rate-limit the login endpoint | done | sonnet | med | b2d7e58 | 2026-06-09 | passed | — |
 
 ## P2 — Input validation (in_progress, 1/4)
 _Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template._
 
-| id | title | status | model | risk | commit | done | ADO |
-|---|---|---|---|---|---|---|---|
-| P2.1 | Validate the checkout payload | done | sonnet | med | c4a11b9 | 2026-06-23 | — |
-| P2.2 | Sanitize the product-search query | in_progress | opus | high | — | started 2026-07-06 | — |
-| P2.3 | Escape server-rendered template output | blocked | sonnet | med | — | started 2026-07-13 | — |
-| P2.4 | Add zod schemas for cart mutations | pending | haiku | low | — | — | — |
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P2.1 | Validate the checkout payload | done | sonnet | med | c4a11b9 | 2026-06-23 | passed | — |
+| P2.2 | Sanitize the product-search query | in_progress | opus | high | — | started 2026-07-06 | no-evidence | — |
+| P2.3 | Escape server-rendered template output | blocked | sonnet | med | — | started 2026-07-13 | failed | — |
+| P2.4 | Add zod schemas for cart mutations | pending | haiku | low | — | — | no-evidence | — |
 
 ## P3 — Performance pass (pending, 0/2)
 _The catalog and product pages render without the known redundant work and heavy above-the-fold images._
 
-| id | title | status | model | risk | commit | done | ADO |
-|---|---|---|---|---|---|---|---|
-| P3.1 | Memoize the product-list selector | pending | haiku | low | — | — | — |
-| P3.2 | Lazy-load below-the-fold images | pending | haiku | low | — | — | — |
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P3.1 | Memoize the product-list selector | pending | haiku | low | — | — | no-evidence | — |
+| P3.2 | Lazy-load below-the-fold images | pending | haiku | low | — | — | no-evidence | — |
 
 ## BF1 — Bugfix batch 1 (in_progress, 1/2)
 _Reported bugs are reproduced red-first and fixed._
 
-| id | title | status | model | risk | commit | done | ADO |
-|---|---|---|---|---|---|---|---|
-| BF1.1 | Fix BUG-3: cart total off-by-one with stacked discounts | in_progress | sonnet | med | — | started 2026-07-20 | — |
-| BF1.2 | Fix BUG-4: logout leaves the session cookie | done | opus | high | a1b2c3d | 2026-07-21 | — |
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| BF1.1 | Fix BUG-3: cart total off-by-one with stacked discounts | in_progress | sonnet | med | — | started 2026-07-20 | no-checks | — |
+| BF1.2 | Fix BUG-4: logout leaves the session cookie | done | opus | high | a1b2c3d | 2026-07-21 | passed | — |
+
+## P4 — Documentation (pending, 0/1)
+_The invariants Phase 1 and Phase 2 established are written down where the next reader will look for them, so the next audit does not rediscover them._
+
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P4.1 | Write down the auth and checkout invariants | pending | haiku | low | — | — | no-gate | — |
 
 ## Bugs
 
@@ -52,7 +59,7 @@ _Reported bugs are reproduced red-first and fixed._
 
 ## Ready now
 
-P2.4
+P2.4, P4.1
 
 
 ## Usage
