@@ -1,10 +1,18 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-08-26 23:59 UTC
+repo: acme-store · generated 2026-08-27 11:21 UTC
 
-> Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
+> Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 
-**Overall:** 4/11 tasks done · 1/5 phases signed off · 3 open bug(s) · 2 ready now
+**Overall:** 6/13 tasks done · 2/6 phases signed off · 3 open bug(s) · 2 ready now
+
+## P0 — Framework upgrade (done, 2/2)
+_The storefront runs on the supported framework line, so the security fixes the audit depends on are actually available._
+
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P0.1 | Move the app bootstrap onto the new framework entry point | done | sonnet | med | 5e1a77c | 2026-05-27 | before-recording | — |
+| P0.2 | Port the route table to the new router API | done | haiku | low | d40b91e | 2026-05-28 | before-recording | — |
 
 ## P1 — Auth hardening (done, 2/2)
 _Credentials are stored and checked safely: modern password hashing and a rate-limited login path._
@@ -98,6 +106,7 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 
 | month | tokens | cost | msgs | tasks done | bugs | fixed | merged |
 |---|---:|---:|---:|---:|---:|---:|---:|
+| 2026-05 | 0 | $0.00 | 0 | 2 | 0 | 0 | 1 |
 | 2026-06 | 38.1M | $47.47 | 640 | 3 | 3 | 0 | 1 |
 | 2026-07 | 55.0M | $56.18 | 259 | 1 | 2 | 1 | 0 |
 
