@@ -98,9 +98,14 @@
 
   h1 { font-size: clamp(1.9rem, 5vw, var(--step-6)); font-weight: 700; line-height: 1.06;
        letter-spacing: -.02em; text-wrap: balance; margin: 0; }
-  h2 { font-size: var(--step-5); font-weight: 700; letter-spacing: -.015em; line-height: 1.15;
+  /* `.grp h3` and `.grp h4` ride along on purpose. Inside the ADO fold the
+     group's own title is the h2, so every heading under it sits one markup
+     level deeper than the same heading outside it — and must still be DRAWN at
+     the level it was, or three settled subheads collapse into body text. A
+     selector, not a second copy of the declarations. */
+  h2, .grp h3 { font-size: var(--step-5); font-weight: 700; letter-spacing: -.015em; line-height: 1.15;
        text-wrap: balance; margin: 0; }
-  h3 { font-size: var(--step-4); font-weight: 600; letter-spacing: -.01em; line-height: 1.25;
+  h3, .grp h4 { font-size: var(--step-4); font-weight: 600; letter-spacing: -.01em; line-height: 1.25;
        text-wrap: balance; margin: 0; }
   h4 { font-size: var(--step-3); font-weight: 600; letter-spacing: 0; margin: 0; }
 
@@ -149,6 +154,32 @@
   .sec-head { display: flex; flex-direction: column; gap: .5rem;
               border-top: 1px solid var(--rule-strong); padding-top: 1.4rem; }
 
+  /* ---------- a group of sections that folds away ----------
+     A native <details>. The disclosure state is then ONE attribute, owned by the
+     platform: the nav's sub-list reads it through :has(), the print handler reads
+     it, and the keyboard support is the browser's. A scripted panel would have
+     needed a second copy of that state and a control that does nothing without
+     script. */
+  .grp > summary {
+    display: flex; flex-direction: column; gap: .5rem; cursor: pointer;
+    border-top: 1px solid var(--rule-strong); padding-top: 1.4rem;
+    list-style: none;                  /* the UA triangle; .tri is the one we draw */
+  }
+  .grp > summary::-webkit-details-marker { display: none; }
+  .grp > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .grp > summary:hover h2 { color: var(--accent); }
+  .grp-hint { font-size: var(--step-2); color: var(--ink-soft); max-width: 60ch; }
+  /* The fold's extent, drawn: three sections deep enough to lose the edge of. */
+  .grp-body { display: flex; flex-direction: column; gap: 3.25rem;
+              padding: 3.25rem 0 0 clamp(.75rem, 2vw, 1.5rem);
+              border-left: 2px solid var(--rule); }
+  .tri { display: inline-block; color: var(--ink-faint); font-size: .82em; }
+  .grp[open] > summary .tri,
+  .shell:has(#ado[open]) .navgrp .tri { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: no-preference) {
+    .tri { transition: transform .15s ease; }
+  }
+
   /* ---------- command cards ---------- */
   .cmd { background: var(--surface); border: 1px solid var(--rule);
          display: flex; flex-direction: column; }
@@ -175,9 +206,26 @@
   /* The wrapper scrolls, but a table at width:100% squeezes its prose column
      rather than overflowing. A min-width makes the scroll actually happen.
      34rem never triggers on desktop (the measure is ~56rem); it stops the
-     crush on a phone. --cmd is the 4-column reference, which needs more. */
+     crush on a phone. */
   .tw > table { min-width: 34rem; }
-  .tw--cmd > table { min-width: 62rem; }
+
+  /* The 4-column reference is laid out FIXED, off the <colgroup>, because under
+     `auto` the widest cell decides all four columns: one flag list set the
+     Arguments column, and Panel path was pushed past the right edge of the
+     wrapper's scroll port where nobody found it. Fixed means no cell can do
+     that. The flag lists wrap instead — each group is its own <code>, which
+     `td code` already keeps unbreakable, so a break can only land BETWEEN
+     flags. */
+  .tw--cmd > table { min-width: 46rem; table-layout: fixed; }
+  .tw--cmd .c-cmd   { width: 12rem; }    /* the longest command, and never more */
+  .tw--cmd .c-args  { width: 32%; }
+  .tw--cmd .c-touch { width: 9.5rem; }   /* two badges, side by side or stacked */
+  /* Panel path takes what is left, which is the point: it is prose and it is the
+     column that was unreadable. */
+  /* One enumeration is longer than the column can ever be. It is the exception,
+     so it says so: breaks are allowed after its `|`, marked with <wbr>, and the
+     space that binds the flag to its values is a &nbsp;. */
+  .tw--cmd td code.alt { white-space: normal; }
   table { border-collapse: collapse; width: 100%; font-size: var(--step-2); }
   th, td { text-align: left; padding: .6rem .85rem; border-bottom: 1px solid var(--rule);
            vertical-align: top; }
@@ -186,6 +234,19 @@
        position: sticky; top: 0; }
   tbody tr:last-child td { border-bottom: none; }
   td code { white-space: nowrap; }
+
+  /* ---------- contents: the folded group ----------
+     ONE state, read from the page rather than mirrored: the sub-list is hidden
+     only while the <details> in the page is closed. Hiding is the override and
+     showing is the default, so each list keeps its own layout when it appears —
+     and a browser without :has() shows the sub-items rather than hiding them
+     forever. */
+  .shell:not(:has(#ado[open])) .navsub { display: none; }
+  .toc .navgrp { display: block; }
+  .toc .tocrow { display: flex; gap: .6rem; align-items: baseline; }
+  .toc .navsub { list-style: none; display: flex; flex-direction: column; gap: .35rem;
+                 margin: .4rem 0 0 .35rem; padding: 0 0 0 .9rem;
+                 border-left: 1px solid var(--rule); }
 
   /* ---------- callouts ---------- */
   .note { border-left: 3px solid var(--signal); background: var(--signal-soft);
@@ -330,13 +391,31 @@
       border-left-color: var(--accent); background: var(--accent-soft);
     }
     .sidenav a[aria-current="true"] .n { color: var(--accent); }
+    /* The group's own row while a section INSIDE it is current — quieter than
+       aria-current, which stays on exactly one link, and enough that the reader
+       does not lose the fold they are reading in. */
+    .sidenav a[data-within="true"] { color: var(--ink); border-left-color: var(--rule-strong); }
+    .sidenav .navsub { margin-left: .75rem; border-left: 1px solid var(--rule); }
+    .sidenav .navsub a { grid-template-columns: 2rem 1fr; }   /* "07.1" needs the room */
   }
 
-  /* A heading targeted by #hash must not hide under the top of the viewport. */
-  section[id] { scroll-margin-top: 1.5rem; }
+  /* A heading targeted by #hash must not hide under the top of the viewport.
+     The fold is a target too - `#ado` is what its own nav entry points at. */
+  section[id], details[id] { scroll-margin-top: 1.5rem; }
 
   @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
+  }
+
+  /* PRINT CARRIES THE WHOLE PAGE, folded or not. The `beforeprint` handler at the
+     bottom of this file is the reliable half — a closed <details> CLIPS its
+     content, so forcing the children visible from CSS is not enough anywhere the
+     shadow slot does the hiding. This is the other half: where ::details-content
+     exists the fold opens with no script at all. */
+  @media print {
+    @supports selector(::details-content) {
+      details::details-content { content-visibility: visible; block-size: auto; }
+    }
   }
 </style>
 </head>
@@ -352,12 +431,16 @@
     <li><a href="#phases"><span class="n">04</span><span>Running phases</span></a></li>
     <li><a href="#shape"><span class="n">05</span><span>Shaping phases &amp; tasks</span></a></li>
     <li><a href="#proposals"><span class="n">06</span><span>Parked proposals</span></a></li>
-    <li><a href="#ado-connect"><span class="n">07</span><span>ADO: connecting</span></a></li>
-    <li><a href="#ado-move"><span class="n">08</span><span>ADO: push &amp; pull</span></a></li>
-    <li><a href="#ado-track"><span class="n">09</span><span>ADO: field map &amp; drift</span></a></li>
-    <li><a href="#panel"><span class="n">10</span><span>The panel</span></a></li>
-    <li><a href="#trail"><span class="n">11</span><span>What the trail records</span></a></li>
-    <li><a href="#ref"><span class="n">12</span><span>Command reference</span></a></li>
+    <li class="navgrp"><a href="#ado"><span class="n">07</span><span>Azure DevOps <span class="tri" aria-hidden="true">&#9656;</span></span></a>
+      <ol class="navsub">
+        <li><a href="#ado-connect"><span class="n">07.1</span><span>Connecting</span></a></li>
+        <li><a href="#ado-move"><span class="n">07.2</span><span>Push &amp; pull</span></a></li>
+        <li><a href="#ado-track"><span class="n">07.3</span><span>Field map &amp; drift</span></a></li>
+      </ol>
+    </li>
+    <li><a href="#panel"><span class="n">08</span><span>The panel</span></a></li>
+    <li><a href="#trail"><span class="n">09</span><span>What the trail records</span></a></li>
+    <li><a href="#ref"><span class="n">10</span><span>Command reference</span></a></li>
   </ol>
 </aside>
 
@@ -387,12 +470,17 @@
       <li><span class="n">04</span><a href="#phases">Running phases</a></li>
       <li><span class="n">05</span><a href="#shape">Shaping phases &amp; tasks</a></li>
       <li><span class="n">06</span><a href="#proposals">Parked proposals</a></li>
-      <li><span class="n">07</span><a href="#ado-connect">ADO: connecting</a></li>
-      <li><span class="n">08</span><a href="#ado-move">ADO: push &amp; pull</a></li>
-      <li><span class="n">09</span><a href="#ado-track">ADO: the field map &amp; drift</a></li>
-      <li><span class="n">10</span><a href="#panel">The panel</a></li>
-      <li><span class="n">11</span><a href="#trail">What the trail records</a></li>
-      <li><span class="n">12</span><a href="#ref">Command reference</a></li>
+      <li class="navgrp">
+        <span class="tocrow"><span class="n">07</span><a href="#ado">Azure DevOps <span class="tri" aria-hidden="true">&#9656;</span></a></span>
+        <ol class="navsub">
+          <li><span class="n">07.1</span><a href="#ado-connect">Connecting</a></li>
+          <li><span class="n">07.2</span><a href="#ado-move">Push &amp; pull</a></li>
+          <li><span class="n">07.3</span><a href="#ado-track">The field map &amp; drift</a></li>
+        </ol>
+      </li>
+      <li><span class="n">08</span><a href="#panel">The panel</a></li>
+      <li><span class="n">09</span><a href="#trail">What the trail records</a></li>
+      <li><span class="n">10</span><a href="#ref">Command reference</a></li>
     </ol>
   </nav>
 
@@ -1062,11 +1150,22 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     </div>
   </section>
 
-  <!-- 07 ------------------------------------------------------------------ -->
+  <!-- 07 - THE ADO GROUP, FOLDED AWAY. Everything down to the matching
+       </details> before section 08 is inside it. ------------------------------ -->
+  <details class="grp" id="ado">
+    <summary>
+      <span class="label">07</span>
+      <h2>Azure DevOps <span class="tri" aria-hidden="true">&#9656;</span></h2>
+      <span class="grp-hint">Three sections, and nothing else on this page depends on them &mdash;
+        skip the group unless the manifest syncs to a board.</span>
+    </summary>
+    <div class="grp-body">
+
+  <!-- 07.1 ---------------------------------------------------------------- -->
   <section id="ado-connect">
     <div class="sec-head">
-      <div class="label">07</div>
-      <h2>ADO: connecting</h2>
+      <div class="label">07.1</div>
+      <h3>ADO: connecting</h3>
     </div>
 
     <p>The connector is configured in <code>meta.ado</code> in the manifest. Credentials never go
@@ -1104,7 +1203,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
          "areaPath": null, "iterationPath": null,
          "types": { "bug": "Bug", "task": "Task" } }</code></pre>
 
-    <h3>The token, and what it may do</h3>
+    <h4>The token, and what it may do</h4>
 
     <p>Configuration travels in the manifest and arrives with a merge; <strong>access does
       not</strong> &mdash; every teammate authenticates themselves. Create the token in the browser
@@ -1134,7 +1233,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
         logged out</strong> &mdash; a nonexistent org produces the same message.</p>
     </div>
 
-    <h3>What the board actually uses</h3>
+    <h4>What the board actually uses</h4>
 
     <p><code>connect</code> detects this for you. To ask it yourself, one read-only query does it
       &mdash; the process decides <code>types.pbi</code> and whether you need a
@@ -1167,7 +1266,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
         <code>sync status</code> prints <code>sprint: unresolvable</code> rather than guessing.</p>
     </div>
 
-    <h3>Conventions the board enforces</h3>
+    <h4>Conventions the board enforces</h4>
 
     <p><code>meta.ado.conventions</code> carries a board's house shape &mdash; a description
       skeleton, mandatory markers, a tag vocabulary, a required parent &mdash; and a
@@ -1229,11 +1328,11 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     </div>
   </section>
 
-  <!-- 08 ------------------------------------------------------------------ -->
+  <!-- 07.2 ---------------------------------------------------------------- -->
   <section id="ado-move">
     <div class="sec-head">
-      <div class="label">08</div>
-      <h2>ADO: push &amp; pull</h2>
+      <div class="label">07.2</div>
+      <h3>ADO: push &amp; pull</h3>
     </div>
 
     <figure class="fig">
@@ -1316,11 +1415,11 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     </div>
   </section>
 
-  <!-- 09 ------------------------------------------------------------------ -->
+  <!-- 07.3 ---------------------------------------------------------------- -->
   <section id="ado-track">
     <div class="sec-head">
-      <div class="label">09</div>
-      <h2>ADO: the field map &amp; drift</h2>
+      <div class="label">07.3</div>
+      <h3>ADO: the field map &amp; drift</h3>
     </div>
 
     <p>What lands where on a push. Every default is overridable in <code>meta.ado</code>. Test
@@ -1427,10 +1526,14 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     </div>
   </section>
 
-  <!-- 10 ------------------------------------------------------------------ -->
+    </div><!-- .grp-body -->
+  </details>
+  <!-- end of the ADO group ---------------------------------------------------- -->
+
+  <!-- 08 ------------------------------------------------------------------ -->
   <section id="panel">
     <div class="sec-head">
-      <div class="label">10</div>
+      <div class="label">08</div>
       <h2>The panel</h2>
     </div>
 
@@ -1519,10 +1622,10 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
       <code>/audit:status</code> immediately.</p>
   </section>
 
-  <!-- 11 ------------------------------------------------------------------ -->
+  <!-- 09 ------------------------------------------------------------------ -->
   <section id="trail">
     <div class="sec-head">
-      <div class="label">11</div>
+      <div class="label">09</div>
       <h2>What the trail records</h2>
     </div>
 
@@ -1637,42 +1740,45 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     </div>
   </section>
 
-  <!-- 12 ------------------------------------------------------------------ -->
+  <!-- 10 ------------------------------------------------------------------ -->
   <section id="ref">
     <div class="sec-head">
-      <div class="label">12</div>
+      <div class="label">10</div>
       <h2>Command reference</h2>
     </div>
 
     <div class="tw tw--cmd">
       <table>
+        <colgroup>
+          <col class="c-cmd"><col class="c-args"><col class="c-touch"><col class="c-panel">
+        </colgroup>
         <thead>
           <tr><th>Command</th><th>Arguments</th><th>Touches</th><th>Panel path</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>/audit:status</code></td><td><code>[--gate] [--fail-on &hellip;] [--phase ID] [--json] [--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td>Overview &mdash; the live view of the same state</td></tr>
-          <tr><td><code>/audit:doctor</code></td><td><code>[--deep] [--json] [--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; CLI only</td></tr>
-          <tr><td><code>/audit:report</code></td><td><code>[--out-dir &lt;dir&gt;] [--share]</code></td><td><span class="badge b-read">read-only</span></td><td>Export report, from any tab</td></tr>
-          <tr><td><code>/audit:usage</code></td><td><code>[--by phase|task|model|author|agent|day|month] [--phase] [--author] [--area] [--since 7d] [--format md|ascii] [--json] [--backfill]</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
+          <tr><td><code>/audit:status</code></td><td><code>[--gate]</code> <code>[--fail-on &hellip;]</code> <code>[--phase ID]</code> <code>[--json]</code> <code>[--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td>Overview &mdash; the live view of the same state</td></tr>
+          <tr><td><code>/audit:doctor</code></td><td><code>[--deep]</code> <code>[--json]</code> <code>[--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:report</code></td><td><code>[--out-dir &lt;dir&gt;]</code> <code>[--share]</code></td><td><span class="badge b-read">read-only</span></td><td>Export report, from any tab</td></tr>
+          <tr><td><code>/audit:usage</code></td><td><code class="alt">[--by&nbsp;phase|<wbr>task|<wbr>model|<wbr>author|<wbr>agent|<wbr>day|<wbr>month]</code> <code>[--phase]</code> <code>[--author]</code> <code>[--area]</code> <code>[--since 7d]</code> <code>[--format md|ascii]</code> <code>[--json]</code> <code>[--backfill]</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
           <tr><td><code>/audit:guide</code></td><td><code>&lt;question&gt;</code></td><td><span class="badge b-read">read-only</span></td><td>Help drawer</td></tr>
           <tr><td><code>/audit:sync status</code></td><td>&mdash;</td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; the ADO card shows manifest counts, never the board</td></tr>
           <tr><td><code>/audit:sync connect</code></td><td>&mdash;</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; the card edits <code>meta.ado</code> once connected</td></tr>
           <tr><td><code>/audit:sync parents</code></td><td>&mdash;</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>partial</em> &mdash; the cached candidates fill the parent picker</td></tr>
-          <tr><td><code>/audit:phase</code></td><td><code>&lt;phaseId&gt; [--dry-run]</code> &middot; <code>add</code> &middot; <code>retarget</code> &middot; <code>priority</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the panel configures runs, never starts one</td></tr>
+          <tr><td><code>/audit:phase</code></td><td><code>&lt;phaseId&gt;</code> <code>[--dry-run]</code> &middot; <code>add</code> &middot; <code>retarget</code> &middot; <code>priority</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the panel configures runs, never starts one</td></tr>
           <tr><td><code>/audit:next</code></td><td><code>[--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
-          <tr><td><code>/audit:run</code></td><td><code>&lt;taskId&gt; [--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
+          <tr><td><code>/audit:run</code></td><td><code>&lt;taskId&gt;</code> <code>[--dry-run]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
           <tr><td><code>/audit:resume</code></td><td>&mdash;</td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
           <tr><td><code>/audit:review</code></td><td><code>&lt;phaseId&gt;</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; same reason</td></tr>
           <tr><td><code>/audit:task</code></td><td><code>add</code> &middot; <code>scope</code> &middot; <code>move</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>partial</em> &mdash; Plan &amp; models edits levers, not structure</td></tr>
-          <tr><td><code>/audit:bug</code></td><td><code>add "&lt;title&gt;"</code> &middot; <code>list [all|&lt;status&gt;]</code> &middot; <code>fix &lt;bugId&gt; [--phase]</code> &middot; <code>close &lt;bugId&gt; [wontfix]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; bugs are listed, not edited</td></tr>
-          <tr><td><code>/audit:propose</code></td><td><code>list [all]</code> &middot; <code>materialize &lt;PROP-id&gt;|--all</code> &middot; <code>drop</code> &middot; <code>revive</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td>Proposals &mdash; same script from both sides</td></tr>
-          <tr><td><code>/audit:worktree</code></td><td><code>&lt;phaseId&gt; [--remove]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
-          <tr><td><code>/audit:layout</code></td><td><code>&lt;sharded|single-file&gt; [--dry-run] [--renumber] [--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; CLI only</td></tr>
-          <tr><td><code>/audit:panel</code></td><td><code>[stop|status] [--port &lt;n&gt;]</code></td><td><span class="badge b-write">manifest</span></td><td>n/a &mdash; it <em>is</em> the panel</td></tr>
-          <tr><td><code>/audit:sync push</code></td><td><code>[bugs|tasks|all] [--task | --phase]</code></td><td><span class="badge b-ado">ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only, and it writes to somebody's board</td></tr>
+          <tr><td><code>/audit:bug</code></td><td><code>add "&lt;title&gt;"</code> &middot; <code>list</code> <code>[all|&lt;status&gt;]</code> &middot; <code>fix &lt;bugId&gt;</code> <code>[--phase]</code> &middot; <code>close &lt;bugId&gt;</code> <code>[wontfix]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; bugs are listed, not edited</td></tr>
+          <tr><td><code>/audit:propose</code></td><td><code>list</code> <code>[all]</code> &middot; <code class="alt">materialize&nbsp;&lt;PROP-id&gt;|<wbr>--all</code> &middot; <code>drop</code> &middot; <code>revive</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td>Proposals &mdash; same script from both sides</td></tr>
+          <tr><td><code>/audit:worktree</code></td><td><code>&lt;phaseId&gt;</code> <code>[--remove]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:layout</code></td><td><code>&lt;sharded|single-file&gt;</code> <code>[--dry-run]</code> <code>[--renumber]</code> <code>[--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:panel</code></td><td><code>[stop|status]</code> <code>[--port &lt;n&gt;]</code></td><td><span class="badge b-write">manifest</span></td><td>n/a &mdash; it <em>is</em> the panel</td></tr>
+          <tr><td><code>/audit:sync push</code></td><td><code>[bugs|tasks|all]</code> <code>[--task | --phase]</code></td><td><span class="badge b-ado">ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only, and it writes to somebody's board</td></tr>
           <tr><td><code>/audit:sync pull</code></td><td><code>[bugs|sprint]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; interactive by construction</td></tr>
-          <tr><td><code>/audit:logs</code></td><td><code>prune [--older-than DAYS] [--dry-run] [--json]</code></td><td><span class="badge b-write">logs feed</span></td><td><em>endpoint only</em> &mdash; the server can prune, the Plan gate card has no button yet</td></tr>
-          <tr><td><code>/audit:migrate</code></td><td><code>[--dry-run] [--renumber] [--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the legacy spelling of <code>layout sharded</code></td></tr>
+          <tr><td><code>/audit:logs</code></td><td><code>prune</code> <code>[--older-than DAYS]</code> <code>[--dry-run]</code> <code>[--json]</code></td><td><span class="badge b-write">logs feed</span></td><td><em>endpoint only</em> &mdash; the server can prune, the Plan gate card has no button yet</td></tr>
+          <tr><td><code>/audit:migrate</code></td><td><code>[--dry-run]</code> <code>[--renumber]</code> <code>[--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; the legacy spelling of <code>layout sharded</code></td></tr>
           <tr><td><code>/audit:init</code></td><td><code>[scope/goals]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
         </tbody>
       </table>
@@ -1680,13 +1786,24 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
 
     <div class="tip">
       <div class="label">Not on the table, and worth knowing</div>
-      <p><code>run-test-gate.py</code> (<code>--record</code>, <code>--reconcile</code>) and
-        <code>commit-audit-state.py</code>, both under <code>scripts/governance/</code>, are scripts
-        rather than slash commands: the pipeline runs them for you, the <em>repair</em> is yours, and
-        <a href="#phases">Running phases</a> covers both. For anything else,
-        <code>/audit:guide &lt;question&gt;</code> answers from the plugin's own documentation with a
-        citation for every claim, and <code>/audit:status --help</code> prints its condition list
-        from the same tuple the gate evaluates.</p>
+      <p>Nothing under <code>scripts/governance/</code> has a slash command &mdash;
+        <code>run-test-gate.py</code>, <code>commit-audit-state.py</code>,
+        <code>verify-invariants.py</code>, <code>audit-journal.py</code> and
+        <code>audit-lock.py</code>. The pipeline invokes them; running one yourself means repairing
+        something a run left behind. There is no <code>/audit:run-gate</code> verb &mdash; it is not
+        built &mdash; so a gate you record by hand is a script invocation:</p>
+<pre><code># record a run the pipeline did not
+python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
+    &lt;manifest&gt; &lt;phaseId&gt; --task &lt;taskId&gt; --record
+
+# the run landed but the pointer did not: read the ledger against the plan, running no tests
+python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
+    &lt;manifest&gt; &lt;phaseId&gt; --reconcile</code></pre>
+      <p><a href="#phases">Running phases</a> shows both against a real manifest, with what each
+        prints. For anything else, <code>/audit:guide &lt;question&gt;</code> answers from the
+        plugin's own documentation with a citation for every claim, and
+        <code>/audit:status --help</code> prints its condition list from the same tuple the gate
+        evaluates.</p>
     </div>
   </section>
 
@@ -1714,6 +1831,81 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
 </dialog>
 
 <script>
+  // A DEEP LINK OPENS WHAT IT LANDS IN.
+  //
+  // The three ADO sections sit inside a <details> that ships closed, so a link to
+  // `#ado-track` from another page would otherwise scroll to a box with nothing in
+  // it - which is worse than no link, because it reads as "that section is gone".
+  // Every <details> from the target upwards is opened, the target included, so the
+  // group's own link opens it too.
+  //
+  // On a CLICK the opening happens BEFORE the default action, so the browser's own
+  // scroll is the one that lands and nothing here fights it. Arriving with a hash
+  // is the other way round - the browser has already scrolled, against a page where
+  // the target had no box - so that one is scrolled again afterwards.
+  (function () {
+    function reveal(id) {
+      var el = id ? document.getElementById(id) : null;
+      var opened = false;
+      while (el && el !== document.body) {
+        if (el.tagName === 'DETAILS' && !el.open) { el.open = true; opened = true; }
+        el = el.parentNode;
+      }
+      return opened;
+    }
+
+    function land(id) {
+      var target = id ? document.getElementById(id) : null;
+      if (!target) return;
+      reveal(id);
+      // Instant, not smooth: this is a correction, and an animation from here
+      // would be the scroll-spy's chance to write a section we are leaving.
+      target.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+
+    document.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('a[href^="#"]');
+      if (a) reveal(a.getAttribute('href').slice(1));
+    });
+
+    // A hash arriving on a page that is already laid out. The browser has scrolled
+    // already - correct it only where THIS opened a fold, because that is the one
+    // case its scroll was computed against content that had no box. Where nothing
+    // opened, its own smooth scroll is right and interrupting it only makes it jump.
+    window.addEventListener('hashchange', function () {
+      var id = location.hash.slice(1);
+      if (reveal(id)) land(id);
+    });
+
+    // A COLD LOAD LANDS TWICE, because nothing about the first one is final.
+    // The webfonts arrive after this script runs and every line above the target
+    // re-measures on the swap, which moves the target DOWN - hundreds of pixels
+    // by the foot of the page, so the deeper the section the further short the
+    // browser's fragment scroll (and this one) came to rest. `wanted` is read
+    // ONCE: by the time the fonts land the scroll-spy has been rewriting the hash
+    // for a second, and re-reading it here would chase the spy to whatever the
+    // short landing was sitting in.
+    if (location.hash) {
+      var wanted = location.hash.slice(1);
+      var taken = false;
+      var release = function () { taken = true; };
+      ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (ev) {
+        window.addEventListener(ev, release, { passive: true });
+      });
+      // One frame late, so the layout the event announces has been recomputed —
+      // and `taken` is read AGAIN inside that frame. Reading it only when the
+      // event fires leaves a frame in which the reader starts scrolling and is
+      // then yanked back, which a wheel arriving in that gap reproduced.
+      var settle = function () {
+        if (taken) return;
+        requestAnimationFrame(function () { if (!taken) land(wanted); });
+      };
+      land(wanted);
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
+      window.addEventListener('load', settle);
+    }
+  })();
+
   // WHICH SECTION AM I IN, and say it in the URL.
   //
   // `IntersectionObserver` rather than a scroll handler: the browser already
@@ -1731,16 +1923,39 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     if (!links.length || !('IntersectionObserver' in window)) return;
     var byId = {};
     links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
-    var sections = links
-      .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
-      .filter(Boolean);
+    // WHAT IS WATCHED is not always what is linked to. A fold's entry points at
+    // the <details>, whose box spans every section inside it - so it would be on
+    // screen whenever any of them was, and would win over the sub-section the
+    // reader is actually in. Its SUMMARY is the part that means "you are at the
+    // group", and it sits in document order exactly where the group starts, so
+    // no re-ordering is needed and none is done.
+    var watched = [];
+    links.forEach(function (a) {
+      var id = a.getAttribute('href').slice(1);
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (el.tagName === 'DETAILS') el = el.querySelector('summary') || el;
+      watched.push({ el: el, id: id });
+    });
+    var els = watched.map(function (w) { return w.el; });
 
     var current = null;
     var mark = function (id) {
       if (id === current) return;
       current = id;
-      links.forEach(function (a) { a.removeAttribute('aria-current'); });
-      if (byId[id]) byId[id].setAttribute('aria-current', 'true');
+      links.forEach(function (a) {
+        a.removeAttribute('aria-current');
+        a.removeAttribute('data-within');
+      });
+      var here = byId[id];
+      if (here) {
+        here.setAttribute('aria-current', 'true');
+        // aria-current belongs to exactly one link, so a group holding the current
+        // section says so with an attribute of its own rather than a second one.
+        var grp = here.closest ? here.closest('.navgrp') : null;
+        var head = grp ? grp.querySelector('a') : null;
+        if (head && head !== here) head.setAttribute('data-within', 'true');
+      }
       try {
         history.replaceState(null, '', '#' + id);
       } catch (e) { /* a sandboxed frame may refuse; the highlight still works */ }
@@ -1749,18 +1964,18 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     // Visible sections, in document order - the first one wins. Keeping a set
     // rather than reacting to each entry means a fast scroll that crosses three
     // boundaries in one frame still lands on the right answer.
-    var visible = {};
+    var visible = [];
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
-        if (e.isIntersecting) visible[e.target.id] = true;
-        else delete visible[e.target.id];
+        var i = els.indexOf(e.target);
+        if (i > -1) visible[i] = e.isIntersecting;
       });
-      for (var i = 0; i < sections.length; i++) {
-        if (visible[sections[i].id]) { mark(sections[i].id); return; }
+      for (var i = 0; i < watched.length; i++) {
+        if (visible[i]) { mark(watched[i].id); return; }
       }
     }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
 
-    sections.forEach(function (s) { io.observe(s); });
+    els.forEach(function (el) { io.observe(el); });
 
     // Arriving with a hash: honour it before the observer has anything to say.
     if (location.hash && byId[location.hash.slice(1)]) mark(location.hash.slice(1));
@@ -1814,6 +2029,24 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
     // so a click whose target is the dialog rather than its contents means outside.
     dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
     dlg.addEventListener('close', function () { stage.textContent = ''; });
+  })();
+
+  // PRINT SHOWS EVERYTHING, folded or not. A closed <details> CLIPS its content in
+  // print media as well - forcing the children visible from CSS is not enough - so
+  // every fold is opened for the duration of the print and put back afterwards.
+  // The report does exactly this, for exactly this reason.
+  (function () {
+    var reopen = [];
+    window.addEventListener('beforeprint', function () {
+      reopen = [];
+      [].forEach.call(document.querySelectorAll('details'), function (d) {
+        if (!d.open) { reopen.push(d); d.open = true; }
+      });
+    });
+    window.addEventListener('afterprint', function () {
+      reopen.forEach(function (d) { d.open = false; });
+      reopen = [];
+    });
   })();
 </script>
 </body>
