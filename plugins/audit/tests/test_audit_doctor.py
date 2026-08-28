@@ -174,6 +174,26 @@ def _cases(check):
               levels(rep, "hooks") == ["WARNING"], repr(levels(rep, "hooks")))
         check("the hooks warning names the likely cause (not enabled)",
               "enabled" in hooks_fix, hooks_fix)
+        # F228. `diagnose()` owns the ORDER, and this row's order is its meaning:
+        # "hooks" says whether anything has run here and "running plugin" says
+        # WHICH COPY ran it. The pair is what stops a guard several releases
+        # behind sitting silently in force while this command answers about the
+        # installation. `CLAUDE_PLUGIN_ROOT` is fixed when a session starts and
+        # is never exported, so nothing in this process can see the hooks' root -
+        # with an empty state directory the only honest answer is that it was not
+        # established, which is NOT that it agrees.
+        names = [r["check"] for r in rep.rows]
+        check("the running-plugin row is wired into diagnose() and sits "
+              "directly after the hooks row it completes: %r"
+              % (names[max(0, names.index("hooks")):][:2],),
+              "running plugin" in names
+              and names.index("running plugin") == names.index("hooks") + 1)
+        check("fresh repo: with no hook state at all, which copy ran the hooks "
+              "is a WARNING that says NOT ESTABLISHED - a check that cleared "
+              "nothing must not read as clean",
+              levels(rep, "running plugin") == ["WARNING"]
+              and "NOT ESTABLISHED" in detail(rep, "running plugin"),
+              detail(rep, "running plugin"))
         # F-E2: an absent ledger DIRECTORY used to read "<path> exists but
         # holds no rows yet" - a diagnostic asserting the existence of a
         # directory nothing ever created. Missing and empty are two branches.

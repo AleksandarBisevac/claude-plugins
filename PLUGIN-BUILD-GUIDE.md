@@ -161,7 +161,7 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_setup.py                # interpreter, sandbox + secret rules, git root, config, manifest, shards, submodules
           _doctor_policy.py               # meta.areas, the capability policy, the buildCommands runners
           _doctor_ado.py                  # the ADO connector's operational half (transport, switches, links)
-          _doctor_trail.py                # has anything run here: hook state, usage ledger, journal chain
+          _doctor_trail.py                # has anything run here, and which plugin copy ran it: hook state, the running-copy stamp, usage ledger, journal chain
           _doctor_completions.py          # the task.complete receipts against the plan, git and the ledger
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
@@ -462,6 +462,17 @@ lives here rather than in the one hook that reported it because three hooks ask 
 Windows drives.
 Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest`.
 
+`hook_plugin_root()` / `hook_plugin_version()` / `stamp_running_plugin()` /
+`running_plugin_stamps()` are the writer and the reader of the running-copy stamp (F228).
+A hook is the only process that knows which plugin copy the harness is executing —
+`CLAUDE_PLUGIN_ROOT` is interpolated into hooks.json's command strings and never exported,
+so `/audit:doctor` has nothing in its environment to read — and disk is therefore the whole
+channel. The reader lives beside the writer, unused by any hook, because the file's name and
+its keys are one fact with one home; a copy of them under `scripts/` would drift the first
+time a key was added. `hook_plugin_version()` is the fourth irreducible derivation of a
+`scripts/` fact for `find_script`'s reason, and `tests/test__config.py`'s `rp1`–`rp2` hold it
+against `_output.plugin_version()` rather than trusting a comment.
+
 `find_script(filename)` is the hooks-side resolver: `filename` **anywhere** under
 `../scripts`, recursively, by basename — the folders there are labels, not namespaces, and
 a flat join is right only while the tree is flat. It is the third derivation of "where is
@@ -503,7 +514,10 @@ the user (systemMessage) the bypass is live. Also surfaces `_configError` (malfo
 once per session, and opportunistically garbage-collects session state files older than 7
 days (incl. forgotten armed bypasses). Never blocks. `require-plan.py`'s PostToolUse pass
 consumes (deletes) the bypass file after the next non-trivial edit actually happens —
-single-use. `--selftest`.
+single-use. It also stamps `stateDir/running-plugin-<session>.json` (`{root, version}`) on
+every prompt, which is the only record of **which copy of the plugin the harness is actually
+running** — a prompt is the coarsest event a session cannot avoid, so the stamp sits here
+rather than on the per-tool-call path the guards are on. `--selftest`.
 
 ### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)
 PostToolUse watcher — the "complete control" for shell writes the PreToolUse text
@@ -2133,6 +2147,20 @@ FINDING while a torn tail or out-of-band drift stays a warning.
 `_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
 uncommitted-file warning, keyed by journal-relative path so a live and an archived month
 cannot read as one another. Layer 4, set by the `usage_ledger` load.
+
+`check_running_plugin` answers the question beside it — **which copy of the plugin ran
+them** (F228). `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
+before an upgrade keeps executing the copy it started with, and the harness substitutes that
+variable into a command string rather than exporting it — so this command runs with nothing
+in its environment naming the hooks' root. Disk is the whole channel and there are two things
+on it: the STAMP `detect-plan-skip` writes on every prompt (`_config.running_plugin_stamps`),
+which can establish agreement, and the SHAPE of a `guard-bash-writes` slot
+(`bash_state_shape` off that hook's own `default_state()`, then `state_shape_drift`), which
+can only refute it — and is the arm that works against a copy too old to have ever stamped
+anything, which is the evidence the original incident was diagnosed by. `running_plugin_verdict`
+folds them into three outcomes: they agree, they differ, or it was NOT ESTABLISHED — and the
+third is not the first, so it warns rather than reading as clean. Every branch is OK or
+WARNING; a stale plugin is a thing to tell somebody, not a thing to fail a run on.
 
 ### `plugins/audit/scripts/status/_doctor_completions.py`
 The one check that CORRELATES two records rather than inspecting one: the journal's

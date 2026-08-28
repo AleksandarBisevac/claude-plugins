@@ -2,14 +2,20 @@
 """
 Has anything actually run here, and does what it wrote still hold together?
 
-Split out of `audit-doctor.py`'s 646-line `hooks, ledger & trail` section. Three
-checks, one question asked three ways: hook state files are the only local
-evidence a guard ever fired, ledger files are the only local evidence metering
-ever wrote, and the journal chain is the only local evidence a completion was
-ever recorded. Each of the three is silent-by-default when the machinery has
-simply never run, and each says WHICH of "never started" and "stopped" it is
-looking at, because those are different diagnoses and only one of them is a
-problem.
+Split out of `audit-doctor.py`'s 646-line `hooks, ledger & trail` section. One
+question asked several ways, and every way of asking it is a file this machinery
+left behind: hook state files are the only local evidence a guard ever fired,
+ledger files the only local evidence metering ever wrote, the journal chain the
+only local evidence a completion was ever recorded. Each is silent-by-default
+when the machinery has simply never run, and each says WHICH of "never started"
+and "stopped" it is looking at, because those are different diagnoses and only
+one of them is a problem.
+
+`check_running_plugin` asks the same question of the plugin itself -- WHICH COPY
+ran the hooks, which is not the copy this command is running from whenever a
+session began before an upgrade (F228). It belongs here rather than beside
+`check_interpreter` for the reason above: the answer is not something this
+process can look up, it is something a hook left on disk.
 
 `check_journal` delegates to the journal's own `verify` rather than re-deriving
 the verdict - the rule `check_locks` follows too, and for the same reason: a
@@ -25,6 +31,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import json
 import os
 import pathlib
 import shutil
@@ -60,6 +67,7 @@ import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
 # while there is still exactly one definition of each. A case pins the identity.
 _load = _base._load
+_HOOKS = _base._HOOKS
 RECENT_DAYS = _base.RECENT_DAYS
 
 
@@ -135,6 +143,249 @@ def check_ledger(rep, project, cfg, manifest_rel):
                  "run /audit:usage --backfill to populate it from existing transcripts")
         return
     rep.ok("usage ledger", "%d ledger file(s) in %s" % (len(files), ledger_dir))
+
+
+
+# --- checks: which copy of the plugin ran them (F228) ---------------------------
+# WHAT EACH SIDE CAN HONESTLY KNOW, established before anything was designed
+# around it. This command knows the copy it is ITSELF running from, off
+# `_output`'s anchor. It does NOT know the hooks' root: a hook is a different
+# process, and the harness substitutes `${CLAUDE_PLUGIN_ROOT}` into hooks.json's
+# command strings rather than exporting it, so the variable is absent from this
+# process's environment and there is nothing here to read. Disk is the whole
+# channel, and there are two things on it.
+#
+#   * A STAMP, written by detect-plan-skip on every prompt (`_config.
+#     stamp_running_plugin`). It names a root and a version, so it can establish
+#     agreement -- the only one of the two that can.
+#   * The SHAPE of what the guards wrote. `guard-bash-writes` saves a fixed key
+#     set; a slot missing a key the copy running THIS command writes was written
+#     by a copy that did not have it. That is the evidence a stale cached copy
+#     was identified by in the incident this check exists for, and it is the only
+#     arm that works against a copy too old to have ever stamped anything.
+#     It can refute agreement and never confirm it.
+#
+# So a shape that matches is not an answer, and neither is an empty state
+# directory. Both land in the third outcome, which says so.
+def bash_state_shape(mod):
+    """What the copy running THIS command writes into a guard-bash-writes slot.
+
+    `mod` is that copy's `guard-bash-writes`, and every field is read off it
+    rather than restated here: the key set from its own `default_state()`, the
+    two file-name prefixes from its own templates. A literal here would be a
+    second statement of that file's shape and would drift the first time a key
+    was added over there -- which is the very drift this check reads."""
+    return {"keys": sorted(mod.default_state().keys()),
+            "prefix": mod.STATE_FILE.split("%s")[0],
+            "sidecar": mod.PLUGIN_SIDECAR.split("%s")[0]}
+
+
+def state_shape_drift(state_dir, shape):
+    """Guard state files in `state_dir` a DIFFERENT copy of the plugin wrote.
+
+    `[{"file", "missing", "extra"}]`, one entry per slot whose top-level keys are
+    not the ones `shape` names -- `missing` for keys the copy running this
+    command writes and the file does not have (an older writer), `extra` for keys
+    the file has and this copy does not know (a different, newer one). [] means
+    every slot read matched, which is NOT the same as "the same copy wrote them":
+    a copy from a release that changed no key is indistinguishable here, and the
+    caller grades an empty list accordingly.
+
+    Sidecars are skipped by name. They share the session slots' prefix and hold a
+    single unrelated key, so counting one would report drift on every project
+    that has ever journalled a write."""
+    out = []
+    try:
+        entries = sorted(os.listdir(str(state_dir)))
+    except Exception:
+        return out
+    expected = set(shape["keys"])
+    for name in entries:
+        if name.startswith(shape["sidecar"]) or not name.startswith(shape["prefix"]):
+            continue
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(str(state_dir), name), "r",
+                      encoding="utf-8") as fh:
+                obj = json.load(fh)
+        except Exception:
+            # A torn slot says nothing about which copy wrote it, and the guard
+            # that owns the file already treats an unreadable one as absent.
+            continue
+        if not isinstance(obj, dict):
+            continue
+        got = set(obj.keys())
+        if got == expected:
+            continue
+        out.append({"file": name, "missing": sorted(expected - got),
+                    "extra": sorted(got - expected)})
+    return out
+
+
+def _same_copy(a, b):
+    """True when two records name one installation - root AND version.
+
+    Both, because either alone reads a real case wrong: an in-place upgrade
+    replaces the version under one root, and two roots can legitimately hold the
+    same version (a checkout beside an installed copy). An empty root is never
+    equal to anything -- it is a stamp that named no root, not a match."""
+    root_a = (a or {}).get("root") or ""
+    root_b = (b or {}).get("root") or ""
+    if not root_a or not root_b:
+        return False
+    return (os.path.realpath(root_a) == os.path.realpath(root_b)
+            and ((a or {}).get("version") or "") == ((b or {}).get("version") or ""))
+
+
+def running_plugin_verdict(here, stamps, drift, unreadable=None):
+    """Which copy is executing the hooks, and WHAT MAKES THAT SAYABLE.
+
+    `{"verdict", "basis", "others", "drift"}` where verdict is one of:
+
+      "differ"        - a stamp names a copy that is not `here`, or a state file's
+                        shape proves one did. `basis` names which of the two said
+                        so; both can.
+      "match"         - at least one copy stamped itself, every stamp names
+                        `here`, and every stamp could be read. A positive claim
+                        with a positive basis.
+      "unestablished" - nothing stamped and nothing drifted, or a stamp was there
+                        and could not be read. THIS IS NOT "match": an empty state
+                        directory, a shape that happens to agree and a torn stamp
+                        are all silence about the same question, and a check that
+                        cleared nothing must not read as clean.
+
+    A TORN STAMP BLOCKS AGREEMENT AND NOT REFUTATION, which is the asymmetry that
+    makes the third outcome mean something. It is a session whose copy this
+    command could not name, so "every stamp names `here`" has stopped being true
+    of everything on disk -- while a copy already refuted by another stamp or by a
+    file's shape stays refuted whatever the unreadable one said.
+
+    Drift outranks a matching stamp rather than being hidden by it, for the same
+    reason. Sessions in one checkout can run different copies -- that is the
+    situation this whole check is about -- so one session stamping agreement says
+    nothing about the one beside it that never stamped at all."""
+    others = [st for st in stamps if not _same_copy(st, here)]
+    basis = (["stamp"] if others else []) + (["state shape"] if drift else [])
+    if basis:
+        return {"verdict": "differ", "basis": basis, "others": others,
+                "drift": drift}
+    if stamps and not (unreadable or []):
+        return {"verdict": "match", "basis": ["stamp"], "others": [],
+                "drift": []}
+    return {"verdict": "unestablished", "basis": [], "others": [], "drift": []}
+
+
+def _copy_name(copy):
+    """A copy as a reader can act on it: the version when it has one, the root
+    always. A copy whose stamp carried no version is NAMED as unversioned rather
+    than printed as `plugin ` with a hole where the number goes."""
+    version = (copy or {}).get("version") or ""
+    root = (copy or {}).get("root") or "an unrecorded path"
+    return ("plugin %s (%s)" % (version, root) if version
+            else "a copy that records no version (%s)" % (root,))
+
+
+def _distinct(copies):
+    """`copies` with duplicates folded, order kept. Several sessions running one
+    installation are one fact about one copy, not one fact per session."""
+    seen, out = [], []
+    for c in copies:
+        key = (os.path.realpath(c.get("root") or "."), c.get("version") or "")
+        if key in seen:
+            continue
+        seen.append(key)
+        out.append(c)
+    return out
+
+
+def _drift_phrase(drift):
+    """One state file's shape as a sentence about the copy that wrote it.
+
+    Both directions are said, because they are different diagnoses: a slot
+    missing a key was written by a copy that predates it, and a slot carrying one
+    this copy does not know was written by a copy that postdates it. Neither is
+    reported as the other."""
+    said = []
+    if drift["missing"]:
+        said.append("without %s, which this copy writes on every save"
+                    % ", ".join(drift["missing"]))
+    if drift["extra"]:
+        said.append("carrying %s, which this copy never writes"
+                    % ", ".join(drift["extra"]))
+    return "%s was written %s" % (drift["file"], " and ".join(said))
+
+
+_STALE_FIX = ("start a new Claude Code session to pick the installed copy up - "
+              "CLAUDE_PLUGIN_ROOT is fixed when a session starts and a running "
+              "session cannot be made to reload it")
+
+
+def check_running_plugin(rep, project, cfg, cfg_mod):
+    """Is the plugin protecting this repo the one this command is describing?
+
+    ADVISORY, ALWAYS. Every outcome here is OK or WARNING and never a FINDING:
+    a session running an older copy is a thing to tell somebody, and turning
+    this diagnostic into something that exits non-zero would make a routine
+    consequence of how the harness loads plugins fail a CI run.
+
+    The row names both sides in every branch, including the one that establishes
+    nothing -- the copy this command is running from is the half that is always
+    knowable, and a reader who is told only that the other half is unknown has
+    been told nothing they can act on."""
+    state_dir = cfg_mod.state_dir(pathlib.Path(project), cfg)
+    here = {"root": _output.PLUGIN_ROOT, "version": _output.plugin_version()}
+    read = cfg_mod.running_plugin_stamps(state_dir)
+    try:
+        shape = bash_state_shape(_load("guard_bash_writes",
+                                       "guard-bash-writes.py", _HOOKS))
+        drift = state_shape_drift(state_dir, shape)
+    except Exception as exc:
+        # The shape arm needs this copy's own guard to say what a slot looks
+        # like. Losing it costs the arm that can refute agreement, so it is
+        # said out loud rather than folded into a quieter verdict below.
+        rep.warn("running plugin",
+                 "could not read this copy's own state-file shape (%s), so the "
+                 "hooks could only be compared by stamp" % (exc,))
+        drift = []
+    torn = read["unreadable"]
+    state = running_plugin_verdict(here, read["stamps"], drift, torn)
+    torn_clause = ("; %d stamp(s) here could not be read (%s)"
+                   % (len(torn), _output.some_of(torn)) if torn else "")
+
+    if state["verdict"] == "differ":
+        parts = ["the hooks in this project ran from %s" % _copy_name(c)
+                 for c in _distinct(state["others"])]
+        parts.extend(_drift_phrase(d) for d in state["drift"])
+        rep.warn("running plugin",
+                 "%s, while this command is running %s (basis: %s)%s"
+                 % ("; ".join(parts), _copy_name(here), ", ".join(state["basis"]),
+                    torn_clause),
+                 _STALE_FIX)
+        return
+    if state["verdict"] == "match":
+        rep.ok("running plugin",
+               "%d session stamp(s) in %s, every one naming %s - the copy this "
+               "command is running from"
+               % (len(read["stamps"]), state_dir, _copy_name(here)))
+        return
+    if torn:
+        seen = ("%d stamp(s) here could not be read (%s)"
+                % (len(torn), _output.some_of(torn)))
+        if read["stamps"]:
+            seen += ", and the %d that could all name it" % (len(read["stamps"]),)
+        fix = ("session stamps are local scratch - delete the unreadable one(s) "
+               "under %s and the next prompt in each live session rewrites its "
+               "own" % (state_dir,))
+    else:
+        seen = "nothing here names the plugin copy that ran the hooks"
+        fix = ("a session running a copy that stamps itself writes %s in %s on "
+               "its next prompt; until one has, this row clears nothing"
+               % (cfg_mod.RUNNING_STAMP_PREFIX + "<session>.json", state_dir))
+    rep.warn("running plugin",
+             "%s, so whether it is %s - the copy this command is running from - "
+             "is NOT ESTABLISHED, which is not the same as agreeing"
+             % (seen, _copy_name(here)), fix)
 
 
 # --- checks: the audit trail ----------------------------------------------------

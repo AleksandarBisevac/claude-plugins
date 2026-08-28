@@ -1,5 +1,5 @@
 ---
-description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether hooks have ever fired, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
+description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether hooks have ever fired and which copy of the plugin ran them, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
 argument-hint: '[--deep] [--json] [--color auto|always|never]'
 allowed-tools: Bash
 ---
@@ -116,6 +116,38 @@ what every reader is already treating it as.
 
 If the run reports **no hook state**, the most likely cause is not a broken hook but a
 plugin that is installed yet not enabled for this project — check `/plugin` → Installed.
+
+## The `running plugin` line — the copy in force, not the copy on disk
+
+Directly under `hooks`, and it completes it: `hooks` says whether anything has run here,
+this says **which copy of the plugin ran it**. They can be different copies.
+`CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began before an
+upgrade goes on executing the copy it started with — a guard several releases behind can be
+silently in force while this command answers about the installation. That is the harness's
+behaviour and nothing here changes it; what this row does is let a user find out.
+
+This command cannot see the hooks' root directly — a hook is a different process, and the
+harness substitutes that variable into a command string instead of exporting it, so there is
+nothing in this process's environment to read. Disk is the whole channel, and it carries two
+kinds of evidence: a **stamp** each session writes on every prompt, which names a root and a
+version, and the **shape** of what the guards wrote, where a state file missing a key this
+release writes was written by a copy that predates it. The second is the only one that works
+against a copy too old to have ever stamped anything.
+
+So there are **three** outcomes, not two, and the row says which it is:
+
+- **OK** — every stamp here names the copy this command is running from.
+- **WARNING, they differ** — a stamp names another copy, or a state file's shape proves one
+  did. The line names both copies and the basis (`stamp`, `state shape`, or both), and the
+  fix is the only one that works: **start a new session**. A running session cannot be made
+  to reload its plugin root.
+- **WARNING, NOT ESTABLISHED** — nothing stamped and nothing drifted, or a stamp was there
+  and could not be read. This is deliberately not an OK line: the same class as `sandbox`
+  and `secret rules` above, a fact this command could not establish rather than one it
+  cleared. Relay it as *unknown*, never as *they agree*.
+
+It is a WARNING at worst in every branch. A stale plugin copy is a thing to tell someone,
+not a thing to block on, so a run that exits 0 today still exits 0 with this row present.
 
 This command is **read-only**: it takes no lock, writes nothing, and never executes a
 `meta.buildCommands` entry (it resolves the program each one names and reports whether that

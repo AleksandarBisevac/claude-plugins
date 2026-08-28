@@ -1627,6 +1627,116 @@ def append_gate_event(logs_dir, event):
     return None
 
 
+# --- which plugin copy is running (F228) ----------------------------------------
+# `CLAUDE_PLUGIN_ROOT` is fixed when a session STARTS: the harness interpolates it
+# into hooks.json's command strings once, so a session that began before an upgrade
+# goes on executing the copy it started with however many times the plugin is
+# replaced underneath it. That is the harness's behaviour and not something a hook
+# may change. What a hook CAN do is say WHICH copy it was -- and it is the only
+# process in a position to, because the harness SUBSTITUTES that variable into a
+# command string rather than exporting it, so `/audit:doctor` runs with no
+# `CLAUDE_PLUGIN_ROOT` in its environment at all and cannot read the hooks' root
+# from anywhere. Disk is the only channel from the copy that is running to the
+# command a user asks what is running, which is why the writer and the reader
+# below are one pair in one file.
+RUNNING_STAMP = "running-plugin-%s.json"
+RUNNING_STAMP_PREFIX = "running-plugin-"
+
+
+def hook_plugin_root():
+    """The plugin root THIS copy of the hooks was loaded from.
+
+    A walk from `__file__` for `find_script`'s reason and not a second spelling
+    of it: `hooks/` may not import `scripts/`, so `_output.PLUGIN_ROOT` -- the
+    anchor every script resolves against -- is out of reach here."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def hook_plugin_version(root=None):
+    """`.claude-plugin/plugin.json`'s version for the copy running this hook, or
+    "" when it cannot be read.
+
+    "" is the ABSENCE of a version rather than a version: the stamp carries it
+    through unchanged and the doctor grades a stamp that names no version as a
+    copy it could not name, never as one that matches.
+    `_output.plugin_version()` is this same read one directory over, for
+    `scripts/`; the layer rule is what makes that two functions instead of one,
+    and `tests/test__config.py` holds them against each other rather than a
+    comment claiming they agree."""
+    try:
+        path = os.path.join(root if root else hook_plugin_root(),
+                            ".claude-plugin", "plugin.json")
+        with open(path, "r", encoding="utf-8") as fh:
+            version = json.load(fh).get("version")
+        return version if isinstance(version, str) and version.strip() else ""
+    except Exception:
+        return ""
+
+
+def stamp_running_plugin(state_dir, session_id):
+    """Record which plugin copy is executing the hooks in this project.
+
+    Returns the dict it wrote, or None when it could not write -- a caller that
+    could not tell those apart would report a stamp that is not on disk.
+
+    Written by detect-plan-skip.py on UserPromptSubmit and by nothing else, and
+    that placement is the cost decision rather than an accident: once per prompt
+    is off the per-tool-call path the guards run on, and no session can reach a
+    guarded tool call without submitting a prompt first. The file's mtime is its
+    own timestamp -- the choice guard-bash-writes already made for its state, for
+    the same reason: a field would only restate what the filesystem says."""
+    try:
+        root = hook_plugin_root()
+        payload = {"root": root, "version": hook_plugin_version(root)}
+        ensure_local_dir(state_dir)
+        with open(Path(state_dir) / (RUNNING_STAMP % session_id), "w",
+                  encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        return payload
+    except Exception:
+        return None
+
+
+def running_plugin_stamps(state_dir):
+    """Every copy that has stamped itself in `state_dir`.
+
+    `{"stamps": [{"root", "version", "session", "mtime"}], "unreadable": [name]}`,
+    newest stamp first. A torn or unparseable stamp is COUNTED and named rather
+    than skipped: a file that exists and cannot be read is evidence that a copy
+    ran here, and dropping it would let the doctor report the same emptiness it
+    reports when nothing ever ran.
+
+    Read by `/audit:doctor` and by no hook. It lives here anyway because the name
+    of the file and the names of its keys are one fact with one home, and a
+    reader that restated them under `scripts/` would drift from the writer above
+    the first time a key was added -- the same reason `DEFAULTS` carries a block
+    no hook reads."""
+    stamps, unreadable = [], []
+    try:
+        entries = sorted(os.listdir(str(state_dir)))
+    except Exception:
+        return {"stamps": stamps, "unreadable": unreadable}
+    for name in entries:
+        if not name.startswith(RUNNING_STAMP_PREFIX) or not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(str(state_dir), name), "r",
+                      encoding="utf-8") as fh:
+                obj = json.load(fh)
+            mtime = os.path.getmtime(os.path.join(str(state_dir), name))
+        except Exception:
+            unreadable.append(name)
+            continue
+        if not isinstance(obj, dict):
+            unreadable.append(name)
+            continue
+        stamps.append({"root": str(obj.get("root") or ""),
+                       "version": str(obj.get("version") or ""),
+                       "session": name[len(RUNNING_STAMP_PREFIX):-len(".json")],
+                       "mtime": mtime})
+    stamps.sort(key=lambda s: (-s["mtime"], s["session"]))
+    return {"stamps": stamps, "unreadable": unreadable}
+
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         # Answered rather than falling through to the library notice below: CI

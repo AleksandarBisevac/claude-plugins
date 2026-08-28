@@ -1455,6 +1455,57 @@ def _cases(check):
     # instead of this one: run that after touching the imports at the top of
     # guard-bash-writes.py.
 
+    # --- the slot's SHAPE is public, because something outside reads it (F228) --
+    # `/audit:doctor` dates the plugin copy that wrote a slot here by which of
+    # these keys it carries - the evidence a stale cached copy was actually
+    # identified by, mechanised. That only works while `default_state()` really is
+    # what `_save_state` writes, so the two are held together here rather than by
+    # the comment that says so.
+    shape_dir = Path(tempfile.mkdtemp(prefix="bw-shape-"))
+    try:
+        # Deliberately NOT `_load_state(absent) == default_state()`: the miss
+        # path RETURNS that function, so the two sides are one call compared
+        # with itself and no mutation can separate them. What is worth pinning
+        # is the VALUES - a truthy default here has a fresh session skip its
+        # baseline, or inherit dirt it never saw.
+        fresh = M._load_state(shape_dir, "absent")
+        check("ds1 a session that has written nothing starts empty on every "
+              "key - no list seeded, no flag pre-set: %r" % (fresh,),
+              fresh["baselined"] is False and fresh["gitTimeout"] is False
+              and [k for k, v in fresh.items() if isinstance(v, list) and v] == [])
+        saved = M.default_state()
+        saved["toolEdited"] = ["src/a.ts"]
+        M._save_state(shape_dir, "written", saved)
+        with open(str(M._state_file(shape_dir, "written")), "r",
+                  encoding="utf-8") as fh:
+            on_disk = json.load(fh)
+        # NOT `on_disk` against `default_state()`, which is the same function
+        # compared with itself: the fixture was BUILT from it, so dropping a key
+        # there drops it from both sides and the case cannot fail. The second,
+        # independent statement of this file's shape is `_load_state`'s HIT
+        # branch, which names every key again with its own coercion - so that is
+        # what the round trip is held against, and either enumeration losing a
+        # key now separates them.
+        round_trip = M._load_state(shape_dir, "written")
+        check("ds3 a slot written and read back carries exactly the keys "
+              "`default_state()` names. The comparison is disk against the LOAD "
+              "path, not against the function the fixture came from - the two "
+              "enumerations in this file are what can actually disagree: %r"
+              % (sorted(on_disk),),
+              sorted(on_disk) == sorted(round_trip)
+              and sorted(round_trip) == sorted(M.default_state()))
+        check("ds4 the two file-name templates are what tells a session slot "
+              "from a plugin sidecar, and the sidecar's name STARTS WITH the "
+              "session prefix - which is why a reader has to test it first, and "
+              "why both templates are public rather than inlined twice: %r"
+              % (M.PLUGIN_SIDECAR,),
+              M.PLUGIN_SIDECAR.split("%s")[0].startswith(
+                  M.STATE_FILE.split("%s")[0])
+              and M._state_file(shape_dir, "s").name == M.STATE_FILE % "s")
+    finally:
+        import shutil as _sh_shape
+        _sh_shape.rmtree(str(shape_dir), ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

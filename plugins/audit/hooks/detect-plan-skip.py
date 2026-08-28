@@ -25,10 +25,20 @@ UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
 
 3. State GC. Session state files (`plan-gate-*`, `tdd-reminder-*`,
    `bash-writes-*`, `config-error-notified-*`, `plan-bypass-*`,
-   `journal-preimage-*`, `owner-note-*`) are otherwise never deleted; this hook
-   opportunistically removes ones older than 7 days on every prompt —
-   stale-session leftovers (and forgotten armed bypasses) expire instead
+   `journal-preimage-*`, `owner-note-*`, `running-plugin-*`) are otherwise never
+   deleted; this hook opportunistically removes ones older than 7 days on every
+   prompt — stale-session leftovers (and forgotten armed bypasses) expire instead
    of accumulating.
+
+4. Stamping which plugin copy is running. `CLAUDE_PLUGIN_ROOT` is fixed when a
+   session starts, so a session that began before an upgrade keeps executing the
+   copy it started with — and `/audit:doctor` is a different process that cannot
+   see that root, because the harness substitutes the variable into a command
+   string rather than exporting it. A hook is the only thing that knows, so this
+   one writes <stateDir>/running-plugin-<session_id>.json ({root, version}) on
+   every prompt for the doctor to read back (F228). A prompt is the coarsest
+   event a session cannot avoid, which is why the stamp is here and not in a
+   guard on the per-tool-call path.
 
 This hook never blocks a prompt. Messages go out as JSON {"systemMessage": ...}
 on stdout with exit 0.
@@ -58,7 +68,12 @@ _GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
                 "journal-preimage-",
                 # require-plan.py's ownership-advisory throttle (v0.34 D2):
                 # which area tags this session has already been nudged about.
-                "owner-note-")
+                "owner-note-",
+                # This hook's own stamp of which plugin copy is executing the
+                # hooks (F228). It is rewritten on every prompt, so a slot that
+                # ages past the line below belongs to a session that ended -
+                # exactly what the rest of this tuple means.
+                _config.RUNNING_STAMP_PREFIX)
 _GC_MAX_AGE = 7 * 86400  # seconds
 
 
@@ -224,6 +239,18 @@ def main():
 
         # --- 0. opportunistic GC of stale session state -----------------------
         _gc_state(state_dir)
+
+        # --- 0b. which plugin copy is executing these hooks (F228) ------------
+        # `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that
+        # began before an upgrade keeps running the copy it started with - and
+        # `/audit:doctor`, a different process, has no way to see that root
+        # (the harness substitutes the variable into a command string, it does
+        # not export it). This is the only process that knows, so this is where
+        # the fact is written down. Deliberately here and not in a guard: a
+        # prompt is the coarsest event a session cannot avoid, and the guards
+        # are on the per-tool-call path. Best-effort by contract - a stamp that
+        # cannot be written costs a diagnostic, never a prompt.
+        _config.stamp_running_plugin(state_dir, session_id)
 
         # --- 1. surface a malformed config, once per session -----------------
         err = cfg.get("_configError")

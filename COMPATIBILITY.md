@@ -177,6 +177,12 @@ depending on an implementation:
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's
   `testEvidence` block is the interface, and an evidence row is not,
+- every file the hooks keep under `stateDir` — the session slots and the
+  running-copy stamp. They are scratch a session writes and the next one replaces,
+  garbage-collected after a week, and `/audit:doctor` reads the SHAPE of one of them
+  on purpose: a slot missing a key this release writes is how it tells that the hooks
+  in force came from an older copy. A promise that the shape held still would take
+  that diagnosis away,
 - the hooks' payload handling, and every exit code except the validators' — the CI
   verdict `/audit:status --gate` returns is a fair thing to want promised and is not
   promised here, so pin the plugin version if you wire it into a pipeline,

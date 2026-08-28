@@ -142,6 +142,10 @@ _leading_executable = _policy_checks._leading_executable
 check_ado = _ado.check_ado
 
 check_hooks_fired = _trail.check_hooks_fired
+bash_state_shape = _trail.bash_state_shape
+state_shape_drift = _trail.state_shape_drift
+running_plugin_verdict = _trail.running_plugin_verdict
+check_running_plugin = _trail.check_running_plugin
 check_ledger = _trail.check_ledger
 _journal_never_committed = _trail._journal_never_committed
 check_journal = _trail.check_journal
@@ -195,6 +199,12 @@ def diagnose(project, deep=False):
     check_branch_naming(rep, project, manifest, git_root)
     check_ado(rep, project, manifest)
     check_hooks_fired(rep, project, cfg, cfg_mod)
+    # Directly after it, because they are one question asked twice: "hooks" says
+    # whether anything has run here, and this says WHICH COPY ran it. Reading the
+    # second without the first is how a guard several releases behind stayed
+    # invisible while the command asked to name it answered about the
+    # installation (F228).
+    check_running_plugin(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     check_journal(rep, project, cfg, cfg_mod, git_root)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
