@@ -622,8 +622,25 @@ def _tokens_are_read_only(toks):
 
 
 # --- state --------------------------------------------------------------------
+# PUBLIC because they are READ FROM OUTSIDE this file. `/audit:doctor` dates the
+# copy that wrote a state file here by which of `default_state()`'s keys the file
+# carries (F228) - the same evidence that identified a stale cached copy by hand,
+# mechanised - and it tells a session slot from a plugin sidecar by these two
+# name templates. A hand-written list over there would be a second statement of
+# this file's shape, drifting the first time a key is added here.
+STATE_FILE = "bash-writes-%s.json"
+
+
+def default_state():
+    """The state a session slot holds before anything has happened - and
+    therefore the exact key set `_save_state` writes, every time."""
+    return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
+            "gitTimeout": False, "otherTrees": [], "bgLaunches": [],
+            "agents": {}}
+
+
 def _state_file(state_dir, session_id):
-    return state_dir / ("bash-writes-%s.json" % session_id)
+    return state_dir / (STATE_FILE % session_id)
 
 
 def _load_state(state_dir, session_id):
@@ -641,8 +658,7 @@ def _load_state(state_dir, session_id):
                     "agents": dict(data.get("agents") or {})}
     except Exception:
         pass
-    return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
-            "gitTimeout": False, "otherTrees": [], "bgLaunches": [], "agents": {}}
+    return default_state()
 
 
 def _save_state(state_dir, session_id, state):

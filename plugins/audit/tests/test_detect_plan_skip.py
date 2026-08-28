@@ -24,6 +24,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -79,6 +80,15 @@ def _cases(check):
     os.utime(stale_note, (old, old))
     check("g6 a stale ownership-advisory throttle slot is swept with the rest",
           M._gc_state(tmp, now=now) == 1 and not stale_note.exists())
+    # F228: the stamp naming which plugin copy is executing the hooks is rewritten
+    # on every prompt, so a slot that ages past the line belongs to a session that
+    # ended - session state like the rest, and it accumulates forever if this
+    # sweep does not know the prefix.
+    stale_stamp = tmp / (_config.RUNNING_STAMP % "dead-session")
+    stale_stamp.write_text("{}", encoding="utf-8")
+    os.utime(stale_stamp, (old, old))
+    check("g7 a stale running-plugin stamp is swept with the rest",
+          M._gc_state(tmp, now=now) == 1 and not stale_stamp.exists())
 
     # (h) the observe tally is reported once and then stays quiet.
     sid = "obs-session"
@@ -234,6 +244,44 @@ def _cases(check):
               and (tmp_i / "logs" / ".gitignore").exists())
     finally:
         _sh.rmtree(tmp_i, ignore_errors=True)
+
+    # (r) which plugin copy is executing the hooks (F228)
+    # DRIVEN AS A PROCESS, because the fact only exists in one. `CLAUDE_PLUGIN_ROOT`
+    # is interpolated into hooks.json's command strings when a session starts and
+    # is never exported, so a hook's own location is the only record of which copy
+    # the harness is running - and `/audit:doctor`, a different process, has
+    # nothing in its environment to read. Calling `main()` in-process would assert
+    # against this suite's own interpreter rather than against a hook the way the
+    # harness launches one.
+    tmp_r = Path(tempfile.mkdtemp(prefix="dps-running-plugin-"))
+    try:
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        payload = json.dumps({"cwd": str(tmp_r), "session_id": "sess-r",
+                              "prompt": "carry on"})
+        proc = subprocess.run(
+            [sys.executable, os.path.join(_harness.HOOKS_DIR,
+                                          "detect-plan-skip.py")],
+            input=payload.encode("utf-8"), stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, env=env)
+        slot = tmp_r / ".claude" / "state" / (_config.RUNNING_STAMP % "sess-r")
+        check("r1 an ordinary prompt - no keyword, no config error, nothing to "
+              "report - still leaves the stamp. It has to be unconditional: the "
+              "session that needs diagnosing is exactly the one where nothing "
+              "looks wrong (rc=%d, %r)" % (proc.returncode, proc.stderr[-200:]),
+              proc.returncode == 0 and slot.exists())
+        stamped = json.loads(slot.read_text(encoding="utf-8")) if slot.exists() else {}
+        check("r2 ...naming the root the hook was loaded from and that copy's "
+              "version, which is the pair `/audit:doctor` compares against its "
+              "own: %r" % (stamped,),
+              stamped.get("root") == _config.hook_plugin_root()
+              and stamped.get("version") == _config.hook_plugin_version())
+        check("r3 ...and the prompt itself never reaches the file. The stamp is "
+              "about the plugin, and a sentence a person typed has no business "
+              "in it - the rule `_arm_bypass` already follows for the feed",
+              "carry on" not in slot.read_text(encoding="utf-8"))
+    finally:
+        _sh.rmtree(tmp_r, ignore_errors=True)
 
 
 def _selftest():

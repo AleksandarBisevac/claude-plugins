@@ -1377,6 +1377,101 @@ def _cases(check):
           and M.slashed("a/b/c") == "a/b/c"
           and M.slashed(7) == "7")
 
+    # --- which plugin copy is running (F228) ------------------------------------
+    # `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
+    # before an upgrade keeps executing the copy it started with. A hook is the
+    # only process that knows which copy that is - the harness substitutes the
+    # variable into a command string rather than exporting it, so `/audit:doctor`
+    # runs with nothing in its environment to read. These cases hold the two ends
+    # of the only channel there is: the stamp this file writes, and the read the
+    # doctor makes of it.
+    check("rp1 `hook_plugin_root()` is the same directory `_output` anchors on. "
+          "The two derivations cannot be merged - hooks/ may import nothing from "
+          "scripts/ - so they are held against each other rather than trusted: %r"
+          % (M.hook_plugin_root(),),
+          os.path.realpath(M.hook_plugin_root())
+          == os.path.realpath(_output.PLUGIN_ROOT))
+    check("rp2 ...and `hook_plugin_version()` reads the same version out of it "
+          "that `_output.plugin_version()` does, which is the half a comment "
+          "claiming they agree could not have caught: %r"
+          % (M.hook_plugin_version(),),
+          M.hook_plugin_version() == _output.plugin_version()
+          and M.hook_plugin_version() != "")
+    rp_tmp = tempfile.mkdtemp(prefix="cfg-running-plugin-")
+    try:
+        check("rp3 a root with no plugin.json is the ABSENCE of a version, not a "
+              "guess at one: the doctor grades an unnamed copy as one it could "
+              "not name, never as one that matches",
+              M.hook_plugin_version(rp_tmp) == "")
+
+        state = os.path.join(rp_tmp, "state")
+        wrote = M.stamp_running_plugin(state, "sess-1")
+        check("rp4 stamping returns the payload it wrote and names both halves - "
+              "a version alone cannot tell two copies of one release apart, and "
+              "the root is what actually identifies the cached copy: %r"
+              % (wrote,),
+              isinstance(wrote, dict)
+              and wrote["root"] == M.hook_plugin_root()
+              and wrote["version"] == M.hook_plugin_version())
+        check("rp5 ...into a self-ignoring directory, like every other slot this "
+              "plugin writes there - session scratch never belongs in git",
+              os.path.isfile(os.path.join(state, ".gitignore")))
+        read = M.running_plugin_stamps(state)
+        check("rp6 and reading it back names the session, the copy and when it "
+              "last ran. The mtime IS the timestamp - a field would only restate "
+              "what the filesystem already says: %r" % (read,),
+              read["unreadable"] == [] and len(read["stamps"]) == 1
+              and read["stamps"][0]["session"] == "sess-1"
+              and read["stamps"][0]["root"] == wrote["root"]
+              and read["stamps"][0]["mtime"] > 0)
+
+        with open(os.path.join(state, M.RUNNING_STAMP % "sess-torn"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{ truncated")
+        read = M.running_plugin_stamps(state)
+        check("rp7 a torn stamp is COUNTED and NAMED rather than skipped. A file "
+              "that exists and cannot be read is evidence a copy ran here, and "
+              "dropping it would produce exactly the emptiness this reports when "
+              "nothing ever ran: %r" % (read["unreadable"],),
+              read["unreadable"] == [M.RUNNING_STAMP % "sess-torn"]
+              and len(read["stamps"]) == 1)
+
+        with open(os.path.join(state, "tdd-reminder-sess-1.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{}")
+        read = M.running_plugin_stamps(state)
+        check("rp8 ...and a slot belonging to another hook is neither a stamp "
+              "nor unreadable. The count is what separates the two, so a "
+              "presence assertion here would pass on a walk that swept "
+              "everything in the directory: %r" % (read,),
+              len(read["stamps"]) == 1
+              and read["unreadable"] == [M.RUNNING_STAMP % "sess-torn"])
+
+        newer = M.stamp_running_plugin(state, "sess-2")
+        stamps = M.running_plugin_stamps(state)["stamps"]
+        check("rp9 several sessions each keep their own slot, newest first - "
+              "parallel sessions in one checkout are a feature of this product "
+              "and each can be running a different copy: %r"
+              % ([st["session"] for st in stamps],),
+              newer is not None and len(stamps) == 2
+              and stamps[0]["mtime"] >= stamps[1]["mtime"])
+
+        blocked = os.path.join(rp_tmp, "not-a-dir")
+        with open(blocked, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        check("rp10 a stamp that could not be written returns None - a success "
+              "sentinel on the failure path would have the doctor report a stamp "
+              "that is not on disk",
+              M.stamp_running_plugin(blocked, "sess-3") is None)
+        check("rp11 ...and reading a state directory that does not exist is "
+              "empty on both channels rather than an exception into a hook: %r"
+              % (M.running_plugin_stamps(os.path.join(rp_tmp, "nope")),),
+              M.running_plugin_stamps(os.path.join(rp_tmp, "nope"))
+              == {"stamps": [], "unreadable": []})
+    finally:
+        import shutil as _sh_rp
+        _sh_rp.rmtree(rp_tmp, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)
