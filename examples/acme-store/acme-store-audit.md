@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-08-27 11:21 UTC
+repo: acme-store · generated 2026-08-28 22:38 UTC
 
 > Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 
@@ -72,33 +72,34 @@ P2.4, P4.1
 
 ## Usage
 
-**Total:** 93.1M tokens · ~$103.65 equiv · 899 msgs · 4 session(s) · cache hit 94% · rates as of 2026-08-06
+**Total:** 90.1M tokens · ~$102.45 equiv · 1,304 msgs · 5 session(s) · cache hit 93% · rates as of 2026-08-06
 
 ### By phase
 
 | phase | tokens | cost | msgs |
 |---|---:|---:|---:|
-| BF1 | 50.1M | $36.16 | 118 |
-| P1 | 30.8M | $28.22 | 259 |
-| P2 | 7.5M | $32.53 | 328 |
-| Uncategorized | 4.6M | $6.74 | 194 |
+| P0 | 32.7M | $19.80 | 352 |
+| P1 | 31.6M | $29.13 | 266 |
+| BF1 | 15.5M | $20.18 | 127 |
+| P2 | 6.4M | $27.40 | 343 |
+| Uncategorized | 3.8M | $5.94 | 216 |
 
 ### By model
 
 | model | tokens | cost | msgs |
 |---|---:|---:|---:|
-| claude-opus-5 | 52.4M | $60.80 | 356 |
-| claude-sonnet-5 | 38.1M | $39.12 | 421 |
-| claude-haiku-4-5 | 2.0M | $0.75 | 85 |
-| claude-fable-5 | 655.2K | $2.98 | 37 |
+| claude-sonnet-5 | 54.8M | $53.24 | 694 |
+| claude-opus-5 | 25.8M | $43.96 | 376 |
+| claude-haiku-4-5 | 8.8M | $2.48 | 198 |
+| claude-fable-5 | 610.5K | $2.77 | 36 |
 
 ### By author
 
 | author | tokens | cost | msgs |
 |---|---:|---:|---:|
-| milos@acme.example | 47.8M | $48.06 | 246 |
-| alex@acme.example | 25.3M | $31.74 | 479 |
-| sara@acme.example | 20.0M | $23.85 | 174 |
+| sara@acme.example | 31.3M | $32.29 | 416 |
+| milos@acme.example | 30.7M | $37.40 | 379 |
+| alex@acme.example | 28.0M | $32.76 | 509 |
 
 ### Month by month
 
@@ -106,19 +107,19 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 
 | month | tokens | cost | msgs | tasks done | bugs | fixed | merged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 2026-05 | 0 | $0.00 | 0 | 2 | 0 | 0 | 1 |
-| 2026-06 | 38.1M | $47.47 | 640 | 3 | 3 | 0 | 1 |
-| 2026-07 | 55.0M | $56.18 | 259 | 1 | 2 | 1 | 0 |
+| 2026-05 | 33.2M | $20.35 | 388 | 2 | 0 | 0 | 1 |
+| 2026-06 | 36.8M | $44.61 | 613 | 3 | 3 | 0 | 1 |
+| 2026-07 | 20.0M | $37.49 | 303 | 1 | 2 | 1 | 0 |
 
 ### Economics
 
-- **Cache:** 94% hit; the input side bills at 18% of fresh-token rates.
+- **Cache:** 93% hit; the input side bills at 20% of fresh-token rates.
 - **Lowest cache phase:** P2 at 62%.
-- **Attribution:** 95% of spend attributed (88% to a specific task).
-- **Cost per completed task:** $15.77 across 4 task(s).
-- **Projection:** suppressed — needs 5 completed tasks, has 4.
-- **Retried tasks:** $5.82 across 1 task(s) (6% of spend). Not the same as wasted spend — the ledger buckets by hour, not by attempt.
-- **Blocked tasks:** $5.82 across 1 task(s) — spend with no outcome.
+- **Attribution:** 96% of spend attributed (87% to a specific task).
+- **Cost per completed task:** $11.41 across 6 task(s).
+- **Projection:** remaining 7 task(s) at the p25-p75 rate = $66.23 to $110.21.
+- **Retried tasks:** $5.36 across 1 task(s) (5% of spend). Not the same as wasted spend — the ledger buckets by hour, not by attempt.
+- **Blocked tasks:** $5.36 across 1 task(s) — spend with no outcome.
 
 ### Model cost within each risk band
 
@@ -126,5 +127,6 @@ Compared inside a band on purpose: hard work is routed to the stronger model del
 
 | risk | model | tasks | cost/task | mean attempts |
 |---|---|---:|---:|---:|
-| high | claude-opus-5 | 3 | $16.69 | 1.0 |
-| med | claude-sonnet-5 | 4 | $9.50 | 1.5 |
+| high | claude-opus-5 | 3 | $11.19 | 1.0 |
+| med | claude-sonnet-5 | 5 | $10.01 | 1.4 |
+| low | claude-haiku-4-5 | 1 | $1.74 | 1.0 |

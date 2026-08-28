@@ -4,6 +4,140 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [1.9.0] - 2026-08-28
+
+**A minor by this repository's own table**: the manifest gains keys the plugin reads, the config
+gains one, `/audit:status` gains gate conditions, and none of it changes what a plan that does not
+opt in already does. Adding is free; that is what makes this a minor rather than a major.
+
+### Added
+
+**A plan could say what should be tested and had nowhere to record what was.** `task.tests.gate`
+and `phase.testGate` are declarations; the only homes for a result were `outcome.technical`, a free
+string the schema itself describes as holding "test counts", and `verifiedBy[]`, which is rendered
+nowhere. This repository's own dogfooded plan carried `"sweep 2173/40 green"` in that field — a
+model-written number with no basis, in a repository whose build lint fails a file for exactly that
+shape.
+
+The measurement mostly existed. `run-test-gate.py` already bracketed a gate with a tree snapshot,
+counted what ran, related the run to the files the work declares, and was carefully three-valued
+wherever it could not know something. It performed **no disk I/O at all**, and its `--json` flag had
+no caller anywhere in the tree. What was missing was memory.
+
+**Test-execution evidence, recorded rather than described.** A gate run through `--record` appends
+one line to a committed NDJSON ledger beside the manifest, and points a three-key `testEvidence`
+block — `runId`, `status`, `at` — at it from the task or phase. The ledger is the source of truth;
+the pointer is a cache, deletable at any moment and re-derivable by reading the ledger. **Absent
+means no run has been recorded — never "failed"**, which is what makes the key free to add.
+
+The row is assembled from named fields rather than copied, so "no program output is stored here" is
+a property of the writer instead of a promise about it. A gate command is stored verbatim only where
+the manifest already publishes it; anything else falls back to a digest, a byte length and a program
+name. Every path passes through the structural redactor that already existed. **A gate's stdout is
+not stored — not truncated, not redacted: not stored.**
+
+**Status is kept apart from observations**, because a gate can fail *and* rewrite the tree, and a
+single verdict loses one of those two facts every time both are true. `treeMutated`, `coverage` and
+`ranTotal` are three-valued and read by explicit comparison: `null` is not knowable, `0` is
+positively zero, `[]` is clean, and only `[]` may render as clean.
+
+**`run-test-gate.py` gained the lifecycle it was missing.** It now tears down the whole child process
+tree on timeout, `SIGINT` and `SIGTERM` rather than the shell alone; distinguishes a timeout from a
+command that never started; times each step; resolves a task's own gate when asked; and records an
+interrupted run instead of exiting on a traceback. An interrupted run reports `treeMutated` as *not
+knowable* rather than clean, because a killed child may still have been writing.
+
+**`testedState`** identifies the work a run was asked to judge — a digest over the declared files
+taken *before* the first command, so a fix-in-place runner cannot make the evidence describe what it
+produced; a digest of which paths were dirty; and `head`, which is repository HEAD at execution time
+and carries a basis saying it does **not** identify the tested state, because a task gate runs before
+the task commit.
+
+**An evidence boundary, so the gate can ask whether a run was possible before asking for one.**
+`--fail-on no-test-evidence` used to fail on every finished task in a plan adopted mid-flight, with
+no setting that helped. The boundary is the earliest moment there is any evidence that recording
+existed — the earlier of a key the recorder writes once and the ledger's own first row — so
+deleting either source leaves the other answering. Work finished before it is excused, and the
+excuse carries the sentence that justifies it.
+
+**Where it surfaces.** The report gains a column and a third group in the existing drawer; the panel
+gains the same on its overview; `/audit:status` gains a column and the conditions `failing-tests`
+and `no-test-evidence`, both opt-in. Sentences that mean different things stay different sentences:
+*No gate configured*, *No evidence*, *Before recording*, *Pointer without evidence* and *Completion
+undated* have five different causes and five different repairs.
+
+**Durability for the runs nothing else would commit.** A failing run leaves no task commit behind it,
+so a narrow audit-state commit exists for the points after which no commit is coming, and stages
+audit state, the trail and the evidence — never the task's own files. Two invariants grade it, and
+`/audit:doctor` correlates pointers against the ledger in both directions.
+
+**Tamper evidence by anchoring** each run into the existing hash chain rather than building a
+second one, split so that a row is never written before the thing it claims exists.
+
+**`evidence.dir`** joins the config surface, published on every side that publishes a config key.
+
+### Fixed
+
+**Two fields shipped that nothing produced.** `attempt` was copied by the row writer, rendered by
+both surfaces, and set only by the demo generator — so the shipped example advertised a capability
+the product did not have, and that drawer row was blank for every real user. `cancelled` was in the
+schema enum, rendered everywhere, and named by the orchestrator document among the rows that get
+written, while a Ctrl-C escaped as a traceback and recorded nothing.
+
+**A schema-valid manifest could blank the whole report at load.** A phase or task id that collides
+with a name on `Object.prototype` reached the prototype chain through a bare bracket read. Neither
+`phase.id` nor `task.id` carries a pattern in the schema. Reads now go through one shared helper, and
+maps built from outside keys are created prototype-free — a read guard alone does not fix the second
+shape.
+
+**An open filter panel had no height bound.** Two added chip rows took it from a tenth of the screen
+to well over a third; the width had been written against the viewport all along and the height never
+was.
+
+**The tree bracket could not see inside an untracked directory.** `run-test-gate` was the only
+porcelain reader in the tree without `-uall`, so with the subject directory wholly untracked a
+fix-in-place runner that created files inside it left the one value that means known clean.
+
+**`guard-bash-writes` stopped blaming the wrong writer, twice.** A command that moves the shell
+withdraws the authorship half of the finding, because the payload's directory is the *session's* and
+only the command moved. And agents of one session no longer inherit each other's writes: they share
+a session id, so the writers are told apart by the discriminator the payload actually carries. Both
+are withdrawals — the finding stays reported and the guard names nobody it cannot prove.
+
+**Checks that could not see what they exist to catch.** The artifact gate compared the working tree,
+so a render left unstaged read as clean while the commit carried the old bytes. The published
+handbook was read by no gate at all, and had rotted accordingly. The case holding the whole
+measurement boundary asserted nothing, because its fixture never committed and porcelain collapsed
+the untracked tree to one line. Two browser-gate selectors pinned an arrangement where they meant a
+property. And the meta-gate that keeps four descriptions of the gate set honest was itself proven by
+nothing.
+
+**`/audit:status --phase` is documented.** It was accepted by the parser and named by neither the
+command's argument hint nor the README row, and the lint that pairs those two cannot see a flag
+missing from both. Its limit is stated with it: it scopes the human render, totals stay whole-plan,
+and it scopes neither `--gate` nor `--json`.
+
+**`/audit:doctor` reports the plugin that ran the hooks**, not only the one on disk. `CLAUDE_PLUGIN_ROOT`
+is fixed when a session starts, so a long-lived session keeps the copy it began with — and a guard
+several releases behind was silently in force while the command asked to report it answered about the
+installation. Agreement, disagreement and *not established* are three answers, and the third is not
+the first.
+
+**A GitHub Release is part of the release procedure.** The Releases page had drifted until it
+presented a long-superseded version as Latest while the README pinned a far newer tag. Both surfaces
+are published and they disagreed in public.
+
+### Consequences worth knowing before you upgrade
+
+- **A gate that writes inside a wholly untracked directory now refuses where it used to pass.** That
+  is the repair, not a regression: it was signing off on work the gate itself had written.
+- **`testedState.dirtyDigest` moves once** for a repository that holds an untracked directory at gate
+  time, because it digests those porcelain lines and they are now per-file. The retry discriminator
+  reads "the tree changed" across the upgrade boundary and self-heals from the next run.
+- **Nothing changes for a plan that does not opt in.** Both new gate conditions are off by default,
+  for the reason the code states beside them: a repository that has never recorded a run carries no
+  pointers, so a default holding either would fail every build on upgrade day.
+
 ## [1.8.0] - 2026-08-26
 
 **A minor rather than a patch, by this repo's own table**: the manifest gains a key the plugin
