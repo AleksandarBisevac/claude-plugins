@@ -81,11 +81,21 @@ ADC = "plugins/audit/tests/test__ado_conventions.py"
 INSTALL = "\n_output.install_path()\n"
 
 # A gate is a public function whose NAME says it reports drift or violations, plus
-# the four that report it under a name of their own. Derived rather than listed so a
+# the ones that report it under a name of their own. Derived rather than listed so a
 # lint added later is missing from the table LOUDLY - see `coverage()`.
+#
+# `affected_dispatch` IS IN THE SECOND GROUP, AND THAT IS A DECISION RATHER THAN A
+# CONVENTION SOMEBODY SKIPPED (F229). Its name says nothing about reporting, and the
+# arm that reads what a function DOES cannot see it either: it takes no required
+# argument, but its corpus is a SUBPROCESS and a file - it runs `tools/affected.py`
+# and reads the prefixes `tools/verify.sh` will dispatch - rather than one of the
+# shared tree walks `_TREE_WALKS` names. Widening `walks_the_tree()` to "anything
+# that shells out" would admit every runnable tool in this repo, so the honest
+# answer is the name, with the reason beside it.
 _GATE_SHAPES = ("_violations", "_drift", "_claims")
 _GATE_NAMED = ("selftest_coverage", "entries_missing_guard",
-               "depth_sensitive_paths", "doc_prose_numbers", "scratch_debris")
+               "depth_sensitive_paths", "doc_prose_numbers", "scratch_debris",
+               "affected_dispatch")
 
 
 # THE TWO PROSE-NUMBER PAYLOADS ARE BUILT, NOT WRITTEN, and that is not tidiness.
@@ -141,7 +151,40 @@ _GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
 # `_TREE_WALKS` is the arm that closes it, and asking the question of the whole tree
 # found a second: `_output.redundant_constants()`, load-bearing since the day it was
 # written, asserted over the real tree by its own suite, and proven by nothing.
-_GATE_OUTSIDE = ("tools/sweep-selftests.py", "tools/_suite.py")
+#
+# F229: THE META-GATE, AND WHAT IT FELL THROUGH IS NEITHER A NAME NOR A SIGNATURE.
+# `gate-parity.py` is what keeps four hand-maintained descriptions of the gate set
+# honest with each other, and nothing proved any of its checks. It was NOT missed
+# the way F166's lint was missed: `isolation_drift` ends in a shape above and
+# `scratch_isolation` walks the tree through `_output.py_files()`, so both arms
+# would have derived them the moment anything opened the file. Nothing opened it -
+# every arm reads functions out of `_gate_sources()`, which is this tuple and
+# `_GATE_MODULES`, both written by hand. The file-level enumeration is the hole,
+# and it SUBSUMES the function-level one F166 closed: a file nobody lists is
+# invisible to every arm at once, the arm added to close the last hole included.
+#
+# THIS ROW REGISTERS THE INSTANCE AND DOES NOT CLOSE THAT HOLE, said here rather
+# than implied by a repair that is not one. Deriving the file set off the tree is
+# not a drop-in swap, for two measured reasons. The NAME arm is a convention that
+# holds only inside curated modules: `bench-hooks.render_violations()` takes a
+# required argument and formats a report, so a widened scan would derive a
+# FORMATTER as a lint, and `NOT_A_GATE` refuses by construction to excuse anything
+# the name arm reaches. And it would arrive already failing by a wide margin -
+# `config/_help.py`, `_ui_theme.py`, `manifest/_areas.py` and `manifest/_branch.py`
+# each hold lints with a row in neither table. A coverage rule that arrives already
+# failing gets an exemption written for it on day one, which is how an exemption
+# table stops meaning anything. Re-derive the shape-named half of that remainder
+# rather than trusting this paragraph - what it prints beyond `_GATE_MODULES` and
+# this tuple is what a widened scan would owe rows for, and the walk-shaped half
+# sits behind it:
+#
+#   grep -rnE "^def [a-z_]+_(violations|drift|claims)\(" \
+#     plugins/audit/scripts tools
+#
+# ADDED WITH ITS ROWS, WHICH IS THE ONLY WAY IT MAY BE ADDED - the rule the two
+# entries above it joined under, and the reason this is one commit and not two.
+_GATE_OUTSIDE = ("tools/sweep-selftests.py", "tools/_suite.py",
+                 "tools/gate-parity.py")
 
 # THE ARM THAT DOES NOT READ A NAME. A lint here judges the REPOSITORY: it takes no
 # required argument and walks the tree with one of the shared walks, and everything
@@ -567,6 +610,41 @@ TABLE = (
  ("config_read_violations", S + "_deps.py", "replace",
   "    block = _block_accessor(node, roots)",
   "    block = None", DEP, "ck18"),
+
+ # --- F229: the meta-gate, whose silence takes four documents down with it ----
+ # THE MUTATED FILE IS A DOCUMENT, because a document is what this rule watches.
+ # `sweep-selftests.py` points a family of environment variables per child away
+ # from the machine, and the documents describing that isolation are compared with
+ # the runner's own constants - so the thing to break is a document's account of
+ # it, not the runner. The pycache pin is the narrowest one available: it is the
+ # family the sweep spreads under a single name, so renaming that name leaves the
+ # whole family named by nothing, while the other two survive a rename of any one
+ # member. Renaming it to a NEIGHBOURING interpreter variable is the shape a
+ # document falls behind a runner in - it still reads as a sentence about bytecode
+ # caches. `is0` is the case that reads the real runner against every side.
+ ("isolation_drift", "CLAUDE.md", "sub", r"PYTHONPYCACHEPREFIX",
+  (r"PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE"),
+  "tools/gate-parity.py", "is0"),
+ # THE MUTATED FILE IS THE RUNNER THIS RULE WAS WRITTEN FOR, and the payload is
+ # the defect verbatim: `verify.sh` kept every step log at a fixed `/tmp` path, so
+ # two runs on one machine shared it and one could read the other's exit code. The
+ # log line is the harmless half of that defect and the one whose whole spelling is
+ # unique in the file, so the mutation reaches the rule without changing which
+ # gates the file names - `parity()` reads the same document and must not move.
+ # `sc0` is the case that reads every runnable file under `tools/`.
+ ("scratch_isolation", "tools/verify.sh", "replace",
+  '  if "$@" >"$WORKDIR/step.log" 2>&1; then',
+  '  if "$@" >/tmp/verify-step.log 2>&1; then',
+  "tools/gate-parity.py", "sc0"),
+ # ...and the other question asked of that same runner, which is a PAIR rather
+ # than a file: the selector chooses the checks and the runner dispatches them, and
+ # the fault was a check the selector named and the runner had no arm for. The
+ # mutation takes the arm away rather than teaching the selector a new shape,
+ # because that is the direction with a unique anchor and because it leaves the
+ # selector emitting the plugin validator the arm was added for - so the row is
+ # about the disagreement and not about a probe. `ad0` runs the real pair.
+ ("affected_dispatch", "tools/verify.sh", "sub", r"^    grep -v -e ",
+  (r" -e '\^claude '", ""), "tools/gate-parity.py", "ad0"),
 )
 
 
@@ -945,6 +1023,41 @@ ALLOW = (
  ("config_read_violations", S + "_deps.py", "replace",
   "    return block if block in roots else None",
   "    return block or None", DEP, "ck21"),
+ # --- F229: the quiet half for the meta-gate ----------------------------------
+ # THE NARROWING IS "NAMING A MEMBER NAMES THE FAMILY", and the rule argues it out
+ # loud: the runner pins every spelling a lookup reads, and a document that listed
+ # all of them would BE the module. Ask for every member instead and the rule
+ # convicts the arrangement it was written to police - measured, not assumed: the
+ # weakening reports the home and scratch families against every real side,
+ # including the docstring the helper carries. `is2` is the pair written for
+ # exactly this, one fixture naming a member of every family and one leaving a
+ # family out, so it fails on the version that demands all of them.
+ ("isolation_drift", "tools/gate-parity.py", "replace",
+  "            if not any(name in text for name in groups[held])]",
+  "            if not all(name in text for name in groups[held])]",
+  "tools/gate-parity.py", "is2"),
+ # THE PUREST F116 SHAPE THIS GUARD HAS. The rule bans naming a temp root, and the
+ # one line allowed to name it is the line that DERIVES a unique directory under
+ # it - which is the repair every other line is told to route through. Stop
+ # excusing it and the rule reports its own remedy, in both scripts that use it:
+ # `verify.sh`'s scratch root and `redfirst.sh`'s backup. `sc2` is the case that
+ # asserts the derivation is READ and then excused rather than skipped, which is
+ # the distinction the exemption rests on.
+ ("scratch_isolation", "tools/gate-parity.py", "replace",
+  '        if "mktemp" in line:', "        if False:",
+  "tools/gate-parity.py", "sc2"),
+ # THE REGION SCOPE, in the shape every other region rule's allow row takes. The
+ # selector prints its REASONS and its commands indented identically, and only the
+ # `run:` line tells them apart - which is the ambiguity that made a catch-all arm
+ # impossible and the silent skip the only option. Widen past it and the guard
+ # reports the selector's own explanations as checks the runner cannot dispatch,
+ # which is a finding against a tool for explaining itself. `ad4` is the case that
+ # asserts a reason line indented like a command is not one.
+ ("affected_dispatch", "tools/gate-parity.py", "replace",
+  '        if not started or not line.startswith("  ") '
+  'or line.startswith("  ("):',
+  '        if not line.startswith("  ") or line.startswith("  ("):',
+  "tools/gate-parity.py", "ad4"),
 )
 
 
