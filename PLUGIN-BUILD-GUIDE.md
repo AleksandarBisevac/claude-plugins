@@ -515,6 +515,14 @@ per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. C
 `bashWriteCheck.enabled` (default true). `--selftest` (incl. a real `git init`
 integration case).
 
+The authorship half of that warning comes off whenever somebody else could have written the
+path: a peer SESSION (its own state file moved inside the window), this session's own
+background job (no hook fires when one ends), a command that moved the shell with `cd`, and
+a peer AGENT of this session. The last is the one nothing keyed by session can see — agents
+share a `session_id`, so they share the state file `_other_sessions` skips as `mine` — and
+`agents`, the writer map inside that file, is what makes them visible: each agent by its
+payload `agent_id`, the main agent (which carries none) under `MAIN_WRITER`.
+
 ### `plugins/audit/agents/` (v0.6.0, a fourth in v0.31.0)
 Four pinned-tool agents, three of which the commands spawn via `subagent_type` (with a
 general-subagent

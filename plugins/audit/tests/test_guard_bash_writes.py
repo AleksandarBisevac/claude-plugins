@@ -135,15 +135,30 @@ def _cases(check):
     prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
 
-    def payload(tool, *, sid, file_path=None, command="x", background=False):
+    def payload(tool, *, sid, file_path=None, command="x", background=False,
+                agent=None):
         # `run_in_background` rides in `tool_input` beside `command` and `timeout` -
         # measured off a real transcript on 2026-08-26, not assumed, because the
         # whole background branch is dead if the key arrives somewhere else.
+        #
+        # `agent_id` / `agent_type` ride at the TOP level and only on a subagent's
+        # payload; the main agent's carries neither key. Probed against the real
+        # harness rather than assumed (Claude Code 2.1.250, 2026-08-28, a
+        # PostToolUse hook dumping stdin under `claude -p`, one main-agent Bash
+        # call and two parallel Task agents): `session_id` and `transcript_path`
+        # were IDENTICAL across all of them and `agent_id` was the only field that
+        # differed, stable across an agent's own calls. That is the whole of the
+        # fixture below - the state file is keyed by session, so two agents share
+        # one, and the peer-session evidence cannot see them.
         ti = {"command": command} if tool == "Bash" else {"file_path": file_path}
         if background:
             ti["run_in_background"] = True
-        return {"tool_name": tool, "tool_input": ti, "session_id": sid,
+        data = {"tool_name": tool, "tool_input": ti, "session_id": sid,
                 "cwd": str(tmp)}
+        if agent is not None:
+            data["agent_id"] = agent
+            data["agent_type"] = "general-purpose"
+        return data
 
     def _expect(name, expected, data, dirty=None, use_cfg=None):
         """One case: run `decide` on `data` and compare its verdict to `expected`.
@@ -970,6 +985,141 @@ def _cases(check):
     check("bg10 with no background launch the plain authorship claim is made",
           _v_p == "warn" and "background job(s)" not in _d_p
           and "modified source file(s)" in _d_p)
+
+    # (ag) TWO AGENTS OF ONE SESSION - the third kind of other-author, and the one
+    # every mechanism above is blind to BY CONSTRUCTION. The state file is named
+    # `bash-writes-<session_id>.json` and a subagent's payload carries the SAME
+    # session_id as the main agent (probed; see `payload` above), so every agent of
+    # one session writes ONE file. `_other_sessions` skips `mine`, which is that
+    # file, so a peer agent has no sibling to be found in - it is neither claimed
+    # nor counted active, and the plain authorship claim is made against whichever
+    # agent's command ran next.
+    #
+    # Driven in a scratch repository before it was fixed, through the real hook
+    # process against a real `git status`: the SAME interleaving (B looks, A acts,
+    # A's shell command writes while its own PostToolUse is still pending, B runs a
+    # command that wrote nothing) withdraws the claim when A and B are two
+    # SESSIONS and asserts it when they are two AGENTS of one.
+    #
+    # The unit half first, because the rule has three branches and only one of them
+    # is "name a peer".
+    check("ag1 the main agent carries no agent_id and is one writer under a "
+          "fixed name", M.writer_id({}) == M.MAIN_WRITER
+          and M.writer_id({"agent_id": "a6773d750dcfc821b"})
+          == "a6773d750dcfc821b")
+    _agst = {}
+    check("ag2 a pass records the writer and reports NO previous look",
+          M.record_agent_pass(_agst, "aaa", 1000.0) is None
+          and _agst["agents"] == {"aaa": 1000.0})
+    check("ag3 ...and the next pass reports the previous one, then overwrites it",
+          M.record_agent_pass(_agst, "aaa", 1060.0) == 1000.0
+          and _agst["agents"] == {"aaa": 1060.0})
+    check("ag4 a writer alone in the session has no peer to name",
+          M.peer_agent_basis({"agents": {"aaa": 1000.0}}, "aaa", 900.0) is None)
+    check("ag5 a peer that acted since my previous look is named",
+          "bbb" in (M.peer_agent_basis({"agents": {"aaa": 1000.0, "bbb": 950.0}},
+                                       "aaa", 900.0) or ""))
+    # The window's own rule, and the direction that keeps the guard its voice: a
+    # peer whose last pass predates my previous look cannot have acted inside it.
+    # Without this the basis could be "any other agent, ever" and ag5 would not
+    # notice.
+    check("ag6 ...and one that acted BEFORE it is outside the window",
+          M.peer_agent_basis({"agents": {"aaa": 1000.0, "bbb": 850.0}},
+                             "aaa", 900.0) is None)
+    # A writer's FIRST pass has no previous look to bound the window with, so it
+    # cannot rule a peer out. Unbounded is the honest reading and it costs only the
+    # authorship sentence: the finding is still reported.
+    check("ag7 a writer with no previous look cannot bound the window at all",
+          "bbb" in (M.peer_agent_basis({"agents": {"bbb": 850.0}}, "aaa", None)
+                    or ""))
+    _agmany = {}
+    for _i in range(M._AGENT_CAP + 5):
+        M.record_agent_pass(_agmany, "ag%d" % _i, 1000.0 + _i)
+    check("ag8 the writer map is capped and keeps the newest",
+          len(_agmany["agents"]) == M._AGENT_CAP
+          and "ag%d" % (M._AGENT_CAP + 4) in _agmany["agents"]
+          and "ag0" not in _agmany["agents"])
+    # A clause that names some of the peers must say how many it did NOT, or the
+    # count in front of the list and the list disagree about what the reader is
+    # looking at. Counted rather than looked for: "a peer is named" is true both
+    # of a clause that names one of many and of one that names them all.
+    _crowd = {"agents": dict(("peer%d" % _i, 950.0)
+                             for _i in range(M._PEERS_SHOWN + 3))}
+    _crowd["agents"]["aaa"] = 1000.0
+    _cbasis = M.peer_agent_basis(_crowd, "aaa", 900.0) or ""
+    check("ag8b a clause that cuts its own evidence says how much it cut",
+          _cbasis.count("peer") == M._PEERS_SHOWN
+          and "and 3 more" in _cbasis
+          and _cbasis.startswith("%d other agent(s)" % (M._PEERS_SHOWN + 3)),
+          repr(_cbasis))
+
+    # THE STRUCTURAL HALF, in the interleaving the scratch repository produced. An
+    # ISOLATED state dir, because which writers are stamped in the one file IS the
+    # fixture.
+    agd = tmp / "state-ag"
+    agd.mkdir(parents=True, exist_ok=True)
+
+    def _ag(sid, agent, *, command="python3 tools/gen.py", dirty=(), tool="Bash",
+            file_path=None):
+        return M.decide(payload(tool, sid=sid, command=command, agent=agent,
+                                file_path=file_path),
+                        cfg=cfg, state_dir=agd, dirty=list(dirty))
+
+    s = "bw-ag"
+    _ag(s, "agent-b", command="ls -la")               # B's previous look
+    _ag(s, "agent-a", command="git log --oneline")    # A acts, inside B's window
+    _v_ag, _d_ag = _ag(s, "agent-b", dirty=["src/peer-agent.ts"])
+    check("ag9 a path that appeared while a PEER AGENT of this session was "
+          "acting is still reported", _v_ag == "warn"
+          and "src/peer-agent.ts" in _d_ag, repr((_v_ag, _d_ag)))
+    check("ag10 ...with the authorship claim dropped and the peer agent named",
+          "CANNOT say the command wrote them" in _d_ag and "agent-a" in _d_ag,
+          repr(_d_ag))
+    # The other direction, and it is the one that looks vacuous: with no peer
+    # agent the plain claim must come back. Without it, a basis that fired
+    # unconditionally - every agent silenced for ever - would leave ag9/ag10
+    # passing on a withdrawal that was always going to happen.
+    s = "bw-ag2"
+    _ag(s, "agent-solo", command="ls -la")
+    _v_solo, _d_solo = _ag(s, "agent-solo", dirty=["src/solo.ts"])
+    check("ag11 an agent alone in its session still gets the plain authorship "
+          "claim", _v_solo == "warn" and "modified source file(s)" in _d_solo
+          and "CANNOT say the command wrote them" not in _d_solo,
+          repr((_v_solo, _d_solo)))
+    # An agent that spent the window in the EDIT tools is a live peer too, and its
+    # shell write is exactly the one no `toolEdited` row can account for. The pass
+    # that records it returns "record" and used to save nothing when the file was
+    # already known, so this is also what pins that the writer is stamped there.
+    s = "bw-ag3"
+    _ag(s, "agent-b", command="ls -la")
+    _ag(s, "agent-e", tool="Edit", file_path=str(tmp / "src" / "edited.ts"))
+    _v_ed, _d_ed = _ag(s, "agent-b", dirty=["src/from-a-shell.ts"])
+    check("ag12 an agent that acted through the EDIT tools counts as a live peer",
+          _v_ed == "warn" and "CANNOT say the command wrote them" in _d_ed
+          and "agent-e" in _d_ed, repr((_v_ed, _d_ed)))
+    # The main agent is a writer with no agent_id, not a non-writer: it runs Bash
+    # in the same tree and its writes reach the same state file.
+    s = "bw-ag4"
+    _ag(s, "agent-b", command="ls -la")
+    _ag(s, None, command="git log --oneline")
+    _v_main, _d_main = _ag(s, "agent-b", dirty=["src/from-the-main-agent.ts"])
+    check("ag13 ...and so does the main agent, under its fixed name",
+          _v_main == "warn" and "CANNOT say the command wrote them" in _d_main
+          and M.MAIN_WRITER in _d_main, repr((_v_main, _d_main)))
+    # The window's rule at the verdict, not only at the unit: a peer whose last
+    # pass predates MY previous look cannot have acted inside the window this
+    # dirt appeared in, and the plain claim stands. Ordered so the peer acts
+    # BEFORE this writer's look rather than after it - which is the only
+    # difference between this case and ag9.
+    s = "bw-ag5"
+    _ag(s, "agent-early", command="ls -la")
+    _ag(s, "agent-b", command="git log --oneline")
+    _v_out, _d_out = _ag(s, "agent-b", dirty=["src/mine-alone.ts"])
+    check("ag14 a peer that acted BEFORE this writer's previous look does not "
+          "take the claim away", _v_out == "warn"
+          and "modified source file(s)" in _d_out
+          and "CANNOT say the command wrote them" not in _d_out,
+          repr((_v_out, _d_out)))
 
     # (os) THE STRUCTURAL HALF. A command that is not provably read-only used to
     # inherit EVERY path that appeared since the last snapshot, and this product

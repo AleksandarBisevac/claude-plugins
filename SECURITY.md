@@ -454,6 +454,17 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      The signal is the mtime of sibling session state files; a session merely
      *seeing* a path dirty is deliberately not a claim on it, or two sessions
      could exonerate each other for a file neither wrote.
+     **And with another AGENT of the same session writing in it, likewise** —
+     which the sentence above could not see, because a subagent's payload carries
+     the same `session_id` as the main agent, so every agent of one session
+     writes to ONE state file and a peer agent has no sibling file to be found
+     in (F227). What the payload does carry is an `agent_id`, on a subagent's
+     calls only, so the writers inside a session are stamped in the file they
+     share and a peer that acted between this writer's previous look and this one
+     withdraws the claim exactly as a peer session does. The window is per
+     WRITER: a peer whose last pass predates that look is outside it and takes
+     nothing away, and a writer on its first pass has no look to bound the window
+     with, so it cannot rule a peer out at all.
    - **The path must be a source file** — not exempt, not the manifest or its
      lock, not written by an edit tool, and not covered by an `in_progress` task.
    - **The plan-coverage class is graded on the same evidence as the plan gate**,

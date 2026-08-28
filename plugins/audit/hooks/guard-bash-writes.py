@@ -47,9 +47,20 @@ attributed there and said nothing about here. When somebody else was writing in
 the window but nothing names an author, the finding is still reported and the
 authorship claim is dropped — see UNPROVEN_TEMPLATE.
 
+AND THE OTHER AGENTS OF THIS ONE, which that mechanism cannot see. A subagent's
+payload carries the SAME `session_id` as the main agent — probed, not assumed —
+so every agent of one session writes to ONE state file, `_other_sessions` skips
+it as `mine`, and a peer agent is neither claimed nor counted active there. The
+plain claim then went to whichever agent's command ran next (F227). What the
+payload DOES carry is `agent_id`, on a subagent's calls only, so the writers
+inside a session are stamped in the file they share (`agents`) and a peer that
+acted inside this writer's window withdraws the authorship claim the same way a
+peer session does. `writer_id` and `peer_agent_basis` hold that.
+
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
-   "baselined": bool, "gitTimeout": bool, "otherTrees": [abs path...]}
+   "baselined": bool, "gitTimeout": bool, "otherTrees": [abs path...],
+   "bgLaunches": [{"program", "at"}...], "agents": {writer: epoch}}
   `otherTrees` is the ONLY key here that is not a repo-relative path, and the
   difference is load-bearing: every rel in this file is a path in the ONE tree
   this guard watches, which is what lets a sibling session's rels be read as
@@ -61,9 +72,15 @@ State: <stateDir>/bash-writes-<session_id>.json
   `baselined` marks that the session's FIRST Bash pass has seeded seenDirty
   with the tree's pre-existing dirt (silently) — only dirt appearing after
   that baseline is ever attributed to a shell command.
+  `agents` maps each WRITER inside this session — every agent by its `agent_id`,
+  the main agent under `MAIN_WRITER` — to when it last passed through this hook.
+  It is the one thing the file's mtime cannot say once a session has more than
+  one writer: the mtime then means "when anybody last looked", and the window a
+  pass covers starts at when THIS writer last looked.
   Written for THIS session and read for every other one in the same stateDir
   (`_other_sessions`), which is what makes a second writer visible at all. The
-  file's mtime is its own timestamp: no field had to be added for the window.
+  file's mtime is its own timestamp: no field had to be added for the SESSION
+  window.
 Read-only sidecars: <stateDir>/bash-writes-plugin-<key>.json {"pluginWrote": [rel]}
   — journal files the plugin ITSELF appended to. Those rels are skipped before
   the journal check, so the plugin's own append is never blamed on the next
@@ -620,11 +637,12 @@ def _load_state(state_dir, session_id):
                     "baselined": bool(data.get("baselined")),
                     "gitTimeout": bool(data.get("gitTimeout")),
                     "otherTrees": list(data.get("otherTrees") or []),
-                    "bgLaunches": list(data.get("bgLaunches") or [])}
+                    "bgLaunches": list(data.get("bgLaunches") or []),
+                    "agents": dict(data.get("agents") or {})}
     except Exception:
         pass
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
-            "gitTimeout": False, "otherTrees": [], "bgLaunches": []}
+            "gitTimeout": False, "otherTrees": [], "bgLaunches": [], "agents": {}}
 
 
 def _save_state(state_dir, session_id, state):
@@ -764,6 +782,121 @@ def background_basis(state, now):
                ages[0] // 60, ages[-1] // 60))
 
 
+# --- the writers inside one session ------------------------------------------
+# The name the main agent is recorded under. It has no `agent_id` at all - probed,
+# not assumed (Claude Code 2.1.250, 2026-08-28: a PostToolUse hook dumping stdin
+# under `claude -p`, one main-agent Bash call and two parallel Task agents; the
+# subagents' payloads carried `agent_id` and `agent_type` at the top level and the
+# main agent's carried neither, while `session_id` and `transcript_path` were
+# IDENTICAL across all of them). A short word cannot collide with a real id, which
+# is a long hex string, and `writer_id` sanitises anyway.
+MAIN_WRITER = "main"
+_AGENT_CAP = 20
+# How many peer names one clause spells out before it says how many it left. The
+# clause is injected into a model's context beside two other clauses, so the whole
+# map is not what a reader needs - but a count with no remainder beside it is the
+# defect `_output.truncated_evidence_violations` exists for.
+_PEERS_SHOWN = 4
+
+
+def writer_id(data):
+    """Which WRITER inside this session made this tool call.
+
+    -> the payload's `agent_id`, sanitised, or `MAIN_WRITER` when there is none
+
+    THE SESSION IS NOT THE WRITER, which is the whole of F227. The state file is
+    named `bash-writes-<session_id>.json` and every agent of one session shares
+    that id, so `_other_sessions` - which separates SESSIONS by their separate
+    files - is blind to two agents of one by construction: a peer agent has no
+    sibling file to be claimed or counted active in, and the plain authorship
+    claim goes to whichever agent's command ran next.
+
+    Sanitised because the value is quoted back into a message this hook injects
+    into the model's context, and a payload field is not a place to trust.
+    """
+    ident = _SAFE_SID.sub("-", str((data or {}).get("agent_id") or "")).strip("-.")
+    return ident[:40] or MAIN_WRITER
+
+
+def record_agent_pass(state, writer, now):
+    """Stamp this writer's pass. -> its PREVIOUS stamp, or None if it has none.
+
+    The previous stamp is returned rather than left in the map because the map is
+    where it is about to be overwritten: "when did I last look at this tree" is
+    the far end of the window everything below became dirty in, and this pass is
+    the near end. `_state_mtime` cannot answer it any more once a session has more
+    than one writer - every agent's pass rewrites the one file, so the file's mtime
+    says when ANYBODY last looked.
+
+    Capped like `bgLaunches`, keeping the newest: a long session spawns agents
+    without limit, and an agent that finished long ago is the one whose stamp is
+    worth least. Dropping a stamp can only take evidence away, never manufacture
+    it - the direction that leaves the guard its voice.
+    """
+    agents = dict(state.get("agents") or {})
+    prev = agents.get(writer)
+    agents[writer] = now
+    if len(agents) > _AGENT_CAP:
+        newest = sorted(agents.items(), key=_stamp_of)[-_AGENT_CAP:]
+        agents = dict(newest)
+    state["agents"] = agents
+    return prev if isinstance(prev, (int, float)) else None
+
+
+def _stamp_of(item):
+    """The timestamp half of an `agents` item, for sorting. Never raises."""
+    return item[1] if isinstance(item[1], (int, float)) else 0.0
+
+
+def peer_agent_basis(state, writer, since):
+    """The clause naming OTHER agents of this session that acted in the window,
+    or None when this writer was alone in it.
+
+    A WITHDRAWAL, NOT A NEW CLAIM - the shape `directory_change_basis` and
+    `background_basis` already set. It never says a peer agent wrote anything: it
+    says another writer was acting in this checkout inside the window these paths
+    became dirty in, and that this guard cannot tell which of them wrote them,
+    because every agent of one session writes to one state file. The finding is
+    still reported; only the authorship half comes off.
+
+    `since` is this writer's OWN previous stamp, so the question asked of a peer is
+    the one `_other_sessions` asks of a sibling session: did it act between my
+    previous look at the tree and this one. A peer whose last pass predates that is
+    outside the window and is not named - the direction that leaves the guard its
+    voice.
+
+    `since` of None is a writer that has never looked at this tree before, and the
+    window it cannot bound is unbounded: every agent recorded here acted since a
+    look that never happened. That reads as over-withdrawal and is the honest
+    answer - an agent's first watched command has no previous snapshot of its own
+    to have seen the tree clean in.
+
+    KNOWN RESIDUAL: the one file has concurrent writers, so two passes that overlap
+    can lose a stamp to last-write-wins, and the writer whose stamp was lost is not
+    named until its next pass. That loses a withdrawal, never invents one.
+    """
+    peers = []
+    for ident, stamp in (state.get("agents") or {}).items():
+        if str(ident) == str(writer) or not isinstance(stamp, (int, float)):
+            continue
+        if since is None or stamp > since:
+            peers.append(str(ident))
+    if not peers:
+        return None
+    # The count and the names it is a count OF, with the remainder stated when the
+    # list is cut - `_output.truncated_evidence_violations` reads exactly that
+    # shape, and a hook may not import `some_of()` to get it for free.
+    peers = sorted(peers)
+    return ("%d other agent(s) of this session (%s) ran tool calls in this "
+            "checkout inside the same window, and every agent of one session "
+            "writes to the SAME state file - so nothing on disk can name which "
+            "of them wrote these paths"
+            % (len(peers),
+               ", ".join(peers[:_PEERS_SHOWN])
+               + ("" if len(peers) <= _PEERS_SHOWN
+                  else " and %d more" % (len(peers) - _PEERS_SHOWN))))
+
+
 def _state_mtime(state_dir, session_id):
     """When this session last wrote its state — one end of the window a pass
     covers. 0.0 when there is no file yet, which only happens before the
@@ -892,6 +1025,17 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     session_id = str(data.get("session_id", "") or "no-session")
     state = _load_state(sd, session_id)
 
+    # WHICH WRITER INSIDE THE SESSION, stamped before either branch runs and read
+    # back as `since_writer` - this writer's PREVIOUS look at the tree. Both
+    # branches stamp because both prove the same thing: an agent that spent the
+    # window in the edit tools is as live as one that spent it in the shell, and
+    # the shell write nobody can account for is the one its `toolEdited` rows do
+    # not name. The map is written but never SAVED here; every path below that
+    # persists anything saves it with the rest of the state.
+    now = _now()
+    writer = writer_id(data)
+    since_writer = record_agent_pass(state, writer, now)
+
     # branch 1: remember files edited through the gated tools
     if tool in _EDIT_TOOLS:
         ti = data.get("tool_input", {}) or {}
@@ -920,7 +1064,11 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         rel = _config.rel_path(root, fp)
         if rel not in state["toolEdited"]:
             state["toolEdited"].append(rel)
-            _save_state(sd, session_id, state)
+        # SAVED WHETHER OR NOT THE REL WAS NEW, which it did not used to be: the
+        # writer stamp above is what says this agent was alive in this window, and
+        # a second Edit of a file already recorded is exactly as good a proof of
+        # that as the first.
+        _save_state(sd, session_id, state)
         return ("record", "tool-edited: %s" % rel)
 
     # branch 2: Bash — diff the working tree against what we last saw.
@@ -931,7 +1079,6 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # return. A detached job that could write must be on the record even when this
     # pass goes on to say nothing — git unusable, a baseline seed, a read-only
     # command — because what it explains is a LATER pass's dirt, not this one's.
-    now = _now()
     if record_background_launch(state, data.get("tool_input") or {}, now):
         _save_state(sd, session_id, state)
 
@@ -1147,6 +1294,13 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             clauses.append("session(s) %s were writing in this checkout during the "
                            "same window, and nothing on disk names an author for "
                            "these paths" % (", ".join(active),))
+        # THE PEER THE LINE ABOVE CANNOT SEE. `_other_sessions` separates sessions
+        # by their separate files, and every agent of one session writes to this
+        # one - so a peer AGENT is neither claimed nor counted active there, and
+        # the plain claim used to go to whichever agent's command ran next (F227).
+        peer = peer_agent_basis(state, writer, since_writer)
+        if peer:
+            clauses.append(peer)
         bg = background_basis(state, now)
         if bg:
             clauses.append(bg)
