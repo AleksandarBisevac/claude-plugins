@@ -1050,38 +1050,90 @@ def _cases(check):
           "fixed name", M.writer_id({}) == M.MAIN_WRITER
           and M.writer_id({"agent_id": "a6773d750dcfc821b"})
           == "a6773d750dcfc821b")
+    # POSITIONS, NOT CLOCKS, and the fixtures below say so by their SHAPE: a
+    # small ordinal reads as "which pass came first", which is the only question
+    # this map is ever asked. Epoch-shaped floats here used to suggest the map
+    # answered a "when", and answering it with a clock is the whole of the defect
+    # ag15 pins.
     _agst = {}
-    check("ag2 a pass records the writer and reports NO previous look",
-          M.record_agent_pass(_agst, "aaa", 1000.0) is None
-          and _agst["agents"] == {"aaa": 1000.0})
+    check("ag2 a pass records the writer's POSITION and reports NO previous look",
+          M.record_agent_pass(_agst, "aaa") is None
+          and _agst["agents"] == {"aaa": 1} and _agst["agentSeq"] == 1)
     check("ag3 ...and the next pass reports the previous one, then overwrites it",
-          M.record_agent_pass(_agst, "aaa", 1060.0) == 1000.0
-          and _agst["agents"] == {"aaa": 1060.0})
+          M.record_agent_pass(_agst, "aaa") == 1
+          and _agst["agents"] == {"aaa": 2} and _agst["agentSeq"] == 2)
     check("ag4 a writer alone in the session has no peer to name",
-          M.peer_agent_basis({"agents": {"aaa": 1000.0}}, "aaa", 900.0) is None)
+          M.peer_agent_basis({"agents": {"aaa": 5}}, "aaa", 3) is None)
     check("ag5 a peer that acted since my previous look is named",
-          "bbb" in (M.peer_agent_basis({"agents": {"aaa": 1000.0, "bbb": 950.0}},
-                                       "aaa", 900.0) or ""))
+          "bbb" in (M.peer_agent_basis({"agents": {"aaa": 5, "bbb": 4}},
+                                       "aaa", 3) or ""))
     # The window's own rule, and the direction that keeps the guard its voice: a
     # peer whose last pass predates my previous look cannot have acted inside it.
     # Without this the basis could be "any other agent, ever" and ag5 would not
     # notice.
     check("ag6 ...and one that acted BEFORE it is outside the window",
-          M.peer_agent_basis({"agents": {"aaa": 1000.0, "bbb": 850.0}},
-                             "aaa", 900.0) is None)
+          M.peer_agent_basis({"agents": {"aaa": 5, "bbb": 2}}, "aaa", 3) is None)
+    # THE BOUNDARY, WHICH IS THE OVER-FIRE ARM. `>` and `>=` differ in exactly one
+    # place - a peer sitting ON my previous position - and that pass had already
+    # happened when I last looked, so counting it withdraws the claim on evidence
+    # from outside the window. ag14 cannot reach this: under positions its peer is
+    # strictly earlier, so a `>=` would pass there and go red only here.
+    check("ag6b ...and one sitting EXACTLY ON my previous look is outside it too",
+          M.peer_agent_basis({"agents": {"aaa": 5, "bbb": 3}}, "aaa", 3) is None)
     # A writer's FIRST pass has no previous look to bound the window with, so it
     # cannot rule a peer out. Unbounded is the honest reading and it costs only the
     # authorship sentence: the finding is still reported.
     check("ag7 a writer with no previous look cannot bound the window at all",
-          "bbb" in (M.peer_agent_basis({"agents": {"bbb": 850.0}}, "aaa", None)
+          "bbb" in (M.peer_agent_basis({"agents": {"bbb": 2}}, "aaa", None)
                     or ""))
     _agmany = {}
     for _i in range(M._AGENT_CAP + 5):
-        M.record_agent_pass(_agmany, "ag%d" % _i, 1000.0 + _i)
+        M.record_agent_pass(_agmany, "ag%d" % _i)
     check("ag8 the writer map is capped and keeps the newest",
           len(_agmany["agents"]) == M._AGENT_CAP
           and "ag%d" % (M._AGENT_CAP + 4) in _agmany["agents"]
           and "ag0" not in _agmany["agents"])
+    # THE REGRESSION CASE, and the reason any of this is a sequence. The position
+    # used to be `time.time()`, whose granularity on windows is the system timer
+    # tick - so consecutive passes of one session landed on the SAME float, the
+    # peer was not inside anybody's window, and the withdrawal fired or did not
+    # by how fast the machine was. Asserted with no clock in reach at all:
+    # `record_agent_pass` takes none, so two passes cannot tie however close
+    # together they run.
+    _agtick = {}
+    M.record_agent_pass(_agtick, "aaa")
+    M.record_agent_pass(_agtick, "bbb")
+    _tick_since = M.record_agent_pass(_agtick, "aaa")
+    check("ag15 two passes a wall clock could not tell apart are still ORDERED, "
+          "and the peer between them is inside the window - the flake this "
+          "replaced passed on a slow runner and failed on a fast one, which is "
+          "worse than a rule that is simply wrong: %r"
+          % (_agtick["agents"],),
+          _agtick["agents"]["bbb"] > _tick_since
+          and "bbb" in (M.peer_agent_basis(_agtick, "aaa", _tick_since) or ""))
+    # A SESSION LIVE ACROSS AN UPGRADE. The map an older copy wrote holds epochs;
+    # comparing one against a fresh position answers by which build wrote the
+    # value, and one direction of that names a peer that did nothing. Renumbered
+    # by their own order instead - and the ORDER is what is asserted here, not
+    # the numbers, because the order is all the old values were good for.
+    _aglegacy = {"agents": {"old-b": 1790000002.5, "old-a": 1790000001.5}}
+    _leg_prev = M.record_agent_pass(_aglegacy, "old-a")
+    check("ag16 a map an older copy stamped with CLOCKS is renumbered into "
+          "positions, keeping the order it recorded, and the pass issued after "
+          "all of them: %r" % (_aglegacy,),
+          _leg_prev == 1 and _aglegacy["agents"]["old-b"] == 2
+          and _aglegacy["agents"]["old-a"] == 3
+          and _aglegacy["agentSeq"] == 3)
+    # THE SECOND DIRECTION, and it is the one that looks vacuous: a renumbering
+    # that ran on every pass would rewrite live positions into 1..N each time,
+    # collapsing the distance between writers and making every peer look like it
+    # acted in the same window as every other. Only this case fails on it.
+    _agseq = {"agents": {"aaa": 7, "bbb": 3}, "agentSeq": 7}
+    M.record_agent_pass(_agseq, "ccc")
+    check("ag17 ...and a map that ALREADY holds positions is left exactly as it "
+          "is, the new pass simply taking the next one: %r" % (_agseq,),
+          _agseq["agents"] == {"aaa": 7, "bbb": 3, "ccc": 8}
+          and _agseq["agentSeq"] == 8)
     # A clause that names some of the peers must say how many it did NOT, or the
     # count in front of the list and the list disagree about what the reader is
     # looking at. Counted rather than looked for: "a peer is named" is true both
@@ -1102,11 +1154,45 @@ def _cases(check):
     agd = tmp / "state-ag"
     agd.mkdir(parents=True, exist_ok=True)
 
+    # THE CLOCK IS HELD STILL FOR EVERY PASS BELOW, and that is the point rather
+    # than a convenience. What these cases assert is an ORDER - who passed through
+    # this hook between my previous look and this one - and while the order was
+    # kept as `time.time()` they asserted it through the platform's timer instead.
+    # On windows that clock advances on the system tick, so ag10, ag12 and ag13
+    # each held or dropped according to how much work happened to fall between
+    # two passes: green on a slow runner, red on a fast one. Freezing it removes
+    # scheduling from the fixture entirely, so a verdict here can only come from
+    # the pass order the product now keeps for itself. ag18 asserts the freeze
+    # actually held, because a freeze that quietly stopped would put the flake
+    # back and nothing else would notice.
+    _ag_instant = M._now()
+    _ag_seen = []
+    _ag_calls = []
+
     def _ag(sid, agent, *, command="python3 tools/gen.py", dirty=(), tool="Bash",
-            file_path=None):
-        return M.decide(payload(tool, sid=sid, command=command, agent=agent,
-                                file_path=file_path),
-                        cfg=cfg, state_dir=agd, dirty=list(dirty))
+            file_path=None, background=False):
+        # Counted OUT HERE and recorded IN THERE, which is what ties ag18 to the
+        # product rather than to the stub: `decide` reads the clock once per
+        # pass, so the two tallies agree only while the frozen clock is the one
+        # it actually read. A freeze that stopped being installed leaves this
+        # list empty beside a positive call count.
+        _ag_calls.append(sid)
+        _real_now = M._now
+
+        def _frozen():
+            # Records the value it RETURNS, not the value it meant to: recording
+            # one number and handing the product another is how a fixture ends up
+            # verifying itself instead of the run.
+            _ag_seen.append(_ag_instant)
+            return _ag_seen[-1]
+
+        M._now = _frozen
+        try:
+            return M.decide(payload(tool, sid=sid, command=command, agent=agent,
+                                    file_path=file_path, background=background),
+                            cfg=cfg, state_dir=agd, dirty=list(dirty))
+        finally:
+            M._now = _real_now
 
     s = "bw-ag"
     _ag(s, "agent-b", command="ls -la")               # B's previous look
@@ -1163,6 +1249,27 @@ def _cases(check):
           and "modified source file(s)" in _d_out
           and "CANNOT say the command wrote them" not in _d_out,
           repr((_v_out, _d_out)))
+    # ...and the freeze is confirmed from the PRODUCT's side, not the stub's. A
+    # backgrounded launch is the one path that makes `decide` write down the
+    # clock value it read, so `at` in the state file is what the hook actually
+    # received - a second place, independently arrived at. Comparing the stub's
+    # own record with itself would be the circular verification that costs a
+    # check its ability to fail, and it did: a stub rewritten to record one
+    # number and return another survived until this was added.
+    _ag("bw-ag6", "agent-clock", command="python3 tools/slow.py",
+        background=True)
+    with open(str(agd / "bash-writes-bw-ag6.json"), encoding="utf-8") as _fh:
+        _ag_saved = [row.get("at") for row
+                     in (json.load(_fh).get("bgLaunches") or [])]
+    check("ag18 ...and every verdict in this block was reached with the clock "
+          "HELD STILL, so the pass order is the only thing that moved. THE "
+          "PRECONDITION CASE: without it a freeze that stopped happening would "
+          "leave ag10, ag12 and ag13 deciding by scheduling again, which is how "
+          "they reached CI green on one machine and red on another. Read off "
+          "what the hook WROTE DOWN, so the fixture is not its own witness: %r"
+          % ((len(_ag_calls), len(set(_ag_seen)), _ag_saved == [_ag_instant]),),
+          _ag_calls and len(_ag_seen) == len(_ag_calls)
+          and len(set(_ag_seen)) == 1 and _ag_saved == [_ag_instant])
 
     # (os) THE STRUCTURAL HALF. A command that is not provably read-only used to
     # inherit EVERY path that appeared since the last snapshot, and this product

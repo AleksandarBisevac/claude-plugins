@@ -535,7 +535,12 @@ background job (no hook fires when one ends), a command that moved the shell wit
 a peer AGENT of this session. The last is the one nothing keyed by session can see — agents
 share a `session_id`, so they share the state file `_other_sessions` skips as `mine` — and
 `agents`, the writer map inside that file, is what makes them visible: each agent by its
-payload `agent_id`, the main agent (which carries none) under `MAIN_WRITER`.
+payload `agent_id`, the main agent (which carries none) under `MAIN_WRITER`. What it maps
+them to is a POSITION in the session's pass order, not a clock reading — "did that writer
+act between my previous look and this one" is a question about order, every pass being
+ordered writes this one file, and a wall clock answered it by the platform's timer
+granularity instead: on Windows consecutive passes of one session landed on the same value
+and the peer went unseen, so the withdrawal fired according to how fast the machine was.
 
 ### `plugins/audit/agents/` (v0.6.0, a fourth in v0.31.0)
 Four pinned-tool agents, three of which the commands spawn via `subagent_type` (with a

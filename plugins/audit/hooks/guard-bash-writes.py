@@ -60,7 +60,8 @@ peer session does. `writer_id` and `peer_agent_basis` hold that.
 State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
    "baselined": bool, "gitTimeout": bool, "otherTrees": [abs path...],
-   "bgLaunches": [{"program", "at"}...], "agents": {writer: epoch}}
+   "bgLaunches": [{"program", "at"}...], "agents": {writer: position},
+   "agentSeq": int}
   `otherTrees` is the ONLY key here that is not a repo-relative path, and the
   difference is load-bearing: every rel in this file is a path in the ONE tree
   this guard watches, which is what lets a sibling session's rels be read as
@@ -73,10 +74,14 @@ State: <stateDir>/bash-writes-<session_id>.json
   with the tree's pre-existing dirt (silently) — only dirt appearing after
   that baseline is ever attributed to a shell command.
   `agents` maps each WRITER inside this session — every agent by its `agent_id`,
-  the main agent under `MAIN_WRITER` — to when it last passed through this hook.
-  It is the one thing the file's mtime cannot say once a session has more than
-  one writer: the mtime then means "when anybody last looked", and the window a
-  pass covers starts at when THIS writer last looked.
+  the main agent under `MAIN_WRITER` — to WHERE its last pass through this hook
+  sits in this session's pass order, and `agentSeq` is the highest position
+  issued. A position and not a clock: the question is which pass came first, every
+  pass being ordered writes this one file, and a wall clock answered it by the
+  platform's timer granularity instead — consecutive passes tied on windows and
+  the peer went unseen. It is the one thing the file's mtime cannot say once a
+  session has more than one writer: the mtime then means "when anybody last
+  looked", and the window a pass covers starts at THIS writer's last look.
   Written for THIS session and read for every other one in the same stateDir
   (`_other_sessions`), which is what makes a second writer visible at all. The
   file's mtime is its own timestamp: no field had to be added for the SESSION
@@ -636,7 +641,7 @@ def default_state():
     therefore the exact key set `_save_state` writes, every time."""
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
             "gitTimeout": False, "otherTrees": [], "bgLaunches": [],
-            "agents": {}}
+            "agents": {}, "agentSeq": 0}
 
 
 def _state_file(state_dir, session_id):
@@ -655,7 +660,11 @@ def _load_state(state_dir, session_id):
                     "gitTimeout": bool(data.get("gitTimeout")),
                     "otherTrees": list(data.get("otherTrees") or []),
                     "bgLaunches": list(data.get("bgLaunches") or []),
-                    "agents": dict(data.get("agents") or {})}
+                    "agents": dict(data.get("agents") or {}),
+                    # Absent in a slot an older copy wrote, and 0 is the reading
+                    # that says so: no position has been issued in this file yet,
+                    # which is what `_sequenced` migrates on.
+                    "agentSeq": int(data.get("agentSeq") or 0)}
     except Exception:
         pass
     return default_state()
@@ -834,33 +843,90 @@ def writer_id(data):
     return ident[:40] or MAIN_WRITER
 
 
-def record_agent_pass(state, writer, now):
-    """Stamp this writer's pass. -> its PREVIOUS stamp, or None if it has none.
+def _sequenced(state):
+    """`agents` as pass POSITIONS, renumbering a map a clock-stamping build left.
 
-    The previous stamp is returned rather than left in the map because the map is
-    where it is about to be overwritten: "when did I last look at this tree" is
-    the far end of the window everything below became dirty in, and this pass is
-    the near end. `_state_mtime` cannot answer it any more once a session has more
-    than one writer - every agent's pass rewrites the one file, so the file's mtime
-    says when ANYBODY last looked.
+    A slot written before positions existed maps each writer to an epoch, which is
+    a vastly larger number than any position this file will ever issue - so a
+    session LIVE ACROSS AN UPGRADE would compare a fresh position against one, and
+    the comparison would answer by which build wrote the value rather than by who
+    acted first. One direction of that loses a withdrawal, which this file can
+    live with; the other NAMES A PEER THAT DID NOTHING, which is the over-fire
+    the whole withdrawal is guarded against. So the old values are not compared
+    with new ones at all: they are renumbered by their own order, which is the
+    one thing they were reliably good for.
 
-    Capped like `bgLaunches`, keeping the newest: a long session spawns agents
-    without limit, and an agent that finished long ago is the one whose stamp is
-    worth least. Dropping a stamp can only take evidence away, never manufacture
-    it - the direction that leaves the guard its voice.
+    "No position has ever been issued here" is what `agentSeq` of 0 says, and a
+    fresh session reaches this with an empty map, where renumbering is a no-op.
     """
     agents = dict(state.get("agents") or {})
+    if int(state.get("agentSeq") or 0) or not agents:
+        return agents
+    ordered = sorted(agents.items(), key=_position_of)
+    return dict((ident, pos) for pos, (ident, _was) in enumerate(ordered, 1))
+
+
+def record_agent_pass(state, writer):
+    """Stamp this writer's pass with its POSITION in this session's pass order.
+
+    -> its PREVIOUS position, or None if it has none
+
+    A SEQUENCE, NOT A CLOCK, AND THAT IS THE WHOLE OF THE REPAIR. The question
+    every reader of this map asks - "did that writer act between my previous look
+    and this one" - is an ORDERING question, and the passes being ordered all go
+    through this one file, so the file can answer it exactly. It used to be
+    answered with `time.time()`, and the answer was then a property of the
+    platform's timer: on windows that clock is `GetSystemTimeAsFileTime`, which
+    advances on the system tick rather than continuously, so consecutive passes
+    of one session landed on the SAME value and `peer > since` was false for a
+    peer that had plainly acted. That made the withdrawal fire or not fire by
+    scheduling - it held on a slow machine and dropped on a fast one - which is
+    worse than a rule that is simply wrong, because it cannot be reproduced.
+
+    THE CLOCK IS NOT REPLACED EVERYWHERE, ONLY WHERE ORDER IS THE QUESTION.
+    `background_basis` renders an AGE in whole minutes, which is a duration and
+    wants a clock; `_other_sessions` orders events across SEPARATE files written
+    by separate processes, where no counter can reach and the filesystem's mtime
+    is the only shared answer - and it already treats a tie as outside the window
+    for exactly the reason above. This map is the one place where every writer
+    being ordered shares a single file, so it is the one place that can be exact.
+
+    The previous position is returned rather than left in the map because the map
+    is where it is about to be overwritten: "when did I last look at this tree" is
+    the far end of the window everything below became dirty in, and this pass is
+    the near end. `_state_mtime` cannot answer it once a session has more than one
+    writer - every agent's pass rewrites the one file, so the mtime says when
+    ANYBODY last looked.
+
+    The next position is taken from the map as well as from `agentSeq` so the two
+    cannot drift into disagreeing: whatever a renumbering or a hand-edited file
+    left behind, the position issued here is above all of it.
+
+    Capped like `bgLaunches`, keeping the highest positions, which is exactly the
+    writers that passed most recently: a long session spawns agents without limit,
+    and an agent that finished long ago is the one whose position is worth least.
+    Dropping one can only take evidence away, never manufacture it - the direction
+    that leaves the guard its voice.
+    """
+    agents = _sequenced(state)
     prev = agents.get(writer)
-    agents[writer] = now
+    seq = max([int(state.get("agentSeq") or 0)]
+              + [_position_of(item) for item in agents.items()]) + 1
+    agents[writer] = seq
     if len(agents) > _AGENT_CAP:
-        newest = sorted(agents.items(), key=_stamp_of)[-_AGENT_CAP:]
+        newest = sorted(agents.items(), key=_position_of)[-_AGENT_CAP:]
         agents = dict(newest)
     state["agents"] = agents
+    state["agentSeq"] = seq
     return prev if isinstance(prev, (int, float)) else None
 
 
-def _stamp_of(item):
-    """The timestamp half of an `agents` item, for sorting. Never raises."""
+def _position_of(item):
+    """The position half of an `agents` item, for sorting. Never raises.
+
+    Tolerates a float because a slot an older copy wrote holds epochs until
+    `_sequenced` has renumbered it, and sorting is what that renumbering is by.
+    """
     return item[1] if isinstance(item[1], (int, float)) else 0.0
 
 
@@ -875,11 +941,17 @@ def peer_agent_basis(state, writer, since):
     because every agent of one session writes to one state file. The finding is
     still reported; only the authorship half comes off.
 
-    `since` is this writer's OWN previous stamp, so the question asked of a peer is
-    the one `_other_sessions` asks of a sibling session: did it act between my
+    `since` is this writer's OWN previous POSITION, so the question asked of a peer
+    is the one `_other_sessions` asks of a sibling session: did it act between my
     previous look at the tree and this one. A peer whose last pass predates that is
     outside the window and is not named - the direction that leaves the guard its
     voice.
+
+    STRICTLY GREATER, AND THE BOUNDARY IS THE POINT. A peer sitting exactly ON my
+    previous position did not act after it, so counting it would withdraw the claim
+    on the strength of a pass that had already happened when I last looked. Under
+    positions that boundary is reachable only through the residual below, and it is
+    the same tie `_other_sessions` resolves the same way and for the same reason.
 
     `since` of None is a writer that has never looked at this tree before, and the
     window it cannot bound is unbounded: every agent recorded here acted since a
@@ -887,9 +959,14 @@ def peer_agent_basis(state, writer, since):
     answer - an agent's first watched command has no previous snapshot of its own
     to have seen the tree clean in.
 
-    KNOWN RESIDUAL: the one file has concurrent writers, so two passes that overlap
-    can lose a stamp to last-write-wins, and the writer whose stamp was lost is not
-    named until its next pass. That loses a withdrawal, never invents one.
+    KNOWN RESIDUAL, UNCHANGED BY THE MOVE TO POSITIONS AND NOT CLAIMED TO BE: the
+    one file has concurrent writers, so two passes that overlap can both read the
+    same highest position and both issue the one after it. The writer whose write
+    lost then holds a position its peer also holds, and neither is inside the
+    other's window until its next pass. That loses a withdrawal, never invents one -
+    the same direction, and the same size, as the last-write-wins residual the
+    clock had. What the positions remove is the case where NOTHING overlapped and
+    the answer still came out wrong.
     """
     peers = []
     for ident, stamp in (state.get("agents") or {}).items():
@@ -1041,8 +1118,10 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     session_id = str(data.get("session_id", "") or "no-session")
     state = _load_state(sd, session_id)
 
-    # WHICH WRITER INSIDE THE SESSION, stamped before either branch runs and read
-    # back as `since_writer` - this writer's PREVIOUS look at the tree. Both
+    # WHICH WRITER INSIDE THE SESSION, given its POSITION in this session's pass
+    # order before either branch runs and read back as `since_writer` - this
+    # writer's PREVIOUS look at the tree. `now` is not passed: a position is not a
+    # time, and the clock below serves `bgLaunches`, whose question is an age. Both
     # branches stamp because both prove the same thing: an agent that spent the
     # window in the edit tools is as live as one that spent it in the shell, and
     # the shell write nobody can account for is the one its `toolEdited` rows do
@@ -1050,7 +1129,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # persists anything saves it with the rest of the state.
     now = _now()
     writer = writer_id(data)
-    since_writer = record_agent_pass(state, writer, now)
+    since_writer = record_agent_pass(state, writer)
 
     # branch 1: remember files edited through the gated tools
     if tool in _EDIT_TOOLS:
