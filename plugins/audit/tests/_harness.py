@@ -64,7 +64,15 @@ which of 90 cases were already green. `run()` puts the body inside a try, so an 
 becomes one more failing case, the cases already recorded still print, and the traceback
 still names the line. `attempt()` is the finer-grained half, for a case that must not abort
 the rest of the suite - `remind-tdd`'s selftest already hand-rolled exactly that guard
-(`except Exception as exc: verdict = "EXC:%s" % exc`) and now borrows it.
+(`except Exception as exc: verdict = "EXC:%s" % exc`) and now borrows it. `stage()` sits
+between the two, for a BLOCK of cases whose fixture may raise before any of them is
+reached; `skip()` is the other way a case can fail to run, and the one that has to say so
+out loud - see each for why.
+
+A SUITE RUNS ON MORE THAN ONE PLATFORM, WHICH IS WHERE BOTH OF THOSE COME FROM. CI runs
+these files on ubuntu, macos and windows, and a mechanism a case needs may exist on some
+of them and not others. `skip()` is how a case says which, and it is graded on evidence
+read the way the product reads it rather than on the platform's name.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -220,6 +228,66 @@ def attempt(fn, *args, **kwargs):
         return True, fn(*args, **kwargs)
     except Exception as exc:                                   # noqa: BLE001
         return False, "%s: %s" % (type(exc).__name__, exc)
+
+
+def stage(check, label, fn):
+    """Run `fn(check)` so an escape becomes ONE NAMED failing case and the rest of
+    the body still runs. True when `fn` returned normally.
+
+    THE THIRD GRANULARITY, AND THE HOLE THE OTHER TWO LEAVE BETWEEN THEM. `run()`
+    guards the WHOLE body: the escape is recorded, but every case after it is lost
+    and the report cannot say which block was at fault. `attempt()` guards ONE
+    CALL, which only helps a case whose author already knew that call could raise.
+    Neither covers the failure this exists for - a block of cases whose FIXTURE
+    raised while it was being BUILT, before any of its `check()` calls were
+    reached. That is what happened on the windows leg: a directory the fixture
+    expected was never created, `os.listdir` raised, and the escape took every
+    case after it out of the run while naming none of them.
+
+    The label is the BLOCK's rather than a case's, and it leads with an identifier
+    for the same reason every case label does: `tools/prove-gates.py` credits a
+    mutation to that token, so a block that raises has to be nameable too.
+
+    The traceback still goes to stderr, exactly as `run()` prints one, because the
+    line that raised is the whole diagnosis and a message alone cannot carry it.
+    """
+    try:
+        fn(check)
+        return True
+    except Exception as exc:                                   # noqa: BLE001
+        traceback.print_exc()
+        check("%s RAISED WHILE ITS CASES WERE BEING BUILT - the cases in THIS "
+              "block did not run; every later block did" % (label,), False,
+              "%s: %s" % (type(exc).__name__, exc))
+        return False
+
+
+def skip(check, label, mechanism, absent):
+    """Record `label` as a case that did NOT run here, and say why - as a case.
+
+    A SKIP IS A CLAIM ABOUT THE PLATFORM, so it is graded like one. `absent` is the
+    evidence that the mechanism this case needs is missing, and it is read the way
+    the PRODUCT reads it - `hasattr(os, "killpg")` and its neighbours - never off
+    `sys.platform`, because the product does not branch on `sys.platform` either.
+    A test that guessed the platform by name could be right about the name and
+    wrong about the mechanism, and the mechanism is what the case needed.
+
+    WHEN `absent` IS FALSE THIS IS A FAILURE, and that direction is the entire
+    reason the helper exists rather than an `if` around the cases. Something was
+    skipped on a machine that could have run it: the case asserted nothing, and
+    the sentence explaining why it was allowed to assert nothing is untrue. An
+    `if` would have printed no line at all, and a suite that quietly stops
+    asserting on one platform is the silent pass this repository is arranged
+    against.
+
+    The identifier stays at the FRONT of the label so the case keeps its name
+    across platforms - `prove-gates.py` attributes by that token, and a skipped
+    `lc10` that renamed itself would be a different case to every reader and every
+    tool that reads the report.
+    """
+    check("%s SKIPPED HERE - %s" % (label, mechanism), bool(absent),
+          "skipped on a platform that HAS this mechanism, so the case asserted "
+          "nothing and the reason printed for skipping it is false")
 
 
 def module_source(mod):
@@ -636,6 +704,60 @@ def _cases(check):
     ok_kw, kw = attempt(dict, a=1)
     check("t4 attempt() forwards keyword arguments, not only positional ones",
           ok_kw is True and kw == {"a": 1})
+
+    # -- stage(): a BLOCK that raises while being built ------------------------
+    def _blocks(c):
+        c("y1 a case before the block", True)
+
+        def _explodes(inner):
+            inner("y2 a case the block DID reach", True)
+            raise FileNotFoundError("no such fixture directory")
+
+        stage(c, "y3 the block", _explodes)
+        c("y4 a case AFTER the block, which is the whole point", True)
+
+    out_st, code_st = _quiet_stderr(_capture, run, _blocks)
+    _st = _labels(out_st)
+    check("bk1 a block that raises does not take the cases AFTER it with it - this "
+          "is the failure the windows leg hit, and the case that fails if stage() "
+          "goes back to letting the escape reach run(): %r" % (_st,),
+          any(lb.startswith("y4 ") for lb in _st))
+    check("bk2 ...and the cases the block DID reach before raising are kept, so a "
+          "block is not all-or-nothing either",
+          any(lb.startswith("y2 ") for lb in _st))
+    check("bk3 ...and the escape is a FAILING case carrying the block's own label "
+          "and the exception type, rather than a generic one from run()",
+          "FAIL y3 the block RAISED WHILE ITS CASES WERE BEING BUILT" in out_st
+          and "FileNotFoundError: no such fixture directory" in out_st)
+    check("bk4 ...so the suite still exits 1. The direction that fails if stage() "
+          "ever records the escape as anything but a failure", code_st == 1)
+    _kept = []
+    _ok_st = stage(lambda *a: _kept.append(a), "y5 the block",
+                   lambda c: c("y6", True))
+    check("bk5 SECOND DIRECTION, and it is the one that looks vacuous: a block that "
+          "returns normally records NO extra case and answers True. It passes on a "
+          "stage() that never guards anything, and it is the only case that fails "
+          "when the guard becomes unconditional: %r" % (_kept,),
+          _ok_st is True and len(_kept) == 1 and _kept[0][0] == "y6")
+
+    # -- skip(): a case that did not run, said out loud ------------------------
+    _sk = []
+    skip(lambda *a: _sk.append(a), "y7", "no `os.killpg` here", True)
+    check("bk6 skip() records a PASSING case whose label still leads with the "
+          "case's own identifier, so the case keeps its name across platforms and "
+          "prove-gates.py can still attribute it: %r" % (_sk,),
+          len(_sk) == 1 and _sk[0][1] is True
+          and case_id(_sk[0][0]) == "y7")
+    check("bk7 ...and the line SAYS it was skipped and why, because a skip a reader "
+          "cannot see in the report is a case that quietly stopped asserting",
+          "SKIPPED HERE" in _sk[0][0] and "no `os.killpg` here" in _sk[0][0])
+    _sk2 = []
+    skip(lambda *a: _sk2.append(a), "y8", "no `os.killpg` here", False)
+    check("bk8 THE DIRECTION THAT MAKES IT A CHECK AND NOT AN `if`: a skip taken "
+          "where the mechanism IS present is a FAILING case. Mutation-proved by "
+          "calling it with the evidence this platform actually reports - a skip "
+          "that fires on posix has to go red: %r" % (_sk2,),
+          len(_sk2) == 1 and _sk2[0][1] is False and _sk2[0][2])
 
     # -- the label extractor the migration proof leans on ----------------------
     check("l1 _labels() recovers the labels a report printed, and nothing else - "

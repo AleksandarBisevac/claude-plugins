@@ -36,6 +36,134 @@ import _journal_io                                 # noqa: E402  (the rows a sta
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 
+# --- which half of a platform split a case may assert -------------------------
+# READ THE WAY THE PRODUCT READS IT, never off `sys.platform`. `_tear_down`
+# branches on `os.killpg`, `shares_our_group` calls `os.getpgid`, and `_shell`
+# hands an interrupt to whatever `os.kill` does here - so those names, and not a
+# platform's name, are what decides which side of a split exists on this machine.
+# A case that guessed by platform name could be right about the name and wrong
+# about the mechanism, and the mechanism is the thing it needed.
+#
+# ONE CONSTANT, NOT THREE. `os.getpgid` gets no constant here on purpose: the
+# skips are graded on a fresh `hasattr` rather than on whatever the `if` above
+# them read, so a name kept for both jobs would have made the grade circular -
+# `console_events()` carries that reasoning in full.
+HAS_KILLPG = hasattr(os, "killpg")
+# `os.kill(pid, SIGINT)` is an INTERRUPT only where signals are real. Where
+# `signal.CTRL_C_EVENT` exists, python documents `os.kill` as generating a
+# console-control event for that value and for CTRL_BREAK_EVENT, and as
+# terminating the target through TerminateProcess for ANY OTHER value - SIGINT
+# among them. A case that must interrupt a child rather than kill it needs this.
+SENDS_REAL_SIGNALS = not hasattr(signal, "CTRL_C_EVENT")
+
+
+def console_events():
+    """The values `os.kill` delivers as console-control events here; () on posix.
+
+    THE EVIDENCE BEHIND THE SKIP, COMPUTED A SECOND TIME ON PURPOSE. A skip is
+    graded on whether the mechanism it names is really missing, and grading it on
+    the very constant the `if` above it read would compare a value with itself:
+    the branch could not be taken unless the evidence already said yes, so the
+    grade could never be anything but a pass. Two reads is the floor for a check
+    that has to be able to fail, and the second one is this - which also asks the
+    question one step more sharply than the constant does, by naming SIGINT.
+    """
+    return tuple(v for v in (getattr(signal, "CTRL_C_EVENT", None),
+                             getattr(signal, "CTRL_BREAK_EVENT", None))
+                 if v is not None)
+
+# The step a process-tree case runs, as a SCRIPT rather than as shell syntax.
+# `sleep 30 & echo $! > f; sleep 30` is three things `cmd.exe` does not have, so
+# on the windows leg the step exited immediately, no grandchild was ever started,
+# and the case reported a teardown it had never exercised. One command with no
+# operators in it is the same command on both platforms, and it builds the same
+# shape either way: the shell starts this helper, this helper starts a
+# grandchild, and the narrow kill `_tear_down` exists to replace reaches neither.
+#
+# THE GRANDCHILD IS MEASURED BY WHAT IT WRITES. The harm has always been stated
+# as "a survivor keeps writing into the tree the gate is about to describe", so
+# the file it is writing is the honest instrument - and a pid probe is not one
+# here anyway: `os.kill(pid, 0)` on windows is a console-control event that takes
+# a process GROUP id, and a grandchild leads no group.
+CHILD_SOURCE = """\
+import os
+import subprocess
+import sys
+import time
+
+MODE = sys.argv[1]
+BEAT = sys.argv[2]
+
+if MODE == "beat":
+    while True:
+        fh = open(BEAT, "a")
+        fh.write("x")
+        fh.close()
+        time.sleep(0.05)
+elif MODE == "stall":
+    sys.stdout.write("marker\\n")
+    sys.stdout.flush()
+    time.sleep(30)
+else:
+    kid = subprocess.Popen([sys.executable, sys.argv[0], "beat", BEAT])
+    fh = open(sys.argv[3], "w")
+    fh.write("%d %d" % (os.getpid(), kid.pid))
+    fh.close()
+    time.sleep(30)
+"""
+
+# Long enough for two interpreters to start on the slowest leg, short enough that
+# the case is not the reason the suite takes as long as it does.
+TREE_TIMEOUT = 5
+
+
+def _step(python, script, *args):
+    """One gate step that runs `script` and nothing else - quoted, no operators.
+
+    `shell=True` is the product's, not this file's: `_shell` always goes through a
+    shell, so the string still has to survive one. Quoting each path is what makes
+    that survivable on both - `cmd.exe` and `sh` agree about a double-quoted word
+    and agree about nothing else here.
+    """
+    return " ".join('"%s"' % (part,) for part in (python, script) + args)
+
+
+def _written(path):
+    """How many bytes the survivor has written, or -1 when it never started.
+
+    -1 rather than 0, because "the file is not there" and "the file is there and
+    empty" are different findings and a case that merged them could not tell a
+    grandchild that died from one that was never spawned.
+    """
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return -1
+
+
+def _pids_in(path):
+    """The pids the helper recorded, or [] when it never got that far."""
+    try:
+        with open(path) as fh:
+            return [int(tok) for tok in fh.read().split()]
+    except Exception:                                          # noqa: BLE001
+        return []
+
+
+def _force_kill(pid):
+    """Best-effort removal of a survivor. CLEANUP, never an assertion.
+
+    Spelled per platform because there is no spelling that names a PID on both:
+    `signal.SIGKILL` does not exist on windows, and `os.kill` there takes a
+    process GROUP id for the two values it accepts at all.
+    """
+    if HAS_KILLPG:
+        _harness.attempt(os.kill, pid, signal.SIGKILL)
+    else:
+        _harness.attempt(subprocess.run,
+                         ["taskkill", "/F", "/PID", str(pid)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def _recorded_rows(directory):
     """Every row in the evidence directory, in the order they landed.
@@ -507,85 +635,201 @@ def _cases(check):
     # --- the REAL runner, against a real process tree ----------------------
     # The one case that cannot be written with a fixture: `subprocess.run`'s own
     # timeout kills the direct child, and with `shell=True` that child is the
-    # shell. A backgrounded grandchild outlives it, keeps writing, and is exactly
-    # what makes the after-snapshot a race. Proven by PID, not by prose.
-    pidfile = os.path.join(tmp, "grandchild.pid")
+    # shell. A grandchild outlives it, keeps writing, and is exactly what makes
+    # the after-snapshot a race. Proven by what the survivor WRITES, not by prose
+    # and not by a pid probe - `CHILD_SOURCE` carries why.
+    #
+    # ITS OWN ROOT, because the survivor is writing a file for as long as the
+    # teardown fails to stop it, and `tmp` is the git fixture several later cases
+    # take a `git status --porcelain` of.
+    treeroot = _harness.fixture_root("run-test-gate-tree-")
+    helper = os.path.join(treeroot, "child_helper.py")
+    with open(helper, "w") as fh:
+        fh.write(CHILD_SOURCE)
+    beat = os.path.join(treeroot, "beat.txt")
+    pidpath = os.path.join(treeroot, "pids.txt")
     code, text, facts = M._shell(
-        tmp, "sleep 30 & echo $! > %s; sleep 30" % (pidfile,), timeout=2)
-    child_pid = None
-    try:
-        with open(pidfile) as fh:
-            child_pid = int(fh.read().strip())
-    except Exception:
-        child_pid = None
-    alive = None
-    if child_pid:
-        import time as _t
-        _t.sleep(0.4)
-        try:
-            os.kill(child_pid, 0)
-            alive = True
-        except OSError:
-            alive = False
-        if alive:
-            try:
-                os.kill(child_pid, 9)
-            except OSError:
-                pass
+        treeroot, _step(sys.executable, helper, "spawn", beat, pidpath),
+        timeout=TREE_TIMEOUT)
+    # Sampled TWICE, after the teardown and half a second apart. One sample can
+    # only say the grandchild ran; two say whether it is still running, which is
+    # the question. The first also has to be positive: a grandchild that never
+    # started writes nothing, and "nothing was written" would otherwise read
+    # exactly like "the teardown worked".
+    tree_pids = _pids_in(pidpath)
+    time.sleep(0.5)
+    wrote = _written(beat)
+    time.sleep(0.5)
+    wrote_later = _written(beat)
+    if wrote_later != wrote:
+        for _pid in tree_pids:
+            _force_kill(_pid)
     # The guard the mutation battery found, covered WITHOUT the suite ever
     # signalling its own group. An earlier case called the real `_tear_down` on a
     # same-group child; with the guard defeated that killpg reaches this runner,
     # so the suite DIED instead of going red - detection of the worst kind, since
     # a dead suite reads as infrastructure trouble. The decision and its use site
     # are covered separately below, and neither can take this process with it.
-    plain = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    detached = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, start_new_session=True)
-    try:
-        check("lc11 the predicate tells the two apart: a child of our own group "
-              "WOULD signal us, one given its own session would not. Both ends "
-              "asserted, because a predicate stuck at either constant is half "
-              "right and wholly useless: same=%r detached=%r"
-              % (M.shares_our_group(plain.pid), M.shares_our_group(detached.pid)),
-              M.shares_our_group(plain.pid) is True
-              and M.shares_our_group(detached.pid) is False)
-        check("lc12 ...and an unanswerable pid is True, the SAFE direction: not "
-              "knowing whether we would hit ourselves must never read as "
-              "permission to aim at the group",
-              M.shares_our_group(-1) is True)
-
-        real = M.shares_our_group
+    #
+    # THE PREDICATE IS THE ONE THING HERE THAT IS GENUINELY HALF A SPLIT.
+    # `shares_our_group` calls `os.getpgid`, which exists on posix and nowhere
+    # else; on a platform without it every call raises, the `except` returns True,
+    # and `_tear_down` never asks - it took the `taskkill` arm two lines earlier.
+    # So the two halves are asserted separately and each says which platform it
+    # is about, rather than one of them being softened until it passes on both.
+    # Each skip below is GRADED on a fresh `hasattr`, not on the constant the
+    # `if` read - see `console_events()` for why a skip graded on its own branch
+    # condition is a check that cannot fail.
+    #
+    # THE SPLIT IS TAKEN ON `os.killpg`, WHICH IS THE EXPRESSION `_tear_down`
+    # ITSELF BRANCHES ON, and that is a safety property and not a tidiness one.
+    # The windows arm below calls `_tear_down` with the predicate forced FALSE,
+    # which on posix is the spelling that reaches `os.killpg` on a child sharing
+    # this runner's group - the call that once killed the suite mid-run. Reading
+    # the same name the product reads makes that call unreachable there rather
+    # than merely unlikely. Each case still declares the mechanism IT needs, so a
+    # platform where the two names came apart is reported and not assumed.
+    if HAS_KILLPG:
+        plain = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+        detached = subprocess.Popen("sleep 30", shell=True, cwd=tmp,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    start_new_session=True)
         try:
-            M.shares_our_group = lambda _pid: True
-            narrow = M._tear_down(detached)
-        finally:
-            M.shares_our_group = real
-        check("lc13 ...and `_tear_down` READS it: told the child shares our "
-              "group, it takes the narrow kill and reports UNCONFIRMED, even "
-              "though this child had a session of its own. The use site, "
-              "covered by swapping the name rather than by signalling "
-              "ourselves - `test__journal_io` uses the same seam: %r" % (narrow,),
-              narrow is False and detached.returncode is not None)
-    finally:
-        for proc in (plain, detached):
-            if proc.poll() is None:
-                proc.kill()
-            try:
-                proc.communicate(timeout=5)
-            except Exception:
-                pass
+            check("lc11 the predicate tells the two apart: a child of our own "
+                  "group WOULD signal us, one given its own session would not. "
+                  "Both ends asserted, because a predicate stuck at either "
+                  "constant is half right and wholly useless: same=%r detached=%r"
+                  % (M.shares_our_group(plain.pid),
+                     M.shares_our_group(detached.pid)),
+                  M.shares_our_group(plain.pid) is True
+                  and M.shares_our_group(detached.pid) is False)
+            check("lc12 ...and an unanswerable pid is True, the SAFE direction: "
+                  "not knowing whether we would hit ourselves must never read as "
+                  "permission to aim at the group",
+                  M.shares_our_group(-1) is True)
 
-    check("lc10 THE FAULT: the real runner tears down the process GROUP, so a "
-          "backgrounded grandchild does not outlive the timeout. "
-          "`subprocess.run(timeout=)` kills the shell alone and leaves this pid "
+            real = M.shares_our_group
+            try:
+                M.shares_our_group = lambda _pid: True
+                narrow = M._tear_down(detached)
+            finally:
+                M.shares_our_group = real
+            check("lc13 ...and `_tear_down` READS it: told the child shares our "
+                  "group, it takes the narrow kill and reports UNCONFIRMED, even "
+                  "though this child had a session of its own. The use site, "
+                  "covered by swapping the name rather than by signalling "
+                  "ourselves - `test__journal_io` uses the same seam: %r"
+                  % (narrow,),
+                  narrow is False and detached.returncode is not None)
+        finally:
+            for proc in (plain, detached):
+                if proc.poll() is None:
+                    proc.kill()
+                try:
+                    proc.communicate(timeout=5)
+                except Exception:
+                    pass
+        _harness.skip(check, "lc11w",
+                      "the constant this asserts is what a platform with no "
+                      "`os.getpgid` reports, and this one HAS it - lc11 and "
+                      "lc12 assert the answering predicate instead",
+                      hasattr(os, "getpgid"))
+        _harness.skip(check, "lc13w",
+                      "`_tear_down` reads the predicate here, which is lc13; "
+                      "the arm that ignores it is the one guarded by "
+                      "`hasattr(os, \"killpg\")` being false",
+                      hasattr(os, "killpg"))
+    else:
+        _harness.skip(check, "lc11",
+                      "no `os.getpgid`, so `shares_our_group` cannot answer the "
+                      "question this case puts to it and returns its safe "
+                      "constant for every pid - lc11w asserts that constant",
+                      not hasattr(os, "getpgid"))
+        _harness.skip(check, "lc12",
+                      "no `os.getpgid`, so EVERY pid takes the same `except` and "
+                      "an unanswerable one is indistinguishable from the rest - "
+                      "the case would pass while separating nothing",
+                      not hasattr(os, "getpgid"))
+        _harness.skip(check, "lc13",
+                      "no `os.killpg`, so `_tear_down` never reaches the branch "
+                      "that reads the predicate - lc13w asserts the arm it "
+                      "reaches instead",
+                      not hasattr(os, "killpg"))
+        # Through `_step`, like every other command here: it is the one spelling
+        # already known to survive both shells, and `sys.executable` is not
+        # guaranteed to be a path without a space in it.
+        _stall = _step(sys.executable, helper, "stall", beat)
+        detached = subprocess.Popen(_stall, shell=True, cwd=tmp,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+        ignored = subprocess.Popen(_stall, shell=True, cwd=tmp,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        try:
+            check("lc11w the predicate is the SAFE CONSTANT here, for every pid "
+                  "including our own: with no `os.getpgid` there is no question "
+                  "it can answer, and True is 'do not aim at the group'. This is "
+                  "the platform half of lc11, and it is only honest beside "
+                  "lc13w - a constant nobody reads: same=%r detached=%r own=%r"
+                  % (M.shares_our_group(detached.pid),
+                     M.shares_our_group(ignored.pid),
+                     M.shares_our_group(os.getpid())),
+                  M.shares_our_group(detached.pid) is True
+                  and M.shares_our_group(ignored.pid) is True
+                  and M.shares_our_group(os.getpid()) is True
+                  and M.shares_our_group(-1) is True)
+
+            real = M.shares_our_group
+            try:
+                M.shares_our_group = lambda _pid: True
+                forced_true = M._tear_down(detached)
+                M.shares_our_group = lambda _pid: False
+                forced_false = M._tear_down(ignored)
+            finally:
+                M.shares_our_group = real
+            _harness.attempt(detached.wait, 10)
+            _harness.attempt(ignored.wait, 10)
+            check("lc13w ...and `_tear_down` does NOT read it here: swung to "
+                  "both constants it gives the same answer, because the arm it "
+                  "takes is `taskkill /T /F` and that arm is chosen before the "
+                  "predicate is mentioned. Asserted as INVARIANCE plus a dead "
+                  "child, so an arm that answered False for a kill that never "
+                  "happened could not pass it: told-true=%r told-false=%r "
+                  "rc=%r %r" % (forced_true, forced_false,
+                                detached.returncode, ignored.returncode),
+                  forced_true == forced_false
+                  and detached.returncode is not None
+                  and ignored.returncode is not None)
+        finally:
+            for proc in (detached, ignored):
+                if proc.poll() is None:
+                    proc.kill()
+                try:
+                    proc.communicate(timeout=5)
+                except Exception:
+                    pass
+
+    check("lc10 THE FAULT: the real runner tears down the whole process tree, so "
+          "a grandchild the step started does not outlive the timeout. "
+          "`subprocess.run(timeout=)` kills the shell alone and leaves it "
           "running - and a survivor keeps writing into the tree the gate is "
-          "about to describe: pid=%r alive_after=%r" % (child_pid, alive),
+          "about to describe. Whichever teardown this platform has is the one "
+          "under test, because `_tear_down` picks it the same way this file "
+          "does: pids=%r outcome=%r wrote=%r then=%r"
+          % (tree_pids, facts.get("outcome"), wrote, wrote_later),
           facts.get("outcome") == M.TIMED_OUT
-          and child_pid is not None and alive is False)
-    if os.path.exists(pidfile):
-        os.remove(pidfile)
+          and len(tree_pids) == 2 and wrote > 0 and wrote_later == wrote)
+    check("lc10b ...and the teardown was CONFIRMED, which is the return value "
+          "and not the silence around it. `_tear_down` answers False for a kill "
+          "it could not account for and the row then says `unconfirmed`, so a "
+          "run whose facts carry no teardown key is the one claiming a clean "
+          "stop. This is the half that reaches the platform's own arm - killpg "
+          "returning, or taskkill exiting 0: %r" % (facts,),
+          facts.get("outcome") == M.TIMED_OUT
+          and facts.get("teardown") is None)
 
     # --- the real runner's other two answers -------------------------------
     code, text, facts = M._shell(os.path.join(tmp, "no-such-dir"), "true")
@@ -596,14 +840,20 @@ def _cases(check):
           facts.get("outcome") == M.CANNOT_RUN and code == 127
           and "could not run" in text)
 
-    code, text, facts = M._shell(tmp, "echo marker; sleep 30", timeout=2)
+    # `echo marker; sleep 30` was two things `cmd.exe` does not read as two
+    # commands, so on the windows leg this step printed the whole string and
+    # exited - and the case went red about a drain that had nothing to drain.
+    # The guarantee is not platform-split, only its spelling was.
+    code, text, facts = M._shell(
+        treeroot, _step(sys.executable, helper, "stall", beat),
+        timeout=TREE_TIMEOUT)
     check("lc15 ...and a timed-out step still returns what the child had "
           "already written. The drain runs AFTER the kill, never instead of it: "
           "a timed-out child is often blocked on a full pipe, so reading first "
           "would wait on a process nothing is going to stop: %r"
           % ((text.strip()[:24], facts.get("timeoutSeconds")),),
           facts.get("outcome") == M.TIMED_OUT and "marker" in text
-          and facts.get("timeoutSeconds") == 2)
+          and facts.get("timeoutSeconds") == TREE_TIMEOUT)
 
     res_127 = M.run_gate(tmp, [("x", "definitely-not-a-real-binary-xyz")])
     check("lc16 THE LIMIT, PINNED: a MISSING BINARY under `shell=True` is "
@@ -1314,6 +1564,51 @@ def _cases(check):
           restored == signal.SIG_DFL)
 
     # --- a REAL signal, through a real process tree -------------------------
+    # THE MECHANISM, NOT THE PLATFORM'S NAME, IS WHAT DECIDES. These cases put
+    # the one question the `runner` seam cannot: whether a signal SENT TO THIS
+    # PROGRAM arrives at `run_gate` as an interrupt. Sending it needs `os.kill`
+    # to be signal delivery, and where `signal.CTRL_C_EVENT` exists it is not:
+    # python documents `os.kill` there as generating a console-control event for
+    # that value and CTRL_BREAK_EVENT, and as terminating the target through
+    # TerminateProcess for every other value - so `os.kill(child, SIGINT)` would
+    # KILL the run rather than interrupt it, and there would be no interrupted
+    # run to record. CTRL_BREAK is not the way round it either: it reaches the
+    # child as SIGBREAK, which `main` does not arm and cannot, since the row it
+    # writes is the row a SIGINT and a SIGTERM produce.
+    #
+    # So the cases skip, and say so. Weakening them into something that passes
+    # on both would mean asserting a `cancelled` row nothing cancelled.
+    if SENDS_REAL_SIGNALS:
+        _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
+    else:
+        for _id, _asserts in (
+                ("is1", "a real SIGINT mid-step lands a `cancelled` row"),
+                ("is2", "the row carries the step that finished"),
+                ("is3", "`treeMutated` is null with the race named"),
+                ("is4", "the torn-down group takes the grandchild with it"),
+                ("is5", "the process exits saying it was cancelled"),
+                ("is6", "nothing was committed while stopping"),
+                ("is7", "the plan pointer names the cancelled run")):
+            _harness.skip(
+                check, _id,
+                "%s - and no signal can be DELIVERED to a child here: `os.kill` "
+                "terminates the target for every value but the two console "
+                "events, so there would be no interrupted run to look at"
+                % (_asserts,),
+                console_events() and signal.SIGINT not in console_events())
+
+def _interrupt_cases(check):
+    """The cases that need a real signal delivered to a real child.
+
+    A FUNCTION SO THE BLOCK CAN BE NAMED. It is run through `_harness.stage`,
+    which turns an escape while the fixture is being BUILT into one failing case
+    carrying this block's label instead of an escape that ends the suite. That is
+    not hypothetical here: on the windows leg the gate step was posix shell, the
+    run never reached the point of writing an evidence directory, and reading it
+    raised - taking every case after this block out of the run and naming none of
+    them.
+    """
+    # --- a REAL signal, through a real process tree -------------------------
     # THE CASE THAT CANNOT BE WRITTEN WITH A FIXTURE. Every case above drives the
     # `runner` seam, which proves the decision and nothing about delivery: whether
     # a signal sent to this program actually reaches `run_gate` as an interrupt,
@@ -1446,6 +1741,7 @@ def _cases(check):
           (shard_sig.get("testEvidence") or {}).get("status") == M.CANCELLED
           and (shard_sig.get("testEvidence") or {}).get("runId")
           == sig_row.get("runId"))
+
 
 def _selftest():
     return _harness.run(_cases)

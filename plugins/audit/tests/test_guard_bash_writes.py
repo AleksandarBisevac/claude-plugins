@@ -668,6 +668,8 @@ def _cases(check):
     _detail_wt = ""
     _wt_ok = _wt_named = _wt_own = _wt_once = _wt_ro = _wt_sep = False
     _cd_out = _cd_in = _cd_blind = _cd_sub = _cd_arg = False
+    _cd_literal_ok = False
+    _cd_literals = []
     wta = tmp / "wt-primary"
     (wta / "src").mkdir(parents=True, exist_ok=True)
     plant_plan(wta)
@@ -687,6 +689,32 @@ def _cases(check):
         wtsep.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "init", "-q"], cwd=str(wtsep), check=True,
                        capture_output=True, timeout=20)
+
+        # THE `cd` TARGETS ARE RELATIVE, AND SPELLED WITH FORWARD SLASHES.
+        # These cases used to paste the fixture's ABSOLUTE path into the command
+        # text, which smuggled two properties of the machine's temp directory
+        # into the thing under test, and on the windows leg both bit at once.
+        # The guard tokenizes with `shlex(posix=True)`, where a backslash is an
+        # ESCAPE - so a native windows path arrives with its separators eaten -
+        # and that runner's temp directory is `...\RUNNER~1\...`, whose `~` is
+        # one of `_UNRESOLVED_MARKS`. wt7 and wt9 therefore both took the
+        # "cannot tell where to" branch: wt7 asserting the wrong withdrawal, wt9
+        # asserting no withdrawal at all. wt10 went GREEN through that same
+        # wrong branch, which is worse, because its assertion never named which
+        # withdrawal it expected - it is tightened below for exactly that.
+        #
+        # A relative literal is a literal path, which is all the branch under
+        # test asks for, and it is the same string on both platforms. Forward
+        # slashes because the payload this hook reads carries a BASH command
+        # line on every platform, and that is how one spells a path.
+        _to_linked = os.path.relpath(str(wtb), str(wta)).replace(os.sep, "/")
+        _to_inside = os.path.relpath(str(wta / "src"),
+                                     str(wta)).replace(os.sep, "/")
+        _cd_literals = [_to_linked, _to_inside]
+        _cd_literal_ok = not any(
+            mark in literal
+            for literal in _cd_literals
+            for mark in tuple(M._UNRESOLVED_MARKS) + ("\\",))
 
         def _wt(sid, cwd, command="python3 tools/gen.py"):
             return M.decide({"tool_name": "Bash",
@@ -748,7 +776,7 @@ def _cases(check):
         (wta / "src" / "walked.ts").write_text("export const w=1\n",
                                                encoding="utf-8")
         _v5, _d5 = _wt("bw-cd", wta,
-                       command="cd %s && python3 tools/gen.py" % wtb)
+                       command="cd %s && python3 tools/gen.py" % (_to_linked,))
         # The FINDING survives and only the AUTHORSHIP claim goes: the file is
         # still named, so this is not the guard going quiet. Counted rather than
         # found - the pre-fix notice names the path exactly once too, so presence
@@ -777,7 +805,7 @@ def _cases(check):
         (wta / "src" / "stayed.ts").write_text("export const s=1\n",
                                                encoding="utf-8")
         _v7, _d7 = _wt("bw-cdin", wta,
-                       command="cd %s && python3 tools/gen.py" % (wta / "src"))
+                       command="cd %s && python3 tools/gen.py" % (_to_inside,))
         _cd_in = (_v7 == "warn" and "src/stayed.ts" in _d7
                   and "modified source file(s)" in _d7)
         # A subshell is the other spelling of the same walk, and the shell it
@@ -788,9 +816,16 @@ def _cases(check):
         (wta / "src" / "subshell.ts").write_text("export const q=1\n",
                                                  encoding="utf-8")
         _v8, _d8 = _wt("bw-cdsub", wta,
-                       command="(cd %s && python3 tools/gen.py)" % wtb)
+                       command="(cd %s && python3 tools/gen.py)"
+                               % (_to_linked,))
+        # NAMES THE WITHDRAWAL, not merely that one happened. Without the second
+        # phrase this case passed on the windows leg through the "cannot tell
+        # where to" branch, which is the branch wt8 exists for - so the `(`
+        # handling it is here to prove went untested on the platform that had
+        # never seen it.
         _cd_sub = (_v8 == "warn" and _d8.count("src/subshell.ts") == 1
-                   and "CANNOT say the command wrote them" in _d8)
+                   and "CANNOT say the command wrote them" in _d8
+                   and "not the tree this guard watches" in _d8)
         # THE NARROW OVER-FIRE, which the two unconditional cases above miss: a
         # withdrawal that read EVERY command's first argument as a destination
         # would still be quiet for arguments inside the tree, so only a command
@@ -840,6 +875,14 @@ def _cases(check):
           "moved no shell, so the plain claim stands - the case that separates "
           "the withdrawal from one that reads any argument as a destination",
           _cd_arg, _detail_wt)
+    check("wt12 ...and the `cd` targets these cases hand the guard are literals "
+          "it can actually RESOLVE: no `_UNRESOLVED_MARKS`, and no backslash for "
+          "a posix tokenizer to read as an escape. THE CASE THAT NAMES THIS "
+          "FAILURE INSTEAD OF LETTING wt7 AND wt9 CARRY IT - a fixture path is "
+          "the machine's, not the subject's, and a `~` or a separator in one "
+          "sends every case above down a branch none of them is about, where "
+          "two go red for a reason no reader can see and one goes GREEN: %r"
+          % (_cd_literals,), _cd_literal_ok, _detail_wt)
 
     # (dn) `2>/dev/null` is the most ordinary read idiom there is, and the
     # blanket "any `>` is hostile" check read it as a write - which put
