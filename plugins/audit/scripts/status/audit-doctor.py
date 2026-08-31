@@ -37,13 +37,21 @@ because `diagnose()` calls every one of them. They are six modules now, cut wher
 file's own section markers already cut it, and the 646-line `hooks, ledger &
 trail` block cut again at the three seams inside it:
 
-  `_doctor_report`       L2  the collector, the loader, the two constants
-  `_doctor_ado`          L3  the connector's operational half
-  `_doctor_hygiene`      L3  what is HELD (locks) and what is LEAKING (git)
-  `_doctor_setup`        L4  interpreter, git, config, manifest, shards, submodules
-  `_doctor_trail`        L4  hook state, the usage ledger, the journal chain
-  `_doctor_completions`  L4  the `task.complete` receipts against the plan
-  `_doctor_policy`       L5  areas, the capability policy, the build runners
+  `_doctor_report`       the collector, the loader, the two constants
+  `_doctor_ado`          the connector's operational half
+  `_doctor_hygiene`      what is HELD (locks) and what is LEAKING (git)
+  `_doctor_setup`        interpreter, git, config, manifest, shards, submodules
+  `_doctor_trail`        hook state, the usage ledger, the journal chain
+  `_doctor_completions`  the `task.complete` receipts against the plan
+  `_doctor_policy`       areas, the capability policy, the build runners, and
+                         whether the plan's skills would survive a clone
+
+THIS TABLE USED TO CARRY A LAYER COLUMN AND IT WENT STALE (F230). `_panel_discovery`
+moved down, `_doctor_policy` followed it, `_deps.py`'s own comment was rewritten to
+say so, and both this column and `_doctor_policy`'s docstring were left asserting the
+layer the module had left - because nothing compares either of them to the table. The
+subject of each piece is what this list is for; `_deps.LAYERS` is where the layer is,
+and `--render` prints the whole graph.
 
 What is left here is the one thing that could not go into a piece: `diagnose()`
 decides the ORDER, and the order is not arbitrary — `check_config` produces the
@@ -136,6 +144,7 @@ check_areas = _policy_checks.check_areas
 check_policy = _policy_checks.check_policy
 check_build_commands = _policy_checks.check_build_commands
 check_plan_skills = _policy_checks.check_plan_skills
+portability_mode = _policy_checks.portability_mode
 check_branch_naming = _policy_checks.check_branch_naming
 _leading_executable = _policy_checks._leading_executable
 
@@ -194,7 +203,7 @@ def diagnose(project, deep=False):
     # `check_build_commands` on purpose - a runner that is not installed and a
     # reviewer that is not installed are the same claim, and they now read as a
     # pair instead of one warning and one silence.
-    check_plan_skills(rep, project, manifest, _discover=_scan_once)
+    check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=_scan_once)
     check_build_commands(rep, project, manifest)
     check_branch_naming(rep, project, manifest, git_root)
     check_ado(rep, project, manifest)

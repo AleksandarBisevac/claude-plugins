@@ -12,11 +12,20 @@ on PATH), and each answers with a WARNING at most, because "declared something
 that is not here" is a gap in this machine or this checkout, never proof that
 the repo is broken.
 
-Layer 5, and `check_policy` is what sets the floor: it runtime-loads
-`_panel_discovery` (layer 4) for the machine's skills/agents/MCP inventory, the
-same walk the panel's rules view marks `dead` with, so the two surfaces cannot
-disagree about which rule is inert. Everything else it reaches - `_policy`,
-`_areas`, `usage_ledger` - is lower still.
+`check_policy` is what sets this module's floor: it runtime-loads
+`_panel_discovery` for the machine's skills/agents/MCP inventory, the same walk the
+panel's rules view marks `dead` with, so the two surfaces cannot disagree about
+which rule is inert. Everything else it reaches - `_policy`, `_areas`,
+`usage_ledger` - is lower still.
+
+THE LAYER NUMBER IS DELIBERATELY NOT WRITTEN HERE (F230). This sentence used to
+carry one, and the sentence in `audit-doctor.py`'s own table carried the same one;
+both were left behind when `_panel_discovery` moved down and this module followed
+it, because nothing compares a docstring to `_deps.LAYERS`. A stale ARGUMENT is
+worse than no argument. The table is the answer:
+
+    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps
+    print([i for i,t in enumerate(_deps.LAYERS) if '_doctor_policy' in t])"
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_policy.py` - see
@@ -232,7 +241,9 @@ def check_policy(rep, project, cfg, cfg_mod, manifest, _discover=None):
     if isinstance(found, dict) and any(found.get(k) for k in pol.KINDS):
         for kind in pol.KINDS:
             if kind == "mcp":
-                names = ["mcp__%s__*" % s for s in (found.get("mcp") or [])]
+                names = ["mcp__%s__*" % e.get("name")
+                         for e in (found.get("mcp") or [])
+                         if isinstance(e, dict) and e.get("name")]
             else:
                 names = [e.get("name") for e in (found.get(kind) or [])
                          if isinstance(e, dict) and e.get("name")]
@@ -347,8 +358,8 @@ def check_branch_naming(rep, project, manifest, git_root):
                      % (parent, dev))
 
 
-def check_plan_skills(rep, project, manifest, _discover=None):
-    """Do the skills this plan NAMES resolve on this machine?
+def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
+    """Do the skills this plan NAMES resolve on this machine — and on anybody else's?
 
     F195. `meta.reviewSkill`, `meta.areas[*].skills` and `task.skills` name skills
     by string and nothing verified any of them. Measured live: a manifest carried
@@ -377,32 +388,30 @@ def check_plan_skills(rep, project, manifest, _discover=None):
 
     The name checked is the EFFECTIVE one, resolved through `_areas` exactly as
     `check_policy` resolves it, so an area default is judged as it will apply.
+
+    AND THE SECOND HALF, WHICH IS THE HALF THAT MATTERS TO A TEAM. "Resolves here"
+    is the wrong question for a plan that is committed: on the machine that wrote
+    it every name resolves, so this row went green while a teammate's clone loaded
+    none of it. Measured on a real repository whose plan named skills that lived
+    only in the author's home directory, with live tasks in the phase due to run
+    next; the validator was silent too, because it warns only when a task resolves
+    NOTHING — so declaring an honest empty list was noisier than naming a skill
+    nobody else can load.
+
+    `_panel_discovery` grades each entry and hands over the verdict WITH its basis;
+    nothing is re-decided here. What this owns is the wording and the tier: a
+    WARNING, never a finding, for the same reason as above, and the `portability`
+    config key decides whether it is said at all.
     """
     if not manifest:
         return
     ar = _load("_areas", "_areas.py")
-    wanted = []
-    seen = set()
-    for phase in (manifest.get("phases") or []):
-        if not isinstance(phase, dict):
-            continue
-        pid = phase.get("id") or "?"
-        skill, _basis = ar.resolve_review_skill(manifest, phase)
-        if skill:
-            wanted.append(("%s review skill" % pid, skill))
-        for task in (phase.get("tasks") or []):
-            if not isinstance(task, dict):
-                continue
-            for name in ar.resolve_skills(manifest, phase, task):
-                wanted.append(("%s skill" % (task.get("id") or pid), name))
     # One row per NAME, not per reference: a review skill inherited by nineteen
     # phases is one thing to install, and nineteen identical lines is the wall
-    # `_warning_groups` exists to stop.
-    named = []
-    for where, name in wanted:
-        if name not in seen:
-            seen.add(name)
-            named.append((where, name))
+    # `_warning_groups` exists to stop. The walk itself lives in `_areas` now,
+    # because the status gate's portability block asks the same question and the
+    # two must not be able to disagree about which names a plan uses.
+    named = ar.plan_skill_refs(manifest)
     if not named:
         rep.ok("skills", "the plan names no skills, so there is nothing to "
                          "resolve here")
@@ -420,11 +429,14 @@ def check_plan_skills(rep, project, manifest, _discover=None):
                  "run `audit-status.py <manifest> --json --discovery` to see what "
                  "this machine can find")
         return
-    have = set()
+    # The ENTRY, not just the name: the source and the portability verdict already
+    # rode along with it, and a second scan to fetch them would be a second answer
+    # to one question.
+    have = {}
     if isinstance(found, dict):
         for entry in (found.get("skills") or []):
             if isinstance(entry, dict) and entry.get("name"):
-                have.add(entry["name"])
+                have[entry["name"]] = entry
     if not have:
         rep.warn("skills",
                  "the skill inventory came back EMPTY, which a working scan "
@@ -447,6 +459,82 @@ def check_plan_skills(rep, project, manifest, _discover=None):
         rep.ok("skills",
                "all %d skill(s) the plan names resolve on this machine"
                % len(named))
+    _plan_skills_travel(rep, cfg, cfg_mod, named, have)
+
+
+def portability_mode(cfg, cfg_mod):
+    """Which tier `portability` is set to, falling back to what the plugin ships.
+
+    Read through the hooks' `DEFAULTS` rather than a literal, so the tier this
+    grades at and the tier the panel enforces at cannot drift apart. A value
+    outside the enum is a config the validator already refuses, so it is treated
+    as unset rather than silently obeyed.
+    """
+    modes = _load("_config_rules", "_config_rules.py").PORTABILITY_MODES
+    shipped = (getattr(cfg_mod, "DEFAULTS", None) or {}).get("portability")
+    mode = (cfg or {}).get("portability")
+    if mode not in modes:
+        mode = shipped
+    return mode if mode in modes else modes[0]
+
+
+def _plan_skills_travel(rep, cfg, cfg_mod, named, have):
+    """The second half: of the names that DID resolve, which would survive a clone?
+
+    Split out because the row above and this one answer different questions and a
+    reader has to be able to tell which one went red - not because the function was
+    long.
+    """
+    mode = portability_mode(cfg, cfg_mod)
+    if mode == "off":
+        # SAID, not skipped. A bare silence here is indistinguishable from
+        # "checked, and every name travels", which is the one thing this must
+        # never be mistaken for.
+        rep.ok("plan portability",
+               "portability is off, so whether the skills this plan names would "
+               "survive a clone was not graded")
+        return
+    graded, stranded, unknown = [], [], []
+    for where, name in named:
+        entry = have.get(name)
+        if entry is None:            # already reported as unresolvable, above
+            continue
+        travels = entry.get("travels")
+        basis = entry.get("travelsBasis") or "no basis was recorded"
+        graded.append(name)
+        if travels is False:
+            stranded.append("%r (%s) - %s" % (name, where, basis))
+        elif travels is not True:
+            unknown.append("%r (%s) - %s" % (name, where, basis))
+    if not graded:
+        # Narrowed to nothing. Every name failed to resolve, so there was nothing
+        # to grade - and an OK row here would report a perfect result over an
+        # empty set, which is the shape this repo refuses.
+        rep.warn("plan portability",
+                 "none of the %d name(s) this plan uses resolved, so whether "
+                 "any of them would survive a clone is UNKNOWN" % (len(named),),
+                 "fix the row above first - a name that resolves nowhere cannot "
+                 "be graded for where it resolves FROM")
+        return
+    if stranded:
+        rep.warn("plan portability",
+                 "named by the plan and will NOT survive a clone: %s"
+                 % _output.some_of(stranded, sep="; "),
+                 "vendor the skill under .claude/skills/, or declare its plugin "
+                 "in the COMMITTED .claude/settings.json (both keys), or point "
+                 "the task at one that already ships here"
+                 + ("" if mode == "strict" else
+                    " - portability is 'warn', so nothing is being refused"))
+    if unknown:
+        rep.warn("plan portability",
+                 "whether these would survive a clone is UNKNOWN: %s"
+                 % _output.some_of(unknown, sep="; "),
+                 "a verdict with no basis is not a pass - see the reason on each "
+                 "row")
+    if not stranded and not unknown:
+        rep.ok("plan portability",
+               "all %d resolvable name(s) this plan uses would survive a clone"
+               % (len(graded),))
 
 
 def check_build_commands(rep, project, manifest):

@@ -231,7 +231,7 @@ def _held_by(ph, done_ids):
 
 # --- phase rows ----------------------------------------------------------------
 def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
-                prank=None, evidence=None):
+                prank=None, evidence=None, portability=None):
     """One phase's rows — the group row, its task-filter row and its task rows.
 
     Extracted from render_html's former inline loop when segmentation (D1)
@@ -353,7 +353,8 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
                e(t.get("id")), e(t.get("title")),
                _chip(t.get("status")),
                "".join(cells[c]() for c in cols)))
-        out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers, tview))
+        out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers, tview,
+                               portability))
     return "\n".join(out)
 
 
@@ -662,7 +663,8 @@ def _table_tools(manifest, summary, evidence=None):
            _filter_panel(manifest, evidence), sortpick))
 
 
-def _phases_block(manifest, summary, owners, workers=None, evidence=None):
+def _phases_block(manifest, summary, owners, workers=None, evidence=None,
+                  portability=None):
     """One collapsible table: each phase is a group-row (click to expand its task
     rows). Default-collapsed via _SCRIPT; with JS off every row is visible."""
     record = ("phases", "Phases", len(summary["phases"]), False)
@@ -695,7 +697,7 @@ def _phases_block(manifest, summary, owners, workers=None, evidence=None):
                             for c in cols)))
     done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
     parts += _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
-                           workers, evidence)
+                           workers, evidence, portability)
     # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
@@ -713,7 +715,7 @@ def _phases_block(manifest, summary, owners, workers=None, evidence=None):
 
 
 def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
-                  workers=None, evidence=None):
+                  workers=None, evidence=None, portability=None):
     """The table body: one seghead per segment, then that segment's phase rows.
 
     D1: the table renders in SEGMENTS — active (in_progress/blocked) first, then
@@ -762,7 +764,7 @@ def _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
                    "</td></tr>" % (seg, ncol, head, exports))
         for ph, psum, prank in by_seg[seg]:
             out.append(_phase_rows(ph, psum, seg, ncol, cols, done_ids, owners,
-                                   workers, prank, evidence))
+                                   workers, prank, evidence, portability))
     return out
 
 
@@ -979,7 +981,7 @@ def _nav_html(sections):
 # --- the page -------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False, css=None, verdict=None, show_proposals=True,
-                evidence=None):
+                evidence=None, portability=None):
     """The HTML report. `fragment=True` emits it for an embedding host.
 
     A Claude Code Artifact wraps what it is given in its own
@@ -1018,7 +1020,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             _invalid_block(summary),
             _gate_block(meta, summary, verdict),
             _phases_block(manifest, summary, owners,
-                          (usage or {}).get("taskAuthors"), evidence),
+                          (usage or {}).get("taskAuthors"), evidence,
+                          portability),
             _usage_block(usage),
             _bugs_block(manifest, summary, evidence),
             _proposals_block(manifest, show_proposals),

@@ -384,6 +384,13 @@ TABLE = (
  ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
+ # F230 restored where it actually shipped: the docstring line that opened on a
+ # layer the table had already moved this module off. The mutation is the real
+ # sentence rather than an invented one, because what made the defect survive was
+ # that it read as a perfectly ordinary claim.
+ ("layer_doc_drift", S + "status/_doctor_policy.py", "replace",
+  "`check_policy` is what sets this module's floor:",
+  "Layer 5, and `check_policy` is what sets this module's floor:", DEP, "lyd1"),
  ("tool_basename_drift", "tools/where.py", "after", "\nSOURCE_EXT = ",
   None, REF, "tb1"),
  ("sweep_glob_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
@@ -803,6 +810,13 @@ ALLOW = (
  ("hooks_rule_drift", S + "_deps.py", "replace",
   "    hit = _GUIDE_HOOKS_EXCUSE.search(text)",
   '    hit = re.search("hooks", text)', DEP, "g0"),
+ # The pattern anchors at the start of a line so it reads a module's claim about
+ # ITSELF. Drop the anchor and it judges every `layer N` in running prose, which
+ # is how one module correctly cites another's layer - dozens of true sentences,
+ # convicted for being accurate.
+ ("layer_doc_drift", S + "_deps.py", "replace",
+  '_SELF_LAYER_CLAIM = re.compile(r"^Layer (\\d+)\\b", re.MULTILINE)',
+  '_SELF_LAYER_CLAIM = re.compile(r"[Ll]ayer (\\d+)\\b")', DEP, "lyd4"),
  # Two markers is the floor the house rule sets, so a file carrying exactly two is
  # the legitimate minimum. Raise the bar by one and the rule convicts the shape it
  # asks for.

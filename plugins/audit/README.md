@@ -232,11 +232,12 @@ page behind it, read against the form rather than instead of it. All of it is
   artifact, or to a link with `--share`. See [Reports](#reports).
 - **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
   composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
-- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
+- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
 - **CI without Claude** — `scripts/status/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`, which also carries the test-evidence conditions
-  `failing-tests` and `no-test-evidence`); see `docs/examples/azure-pipelines.yml`.
+  `failing-tests` and `no-test-evidence`, and `stranded-skills` for a plan naming a
+  skill a clone would not load); see `docs/examples/azure-pipelines.yml`.
 - **Pinned-tool agents** (`agents/`) — the orchestrator spawns the plugin's own subagents
   instead of free-form ones: `audit-explorer` is **mechanically read-only** (no Edit/Write/
   Bash in its tool list — not a prompt request, a hard boundary), `audit-executor` has no
@@ -449,7 +450,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|day\|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--format <fmt>] [--backfill]` | **Token spend, attributed** — per phase, task, model, author, area and time window (down to the calendar month), with cache economics, cost-per-task, a monthly overview and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
 | `/audit:layout` | `<sharded\|single-file> [--dry-run] [--renumber] [--force]` | Choose how the manifest is stored, **in either direction**: `sharded` splits it into an index plus one file per phase (fewer tokens per phase run, parallel-safe across worktrees), `single-file` assembles the shards back into one file. A layout **choice**, not a version upgrade — both shapes are current, and staying on single-file never makes a manifest out of date. Either direction holds the index lock, backs up to `<manifestPath>.bak-<UTC>`, and re-validates the result or restores the backup. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | **Legacy spelling of `/audit:layout sharded`** — it still works and does exactly that, kept so existing transcripts and runbooks resolve. **It will be removed in a future release**: switch anything written down to `/audit:layout sharded` while both spellings work. |
-| `/audit:doctor` | `[--deep] [--json] [--color auto\|always\|never]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
+| `/audit:doctor` | `[--deep] [--json] [--color auto\|always\|never]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:logs` | `prune [--older-than DAYS] [--dry-run] [--json]` | Prune the local feeds this plugin writes under `logsDir` — today `<logsDir>/plan-gate-events.jsonl`, the file the plan gate appends to and the panel's **Plan gate** card renders. `prune` drops the rows that no longer belong: a `file` that resolves **outside this repository** (the plugin manages and references only the consuming repo), and a line that is not a JSON object (the panel's reader already discards those, so they occupy the file while showing up nowhere). `--older-than DAYS` adds an age pass and is **off unless given** — the feed already self-trims by size, and an old verdict is still a true record of this repo, so a default would be a number with no basis. Both counts print, including at zero, and removed rows are counted by class and never echoed. `--dry-run` reports the identical counts and writes nothing. **This one writes**: the verb is mandatory, and the blast radius is the one file — the journal is deliberately out of reach. |
 | `/audit:guide` | `<question about the audit plugin>` | Answer a question about the plugin itself — what a config key does, how the plan gate grades, what the journal can and cannot prove — from the plugin's own README, reference docs, schemas and `SECURITY.md`, with a citation for every claim. Read-only and cheap; it changes nothing. |
 | `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
@@ -525,6 +526,13 @@ clones gets a flag enabling a plugin from a marketplace their machine has never 
 of. It keeps working for whoever added it, because their machine already registered
 the marketplace by hand, so the mistake is invisible from the inside. Found in a real
 repository doing exactly this.
+
+**This is now checked rather than only documented.** Both keys are what the
+[`portability`](#configuration-claudeauditconfigjson) grading reads: a skill or
+subagent arriving through a plugin counts as travelling only when the committed file
+declares it in both, and when exactly one is present the message names the one that is
+missing. `/audit:doctor` reports it, `--fail-on stranded-skills` can fail a build over
+it, and under the shipped `strict` the panel will not write such a name into the plan.
 
 Two things to check before rolling this out to a team:
 
@@ -649,8 +657,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.9.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.9.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -724,6 +732,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `journal.strictManifestState` | Opt-in confirmation prompt when an edit changes manifest **state** (a task/phase `status`, `completedAt`, `commit`, `attempts`): `off` \| `ask` — deliberately no `deny`, the orchestrator writes through the same tools | `off` |
 | `ui.theme` | The look of the panel and the report: a shipped preset name (`slate-teal`) or a path to a theme file, absolute or relative to the project dir. Unset -> search `.claude/audit.theme.json` in the project, then `~/.claude/audit.theme.json`, then the built-in preset; every surface says which of the four it is wearing, and a path that is not a file is reported rather than silently ignored. Edited in the panel's **Appearance** tab | unset |
 | `priority.maxTier` | Highest phase-priority tier the panel's control offers and `set-priority.py` suggests. **Advisory, and nothing is clamped to it**: a phase pinned above it keeps the tier it was given and sorts after every tier at or under the maximum. Priority re-sorts work that is *already* ready - it never makes an unready task ready and never skips a dependency | `9` |
+| `portability` | Whether a skill / subagent / MCP server that would **not survive a clone** may be used here: `strict` \| `warn` \| `off`. A capability under `.claude/` travels; one in a home directory never does; one from a plugin travels only if the **committed** `.claude/settings.json` declares it in *both* `extraKnownMarketplaces` and `enabledPlugins` (see [Making it travel with the repo](#making-it-travel-with-the-repo)). `strict` offers only what travels and refuses to write anything else into the manifest; `warn` marks it and `/audit:doctor` still says so, but nothing is blocked; `off` says nothing. The verdict and its basis are computed either way — this key decides only what each surface does about it | `strict` |
 | `policy.enabled` | Enforce the capability policy below | `true` (and inert — the shipped rules allow everything) |
 | `policy.onViolation` | What a violation does: `deny` \| `ask` \| `warn` | `deny` |
 | `policy.{skills,agents,mcp}` | Per kind: `{default: "allow"\|"deny", allow: [pattern], deny: [pattern], areas: {tag: {allow, deny}}}` | `default: "allow"`, no rules |
@@ -1659,7 +1668,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v1.9.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

@@ -5035,6 +5035,16 @@ function writeFixtureMcp(project, names) {
   return names;
 }
 
+/** Merge keys into `<project>/.claude/audit.config.json`, keeping what is there. */
+function writeFixtureConfig(project, extra) {
+  const p = path.join(project, '.claude', 'audit.config.json');
+  mkdirSync(path.dirname(p), { recursive: true });
+  let cur = {};
+  try { cur = JSON.parse(readFileSync(p, 'utf8')); } catch { cur = {}; }
+  writeFileSync(p, `${JSON.stringify({ ...cur, ...extra }, null, 2)}\n`);
+  return p;
+}
+
 /**
  * Did discovery reach exactly the fixture, and nothing of this machine's?
  *
@@ -5049,7 +5059,9 @@ async function assertFixtureDiscovery(page, want, label) {
     const r = await api('GET', '/api/registry');
     return { skills: r.skills.map((s) => s.name).sort(),
              agents: r.agents.map((a) => a.name).sort(),
-             mcp: (r.mcp || []).slice().sort() };
+             // MCP rows carry a source now, like skills and agents. Compared by
+             // NAME, which is what "did HOME take" is a question about.
+             mcp: (r.mcp || []).map((m) => m.name).sort() };
   });
   const wanted = { skills: want.skills.slice().sort(),
                    agents: want.agents.slice().sort(),
@@ -5117,6 +5129,14 @@ function writeBigFixture(work, project) {
                              plugin: BIG_PLUGIN });
   writeDiscoveryTree(project, { skills: BIG_PROJECT_SKILLS });
   writeFixtureMcp(project, BIG_MCP);
+  // The SHIPPED tier, written out rather than left to the default, so a change to
+  // that default cannot silently re-shoot every panel picture. `strict` was
+  // expected to empty the pickers three of these shots exist to photograph — it
+  // does not, because BIG_PROJECT_SKILLS are project-scope and survive it, and
+  // driving the real panel under both tiers is what settled that rather than the
+  // guess. So the screenshots show what a reader actually gets on install: the
+  // fixture home's skills listed and marked, and not offered.
+  writeFixtureConfig(project, { portability: 'strict' });
   return {
     home,
     want: {

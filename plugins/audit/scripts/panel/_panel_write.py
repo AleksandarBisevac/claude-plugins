@@ -101,6 +101,9 @@ import _priority              # noqa: E402  (what a valid tier is, and who holds
 import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
 #                                            the SAME rule /audit:logs prune runs)
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
+import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
+import _config_rules          # noqa: E402  (PORTABILITY_MODES: the enum this reads a tier from)
+import _loader                # noqa: E402  (load_hooks_config: where the shipped default lives)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -1331,6 +1334,75 @@ def _apply_ado_tracked(manifest, phase, value):
     return None
 
 
+def _patched_skill_names(patch):
+    """Every skill name a composition patch would WRITE, deduped, in written order.
+
+    `meta.reviewSkill` and each task's `skills` — the two places the form can put
+    one. `null` and a non-string contribute nothing: the shape check downstream
+    owns those, and refusing them here would give a reader the wrong reason.
+    """
+    out = []
+    values = [(patch.get("meta") or {}).get("reviewSkill")]
+    for _tid, tv in sorted((patch.get("tasks") or {}).items()):
+        skills = (tv or {}).get("skills")
+        values.extend(skills if isinstance(skills, list) else [])
+    for value in values:
+        if isinstance(value, str) and value.strip() and value.strip() not in out:
+            out.append(value.strip())
+    return out
+
+
+def _reject_stranded(project, config, patch):
+    """The refusal string when `portability` is strict and a name would not travel.
+
+    PREVENTION AT THE POINT OF CHOICE. The doctor reports this after the fact and
+    the gate can fail a build over it, but the panel is where the name is picked,
+    and a defect kept out of the manifest never has to be found in it.
+
+    Three things are deliberately NOT refused. A name discovery has never seen is
+    accepted, because an inventory is not a whitelist and refusing an unknown name
+    is a different feature with different consequences. A name whose verdict is
+    UNKNOWN is accepted, because a refusal needs a basis and there is none. And
+    everything is accepted under `warn` and `off` — the tier is what the user set,
+    and a panel that ignored it would be worse than one that never had the switch.
+
+    Fails OPEN on a scan that raises: this is a write path, and taking somebody's
+    edit away because a filesystem walk failed is not a trade this makes.
+    """
+    modes = _config_rules.PORTABILITY_MODES
+    mode = (config or {}).get("portability")
+    if mode not in modes:
+        mode = (getattr(_loader.load_hooks_config(), "DEFAULTS", None)
+                or {}).get("portability")
+    if mode != "strict":
+        return None
+    names = _patched_skill_names(patch)
+    if not names:
+        return None
+    try:
+        found = _panel_discovery.discover(project) or {}
+    except Exception:
+        return None
+    have = {}
+    for entry in (found.get("skills") or []):
+        if isinstance(entry, dict) and entry.get("name"):
+            have[entry["name"]] = entry
+    bad = []
+    for name in names:
+        entry = have.get(name)
+        if entry is not None and entry.get("travels") is False:
+            bad.append("%r - %s" % (name, entry.get("travelsBasis")
+                                    or "no basis was recorded"))
+    if not bad:
+        return None
+    return ("portability is strict and %s would not survive a clone of this "
+            "repository: %s. Vendor the skill under .claude/skills/, declare its "
+            "plugin in the COMMITTED .claude/settings.json (both keys), or set "
+            "portability to 'warn' in the Settings tab to record it anyway"
+            % ("this name" if len(bad) == 1 else "these names",
+               _output.some_of(bad, sep="; ")))
+
+
 def apply_composition_patch(manifest, patch):
     """Apply an allow-listed composition patch to `manifest` in place.
     Returns None on success or an error string. Never touches structure."""
@@ -1572,6 +1644,9 @@ def apply_composition(project, patch):
     # `from` half of every row has to be the value on disk, not the value the patch
     # is about to put there.
     applied = _composition_changes(assembled, patch)
+    err = _reject_stranded(project, config, patch)
+    if err:
+        return {"ok": False, "findings": ["refused: " + err]}
     err = apply_composition_patch(assembled, patch)
     if err:
         return {"ok": False, "findings": ["refused: " + err]}

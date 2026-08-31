@@ -41,6 +41,12 @@ def _detail(rep, name):
     return " ".join(r["detail"] for r in rep.rows if r["check"] == name)
 
 
+def _fix(rep, name):
+    """The `fix` half of the rows for `name` — where a row says what to DO, which
+    is a different claim from what it observed and is asserted separately."""
+    return " ".join(r.get("fix") or "" for r in rep.rows if r["check"] == name)
+
+
 def _manifest():
     return {
         "meta": {"version": 2, "title": "t"},
@@ -350,10 +356,18 @@ def _cases(check):
         # gate whose runner is absent and a reviewer whose skill is absent are the
         # same shape, and one of them got silence. Measured live on a manifest
         # naming a hand-placed SKILL.md that exists in no marketplace.
-        def _skills(mf, inv):
+        # Entries carry a portability verdict now, and a fixture that omits it is
+        # the honest shape for "this machine could not say" - so the F195 cases
+        # below stay about resolution alone, and the ones after them supply a
+        # verdict on purpose.
+        def _skills(mf, inv, cfg=None):
             r = base.Report()
-            M.check_plan_skills(r, tmp, mf, _discover=lambda _p, home=None: inv)
+            M.check_plan_skills(r, tmp, cfg or {}, cfgmod, mf,
+                                _discover=lambda _p, home=None: inv)
             return r
+
+        def _travels(name, travels, basis="because"):
+            return {"name": name, "travels": travels, "travelsBasis": basis}
         mfs = _manifest()
         mfs["meta"]["reviewSkill"] = "code-review-and-quality"
         rep = _skills(mfs, {"skills": [{"name": "writing-python"}]})
@@ -363,7 +377,11 @@ def _cases(check):
               "reviewer: %r" % (_detail(rep, "skills"),),
               "'code-review-and-quality'" in _detail(rep, "skills")
               and "P1 review skill" in _detail(rep, "skills")
-              and all(r["level"] != "finding" for r in rep.rows))
+              # F233: this read `!= "finding"` and could not fail. `Report.finding`
+              # writes "FINDING", so the comparison was true of every row it would
+              # ever see, and the half of dp27 that names the TIER was asserting
+              # nothing for as long as the case had existed.
+              and "FINDING" not in _levels(rep, "skills"))
         rep = _skills(mfs, {"skills": [{"name": "writing-python"},
                                        {"name": "code-review-and-quality"}]})
         check("dp28 ...and a plan whose every name resolves says so instead. THE "
@@ -383,7 +401,7 @@ def _cases(check):
               and "resolve on this machine" not in _detail(rep, "skills"))
         rep = base.Report()
         M.check_plan_skills(
-            rep, tmp, mfs,
+            rep, tmp, {}, cfgmod, mfs,
             _discover=lambda _p, home=None: (_ for _ in ()).throw(OSError("x")))
         check("dp30 ...and a scan that RAISES says the same thing rather than "
               "nothing: silence here would be indistinguishable from a plan that "
@@ -400,6 +418,101 @@ def _cases(check):
               "phase - nineteen identical lines is the wall `_warning_groups` "
               "exists to stop: %r" % (_detail(rep, "skills"),),
               _detail(rep, "skills").count("'ghost'") == 1)
+
+        # --- would it survive a CLONE? the half "resolves here" cannot see ------
+        # The row above is answered on the authoring machine, where every name
+        # resolves - which is why it went green over a plan a teammate could not
+        # run. `_panel_discovery` decides; this only words it, so every fixture
+        # here states a verdict rather than a tree.
+        _PORT = "plan portability"
+        mfp = _manifest()
+        mfp["meta"]["reviewSkill"] = "personal-skill"
+        rep = _skills(mfp, {"skills": [
+            _travels("personal-skill", False,
+                     "lives in a home directory, which no clone carries")]})
+        check("dp32 a name that resolves HERE and would not survive a clone is "
+              "warned about, naming the skill, where the plan names it, and the "
+              "basis - and never as a finding, because a solo plan nobody will "
+              "clone is entitled to it: %r" % (_detail(rep, _PORT),),
+              "'personal-skill'" in _detail(rep, _PORT)
+              and "P1 review skill" in _detail(rep, _PORT)
+              and "home directory" in _detail(rep, _PORT)
+              and "FINDING" not in _levels(rep, _PORT))
+        rep = _skills(mfp, {"skills": [
+            _travels("personal-skill", True, "committed under .claude/")]})
+        # THE SECOND-DIRECTION CASE, and the one that looks vacuous: a plan whose
+        # every name travels must draw NO such warning. An unconditional row -
+        # the natural way to get dp32 green - fails exactly here.
+        check("dp33 ...and a plan whose every name would survive a clone says so "
+              "instead, drawing no warning at all: %r" % (_detail(rep, _PORT),),
+              "will NOT survive" not in _detail(rep, _PORT)
+              and "would survive a clone" in _detail(rep, _PORT)
+              and _levels(rep, _PORT) == ["OK"])
+        rep = _skills(mfp, {"skills": [
+            _travels("personal-skill", False,
+                     "enabledPlugins names p@m but extraKnownMarketplaces does "
+                     "not carry 'm'")]})
+        check("dp34 the BASIS is carried through rather than restated - here the "
+              "half-declared plugin, whose repair is one named key: %r"
+              % (_detail(rep, _PORT),),
+              "extraKnownMarketplaces" in _detail(rep, _PORT))
+        rep = _skills(mfp, {"skills": [
+            _travels("personal-skill", False,
+                     "extraKnownMarketplaces carries 'm' but enabledPlugins "
+                     "names no plugin of it")]})
+        # THE TWIN OF dp34. A doctor that wrote its own message instead of
+        # rendering the basis passes one of this pair and fails the other,
+        # whichever key it happened to hard-code.
+        check("dp35 ...and the OTHER half-declaration reaches the reader naming "
+              "the other key: %r" % (_detail(rep, _PORT),),
+              "enabledPlugins" in _detail(rep, _PORT)
+              and "extraKnownMarketplaces" in _detail(rep, _PORT))
+        rep = _skills(mfp, {"skills": [
+            _travels("personal-skill", None,
+                     "the committed .claude/settings.json could not be read")]})
+        check("dp36 an UNANSWERED verdict is said as unknown and never folded "
+              "into 'will not travel' - an unreadable settings file is not "
+              "evidence about a plugin: %r" % (_detail(rep, _PORT),),
+              "UNKNOWN" in _detail(rep, _PORT)
+              and "OK" not in _levels(rep, _PORT))
+        mfg = _manifest()
+        mfg["meta"]["reviewSkill"] = "nowhere-at-all"
+        rep = _skills(mfg, {"skills": [_travels("something-else", True)]})
+        # NARROWED TO NOTHING IS NOT CLEAN. Every name failed to resolve, so the
+        # graded set is empty - and `if not stranded: ok(...)` would report a
+        # perfect result over a set it never looked at.
+        check("dp37 when NOTHING resolved there is nothing to grade, and that is "
+              "reported as unknown rather than as an all-clear: %r"
+              % (_detail(rep, _PORT),),
+              "UNKNOWN" in _detail(rep, _PORT)
+              and "OK" not in _levels(rep, _PORT))
+        _stranded = {"skills": [_travels("personal-skill", False, "home dir")]}
+        rep_off = _skills(mfp, _stranded, {"portability": "off"})
+        check("dp38 'off' does not go quiet - it SAYS it did not grade, because "
+              "silence and 'checked, all fine' are indistinguishable to a reader: "
+              "%r" % (_detail(rep_off, _PORT),),
+              "not graded" in _detail(rep_off, _PORT)
+              and "will NOT survive" not in _detail(rep_off, _PORT))
+        rep_warn = _skills(mfp, _stranded, {"portability": "warn"})
+        rep_strict = _skills(mfp, _stranded, {"portability": "strict"})
+        # The doctor DIAGNOSES at every tier that is not off; only the panel and
+        # the gate act on the difference. Binding this row to strict would make
+        # 'warn' mean nothing at all, which is the mutation this kills.
+        check("dp39 'warn' and 'strict' draw the SAME warning - the tier decides "
+              "what is refused elsewhere, not what is observed here",
+              "will NOT survive" in _detail(rep_warn, _PORT)
+              and "will NOT survive" in _detail(rep_strict, _PORT))
+        check("dp40 ...and 'warn' says plainly that nothing is being refused, "
+              "which 'strict' does not: %r"
+              % (_detail(rep_warn, _PORT),),
+              "nothing is being refused" in _fix(rep_warn, _PORT)
+              and "nothing is being refused" not in _fix(rep_strict, _PORT))
+        rep = _skills(mfp, _stranded, {"portability": "bogus"})
+        check("dp41 a tier outside the enum is treated as unset and falls back to "
+              "what the plugin ships, rather than switching the check off - the "
+              "validator already refuses the value, and a typo must not be the "
+              "quiet way to disable this",
+              "will NOT survive" in _detail(rep, _PORT))
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

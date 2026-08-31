@@ -215,8 +215,14 @@ def policy_state(project):
     out["areaInfo"] = _policy_areas_view(reg, active, out["areas"])
     for kind in _policy.KINDS:
         rows = []
+        # MCP rows are STAND-INS: a server is governed by the glob over its whole
+        # tool name, so that glob is what a rule is resolved against. The row's
+        # `source` is the server's own, which it did not used to be — this column
+        # rendered the server NAME for every MCP row, because discovery handed
+        # back bare strings and the name was passed into the source slot.
         if kind == "mcp":
-            names = [("mcp__%s__*" % s, s, True) for s in (found.get("mcp") or [])]
+            names = [("mcp__%s__*" % e.get("name"), e.get("source"), True)
+                     for e in (found.get("mcp") or []) if e.get("name")]
         else:
             names = [(e.get("name"), e.get("source"), False)
                      for e in (found.get(kind) or []) if e.get("name")]

@@ -138,7 +138,11 @@ _scan_agents = _panel_discovery._scan_agents
 _plugin_bases = _panel_discovery._plugin_bases
 discover = _panel_discovery.discover
 _local_plugin_bases = _panel_discovery._local_plugin_bases
-_mcp_names = _panel_discovery._mcp_names
+_mcp_entries = _panel_discovery._mcp_entries
+grade_entry = _panel_discovery.grade_entry
+declared_plugins = _panel_discovery.declared_plugins
+SCOPE_MACHINE = _panel_discovery.SCOPE_MACHINE
+SCOPE_REPO = _panel_discovery.SCOPE_REPO
 
 # The panel's READ side -- every payload `GET /api/*` answers with, plus the path
 # safety, viewer identity, core-module loading and lock detection those payloads

@@ -211,6 +211,46 @@ def _cases(check):
           "invariant-breach" in M.CONDITIONS
           and "invariant-breach" not in M.DEFAULT_GATE)
 
+    # --- stranded-skills: the same three states, and why an empty one is not a
+    # pass. The block is INJECTED by audit-status.py (this module is layer two and
+    # the scan is layer three), so "nobody asked" and "asked, nothing found" have
+    # to be told apart HERE or a failed enrichment reads as a clean plan.
+    def _port(block):
+        return M.evaluate_gate({"portability": block} if block is not None else {},
+                               ["stranded-skills"])
+    check("g10 a summary with NO portability block FAILS - the scan not having "
+          "run is not evidence that the plan travels",
+          _port(None) == ["stranded-skills"]
+          and "not a pass" in " ".join(M.stranded_skills({}) or []))
+    # THE SECOND DIRECTION, and the only case that fails if the condition becomes
+    # unconditional. It looks vacuous; it is the reason the trip is `is not None`.
+    check("g11 ...and a block that graded names and found none stranded PASSES",
+          _port({"graded": ["a", "b"], "stranded": []}) == []
+          and M.stranded_skills({"portability": {"graded": ["a"],
+                                                 "stranded": []}}) is None)
+    check("g12 a block naming a stranded skill fails, handing the caller the "
+          "lines rather than a count",
+          _port({"graded": ["a"], "stranded": ["'a' (P1 skill) - home dir"]})
+          == ["stranded-skills"]
+          and M.stranded_skills(
+              {"portability": {"graded": ["a"],
+                               "stranded": ["'a' (P1 skill) - home dir"]}})
+          == ["'a' (P1 skill) - home dir"])
+    # NARROWED TO NOTHING IS NOT CLEAN, and it is worded apart from g10 because
+    # it is a different repair: there the scan failed, here it ran and had
+    # nothing to grade.
+    _empty = M.stranded_skills({"portability": {"graded": [], "stranded": []}})
+    check("g13 a block that graded NOTHING fails too, and says so in its own "
+          "words rather than borrowing the did-not-run sentence: %r" % (_empty,),
+          _port({"graded": [], "stranded": []}) == ["stranded-skills"]
+          and "nothing was checked" in " ".join(_empty or [])
+          and "did not run" not in " ".join(_empty or []))
+    check("g14 it is NOT in the default gate: a plan naming a skill only its "
+          "author has is a correct observation about a repository nobody may "
+          "ever clone, and the doctor already says so at exit zero",
+          "stranded-skills" in M.CONDITIONS
+          and "stranded-skills" not in M.DEFAULT_GATE)
+
     # --- test evidence: two conditions, and what absence is allowed to mean ----
     # EVERY CASE HERE IS ANCHORED ON A SUBJECT NAME, never on "the list is not
     # empty" and never on "the gate returned []". A condition that matched nothing

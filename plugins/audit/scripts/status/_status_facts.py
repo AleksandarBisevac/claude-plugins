@@ -70,7 +70,7 @@ import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at la
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80", "invariant-breach",
-              "failing-tests", "no-test-evidence")
+              "failing-tests", "no-test-evidence", "stranded-skills")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
@@ -84,6 +84,11 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
 # the same road: a plan holding a red pointer somebody has already triaged would
 # start blocking merges nobody asked it to block. Both are opt-in, and moving
 # either into this tuple is a deliberate edit a case makes you make on purpose.
+#
+# `stranded-skills` is out for the first of those reasons and one of its own: a
+# plan naming a skill only its author has is a correct observation about a
+# repository nobody may ever clone, and the doctor already says so at exit zero.
+# A team that wants it enforced is a team that will type it.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
@@ -926,6 +931,10 @@ def evaluate_gate(summary, conditions):
         # cannot disagree.
         elif c == "no-test-evidence" and any(unevidenced(summary).values()):
             failed.append(c)
+        # `is not None` for `invariant-breach`'s reason: it is the only spelling
+        # under which a block nobody computed fails instead of passing.
+        elif c == "stranded-skills" and stranded_skills(summary) is not None:
+            failed.append(c)
     return failed
 
 
@@ -949,6 +958,31 @@ def invariant_breaches(summary):
         return ["the invariant checks did not run, so nothing about them was "
                 "verified - this is not a pass"]
     return block["breaches"] or None
+
+
+def stranded_skills(summary):
+    """The names this plan uses that a clone would not load, or None. Never [].
+
+    THE SAME THREE STATES `invariant_breaches` has, for the same reason and with
+    the same spelling of the trip: the block is INJECTED by `audit-status.py`,
+    which owns the filesystem scan this module (layer two) may not reach, so an
+    ABSENT block means nobody asked — and a gate that read that as clean would
+    pass every repository where the enrichment silently failed.
+
+    `graded` is carried beside `stranded` and checked here rather than trusted:
+    a block that graded NOTHING — every name unresolvable, or portability off —
+    has narrowed to nothing, and "no stranded names" over an empty set is the
+    reading this repo refuses.
+    """
+    block = (summary or {}).get("portability")
+    if not isinstance(block, dict) or not isinstance(block.get("stranded"), list):
+        return ["the portability scan did not run, so whether this plan's "
+                "skills would survive a clone was never asked - this is not a "
+                "pass"]
+    if not block.get("graded"):
+        return ["no name in this plan could be graded, so nothing was checked - "
+                "an empty result here is not a clean one"]
+    return block["stranded"] or None
 
 
 # `_budget_detail` sat here between these two and went back to `audit-status.py`

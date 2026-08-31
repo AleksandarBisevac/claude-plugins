@@ -87,8 +87,10 @@ def _cases(check):
     check("discovery labels this repo's own plugins by their real directory name, "
           "not a generic 'plugin' badge",
           M._local_plugin_bases(_repo_root, []))
-    check("MCP names come back sorted, with no secrets in the row (names only)",
-          M._mcp_names(home, proj, []) == sorted(M._mcp_names(home, proj, [])))
+    check("MCP rows carry a name and a source and nothing else — no command line "
+          "and no env block, because those carry tokens",
+          all(set(e) == {"name", "source", "description"}
+              for e in M._mcp_entries(home, proj, [])))
     _src_lines = [l for l in open(M.__file__).read().split("\n")
                   if l.startswith("import ") or l.startswith("from ")]
     check("this module never imports panel-server or _panel_settings - it sits at "
@@ -216,7 +218,7 @@ def _cases(check):
     _r6, _n6 = _counted(lambda: M.discover(proj, home=home))
     check("cache: a file that did not EXIST when the scan ran invalidates when it "
           "appears — absent paths are stamped, not dropped from the token",
-          "late-server" in _r6["mcp"])
+          "late-server" in {m["name"] for m in _r6["mcp"]})
 
     # The settle guard, both ways. Its whole purpose is to refuse a scan of a tree
     # that was still being written, so a case that only ever saw it accept would
@@ -262,6 +264,175 @@ def _cases(check):
     check("cache: every file the scan parsed is in the watch list — a file read "
           "but not stamped is precisely how a cache goes stale in silence",
           bool(_parsed) and _parsed <= set(_watch))
+
+    # --- portability: would a CLONE of this repository load it? ----------------
+    # `grade_entry` is pure, so most of these need no tree: the branches are
+    # reachable from literals, which is the whole reason the grading takes a
+    # declaration dict rather than reading the file itself.
+    _plug_root = os.path.dirname(_harness.SCRIPTS_DIR)
+    _own = M.own_names()
+    _own_one = sorted(_own)[0]
+    _nofile = M.declared_plugins(None, None)
+    _broken = M.declared_plugins(None, "Expecting ',' delimiter: line 3")
+    _both = M.declared_plugins(
+        {"enabledPlugins": {"pkg-a@market-x": True},
+         "extraKnownMarketplaces": {"market-x": {"source": {}}}}, None)
+    _only_enabled = M.declared_plugins(
+        {"enabledPlugins": {"pkg-a@market-x": True}}, None)
+    _only_known = M.declared_plugins(
+        {"extraKnownMarketplaces": {"market-x": {"source": {}}}}, None)
+    _cache_path = os.path.join("cache", "market-x", "pkg-a", "0.1.0",
+                               "skills", "s", "SKILL.md")
+    _checkout_path = os.path.join("marketplaces", "market-x", "plugins",
+                                  "pkg-a", "skills", "s", "SKILL.md")
+
+    check("pt1 a project-scope entry travels — it is committed under .claude/, "
+          "which is the only source a clone gets unconditionally",
+          M.grade_entry("s", "project", "/x/.claude/skills/s/SKILL.md",
+                        _nofile, _own, _plug_root)["travels"] is True)
+    _user = M.grade_entry("s", "user", "/h/.claude/skills/s/SKILL.md",
+                          _nofile, _own, _plug_root)
+    # THE SECOND DIRECTION OF pt1: a table that graded everything travelling
+    # would pass pt1 and fail here, and one that graded everything stranded
+    # would do the reverse. Neither survives the pair.
+    check("pt2 a user-scope entry never travels, and the basis says where it "
+          "lives rather than only that it failed: %r" % (_user["basis"],),
+          _user["travels"] is False and "home directory" in _user["basis"])
+
+    _ok = M.grade_entry("s", "plugin", _cache_path, _both, _own, _plug_root)
+    check("pt3 a plugin declared in BOTH committed keys travels, and the basis "
+          "names the pair rather than saying 'declared': %r" % (_ok["basis"],),
+          _ok["travels"] is True and "pkg-a@market-x" in _ok["basis"])
+    _half_e = M.grade_entry("s", "plugin", _cache_path, _only_enabled,
+                            _own, _plug_root)
+    check("pt4 enabledPlugins alone does NOT travel, and the basis names the "
+          "key that is missing — this is the documented trap, and 'not "
+          "declared' would not tell anyone what to add: %r" % (_half_e["basis"],),
+          _half_e["travels"] is False
+          and "extraKnownMarketplaces" in _half_e["basis"])
+    _half_k = M.grade_entry("s", "plugin", _cache_path, _only_known,
+                            _own, _plug_root)
+    # THE SECOND DIRECTION OF pt4. A message that names one key unconditionally
+    # passes pt4 and fails here; only a message derived from which key is
+    # actually absent passes both.
+    check("pt5 ...and extraKnownMarketplaces alone names the OTHER key: %r"
+          % (_half_k["basis"],),
+          _half_k["travels"] is False and "enabledPlugins" in _half_k["basis"])
+
+    _absent = M.grade_entry("s", "plugin", _cache_path, _nofile, _own, _plug_root)
+    check("pt6 a repository that commits no settings file is told THAT, not "
+          "that its settings declare nothing — different repairs: %r"
+          % (_absent["basis"],),
+          _absent["travels"] is False
+          and "commits no .claude/settings.json" in _absent["basis"])
+    _unreadable = M.grade_entry("s", "plugin", _cache_path, _broken,
+                                _own, _plug_root)
+    check("pt7 a settings file that could not be PARSED leaves the answer "
+          "UNKNOWN, never False — a stray comma is not evidence that a plugin "
+          "fails to travel: %r" % (_unreadable["basis"],),
+          _unreadable["travels"] is None and "UNKNOWN" in _unreadable["basis"])
+
+    check("pt8 the fetched-marketplace layout matches its declaration",
+          M.grade_entry("s", "plugin", _cache_path, _both,
+                        _own, _plug_root)["travels"] is True)
+    # THE SECOND DIRECTION OF pt8: the SAME declaration against the other live
+    # layout. A parser pinned to either one passes exactly one of this pair.
+    check("pt9 ...and so does the checked-out-marketplace layout, from the very "
+          "same declaration",
+          M.grade_entry("s", "plugin", _checkout_path, _both,
+                        _own, _plug_root)["travels"] is True)
+    check("pt10 a sibling directory whose name merely BEGINS with the declared "
+          "marketplace does not match it — whole segments, because a real tree "
+          "carries backup copies beside the original",
+          M.grade_entry("s", "plugin",
+                        _checkout_path.replace("market-x", "market-x.bak", 1),
+                        _both, _own, _plug_root)["travels"] is not True)
+    check("pt11 a skill sitting at a marketplace root, belonging to no plugin, "
+          "is never graded as travelling — nothing declares it",
+          M.grade_entry("s", "plugin",
+                        os.path.join("marketplaces", "market-x", "skills", "s",
+                                     "SKILL.md"),
+                        _both, _own, _plug_root)["travels"] is not True)
+
+    _own_path = os.path.join(_plug_root, "skills", _own_one, "SKILL.md")
+    check("pt12 audit's own capability is exempt even with no settings file at "
+          "all — the plugin is what RUNS the plan, so a checkout without it "
+          "cannot reach the plan to ask",
+          M.grade_entry(_own_one, "plugin", _own_path, _nofile,
+                        _own, _plug_root)["travels"] is True)
+    # THE SECOND DIRECTION OF pt12, twice: the exemption is a name AND a place,
+    # so each half is mutated away on its own. Dropping the name test exempts a
+    # third-party skill that happens to share a name; dropping the path test
+    # exempts any plugin file whose name collides with one of ours.
+    check("pt13 a name audit does not ship, sitting at that same path, is NOT "
+          "exempt",
+          M.grade_entry("stranger", "plugin", _own_path, _nofile,
+                        _own, _plug_root)["travels"] is not True)
+    check("pt14 ...and audit's own NAME somewhere else is not exempt either",
+          M.grade_entry(_own_one, "plugin", _cache_path, _nofile,
+                        _own, _plug_root)["travels"] is not True)
+    check("pt15 a source this grading does not know is UNKNOWN rather than "
+          "quietly stranded",
+          M.grade_entry("s", "something-new", "/x/s", _nofile,
+                        _own, _plug_root)["travels"] is None)
+
+    # Now the scan itself. The repo scope must not merely PREFER the repository —
+    # it must not read a home directory at all, because a shared artifact that
+    # renders from one is a different document on every machine.
+    _rreg, _rwatch = M._discover_scan(proj, home, M.SCOPE_REPO)
+    check("pt16 the repo scope reads nothing whatsoever under the home "
+          "directory — asserted over the watch list the scan itself built, so "
+          "it cannot be satisfied by a filter over a machine-wide walk",
+          not [w for w in _rwatch
+               if os.path.abspath(w).startswith(os.path.abspath(home) + os.sep)])
+    check("pt17 ...and it still sees the project's own skills, so pt16 is not "
+          "passing by scanning nothing",
+          "proj-skill" in {s["name"] for s in _rreg["skills"]}
+          and "user-skill" not in {s["name"] for s in _rreg["skills"]})
+    _age(tmp)
+    M.discover(proj, home=home)                     # warm the MACHINE scope
+    _r11, _n11 = _counted(
+        lambda: M.discover(proj, home=home, scope=M.SCOPE_REPO))
+    check("pt18 a warm machine scan does not answer a repo-scope question — the "
+          "scope is part of the cache key, and without it one scope would be "
+          "served the other's answer",
+          _n11["listdir"] > 0 or _n11["reads"] > 0)
+
+    _plug_before = [s for s in M.discover(proj, home=home)["skills"]
+                    if s["name"] == "plug-skill"]
+    _age(tmp)
+    M.discover(proj, home=home)
+    with open(os.path.join(proj, ".claude", "settings.json"), "w") as fh:
+        fh.write('{"enabledPlugins": {"pkg-a@marketplace": true},'
+                 ' "extraKnownMarketplaces": {"marketplace": {"source": {}}}}')
+    _plug_after = [s for s in M.discover(proj, home=home)["skills"]
+                   if s["name"] == "plug-skill"]
+    check("pt19 committing a settings file that declares the plugin flips its "
+          "verdict — which also proves the file is in the watch list, since a "
+          "cache that never re-read it would still be serving the old answer: "
+          "%r -> %r" % (_plug_before[0]["travels"], _plug_after[0]["travels"]),
+          _plug_before[0]["travels"] is False
+          and _plug_after[0]["travels"] is True)
+
+    _mcp = M._mcp_entries(home, proj, [])
+    check("pt20 an MCP server from the project's committed .mcp.json is sourced "
+          "'project' and travels",
+          [m for m in _mcp if m["name"] == "late-server"]
+          and _mcp[0]["source"] == "project")
+    _final = M.discover(proj, home=home)
+    _all = _final["skills"] + _final["agents"] + _final["mcp"]
+    check("pt21 EVERY row of every kind carries a verdict AND a non-empty basis "
+          "— a partially graded registry is how a consumer starts treating "
+          "'no verdict' as 'fine'",
+          bool(_all) and all("travels" in e and (e.get("travelsBasis") or "")
+                             for e in _all))
+    check("pt22 no basis names an absolute path — these strings reach a shared "
+          "report and a committed artifact, so the PII gate is honoured where "
+          "the text is written rather than where it is rendered",
+          not [e for e in _all
+               if e["travelsBasis"].startswith("/")
+               or ":\\" in e["travelsBasis"]
+               or tmp in e["travelsBasis"]])
 
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -4,6 +4,92 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.0.0] - 2026-08-31
+
+**A major by this repository's own table, and by one clause of it.** `COMPATIBILITY.md`
+promises that adding a config key never changes behaviour for a config that does not set it.
+`portability` ships as `"strict"` and does: a repository that has never written the key gets
+a control panel that offers only the skills a clone would load, and refuses to write any
+other name into the plan. Nothing already written stops being read and the manifest schema is
+untouched — what changes is what the panel will accept next. The promise is broken on purpose,
+in the open, with the clause it breaks quoted in `COMPATIBILITY.md` beside the reason.
+
+### Added
+
+**A plan could name a skill that only its author has, and every surface reported health.**
+An audit manifest names skills by string — `meta.reviewSkill`, `meta.areas[*].skills`,
+`task.skills` — and the executor is told to load each one before it works. On the machine that
+wrote the plan every name resolves, so `/audit:doctor` printed a green row; on a teammate's
+clone the call fails and the task runs without the conventions it was written to follow. The
+validator was quieter still: it warns only when a task resolves NO skills, so declaring an
+honest empty list drew a warning while naming an unloadable skill drew nothing. Measured on a
+real repository whose plan named six skills, five of them from a home directory, with four
+live tasks in the phase due to run next.
+
+**The grading, once, where discovery already is.** `_panel_discovery` now stamps every
+discovered skill, subagent and MCP server with `travels` and the `travelsBasis` behind it. A
+capability under `.claude/` travels; one in a home directory never does; one from a plugin
+travels only when the COMMITTED `.claude/settings.json` declares it in both
+`extraKnownMarketplaces` and `enabledPlugins` — and when exactly one of those is present the
+message names the one that is missing, which is the trap this README has documented since a
+real repository was found doing it. Matching a plugin to its declaration compares whole path
+segments, because both the fetched and the checked-out marketplace layouts are live and a real
+plugins tree carries backup directories a substring test would accept. Audit's own
+capabilities are exempt: the plugin is the thing that runs the plan.
+
+**Where it surfaces.** `/audit:doctor` gains a `plan portability` row — a WARNING at most,
+naming each stranded name, where the plan names it, and why. `/audit:status --gate --fail-on
+stranded-skills` is the CI half, deliberately out of the default gate. The panel lists every
+discovered row and dims the ones that stay here, keeps them out of the pickers under `strict`,
+predicts the refusal inline before a save rather than at one, and refuses the write. The
+report marks a stranded name in a task's detail — graded from the repository alone, never from
+a home directory, so a shared artifact still renders the same document on every machine.
+
+**One lever, three tiers.** `portability` is `"strict"` (the default: offer only what travels,
+refuse the rest), `"warn"` (diagnose everything, block nothing) or `"off"` (say nothing). The
+verdict and its basis are computed at every tier that is not off; the key decides only what
+each surface does about it.
+
+### Fixed
+
+**The policy switchboard showed a server's name where its source belongs.** For MCP rows the
+panel passed the server name into the `source` column, because discovery handed back bare
+strings and there was no source to pass. MCP entries now carry `project` or `user` like every
+other row, and the column says which.
+
+**A plan-skill walk existed twice as soon as it had two readers.** Which names a plan uses is
+now `_areas.plan_skill_refs`, read by the doctor and by the status gate, so the two cannot
+disagree about what they are grading.
+
+**Two docstrings asserted a layer their module had already left, and a third would have.**
+`_doctor_policy` opened "Layer 5" and `audit-doctor`'s module table carried a matching column;
+both were true when written, and both were left behind when `_panel_discovery` moved down and
+`_doctor_policy` followed it. `_deps.py`'s own comment recorded the move — nothing compared the
+two documents to the table. `layer_doc_drift()` now fails the build on a docstring whose layer
+disagrees with `LAYERS`, judging only a module's claim about itself so that one module citing
+another's layer in prose stays legal.
+
+**A case that could not fail, in the block that had just been written to prove a tier.**
+`dp27` asserted `level != "finding"` while `Report.finding` writes `"FINDING"`, so the half of it
+that named the WARNING tier was true of every row it would ever see. Repaired and then proven red
+by making the row a finding on purpose.
+
+### Consequences worth knowing before you upgrade
+
+- **The panel will refuse a save it used to accept**, whenever a name in the patch resolves
+  here and would not survive a clone. Set `portability` to `"warn"` to keep the diagnosis
+  without the refusal, or `"off"` to restore the previous behaviour exactly. Both are one row
+  in the Settings tab.
+- **A name discovery has never seen is still accepted**, at every tier. An inventory is not a
+  whitelist, and refusing an unknown name is a different feature.
+- **`_panel_discovery._mcp_names` is now `_mcp_entries` and returns rows, not strings.**
+  Renamed rather than widened so a caller still expecting strings fails loudly instead of
+  rendering the letters of a name.
+- **`check_plan_skills` takes the config pair.** Its signature now mirrors `check_policy`'s.
+- **`stranded-skills` fails when it could not run.** A scan that raised, or one with nothing it
+  could grade, fails the condition rather than clearing it — the same three-state reading
+  `invariant-breach` uses.
+
 ## [1.9.0] - 2026-08-28
 
 **A minor by this repository's own table**: the manifest gains keys the plugin reads, the config

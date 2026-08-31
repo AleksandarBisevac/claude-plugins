@@ -1306,13 +1306,22 @@ def _cases(_record):
             fh.write("---\nname: big-skill\ndescription: "
                      + "x" * 5000 + "\n---\n")
         _drows = M.discovery_block(_dproj, home=_dhome)["skills"]
-        check("dv7 a discovered row carries exactly name/description/source "
-              "(no path leak) with the description clipped to discovery's cap",
+        check("dv7 a discovered row carries exactly name/description/source and "
+              "the portability verdict WITH its basis (no path leak) with the "
+              "description clipped to discovery's cap",
               bool(_drows)
-              and set(_drows[0]) == {"name", "description", "source"}
+              and set(_drows[0]) == {"name", "description", "source",
+                                     "travels", "travelsBasis"}
               and _drows[0]["name"] == "big-skill"
               and len(_drows[0]["description"]) <= M.DISCOVERY_DESC_CAP,
               repr(_drows[:1]))
+        # A verdict without its basis is the shape this repo refuses everywhere
+        # else, and a payload is where it would be easiest to drop.
+        check("dv7b ...and the verdict is never served bare - a consumer that "
+              "shows 'will not travel' with nothing after it is a consumer "
+              "nobody can act on",
+              _drows[0]["travels"] is True
+              and ".claude/" in (_drows[0]["travelsBasis"] or ""))
         _dfail = M.discovery_block(None)
         check("dv8 a discovery failure fails OPEN: empty lists plus a one-line "
               "error, never an exception through the status surface",
@@ -1408,7 +1417,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 10,
+          _missing_ap == [] and len(M.CONDITIONS) == 11,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "

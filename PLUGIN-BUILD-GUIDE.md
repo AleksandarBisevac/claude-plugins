@@ -296,7 +296,7 @@ L3:
   _doctor_hygiene -> _locks, _output
   _evidence_view -> _evidence_io, _output, _report_html, _status_facts
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
-  _panel_discovery -> _help, _manifest_io, _output
+  _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
@@ -327,7 +327,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _config_rules, _gate_feed, _journal_io, _loader, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L7:
@@ -349,7 +349,7 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  render-report -> _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
@@ -1036,6 +1036,14 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
+`layer_doc_drift()` closes the third leak in that seam (F230): a module may open its docstring
+with a layer, and now it has to be the layer `LAYERS` gives it. Two documents said `Layer 5` for
+a module the table had already moved off, both were true when written, and nothing compared
+either to the table — a stale ARGUMENT costs the next reader more than no argument does. Only a
+module's claim about ITSELF is judged, anchored at the start of a docstring line, so one module
+correctly citing another's layer in running prose is left alone; the allow row in
+`tools/prove-gates.py` is what holds that line, because a pattern widened to catch the prose
+convicts dozens of accurate sentences.
 `doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
 derived set described under `_output.py` above, product documents included — and it **delegates**
 to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the
@@ -2130,15 +2138,21 @@ merges them. An unparseable settings file is reported, not skipped — the harne
 applying its rules either, and "no rule found" would name the wrong cause.
 
 ### `plugins/audit/scripts/status/_doctor_policy.py`
-The three checks that compare a declaration against the world it claims to describe:
-`meta.areas` roots against the tree and phase tags against the registry (v0.28), the
-capability policy against the plan it governs and against this machine's inventory (v0.30,
-dead patterns v0.38), and `meta.buildCommands` runners against PATH. Every row is a WARNING
-at most — a missing directory or an uninstalled runner is a gap in this checkout or this
-machine, never proof the repo is broken, which is the lesson CI's manifest job taught by
-failing over a correct observation. `_leading_executable` resolves what a command would
-actually run (`cd x &&`, `env`, `VAR=v` prefixes) and returns None rather than guessing at
-shell control flow. Layer 5, set by the `_panel_discovery` load `check_policy` makes.
+The checks that compare a declaration against the world it claims to describe — count them
+with `grep -c '^def check_' plugins/audit/scripts/status/_doctor_policy.py`, because this
+sentence has carried a stale figure before: `meta.areas` roots against the tree and phase
+tags against the registry (v0.28), the capability policy against the plan it governs and
+against this machine's inventory (v0.30, dead patterns v0.38), `meta.buildCommands` runners
+against PATH, the branch-naming convention, and the skills the plan names — first against
+this machine (F195) and then, as a second half, against what a CLONE would load. Every row
+is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
+checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
+job taught by failing over a correct observation. `_leading_executable` resolves what a
+command would actually run (`cd x &&`, `env`, `VAR=v` prefixes) and returns None rather than
+guessing at shell control flow. `portability_mode` reads the tier the second half grades at,
+falling back to the hooks' own `DEFAULTS` rather than to a literal. The layer is in
+`_deps.LAYERS` and is deliberately not restated here: two docstrings claimed a layer this
+file had already left, and nothing compared either of them to the table.
 
 ### `plugins/audit/scripts/status/_doctor_ado.py`
 The ADO connector's operational half (connector v2), offline by construction — a doctor that
@@ -2834,6 +2848,23 @@ blocks instead of free-typed names that may not exist. Front-matter parsing dele
 `_help.front_matter` rather than reimplementing it. `panel-server.py` keeps thin aliases
 (`discover = _panel_discovery.discover`, etc.) so its `/api/registry` route and existing
 selftest fixtures keep working unchanged.
+
+It also answers the question the first one hides: **would a clone of this repository load
+the same thing?** `grade_entry` is a pure function stamping every row with `travels`
+(`True`/`False`/`None`) and the `travelsBasis` behind it — `project` travels, `user` never
+does, and a plugin travels only when the COMMITTED `.claude/settings.json` (read by
+`_committed_settings`, never `settings.local.json` and never the home file) declares it in
+both `extraKnownMarketplaces` and `enabledPlugins`, with the message naming whichever key is
+absent. `_declares` matches a `plugin@marketplace` pair against whole path SEGMENTS, because
+both the fetched (`cache/<marketplace>/<plugin>/<version>/`) and checked-out
+(`marketplaces/<marketplace>/plugins/<plugin>/`) layouts are live and a real tree carries
+backup directories a substring test would accept. Audit's own capabilities are exempt through
+`_policy.required_names()` plus a path test — the plugin is what RUNS the plan. `discover`
+takes a `scope`: `SCOPE_MACHINE` is the panel's question, `SCOPE_REPO` reads nothing under a
+home directory at all, which is what lets the report and the CI gate state a verdict that is
+the same on every machine. The scope is part of the cache key for that reason. `_mcp_entries`
+replaced a function returning bare names, so an MCP row now carries the source it always
+knew.
 
 ### `plugins/audit/scripts/panel/_panel_settings.py`
 Settings-shape knowledge moved out of `panel-server.py`: `FIELD_HELP`/`COMPOSITION_HELP`/

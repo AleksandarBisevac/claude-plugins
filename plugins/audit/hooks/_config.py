@@ -258,6 +258,19 @@ DEFAULTS = {
     # dict is the one place the whole config's shape is stated, and a key the
     # validator knows and this file does not is how the two drifted before.
     "priority": {"maxTier": 9},
+    # Whether a capability that would NOT survive a clone may be used here:
+    # "strict" (shipped) | "warn" | "off". A skill in somebody's home directory
+    # never travels, and a plugin travels only if the COMMITTED settings declare
+    # it in both `extraKnownMarketplaces` and `enabledPlugins`;
+    # `_panel_discovery` grades every discovered capability and this key decides
+    # whether the panel refuses to write one, merely reports it, or says nothing.
+    #
+    # Shipped strict, which is a BEHAVIOUR CHANGE for a repository that sets
+    # nothing -- see COMPATIBILITY.md, where it is recorded as one. No hook reads
+    # this; it is here for `ui`'s and `priority`'s reason: this dict is the one
+    # place the whole config's shape is stated, and a key the validator knows and
+    # this file does not is how the two drifted before.
+    "portability": "strict",
 }
 
 

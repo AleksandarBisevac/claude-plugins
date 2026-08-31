@@ -134,6 +134,18 @@ is still true of a nested key.
 - **Absence keeps meaning the documented default.** Adding a key never changes
   behaviour for a config that does not set it, so an upgrade cannot alter what your
   repository does by introducing a lever you have not touched.
+
+  **`portability` broke this promise once, on purpose, and that is why 2.0.0 is a
+  major.** It ships as `"strict"`, which means a repository that has never written the
+  key gets a control panel that offers only the skills a clone would load and refuses
+  to write any other name into the plan — an edit that worked the day before the
+  upgrade. Nothing about the manifest changes and nothing already written stops being
+  read; what changes is what the panel will accept next. It was shipped strict rather
+  than advisory because the defect it prevents is silent on exactly the machine that
+  causes it: on the author's laptop every name resolves, so every warning tier reads
+  as green there and the cost is paid by whoever clones. Set `"warn"` to keep the
+  diagnosis and lose the refusal, or `"off"` to restore the previous behaviour
+  exactly.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

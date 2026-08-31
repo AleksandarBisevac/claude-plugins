@@ -173,6 +173,55 @@ def _invariant_detail(summary):
                                   _output.some_of(found, sep="; "))
 
 
+def portability_block(manifest, project):
+    """Which of the names this plan uses would survive a clone of the repository.
+
+    `{"graded": [name], "stranded": ["<name> (<where>) - <basis>"]}`, or a block
+    with NO `stranded` key when the scan could not run — which
+    `_status_facts.stranded_skills` reads as "nothing was verified" and trips on.
+    An empty list there would have been a clean bill of health produced by a crash.
+
+    THE REPO SCOPE, NOT THE MACHINE'S. A CI verdict has to be the same on every
+    runner and on the author's laptop, so the scan reads nothing under a home
+    directory; a name found only in somebody's `~/.claude` is exactly what this is
+    looking for, and finding it there would be the bug.
+    """
+    try:
+        import _panel_discovery
+        found = _panel_discovery.discover(
+            project, scope=_panel_discovery.SCOPE_REPO) or {}
+        have = {}
+        for entry in (found.get("skills") or []):
+            if isinstance(entry, dict) and entry.get("name"):
+                have[entry["name"]] = entry
+        graded, stranded = [], []
+        for where, name in _areas.plan_skill_refs(manifest):
+            entry = have.get(name)
+            if entry is None:
+                # Not in the repository at all, which for THIS question is the
+                # same answer as "in a home directory": a clone loads neither.
+                stranded.append("%r (%s) - resolves from nothing this repository "
+                                "carries" % (name, where))
+                graded.append(name)
+                continue
+            graded.append(name)
+            if entry.get("travels") is not True:
+                stranded.append("%r (%s) - %s"
+                                % (name, where,
+                                   entry.get("travelsBasis")
+                                   or "no basis was recorded"))
+        return {"graded": sorted(set(graded)), "stranded": stranded}
+    except Exception as exc:                       # defensive; see the docstring
+        msg = " ".join(("%s: %s" % (type(exc).__name__, exc)).split())
+        return {"error": "the portability scan could not run: %s" % (msg[:200],)}
+
+
+def _stranded_detail(summary):
+    """What `GATE FAILED: stranded-skills (...)` says after the name."""
+    found = _status_facts.stranded_skills(summary) or []
+    return "%d name(s): %s" % (len(found), _output.some_of(found, sep="; "))
+
+
 def _subject_id(row):
     """An evidence row's id for a gate line, or `-` when the subject has none.
 
@@ -395,7 +444,7 @@ DISCOVERY_DESC_CAP = 280
 
 
 def discovery_block(project, home=None):
-    """{"skills": [{name, description, source}], "agents": [...]} for `project`.
+    """{"skills": [{name, description, source, travels, travelsBasis}], "agents": [...]}.
 
     Rows come from _panel_discovery.discover (the panel's own scan: project
     .claude/, user ~/.claude/, installed plugins, this repo's plugins tree)
@@ -419,6 +468,8 @@ def discovery_block(project, home=None):
                         "description": (e.get("description")
                                         or "")[:DISCOVERY_DESC_CAP],
                         "source": e.get("source"),
+                        "travels": e.get("travels"),
+                        "travelsBasis": e.get("travelsBasis"),
                     })
             return out
 
@@ -1076,6 +1127,21 @@ CONDITION_HELP = {
                         "on it fails instead: an unaskable source may have held "
                         "an earlier moment, which would make the excuse wider "
                         "than it should be",
+    # The lead sentence stays SHORT on purpose: `--help` wraps this at a fixed
+    # width behind an indent, and case ap9 asserts the part before the first
+    # bracket survives on one line.
+    "stranded-skills": "a skill this plan NAMES that a clone would not load "
+                       "(one in somebody's home directory, or from a plugin the "
+                       "COMMITTED .claude/settings.json does not declare in both "
+                       "of its keys. Graded from the repository alone and never "
+                       "from a home directory, so the verdict is the same on "
+                       "every runner as on the author's laptop - which is the "
+                       "point, since the machine that wrote the plan is the one "
+                       "machine where every name resolves. Opt-in and "
+                       "deliberately out of the --gate default: a plan naming a "
+                       "skill only its author has is a correct observation about "
+                       "a repository nobody may ever clone, and /audit:doctor "
+                       "already says so at exit zero)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -1111,6 +1177,13 @@ def _conditions_epilog():
         "them would fail builds on the day the plugin was upgraded rather than "
         "on the day anything went wrong. Absent evidence is never read as a "
         "failure by either one.", width=78))
+    lines.append("")
+    lines.append(textwrap.fill(
+        "Nor is stranded-skills, for a reason of its own: a plan naming a skill "
+        "only its author has is a correct observation about a repository nobody "
+        "may ever clone. A team that wants it enforced is a team that will type "
+        "it. What it does NOT do is pass quietly - a scan that could not run "
+        "fails the condition rather than clearing it.", width=78))
     lines.append("")
     lines.append(textwrap.fill(
         "exit codes: 0 pass | 1 gate failed | 2 usage error / unreadable "
@@ -1267,6 +1340,13 @@ def main(argv):
         # `/audit:status` that was not asked for it should pay.
         summary["invariants"] = invariants_block(manifest, manifest_path)
 
+    if want_gate and "stranded-skills" in conditions:
+        # Injected for `invariant-breach`'s reason — `_status_facts` is layer 2
+        # and the scan is layer 3 — and computed only when asked, because it walks
+        # the repository's `.claude/` tree.
+        summary["portability"] = portability_block(
+            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+
     if want_gate:
         failed = evaluate_gate(summary, conditions)
         summary["gate"] = {
@@ -1326,6 +1406,7 @@ def main(argv):
                     "invariant-breach": _invariant_detail(summary),
                     "failing-tests": _failing_tests_detail(summary),
                     "no-test-evidence": _no_evidence_detail(summary),
+                    "stranded-skills": _stranded_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

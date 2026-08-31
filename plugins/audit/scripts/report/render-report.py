@@ -99,6 +99,7 @@ import _evidence_view         # noqa: E402  (the test-execution record: the only
 import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
+import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
 
 
 # --- module aliases (CSS/SCRIPT, page + fragment + usage re-exports) ------------
@@ -218,8 +219,45 @@ def _verdict(summary):
 
 
 # --- rendering ------------------------------------------------------------------
+def stranded_marks(project, manifest, config):
+    """`{skill name: basis}` for the names a CLONE of this repository would not load.
+
+    THE REPOSITORY ALONE, and never a home directory. A report is a shared
+    artifact — a CI upload, a `--share` link, a committed example this repo diffs
+    against a fresh render — so a mark computed from the author's `~/.claude` would
+    make one manifest render two different documents and turn
+    `check-rendered-artifacts.py` into a machine-dependent gate. The repo scope
+    exists for this caller.
+
+    `{}` rather than a mark whenever the question was not asked or could not be
+    answered: `portability: off`, or a scan that raised. An empty map renders
+    exactly what this report rendered before the question existed, which is what
+    keeps the committed artifacts byte-identical while the key is off.
+    """
+    if (config or {}).get("portability") == "off":
+        return {}
+    try:
+        import _panel_discovery
+        found = _panel_discovery.discover(
+            project, scope=_panel_discovery.SCOPE_REPO) or {}
+        travels = set()
+        for entry in (found.get("skills") or []):
+            if isinstance(entry, dict) and entry.get("travels") is True:
+                travels.add(entry.get("name"))
+        marks = {}
+        for _where, name in _areas.plan_skill_refs(manifest):
+            if name not in travels:
+                marks[name] = ("does not resolve from anything this repository "
+                               "carries, so a clone loads nothing for it")
+        return marks
+    except Exception:
+        # A report that cannot be rendered is worse than one that says less.
+        return {}
+
+
 def render_html(manifest, summary, basename="audit-report", usage=None,
-                fragment=False, css=None, show_proposals=True, evidence=None):
+                fragment=False, css=None, show_proposals=True, evidence=None,
+                portability=None):
     """The HTML report, with this file's gate verdict wired into it.
 
     The document itself is `_report_page.render_html`; the only thing added here
@@ -232,7 +270,8 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                                     fragment=fragment, css=css,
                                     verdict=_verdict,
                                     show_proposals=show_proposals,
-                                    evidence=evidence)
+                                    evidence=evidence,
+                                    portability=portability)
 
 
 # --- cli ------------------------------------------------------------------------
@@ -326,6 +365,7 @@ def main(argv):
     # tokens + the report's own rules, assembled where that concatenation is
     # defined — the token block alone is not a stylesheet.
     _css = _report_ui.css_with_tokens(_tokens)
+    _port = stranded_marks(_proj, manifest, _cfg)
     if _tinfo.get("error"):
         sys.stderr.write("WARNING: theme not applied - %s\n" % _tinfo["error"])
 
@@ -338,7 +378,7 @@ def main(argv):
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(render_html(manifest, summary, basename, usage,
                                  css=_css, show_proposals=show_proposals,
-                                 evidence=evidence))
+                                 evidence=evidence, portability=_port))
         written.append(p)
     if fmt == "artifact":
         # A separate name, never the .html one. The standalone file is what people
@@ -349,7 +389,7 @@ def main(argv):
             fh.write(render_html(manifest, summary, basename, usage,
                                  fragment=True, css=_css,
                                  show_proposals=show_proposals,
-                                 evidence=evidence))
+                                 evidence=evidence, portability=_port))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")

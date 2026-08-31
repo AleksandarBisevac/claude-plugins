@@ -1562,12 +1562,21 @@ def write_config(out_dir):
     control panel opened on this directory reports "No manifest — run /audit:init"
     and the Overview tab renders its empty state. The committed acme example carries
     the same file for the same reason.
+
+    `portability: "off"` because the fixture is a scratch directory that nobody
+    clones, and it is true of it rather than convenient: SKILL_POOL names real
+    skills that live on somebody's machine and in no repository, so the honest
+    grading marks every one of them. A demo covered in "would not survive a clone"
+    would be reporting a property of the FIXTURE as if it were a property of the
+    product, and the marks would land in a committed artifact this repo diffs
+    byte-for-byte against a fresh render.
     """
     cfg_dir = os.path.join(out_dir, ".claude")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "audit.config.json")
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"manifestPath": "audit-plan.json"}, fh, indent=2)
+        json.dump({"manifestPath": "audit-plan.json", "portability": "off"},
+                  fh, indent=2)
         fh.write("\n")
     return path
 

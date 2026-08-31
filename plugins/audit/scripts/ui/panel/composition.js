@@ -647,11 +647,71 @@ function modelHints(){
 function skillHints(){
  if(!REG.skills||!REG.skills.length)return[];
  const known=new Set(REG.skills.map(s=>s.name));
+ return spelledSkills().filter(n=>!known.has(n));}
+/**
+ * Every skill name the manifest spells, sorted — the input to both notes below.
+ *
+ * @returns {string[]} sorted and deduped; empty when the manifest names none
+ */
+function spelledSkills(){
  const comp=(STATE&&STATE.composition)||{tasks:[]};
  const spelled=new Set();
  (comp.tasks||[]).forEach(t=>{(Array.isArray(t.skills)?t.skills:[]).forEach(s=>spelled.add(s));});
  (comp.areaSkills||[]).forEach(s=>spelled.add(s));
- return [...spelled].sort().filter(n=>!known.has(n));}
+ return [...spelled].sort();}
+/**
+ * Which portability tier this project is on, read the way every other setting is.
+ *
+ * The shipped default arrives in `STATE.defaults`, so there is no second copy of
+ * it here — a literal would be a fourth statement of a value the config schema,
+ * the validator and the hooks' DEFAULTS already agree on.
+ *
+ * @returns {string} one of the validator's PORTABILITY_MODES
+ */
+function portabilityMode(){
+ const cfg=(STATE&&STATE.config)||{},def=(STATE&&STATE.defaults)||{};
+ return cfg.portability??def.portability??'strict';}
+/**
+ * Whether a discovered row may be OFFERED.
+ *
+ * `!==false` and not `===true` on purpose: an UNKNOWN verdict is not a refusal.
+ * Hiding a row whose verdict could not be reached would turn a missing basis into
+ * a decision, which is the one thing the grading refuses to do itself.
+ *
+ * @param {{travels?: boolean|null}} row
+ * @returns {boolean}
+ */
+function travels(row){return !row||row.travels!==false;}
+/**
+ * The rows a picker may offer: everything under 'warn' and 'off', and only what a
+ * clone would load under 'strict'.
+ *
+ * The TABLE below still lists every row — this narrows what may be CHOSEN, which
+ * is a different question. A list that quietly shrank would read as "you do not
+ * have that skill" and send its reader to debug discovery.
+ *
+ * @returns {Array<Object>} rows from REG.skills
+ */
+function pickableSkills(){
+ const all=REG.skills||[];
+ return portabilityMode()==='strict'?all.filter(travels):all;}
+/**
+ * The names this manifest spells that a clone of this repository would NOT load.
+ *
+ * Rendered beside `skillHints`, and separate from it because they are different
+ * problems with different repairs: that one is a name nothing here can find, this
+ * one is a name that resolves perfectly well HERE and nowhere else. Predicting the
+ * refusal is the point — under 'strict' the alternative is teaching by refusal at
+ * save time, after the choice has been made.
+ *
+ * @returns {Array<{name: string, basis: string}>} sorted; empty both when every
+ *   spelled name travels and when there was no inventory to judge against
+ */
+function portabilityHints(){
+ if(!REG.skills||!REG.skills.length||portabilityMode()==='off')return[];
+ const by=new Map((REG.skills||[]).map(s=>[s.name,s]));
+ return spelledSkills().map(n=>by.get(n)).filter(s=>s&&s.travels===false)
+   .map(s=>({name:s.name,basis:s.travelsBasis||''}));}
 /**
  * A one-skill box with a completion menu, for the settings that take a single
  * skill rather than a list.
@@ -682,7 +742,7 @@ function skillPicker(current,onChange,ariaName,hook){
    'aria-label':ariaName||'search a skill'});
  if(hook)inp.setAttribute('data-skillpick',hook);
  inp.addEventListener('input',()=>onChange(inp.value.trim()||null));
- return comboWrap(inp,()=>REG.skills,(name,close)=>{inp.value=name;onChange(name);close();});}
+ return comboWrap(inp,()=>pickableSkills(),(name,close)=>{inp.value=name;onChange(name);close();});}
 /**
  * The three-state skill list for one task.
  *
@@ -726,7 +786,7 @@ function skillChips(getArr,setArr,ariaName){
  const add=(name,close)=>{const n=(name||'').trim();
    if(n){const a=(getArr()||[]).slice();if(!a.includes(n)){a.push(n);setArr(a);draw();}}
    inp.value='';if(close)close();};
- const combo=comboWrap(inp,()=>REG.skills.filter(s=>!(getArr()||[]).includes(s.name)),add,add);
+ const combo=comboWrap(inp,()=>pickableSkills().filter(s=>!(getArr()||[]).includes(s.name)),add,add);
  draw();box.append(chips,combo);return box;}
 /**
  * Composition's filter state, held OUT here rather than in renderComp's closure.
@@ -898,6 +958,24 @@ function renderComp(){closeCombo();
   el('div',{class:'mut small','data-skhint':n},
    'skill "'+n+'" is spelled only in this manifest; discovery knows no such '
    +'skill — a hint, not a gate: a name that never resolves simply loads nothing.')));
+ // sp: the portability note, separate from the one above because it is a
+ // different problem — this name resolves perfectly well HERE, and nowhere else.
+ // Said BEFORE a save rather than at one: under strict the alternative is
+ // teaching by refusal, after the choice has already been made.
+ const skport=portabilityHints().slice(0,3);
+ skport.forEach(h=>tcard.append(
+  el('div',{class:'mut small','data-skport':h.name},
+   'skill "'+h.name+'" resolves here but would not survive a clone — '+h.basis+'.')));
+ // The tier is said ONCE, under the names it applies to, and not repeated on each
+ // of them: three copies of one sentence read as three problems, which is the
+ // wall `_warning_groups` exists to stop one surface over.
+ if(skport.length)tcard.append(el('div',{class:'mut small',
+   'data-skport-mode':portabilityMode()},
+  portabilityMode()==='strict'
+    ?'Portability is strict, so a save naming one of these is refused. Vendor it '
+     +'under .claude/skills/, declare its plugin in the committed '
+     +'.claude/settings.json, or set portability to "warn" in Settings.'
+    :'Portability is "warn", so this is a note and nothing is refused.'));
  const tbody=el('tbody');
  // The reference for the two PHASE-row levers, once, above the columns they sit
  // in. Both of the last two columns hold TWO different things - column 4 a task's
@@ -1287,15 +1365,22 @@ function renderComp(){closeCombo();
  // building blocks — one table, sub-tabs switch context (skills / agents / mcp)
  const bb=el('div',{class:'card'});
  bb.append(h2h('Available building blocks (discovered)',
-   'Skills & agents found in this project, your ~/.claude, and installed plugins — plus MCP servers in scope. Use these names in the pickers above.'));
- const datasets={skills:REG.skills,agents:REG.agents,
-   mcp:(REG.mcp||[]).map(n=>({name:n,source:'mcp',description:''}))};
+   'Skills & agents found in this project, your ~/.claude, and installed plugins — plus MCP servers in scope. Use these names in the pickers above. A row marked "stays here" resolves on this machine and would not survive a clone; under strict portability it is listed but not offered.'));
+ // EVERY ROW STAYS VISIBLE, including the ones the pickers will not offer. This
+ // table answers "what does this machine have"; the pickers answer "what may I
+ // choose". A table that silently shrank would read as "you do not have that
+ // skill" and send its reader to debug discovery instead of their settings.
+ const datasets={skills:REG.skills,agents:REG.agents,mcp:REG.mcp};
  const subtabs=el('div',{class:'subtabs'}),host=el('div',{class:'regtblwrap'});let cur='skills';
  const drawTbl=()=>{const items=datasets[cur]||[];const tb=el('tbody');
    if(!items.length)tb.append(el('tr',{},el('td',{colspan:'3',class:'mut'},'none found')));
-   items.forEach(it=>tb.append(el('tr',{},el('td',{class:'mono'},it.name),
-     el('td',{},it.source?el('span',{class:'src badge'},it.source):null),
-     el('td',{class:'d'},it.description||''))));
+   items.forEach(it=>{const row=el('tr',{},el('td',{class:'mono'},it.name),
+     el('td',{},it.source?el('span',{class:'src badge'},it.source):null,
+       it.travels===false?el('span',{class:'src badge stays',
+         title:it.travelsBasis||''},'stays here'):null),
+     el('td',{class:'d'},it.description||''));
+    if(it.travels===false)row.classList.add('stranded');
+    tb.append(row);});
    host.replaceChildren(el('table',{class:'regtbl'},
      tableHead(['name','source','description']),tb));};
  ['skills','agents','mcp'].forEach(k=>subtabs.append(el('button',{class:'subtab'+(k===cur?' on':''),

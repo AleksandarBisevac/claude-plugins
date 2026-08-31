@@ -109,7 +109,8 @@ def _cases(check):
                   and not _f["label"][0].islower())
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
-          == ("paths", "guards", "tdd", "usage", "journal", "priority")
+          == ("paths", "guards", "tdd", "usage", "journal", "priority",
+              "portability")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",

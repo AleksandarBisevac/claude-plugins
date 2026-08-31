@@ -248,6 +248,15 @@ FIELD_HELP = {
         "pinned above it keeps the tier it was given and simply sorts after every "
         "tier at or under the maximum. Priority re-sorts work that is ALREADY "
         "ready; it never makes an unready task ready and never skips a dependency.",
+    "portability":
+        "Whether a capability that would NOT survive a clone of this repository may "
+        "be used in it. Under .claude/ it travels; in a home directory it never "
+        "does; from a plugin it travels only when the COMMITTED .claude/settings.json "
+        "declares it in both extraKnownMarketplaces and enabledPlugins - committing "
+        "only the second is the trap, because it keeps working for whoever added it. "
+        "strict offers only what travels and refuses to write the rest into the "
+        "manifest; warn reports and blocks nothing; off says nothing. The verdict is "
+        "computed either way - this decides what is done about it.",
     "usage.pricing":
         "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
         "then longest matching prefix — so a dated model id resolves to its family — "
@@ -503,6 +512,23 @@ SETTINGS_GROUPS = (
              "kind": "int", "min": 1},
         ),
     },
+    {
+        "id": "portability",
+        "title": "Travelling with the repo",
+        # No backticks in a blurb: it is rendered as text, not as markdown.
+        "blurb": "A plan names its skills by string, and a name that resolves only "
+                 "on the machine that wrote it loads nothing on anybody else's "
+                 "clone - quietly, because the executor asks for it, misses, and "
+                 "carries on. Strict offers only what a clone would get and "
+                 "refuses to write the rest; warn reports and blocks nothing; off "
+                 "says nothing. A capability from a plugin counts as travelling "
+                 "only when the committed settings file declares it in both of "
+                 "its keys.",
+        "fields": (
+            {"path": "portability", "label": "Capabilities that must survive a clone",
+             "kind": "enum", "enum": "portability"},
+        ),
+    },
 )
 
 
@@ -536,7 +562,8 @@ def _cfg_enums():
     return {"inProgressPolicy": list(vc.IN_PROGRESS_POLICY),
             "authorMode": list(vc.AUTHOR_MODES),
             "strictManifestState": list(vc.STRICT_MANIFEST_STATE),
-            "planGate": list(vc.PLAN_GATE_MODES)}
+            "planGate": list(vc.PLAN_GATE_MODES),
+            "portability": list(vc.PORTABILITY_MODES)}
 
 
 # --- cli --------------------------------------------------------------------

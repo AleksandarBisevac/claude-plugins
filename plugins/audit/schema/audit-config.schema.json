@@ -425,6 +425,15 @@
           "description": "The highest tier the panel's control offers and the CLI suggests. ADVISORY, AND NOTHING IS CLAMPED: a phase pinned above it keeps the tier it was given and sorts after every tier at or under the maximum by ordinary arithmetic, and the surfaces say so. A clamped value would be a file that says one thing and a run that does another. Default 9."
         }
       }
+    },
+    "portability": {
+      "type": "string",
+      "enum": [
+        "strict",
+        "warn",
+        "off"
+      ],
+      "description": "Whether a skill, subagent or MCP server that would NOT survive a clone of this repository may be used in it. A capability under .claude/ travels; one in a home directory never does; one from a plugin travels only if the COMMITTED .claude/settings.json declares it in BOTH extraKnownMarketplaces and enabledPlugins - committing only the second is a documented trap that keeps working for whoever added it. 'strict' (the default) offers only what travels and refuses to write anything else into the manifest; 'warn' still marks and still lets /audit:doctor say so, but blocks nothing; 'off' says nothing at all. The verdict itself is always computed and always carries the basis it was reached by; this key decides only what each surface does about it."
     }
   }
 }

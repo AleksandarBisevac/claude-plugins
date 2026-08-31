@@ -71,12 +71,20 @@ KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
-    "journal", "evidence", "policy", "ui", "priority",
+    "journal", "evidence", "policy", "ui", "priority", "portability",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
 # the two together, and the panel's select reads THIS tuple via _cfg_enums.
 PLAN_GATE_MODES = ("observe", "warn", "ask", "deny")
+# How strictly this repository refuses capabilities that would not survive a clone
+# — a skill in somebody's home directory, a plugin the committed settings do not
+# declare. `strict` is the shipped value and it BLOCKS: the panel offers only what
+# travels and refuses to write anything else. `warn` diagnoses and blocks nothing;
+# `off` says nothing at all. Read by `_panel_discovery`'s consumers rather than by
+# the grading itself, which always states a verdict and lets each surface decide
+# what to do about it.
+PORTABILITY_MODES = ("strict", "warn", "off")
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
 KNOWN_RULE = {"pathPrefix", "bannedPattern", "message"}
@@ -184,6 +192,15 @@ def validate_config(obj):
         findings.append("planGate must be one of %s - the gate reads anything "
                         "else as unset (the graded ladder)"
                         % (PLAN_GATE_MODES,))
+    # A FINDING rather than a warning, and for the reason above one key over: only
+    # a finding refuses the panel's save, so a typo here would otherwise be stored
+    # and then read as `strict` by every surface — the strictest tier, arrived at
+    # by accident.
+    if "portability" in obj and obj["portability"] not in PORTABILITY_MODES:
+        findings.append("portability must be one of %s - it decides whether a "
+                        "capability that would not survive a clone is refused, "
+                        "merely reported, or ignored" % (PORTABILITY_MODES,))
+
     if "planGate" in obj and "enforce" in obj:
         warnings.append("both planGate and enforce are set - planGate wins; "
                         "enforce is legacy (true means the same as planGate: "

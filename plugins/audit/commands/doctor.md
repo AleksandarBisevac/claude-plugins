@@ -1,5 +1,5 @@
 ---
-description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether hooks have ever fired and which copy of the plugin ran them, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
+description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether the skills the plan names would resolve from a clone or only here, whether hooks have ever fired and which copy of the plugin ran them, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
 argument-hint: '[--deep] [--json] [--color auto|always|never]'
 allowed-tools: Bash
 ---

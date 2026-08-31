@@ -10,6 +10,14 @@ walks the same places Claude Code itself looks for skills/agents and returns wha
 it finds, so the panel's composition pickers offer real building blocks instead of
 free-typed names that may not exist.
 
+AND IT ANSWERS A SECOND QUESTION THE FIRST ONE HIDES: would a clone of this
+repository load the same thing? Every entry carries `travels` and `travelsBasis`
+beside its `source`, because "reachable from here" is the answer that made a plan
+naming a home-directory skill look healthy on the machine that wrote it. The
+grading lives HERE, once, for the reason `_policy` states about the capability
+policy: the doctor, the panel, the CI gate and the report all ask it, and a rule
+resolved in four places is four rules. See the portability section below.
+
 Front matter parsing delegates to `_help.front_matter` (P10.5) rather than
 reimplementing it here — this module still needs `_help` for that one function,
 which is fine: `_help` does not import this module or panel-server, so there is no
@@ -64,6 +72,7 @@ _output.install_path()
 
 import _help  # noqa: E402  (schema-sourced field help + concept topics; front_matter lives here)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _policy  # noqa: E402  (required_names: what this plugin ships, read off its own tree)
 
 
 # --- discovery / registry -------------------------------------------------------
@@ -184,31 +193,45 @@ def _plugin_bases(home, watch, cap=200):
     return sorted(set(bases))
 
 
-def _discover_scan(project, home):
+def _discover_scan(project, home, scope=None):
     """One uncached scan: `({skills, agents, mcp}, watched_paths)`.
 
     Split out of `discover` so the cache has a seam to wrap, and so the second
-    element is produced BY the scan rather than guessed alongside it."""
+    element is produced BY the scan rather than guessed alongside it.
+
+    `scope` picks WHICH question is being asked — see `SCOPE_MACHINE` /
+    `SCOPE_REPO`. The repo scope reads nothing under a home directory, which is a
+    property its callers depend on rather than a saving.
+    """
+    machine = scope != SCOPE_REPO
     skills, agents, s_seen, a_seen, watch = [], [], set(), set(), []
     # project-local
     _scan_skills(os.path.join(project, ".claude"), "project", skills, s_seen, watch)
     _scan_agents(os.path.join(project, ".claude"), "project", agents, a_seen, watch)
-    # user-global
-    _scan_skills(os.path.join(home, ".claude"), "user", skills, s_seen, watch)
-    _scan_agents(os.path.join(home, ".claude"), "user", agents, a_seen, watch)
-    # installed plugins (parent-dir basename is often a version/cache name — noise,
-    # so use a plain 'plugin' badge)
-    for base in _plugin_bases(home, watch):
-        _scan_skills(base, "plugin", skills, s_seen, watch)
-        _scan_agents(base, "plugin", agents, a_seen, watch)
+    if machine:
+        # user-global
+        _scan_skills(os.path.join(home, ".claude"), "user", skills, s_seen, watch)
+        _scan_agents(os.path.join(home, ".claude"), "user", agents, a_seen, watch)
+        # installed plugins (parent-dir basename is often a version/cache name —
+        # noise, so use a plain 'plugin' badge)
+        for base in _plugin_bases(home, watch):
+            _scan_skills(base, "plugin", skills, s_seen, watch)
+            _scan_agents(base, "plugin", agents, a_seen, watch)
     # this repo's own plugins (dev / local checkout — basename is the real name)
     for base in sorted(_local_plugin_bases(project, watch)):
         label = "plugin:" + os.path.basename(base)
         _scan_skills(base, label, skills, s_seen, watch)
         _scan_agents(base, label, agents, a_seen, watch)
     # MCP servers (names only — never surface secrets/tokens)
-    mcp = _mcp_names(home, project, watch)
-    return {"skills": skills, "agents": agents, "mcp": mcp}, watch
+    mcp = _mcp_entries(home, project, watch, machine)
+    registry = {"skills": skills, "agents": agents, "mcp": mcp}
+    # The portability half, at the same read: the declarations that decide it are
+    # a file in this repository, so grading here costs the scan one more stat and
+    # keeps every surface reading a single verdict.
+    settings, problem = _committed_settings(project, watch)
+    _grade_registry(registry, declared_plugins(settings, problem),
+                    own_names(), _output.PLUGIN_ROOT)
+    return registry, watch
 
 
 def _local_plugin_bases(project, watch):
@@ -227,25 +250,268 @@ def _local_plugin_bases(project, watch):
     return out
 
 
-def _mcp_names(home, project, watch):
-    names = set()
-    for path in (os.path.join(home, ".claude.json"),
-                 os.path.join(project, ".mcp.json")):
+def _mcp_entries(home, project, watch, machine=True):
+    """`[{"name", "source", "description"}]` — MCP servers in scope, project first.
+
+    Names only, never a command line or an env block: those carry tokens and this
+    dict is served to a browser.
+
+    IT USED TO RETURN A FLAT SORTED LIST OF NAMES, discarding a source it already
+    knew — `<project>/.mcp.json` is committed and `~/.claude.json` is not, and that
+    is exactly the distinction the portability grading needs. Renamed rather than
+    widened in place, so a caller still expecting strings fails loudly instead of
+    iterating a dict and rendering the letters of its keys.
+
+    Project is read FIRST, so a server declared in both wins as `project` — the
+    precedence the skill and agent scans already use.
+    """
+    sources = [(os.path.join(project, ".mcp.json"), "project")]
+    if machine:
+        sources.append((os.path.join(home, ".claude.json"), "user"))
+    out, seen = [], set()
+    for path, source in sources:
         watch.append(path)
         try:
             data = _mio.read_json(path)
         except Exception:
             continue
         servers = data.get("mcpServers") if isinstance(data, dict) else None
-        if isinstance(servers, dict):
-            names.update(str(k) for k in servers.keys())
-    return sorted(names)
+        if not isinstance(servers, dict):
+            continue
+        for key in sorted(servers.keys()):
+            name = str(key)
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append({"name": name, "source": source, "description": ""})
+    return out
+
+
+# --- portability: what a clone of this repository would actually load ------------
+# Everything above answers "what can THIS MACHINE reach". For a plan that is
+# committed and handed to somebody else that is the wrong half of the question: on
+# the machine that wrote the plan every name resolves, so nothing is ever said,
+# and the teammate's checkout loads none of it. Measured on a real repository whose
+# plan named skills that lived only in the author's home directory, with live tasks
+# in the phase due to run next.
+#
+# So every entry also carries whether it would survive a clone, AND the basis for
+# saying so — a verdict a reader cannot explain is a verdict they will switch off.
+COMMITTED_SETTINGS_REL = os.path.join(".claude", "settings.json")
+
+# The two questions `discover` can be asked. MACHINE is the panel's ("what may I
+# pick from, here"); REPO is the shared artifact's ("what would anybody get"), and
+# it reads nothing under a home directory at all — a report that renders
+# differently on two machines is not a report anyone can compare.
+SCOPE_MACHINE = "machine"
+SCOPE_REPO = "repo"
+
+
+def _committed_settings(project, watch):
+    """`(obj or None, problem or None)` — the COMMITTED settings, and nothing else.
+
+    Not `settings.local.json`, which is personal and gitignored, and not the home
+    settings, which belong to one machine. A capability arriving through either is
+    stranded, and that distinction is the entire subject here.
+
+    DELIBERATELY NOT `_doctor_setup.read_settings`, which is a layer above this one
+    and answers a different question: it walks the precedence chain of every scope
+    to say what applies on this machine. This asks what a clone is promised, which
+    is one committed file. Two readers, two questions — do not collapse them.
+
+    A parse failure is RETURNED as a problem and never as `{}`: an empty dict would
+    grade every plugin stranded over a stray comma, which is a confident wrong
+    answer where the honest one is that the basis could not be read.
+    """
+    path = os.path.join(project, COMMITTED_SETTINGS_REL)
+    watch.append(path)
+    if not os.path.isfile(path):
+        return (None, None)
+    try:
+        obj = _mio.read_json(path)
+    except Exception as exc:
+        return (None, "%s" % (exc,))
+    if not isinstance(obj, dict):
+        return (None, "not a JSON object")
+    return (obj, None)
+
+
+def declared_plugins(settings, problem):
+    """What the committed settings promise a clone.
+
+    `{"enabled": set((plugin, marketplace)), "marketplaces": set(name),
+      "present": bool, "problem": str or None}`
+
+    `present` is separate from an empty `enabled` on purpose: "this repository
+    commits no settings file" and "it commits one that declares nothing" are
+    different repairs, and a reader told only the second would go looking for a
+    typo in a file that is not there.
+    """
+    enabled, marketplaces = set(), set()
+    if isinstance(settings, dict):
+        rows = settings.get("enabledPlugins")
+        for key, value in (rows if isinstance(rows, dict) else {}).items():
+            if not value:  # a row set false is a plugin switched OFF, not enabled
+                continue
+            plugin, sep, market = str(key).rpartition("@")
+            if sep and plugin.strip() and market.strip():
+                enabled.add((plugin.strip(), market.strip()))
+        known = settings.get("extraKnownMarketplaces")
+        if isinstance(known, dict):
+            marketplaces = set(str(k) for k in known.keys())
+    return {"enabled": enabled, "marketplaces": marketplaces,
+            "present": settings is not None, "problem": problem}
+
+
+def own_names():
+    """Audit's own skill and agent names, read off the plugin's own directory.
+
+    `_policy.required_names()` is already the answer to "what does this plugin
+    ship", derived rather than typed, and the capability policy exempts the same
+    set for the same reason: the plugin is the thing that RUNS the plan, so whether
+    its own skills travel is a question that cannot arise — a checkout without them
+    cannot reach the plan at all.
+    """
+    req = _policy.required_names()
+    return set(req.get("skills") or []) | set(req.get("agents") or [])
+
+
+def _path_segments(path):
+    """Every whole directory name in `path`, either separator, no empties."""
+    return [seg for seg in re.split(r"[\\/]+", path or "") if seg]
+
+
+def _under(path, root):
+    """True iff `path` sits inside `root`, compared as whole segments.
+
+    A plain `startswith` would accept a sibling directory whose name merely begins
+    with the root's, which is the same class of mistake the segment matching below
+    exists for.
+    """
+    if not path or not root:
+        return False
+    here = os.path.normcase(os.path.abspath(path))
+    top = os.path.normcase(os.path.abspath(root))
+    return here == top or here.startswith(top + os.sep)
+
+
+def _declares(plugin, marketplace, segments):
+    """True iff both names appear as WHOLE path segments, marketplace first.
+
+    Two installed layouts are live and a parser pinned to either answers wrongly on
+    the other: `cache/<marketplace>/<plugin>/<version>/` when the marketplace was
+    fetched, `marketplaces/<marketplace>/plugins/<plugin>/` when it is a checkout.
+    Whole segments rather than a substring test, because a real tree carries names
+    like `<marketplace>.bak`, which `in` and `startswith` both accept.
+    """
+    if plugin not in segments or marketplace not in segments:
+        return False
+    first_market = segments.index(marketplace)
+    last_plugin = len(segments) - 1 - segments[::-1].index(plugin)
+    return first_market < last_plugin
+
+
+def _verdict(travels, basis):
+    return {"travels": travels, "basis": basis}
+
+
+def grade_entry(name, source, path, decl, names_of_own, root_of_own):
+    """`{"travels": True|False|None, "basis": "<one line>"}` for a discovered entry.
+
+    PURE — no filesystem, no config — so every branch is reachable from literals
+    and its cases need no fixture tree.
+
+    `None` is the third answer and is never folded into `False`: a settings file
+    that could not be parsed, or a source this grading does not know, leaves the
+    question UNANSWERED, and reporting that as "will not travel" would be a claim
+    with no basis behind it.
+
+    The plugin arms are separated by WHICH REPAIR they call for, which is why there
+    are four of them rather than one "not declared". Naming only `enabledPlugins`
+    is the documented trap: everyone who clones then gets a flag enabling a plugin
+    from a marketplace their machine has never heard of, and it keeps working for
+    whoever added it, because their machine registered that marketplace by hand.
+    """
+    if source == "project":
+        return _verdict(True, "committed under .claude/, so a clone gets it")
+    if source == "user":
+        return _verdict(False,
+                        "lives in a home directory, which no clone carries")
+    label = str(source or "")
+    if label != "plugin" and not label.startswith("plugin:"):
+        return _verdict(None,
+                        "the source %r is not one this grading knows, so whether "
+                        "it travels is UNKNOWN" % (source,))
+    if name in names_of_own and _under(path, root_of_own):
+        return _verdict(True,
+                        "audit's own, and audit is what runs the plan")
+    if decl["problem"]:
+        return _verdict(None,
+                        "the committed .claude/settings.json could not be read "
+                        "(%s), so whether this travels is UNKNOWN"
+                        % (decl["problem"],))
+    segments = _path_segments(path)
+    # A plugin checked out INSIDE the repository is named by its directory, and its
+    # path carries no marketplace segment to match on — so the label is the name.
+    local = label.split(":", 1)[1] if label.startswith("plugin:") else None
+    here = [pair for pair in sorted(decl["enabled"])
+            if _declares(pair[0], pair[1], segments) or pair[0] == local]
+    for plugin, market in here:
+        if market in decl["marketplaces"]:
+            return _verdict(True,
+                            "the committed settings declare %s@%s, in both "
+                            "enabledPlugins and extraKnownMarketplaces"
+                            % (plugin, market))
+    if here:
+        plugin, market = here[0]
+        return _verdict(False,
+                        "enabledPlugins names %s@%s but extraKnownMarketplaces "
+                        "does not carry %r, so a clone enables a plugin from a "
+                        "marketplace its machine has never heard of"
+                        % (plugin, market, market))
+    seen_market = sorted(m for m in decl["marketplaces"]
+                         if local is not None or m in segments)
+    if seen_market:
+        return _verdict(False,
+                        "extraKnownMarketplaces carries %r but enabledPlugins "
+                        "names no plugin of it that this entry belongs to"
+                        % (seen_market[0],))
+    if not decl["present"]:
+        return _verdict(False,
+                        "this repository commits no .claude/settings.json, so a "
+                        "clone enables no plugin and loads none of its skills")
+    return _verdict(False,
+                    "the committed settings declare neither a marketplace nor a "
+                    "plugin this entry belongs to")
+
+
+def _grade_registry(registry, decl, names_of_own, root_of_own):
+    """Stamp every entry with `travels` and the basis for it.
+
+    In place, and that is safe here alone: this dict was built by the scan that is
+    still running and has no other reader yet — the copy every caller receives is
+    taken later, by `discover`.
+    """
+    for kind in ("skills", "agents", "mcp"):
+        for entry in (registry.get(kind) or []):
+            graded = grade_entry(entry.get("name"), entry.get("source"),
+                                 entry.get("path"), decl,
+                                 names_of_own, root_of_own)
+            entry["travels"] = graded["travels"]
+            entry["travelsBasis"] = graded["basis"]
+    return registry
 
 
 # --- scan cache -----------------------------------------------------------------
-# {(project, home): {"watch": [...], "stamp": [...], "registry": {...}}}. One entry
-# per project in practice — panel-server serves exactly one, audit-status runs once
-# and exits — so this is not a growth surface worth bounding.
+# {(project, home, scope): {"watch": [...], "stamp": [...], "registry": {...}}}. A
+# handful of entries per project — panel-server serves the machine scope, the
+# report asks for the repo scope, audit-status runs once and exits — so this is
+# not a growth surface worth bounding.
+#
+# THE SCOPE IS PART OF THE KEY AND MUST STAY THERE. Two scopes over one project are
+# two different answers built from two different watch lists; a key without it
+# would serve the repo scope's home-free answer to the panel, or the panel's
+# home-aware answer into a report that must render the same on every machine.
 #
 # panel-server is a ThreadingHTTPServer, so two requests can be in here at once.
 # That is safe only under one rule: an entry is REPLACED, never edited in place.
@@ -294,8 +560,13 @@ def _settled(stamp, started):
     return newest < started - _SETTLE_SECONDS
 
 
-def discover(project, home=None, cache=True):
+def discover(project, home=None, cache=True, scope=SCOPE_MACHINE):
     """Return {skills, agents, mcp} available to this project (read-only scan).
+
+    Every entry carries `travels` and `travelsBasis` beside its `source` — whether
+    a clone of this repository would load it, and why. `scope=SCOPE_REPO` asks the
+    same question while reading nothing under a home directory, which is what lets
+    a shared artifact state the answer without becoming machine-specific.
 
     WHY THERE IS A CACHE. This is the panel's most expensive read by an order of
     magnitude — measured on one developer machine at 1,381 `scandir` calls and 337
@@ -340,13 +611,13 @@ def discover(project, home=None, cache=True):
     measure the walk, and for the cases below that must see the real thing.
     """
     home = home or os.path.expanduser("~")
-    key = (os.path.realpath(project), os.path.realpath(home))
+    key = (os.path.realpath(project), os.path.realpath(home), scope)
     if cache:
         hit = _DISCOVERY_CACHE.get(key)
         if hit is not None and _stamp(hit["watch"]) == hit["stamp"]:
             return copy.deepcopy(hit["registry"])
     started = time.time()
-    registry, watch = _discover_scan(project, home)
+    registry, watch = _discover_scan(project, home, scope)
     if not cache:
         return registry
     watch = sorted(set(watch))

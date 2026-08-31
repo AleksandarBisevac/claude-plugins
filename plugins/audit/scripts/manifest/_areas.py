@@ -253,6 +253,42 @@ def resolve_skills(manifest, phase, task):
     return out
 
 
+def plan_skill_refs(manifest):
+    """`[(where, name), ...]` — every skill this plan NAMES, once per name.
+
+    The EFFECTIVE names, resolved through the two functions above, so an area
+    default is listed exactly as it will apply rather than as it is written.
+
+    ONE ROW PER NAME, not per reference, and the first mention keeps the label: a
+    review skill inherited by every phase is one thing to install, and a surface
+    printing it once per phase is a wall of identical lines.
+
+    It lives here because two surfaces ask it — `/audit:doctor` and the status
+    gate's portability block — and they must not be able to disagree about which
+    names a plan uses. It was written out inside the doctor first; the second
+    caller is what made it a shared fact rather than a local loop.
+    """
+    out, seen = [], set()
+    for phase in ((manifest or {}).get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        pid = phase.get("id") or "?"
+        skill, _basis = resolve_review_skill(manifest, phase)
+        refs = []
+        if skill:
+            refs.append(("%s review skill" % pid, skill))
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict):
+                continue
+            for name in resolve_skills(manifest, phase, task):
+                refs.append(("%s skill" % (task.get("id") or pid), name))
+        for where, name in refs:
+            if name not in seen:
+                seen.add(name)
+                out.append((where, name))
+    return out
+
+
 # --- conflicts + unregistered tags --------------------------------------------
 def review_skill_conflicts(manifest, phase):
     """[(tag, skill), ...] when a phase's areas disagree about its reviewer.

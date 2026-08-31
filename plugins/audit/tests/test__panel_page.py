@@ -2492,8 +2492,11 @@ def _cases(check):
     check("the index is reachable from the topbar, not only from a field",
           "id=helpbtn" in M.UI_HTML and "$('#helpbtn').onclick=()=>openHelpIndex()"
           in M.UI_HTML)
-    check("a group heading that has a concept page opens it; the three that have "
-          "none draw no hint at all",
+    # The count of topic-less groups is deliberately not written here: it moved
+    # the moment a group was added, and the pin below already says WHICH groups
+    # carry a topic, which is the claim worth making.
+    check("a group heading that has a concept page opens it; the groups that "
+          "have none draw no hint at all",
           "grp.topic?{topic:grp.topic}:null" in M.UI_HTML
           and [g["id"] for g in M.SETTINGS_GROUPS if g.get("topic")]
           == ["paths", "journal"]

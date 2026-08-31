@@ -939,7 +939,33 @@ def _tev_phase_marks(entry):
     return out
 
 
-def _detail_row(task, phase, owners, ncol, seg, pid, workers=None, view=None):
+def _skills_cell(skills, portability):
+    """The `skills` detail cell, with a mark on any name a CLONE would not load.
+
+    `portability` is `{name: basis}` for the stranded ones, computed by
+    `render-report.py` from the REPOSITORY alone — never from a home directory, or
+    the same manifest would render two different documents on two machines and the
+    committed artifact could not be compared against a fresh render.
+
+    A `None` map is not "everything travels": it is "nobody asked", and it renders
+    exactly what this cell rendered before the question existed. That is what keeps
+    the shipped artifacts byte-identical when the feature is off.
+    """
+    marks = portability if isinstance(portability, dict) else {}
+    out = []
+    for name in (skills or []):
+        if not isinstance(name, str):
+            continue
+        if name in marks:
+            out.append('%s <span class="muted" title="%s">(stays here)</span>'
+                       % (e(name), e(marks[name])))
+        else:
+            out.append(e(name))
+    return ", ".join(out)
+
+
+def _detail_row(task, phase, owners, ncol, seg, pid, workers=None, view=None,
+                portability=None):
     """The row under a task row: everything the compact row had to leave out.
 
     ex (F-P-4). The table is read at a glance and acted on in detail, and those
@@ -1032,7 +1058,7 @@ def _detail_row(task, phase, owners, ncol, seg, pid, workers=None, view=None):
         ("outcome", e(str(o.get("descriptive") or "").strip())),
         ("technical", clamped(e(str(o.get("technical") or "").strip()))),
         ("model", e(task.get("model") or "")),
-        ("skills", e(", ".join(s for s in (skills or []) if isinstance(s, str)))
+        ("skills", _skills_cell(skills, portability)
          if isinstance(skills, list) and skills
          else ('<span class="muted">none \u2014 opted out</span>'
                if skills is None and "skills" in task else "")),

@@ -1429,6 +1429,65 @@ def hooks_rule_drift(guide_path=None):
     return out
 
 
+# A docstring sentence claiming a layer for the module it opens: "Layer 4," or
+# "Layer 4:" or "Layer 4." — the shape the doctor's six pieces all use. NOT
+# `layer 4` in running prose, which is how a module talks about a module OTHER
+# than itself ("`_invariants` is layer 4"), and convicting that would make the
+# rule fire on every correct cross-reference in the tree.
+_SELF_LAYER_CLAIM = re.compile(r"^Layer (\d+)\b", re.MULTILINE)
+
+
+def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
+    """[(relname, problem), ...] — a docstring claiming a layer LAYERS disagrees with.
+
+    F230, and it is the third instance of one class. `_doctor_policy`'s docstring
+    opened "Layer 5" and `audit-doctor`'s module table carried a matching column,
+    both written when they were true. `_panel_discovery` then came down a layer,
+    `_doctor_policy` followed it, `_deps.py`'s own comment was rewritten to record
+    the move — and the two documents that restated the number were not, because
+    nothing compared them to the table. A stale ARGUMENT is worse than no argument:
+    the next reader spends their time working out why it is wrong.
+
+    So a module may still say which layer it is on, and now it has to be right.
+    Only a claim a module makes about ITSELF is judged, and only in the module
+    docstring: `Layer 4` opening a sentence there. A reference to another module's
+    layer in running prose (`_invariants` is layer 4) is left alone — the same
+    words, a different claim, and one this function has no business grading.
+
+    A file with no LAYERS entry is NOT reported here. That is `layer_violations`'
+    finding and reporting it twice would make one defect look like two; this
+    function's subject is a claim that DISAGREES, not a module nobody placed.
+    """
+    layers = layers if layers is not None else LAYERS
+    where = {}
+    for i, members in enumerate(layers):
+        for name in members:
+            where[name] = i
+    out = []
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+        module = os.path.basename(rel)[:-3]
+        actual = where.get(module)
+        if actual is None:
+            continue                     # layer_violations' finding, not this one
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            # Named rather than skipped, the rule `navigability_violations` follows:
+            # a file this could not read is not a file it found nothing wrong with.
+            out.append((rel, "could not be read to check its layer claim: %s" % exc))
+            continue
+        doc = ast.get_docstring(tree) or ""
+        for hit in _SELF_LAYER_CLAIM.finditer(doc):
+            claimed = int(hit.group(1))
+            if claimed != actual:
+                out.append((rel, "its docstring opens \"Layer %d\" and _deps.LAYERS "
+                                 "puts it at layer %d - delete the number or fix "
+                                 "it; a stale layer is an argument the next reader "
+                                 "has to disprove" % (claimed, actual)))
+    return out
+
+
 _TREE_HEADING = "## 1. Directory tree"
 _SECTION2_HEADING = "## 2. File-by-file logic"
 

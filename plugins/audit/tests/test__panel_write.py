@@ -317,6 +317,70 @@ def _cases(check):
     res = M.apply_composition(proj, {"tasks": {"P1.1": {"skills": "notalist"}}})
     check("bad skills type refused", not res["ok"])
 
+    # --- rs: the panel is where a name that will not travel gets chosen -------
+    # Prevention at the point of choice. The doctor reports this afterwards and
+    # the gate can fail a build over it; refusing the write is the only one of
+    # the three that keeps the defect out of the manifest entirely.
+    _rs_plug = os.path.join(proj, "plugins", "local-pack", "skills", "stranded-one")
+    os.makedirs(_rs_plug, exist_ok=True)
+    with open(os.path.join(_rs_plug, "SKILL.md"), "w", encoding="utf-8") as _fh:
+        _fh.write("---\nname: stranded-one\ndescription: An undeclared plugin.\n---\n")
+    _rs_vend = os.path.join(proj, ".claude", "skills", "vendored-one")
+    os.makedirs(_rs_vend, exist_ok=True)
+    with open(os.path.join(_rs_vend, "SKILL.md"), "w", encoding="utf-8") as _fh:
+        _fh.write("---\nname: vendored-one\ndescription: Committed here.\n---\n")
+    M.write_config(proj, {"trivialLineThreshold": 40, "portability": "strict"})
+    _rs_before = M._read_json(mpath)["phases"][0]["tasks"][0].get("skills")
+    _rs = M.apply_composition(proj, {"tasks": {"P1.1": {"skills": ["stranded-one"]}}})
+    check("rs1 under strict, a skill from a plugin the committed settings do not "
+          "declare is REFUSED, the message names the skill and the repair, and "
+          "the manifest on disk is untouched: %r" % (_rs.get("findings"),),
+          not _rs["ok"]
+          and "stranded-one" in " ".join(_rs["findings"])
+          and "settings.json" in " ".join(_rs["findings"])
+          and M._read_json(mpath)["phases"][0]["tasks"][0].get("skills")
+          == _rs_before)
+    M.write_config(proj, {"trivialLineThreshold": 40, "portability": "warn"})
+    _rs_warn = M.apply_composition(proj,
+                                   {"tasks": {"P1.1": {"skills": ["stranded-one"]}}})
+    # THE SECOND-DIRECTION CASE: the IDENTICAL patch, one tier down. A refusal
+    # that ignored the tier passes rs1 and fails here, and that is the mutation
+    # this exists for - it would make the switch the user was promised inert.
+    check("rs2 ...and the very same patch is ACCEPTED under 'warn', because the "
+          "tier is the user's decision and a panel that overrode it would be "
+          "worse than one that never offered the switch",
+          _rs_warn["ok"]
+          and M._read_json(mpath)["phases"][0]["tasks"][0]["skills"]
+          == ["stranded-one"])
+    M.write_config(proj, {"trivialLineThreshold": 40, "portability": "strict"})
+    _rs_ok = M.apply_composition(proj,
+                                 {"tasks": {"P1.1": {"skills": ["vendored-one"]}}})
+    check("rs3 a skill vendored under .claude/skills/ is accepted under strict - "
+          "strict refuses what will not travel, not everything",
+          _rs_ok["ok"]
+          and M._read_json(mpath)["phases"][0]["tasks"][0]["skills"]
+          == ["vendored-one"])
+    _rs_rev = M.apply_composition(proj, {"meta": {"reviewSkill": "stranded-one"}})
+    check("rs4 the reviewer is refused on the same grounds as a task's skills - "
+          "sign-off with no reviewer is the failure this started from",
+          not _rs_rev["ok"]
+          and "stranded-one" in " ".join(_rs_rev["findings"])
+          and M._read_json(mpath)["meta"]["reviewSkill"] != "stranded-one")
+    _rs_unknown = M.apply_composition(
+        proj, {"tasks": {"P1.1": {"skills": ["not-anywhere-at-all"]}}})
+    # A DELIBERATE BOUNDARY, stated as a case so it cannot be tightened by
+    # accident: discovery is an INVENTORY, not a whitelist. Refusing a name it
+    # has never seen is a different feature with different consequences, and the
+    # validator already warns when a task resolves nothing.
+    check("rs5 a name discovery has never seen is still accepted under strict - "
+          "an unknown name has no verdict, and a refusal needs a basis",
+          _rs_unknown["ok"])
+    # Put the fixture back where the cases after this one expect it: they read
+    # the `from` half of a change row, which is the value on disk.
+    M.write_config(proj, {"trivialLineThreshold": 40})
+    M.apply_composition(proj, {"meta": {"reviewSkill": "user-skill"},
+                               "tasks": {"P1.1": {"skills": ["user-skill"]}}})
+
     # v0.37 B1: null is a WRITABLE value — the chips UI's "none applies" — and
     # it must land in the FILE as null (the opt-out that stops the area
     # fallback), not be refused as a bad type or flattened to [].

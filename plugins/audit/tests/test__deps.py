@@ -518,6 +518,67 @@ def _cases(check):
     finally:
         shutil.rmtree(rule_tmp, ignore_errors=True)
 
+    # ------------------------------------------- layer_doc_drift: docstrings vs LAYERS
+    # F230. Two documents opened "Layer 5" for a module the table had already moved
+    # to 4, and both were true when written — `_panel_discovery` came down, this one
+    # followed it, `_deps.py`'s own comment was rewritten, and nothing compared the
+    # two docstrings to the table. The fixtures below are the real tree, because a
+    # hand-written module could not have told me the rule fires on what actually
+    # shipped.
+    check("lyd1 the shipped tree carries no docstring claiming a layer LAYERS "
+          "disagrees with: %r" % (M.layer_doc_drift(),), not M.layer_doc_drift())
+
+    ld_tmp = tempfile.mkdtemp(prefix="audit-deps-layerdoc-")
+    try:
+        def _ld(doc, module="_probe_layer_doc", layer=1):
+            """Judge one docstring against a LAYERS that places its module."""
+            path = os.path.join(ld_tmp, module + ".py")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('"""%s"""\n' % doc)
+            layers = tuple(("_output",) if i == 0 else
+                           ((module,) if i == layer else ())
+                           for i in range(max(2, layer + 1)))
+            return M.layer_doc_drift(ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
+                                     layers=layers)
+
+        wrong = _ld("Layer 5, and the floor is set elsewhere.", layer=4)
+        check("lyd2 a docstring opening on a layer the table contradicts is named, "
+              "with BOTH numbers - the repair is to delete one or fix it, and a "
+              "message carrying neither cannot say which: %r" % (wrong,),
+              len(wrong) == 1 and "Layer 5" in wrong[0][1]
+              and "layer 4" in wrong[0][1])
+        # THE SECOND DIRECTION, and the case that looks vacuous: the identical
+        # sentence over a table that agrees draws nothing. A rule that fired on
+        # every self-claim would pass ld2 and fail here.
+        check("lyd3 ...and the same sentence over a table that AGREES is silent",
+              _ld("Layer 4, and the floor is set elsewhere.", layer=4) == [])
+        # THE OTHER SECOND DIRECTION, and the one the over-firing mutation dies on.
+        # A module talking about ANOTHER module's layer is the commonest sentence
+        # in this tree's docstrings; convicting it would make the rule fire on
+        # dozens of correct cross-references.
+        check("lyd4 a reference to some OTHER module's layer in running prose is "
+              "not a self-claim and is left alone - `_invariants` really is at "
+              "layer 4, and saying so is not this rule's business",
+              _ld("Reads `_manifest_rules`, which is layer 3, and `_invariants` "
+                  "(layer 4).", layer=1) == [])
+        check("lyd5 a module with no LAYERS entry is NOT reported here - that is "
+              "layer_violations' finding, and naming it twice would make one "
+              "defect look like two",
+              M.layer_doc_drift(ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
+                                layers=(("_output",), ())) == [])
+        torn = os.path.join(ld_tmp, "_probe_torn_doc.py")
+        with open(torn, "w", encoding="utf-8") as fh:
+            fh.write("def (:\n")
+        torn_hits = M.layer_doc_drift(
+            ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
+            layers=(("_output",), ("_probe_torn_doc",)))
+        check("lyd6 a file that will not parse is NAMED rather than skipped - a "
+              "scan that passes silently over a file it could not read is "
+              "claiming a clean answer about it: %r" % (torn_hits,),
+              len(torn_hits) == 1 and "could not be read" in torn_hits[0][1])
+    finally:
+        shutil.rmtree(ld_tmp, ignore_errors=True)
+
     guide_tmp = tempfile.mkdtemp(prefix="audit-deps-guide-")
     try:
         real_render = M.render()

@@ -86,6 +86,12 @@ meanings, rendered from the same tuple the gate evaluates:
   phase's sign-off gate records a run of its own, and no task's pointer stands in
   for it. Work that finished before the *evidence boundary* is excused rather than
   failed — see below
+- `stranded-skills` — a skill the plan **names** that a clone of this repository
+  would not load: one in somebody's home directory, or from a plugin the
+  **committed** `.claude/settings.json` does not declare in both of its keys.
+  Graded from the repository alone and never from a home directory, so the verdict
+  is the same on every runner as on the author's laptop — which is the point, since
+  the machine that wrote the plan is the one machine where every name resolves
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
@@ -100,6 +106,13 @@ ask for the opposite reading, and it asks it of every subject the plan already c
 `done` — a phase as readily as a task, because a phase is signed off by a gate run of
 its own. A `status` word this build does not recognise trips nothing: the enum may gain
 members, so it is reported as itself rather than folded into `failed`.
+
+**Nor is `stranded-skills`, for a reason of its own.** A plan naming a skill only its
+author has is a *correct observation about a repository nobody may ever clone*, and
+`/audit:doctor` already says so at exit 0. A team that wants it enforced is a team that
+will type it. What it does not do is pass quietly: a scan that could not run, or one
+that had nothing it could grade, **fails** the condition rather than clearing it — the
+same three-state reading `invariant-breach` uses, and for the same reason.
 
 **The evidence boundary is what makes `no-test-evidence` usable for a plan adopted
 mid-flight.** A project that starts using the plugin part-way through carries tasks
