@@ -657,8 +657,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -1668,7 +1668,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

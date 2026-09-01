@@ -111,9 +111,39 @@ const PKLABEL={skills:'Skills',agents:'Subagents',mcp:'MCP servers'};
  * `cols` is cleared when the kind changes, the way `q` is: "which area has no
  * column here" is asked per kind, and a tag revealed while reading skills says
  * nothing about subagents.
- * @type {{kind: string, q: string, bad: boolean, cols: string[]}}
+ *
+ * `strays` is the only one that starts from the CONFIG rather than from nothing:
+ * under strict portability the switchboard opens on what a clone would carry,
+ * because a project using a handful of repo skills was listing every skill on the
+ * machine as an equal subject of a policy the repository shares. It is null until
+ * the payload has been read, so `pStrays()` can tell "not yet known" from "the
+ * reader turned it off".
+ * @type {{kind: string, q: string, bad: boolean, cols: string[],
+ *         strays: (boolean|null)}}
  */
-const PF={kind:'skills',q:'',bad:false,cols:[]};
+const PF={kind:'skills',q:'',bad:false,cols:[],strays:null};
+/**
+ * Whether the capability table is currently showing the rows a clone would not get.
+ *
+ * @returns {boolean} the reader's choice once they have made one; otherwise the
+ *   tier's own answer — hidden under strict, shown under warn and off
+ */
+function pStrays(){
+ if(PF.strays!==null)return PF.strays;
+ return ((POLICY||{}).portability||'off')!=='strict';}
+/**
+ * Is this row one the portability filter may hide?
+ *
+ * TWO conditions, and the second is the one that keeps this honest: the row must
+ * not survive a clone AND the policy must say nothing about it (`rule` is null
+ * exactly then). A capability somebody DENIED, allow-listed or that audit requires
+ * stays on screen wherever it lives — hiding a refusal is lying about what the
+ * guard will do, and this table's whole job is to preview that.
+ *
+ * @param {PolicyRow} r
+ * @returns {boolean}
+ */
+function pStray(r){return r.travels===false&&!r.rule;}
 // --- the draft, and what it is compared against ---------------------------------
 // The nodes the last save left behind — the ✓/✗ box and, if the file had moved
 // under the reader, the mismatch warning. A save re-renders the whole view to pick

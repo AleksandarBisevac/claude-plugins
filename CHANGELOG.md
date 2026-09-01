@@ -4,6 +4,33 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.0.1] - 2026-09-01
+
+**A patch, and it finishes what 2.0.0 left half-done.** The portability verdict reached the
+composition table, the pickers and the report — and not the Policy tab, which is the one place a
+reader goes to ask what governs this project. Reported from a real repository: a project using a
+handful of committed skills listed a hundred and twenty capabilities, every row reading
+`policy.skills.default is allow`.
+
+### Fixed
+
+**The capability switchboard opens on what a clone would carry.** Every row now carries the
+verdict and its basis, a row that stays on this machine is badged and dimmed, and under `strict`
+the table opens narrowed — with a control that says how many are hidden and brings them back.
+
+**What it will never hide is a row somebody wrote a rule about.** The narrowing needs two things
+to be true: the capability would not survive a clone AND the policy says nothing about it. A
+denied capability, an allow-listed one, and one audit itself requires all stay on screen wherever
+they live — this table's job is to preview what the guard will do, and a refusal nobody can see
+is a lie about that. Both halves of that condition are proven by mutation, and the browser gate
+drives the real panel: it asserts the denied row survives the narrowing.
+
+**Three empty states, not two.** "Everything discovered here stays on this machine" is its own
+answer with its own repair, and the Clear-filters button would not have brought those rows back.
+
+**The tier was being resolved in three places.** `_config_rules.portability_mode` owns the
+fallback now; the doctor, the panel's write refusal and the switchboard all call it.
+
 ## [2.0.0] - 2026-08-31
 
 **A major by this repository's own table, and by one clause of it.** `COMPATIBILITY.md`

@@ -29,8 +29,10 @@
  */
 function pCapTable(kind,rows,full){
  const q=PF.q.trim().toLowerCase();
+ const strays=pStrays(),hid=rows.filter(pStray).length;
  const shown=rows.filter(r=>(!q||(r.name+' '+(r.source||'')).toLowerCase().includes(q))
-   &&(!PF.bad||r.verdict==='violation'));
+   &&(!PF.bad||r.verdict==='violation')
+   &&(strays||!pStray(r)));
  const qIn=el('input',{type:'search',id:full?'polqfull':'polq',value:PF.q,
    placeholder:'search '+PKLABEL[kind].toLowerCase()+'…',
    'aria-label':'search '+PKLABEL[kind].toLowerCase()});
@@ -38,8 +40,20 @@ function pCapTable(kind,rows,full){
  const badId=full?'polbadfull':'polbad';
  const bad=el('input',{type:'checkbox',id:badId});bad.checked=PF.bad;
  bad.onchange=()=>{PF.bad=bad.checked;renderPolicy();};
+ const strayId=full?'polstrayfull':'polstray';
+ const strayBox=el('input',{type:'checkbox',id:strayId});strayBox.checked=strays;
+ strayBox.onchange=()=>{PF.strays=strayBox.checked;renderPolicy();};
  const tools=el('div',{class:'ovtools'},qIn,
    el('label',{class:'inl',for:badId},bad,'violations only'),
+   // The narrowing SAYS SO, and it is only offered when there is something to
+   // say: a checkbox that hides nothing is a control that teaches the wrong
+   // lesson about what is on screen.
+   hid?el('label',{class:'inl',for:strayId,'data-polstray':'1',
+     title:'Capabilities that resolve on this machine and would not survive a '
+       +'clone — a skill in a home directory, or a plugin the committed '
+       +'.claude/settings.json does not declare. A rule that NAMES one is shown '
+       +'either way: hiding a refusal would misreport what the guard does.'},
+     strayBox,'incl. '+hid+' that stay on this machine'):null,
    el('span',{class:'count',style:'margin-left:auto'},
      shown.length===rows.length?(rows.length+' discovered')
        :(shown.length+' / '+rows.length)));
@@ -91,19 +105,32 @@ function pCapTable(kind,rows,full){
       'required'):null,
     r.standIn?el('span',{class:'badge stand',title:'stands in for every tool of '
       +'this server'},'server'):null));
-  tr.append(el('td',{},r.source?el('span',{class:'src badge'},r.source):null));
+  tr.append(el('td',{},r.source?el('span',{class:'src badge'},r.source):null,
+    r.travels===false?el('span',{class:'src badge stays',
+      title:r.travelsBasis||''},'stays here'):null));
+  if(r.travels===false)tr.classList.add('stranded');
   tr.append(pCell(kind,r,null));
   cols.forEach(a=>tr.append(pCell(kind,r,a.tag)));
   tr.append(el('td',{class:'vd'},
     el('span',{class:'pv '+r.verdict},r.verdict==='violation'?'Violation':'Allowed'),
     el('span',{class:'pbasis'},r.basis||'')));
   tb.append(tr);});
+ // THREE empty states, not two. "Everything discovered stays on this machine" is
+ // its own answer and its own repair — the Clear button would not bring those rows
+ // back, because it is not what removed them.
+ const allStray=!strays&&rows.length&&hid===rows.length;
  const body=!shown.length?el('div',{class:'ovempty','data-polempty':'1'},
-   rows.length?'No '+PKLABEL[kind].toLowerCase()+' match this filter. '
-     :'Nothing of this kind was discovered for this project. A rule can still be '
-      +'written for it below — it will apply the day something matches it.',
-   rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
-     onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null)
+   allStray
+     ?('Every '+PKLABEL[kind].toLowerCase()+' discovered here stays on this '
+       +'machine — none would survive a clone, so none is shown. A rule can still '
+       +'be written below, and one that NAMES a capability is listed either way.')
+     :(rows.length?'No '+PKLABEL[kind].toLowerCase()+' match this filter. '
+       :'Nothing of this kind was discovered for this project. A rule can still be '
+        +'written for it below — it will apply the day something matches it.'),
+   allStray?el('button',{class:'btn small',type:'button','data-polstrayshow':'1',
+     onclick:()=>{PF.strays=true;renderPolicy();}},'Show them')
+   :(rows.length?el('button',{class:'btn small',type:'button','data-polclear':'1',
+     onclick:()=>{PF.q='';PF.bad=false;renderPolicy();}},'Clear filters'):null))
  :el('div',{class:'poltblwrap'+(full?' full':''),id:full?'poltblfull':'poltbl'},
    el('table',{class:'poltbl'},head2,tb));
  return {tools:tools,colstrip:colstrip,body:body};}

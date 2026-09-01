@@ -465,17 +465,13 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
 def portability_mode(cfg, cfg_mod):
     """Which tier `portability` is set to, falling back to what the plugin ships.
 
-    Read through the hooks' `DEFAULTS` rather than a literal, so the tier this
-    grades at and the tier the panel enforces at cannot drift apart. A value
-    outside the enum is a config the validator already refuses, so it is treated
-    as unset rather than silently obeyed.
+    A thin call, not a second implementation: `_config_rules.portability_mode`
+    owns the fallback so the tier this grades at and the tier the panel refuses
+    at cannot drift. The hooks' DEFAULTS are handed over because this caller
+    already holds them.
     """
-    modes = _load("_config_rules", "_config_rules.py").PORTABILITY_MODES
-    shipped = (getattr(cfg_mod, "DEFAULTS", None) or {}).get("portability")
-    mode = (cfg or {}).get("portability")
-    if mode not in modes:
-        mode = shipped
-    return mode if mode in modes else modes[0]
+    rules = _load("_config_rules", "_config_rules.py")
+    return rules.portability_mode(cfg, getattr(cfg_mod, "DEFAULTS", None))
 
 
 def _plan_skills_travel(rep, cfg, cfg_mod, named, have):

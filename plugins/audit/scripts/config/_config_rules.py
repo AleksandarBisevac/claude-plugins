@@ -85,6 +85,30 @@ PLAN_GATE_MODES = ("observe", "warn", "ask", "deny")
 # the grading itself, which always states a verdict and lets each surface decide
 # what to do about it.
 PORTABILITY_MODES = ("strict", "warn", "off")
+
+
+def portability_mode(config, defaults=None):
+    """Which `portability` tier a project is on, falling back to what ships.
+
+    HERE because four surfaces ask it — the doctor's row, the panel's write
+    refusal, the policy switchboard and the report — and a tier resolved four
+    times is four tiers waiting to disagree. It was written twice before this
+    function existed, which is exactly how far that gets before it is a defect.
+
+    A value outside the enum resolves to the shipped tier rather than switching
+    the feature off: `validate_config` already refuses to store one, so a typo
+    reaching here is a config nobody could have saved through the panel, and
+    reading it as "off" would make a misspelling the quiet way to disable this.
+
+    `defaults` is the hooks' `DEFAULTS` dict when a caller already holds it (the
+    doctor does); otherwise it is loaded through the one loader.
+    """
+    if defaults is None:
+        defaults = getattr(_loader.load_hooks_config(), "DEFAULTS", None) or {}
+    mode = (config or {}).get("portability")
+    if mode not in PORTABILITY_MODES:
+        mode = defaults.get("portability")
+    return mode if mode in PORTABILITY_MODES else PORTABILITY_MODES[0]
 KNOWN_SECRET = {"extra"}
 KNOWN_GUARD = {"tokenVars", "customRules"}
 KNOWN_RULE = {"pathPrefix", "bannedPattern", "message"}

@@ -5213,6 +5213,10 @@ const POL_PLUGIN = [
   ['agents', 'audit-explorer', 'audit:audit-explorer', 'Read-only subsystem auditor.'],
 ];
 const POL_MCP = ['acme-tickets', 'vector-store'];
+// The one the portability check denies. It has to be a USER-scope name — the whole
+// question is whether a row a clone would not carry stays on screen when a rule
+// names it, and a project-scope row would answer nothing.
+const POLICY_DENIED_USER_SKILL = 'shell-runner';
 
 function writePolicyFixture(work) {
   const project = path.join(work, 'pol');
@@ -5667,6 +5671,72 @@ async function assertSavebarCensus(page) {
   // data-psave, data-thsave) and the containers are not either (.savebar vs a
   // bare .row). This census accepts any of them on purpose, so it keeps holding
   // when the footers become one helper emitting one convention.
+}
+
+/**
+ * The switchboard opens on what a clone would carry, and says what it is not showing.
+ *
+ * Driven rather than pinned, because this is exactly where the substring pins were
+ * green while the tab was wrong: a project using a handful of repo skills listed a
+ * hundred and twenty rows, every one reading `policy.skills.default is allow`. The
+ * pins asserted the code existed; nothing asserted what reached the screen.
+ *
+ * The `rule` half is checked here too, in the direction that matters: a DENIED
+ * capability stays on screen wherever it lives, because a refusal nobody can see is
+ * a lie about what the guard will do.
+ */
+async function assertPolicyStrays(page, cfgPath) {
+  const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+  cfg.portability = 'strict';
+  // A deny aimed at a USER-scope skill: the row this narrowing must never hide.
+  cfg.policy = { onViolation: 'deny',
+                 skills: { default: 'allow', deny: [POLICY_DENIED_USER_SKILL] } };
+  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+  await page.reload({ waitUntil: 'load' });
+  await tabTo(page, 'policy');
+  await page.waitForSelector('#policy .card', { timeout: 15000 });
+  await page.waitForTimeout(300);
+  const read = () => page.evaluate(() => ({
+    shown: [...document.querySelectorAll('#policy [data-pcap]')]
+      .map((r) => r.getAttribute('data-pcap')),
+    // The server's own answer, so the check compares the screen against the
+    // payload rather than against a second matcher written here.
+    strays: (POLICY.resolved[PF.kind] || []).filter(pStray).map((r) => r.name),
+    all: (POLICY.resolved[PF.kind] || []).map((r) => r.name),
+    toggle: !!document.querySelector('#policy [data-polstray]'),
+  }));
+  const shut = await read();
+  const leaked = shut.shown.filter((n) => shut.strays.includes(n));
+  if (!shut.strays.length) {
+    fail('policy: the fixture resolves no stray capability at all, so this check '
+       + 'has nothing to be about — the fixture home must declare a skill the '
+       + 'committed settings do not');
+  } else if (leaked.length) {
+    fail(`policy: strict opened showing ${JSON.stringify(leaked)}, which a clone `
+       + 'would not carry — the switchboard is not narrowing');
+  } else if (!shut.toggle) {
+    fail(`policy: ${shut.strays.length} row(s) are hidden and no control says so — `
+       + 'a list that narrows in silence reads as a machine with nothing on it');
+  } else if (shut.shown.includes(POLICY_DENIED_USER_SKILL)) {
+    note(`policy: strict hides ${shut.strays.length} of ${shut.all.length}, and the `
+       + `denied ${POLICY_DENIED_USER_SKILL} stays on screen`);
+  } else {
+    fail(`policy: ${POLICY_DENIED_USER_SKILL} is DENIED by the policy and is not on `
+       + 'screen — hiding a refusal misreports what the guard will do, which is the '
+       + 'one thing this table may not get wrong');
+  }
+  // ...and the reader can still see them. The second direction: a narrowing with
+  // no way back is a narrowing that has taken the machine's inventory away.
+  await page.locator('#policy [data-polstray] input').click();
+  await page.waitForTimeout(250);
+  const open = await read();
+  const missing = open.strays.filter((n) => !open.shown.includes(n));
+  if (missing.length) {
+    fail(`policy: after asking for them, ${JSON.stringify(missing)} is still not on `
+       + 'screen — the toggle does not restore what it hid');
+  } else {
+    note(`policy: the toggle brings all ${open.strays.length} back`);
+  }
 }
 
 async function assertPolicyExpand(page) {
@@ -7859,6 +7929,9 @@ async function main() {
         // v0.38: dead-pattern notes. Rewrites the fixture's policy block, so
         // it is the leg's last word.
         await assertDeadPatternNote(ppage, cfgPath);
+        // ...and this one rewrites it again, plus the portability tier, so it
+        // goes after every shot. No picture is taken from here on.
+        await assertPolicyStrays(ppage, cfgPath);
         await pctx.close();
       }
       // Collected across every tab this run touched, and reported last so the more

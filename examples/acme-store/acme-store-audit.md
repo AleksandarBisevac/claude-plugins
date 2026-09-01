@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-08-31 17:01 UTC
+repo: acme-store · generated 2026-09-01 07:47 UTC
 
 > Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 

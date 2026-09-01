@@ -103,7 +103,6 @@ import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
 import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
 import _config_rules          # noqa: E402  (PORTABILITY_MODES: the enum this reads a tier from)
-import _loader                # noqa: E402  (load_hooks_config: where the shipped default lives)
 
 # The write allow-lists: what a composition patch may legally name.
 _META_KEYS = _panel_settings._META_KEYS
@@ -1369,12 +1368,7 @@ def _reject_stranded(project, config, patch):
     Fails OPEN on a scan that raises: this is a write path, and taking somebody's
     edit away because a filesystem walk failed is not a trade this makes.
     """
-    modes = _config_rules.PORTABILITY_MODES
-    mode = (config or {}).get("portability")
-    if mode not in modes:
-        mode = (getattr(_loader.load_hooks_config(), "DEFAULTS", None)
-                or {}).get("portability")
-    if mode != "strict":
+    if _config_rules.portability_mode(config) != "strict":
         return None
     names = _patched_skill_names(patch)
     if not names:

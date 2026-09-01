@@ -12,12 +12,6 @@ table.regtbl td{padding:var(--sp-1) var(--sp-2);border-bottom:1px solid var(--bo
 /* :is(th,td), because one regtbl row now opens with a <th scope=row> and a hover
    that skipped it would leave the first column unlit at every pointer move. */
 table.regtbl tbody tr:hover :is(th,td){background:var(--surface-2)}
-/* A row that resolves on this machine and would not survive a clone. DIMMED, not
-   hidden: the table says what this machine has, and the pickers are what narrow.
-   Opacity rather than a colour, so it reads the same in both themes without a
-   second token — and the badge beside it carries the basis in its title. */
-table.regtbl tbody tr.stranded :is(th,td){opacity:.55}
-.badge.stays{background:var(--surface-2);color:var(--muted);border:1px dashed var(--border)}
 /* ADO card: the stateMap mini-tables must never widen the document — the
    390px no-sideways-scroll rule. Fixed layout + collapsible inputs keep the
    table at its container's width instead of its inputs' intrinsic one. */

@@ -2416,7 +2416,12 @@ def _cases(check):
     check("pc6 a reveal is scoped to the kind it was made in, and the strip is an "
           "OPTIONAL child of both copies of the table - append() stringifies a "
           "null where el() drops it, which is the browse dialog's lesson",
-          "const PF={kind:'skills',q:'',bad:false,cols:[]};" in M.UI_HTML
+          "const PF={kind:'skills',q:'',bad:false,cols:[],strays:null};"
+          in M.UI_HTML
+          # `strays` is deliberately NOT cleared with the kind, unlike `q` and
+          # `cols`: those answer a per-kind question, while "am I looking at what
+          # a clone gets" is one stance over the whole switchboard, and resetting
+          # it on every tab press would undo the reader's choice behind their back.
           and "PF.kind=k;PF.q='';PF.cols=[];PNOTE=null;renderPolicy();" in M.UI_HTML
           and M.UI_HTML.count("cap.tools,cap.colstrip,cap.body].filter(Boolean));")
               == 2)

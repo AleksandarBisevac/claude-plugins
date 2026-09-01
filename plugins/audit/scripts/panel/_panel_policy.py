@@ -40,6 +40,7 @@ import _areas                 # noqa: E402  (meta.areas registry + shared resolu
 import _policy                # noqa: E402  (the capability policy + its resolution)
 import _panel_discovery       # noqa: E402  (skills/agents/MCP registry scan)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _config_rules          # noqa: E402  (portability_mode: the tier, resolved once)
 
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.
@@ -210,6 +211,10 @@ def policy_state(project):
         # Whether anything is enforcing this at all. Served with the verdicts and
         # not on a separate endpoint, because it is a qualifier ON the verdicts.
         "enforcement": _policy_enforcement(project, config),
+        # The tier decides whether the switchboard opens narrowed to what a clone
+        # carries. Served rather than re-derived in the browser: a second reading
+        # of the same key is a second answer waiting to disagree.
+        "portability": _config_rules.portability_mode(config),
         "resolved": {}, "rules": {},
     }
     out["areaInfo"] = _policy_areas_view(reg, active, out["areas"])
@@ -221,16 +226,24 @@ def policy_state(project):
         # rendered the server NAME for every MCP row, because discovery handed
         # back bare strings and the name was passed into the source slot.
         if kind == "mcp":
-            names = [("mcp__%s__*" % e.get("name"), e.get("source"), True)
+            names = [("mcp__%s__*" % e.get("name"), e.get("source"), True,
+                      e.get("travels"), e.get("travelsBasis"))
                      for e in (found.get("mcp") or []) if e.get("name")]
         else:
-            names = [(e.get("name"), e.get("source"), False)
+            names = [(e.get("name"), e.get("source"), False,
+                      e.get("travels"), e.get("travelsBasis"))
                      for e in (found.get(kind) or []) if e.get("name")]
-        for name, source, stand_in in names:
+        for name, source, stand_in, travels, why in names:
             v = _policy.resolve(policy, kind, name, active_tags=active)
             rows.append({"name": name, "source": source, "standIn": stand_in,
                          "verdict": v["verdict"], "basis": v["basis"],
                          "rule": v["rule"], "area": v["area"],
+                         # Carried so the switchboard can say which of these a
+                         # CLONE would even have. Without it the tab lists every
+                         # skill on the machine as an equal subject of a policy
+                         # the repository shares, which is how a project using a
+                         # handful reads as a project using a hundred.
+                         "travels": travels, "travelsBasis": why,
                          "required": bool(_policy.matches(
                              name, _policy.required_patterns(kind)))})
         out["resolved"][kind] = rows

@@ -41,3 +41,14 @@
    icon — lives in showTip() with the rest of the geometry. There is deliberately
    no `max-width` here: the width IS the clamp, and a second cap expressed in
    `vw` would disagree with it by the width of a scrollbar (F9's lesson, kept). */
+/* A capability that resolves on this machine and would not survive a clone.
+   DIMMED, never hidden by CSS: the tables say what this machine has, and the
+   narrowing is a filter the reader can see and switch. Opacity rather than a
+   colour, so it reads the same in both themes without a second token; the badge
+   beside it carries the basis in its title.
+
+   ONE rule for BOTH tables, here rather than beside either of them, because the
+   same state under two names is how `.mut` and `.muted` happened. `:where()`
+   keeps specificity at zero so a surface rule still wins. */
+:where(table.regtbl,table.poltbl) tbody tr.stranded :is(th,td){opacity:.55}
+.badge.stays{background:var(--surface-2);color:var(--muted);border:1px dashed var(--border)}

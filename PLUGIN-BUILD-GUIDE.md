@@ -311,7 +311,7 @@ L4:
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
-  _panel_policy -> _areas, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
+  _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
@@ -327,7 +327,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _config_rules, _gate_feed, _journal_io, _loader, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L7:
