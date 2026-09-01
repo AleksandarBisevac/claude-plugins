@@ -609,6 +609,26 @@
       "taskId": "P16.1",
       "fixedIn": null,
       "notes": "The F3/u8 class one level down: green for the wrong reason."
+    },
+    {
+      "id": "BUG-6",
+      "title": "panel: a task's detail row renders away from the row it was opened on",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-01T09:00:00+02:00",
+      "reportedBy": "the maintainer, reading the panel after v2.0.1",
+      "description": "Opening a task in the panel draws its information row somewhere other than under the row that was opened - reported as rendering at the bottom. NOT YET REPRODUCED, and that is recorded rather than assumed: overview.js appends the data-evdetail row immediately after its own data-ovtask row, and evRollCells returns plain spans rather than toggles, so neither the append order nor a shared OVF.evOpen key explains it. Either the surface is the Composition tab instead, or the cause is CSS or re-render order. Reproduce in a browser before changing any code.",
+      "repro": [
+        "open the panel, expand a phase, open a task's detail, and read where the detail row lands relative to the row that was pressed"
+      ],
+      "expected": "the detail row is the next sibling of the row it belongs to.",
+      "actual": "reported as rendering at the bottom, away from its own row.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/overview.js"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "Nothing drives data-evdetail: `grep -rn evdetail tools/` finds no gate, which is why this could be wrong with every check green. The fix owes a browser assertion that the detail is the NEXT SIBLING of its task row, not merely that it exists somewhere."
     }
   ],
   "deferred": {

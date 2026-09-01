@@ -1,0 +1,28 @@
+{
+  "//": "This repository's OWN configuration, committed so it travels. The audit plugin under plugins/audit/ is the product; these two hooks are how this repo governs its own releases. See .claude/hooks/guard-release.py for why they exist.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/arm-release-bypass.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-release.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

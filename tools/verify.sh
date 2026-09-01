@@ -466,6 +466,23 @@ PYEOF
     grep -q "^## \[$version\]" CHANGELOG.md \
       || { echo "CHANGELOG.md has no '## [$version]' section"; return 1; }
   }
+  # THE QUESTION NONE OF THE TWENTY-ONE GATES ABOVE ASKS. v2.0.0 and v2.0.1 both
+  # went out while four bugs sat `open` in the plan, and every gate was green and
+  # honest about it: they check the tree, not the tracker. `--fail-on open-bugs`
+  # already existed and had nothing pointed at it. The hook in .claude/ refuses
+  # the publishing command itself; this is the same question asked early, where a
+  # release is being prepared rather than executed.
+  #
+  # NOT piped into `tail`: this is /bin/sh, a pipeline reports the LAST command's
+  # status, and `tail` always succeeds - so the verdict would be thrown away and
+  # the row would be green over an open bug. Captured, then re-emitted.
+  no_open_bugs() {
+    _bugs_out=$(python3 plugins/audit/scripts/status/audit-status.py \
+      docs/audit/audit-plan.json --gate --fail-on open-bugs 2>&1)
+    _bugs_rc=$?
+    [ "$_bugs_rc" -eq 0 ] || echo "$_bugs_out" | tail -2
+    return "$_bugs_rc"
+  }
   tag_is_free() {
     git rev-parse "v$version" >/dev/null 2>&1 \
       && { echo "tag v$version already exists — a pushed tag is never moved here"; return 1; }
@@ -477,6 +494,7 @@ PYEOF
   run "follower 4: screenshots were shot at v$version" refs_rule screenshot_capture_drift
   # Not followers — these are properties of the release COMMIT rather than files the
   # number stales, which is why they sit below the numbered list instead of in it.
+  run "the plan carries no open bug" no_open_bugs
   run "CHANGELOG has a [$version] section" changelog_has_section
   run "tag v$version does not exist yet" tag_is_free
   # THE ONLY GATE IN THIS FILE THAT ASKS A REMOTE, which is why it is here and not

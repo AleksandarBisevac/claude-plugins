@@ -283,6 +283,24 @@ One release is **one commit** that bumps `plugin.json`, finalizes the `CHANGELOG
 carries the annotated `v<version>` tag. Push only after CI is green **on that commit**. A pushed
 tag is never moved or deleted — fix forward.
 
+**A release does not go out over an open bug, and that is enforced rather than remembered.**
+`.claude/hooks/guard-release.py` refuses the publishing commands — creating a tag, pushing one,
+`gh release create` — while the plan carries an open bug, and `verify.sh --release` asks the same
+question early. Ordinary work is untouched: `git push origin main` is not a release, and a guard
+that fired on it would be routed around inside a day.
+
+The way past it is **yours alone**: type `#release-with-bugs` in your own message, which arms a
+single-use, one-hour slot through `.claude/hooks/arm-release-bypass.py` and prints which bugs you
+are shipping over. Nothing the model writes can arm it — that is why the switch reads the prompt
+and not the command.
+
+This exists because it already failed: a bug reported *during* the v2.0.1 release was written into
+a scratch plan file no gate reads, and the release went out. Twenty-one gates were green and every
+one was honest — none of them asked about the tracker. So **a bug belongs in the manifest**
+(`/audit:bug`), never in a session note; a bug the tooling cannot see is a bug that stops nothing.
+`open` there means the plugin's own *effective* status (`_manifest_io.effective_bug_status`), so a
+bug whose fix task is `done` is already closed and blocks nothing.
+
 A Release is created **for** a tag, so it comes after the push. The tag is a git object;
 the Release is the page a reader lands on, and the README's `curl` pins make the tag a
 published claim — the Releases page had drifted to presenting a long-superseded version

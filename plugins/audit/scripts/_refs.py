@@ -204,6 +204,10 @@ _SCRIPTS_VAR = r"\$scripts/"
 # tree from outside it is written `plugins/audit/tests/...` anyway.
 _TESTS_DIR = r"tests/"
 
+# This repository's OWN configuration tree, which shares `hooks/` and `skills/`
+# with the plugin's product and means something else entirely. See `_match_rel`.
+_REPO_DIR_PREFIX = ".claude/"
+
 _BARE_RE = re.compile(r"%s?(%s%s)|%s(%s)|%s(%s%s)"
                       % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL,
                          _ROOT_ANCHOR, _TESTS_DIR, _TAIL))
@@ -213,8 +217,23 @@ _ANCHORED_RE = re.compile(r"%s(%s%s)|%s(%s)|%s(%s%s)"
 
 
 def _match_rel(match):
-    """The repo-relative path a match names, whichever branch of the pattern fired."""
+    """The repo-relative path a match names, whichever branch of the pattern fired.
+
+    A `.claude/`-PREFIXED reference resolves against the REPOSITORY, not the
+    plugin. The two trees share directory names by design — `.claude/hooks/` is
+    this repository's own configuration and `plugins/audit/hooks/` is the
+    product — so `hooks/x.py` had exactly one reading until the first repo-level
+    hook was written, and then it silently had two. Resolving the prefixed form
+    to the plugin reported a missing file for one that is there, which is the
+    same ambiguity this module already carves out for `tests/`, one directory
+    over. The reference stays CHECKED either way: a typo under `.claude/hooks/`
+    is still a missing file, just a missing file in the right tree.
+    """
+    text = match.string
+    prefixed = text[max(0, match.start() - len(_REPO_DIR_PREFIX)):match.start()]
     if match.group(1):
+        if prefixed.endswith(_REPO_DIR_PREFIX):
+            return "%s%s" % (_REPO_DIR_PREFIX, match.group(1))
         return "%s/%s" % (PLUGIN_REL, match.group(1))
     if match.group(3):
         return "%s/%s" % (PLUGIN_REL, match.group(3))

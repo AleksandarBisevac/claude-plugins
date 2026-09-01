@@ -140,8 +140,16 @@ ABSENT_BY_DESIGN = (
      "check-rendered-artifacts.py, which is stronger because it compares bytes"),
     ("plugins/audit/scripts/status/audit-doctor.py", LOCAL_SIDES,
      "an end-to-end CLI smoke test over a fixture project"),
-    ("plugins/audit/scripts/status/audit-status.py", LOCAL_SIDES,
-     "exercises --gate's exit codes, which need a fixture manifest per case"),
+    # DOC_SIDES, not LOCAL_SIDES: `verify.sh --release` now invokes this for real,
+    # asking `--fail-on open-bugs` before a version goes out, so declaring it
+    # absent from that side became a row that excused nothing. What stays absent
+    # is the DOCUMENTS' account of the per-commit set, and for the original
+    # reason - CI exercises --gate's exit codes across a fixture manifest per
+    # case, which is a matrix rather than a gate a person runs.
+    ("plugins/audit/scripts/status/audit-status.py", DOC_SIDES,
+     "exercises --gate's exit codes, which need a fixture manifest per case; the "
+     "release preflight in verify.sh invokes it for the open-bug question and is "
+     "therefore no longer exempt"),
     ("plugins/audit/hooks/py-launch.sh", LOCAL_SIDES,
      "the launcher is driven directly with fixture projects and with PATH unset, to "
      "prove the WIRING rather than decide(): the interpreter fallback, the stdin "
