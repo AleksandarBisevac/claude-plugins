@@ -1273,6 +1273,49 @@ def _cases(check):
               "by name: %r" % (_hb["findings"],),
               [(k, s) for k, s, _p in _hb["findings"]] == [("flag", _hb_dead)])
 
+        # F243. THE CASE THIS LINT MISSED FOR A WHOLE RELEASE. `_plugin_options`
+        # was a text scan, so removing a flag properly - parser, tests, and a
+        # comment at each site saying what went and why - left the spelling in
+        # those comments and the option read as still carried. That is how
+        # `docs/handbook.html` advertised `--include-strangers` through a full
+        # `verify.sh` and a full `prove-gates` sweep, until a human read the page.
+        _write(tmp, _FX_SCRIPTS + "probe_entry.py",
+               '"""A mirror script."""\n'
+               'FLAGS = ("%s",)\n'
+               '# `--retired-flag` used to be read here and is deliberately gone.\n'
+               % (_hb_opt,))
+        _hb_tree_page = _hb_page("<p>then <code>--retired-flag</code></p>")
+        _write(tmp, _FX_COMMANDS + "probe.md",
+               "---\nargument-hint: '[%s]'\n---\n# probe\n" % (_hb_opt,))
+        _write(tmp, M.HANDBOOK_REL, _hb_tree_page)
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb7b a flag named only in a COMMENT is not carried, so the page "
+              "that still tells a reader to type it is reported. A removal here "
+              "is expected to leave a comment explaining itself, which made the "
+              "old text scan blind to exactly the removals this project performs "
+              "well: %r" % (_hb["findings"],),
+              [(k, s) for k, s, _p in _hb["findings"]]
+              == [("flag", "--retired-flag")])
+        _write(tmp, _FX_SCRIPTS + "probe_entry.py",
+               '"""A mirror script."""\n'
+               'FLAGS = ("%s", "--retired-flag")\n' % (_hb_opt,))
+        _write(tmp, M.HANDBOOK_REL, _hb_tree_page)
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb7c ...while the same flag carried as a VALUE is fine, which is "
+              "what stops hb7b being a rule that convicts every option. A script "
+              "reading sys.argv by hand accepts flags argparse never sees, and "
+              "`materialize-proposal.py` really does: %r" % (_hb["findings"],),
+              _hb["findings"] == [])
+        _write(tmp, _FX_SCRIPTS + "probe_entry.py",
+               '"""A mirror script."""\nimport argparse\n'
+               'FLAGS = ("%s",)\n'
+               'def build():\n    return argparse.ArgumentParser()\n' % (_hb_opt,))
+        _write(tmp, M.HANDBOOK_REL, _hb_page("<p>then <code>--help</code></p>"))
+        _hb = M.handbook_drift(tmp, absent=(), foreign=())
+        check("hb7d ...and `--help` is carried by CONSTRUCTING a parser, never by "
+              "a literal - derived rather than exempted, because a table row "
+              "would say it belongs to somebody else: %r" % (_hb["findings"],),
+              _hb["findings"] == [])
         _hb_tree(tmp, _hb_page("<p>set <code>meta.nosuchkey</code></p>"))
         _hb = M.handbook_drift(tmp, absent=(), foreign=())
         check("hb8 a path written from the root of a document this plugin publishes, "

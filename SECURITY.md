@@ -104,7 +104,7 @@ commit and the command above does not.
 | `require-plan` (state commit) | PostToolUse edits | silent | no-op |
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
-| `journal-writes` | PostToolUse edits + Bash | silent | no-op |
+| `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
 
@@ -121,10 +121,29 @@ deny. Both plan gates are graded this way — `require-plan` and the shell-write
 branch of `guard-secrets-read` — so the same file gets the same verdict whether it is edited
 through a tool or through `sed -i`.
 
+**The plan gate speaks to two audiences, and since 2.1.1 it says different things to them.** A
+subagent's payload carries `agent_id` and the main agent's does not. A subagent is told to stop and
+report the path to the orchestrator; it is not told to add a task, because it may not edit the
+manifest and has no channel to ask a human. **And the manifest exemption no longer extends to it**:
+a subagent editing the plan or a phase shard is refused. That is a narrowing of what the gate
+allows, and it is deliberate — the exemption is there so the ORCHESTRATOR can do its bookkeeping,
+and a task that edits the plan it is judged by is a task nobody can review. Measured on a live run:
+four of five tasks meeting a refusal took that door because it was the only one open.
+
 **No secret guard is graded.** Secret reads, the token-logging ban and the shell secret
 checks deny by default at every tier, with or without a manifest: reading `.env` is wrong
 regardless of whether a plan exists, so those guards need no evidence to be correct. If you
 are relying on this plugin for secret containment, that behaviour is unchanged.
+
+**Rule #1 grades on what a body READS, not on what it spells (2.1.1).** An interpreter body is
+refused when a read call names a secret path — resolved through one hop of binding, so
+`p = '.env'` then `open(p)` is the one read it plainly is — or when it carries a shell read of one,
+which is how `subprocess.run(["cat", ".env"])` stays caught. **Naming a secret filename in a
+comment, a docstring or a printed sentence is no longer a read.** That is a narrowing, and the
+direction of its risk is stated rather than hidden: a read spelled in a way none of those three
+sees would pass. It was made because the previous rule refused prose — writing a summary that
+mentioned `.env` was reported as *"Reading a secret file"* — and a guard that fires on prose is one
+people route around, which costs more than it protects.
 
 **Neither plan gate governs a path OUTSIDE the consuming repository, and it says which
 rather than falling silent.** `_config.rel_path` is `os.path.relpath`, which answers a path
@@ -224,8 +243,14 @@ straight answer:
   `_worktrees.sweep_plan()` the CLI calls, and executes only what that planner
   returned, in the planner's order (worktree first, branch second, because git
   refuses the reverse). It runs behind the loopback and token guards, takes the
-  manifest write lock, requires the browser to confirm a dry run first, and appends
-  a journal row.
+  manifest write lock, and appends a journal row.
+  **The dry run the operator confirms is a property of the page, not of the
+  server**, and that distinction is stated rather than blurred: the server keeps no
+  record of a prior dry run, so a caller that already holds the token can `POST`
+  `{"apply": true, …}` first. What that buys an attacker is nothing — holding the
+  token is holding the panel — and what it buys the operator is real: the button
+  cannot delete anything they have not been shown. `apply` is opt-in per verb on
+  both sides, so naming none is refused rather than read as "all of them".
   **Four conditions, all failing closed, and the first two are about permission
   rather than safety:** the worktree must carry the plugin's own provenance marker
   (written by `add` into the worktree's admin directory, which git deletes with it —

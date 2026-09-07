@@ -164,6 +164,34 @@ def _cases(check):
     check_custom("a5 custom-path lockfile allowed", "allow",
                  payload("Write", "planning/plan.json.lock", content="{}",
                          sid="selftest-session-a4"))
+    # F262. The plan is the ORCHESTRATOR's, and the exemption said otherwise: a
+    # subagent refused a source file could widen its own scope instead, and on a
+    # live run four tasks out of five took that route because it was the only door
+    # left open. A task that edits the plan it is judged by is a task nobody can
+    # review. `agent_id` is present on a subagent's payload and absent on the main
+    # agent's, which is `guard-bash-writes`' probe.
+    _sub_man = dict(payload("Edit", "planning/plan.json", new_string=big,
+                            sid="selftest-a4sub"))
+    _sub_man["agent_id"] = "exec-91c2"
+    _v_sub, _m_sub = M.decide(_sub_man, cfg=cfg_custom, state_dir=sd,
+                              logs_dir=ld)
+    check("a4b a SUBAGENT is refused the manifest, which the orchestrator is "
+          "allowed - the contract in audit-executor.md said so and only the "
+          "guard can be checked",
+          _v_sub == "block" and "belongs to the orchestrator" in _m_sub,
+          repr((_v_sub, _m_sub[:120])))
+    check("a4c ...and the refusal points at the real remedy - tell the "
+          "orchestrator - rather than at a wider scope this agent cannot grant "
+          "itself, and names the case it exists for",
+          "tell the orchestrator" in _m_sub
+          and "plan-gate refusal on a source file" in _m_sub, repr(_m_sub))
+    _sub_shard = dict(payload("Edit", "planning/phases/P1.json", new_string=big,
+                              sid="selftest-a4sub2"))
+    _sub_shard["agent_id"] = "exec-91c2"
+    check("a4d ...and the phase SHARDS go with it, because that is where a task's "
+          "own status, scope and outcome actually live",
+          _verdict(_sub_shard, cfg_custom) == "block",
+          repr(_verdict(_sub_shard, cfg_custom)))
     # a5b-a5d: the SHARDS of a custom-path manifest. The orchestrator writes
     # `<manifest dir>/phases/<phaseId>.json` on every bookkeeping step, and exact
     # equality with manifestPath does not match those. At the default path it
@@ -598,9 +626,35 @@ def _cases(check):
     v, m = deny_msg(cfg_graded, "selftest-h3")
     hok("h3 a real running phase is NAMED - 'phase P3', not 'a phase'",
         v == "block" and "Phase P3 is in_progress" in m, repr(m))
-    hok("h4 the refusal tells an agent to ask the human and NOT to recommend "
-        "the bypass",
-        "ask the human" in m and "do not recommend the bypass" in m, repr(m))
+    # F251/F262. The remedy used to be one text for everybody: "add a task
+    # covering this file to <manifest>". A subagent may not edit the manifest and
+    # has no channel to the human, so that line sent it into an action it is
+    # forbidden to take - one executor stopped to ask the operator which of two
+    # things IT should do, and in another run the same refusal produced three
+    # different resolutions, four of them the agent editing the manifest itself
+    # because `docs/audit/**` is exempt from this gate.
+    hok("h4 the ORCHESTRATOR's refusal offers the two ways forward, and tells it "
+        "to continue a running subagent rather than replace it",
+        "add a task covering this file" in m
+        and "do not re-spawn it" in m, repr(m))
+    _sub = dict(offending("selftest-h4b"))
+    _sub["agent_id"] = "exec-7f3a"
+    _vs, _ms = M.decide(_sub, cfg=cfg_graded, state_dir=sd, logs_dir=ld)
+    hok("h4b a SUBAGENT is told to stop and report to the orchestrator, and is "
+        "NOT told to edit a manifest it may not touch - the payload carries "
+        "`agent_id` only for a subagent, which is the probe guard-bash-writes "
+        "already uses",
+        _vs == "block" and "YOU ARE A SUBAGENT" in _ms
+        and "report to the orchestrator" in _ms
+        and "add a task covering this file" not in _ms, repr(_ms))
+    hok("h4c ...and it names the three worse resolutions that were actually "
+        "taken, because an agent that only hears 'no' invents one",
+        "edit the manifest yourself" in _ms
+        and "somewhere it does not belong" in _ms
+        and "abandon work" in _ms, repr(_ms))
+    hok("h4d ...and it says it will not be re-spawned, which is what makes "
+        "stopping cheap rather than a lost 60-150k of context",
+        "not be re-spawned" in _ms, repr(_ms))
     hok("h5 ...and states the bypass facts: the HUMAN types it, single-use, "
         "logged, 30-minute expiry",
         "HUMAN" in m and "single-use" in m and "30 minutes" in m

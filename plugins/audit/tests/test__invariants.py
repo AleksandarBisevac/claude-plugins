@@ -306,6 +306,23 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         # which is the only thing that separates this check from re-validating
         # the file that is already on disk.
         shard["tasks"][1]["dependsOn"] = ["P9.9"]
+    if invalid_state in ("fileindex", "fileindex-unsettled"):
+        # F250's shape instead: a task whose `files` grew mid-phase. The shard is
+        # committed (step 4c stages it) and the index is NOT (step 4c forbids it),
+        # so the state this commit recorded pairs a file with no fileIndex entry.
+        # This is what a real run produces 39 and 93 times; nothing the operator
+        # can reorder avoids it.
+        shard["tasks"][1].pop("dependsOn", None)
+        shard["tasks"][1]["files"] = list(shard["tasks"][1].get("files") or [])
+        shard["tasks"][1]["files"].append("src/widened.py")
+        _write(os.path.join(root, "src", "widened.py"), "w = 1\n")
+        if invalid_state == "fileindex":
+            # ...and the chore commit the operator makes afterwards, which is what
+            # settles the pairing. `fileindex-unsettled` is the same repository
+            # without it, so the pair separates "deferred" from "never paid".
+            idx = _mio.read_json(index_path)
+            idx.setdefault("fileIndex", {})["src/widened.py"] = ["P1.2"]
+            _write_json(index_path, idx)
     _write_json(shard_path, shard)
     staged = ["src/b.py", "docs/audit/phases/P1.json"]
     if evidence_pointer:
@@ -755,6 +772,39 @@ def _cases(check):
               "%r" % (valid["breaches"],),
               len(valid["breaches"]) == 1
               and broken["sha2"][:12] in valid["breaches"][0])
+
+        # F250. `task.files` lives in the phase shard and `fileIndex` lives in the
+        # index, and step 4c forbids a task commit from staging the index - so a
+        # scope corrected mid-run commits a shard the committed index does not
+        # pair with, and EVERY later commit reports it. Measured on two separate
+        # live runs: 39 breaches across 10 of 12 tasks, and 93 in one phase. There
+        # is no commit ordering that avoids it, and it punished the right instinct.
+        fidx = repos.get(invalid_state="fileindex")
+        valid = _check(_phase_answer(fidx), "manifest-revalidated")
+        check("iv18b a task whose scope grew mid-phase is NOT a breach at the "
+              "commit that recorded it: the pairing it is missing is one step 4c "
+              "makes impossible to carry, and a rule nothing can satisfy is a "
+              "rule people learn to route around: %r" % (valid["breaches"],),
+              not [b for b in valid["breaches"] if "fileIndex" in b],
+              repr(valid["breaches"]))
+        check("iv18c ...and the deferral is PAID against the manifest as it "
+              "stands, so the exemption is a moment and not a hole. This fixture "
+              "leaves the index paired, so nothing is owed",
+              valid["verdict"] != M.BREACH, repr(valid))
+        unsettled = repos.get(invalid_state="fileindex-unsettled")
+        _uv = _check(_phase_answer(unsettled), "manifest-revalidated")
+        check("iv18d ...and a deferral NEVER PAID is a real breach: the same "
+              "repository without the chore commit that settles the index. This "
+              "is what stops iv18b being a hole - the rule is 'not yet', not "
+              "'never': %r" % (_uv["breaches"],),
+              [b for b in _uv["breaches"] if "STILL does not pair" in b]
+              and [b for b in _uv["breaches"] if "deferred this pairing" in b],
+              repr(_uv["breaches"]))
+        check("iv18e ...while an ordinary invalid state committed alongside it is "
+              "still a breach - without this, iv18b could be a rule that stopped "
+              "reading the validator at all",
+              len([b for b in _check(_phase_answer(repos.get(invalid_state=True)),
+                                     "manifest-revalidated")["breaches"]]) == 1)
 
         rowed = repos.get(journal_rows=3)
         valid = _check(_phase_answer(rowed), "manifest-revalidated")

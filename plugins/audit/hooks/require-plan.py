@@ -132,6 +132,22 @@ def _now_iso():
 # holding the pen: another session has this manifest's lock and is alive, so this
 # write would land on top of theirs. Says the holder, what they are doing, the
 # basis for calling them alive, and the one command that resolves it.
+# What a SUBAGENT is told when it reaches for the plan itself (F262). Its own
+# constant rather than a branch inside the refusal below, because this is a
+# different refusal: the file is not out of scope, it is out of AUTHORITY, and the
+# remedy is not a wider scope but a message to the orchestrator.
+_SUBAGENT_MANIFEST = (
+    "%s is the audit plan, and the plan belongs to the orchestrator.\n"
+    "You are a subagent: your job is one task, and a task that edits the plan it "
+    "is being judged by is a task nobody can review. This is why the exemption "
+    "that lets the ORCHESTRATOR write here does not extend to you.\n"
+    "Do this: STOP, and tell the orchestrator what you need - a wider `files` "
+    "scope, a status change, a new task. It owns those writes and will make them, "
+    "then tell you to carry on.\n"
+    "If you reached for %s to get past a plan-gate refusal on a source file, that "
+    "is the case this rule exists for: report the refusal instead."
+)
+
 _LOCK_DENY = (
     "%s is under the %s lock, held by another LIVE session (%s).\n"
     "  doing: %s\n"
@@ -382,6 +398,23 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     Exempt from the PLAN gate is not the same as unconditionally writable.
     #     A manifest write is checked against the concurrency lock instead — see
     #     step 2a-ii.
+    # 2a-0. THE PLAN IS THE ORCHESTRATOR'S, AND THE EXEMPTION SAID OTHERWISE
+    #     (F262). `agents/audit-executor.md` puts the manifest with the
+    #     orchestrator, and this gate exempted it from everybody — so a subagent
+    #     refused a source file could, and did, widen its own scope instead:
+    #     measured on a live run, four tasks out of five took that route because
+    #     it was the only door left open. The contract and the guard have to agree,
+    #     and the guard is the half that can be checked.
+    #
+    #     `agent_id` is present on a subagent's payload and absent on the main
+    #     agent's, which is `guard-bash-writes`' probe. The orchestrator is
+    #     untouched: it has no `agent_id`, so every branch below runs for it
+    #     exactly as before.
+    if str(data.get("agent_id") or "").strip() and (
+            rel == manifest_rel or rel == manifest_rel + ".lock"
+            or _config.governing_lock(manifest_rel, rel)):
+        return ("block", _SUBAGENT_MANIFEST % (rel, rel))
+
     if rel == manifest_rel or rel == manifest_rel + ".lock" or (
             _config.governing_lock(manifest_rel, rel)):
         # 2a-ii. The lock, enforced. audit-lock.py can tell a live holder from an
@@ -613,6 +646,35 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         _config.append_gate_event(ld, {
             "event": "deny", "file": rel, "mode": "deny", "reason": reason,
             "sessionId": session_id})
+    # THE REMEDY BRANCHES BY AUDIENCE, and it did not (F251, F262). The old text
+    # told every reader to "add a task covering this file to <manifest>" — but a
+    # subagent may not edit the manifest (`agents/audit-executor.md` puts it with
+    # the orchestrator) and has no channel to the human, so the one line addressed
+    # to it sent it into an action it is forbidden to take. Measured: one executor
+    # stopped and asked the operator which of two things IT should do, and across
+    # another run the same refusal produced three different resolutions — content
+    # put in the wrong module, work reverted for a worse UX, and four tasks where
+    # the agent edited the manifest itself because `docs/audit/**` is exempt.
+    #
+    # A subagent's payload carries `agent_id` and the main agent's does not, which
+    # is the probe `guard-bash-writes` already relies on.
+    if str((data or {}).get("agent_id") or "").strip():
+        return (
+            "block",
+            "Outside the running plan (%s): %s\n"
+            "%s\n"
+            "YOU ARE A SUBAGENT, so this one is not yours to resolve: the "
+            "manifest belongs to the orchestrator, and widening a scope from "
+            "inside a task is how a plan stops describing the work.\n"
+            "Do this: STOP, and report to the orchestrator that %s is outside "
+            "your task's `files` and why you need it. It will widen the scope "
+            "and tell you to carry on - you will not be re-spawned.\n"
+            "Do NOT: edit the manifest yourself (it is exempt from this gate, "
+            "which does not make it yours), put the change somewhere it does "
+            "not belong to dodge the refusal, or abandon work you have already "
+            "done. All three have happened, and each was worse than stopping."
+            % (reason, rel, cause, rel),
+        )
     return (
         "block",
         "Outside the running plan (%s): %s\n"
@@ -620,12 +682,11 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         "Two ways forward, weighed:\n"
         "  1. This is part of the work at hand -> add a task covering this "
         "file to %s (status \"in_progress\"). Preferred: the change lands in "
-        "the plan, reviewed and recorded.\n"
+        "the plan, reviewed and recorded. If a subagent is running, widen its "
+        "scope and message it to continue - do not re-spawn it.\n"
         "  2. This is genuinely a one-off -> the HUMAN types %s in their own "
         "prompt to opt out for one change. Agents cannot arm it; it is "
         "single-use, logged, and expires unused after %d minutes.\n"
-        "If you are an agent reading this: ask the human which they want - do "
-        "not recommend the bypass.\n"
         "Exempt regardless: %s, and the first single small (magnitude <= %d: "
         "lines added, chars/200, or lines removed - whichever is larger) "
         "non-exempt file per session."

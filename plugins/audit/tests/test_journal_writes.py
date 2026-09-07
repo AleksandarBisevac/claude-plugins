@@ -1072,6 +1072,77 @@ def _cases(check):
               and not [w for w in _e_res["warnings"] if "never saw" in w],
               repr((_e_res["rows"], _e_res["warnings"])))
 
+        # --- F261: the Bash lane's FIRST call had no baseline ------------------
+        # Reported from a live run as `docs/audit/phases/P0.json has changed since
+        # the last row that recorded it -- an edit the journal never saw`, after a
+        # `mergedAt` stamp made through a heredoc. The offered cause was that
+        # heredoc-fed stdin bypasses the digest comparison; driven, it does not -
+        # the Bash pass names no path and parses no command. The real window is
+        # `pre_cache`'s own documented reasoning one lane over: with no baseline
+        # the FIRST write of a session loses its rows, and Bash had no Pre pass at
+        # all, so it had that regression permanently.
+        _fp_proj = os.path.join(tmp, "firstbash")
+        os.makedirs(os.path.join(_fp_proj, "docs", "audit", "phases"))
+        _fp_man = os.path.join(_fp_proj, "docs", "audit", "audit-plan.json")
+        _fp_shard = os.path.join(_fp_proj, "docs", "audit", "phases", "P0.json")
+        with open(_fp_man, "w", encoding="utf-8") as _fh:
+            json.dump({"meta": {"version": 2},
+                       "phases": [{"id": "P0", "shard": "phases/P0.json"}]}, _fh)
+        with open(_fp_shard, "w", encoding="utf-8") as _fh:
+            json.dump({"id": "P0", "mergedAt": None}, _fh)
+
+        def _fp_bash(sid, event):
+            return {"tool_name": "Bash", "session_id": sid, "cwd": _fp_proj,
+                    "hook_event_name": event,
+                    "tool_input": {"command": "python3 - <<'EOF'\nx\nEOF"}}
+
+        M.pre_cache(_fp_bash("fp-1", "PreToolUse"), cfg=cfg, root=_fp_proj)
+        with open(_fp_shard, "w", encoding="utf-8") as _fh:
+            json.dump({"id": "P0", "mergedAt": "2026-01-01T00:00:00Z"}, _fh)
+        _fp = M.post_entries(_fp_bash("fp-1", "PostToolUse"), cfg=cfg,
+                             root=_fp_proj)
+        check("fb1 a write made by the session's FIRST Bash call is RECORDED - "
+              "the Pre pass now seeds the swept paths for this lane, so the Post "
+              "pass has something to diff against instead of seeding from the "
+              "already-written file and claiming nothing",
+              [(e.get("action"), e.get("target")) for e in _fp]
+              == [("manifest.edit", "docs/audit/phases/P0.json")], repr(_fp))
+        _fp_slot = M._slot_path(_fp_proj, cfg, _fp_bash("fp-2", "PreToolUse"),
+                                "docs/audit/phases/P0.json")
+        check("fb2 ...and a session that has ALREADY seeded pays no hash on its "
+              "next Bash call: an existing slot is left alone, so the steady-state "
+              "cost is one `exists` per watched path rather than a re-read of the "
+              "manifest on every shell command",
+              not os.path.exists(_fp_slot)
+              and M.pre_cache(_fp_bash("fp-2", "PreToolUse"), cfg=cfg,
+                              root=_fp_proj)
+              and os.path.exists(_fp_slot)
+              and M._read_preimage(_fp_proj, cfg, _fp_bash("fp-2", "PreToolUse"),
+                                   "docs/audit/phases/P0.json") is not None,
+              repr(_fp_slot))
+        # COUNTED, not compared. The first draft of this case asserted the slot
+        # was byte-identical after a second pass - which it is either way, since
+        # `_write_slot` writes the same content - so it passed with the skip
+        # removed. "It did not re-hash" and "it re-hashed to the same value" are
+        # one file and two costs, and only a call count can tell them apart.
+        _fp_calls = []
+        _fp_real = M._write_slot
+
+        def _counting_slot(root_, cfg_, data_, rel_):
+            _fp_calls.append(rel_)
+            return _fp_real(root_, cfg_, data_, rel_)
+
+        M._write_slot = _counting_slot
+        try:
+            M.pre_cache(_fp_bash("fp-2", "PreToolUse"), cfg=cfg, root=_fp_proj)
+        finally:
+            M._write_slot = _fp_real
+        check("fb3 ...proven by COUNTING the snapshots: a session whose slots "
+              "already exist takes none on its next Bash call, so the steady-state "
+              "cost really is an `exists` per watched path and not a re-read of "
+              "the manifest on every shell command",
+              _fp_calls == [], repr(_fp_calls))
+
         # --- w: the wiring - main() routes by hook_event_name ------------------
         wproj = os.path.join(tmp, "wire")
         os.makedirs(os.path.join(wproj, "docs", "audit"))

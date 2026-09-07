@@ -812,6 +812,99 @@ def check_close_phase_already_contained(fx):
         write_manifest(fx, manifest_body())
 
 
+def check_close_phase_deletes_after_no_checkout_merge(fx):
+    """The branch really goes after a merge into a parent checked out NOWHERE (F249).
+
+    This is the topology `merge_plan` calls `no-checkout`, and it is the ordinary one
+    on a machine where you work on feature branches: the development branch has no
+    worktree of its own. Measured on a real repository, `git branch -d` then refuses
+    with `error: the branch '<b>' is not fully merged` — because it grades from HEAD,
+    and HEAD is by construction not the parent here — AFTER the worktree has already
+    been removed. The result was an orphan branch, an exit 1 for a merge that landed,
+    and an accusation about a branch this plugin had just proven contained.
+
+    Asked end to end rather than as a planner case, because the whole point is what
+    git does with the argv, not what the plan says.
+    """
+    branch = "feature/wt/p9-nocheckout"
+    parent = "develop-nocheckout"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-nock")
+    code, out = git(fx, "branch", parent, FIXTURE_BRANCH)
+    if code != 0:
+        return False, "could not create the parent branch: %s" % (out or "").strip()
+    code, out = _wt_add(fx, wt, branch)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        with io.open(os.path.join(wt, "n.txt"), "w", encoding="utf-8") as fh:
+            fh.write("phase work\n")
+        run([fx["git"], "add", "-A"], wt, fx["env"])
+        run([fx["git"], "commit", "-q", "-m", "phase work"], wt, fx["env"])
+        # The worktree goes FIRST, by hand, so this case is about the branch alone.
+        # Left standing it holds the branch and the deletion is blocked behind the
+        # removal — a correct refusal, and one that would hide the thing being
+        # asked here.
+        git(fx, "worktree", "remove", wt)
+        body = _wt_manifest(branch=branch)
+        body["phases"][-1]["parentBranch"] = parent
+        # Signed off, because the cleanup half is gated on settlement and this case
+        # is about what the deletion RUNS, not about whether it is allowed to.
+        body["phases"][-1]["status"] = "done"
+        write_manifest(fx, body)
+        code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
+                           "--project", ".")
+        gone, _ = git(fx, "rev-parse", "--verify", "--quiet",
+                      "refs/heads/%s" % (branch,))
+        contained, _ = git(fx, "merge-base", "--is-ancestor", parent, parent)
+        _, landed = git(fx, "log", "--oneline", "-1", parent)
+        return (code == 0 and gone != 0 and "phase work" in (landed or "")), (
+            "exit %r; branch still present=%r; %s tip=%r; output: %s"
+            % (code, gone == 0, parent, (landed or "").strip()[:40],
+               (out or "").strip().split("\n")[0][:70]))
+    finally:
+        _wt_drop(fx, wt, branch)
+        git(fx, "branch", "-D", parent)
+        write_manifest(fx, manifest_body())
+
+
+def check_close_phase_stamps_already_contained(fx):
+    """An already-landed phase is STAMPED, not merely cleaned up (F249).
+
+    The gate on the write used to be "this run performed a merge", which is false on
+    exactly this path - and the cleanup beside it gates on the VERIFIED containment,
+    so the half that deletes and the half that records disagreed about one phase.
+    The reachable version of this is the re-run `orchestrator.md` asks a human to
+    make after merging by hand under `meta.merge.auto: false`: worktree removed,
+    branch deleted, `mergedAt` still null, and `phase_settled` then refuses for ever
+    so no later sweep can reap anything.
+
+    Asked against a real repository rather than in the suite, because the field is
+    written by `main()` into a manifest on disk and the suite drives `close()`.
+    """
+    branch = "feature/wt/p9-stamp"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-stamp")
+    code, out = _wt_add(fx, wt, branch)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        write_manifest(fx, _wt_manifest(branch=branch))
+        before = [p for p in read_manifest(fx)["phases"] if p["id"] == "P9"]
+        code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
+                           "--project", ".", "--keep-worktree", "--keep-branch")
+        after = [p for p in read_manifest(fx)["phases"] if p["id"] == "P9"]
+        stamped = after and after[0].get("mergedAt")
+        return (code == 0 and before and not before[0].get("mergedAt")
+                and bool(stamped)), (
+            "exit %r; mergedAt before=%r after=%r; output: %s"
+            % (code, before[0].get("mergedAt") if before else "<no phase>",
+               stamped, (out or "").strip().split("\n")[0][:70]))
+    finally:
+        _wt_drop(fx, wt, branch)
+        write_manifest(fx, manifest_body())
+
+
 def check_close_phase_refuses_diverged(fx):
     """The parent moved during the phase: exit 3, and NOTHING written.
 
@@ -967,6 +1060,11 @@ CHECKS = (
      "<parent>` cannot run at all", check_close_phase_from_worktree),
     ("g17 an already-landed phase makes no git write, and is not reported as a "
      "conflict", check_close_phase_already_contained),
+    ("g17b ...and it is STAMPED, so a phase merged by hand is not left unsettled "
+     "with its worktree already gone", check_close_phase_stamps_already_contained),
+    ("g17c a merge into a parent checked out NOWHERE still deletes the branch - "
+     "`git branch -d` grades from HEAD and refuses this one",
+     check_close_phase_deletes_after_no_checkout_merge),
     ("g18 a parent that moved during the phase is exit 3, and nothing is written",
      check_close_phase_refuses_diverged),
     ("g19 a sweep leaves a worktree this plan does not name, and says so",

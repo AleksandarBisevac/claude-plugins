@@ -84,8 +84,17 @@ def git_user_name(git_root):
 
 
 def find_phase(manifest, phase_id):
+    """The phase `phase_id` names, through the shared resolver (F257).
+
+    `2`, `p2` and `P2` are one phase here because they are one phase everywhere -
+    the fault this replaces was that each script answered the question its own way
+    and none of them mapped a bare integer, so `/audit:phase 2` matched nothing.
+    """
+    resolved, _why = _mio.resolve_phase_id(manifest, phase_id)
+    if resolved is None:
+        return None
     for ph in (manifest.get("phases") or []):
-        if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
+        if isinstance(ph, dict) and str(ph.get("id")) == resolved:
             return ph
     return None
 

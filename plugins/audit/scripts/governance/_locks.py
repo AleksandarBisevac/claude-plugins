@@ -209,6 +209,38 @@ def read_lock(path):
         return {}
 
 
+def held_by_us(info, session=None, pid=None):
+    """`{"ours", "why"}` -- is this lock THIS session's own?
+
+    F260. `set-priority.py` refused with exit 3 and `pid 80470 is running on this
+    host` — and that pid was the operator, who had taken the index lock by hand
+    around several structural writes, which is the flow the lock exists for. The
+    documented workaround was "hold no lock by hand", i.e. do not use the thing.
+    `release` has always answered this question (`is NOT yours to release`); only
+    `acquire` never asked it.
+
+    TWO SPELLINGS, EITHER SUFFICIENT, and `SECURITY.md` records why one is not
+    enough: a lock taken from **Bash** carries `$CLAUDE_CODE_SESSION_ID`, while a
+    hook is handed `session_id` in its payload and `$CLAUDE_PID` is a third name
+    for the same run. Measured in a live session those are different values, so a
+    run could lock as one identity and be refused as another — the gate denying
+    the orchestrator its own bookkeeping. The tie goes to "ours": matching too
+    eagerly costs a missed denial against a stranger who happens to share an id,
+    and failing to match breaks the run that is holding the lock correctly.
+    """
+    if not isinstance(info, dict) or not info:
+        return {"ours": False, "why": "no lock to compare against"}
+    sid, ident = _identity(session, pid)
+    if sid and info.get("sessionId") and str(info["sessionId"]) == str(sid):
+        return {"ours": True,
+                "why": "held by this session (sessionId %s)" % (sid,)}
+    if ident and info.get("pid") and str(info["pid"]) == str(ident):
+        return {"ours": True, "why": "held by this session (pid %s)" % (ident,)}
+    return {"ours": False,
+            "why": "held by %s" % (info.get("sessionId") or info.get("pid")
+                                   or info.get("hostname") or "someone else")}
+
+
 def _identity(session, pid):
     """What goes into the lock: whose run this is, and a pid that outlives us."""
     sid = session or os.environ.get("CLAUDE_CODE_SESSION_ID") or None

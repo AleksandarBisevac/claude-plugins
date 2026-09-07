@@ -180,6 +180,17 @@ _INLINE_EVAL = re.compile(
 )
 SECRET_TOKEN_RE = re.compile(_SECRET_TOKEN, re.IGNORECASE)
 
+# How the interpreter got its program, in the words the operator used (F256). Both
+# shapes are the same CAPABILITY and are graded identically — that is F31 and it
+# stays — but a refusal that names the spelling nobody typed reads as a guard
+# firing at random, and a guard people believe fires at random is one they route
+# around. The distinction costs one word and buys the reader their own command.
+_EVAL_SHAPE = {
+    "-c": "an inline-eval one-liner (python -c / node -e / ruby/perl -e …)",
+    "heredoc": ("a heredoc fed to an interpreter's stdin (python3 - <<EOF …), "
+                "which is the same capability as python -c and is graded as one"),
+}
+
 # F-P-7: the write CALL and the path it writes, captured TOGETHER. The old
 # pattern matched a write-shaped fragment anywhere in the clause and left the
 # target to a second, unrelated search — so `>` inside the code (a comparison,
@@ -399,6 +410,75 @@ def _eval_write_targets(clause):
         if target:
             out.append(target)
     return out
+# Every shape that READS a path in an interpreter body, with the path in the
+# argument position (F263). The mirror of `_WRITE_CALL_EXPR`, and it exists for the
+# reason F-P-7 gives about that one: a token that merely SHARES a clause with a read
+# shape is not a read. Write modes are excluded here on purpose — `open(p, 'w')` is
+# the write arm's business, and grading it as a read would refuse creating a file
+# whose name resembles a secret.
+_READ_CALL_EXPR = re.compile(
+    r"(?:(?:io|codecs)\s*\.\s*)?open\s*\(\s*([^,)]+?)\s*"
+    r"(?:,\s*['\"](?:r|rb|rt|r\+b?)['\"][^)]*)?\)"
+    r"|Path\s*\(\s*([^,)]+?)\s*\)\s*\.\s*read_(?:text|bytes)"
+    r"|(?:fs\s*\.\s*)?readFile(?:Sync)?\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|createReadStream\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|(?:File|IO)\s*\.\s*(?:read|readlines|foreach|open)\s*\(\s*([^,)]+?)\s*[,)]"
+    r"|load_dotenv\s*\(\s*([^,)]*?)\s*[,)]",
+    re.IGNORECASE,
+)
+
+
+def _eval_read_targets(clause):
+    """Every path this clause actually READS, from the read calls themselves.
+
+    `_eval_write_targets`' twin, resolving a bound name the same way, so
+    `p = '.env'` followed by `open(p)` is the one read it plainly is.
+    """
+    out = []
+    bindings = None
+    for m in _READ_CALL_EXPR.finditer(clause):
+        expr = next((g for g in m.groups() if g), None)
+        if expr is None:
+            continue
+        if bindings is None:
+            bindings = _eval_bindings(clause)
+        target = _resolve_write_expr(expr, bindings)
+        if target:
+            out.append(target)
+    return out
+
+
+def _eval_reads_a_secret(clause, extras):
+    """Does this interpreter body READ a secret, as opposed to mentioning one?
+
+    F263, and it is a narrowing of Rule #1, so what it keeps is stated first.
+    THREE WAYS TO BE A READ, and only prose falls outside all three:
+
+      1. a read call NAMES the path — the definite case, resolved through one hop
+         of binding exactly as the write arm resolves its targets;
+      2. the body carries a SHELL read of it — `subprocess.run(["cat", ".env"])`
+         is a read no Python-shaped pattern would see, and `BASH_FILE_READ` is the
+         same matcher the shell lane already trusts for that sentence;
+      3. a project-configured extra names one of the read targets.
+
+    What this stops refusing is a body that merely SPELLS the name: a phase summary
+    about a `.env` failing at boot, a comment, a docstring, an error message. That
+    was reported from a live run and reproduced twice inside one command here — the
+    refusal said *Reading a secret file* about a sentence that read nothing.
+
+    The direction of the risk is stated rather than hidden: this can miss a read
+    spelled in a way none of the three sees. The alternative is what was measured —
+    a guard that fires on prose is one people route around, and this register
+    already carries that lesson under its own entry.
+    """
+    targets = _eval_read_targets(clause)
+    if any(SECRET_TOKEN_RE.search(t) for t in targets):
+        return True
+    if BASH_FILE_READ.search(clause) or DOT_SOURCE_SECRET.search(clause):
+        return True
+    return bool(targets) and _hits_extra(" ".join(targets), extras)
+
+
 _NON_EXEMPT_WRITE_TARGET = re.compile(
     r"['\"][\w./-]+\.(?:tsx?|jsx?|mjs|cjs|json|ya?ml|swift|kt|java|rb|py|sh|gradle|"
     r"podspec|plist)['\"]",
@@ -1124,28 +1204,36 @@ def _decide_core(data, root, cfg):
         # (clause, is it already known to be code). A heredoc body carries no
         # `-c` spelling of its own -- being fed to an interpreter IS its
         # spelling -- so it arrives pre-judged rather than re-matched.
-        graded = [(cl, bool(_INLINE_EVAL.search(cl))) for cl in _clauses(_text)]
-        graded += [(b, True) for b in _code_bodies + _shell_bodies]
-        for cl, is_eval in graded:
-            if is_eval and (SECRET_TOKEN_RE.search(cl)
-                            or _hits_extra(cl, extras)):
+        graded = [(cl, bool(_INLINE_EVAL.search(cl)), "-c") for cl in
+                  _clauses(_text)]
+        # ...and the heredoc bodies, carrying HOW they arrived (F256). Grading
+        # `python3 - <<PY` as an inline eval is deliberate and stays (F31: it is
+        # the same capability as `python3 -c`), but the refusal used to name only
+        # the `-c` spelling - so an operator who typed a heredoc was told about a
+        # command nobody had written, which is how a correct guard earns a
+        # reputation for firing at random. Reported from a live run, and hit three
+        # times in one session here.
+        graded += [(b, True, "heredoc") for b in _code_bodies + _shell_bodies]
+        for cl, is_eval, how in graded:
+            if is_eval and _eval_reads_a_secret(cl, extras):
                 return ("block",
-                        "Reading a secret file via an inline-eval one-liner "
-                        "(python -c / node -e / ruby/perl -e …) is blocked (Rule #1). "
-                        "Listing names is fine; reading contents is not. Ask the user to "
-                        "paste any value you actually need.")
-        for cl, is_eval in graded:
+                        "Reading a secret file from %s is blocked (Rule #1). "
+                        "Listing names is fine; reading contents is not. Ask the "
+                        "user to paste any value you actually need."
+                        % (_EVAL_SHAPE[how],))
+        for cl, is_eval, how in graded:
             # F-P-7: judged on the paths the write calls NAME, not on a write
             # shape and a path that merely share a clause.
             targets = _eval_write_targets(cl) if is_eval else []
             if any(_NON_EXEMPT_WRITE_TARGET.search("'%s'" % t)
                    and not _exempt_eval_write("'%s'" % t) for t in targets):
                 return ("block",
-                        "Writing source files via an inline-eval one-liner "
-                        "(python -c / node -e …) bypasses the plan-first gate.\n"
-                        "Use the Edit/Write tools so guard-edits and require-plan can review "
-                        "the change. This is a best-effort backstop — full Bash-write "
-                        "coverage needs a PostToolUse diff check.")
+                        "Writing source files from %s bypasses the plan-first "
+                        "gate.\n"
+                        "Use the Edit/Write tools so guard-edits and require-plan "
+                        "can review the change. This is a best-effort backstop — "
+                        "full Bash-write coverage needs a PostToolUse diff check."
+                        % (_EVAL_SHAPE[how],))
         # F116: over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.

@@ -449,6 +449,16 @@ def _check_ado_parents(manifest, phases):
 
 
 # --- fileIndex, bugs and proposals -----------------------------------------------
+# The one wording that says a task's `files` and the `fileIndex` disagree. A
+# CONSTANT because a second reader grades it differently: `task.files` lives in the
+# phase shard and `fileIndex` lives in the index, and `orchestrator.md` forbids a
+# task commit from staging the index — so a mid-phase commit CANNOT carry both
+# halves, and `_invariants.manifest_revalidated` has to tell this finding apart
+# from every other one (F250). Matching the sentence in two files by hand is how
+# the two would drift; one of them owns the words.
+FILEINDEX_PAIRING = "missing from fileIndex"
+
+
 def _check_file_index(manifest, index):
     """fileIndex integrity in BOTH directions. Returns (findings, warnings);
     warnings is always empty.
@@ -484,9 +494,9 @@ def _check_file_index(manifest, index):
         for fentry in files:
             key = _strip_line_suffix(fentry)
             if tid not in stripped_index.get(key, set()):
-                f.append("task %s: file '%s' missing from fileIndex "
+                f.append("task %s: file '%s' %s "
                          "(fileIndex['%s'] must include '%s')"
-                         % (tid, fentry, key, tid))
+                         % (tid, fentry, FILEINDEX_PAIRING, key, tid))
     return (f, [])
 
 

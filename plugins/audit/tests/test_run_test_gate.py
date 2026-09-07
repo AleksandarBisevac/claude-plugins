@@ -220,6 +220,38 @@ def _cases(check):
           "it may be a literal shell command, and refusing it would make this "
           "script decide what a gate is allowed to be: %r" % (cmds3,),
           cmds3 == [("echo literal", "echo literal")])
+    # F253. `orchestrator.md` names `meta.nodePreamble` four times, including "it
+    # must run task.tests.gate (running meta.nodePreamble first, un-piped, if set)"
+    # — and the script had ZERO occurrences of it. On a real run that cost two gate
+    # rows recording exit 127, a PATH problem, as EVIDENCE: the committed ledger
+    # carries two false failures for ever. A gate that records a false red is worse
+    # than one that does not run.
+    _pre_man = {"meta": dict(man["meta"],
+                             nodePreamble="source ~/.nvm/nvm.sh && nvm use"),
+                "phases": man["phases"]}
+    _pre_cmds, _srcP, _errP = M.gate_of(_pre_man, "P1")
+    check("rg1b every resolved command carries meta.nodePreamble in front, "
+          "because the script spawns its own shell and a preamble the caller "
+          "exported into a different one reaches nothing: %r" % (_pre_cmds,),
+          _pre_cmds == [
+              ("lint", "source ~/.nvm/nvm.sh && nvm use && "
+                       "pre-commit run --all-files"),
+              ("test", "source ~/.nvm/nvm.sh && nvm use && pytest -q")])
+    check("rg1c ...joined with && rather than a pipe, which is what 'un-piped' "
+          "in orchestrator.md is asking for - a pipe would hand the gate's exit "
+          "code to the preamble's tail and lose the verdict entirely",
+          all("|" not in c for _n, c in _pre_cmds), repr(_pre_cmds))
+    check("rg1d ...and with NO preamble the command is untouched, so the "
+          "overwhelming majority of manifests pay nothing for this",
+          [c for _n, c in cmds] == ["pre-commit run --all-files", "pytest -q"],
+          repr(cmds))
+    _blank = {"meta": dict(man["meta"], nodePreamble="   "),
+              "phases": man["phases"]}
+    _blank_cmds, _sB, _eB = M.gate_of(_blank, "P1")
+    check("rg1e ...and a preamble that is only whitespace is not one. Prefixing "
+          "`   && ` would make every gate on that manifest exit 2 with a syntax "
+          "error, which is the false-red this entry exists to stop",
+          _blank_cmds == cmds, repr(_blank_cmds))
     _none, _srcC, err_none = M.gate_of(man, "P9")
     check("rg3 an unknown phase is an error rather than an empty gate - "
           "'this phase has no gate' and 'there is no such phase' are two "
@@ -495,6 +527,43 @@ def _cases(check):
           "not the same as a run that covered nothing: %r"
           % (res["coverageBasis"],),
           res["overlap"] is None and "declares no files" in res["coverageBasis"])
+    # F255. Two field reports disagreed about `NO OVERLAP` and both were right
+    # about their own run: one saw it on 9 of 12 tasks because jest prints SUITE
+    # paths while `task.files` lists the sources under them; the other called this
+    # line the best thing in the plugin because eslint and tsc named real files and
+    # none was the Markdown that task owned. The repair is the MATCH, and these two
+    # cases are the pair - quieten the first without preserving the second and the
+    # feature is gone.
+    _hit, _b = M.coverage(["src/parser.ts", "src/other.ts"],
+                          set(["tests/parser.spec.ts", "tests/misc.test.ts"]))
+    check("cv5b a runner that printed only SUITE paths still names the work: "
+          "`tests/parser.spec.ts` is about `src/parser.ts`, matched on the stem "
+          "the test is named after and across directories, because src/ tested "
+          "from tests/ is the ordinary layout: %r / %r" % (_hit, _b),
+          _hit == ["src/parser.ts"] and "test paths" in _b)
+    _miss, _b2 = M.coverage(["docs/handbook.md", "docs/guide.md"],
+                            set(["src/a.ts", "src/b.ts"]))
+    check("cv5c ...and NO OVERLAP still fires where it was earned: eslint and "
+          "tsc named real source files and none of them is the Markdown this "
+          "task owns. This is the case the second report says stopped it reading "
+          "green as verified: %r" % (_miss,),
+          _miss == [])
+    _cross, _b3 = M.coverage(["src/parser.ts"], set(["tests/lexer.spec.ts"]))
+    check("cv5d ...and a test named after a DIFFERENT file is not a match. The "
+          "match only widens onto test-shaped paths and only onto the exact stem "
+          "they carry - a false overlap tells the reader their work was "
+          "exercised when it was not, which is the comfort NO OVERLAP exists to "
+          "refuse: %r" % (_cross,),
+          _cross == [])
+    check("cv5e `_subject_of` answers only for test-shaped paths, so an "
+          "ordinary source file is never re-spelled into somebody else's stem",
+          M._subject_of("src/foo.ts") is None
+          and M._subject_of("src/foo.test.ts") == "foo"
+          and M._subject_of("tests/foo_spec.rb") == "foo"
+          and M._subject_of("src/.spec.ts") is None,
+          repr([M._subject_of(p) for p in
+                ("src/foo.ts", "src/foo.test.ts", "tests/foo_spec.rb",
+                 "src/.spec.ts")]))
     check("cv6 `files_named` reads a path out of runner prose and leaves the "
           "words alone - a grammar that swallowed `Passed` or `2` would make "
           "every run overlap everything: %r"

@@ -1924,6 +1924,103 @@ def _cases(check):
     finally:
         _sh2.rmtree(_pp_tmp, ignore_errors=True)
 
+    # --- F260: a lock this session already holds is not a conflict ------------
+    # `set-priority.py` refused with exit 3 naming a pid that was the operator,
+    # mid take-lock / write / write / release - the flow the lock exists for. The
+    # dangerous half of the repair is the RELEASE: proceeding is useless if the
+    # write then hands somebody else's lock back.
+    import subprocess as _sp
+    _lk_proj = tempfile.mkdtemp(prefix="borrowed-lock-")
+    try:
+        _sp.run(["git", "init", "-q", _lk_proj], check=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _ld = M._locks.lock_dir(_lk_proj)
+        os.makedirs(_ld, exist_ok=True)
+        with open(os.path.join(_ld, "index.lock"), "w",
+                  encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"sessionId": "mine-1", "pid": 4242,
+                                  "hostname": "h", "note": "hand-held"}))
+        _prev = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "mine-1"
+        try:
+            _said = []
+            _h = M.acquire_index_lock(_lk_proj, {}, os.path.join(_lk_proj, "m.json"),
+                                      False, _said.append, "[probe]", "write")
+            check("bl1 a lock this session already holds is BORROWED, not "
+                  "refused - the caller proceeds instead of exiting 3 at itself",
+                  isinstance(_h, dict) and _h.get("borrowed") is True,
+                  repr((_h, _said)))
+            check("bl2 ...and it says so, naming which identity matched rather "
+                  "than asserting ownership bare",
+                  any("already yours" in s for s in _said), repr(_said))
+            M.release_index_lock(_h)
+            check("bl3 ...and releasing a BORROWED handle leaves the lock where "
+                  "it was. This is the half that matters: giving back a lock we "
+                  "never took drops it out from under whatever still holds it, "
+                  "which is worse than the refusal this replaced",
+                  os.path.isfile(os.path.join(_ld, "index.lock")),
+                  repr(os.listdir(_ld)))
+        finally:
+            if _prev is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = _prev
+    finally:
+        _shutil.rmtree(_lk_proj, ignore_errors=True)
+
+    # --- the sweep's rows: one shape, three consumers (F248) ------------------
+    # `POST /api/worktrees/sweep` had no case anywhere, and the defect it hid was a
+    # list of pre-joined STRINGS where every other panel write emits change rows.
+    # `_fmt_change` dereferences `row.get("target")`, so each of these went through
+    # `_journal`'s blanket `except` and came back as "the journal refused the row" -
+    # on the one route that deletes directories.
+    _sw_plan = {"actions": [
+        {"path": "/Users/somebody/Desktop/work/myrepo-P2",
+         "branch": "audit/p2-two",
+         "steps": [{"action": "worktree-remove",
+                    "argv": ["worktree", "remove", "/x"]},
+                   {"action": "branch-delete",
+                    "argv": ["branch", "-d", "audit/p2-two"]}]},
+        {"path": None, "branch": None,
+         "steps": [{"action": "worktree-prune", "argv": ["worktree", "prune"]}]}]}
+    _sw_rows = M.sweep_rows(proj, _sw_plan)
+    check("sw1 every planned step becomes a change row carrying the four fields "
+          "the journal, the confirm dialog and appliedDiff all dereference - a "
+          "string row raises inside _journal's blanket except and is reported as "
+          "the journal REFUSING it, which is a different and worse claim",
+          len(_sw_rows) == 3
+          and all(set(r) == {"target", "field", "from", "to"} for r in _sw_rows),
+          repr(_sw_rows))
+    check("sw2 ...and each row renders through the SAME formatter every other "
+          "panel write uses, rather than raising in it",
+          [M._fmt_change(r) for r in _sw_rows]
+          == ["worktree myrepo-P2: present -> removed",
+              "branch audit/p2-two: present -> deleted",
+              "worktree records (records git reports prunable): stale -> pruned"],
+          repr([M._fmt_change(r) for r in _sw_rows]))
+    check("sw3 the worktree is named by its BASENAME and never by the path git "
+          "printed. A worktree lives at ../<repo>-<phaseId>, outside the repo, so "
+          "the journal is committed and a raw path would write somebody's home "
+          "directory into a tracked file - which check-committed-pii fails on",
+          all("Users" not in r["field"] and "/" not in r["field"]
+              for r in _sw_rows if r["target"] == "worktree"),
+          repr([r["field"] for r in _sw_rows]))
+    check("sw4 ...and the branch row names the BRANCH rather than the path, "
+          "because 'which directory' and 'which ref' are the two different things "
+          "an operator reads this row to tell apart",
+          [r["field"] for r in _sw_rows if r["target"] == "branch"]
+          == ["audit/p2-two"],
+          repr(_sw_rows[1]))
+    check("sw5 rows keep the PLANNER's order, so the record reads in the order "
+          "the deletions happened - worktree before branch, which is the order "
+          "git enforces and the one a reader reconstructs the run from",
+          [r["target"] for r in _sw_rows]
+          == ["worktree", "branch", "worktree records"],
+          repr([r["target"] for r in _sw_rows]))
+    check("sw6 a plan with no actions produces no rows, so an apply that "
+          "executed nothing does not journal a change it did not make",
+          M.sweep_rows(proj, {"actions": []}) == [], "empty plan, empty rows")
+
     _shutil.rmtree(tmp, ignore_errors=True)
 
 def _selftest():

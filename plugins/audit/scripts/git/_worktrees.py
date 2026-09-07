@@ -73,6 +73,14 @@ CONTAINED = "contained"
 NOT_CONTAINED = "not-contained"
 UNKNOWN = "unknown"
 
+# The answer a caller gives `cleanup_plan` when it HAS asked where it is standing and
+# the answer is "outside every worktree". It exists because absence used to mean that
+# (F245): `cwd_tree=None` skipped the check, so a caller that never asked and a caller
+# that asked and got "nowhere" were one value -- and the panel passed the first one
+# literally while the CLI passed the second. `owned` and `settled` already refuse on
+# an absent answer; this is the third precondition joining them.
+CWD_OUTSIDE = "cwd-outside-every-worktree"
+
 # How a merge can be reached. `refuse` is a mode rather than an absence, so a plan
 # always has one and a caller never has to tell "no mode" from "not planned yet".
 MERGE_MODES = ("already-contained", "in-parent-worktree", "no-checkout", "refuse")
@@ -120,14 +128,23 @@ def admin_dir(tree_path, run=None):
     return path if os.path.isabs(path) else os.path.join(tree_path, path)
 
 
-def read_provenance(tree_path, run=None):
-    """{"ours", "record", "basis"} -- did THIS plugin create this worktree?
+def read_provenance(tree_path, run=None, expect_branch=None):
+    """{"ours", "record", "basis"} -- did THIS plugin create THIS worktree?
 
     `ours` is True, False, or None when the question could not be put. None is
     treated as NOT ours by every caller, because the whole point is that an
     unanswered question never authorises a deletion -- but it is a distinct value so
     the report can say "could not tell" rather than "somebody else's", which are
     different things to a reader deciding what to do next.
+
+    `expect_branch` IS WHAT MAKES THE ANSWER ABOUT THIS WORKTREE (F246). The marker
+    records the phase and the branch it was written for, and only `createdBy` used to
+    be read -- so the join from worktree to phase was made purely from whatever branch
+    git reports NOW. An operator who runs `git switch` inside a phase worktree to look
+    at something hands P1's still-open working directory to P2's settlement verdict,
+    and it is removed with the ignored files `dirtiness()` deliberately cannot see.
+    Reproduced against a real worktree. Passing None keeps the weaker question, which
+    is right for a report that only asks "did we make this at all".
     """
     admin = admin_dir(tree_path, run=run)
     if not admin:
@@ -149,6 +166,16 @@ def read_provenance(tree_path, run=None):
         return {"ours": False, "record": rec if isinstance(rec, dict) else None,
                 "basis": "%s does not carry createdBy=%r" % (path,
                                                              PROVENANCE_MARK)}
+    if expect_branch is not None and rec.get("branch") != expect_branch:
+        # The marker is ours and describes a DIFFERENT job. Not "somebody else's" and
+        # not "could not tell" - a third thing, and the wording has to say which,
+        # because the repair is neither "leave it alone" nor "investigate git".
+        return {"ours": False, "record": rec,
+                "basis": "%s was created by this plugin for phase %r on branch %r, "
+                         "and this worktree now holds %r - the marker does not "
+                         "describe the work in it"
+                         % (path, rec.get("phaseId"), rec.get("branch"),
+                            expect_branch)}
     return {"ours": True, "record": rec, "basis": path}
 
 
@@ -171,8 +198,24 @@ def phase_settled(phase, terminal):
         return {"settled": False,
                 "why": "phase %s is %r, not 'done' - sign-off has not passed"
                        % (phase.get("id"), status)}
-    open_tasks = [str(t.get("id")) for t in (phase.get("tasks") or [])
-                  if isinstance(t, dict) and t.get("status") not in terminal]
+    # AN ENTRY THIS CANNOT READ IS A REFUSAL, NOT A FINISHED TASK (F247). The
+    # `isinstance` test used to sit inside the comprehension, where it dropped the
+    # item from the OPEN list -- so `"tasks": ["P2.1", "P2.2"]`, or a `tasks` object
+    # rather than an array, produced `settled: True` with a `why` that stated "every
+    # task is terminal" about a list it had never looked at. `settled` is one of the
+    # two permission gates for deleting a working directory, and the sweep does not
+    # revalidate the manifest first, so a half-written one reaches this directly.
+    tasks = phase.get("tasks") or []
+    unreadable = [t for t in tasks if not isinstance(t, dict)]
+    if unreadable:
+        return {"settled": False,
+                "why": "phase %s has %d task entr%s that could not be read as a "
+                       "task object (first: %r) - a phase is never called finished "
+                       "on a list this cannot see into"
+                       % (phase.get("id"), len(unreadable),
+                          "y" if len(unreadable) == 1 else "ies", unreadable[0])}
+    open_tasks = [str(t.get("id")) for t in tasks
+                  if t.get("status") not in terminal]
     if open_tasks:
         return {"settled": False,
                 "why": "phase %s still has unfinished task(s): %s"
@@ -390,17 +433,50 @@ def holder_of(trees, branch, resolve=None):
             "basis": "worktree list names no worktree holding %s" % (branch,)}
 
 
+def within_tree(root, path, resolve=None):
+    """True when `path` IS `root` or sits under it, on resolved paths.
+
+    THE SEPARATOR BOUNDARY IS THE WHOLE POINT, not tidiness: a bare `startswith`
+    makes `/x/repo-P1-old` a child of `/x/repo-P1`, and those are two worktrees whose
+    only relationship is a shared prefix. Removing one because the caller is in the
+    other is the same class of mistake this function exists to prevent.
+    """
+    fn = resolve if resolve is not None else os.path.realpath
+    if not root or not path:
+        return False
+    try:
+        a, b = fn(root), fn(path)
+    except Exception:
+        return False
+    return a == b or b.startswith(a.rstrip(os.sep) + os.sep)
+
+
 def standing_in(trees, cwd, resolve=None):
     """The worktree this process is inside, or None.
 
     `git worktree remove` will delete the tree the caller's cwd is inside --
-    measured: silently, exit 0, empty stdout AND empty stderr. Nothing in git asks
-    the question, so this is the only place it can be asked.
+    measured: silently, exit 0, empty stdout AND empty stderr, and the ignored files
+    a `git status` never mentioned go with it. Nothing in git asks the question, so
+    this is the only place it can be asked.
+
+    INSIDE, NOT AT (F245). This was realpath EQUALITY, which answered a different
+    question than its own docstring asked: from `<worktree>/src` it returned None and
+    the guard never fired, so one `cd` into a subdirectory turned the refusal into
+    the deletion. Reproduced on a real repository -- clean per `status --porcelain`,
+    exit 0, directory and `.env` both gone.
+
+    THE INNERMOST MATCH WINS, because a worktree nested under the main one (`<repo>/
+    worktrees/P1`) is inside two records and git resolves such a path to the deeper
+    of them. Returning the first would name the main worktree, which is never removed
+    anyway -- so the guard would silently stop protecting the linked one.
     """
+    best = None
     for rec in trees or []:
-        if same_tree(rec.get("path"), cwd, resolve=resolve):
-            return rec
-    return None
+        if within_tree(rec.get("path"), cwd, resolve=resolve):
+            if best is None or len(str(rec.get("path") or "")) > \
+                    len(str(best.get("path") or "")):
+                best = rec
+    return best
 
 
 def phase_trees(trees, wanted_branches, resolve=None):
@@ -531,15 +607,42 @@ def list_worktrees(git_root, run=None, nul=True):
     Front door rather than a fourth place that remembers to pair `parse_list` with
     `parse_error`. `nul=True` by default, because the newline-safe spelling is the
     right default and the plain one exists for a case that pins the other parser.
+
+    AND IT FALLS BACK, because `-z` is not as old as the command. `git worktree list
+    --porcelain` predates it by years; `-z` arrives in 2.36, and Ubuntu 22.04 LTS
+    ships 2.34 while Debian 11 ships 2.30. Without a fallback the whole feature -
+    every `/audit:worktree` verb, sign-off's cleanup, the panel's table and the
+    doctor's residue row - fails on a default LTS install with `unknown switch 'z'`,
+    which reads like a broken plugin rather than an old git. The module already
+    carries a parser for the newline form and `p10` pins the two equal, so the plain
+    spelling is a real answer here rather than a default invented to fill a gap. What
+    is lost is newline-safety in a path, and the basis says which spelling answered.
     """
     fn = _runner(run)
     args = ["worktree", "list", "--porcelain"]
     if nul:
         args.append("-z")
     code, out, err = fn(git_root, args)
+    if nul and code not in (0, None) and _rejected_z(err, out):
+        code, out, err = fn(git_root, ["worktree", "list", "--porcelain"])
+        nul = False
     trees = parse_list(out or "", nul=nul) if code == 0 else []
     return {"trees": trees, "error": parse_error(code, err, trees),
             "basis": "git worktree list --porcelain%s" % (" -z" if nul else "",)}
+
+
+def _rejected_z(err, out):
+    """Did git refuse the `-z` FLAG, as opposed to failing at the job?
+
+    Read off the message rather than off the exit code, because git spends 128 and
+    129 on several things and "this repository is broken" must not be retried as if
+    it were "this git is old". Both spellings git has used are matched, and the test
+    is narrowed to a message that also names the option, so a repository error that
+    happens to contain the word `usage` is not swallowed.
+    """
+    text = ("%s %s" % (err or "", out or "")).lower()
+    return ("unknown switch" in text or "unknown option" in text
+            or "usage: git worktree" in text) and "z" in text
 
 
 # --- planning the merge (pure, given the answers above) --------------------------
@@ -675,7 +778,8 @@ def merge_plan(trees, branch, parent, contained, parent_exists, parent_dirty,
 
 def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                  cwd_tree=None, want_worktree=True, want_branch=True,
-                 resolve=None, owned=None, settled=None):
+                 resolve=None, owned=None, settled=None, tree=None,
+                 branch_sha=None):
     """{"steps", "blocked", "basis"} -- the ordered cleanup, or why each half cannot.
 
     `steps` IS ORDERED AND THE ORDER IS THE CONTRACT. Worktree removal comes strictly
@@ -694,10 +798,22 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
 
     Four refusals are worded apart because they are four different repairs, and one of
     them git does not make at all.
+
+    `tree` IS THE RECORD THAT WAS MEASURED, and passing it is how a caller keeps this
+    plan about the same directory its answers were about (F244). `git worktree add
+    --force <path> <branch>` legally puts two records on one branch; `sweep_plan`
+    measures provenance and dirtiness per RECORD, and re-resolving here by branch took
+    the FIRST holder instead -- so a plan could keep `/a` as "somebody else's" and
+    remove `/a` in the next line, with both safety answers having been about `/b`.
+    Omitting it falls back to the lookup, which is right for a caller that only has a
+    branch name and only one worktree can hold it.
     """
     steps, blocked = [], []
     held = holder_of(trees, branch)
-    tree = held["tree"]
+    tree = held["tree"] if tree is None else tree
+    # Every record still on this branch, which is what `git branch -d` actually
+    # objects to. Removing one of two holders does not free the branch.
+    holders = [r for r in (trees or []) if r.get("branch") == branch]
     removed_here = False
 
     # FAIL CLOSED. `owned` and `settled` default to None, which means the caller did
@@ -750,11 +866,23 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                 "worktree and is never removed" % (branch, tree.get("path")),
                 "switch the main worktree to another branch if you want this one "
                 "reaped"))
-        elif cwd_tree is not None and same_tree(tree.get("path"),
-                                                cwd_tree.get("path")
-                                                if isinstance(cwd_tree, dict)
-                                                else cwd_tree,
-                                                resolve=resolve):
+        elif cwd_tree is None:
+            # FAIL CLOSED, like `owned` and `settled` one gate up (F245). This used
+            # to skip on None, so "the caller never asked where it is standing" and
+            # "the caller asked and is outside every worktree" were the same value -
+            # and the panel passed the first one literally, which made the panel
+            # able to delete the worktree it was being served from.
+            blocked.append(_refusal(
+                "nothing establishes where this process is standing, and git "
+                "removes the directory its caller is sitting in - measured: "
+                "silently, exit 0, empty stdout and stderr",
+                "pass the answer: `standing_in(trees, os.getcwd())`, or the "
+                "CWD_OUTSIDE sentinel when it is outside every worktree"))
+        elif cwd_tree is not CWD_OUTSIDE and cwd_tree != CWD_OUTSIDE \
+                and within_tree(tree.get("path"),
+                                cwd_tree.get("path")
+                                if isinstance(cwd_tree, dict) else cwd_tree,
+                                resolve=resolve):
             blocked.append(_refusal(
                 "this process is standing inside %s, the worktree it was asked to "
                 "remove" % (tree.get("path"),),
@@ -810,16 +938,56 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                 "`git branch -d` would not stop this - measured, it grades against "
                 "HEAD and deletes a branch that never reached its declared parent. "
                 "Merge it into %r first" % (parent,)))
-        elif tree is not None and not removed_here:
+        elif [r for r in holders
+              if not (removed_here and same_tree(r.get("path"),
+                                                 tree.get("path")
+                                                 if tree else None,
+                                                 resolve=resolve))]:
+            # EVERY holder, not the one this plan happened to look at. Two records
+            # can share a branch, and removing one of them leaves git refusing the
+            # deletion for the other - which is the right refusal, said here rather
+            # than discovered as a raw `error:` at the shell.
+            _rest = [r for r in holders
+                     if not (removed_here and same_tree(r.get("path"),
+                                                        tree.get("path")
+                                                        if tree else None,
+                                                        resolve=resolve))]
             blocked.append(_refusal(
-                "%r is still checked out at %s" % (branch, tree.get("path")),
+                "%r is still checked out at %s"
+                % (branch, ", ".join(str(r.get("path")) for r in _rest)),
                 "the worktree must go first; git refuses with `cannot delete branch "
-                "%r used by worktree at %r`" % (branch, tree.get("path"))))
+                "%r used by worktree at %r`" % (branch, _rest[0].get("path"))))
         else:
-            steps.append({"action": "branch-delete",
-                          "argv": ["branch", "-d", branch],
-                          "why": "%r is contained in %r, and nothing holds it any "
-                                 "more" % (branch, parent)})
+            # NOT `git branch -d` WHEN WE CAN DO BETTER, and this is measured rather
+            # than preferred (F249). After a `no-checkout` merge the parent is by
+            # construction checked out nowhere, so HEAD is not the parent - and
+            # `branch -d` grades from HEAD. Driven on a real repository: a branch
+            # proven contained in `develop` by `merge-base --is-ancestor` is refused
+            # with `error: the branch 'feature/p1' is not fully merged`, exit 1,
+            # AFTER its worktree has already been removed. That leaves the orphan
+            # branch this module's opening docstring exists to eliminate, and it
+            # accuses a branch that landed.
+            #
+            # `update-ref -d <ref> <oldvalue>` is not `-D`. It deletes only if the
+            # ref still points where we looked, so it refuses exactly what a force
+            # delete would not: a branch that moved under us. The schema's rule is
+            # about never discarding unmerged work, and containment is already
+            # established by the question the manifest asks. Without a sha there is
+            # nothing to guard on, so the old command stays as the fallback.
+            if branch_sha:
+                steps.append({"action": "branch-delete",
+                              "argv": ["update-ref", "-d",
+                                       "refs/heads/%s" % (branch,), branch_sha],
+                              "why": "%r is contained in %r, nothing holds it any "
+                                     "more, and it still points at %s"
+                                     % (branch, parent, branch_sha[:12])})
+            else:
+                steps.append({"action": "branch-delete",
+                              "argv": ["branch", "-d", branch],
+                              "why": "%r is contained in %r, and nothing holds it "
+                                     "any more (no sha to guard on, so git's own "
+                                     "HEAD-graded check is the fallback)"
+                                     % (branch, parent)})
 
     return {"steps": steps, "blocked": blocked,
             "basis": "%s; contained=%s" % (held["basis"], contained)}
@@ -848,14 +1016,20 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
     `_deps.layer_violations()` refuses. The shared answer therefore lives HERE, at
     the floor, where both can reach down to it.
     """
-    contained, dirty, owned, settled = {}, {}, {}, {}
+    contained, dirty, owned, settled, shas = {}, {}, {}, {}, {}
     for rec in phase_trees(trees, wanted_branches, resolve=resolve)["named"]:
         branch = rec.get("branch")
         parent = (parent_of or {}).get(branch) or ""
+        # Where the branch points RIGHT NOW, so the deletion can be guarded on it
+        # rather than re-asked of git's HEAD-graded `branch -d` (F249).
+        shas[branch] = ref_exists(git_root, branch, run=run).get("sha") or ""
         contained[branch] = merged_into(git_root, branch, parent,
                                         run=run)["answer"]
         dirty[rec.get("path")] = dirtiness(rec.get("path"), run=run)
-        prov = read_provenance(rec.get("path"), run=run)
+        # The branch is what binds the marker to the work now in the tree (F246).
+        # This is the observation the sweep's permission gate reads, so it asks the
+        # narrow question; the report in `_panel_composition` asks the wide one.
+        prov = read_provenance(rec.get("path"), run=run, expect_branch=branch)
         owned[rec.get("path")] = {"ok": prov["ours"] is True,
                                   "why": prov["basis"], "record": prov["record"]}
         phase = (phase_by_branch or {}).get(branch)
@@ -872,12 +1046,12 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
             verdict = phase_settled(phase, terminal or ())
             settled[branch] = {"ok": verdict["settled"], "why": verdict["why"]}
     return {"contained": contained, "dirty": dirty, "owned": owned,
-            "settled": settled}
+            "settled": settled, "shas": shas}
 
 
 def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
                dirty_by_path, cwd_tree=None, verbs=None, resolve=None,
-               owned_by_path=None, settled_by_branch=None):
+               owned_by_path=None, settled_by_branch=None, sha_by_branch=None):
     """{"examined", "actions", "kept", "strangers", "empty", "basis"}.
 
     `examined` IS A COUNT AND IT IS ALWAYS REPORTED, and `empty` is a separate field
@@ -912,7 +1086,12 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
             cwd_tree=cwd_tree,
             want_worktree="removeWorktrees" in verbs,
             want_branch="deleteBranches" in verbs,
-            resolve=resolve, owned=owned, settled=settled)
+            # THE RECORD, not the branch (F244). `owned` and `dirt` above were both
+            # read at `rec`'s path; handing the branch over instead let the plan act
+            # on a different record carrying the same branch, judged by this one's
+            # answers.
+            resolve=resolve, owned=owned, settled=settled, tree=rec,
+            branch_sha=(sha_by_branch or {}).get(branch))
         row = {"path": rec.get("path"), "branch": branch,
                "ours": (owned or {}).get("ok"),
                "settled": (settled or {}).get("ok"),

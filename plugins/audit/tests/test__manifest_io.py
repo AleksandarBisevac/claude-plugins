@@ -754,6 +754,35 @@ def _cases(check):
               "cannot contribute a directory",
               M.shard_dir_to_retire({"phases": [{"id": "P1", "shard": 7}]},
                                     _lsharded)[0] == "")
+
+        # F257. There was no shared resolver, so `/audit:phase 2` matched nothing
+        # and the failure was whatever each script happened to print.
+        _rp = {"phases": [{"id": "P1"}, {"id": "P2"}, {"id": "BF1"}]}
+        check("rp1 an exact id resolves, which is every call site that already "
+              "worked", M.resolve_phase_id(_rp, "P2") == ("P2", None),
+              repr(M.resolve_phase_id(_rp, "P2")))
+        check("rp2 ...and case is not identity: `p2` is not a different phase "
+              "from `P2`", M.resolve_phase_id(_rp, "p2") == ("P2", None),
+              repr(M.resolve_phase_id(_rp, "p2")))
+        check("rp3 ...and a bare integer maps onto P<n>, which is what an "
+              "operator types when the ids are P1..P9",
+              M.resolve_phase_id(_rp, "2") == ("P2", None),
+              repr(M.resolve_phase_id(_rp, "2")))
+        check("rp4 ...but ONLY when P<n> exists. A resolver that invented a "
+              "phase would be worse than one that refuses, and a plan whose "
+              "phases are BF1/BF2 has no P3 to mean",
+              M.resolve_phase_id(_rp, "3")[0] is None,
+              repr(M.resolve_phase_id(_rp, "3")))
+        check("rp5 ...and the refusal NAMES the ids that exist, which is the "
+              "shape close-phase.py already printed rather than a second one "
+              "invented here - a reader of a failed lookup wants the "
+              "alternatives, not their own input read back",
+              "P1, P2, BF1" in (M.resolve_phase_id(_rp, "nope")[1] or ""),
+              repr(M.resolve_phase_id(_rp, "nope")))
+        check("rp6 ...and an empty manifest says `none` rather than an empty "
+              "list, because a blank after 'have:' reads as a rendering bug",
+              "none" in (M.resolve_phase_id({}, "P1")[1] or ""),
+              repr(M.resolve_phase_id({}, "P1")))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

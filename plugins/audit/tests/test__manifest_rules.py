@@ -136,6 +136,52 @@ def _cases(record):
           lambda m: m["phases"][0]["tasks"][0].update(status="doing"))
     check("v3 bad tests.mode", "tests.mode 'yolo' not in",
           lambda m: m["phases"][0]["tasks"][0]["tests"].update(mode="yolo"))
+    # F254. A live run met this on the largest security change of a phase, written
+    # by `/audit:init`: mode tdd, expectRedFirst true, and nothing named to prove
+    # red with. A WARNING and not a finding — the repair is to name the case, and an
+    # existing plan must not go red over a field it was written without.
+    check("v3b tdd with expectRedFirst and no tests.add is warned about - a "
+          "red-first task naming no case cannot be shown to have gone red", None,
+          lambda m: m["phases"][0]["tasks"][0]["tests"].update(
+              mode="tdd", expectRedFirst=True, add=[]),
+          expect_warning="with expectRedFirst and no tests.add")
+    check("v3c ...and the warning NAMES the two ways out, because a warning "
+          "whose repair the reader has to invent is one they turn off", None,
+          lambda m: m["phases"][0]["tasks"][0]["tests"].update(
+              mode="tdd", expectRedFirst=True, add=[]),
+          expect_warning="--tests-add")
+    # Asserted directly rather than through `check`, which only ever looks for a
+    # warning that IS there: the second direction needs the absence, and a case
+    # that cannot express it would pass over a rule warning on every tdd task.
+    _v3d = copy.deepcopy(_valid_manifest())
+    _v3d["phases"][0]["tasks"][0]["tests"].update(
+        mode="tdd", expectRedFirst=True, add=["the case the fix owes"])
+    _v3d_f, _v3d_w = M.validate(_v3d)
+    record("v3d ...while tdd that DOES name a case is silent - the second "
+           "direction, without which the rule could warn on every tdd task and "
+           "v3b would still pass",
+           _v3d_f == []
+           and not [x for x in _v3d_w if "expectRedFirst and no tests.add" in x],
+           "findings=%r warnings=%r" % (_v3d_f, _v3d_w))
+    # ...and the narrowing that keeps this actionable. A red-first case named
+    # after the task finished is not a red-first case, so a `done` one is a
+    # warning nobody can act on - which is how a rule that fires across a mature
+    # plan teaches people to skip the class. This repository's own manifest named
+    # 25 tasks the moment the rule landed, and the finished ones already carry
+    # their cases in `verifiedBy`.
+    _v3e = copy.deepcopy(_valid_manifest())
+    _v3e["phases"][0]["tasks"][0]["tests"].update(
+        mode="tdd", expectRedFirst=True, add=[])
+    _v3e["phases"][0]["tasks"][0]["status"] = "done"
+    _v3e["phases"][0]["status"] = "done"
+    for _t in _v3e["phases"][0]["tasks"]:
+        _t["status"] = "done"
+    _v3e_f, _v3e_w = M.validate(_v3e)
+    record("v3e a FINISHED tdd task with no case is not warned about - the "
+           "opportunity the warning describes is gone, and a warning nobody can "
+           "act on is the whole reason this class gets skipped past",
+           not [x for x in _v3e_w if "expectRedFirst and no tests.add" in x],
+           "warnings=%r" % (_v3e_w,))
     check("v4 duplicate id", "duplicate id: P0.1",
           lambda m: m["phases"][0]["tasks"].append(
               {"id": "P0.1", "title": "dup", "status": "pending"}))

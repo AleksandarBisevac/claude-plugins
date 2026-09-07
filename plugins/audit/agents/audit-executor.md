@@ -20,11 +20,19 @@ Hard rules (non-negotiable):
   - `regression` → implement the change, then add test(s) locking the
     corrected behavior.
   - `gate-only` → no new tests; keep the given gates green.
-- **Run every gate command** you were given (running the node preamble first,
-  un-piped, when provided) and report pass/fail per gate. Distinguish
-  **"gates ran and failed"** from **"gates could not run"** (missing command,
-  runner crash, zero tests collected where some were expected) — the
-  orchestrator treats these very differently.
+- **Run every gate command** you were given and report pass/fail per gate.
+  Distinguish **"gates ran and failed"** from **"gates could not run"** (missing
+  command, runner crash, zero tests collected where some were expected) — the
+  orchestrator treats these very differently. (`run-test-gate.py` applies
+  `meta.nodePreamble` itself; you only prepend it to a command you type yourself.)
+- **A gate failure in a file you do not own is probably not yours.** The working
+  tree is shared with sibling tasks running right now, and each of them runs the
+  full gate — so a type error, a lint error or a failing suite can come from a
+  sibling mid-edit, or from a sibling doing red-first *correctly*, with its test
+  written before the module it tests. Check whether the failing path is in your
+  `files`. If it is not: say so in your outcome and carry on with your own work.
+  **Do not fix it** — that file belongs to another task, and the orchestrator
+  re-runs the gate on a quiet tree before anything is signed off.
 - **A verification claim carries its evidence.** Any claim that something was
   verified, tested, or checked MUST name the exact command you ran and its
   exit code — or, for a non-command check, the concrete observation (file,

@@ -511,6 +511,15 @@
         is <code>in_progress</code>. So installing does not start refusing edits in repositories that
         never opted in. <code>/audit:doctor</code> prints the tier and its basis:</p>
 <pre><code>[OK     ] plan gate      deny - a phase is in_progress, so edits are held to the running plan</code></pre>
+      <p><strong>The refusal says different things to you and to a subagent.</strong> You get the two
+        ways forward: widen the task's scope, or the single-use human bypass. A subagent gets
+        neither &mdash; it is told to stop and report the path to the orchestrator, because it may
+        not edit the manifest and has no way to ask you. <strong>It also cannot edit the plan to get
+        around a refusal</strong>: the exemption that lets the orchestrator do its bookkeeping does
+        not extend to a task, since a task that edits the plan it is judged by is one nobody can
+        review. When a scope really is too narrow, widen it and tell the running agent to carry on
+        &mdash; it does not need to be replaced, and replacing it throws away everything it has
+        read.</p>
     </div>
 
     <h3>Scope decides who else gets it</h3>
@@ -886,7 +895,7 @@ python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
         <tbody>
           <tr><td>tree mutated</td><td>the gate rewrote files. A gate is a measurement &mdash; do not commit on that run</td></tr>
           <tr><td>tree unknown</td><td>no comparison was made: git could not describe the tree, or the run was interrupted</td></tr>
-          <tr><td>no overlap</td><td>the run named paths, and none is a file this work declares</td></tr>
+          <tr><td>no overlap</td><td>the run named paths, and none is a file this work declares. A runner that prints <em>suite</em> paths still counts: <code>tests/parser.spec.ts</code> is matched to the <code>src/parser.ts</code> it is named after, across directories &mdash; only for test-shaped paths and only onto the exact stem, because a false overlap would tell you your work was exercised when it was not</td></tr>
           <tr><td>coverage unknown</td><td>the runner printed no paths, so overlap is not knowable from its output</td></tr>
           <tr><td>checks unknown</td><td>this runner reports no check count &mdash; which is not the same as reporting zero</td></tr>
         </tbody>

@@ -480,6 +480,10 @@ the report, and `scripts/manifest/validate-manifest.py` runs the referential val
 - **POSIX `sh`** for the hook launcher. On **Windows** that means running Claude Code
   inside **Git Bash** (which also provides `sh`); with `cmd`/PowerShell-only sessions the
   hooks surface as non-blocking errors instead of running.
+- **git** for `/audit:worktree`, sign-off's merge and the panel's worktree table. No version floor:
+  the newline-safe `worktree list --porcelain -z` is used where git has it (2.36+) and the plain
+  form where it does not, so Ubuntu 22.04 LTS (2.34) and Debian 11 (2.30) work unchanged. The
+  output says which spelling answered.
 - Optional: Node/`npx` for JSON-Schema validation with `ajv-cli` (skipped when absent);
   the `az` CLI + `azure-devops` extension for `/audit:sync`.
 
@@ -657,8 +661,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.1/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.1/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -823,7 +827,7 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `reviewSkill` | Skill run at phase sign-off; `null` → tests are the signer. | `null` |
 | `areas` | Registry of the areas a phase's `area` tag can name — `{tag: {root, description, reviewSkill?, skills?}}`. See below. | — |
 | `runtimeBoot` | `{appRootPath, launch, verify}` smoke gate; `null` → skipped. | `null` |
-| `nodePreamble` | Shell prefix run before build gates (e.g. `nvm use`). | `null` |
+| `nodePreamble` | Shell prefix run before build gates (e.g. `nvm use`). **`run-test-gate.py` applies it itself** — it spawns its own shell per command, so a preamble exported into a different one reaches nothing; prepend it yourself only to a command you type by hand. | `null` |
 | `commit` | `{type, coauthor}` commit-message conventions. | `{chore, null}` |
 | `buildCommands` | Map so gate entries like `test` resolve to a real command. | — |
 | `ado` | Azure DevOps connector for `/audit:sync` + the orchestration echo — states, sprints, Remaining Work, comments; editable in the panel's ADO card (never store credentials). | `null` |
@@ -1706,7 +1710,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.1/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

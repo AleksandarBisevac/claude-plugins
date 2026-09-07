@@ -1,0 +1,29 @@
+{
+  "id": "P24",
+  "title": "F232: every exemption names the instrument that audits its reason",
+  "status": "pending",
+  "description": "Thirty module constants share the {subject: sentence} shape and the shape cannot tell an exemption from a help table, so the classification is the work - the same first-filter problem F231 paid off, and the NOT_A_GATE pattern is the answer this repository already owns. Derive the tables, require each to name its reason-checker or a reason it can have none, both directions checked. The user-visible argument is that four defects in two field reports were one shape: a claim in the product that nothing checks against reality.",
+  "desiredOutcome": "Every exemption table in the tree either names the instrument that audits its reasons, or carries a checked reason why it cannot - and a table added later cannot opt out by being forgotten.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

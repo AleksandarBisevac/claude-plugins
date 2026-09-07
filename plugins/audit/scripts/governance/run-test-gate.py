@@ -349,8 +349,50 @@ def files_named(text):
     return found or None
 
 
+# The suffixes a test file carries in front of its extension, across the runners
+# this script actually meets. Used to relate `src/foo.test.ts` to `src/foo.ts`
+# (F255) and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
+_TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
+
+
+def _subject_of(path):
+    """The file a TEST path is about, or None when the path is not test-shaped.
+
+    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
+    The basename alone, because the two live in different directories as often as
+    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
+
+    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
+    spurious path only ADDS overlap and overlap is reported rather than enforced.
+    That reasoning does NOT carry here: a false overlap tells the reader their work
+    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
+    exists to prevent. So this fires only on a path that really is spelled like a
+    test, and only onto a file whose stem it matches exactly.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    for mark in _TEST_MARKS:
+        if stem.endswith(mark) and len(stem) > len(mark):
+            return stem[:-len(mark)]
+    return None
+
+
 def coverage(task_files, named):
-    """`(overlap, basis)` -- which of the task's files the run actually named."""
+    """`(overlap, basis)` -- which of the task's files the run actually named.
+
+    A RUNNER THAT PRINTS ONLY SUITE PATHS STILL NAMES YOUR WORK (F255). Two field
+    reports disagreed about this line and both were right about their own run:
+    one saw `NO OVERLAP` on 9 of 12 tasks because jest prints suite paths while
+    `task.files` lists the sources under them, and the other called this line the
+    best thing in the plugin because eslint and tsc named real files and none of
+    them was the Markdown that task owned. The two are different situations that
+    the old comparison rendered identically.
+
+    The repair is the MATCH, never a threshold or a mute. `src/foo.test.ts` is
+    related to `src/foo.ts` and is counted; `src/a.ts` is unrelated to `docs/x.md`
+    and is not - so the first report's tasks report coverage they really had, and
+    the second report's `NO OVERLAP` still fires exactly where it did.
+    """
     owned = [f for f in (task_files or []) if isinstance(f, str) and f.strip()]
     if not owned:
         return None, ("the work under test declares no files, so there is "
@@ -358,11 +400,22 @@ def coverage(task_files, named):
     if named is None:
         return None, ("this runner printed no file paths, so coverage is not "
                       "knowable from its output")
+    subjects = set(s for s in (_subject_of(n) for n in named) if s)
+
+    def _stem(path):
+        base = str(path).rsplit("/", 1)[-1]
+        return base.rsplit(".", 1)[0] if "." in base else base
+
     hits = sorted(f for f in owned
                   if any(n == f or n.endswith("/" + f) or f.endswith("/" + n)
-                         for n in named))
-    return hits, ("the runner named %d path(s); the work under test declares "
-                  "%d file(s)" % (len(named), len(owned)))
+                         for n in named)
+                  or _stem(f) in subjects)
+    basis = ("the runner named %d path(s); the work under test declares "
+             "%d file(s)" % (len(named), len(owned)))
+    if subjects:
+        basis += ("; %d of them are test paths, matched to the files they are "
+                  "named after" % (len([n for n in named if _subject_of(n)]),))
+    return hits, basis
 
 
 def owned_files(manifest, phase_id, task_id=None):
@@ -421,7 +474,7 @@ def attempt_of(manifest, task_id):
     return _mio.recorded_attempt(_mio.tasks_by_id(manifest).get(task_id))
 
 
-def _resolved(entries, build):
+def _resolved(entries, build, preamble=None):
     """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
     THE ONE RESOLUTION, shared by both scopes on purpose. A task gate and a phase
@@ -430,9 +483,25 @@ def _resolved(entries, build):
     rule. An entry naming no build command is carried VERBATIM, because it may be
     a literal shell command and refusing it would make this script decide what a
     gate is allowed to be.
+
+    `meta.nodePreamble` IS APPLIED HERE, and it was applied nowhere (F253). The
+    document has instructed callers to run it before every build gate since it
+    shipped; this script spawns its OWN shell per command, so a preamble the caller
+    exported into a different one reaches nothing. Measured on a live run: two gate
+    rows recorded exit 127 for a `PATH` problem, so a committed ledger carries two
+    false failures permanently. A gate that records a false red is worse than a gate
+    that does not run, because the row outlives the session that could explain it.
+
+    JOINED WITH `&&`, which is what "un-piped" in `orchestrator.md` asks for: a pipe
+    would hand the gate's exit status to the preamble's tail and lose the verdict.
+    A whitespace-only value is not a preamble - prefixing it would make every gate
+    on that manifest die of a shell syntax error, which is the same false red one
+    door along.
     """
-    return [(e, build.get(e, e)) for e in entries
-            if isinstance(e, str) and e.strip()]
+    lead = (preamble or "").strip() if isinstance(preamble, str) else ""
+    return [(e, ("%s && %s" % (lead, build.get(e, e))) if lead
+             else build.get(e, e))
+            for e in entries if isinstance(e, str) and e.strip()]
 
 
 def gate_of(manifest, phase_id, task_id=None):
@@ -459,6 +528,9 @@ def gate_of(manifest, phase_id, task_id=None):
     build = ((manifest.get("meta") or {}).get("buildCommands") or {})
     if not isinstance(build, dict):
         build = {}
+    # Read beside `buildCommands` because it is the same kind of declaration: what a
+    # gate entry becomes before a shell sees it (F253).
+    preamble = (manifest.get("meta") or {}).get("nodePreamble")
     if task_id is not None:
         tasks = [t for t in (phases[0].get("tasks") or [])
                  if isinstance(t, dict) and t.get("id") == task_id]
@@ -466,10 +538,11 @@ def gate_of(manifest, phase_id, task_id=None):
             return None, None, "no task %r in phase %r" % (task_id, phase_id)
         tests = tasks[0].get("tests")
         entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        resolved = _resolved(entries, build)
+        resolved = _resolved(entries, build, preamble)
         if resolved:
             return resolved, "task", None
-    return _resolved(phases[0].get("testGate") or [], build), "phase", None
+    return (_resolved(phases[0].get("testGate") or [], build, preamble),
+            "phase", None)
 
 
 def _spawn_kwargs():

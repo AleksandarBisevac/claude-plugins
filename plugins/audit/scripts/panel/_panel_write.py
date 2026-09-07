@@ -242,6 +242,24 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     one; this one is an import.
     """
     git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
+    # A LOCK THIS SESSION ALREADY HOLDS IS NOT A CONFLICT (F260). The natural flow
+    # is take-lock -> several structural writes -> release, which is what the lock
+    # is FOR; a script inside that window used to exit 3 saying a pid was running
+    # on this host, and the pid was the caller. `borrowed` is the load-bearing half
+    # of the handle: the outer holder still needs the lock after this write, so the
+    # release below must not give it away.
+    try:
+        _ld = _locks.lock_dir(git_root)
+        mine = _locks.held_by_us(_locks.read_lock(
+            os.path.join(_ld, "index.lock"))) if _ld else {"ours": False}
+    except Exception:
+        mine = {"ours": False}
+    if mine.get("ours"):
+        out("%s the index lock is already yours (%s) - continuing without "
+            "retaking it, and leaving it held for whatever took it."
+            % (prefix, mine.get("why")))
+        return {"held": True, "borrowed": True, "mod": _locks,
+                "project": git_root}
     lines = []
     try:
         code = _locks.acquire(git_root, "index", note=note,
@@ -279,6 +297,11 @@ def release_index_lock(lock):
     """Give the lock back. Never raises: a write that succeeded must not be
     reported as failed because the release did."""
     if not lock or not lock.get("held"):
+        return
+    if lock.get("borrowed"):
+        # We never took it, so it is not ours to give back (F260). Releasing here
+        # would drop the lock out from under whatever is still holding it, which
+        # is a worse bug than the refusal this replaced.
         return
     try:
         if lock.get("legacy"):
@@ -409,6 +432,69 @@ SWEEP_VERB_KEYS = (("removeWorktrees", "removeWorktrees"),
                    ("deleteBranches", "deleteBranches"),
                    ("prune", "prune"))
 
+# What each planned step is, as a change row. `target`/`field`/`from`/`to` is the
+# shape EVERY other panel write speaks, and the three consumers all dereference it:
+# `_fmt_change` builds the journal summary from it, the confirm dialog paints one
+# table row per entry, and `appliedDiff` keys dry-run against apply on it.
+SWEEP_STEP_WORDS = {
+    "worktree-remove": ("worktree", "present", "removed"),
+    "branch-delete": ("branch", "present", "deleted"),
+    "worktree-prune": ("worktree records", "stale", "pruned"),
+}
+
+
+def _sweep_subject(project, action, step):
+    """The name a change row puts in `field`, safe to write into a committed file.
+
+    A worktree lives at `../<repo>-<phaseId>`, i.e. OUTSIDE the repository, so
+    `repo_relative_or_token` — correctly — answers its outside token for one, and a
+    row reading "outside" names nothing. The BASENAME is what the operator recognises
+    and is composed by `default_path` out of the repo name and the phase id, so it
+    carries no home directory and no user name. The redactor is still asked first,
+    because a worktree somebody made INSIDE the repo should read as its real path.
+    """
+    if step.get("action") == "branch-delete":
+        return str(action.get("branch") or "(unnamed branch)")
+    if step.get("action") == "worktree-prune":
+        return "(records git reports prunable)"
+    path = action.get("path") or ""
+    if not path:
+        return "(unnamed worktree)"
+    mod = _journalmod()
+    inside = None
+    if mod is not None and hasattr(mod, "repo_relative_or_token"):
+        try:
+            inside = mod.repo_relative_or_token(project, path)
+        except Exception:
+            inside = None
+    if inside and inside != getattr(mod, "OUTSIDE_TOKEN", "<outside>") \
+            and not str(inside).startswith(".."):
+        return str(inside)
+    return os.path.basename(str(path).rstrip(os.sep)) or "(unnamed worktree)"
+
+
+def sweep_rows(project, plan):
+    """The plan's steps as change rows, in the plan's own order.
+
+    ONE SHAPE, THREE CONSUMERS, and it used to be a list of pre-joined strings
+    (F248). `_fmt_change` calls `row.get("target")` on each, so every sweep that
+    actually removed something raised inside `_journal`'s blanket `except` and came
+    back `journaled: false, journaledWhy: "failed"` — the code that means the journal
+    REFUSED the row, so the panel told the operator the audit trail was broken on
+    every successful sweep. The same strings made the confirm dialog paint
+    `undefined / not set → not set` for an irreversible deletion, and collapsed
+    `appliedDiff`'s key to one value so dry-run-vs-apply drift could never be seen.
+    """
+    out = []
+    for action in (plan or {}).get("actions") or []:
+        for step in action.get("steps") or []:
+            target, before, after = SWEEP_STEP_WORDS.get(
+                step.get("action"), ("worktree", "present", str(step.get("action"))))
+            out.append({"target": target,
+                        "field": _sweep_subject(project, action, step),
+                        "from": before, "to": after})
+    return out
+
 
 def sweep_worktrees(project, body):
     """`POST /api/worktrees/sweep` — the panel's FIRST git write, and the only one.
@@ -481,10 +567,20 @@ def sweep_worktrees(project, body):
                                        terminal=_mio.TERMINAL)
     plan = _worktrees.sweep_plan(
         trees, wanted, parents, obs["contained"], obs["dirty"],
-        cwd_tree=None, verbs=verbs or ("removeWorktrees", "deleteBranches"),
-        owned_by_path=obs["owned"], settled_by_branch=obs["settled"])
-    rows = ["%s %s" % (step["action"], action.get("path") or "")
-            for action in plan["actions"] for step in action["steps"]]
+        # WHERE THE SERVER IS STANDING, measured rather than skipped (F245). This
+        # was `None`, which the planner read as "nowhere" — so a panel started from
+        # inside a phase worktree could remove the directory it was being served
+        # from, silently, exit 0. `git_root` is the directory every git call here
+        # runs with `-C`, so it is the one whose removal matters.
+        cwd_tree=(_worktrees.standing_in(trees, git_root)
+                  or _worktrees.CWD_OUTSIDE),
+        # ...and the verbs as given. The apply path already refuses an empty set;
+        # inferring both here made the dry run offer an operator who had unticked
+        # both boxes a deletion no reachable apply could then perform.
+        verbs=verbs,
+        owned_by_path=obs["owned"], settled_by_branch=obs["settled"],
+        sha_by_branch=obs["shas"])
+    rows = sweep_rows(project, plan)
     if not apply_it:
         # The read-only half, and it returns the SAME rows the confirm dialog
         # renders for a config save: one grammar for "here is what I am about to
@@ -502,7 +598,8 @@ def sweep_worktrees(project, body):
                 if code != 0:
                     failure = (err or out or "git exited %r" % (code,)).strip()
                     break
-                done.append("%s %s" % (step["action"], action.get("path") or ""))
+                done.extend(sweep_rows(project, {"actions": [
+                    dict(action, steps=[step])]}))
             if failure:
                 break
     finally:

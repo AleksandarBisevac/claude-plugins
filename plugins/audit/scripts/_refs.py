@@ -79,6 +79,7 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 (`scripts/` to `tests/`, both ANCHORED) and the rule did not.
 """
 
+import ast
 import hashlib
 import html
 import json
@@ -990,14 +991,87 @@ def _plugin_verbs(root):
     return verbs, None
 
 
+def _accepted_flags(source):
+    """Every `--flag` this source CARRIES AS A VALUE: its string literals, minus
+    the prose ones.
+
+    THE LINE IS CODE VERSUS PROSE, and it is drawn where the AST already draws it
+    (F243). A comment is not in the tree at all, and a docstring is the one string
+    constant that is prose by construction — so excluding those two is exactly the
+    narrowing that was needed, and nothing more. `--include-strangers` was removed
+    properly, leaving four comments and one docstring naming it; a text scan read
+    those as the product still carrying the flag, and `docs/handbook.html`
+    advertised it through a full `verify.sh` and a full `prove-gates` sweep.
+
+    NOT `add_argument` ALONE, and that narrower rule was tried and measured wrong
+    here: `materialize-proposal.py` reads `sys.argv` by hand, so `--with-deps` and
+    `--drop-edges` are genuinely accepted and argparse never sees them. A rule that
+    convicted the handbook for naming them would be this lint over-firing on the
+    product's own options — the failure direction that gets a guard routed around.
+
+    A file that will not parse contributes nothing rather than falling back to a
+    text scan: the fallback would restore the hole this closes, and an unparseable
+    `.py` is already a finding the sweep makes elsewhere.
+    """
+    out = set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return out
+    prose = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            doc = node.body[0] if node.body else None
+            if isinstance(doc, ast.Expr) and isinstance(doc.value, ast.Constant) \
+                    and isinstance(doc.value.value, str):
+                prose.add(id(doc.value))
+    for node in ast.walk(tree):
+        # `ast.Constant`, never `ast.Str`: the latter is gone from 3.12 and the
+        # sweep runs on six interpreters, so the deprecated spelling would fail on
+        # the newest of them while passing the 3.8 floor.
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and id(node) not in prose:
+            out |= set(_FLAG.findall(node.value))
+        # ...and the one flag that is accepted without ever being written down:
+        # `ArgumentParser()` adds `-h/--help` itself unless told not to. Derived
+        # from the construction rather than exempted in a table, because it IS the
+        # plugin's option - a table row would say it belongs to somebody else.
+        if isinstance(node, ast.Call):
+            fn = node.func
+            built = fn.attr if isinstance(fn, ast.Attribute) else (
+                fn.id if isinstance(fn, ast.Name) else "")
+            if built == "ArgumentParser" and not any(
+                    kw.arg == "add_help"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is False for kw in node.keywords):
+                out.add("--help")
+    return out
+
+
 def _plugin_options(root):
     """(every option spelling the plugin's own source carries, problem).
 
-    A TEXT SCAN OVER THE PRODUCT, and the limit is stated rather than hidden: a
-    comment that still mentions a retired option keeps it alive here, so this
-    UNDER-reports. That is the safe direction - the failure it exists for is an
-    option removed from the product while the page still tells a reader to type it,
-    and removing one takes the declaration, the parser and the command doc with it.
+    AN OPTION IS CARRIED WHEN SOMETHING ACCEPTS IT (F243). This was a TEXT SCAN,
+    and its own docstring called that "the safe direction" on the grounds that
+    removing an option takes the declaration, the parser and the command doc with
+    it. This repository is the counter-example: a removal here is expected to leave
+    a comment saying what went and why, and `--include-strangers` was deleted
+    exactly that way - so four comments went on naming it, this function went on
+    reporting it carried, and `docs/handbook.html` advertised the flag through a
+    full `verify.sh` and a full `prove-gates` sweep until a human read the page.
+    The stated safe direction was the COMMON direction, and the guard was off for
+    precisely the removals this project performs well.
+
+    So the corpus is what ACCEPTS a flag, in the two places a flag can be accepted:
+
+      * an `add_argument("--x")` STRING LITERAL, read from the AST - the same walk
+        `_output.py`'s lints already use, and the reason a comment, a docstring or
+        an error message naming a retired flag no longer counts;
+      * a command document's `argument-hint`, which is the declaration an operator
+        types against. The BODY of a command document is prose about the command
+        and is read for nothing here, one door along from the same distinction
+        `verbatim_rule_drift` already draws two functions down.
 
     `scripts/ui/` holds no `.py`, so this reads none of the stylesheets; the design
     tokens that share the option spelling are not in the corpus at all.
@@ -1010,16 +1084,20 @@ def _plugin_options(root):
             continue
         try:
             with open(os.path.join(cdir, name), "r", encoding="utf-8") as fh:
-                found |= set(_FLAG.findall(fh.read()))
+                head = fh.read().split("---", 2)
             read += 1
         except (OSError, UnicodeDecodeError):
             continue
+        hint = re.search(r"^argument-hint:\s*(.+)$",
+                         head[1] if len(head) > 2 else "", re.MULTILINE)
+        if hint:
+            found |= set(_FLAG.findall(hint.group(1)))
     for sub in ("scripts", "hooks"):
         for _rel, path in _output.py_files(
                 os.path.join(root, PLUGIN_REL.replace("/", os.sep), sub)):
             try:
                 with open(path, "r", encoding="utf-8") as fh:
-                    found |= set(_FLAG.findall(fh.read()))
+                    found |= _accepted_flags(fh.read())
                 read += 1
             except (OSError, UnicodeDecodeError):
                 continue

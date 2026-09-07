@@ -38,7 +38,12 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import io
+import json
+import os
+import shutil
 import sys
+import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -115,6 +120,11 @@ SETTLED_OK = {"ok": True, "why": "fixture: signed off, no open task, mergedAt se
 def _cp(*a, **kw):
     kw.setdefault("owned", OWNED_OK)
     kw.setdefault("settled", SETTLED_OK)
+    # ...and where the caller is standing, for the same reason: these three are
+    # PRECONDITIONS that now all refuse when unanswered, so a case about a different
+    # refusal has to satisfy them or it proves nothing about the one it names. `s7`
+    # is the case that asserts the absent answer refuses.
+    kw.setdefault("cwd_tree", M.CWD_OUTSIDE)
     return M.cleanup_plan(*a, **kw)
 
 
@@ -123,6 +133,7 @@ def _sp(trees, wanted, parents, contained, dirty, **kw):
                   dict((r.get("path"), OWNED_OK) for r in trees or []))
     kw.setdefault("settled_by_branch",
                   dict((b, SETTLED_OK) for b in (wanted or {})))
+    kw.setdefault("cwd_tree", M.CWD_OUTSIDE)
     return M.sweep_plan(trees, wanted, parents, contained, dirty, **kw)
 
 
@@ -176,6 +187,45 @@ def _cases(check):
           M.parse_list(PORCELAIN.replace("\n", "\0"), nul=True) == trees,
           "%d vs %d" % (len(M.parse_list(PORCELAIN.replace("\n", "\0"), nul=True)),
                         len(trees)))
+
+    # --- the -z flag is younger than the command it modifies ------------------
+    # `git worktree list --porcelain -z` arrives in git 2.36; Ubuntu 22.04 LTS ships
+    # 2.34 and Debian 11 ships 2.30. Without a fallback every verb, sign-off's
+    # cleanup, the panel's table and the doctor's residue row fail on a default LTS
+    # install with `unknown switch 'z'` - which reads as a broken plugin.
+    _z_calls = []
+
+    def _old_git(_root, args, timeout=None):
+        _z_calls.append(list(args))
+        if "-z" in args:
+            return (129, "", "error: unknown switch `z'\nusage: git worktree "
+                            "list [-v | --porcelain]\n")
+        return (0, PORCELAIN, "")
+
+    _old = M.list_worktrees("/repo", run=_old_git)
+    check("z1 a git that refuses -z is asked again WITHOUT it, rather than "
+          "reporting the repository unreadable - the module already carries the "
+          "newline parser and p10 pins the two equal, so the plain spelling is a "
+          "real answer here and not a default invented to fill a gap",
+          not _old["error"] and _old["trees"] == trees,
+          "error=%r trees=%d" % (_old["error"], len(_old["trees"])))
+    check("z2 ...and the basis SAYS which spelling answered, because newline "
+          "safety in a path is what the fallback gives up and a reader deciding "
+          "whether to trust a path needs to know which one they got",
+          _old["basis"].endswith("--porcelain")
+          and len(_z_calls) == 2 and "-z" in _z_calls[0]
+          and "-z" not in _z_calls[1],
+          "%r / %r" % (_old["basis"], _z_calls))
+
+    def _broken_repo(_root, args, timeout=None):
+        return (128, "", "fatal: not a git repository\n")
+
+    _broken = M.list_worktrees("/repo", run=_broken_repo)
+    check("z3 ...and a git that failed at the JOB is NOT retried as if it were "
+          "old. 128 is spent on several things, so the retry is decided on the "
+          "message naming the option rather than on an exit code",
+          _broken["error"] and "not a git repository" in _broken["error"],
+          repr(_broken["error"]))
 
     # --- parse_error: the three ways the list is not an answer ----------------
     check("e1 git that could not be run yields a sentence, not an empty list "
@@ -579,6 +629,21 @@ def _cases(check):
           M.phase_settled(dict(done_phase, mergedAt=None),
                           TERM)["settled"] is False,
           M.phase_settled(dict(done_phase, mergedAt=None), TERM)["why"][:60])
+    # F247. The filter that skipped a non-dict task removed it from the OPEN list
+    # rather than refusing on it, so a `tasks` array of bare ids read as a phase
+    # whose every task is terminal - and `settled` is one of the two PERMISSION
+    # gates, not a report. The sweep does not revalidate the manifest, so a
+    # half-written or hand-edited one reaches this directly.
+    for _bad, _label in ((["P2.1", "P2.2"], "a list of bare ids"),
+                         ({"P2.1": {"status": "done"}}, "an object, not an array"),
+                         ([{"id": "P2.1", "status": "done"}, None], "a null task")):
+        _got = M.phase_settled(dict(done_phase, tasks=_bad), TERM)
+        check("q6 a `tasks` entry this cannot read REFUSES rather than counting as "
+              "finished (%s) - every other unreadable input in this module refuses, "
+              "and the old `why` asserted 'every task is terminal' about a list it "
+              "never looked at" % (_label,),
+              _got["settled"] is False and "could not be read" in _got["why"],
+              repr(_got))
 
     # --- sweep_plan: the two do-nothing states, worded apart ------------------
     empty = _sp([], {}, {}, {}, {}, verbs=("removeWorktrees",))
@@ -639,6 +704,164 @@ def _cases(check):
                        {"/wt-p2": {"dirty": False, "lines": []}},
                        verbs=())["actions"] == [],
           "no verbs, no actions")
+
+    # --- F244: the plan must act on the record it MEASURED --------------------
+    # `git worktree add --force <path> <branch>` legally puts two records on one
+    # branch. The measurements are per RECORD (owned by path, dirty by path); a
+    # cleanup that re-resolves by branch takes the first holder, so both safety
+    # answers end up being about a directory that is not in the argv.
+    twins = [{"path": "/main", "branch": "main", "isMain": True},
+             {"path": "/a", "branch": "feature/p2"},     # stranger, dirty
+             {"path": "/b", "branch": "feature/p2"}]     # ours, clean
+    twin_plan = M.sweep_plan(
+        twins, {"feature/p2": "P2"}, {"feature/p2": "dev"},
+        {"feature/p2": M.CONTAINED},
+        {"/a": {"dirty": True, "lines": ["?? work.py"]},
+         "/b": {"dirty": False, "lines": []}},
+        cwd_tree=M.CWD_OUTSIDE, verbs=("removeWorktrees", "deleteBranches"),
+        owned_by_path={"/main": {"ok": False, "why": "the main worktree"},
+                       "/a": {"ok": False, "why": "no marker - somebody else's"},
+                       "/b": OWNED_OK},
+        settled_by_branch={"feature/p2": SETTLED_OK})
+    _removes = [s["argv"][2] for a in twin_plan["actions"] for s in a["steps"]
+                if s["action"] == "worktree-remove"]
+    check("w8 with two worktrees on ONE branch, every removal names the worktree "
+          "whose provenance and cleanliness were measured - the plan kept /a as "
+          "somebody else's and must not then remove it: %r" % (_removes,),
+          "/a" not in _removes)
+    check("w9 ...and the action row reports the path the argv actually removes. "
+          "Two names for one act means the applied list, the CLI output and the "
+          "journal all record a directory that still exists",
+          all(s["argv"][2] == a["path"]
+              for a in twin_plan["actions"] for s in a["steps"]
+              if s["action"] == "worktree-remove"),
+          repr([(a["path"], [s["argv"] for s in a["steps"]])
+                for a in twin_plan["actions"]]))
+    check("w10 ...and the branch is NOT deleted while another record still holds "
+          "it - git refuses `cannot delete branch used by worktree`, and one of "
+          "the two holders is a worktree this plan may never touch",
+          not [s for a in twin_plan["actions"] for s in a["steps"]
+               if s["action"] == "branch-delete"],
+          repr([s["action"] for a in twin_plan["actions"] for s in a["steps"]]))
+
+    # --- F245: standing-in is CONTAINMENT, and an unestablished cwd refuses ----
+    nested = [{"path": "/x/repo-P1", "branch": "feature/p1"},
+              {"path": "/x/repo-P1-old", "branch": "feature/old"}]
+    check("s4 the caller is inside a worktree when it is inside a SUBDIRECTORY of "
+          "it, not only when it is exactly at its root. One `cd src` used to turn "
+          "the refusal into the deletion, and git removes that directory silently "
+          "with exit 0",
+          (M.standing_in(nested, "/x/repo-P1/src/deep", resolve=lambda p: p)
+           or {}).get("path") == "/x/repo-P1",
+          repr(M.standing_in(nested, "/x/repo-P1/src/deep", resolve=lambda p: p)))
+    check("s5 ...and a sibling whose path merely STARTS WITH another's is not "
+          "inside it - `/x/repo-P1-old` is its own worktree, and a prefix test "
+          "without a separator boundary would call it a child",
+          (M.standing_in(nested, "/x/repo-P1-old", resolve=lambda p: p)
+           or {}).get("path") == "/x/repo-P1-old",
+          repr(M.standing_in(nested, "/x/repo-P1-old", resolve=lambda p: p)))
+    _deep = [{"path": "/x/repo", "branch": "main", "isMain": True},
+             {"path": "/x/repo/worktrees/P1", "branch": "feature/p1"}]
+    check("s6 ...and when the cwd is inside two records the INNERMOST wins, which "
+          "is the one git resolves such a path to. A worktree nested under the "
+          "main one is inside both",
+          (M.standing_in(_deep, "/x/repo/worktrees/P1/src", resolve=lambda p: p)
+           or {}).get("path") == "/x/repo/worktrees/P1",
+          repr(M.standing_in(_deep, "/x/repo/worktrees/P1/src",
+                             resolve=lambda p: p)))
+    _unset = M.cleanup_plan(
+        open_trees, "feature/p2", "dev", M.CONTAINED, False, [],
+        owned=OWNED_OK, settled=SETTLED_OK)
+    check("s7 FAIL CLOSED: a caller that did not establish where it is standing "
+          "gets a refusal, not a removal. `owned` and `settled` already refuse on "
+          "an absent answer; this was the one precondition where 'not measured' "
+          "and 'measured, and outside every worktree' were the same value - and "
+          "the panel passed the absent one literally",
+          not [s for s in _unset["steps"] if s["action"] == "worktree-remove"]
+          and any("where this process is standing" in b["why"]
+                  for b in _unset["blocked"]),
+          repr([b["why"][:70] for b in _unset["blocked"]]))
+    # --- F246: the marker has to describe the work that is in the tree --------
+    _mk = tempfile.mkdtemp()
+    try:
+        _adm = os.path.join(_mk, "admin")
+        os.makedirs(_adm)
+        with io.open(os.path.join(_adm, M.PROVENANCE_FILE), "w",
+                     encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"createdBy": M.PROVENANCE_MARK,
+                                  "phaseId": "P1", "branch": "feature/p1",
+                                  "at": "2026-01-01T00:00:00Z"}))
+        _fake_admin = lambda _p, run=None: _adm            # noqa: E731
+        _saved, M.admin_dir = M.admin_dir, _fake_admin
+        try:
+            _same = M.read_provenance("/x/repo-P1", expect_branch="feature/p1")
+            check("pv6 a marker written for this branch still answers ours=True - "
+                  "without this the binding below is a rule that refuses "
+                  "everything and proves nothing",
+                  _same["ours"] is True, repr(_same["basis"][:60]))
+            _moved = M.read_provenance("/x/repo-P1", expect_branch="feature/p2")
+            check("pv7 ...and a marker written for ANOTHER branch does not "
+                  "authorise this one. `createdBy` alone proved the plugin made A "
+                  "worktree, never THIS one, so a `git switch` inside a phase "
+                  "worktree handed P1's open directory to P2's settlement verdict",
+                  _moved["ours"] is False
+                  and "does not describe the work in it" in _moved["basis"],
+                  repr(_moved["basis"][:110]))
+            check("pv8 ...and the refusal names BOTH sides - the phase and branch "
+                  "the marker was written for, and the branch found in the tree. "
+                  "'not ours' would send the reader looking for a colleague who "
+                  "does not exist",
+                  "P1" in _moved["basis"] and "feature/p1" in _moved["basis"]
+                  and "feature/p2" in _moved["basis"], repr(_moved["basis"]))
+            _wide = M.read_provenance("/x/repo-P1")
+            check("pv9 ...while the WIDE question - did we make this at all - is "
+                  "still askable, because the panel's table reports provenance and "
+                  "must not call a switched worktree a stranger",
+                  _wide["ours"] is True, repr(_wide["ours"]))
+        finally:
+            M.admin_dir = _saved
+    finally:
+        shutil.rmtree(_mk, ignore_errors=True)
+
+    _outside = M.cleanup_plan(
+        open_trees, "feature/p2", "dev", M.CONTAINED, False, [],
+        cwd_tree=M.CWD_OUTSIDE, owned=OWNED_OK, settled=SETTLED_OK)
+    check("s8 ...and the caller that DID establish it, and is outside every "
+          "worktree, still gets the removal - without this the refusal above is a "
+          "guard that refuses everything and proves nothing",
+          [s["action"] for s in _outside["steps"]] == ["worktree-remove",
+                                                       "branch-delete"],
+          repr([s["action"] for s in _outside["steps"]]))
+
+    # --- F249: the deletion is guarded on where the branch points -------------
+    # `git branch -d` grades from HEAD. On the no-checkout merge path the parent is
+    # by construction checked out NOWHERE, so HEAD is never the parent - measured on
+    # a real repository, a branch proven contained in `develop` is refused with
+    # `error: the branch 'feature/p1' is not fully merged`, exit 1, after its
+    # worktree has already gone. `update-ref -d <ref> <old>` is not `-D`: it deletes
+    # only while the ref still points where we looked, so it refuses the one thing a
+    # force delete would not.
+    _guarded = M.cleanup_plan(
+        open_trees, "feature/p2", "dev", M.CONTAINED, False, [],
+        cwd_tree=M.CWD_OUTSIDE, owned=OWNED_OK, settled=SETTLED_OK,
+        branch_sha="0123456789abcdef0123456789abcdef01234567")
+    _del = [s for s in _guarded["steps"] if s["action"] == "branch-delete"]
+    check("bd1 with the branch's sha known the deletion is guarded on it, rather "
+          "than re-asking git a question about HEAD that the manifest never asked",
+          _del and _del[0]["argv"] == ["update-ref", "-d", "refs/heads/feature/p2",
+                                       "0123456789abcdef0123456789abcdef01234567"],
+          repr(_del[0]["argv"] if _del else None))
+    check("bd2 ...and it is never `-D`. The schema forbids that spelling because "
+          "it discards unmerged work; the guarded form refuses a ref that MOVED, "
+          "which is the case a force delete would happily run through",
+          all("-D" not in s["argv"] for s in _guarded["steps"]),
+          repr([s["argv"] for s in _guarded["steps"]]))
+    _fallback = [s for s in _outside["steps"] if s["action"] == "branch-delete"]
+    check("bd3 ...and with NO sha the old command stays, because there is nothing "
+          "to guard on - a fallback that silently force-deleted would be worse "
+          "than git's over-cautious refusal",
+          _fallback and _fallback[0]["argv"] == ["branch", "-d", "feature/p2"],
+          repr(_fallback[0]["argv"] if _fallback else None))
 
 
 def _selftest():

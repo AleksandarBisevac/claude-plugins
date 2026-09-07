@@ -321,12 +321,45 @@ def pre_cache(data, *, cfg=None, root=None):
         cfg = cfg if cfg is not None else _config.load(root)
         if not _config.journal_enabled(cfg):
             return None            # on Pre, the config on disk IS the pre-image
+        if str(data.get("tool_name") or "") == "Bash":
+            return _pre_seed_bash(root, cfg, data)
         action, rel, _tool, _ti = classify(data, cfg=cfg, root=root)
         if action is None:
             return None
         return _write_slot(root, cfg, data, rel)
     except Exception:
         return None
+
+
+def _pre_seed_bash(root, cfg, data):
+    """Seed a baseline for the swept paths, for the Bash lane's FIRST call (F261).
+
+    THE EDIT LANE'S OWN REASONING, one lane over. `pre_cache`'s docstring already
+    says why the Pre pass stays: with no baseline the FIRST write of every session
+    loses its derived rows. Bash had no Pre pass at all, so it had that regression
+    permanently — reproduced: a `mergedAt` stamp made by the session's first Bash
+    call produced NO row, the Post pass seeded the slot from the ALREADY-WRITTEN
+    file, and `audit-journal verify` later reported `an edit the journal never
+    saw`. That warning was telling the truth; the window was the defect.
+
+    NOT A HASH PER CALL. A slot that already exists is left alone, so the cost
+    after the session's first Bash call is one `exists` per watched path — and
+    only the paths this hook already sweeps on Post are touched, so the Pre and
+    Post passes cannot disagree about what is watched.
+
+    Returns the last slot written, or None, matching `pre_cache`'s contract.
+    """
+    last = None
+    for rel in _bash_targets(root, cfg):
+        if _config.in_journal(root, cfg, rel):
+            continue
+        slot = _slot_path(root, cfg, data, rel)
+        if os.path.exists(slot):
+            continue
+        if _snapshot(os.path.join(str(root), rel))[0] is None:
+            continue               # nothing readable to be a baseline
+        last = _write_slot(root, cfg, data, rel) or last
+    return last
 
 
 def _read_preimage(root, cfg, data, rel):

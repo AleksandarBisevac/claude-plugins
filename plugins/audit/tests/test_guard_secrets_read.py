@@ -121,6 +121,40 @@ def _cases(check):
     _expect("b10 python selftest of a hook allowed", "allow",
           bash("python3 hooks/require-plan.py --selftest"))
 
+    # F263. Rule #1's arm used to grep the WHOLE body for a secret-filename token,
+    # so writing a sentence that names one was refused as reading one. Reported
+    # from a live run and reproduced twice inside a single command here: the
+    # refusal said "Reading a secret file" about prose that read nothing. F-P-7
+    # made exactly this repair on the WRITE arm; this is the read side of it.
+    #
+    # THE PAIR IS THE POINT. b1/b3/b5/b7 above are the "still refused" half and
+    # they must keep passing; these are the "prose is not a read" half. Either
+    # alone is a rule that refuses everything or nothing.
+    _expect("b8b prose NAMING a secret file is not reading one - a phase summary "
+          "about a .env failing at boot is a sentence, not a read", "allow",
+          bash("python3 -c \"print('a too-short secret in .env fails at boot')\""))
+    _expect("b8c ...and the same through a heredoc, which is the shape the live "
+          "report actually used", "allow",
+          bash("python3 - <<'PY'\n"
+               "print('the pattern matches .env and credentials.json')\nPY"))
+    _expect("b8d ...and a COMMENT naming one is not a read either", "allow",
+          bash("python3 -c \"x = 1  # the .env loader runs before this\""))
+    # ...and the two ways a read hides from a Python-shaped pattern, both kept.
+    _expect("b8e a shell read of a secret INSIDE an interpreter body is still "
+          "refused - `subprocess.run(['cat', '.env'])` is a read no read-call "
+          "pattern would see, and the shell matcher is what catches it", "block",
+          bash("python3 -c \"import subprocess; subprocess.run(['cat', '.env'])\""))
+    _expect("b8f ...and a read through a BOUND name resolves, exactly as the "
+          "write arm resolves its targets", "block",
+          bash("python3 -c \"p='.env'; print(open(p).read())\""))
+    # A RELATIVE path on purpose: `_refs.absolute_path_violations` refuses an
+    # absolute one anywhere in this tree, and the case does not need one - what it
+    # asks is whether a WRITE is graded as a read, which the mode decides.
+    _expect("b8g ...while WRITING a file whose name resembles a secret is the "
+          "write arm's business and not a read - grading it here would refuse "
+          "creating one", "allow",
+          bash("python3 -c \"open('build/.env','w').write('K=1')\""))
+
     # --- Bash shell-verb reads ---
     _expect("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
     _expect("b12 printenv blocked", "block", bash("printenv"))
@@ -463,6 +497,28 @@ def _cases(check):
           "actually used", "block",
           bash('python3 - <<\'PY\'\nimport io\np=\'src/app.ts\'\n'
                's=io.open(p).read()\nio.open(p,\'w\').write(s)\nPY'))
+    # F256. Grading a heredoc as an inline eval is deliberate (F31: same
+    # capability), so the classification is right and the MESSAGE was wrong - it
+    # named `python -c` for a command the operator never typed. Reported from a
+    # live run, and hit three times in one session here. A guard people believe
+    # fires at random is one they route around, and the whole cost of the repair
+    # is one word.
+    _hd = M.decide(bash('python3 - <<\'PY\'\nimport io\n'
+                        'io.open("src/app.ts","w").write("x")\nPY'), cfg=cfg)[1]
+    check("s51b the refusal for a HEREDOC names the heredoc - the operator has "
+          "to be able to recognise their own command in it: %r" % (_hd[:110],),
+          "heredoc" in _hd and "<<EOF" in _hd)
+    check("s51c ...and it still says the two are one capability, so the reader "
+          "learns the rule rather than concluding the guard is inconsistent",
+          "same capability as python -c" in _hd, repr(_hd[:160]))
+    _dashc = M.decide(bash('python3 -c "open(\'src/app.ts\',\'w\').write(x)"'),
+                      cfg=cfg)[1]
+    check("s51d ...while the -c form still names -c. Both branches asserted, "
+          "because a single message that mentioned both spellings would pass a "
+          "test for either and tell every operator about a command they did not "
+          "type",
+          "inline-eval one-liner" in _dashc and "heredoc" not in _dashc,
+          repr(_dashc[:110]))
     _expect("s52 ...and a path built by CONCATENATION, which names no single "
           "literal either", "block",
           bash('python3 -c "open(\'src/\'+\'app.ts\',\'w\').write(x)"'))

@@ -85,10 +85,12 @@ def _obs(contained, trees=None, parent_dirty=False, phase_dirty=False,
         "phaseTree": W.holder_of(trees, "feature/p2")["tree"],
         "parentDirty": {"dirty": parent_dirty, "lines": [], "basis": "fake"},
         "phaseDirty": {"dirty": phase_dirty, "lines": [], "basis": "fake"},
-        "standingIn": None,
         # Supplied, because `cleanup_plan` fails CLOSED without them: a case that
         # omitted these would refuse every cleanup and pass its assertions for a
-        # reason that has nothing to do with what it claims to measure.
+        # reason that has nothing to do with what it claims to measure. `standingIn`
+        # joined that list in 2.1.1 (F245) - it used to be None, which the plan read
+        # as "nowhere" and now reads as "never asked".
+        "standingIn": W.CWD_OUTSIDE,
         "owned": owned if owned is not None else OWNED_OK,
         "settled": settled if settled is not None else SETTLED_OK,
         "why": "",
@@ -139,6 +141,30 @@ def _cases(check):
     check("a3 ...and it hands over the exact command, so the human is not left to "
           "reconstruct it from the mode name",
           ans["command"].startswith("git "), ans["command"])
+    # F249. `auto` used to be read BEFORE the merge plan's own refusal, so a run
+    # that could not merge for a real reason - a `parentBranch` this clone does not
+    # have, a dirty parent worktree - came back exit 0 saying "the human will do
+    # this deliberately". `orchestrator.md` maps that exact shape to "signed off and
+    # deliberately unlanded", so a typo'd branch travelled up the chain as a plan.
+    run, calls = _fake({})
+    _bad = M.plan(_obs(W.NOT_CONTAINED, parent_exists=False),
+                  "feature/p2", "develp", NO_AUTO)
+    code, ans = M.close("/repo", _bad, "feature/p2", "develp", run=run,
+                        settled_now=SETTLED_OK)
+    check("a4 a merge the plan REFUSES is a failure even under auto:false - the "
+          "switch says 'a human will merge this', and a parent that does not "
+          "resolve is not something a human can merge either. Two different "
+          "answers must not share exit 0",
+          code == M.E_FAIL and ans["pending"] is False,
+          "exit=%d pending=%r mode=%r" % (code, ans["pending"], ans["mode"]))
+    check("a5 ...and the reason is REPORTED. The pending path used to return "
+          "before the refusal block, so the one line a reader got named the "
+          "switch and not the branch that does not exist",
+          ans["refusal"] and "develp" in str(ans["refusal"].get("why")),
+          repr(ans["refusal"]))
+    check("a6 ...and it still ran no git command, because a refusal is decided "
+          "before anything is attempted",
+          calls == [], repr(calls))
 
     # --- already contained: zero writes ---------------------------------------
     run, calls = _fake({})
@@ -153,6 +179,82 @@ def _cases(check):
     check("b2 ...and it still exits 0: the parent contains the branch, which is "
           "the question this command answers",
           code == M.E_OK, "exit=%d" % (code,))
+    # F249. `main()` stamped `mergedAt` on `answer["merged"]`, which is "THIS RUN
+    # performed a merge" - and this path performs none, while its cleanup runs on
+    # the VERIFIED containment. So the idempotent re-run the design advertises, and
+    # the re-run `orchestrator.md` tells a human to make after merging by hand,
+    # removed the worktree and deleted the branch and wrote no `mergedAt`. The
+    # phase is then unsettled for ever and no later sweep can reap anything.
+    check("b3 ...and it reports the containment it VERIFIED, which is the fact the "
+          "stamp is written from. 'this run merged' and 'the parent contains it' "
+          "are two different claims and only the second is what mergedAt records",
+          ans["verified"]["answer"] == W.CONTAINED
+          and ans["merged"] is False,
+          "verified=%r merged=%r" % (ans["verified"]["answer"], ans["merged"]))
+    # --- F249: the preview previews the CLEANUP, not just the merge ------------
+    # The plan is built with `settled` read off disk, where `mergedAt` is null by
+    # construction before sign-off — so the preview blocked both cleanup halves and
+    # printed a merge and nothing else, while the same command without --dry-run
+    # removed the worktree and deleted the branch. `commands/phase.md` promises the
+    # opposite. There were no dry-run cases here at all, which is how it survived.
+    run, calls = _fake({})
+    _dp = M.plan(_obs(W.NOT_CONTAINED), "feature/p2", "dev", ALL_ON)
+    code, dry = M.close("/repo", _dp, "feature/p2", "dev", run=run, dry_run=True,
+                        settled_now=SETTLED_OK)
+    check("y1 --dry-run exits 0 and writes nothing at all - COUNTED, because a "
+          "preview that ran a command is not a preview",
+          code == M.E_OK and calls == [], "exit=%d calls=%r" % (code, calls))
+    check("y2 ...and it shows the CLEANUP it will perform, not the merge alone. "
+          "The preview is computed against what the merge is about to make true, "
+          "which is the only version of it that describes the same run",
+          # The merge argv carries `-C <tree>` in front, so the verb is read by
+          # membership rather than by position - a positional read would pass or
+          # fail on which worktree held the parent, which is not what is asked here.
+          [next(a for a in c if not a.startswith("-") and a != "/repo")
+           for c in dry["plannedSteps"]] == ["merge", "worktree", "branch"],
+          repr(dry["plannedSteps"]))
+    check("y3 ...and it SAYS the preview is conditional on the merge landing, "
+          "because a cleanup shown as fact about a repository that has not merged "
+          "yet is a different claim from the one being made",
+          "the merge lands" in str(dry.get("previewAssumes")),
+          repr(dry.get("previewAssumes")))
+
+    # --- F249: --no-ff is honoured or refused, never dropped -------------------
+    # `git fetch . <b>:<p>` cannot make a merge commit, so on the no-checkout path
+    # the flag used to be silently ignored: the run fast-forwarded, reported
+    # success, and produced a different history than the one asked for. It matters
+    # twice over because `orchestrator.md` makes --no-ff the documented remedy for
+    # exit 3, and in this topology that remedy could never have worked.
+    _nf_trees = [{"path": "/repo", "branch": "main", "isMain": True},
+                 {"path": "/wt-p2", "branch": "feature/p2"}]
+    _nf = M.plan(_obs(W.NOT_CONTAINED, trees=_nf_trees), "feature/p2", "dev",
+                 ALL_ON, no_ff=True)
+    check("n1 --no-ff with the parent checked out NOWHERE is refused, not "
+          "silently fast-forwarded - a merge commit and a fast-forward are two "
+          "histories, and the caller asked for the one a fetch cannot make",
+          _nf["merge"]["mode"] == "refuse" and not _nf["merge"]["argv"],
+          "mode=%r argv=%r" % (_nf["merge"]["mode"], _nf["merge"]["argv"]))
+    check("n2 ...and the refusal names the parent and offers both ways out, "
+          "because the operator can either check it out or accept the "
+          "fast-forward and both are legitimate",
+          "--no-ff" in str(_nf["merge"]["refusal"].get("why"))
+          and "dev" in str(_nf["merge"]["refusal"].get("remedy")),
+          repr(_nf["merge"]["refusal"]))
+    _nf_ok = M.plan(_obs(W.NOT_CONTAINED), "feature/p2", "dev", ALL_ON,
+                    no_ff=True)
+    check("n3 ...while with the parent checked out somewhere it is HONOURED - "
+          "the allow case, without which n1 is a rule that refuses every --no-ff "
+          "and proves nothing about the topology",
+          "--no-ff" in _nf_ok["merge"]["argv"]
+          and "--ff-only" not in _nf_ok["merge"]["argv"],
+          repr(_nf_ok["merge"]["argv"]))
+
+    check("b4 ...and `stampable` is the field main() gates the write on, set from "
+          "the verified containment rather than from whether this run merged. The "
+          "cleanup half already read the verified answer; the recording half read "
+          "the other one, so the two disagreed about the same phase",
+          ans["stampable"] is True,
+          "stampable=%r merged=%r" % (ans.get("stampable"), ans["merged"]))
 
     # --- the merge itself -----------------------------------------------------
     run, calls = _fake({"merge --ff-only": (0, "Fast-forward\n", ""),

@@ -31,6 +31,7 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import json
 import os
 import sys
 
@@ -74,12 +75,28 @@ def _fake(script, listing=LIST, admin_root=None, ours=()):
             marker = os.path.join(admin_root, name, M._wt.PROVENANCE_FILE)
             if os.path.isfile(marker):
                 os.remove(marker)
-        for path in ours:
+        # THE MARKER CARRIES THE BRANCH THE LISTING SAYS THAT PATH HOLDS, read out
+        # of `listing` rather than written twice: the provenance gate compares the
+        # two (F246), so a fixture that invented a branch here would be asserting
+        # its own invention. `ours` may name a path with an explicit branch as a
+        # pair, which is how the mismatch case is driven.
+        held = {}
+        for block in listing.split("\n\n"):
+            path_line = [ln for ln in block.split("\n")
+                         if ln.startswith("worktree ")]
+            br_line = [ln for ln in block.split("\n") if ln.startswith("branch ")]
+            if path_line and br_line:
+                held[path_line[0].split(" ", 1)[1]] = \
+                    br_line[0].split(" ", 1)[1].replace("refs/heads/", "")
+        for entry in ours:
+            path, branch = entry if isinstance(entry, tuple) else \
+                (entry, held.get(entry, ""))
             adm = os.path.join(admin_root, os.path.basename(path))
             if not os.path.isdir(adm):
                 os.makedirs(adm)
             with open(os.path.join(adm, M._wt.PROVENANCE_FILE), "w") as fh:
-                fh.write('{"createdBy": "audit", "phaseId": "P2"}')
+                fh.write(json.dumps({"createdBy": "audit", "phaseId": "P2",
+                                     "branch": branch}))
 
     def key_of(args):
         rest = args[2:] if len(args) > 2 and args[0] == "-C" else args
@@ -246,6 +263,28 @@ def _run_cases(check, root):
           and owned["actions"][0]["path"] == "/wt-p2",
           "unowned=%d owned=%d" % (len(unowned["actions"]),
                                    len(owned["actions"])))
+    # F246. The marker names the phase and the branch it was written for, and only
+    # `createdBy` used to be read - so the worktree-to-phase join was made from
+    # whatever branch git reports NOW. An operator who runs `git switch` inside a
+    # phase worktree to look at something hands that still-open directory to another
+    # phase's settlement verdict, and it goes with its ignored files.
+    run, _c = _f({"merge-base --is-ancestor": (0, "", ""),
+                  "status --porcelain": (0, "", "")},
+                 ours=(("/wt-p2", "audit/p9-elsewhere"),))
+    code, moved = M.do_sweep("/repo", PLAN, ("removeWorktrees",), run=run)
+    check("x2b ...and a marker written for a DIFFERENT branch does not authorise "
+          "this one. Same repository, same clean tree, same settled phase as x2 - "
+          "the only difference is which job the marker describes",
+          moved["actions"] == [],
+          repr([a["path"] for a in moved["actions"]]))
+    check("x2c ...and the reason names the phase and branch the marker was "
+          "written for AND the branch found in the tree. 'not ours' would send the "
+          "reader looking for a colleague who does not exist",
+          moved["kept"] and any("audit/p9-elsewhere" in r["why"]
+                                and "audit/p2-two" in r["why"]
+                                for r in moved["kept"][0]["reasons"]),
+          repr([r["why"][:120] for r in (moved["kept"][0]["reasons"]
+                                         if moved["kept"] else [])]))
     unsettled = {"meta": PLAN["meta"],
                  "phases": [dict(PLAN["phases"][0], status="in_progress")]}
     run, _c = _f({"merge-base --is-ancestor": (0, "", ""),

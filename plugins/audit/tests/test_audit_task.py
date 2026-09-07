@@ -221,6 +221,45 @@ def _cases(check):
               and (t.get("tests") or {}).get("expectRedFirst") is True
               and (t.get("tests") or {}).get("add")
               == ["repro must fail first"])
+        # F258. The case named in `tests.add` is a file this task CREATES, so a
+        # scope that excludes it fails the task's own commit through commit-scope.
+        # One operator hand-fixed 13 tasks over exactly this, and reported that
+        # there is no case where the divergence is wanted.
+        # Its OWN project, because the ids in `proj` are positional and a task
+        # added mid-suite renumbers every case after it.
+        _tdd_proj, _tdd_mp = mk("a-tdd-note", base_manifest())
+        code, _txt_tdd = run(["add", "No case named", "--phase", "P2",
+                              "--project-dir", _tdd_proj, "--tests-mode", "tdd"])
+        check("t5b a tdd task created with no --tests-add is NOTED at creation, "
+              "not only at the next validate. A live run made two of these and "
+              "the operator noticed later, by which point the work was already "
+              "with an executor told to prove a red first with nothing to prove "
+              "it with: %r" % (_txt_tdd[-260:],),
+              code == 0 and "tests.add is empty" in _txt_tdd
+              and "--tests-add" in _txt_tdd)
+        check("t5c ...and a tdd task that DID name one is not noted, so the line "
+              "means something when it appears",
+              "tests.add is empty" not in _txt, repr(_txt[-160:]))
+        check("t6b ...and the case it names is in `files`, unioned rather than "
+              "left for the operator to type twice: %r" % (t.get("files"),),
+              "repro must fail first" in (t.get("files") or []))
+        # The ordering rule asked of the helper that owns it, rather than by
+        # creating a task here: the ids in this fixture are positional and a task
+        # added mid-suite renumbers every case after it.
+        check("t6c ...and the DECLARED order is kept with the derived case after "
+              "it, duplicates dropped. `sorted(set(...))` would give the same "
+              "scope and a different document on every edit, which is a diff "
+              "nobody can review",
+              M._union_paths(["src/a.ts", "src/b.ts"],
+                             ["src/a.test.ts", "src/a.ts"])
+              == ["src/a.ts", "src/b.ts", "src/a.test.ts"],
+              repr(M._union_paths(["src/a.ts", "src/b.ts"],
+                                  ["src/a.test.ts", "src/a.ts"])))
+        check("t6d ...and a blank or non-string entry is not a path, so a stray "
+              "comma in `--tests-add` cannot put an empty name into the scope",
+              M._union_paths(["src/a.ts"], ["", "   ", None, "src/b.ts"])
+              == ["src/a.ts", "src/b.ts"],
+              repr(M._union_paths(["src/a.ts"], ["", "   ", None, "src/b.ts"])))
         check("t7 blockedBy/dependsOn/description land as given",
               t.get("blockedBy") == ["P2.1"] and t.get("dependsOn") == ["P2.3"]
               and t.get("description") == "why and how")
@@ -1365,15 +1404,32 @@ def _cases(check):
         # THE PAIRED NEGATIVE for jf3, which is vacuously true over no rows at
         # all: the comparison this fix adds could suppress every row instead of
         # only the unchanged ones.
-        check("jf4 ...and both fields the call moved ARE in it, counted rather "
-              "than found: %r" % (sorted(jf_from),),
-              sorted(jf_from) == ["tests.add", "tests.gate"])
+        check("jf4 ...and every field the call moved IS in it, counted rather "
+              "than found. `files` joins the pair because `tests.add` is unioned "
+              "into it (F258): a case the task creates is a file it owns, and a "
+              "scope that named one without the other was the shape that cost a "
+              "real run 13 hand-fixes: %r" % (sorted(jf_from),),
+              sorted(jf_from) == ["files", "tests.add", "tests.gate"])
         os.makedirs(os.path.join(jf_proj, "src"), exist_ok=True)
         for _jff in ("d.ts", "e.ts"):
             with open(os.path.join(jf_proj, "src", _jff), "w") as _fh:
                 _fh.write("x\n")
         code, txt = run(["scope", "P2.3", "--files", "src/d.ts",
                          "--project-dir", jf_proj])
+        # F258, the invariant asserted on its own rather than as a side effect of
+        # jf4's row count: `files` must contain everything `tests.add` names, from
+        # whichever writer touched the task last.
+        _jf_node = [t for p in _mio.load_manifest(jf_mp).get("phases") or []
+                    for t in (p.get("tasks") or []) if t.get("id") == "P2.3"]
+        check("jf4b files contains every case tests.add names, after a scope that "
+              "moved tests.add - a tdd task CREATES that file, so a scope that "
+              "excludes it fails the task's own commit",
+              _jf_node and all(
+                  a in (_jf_node[0].get("files") or [])
+                  for a in ((_jf_node[0].get("tests") or {}).get("add") or [])),
+              repr((_jf_node[0].get("files"),
+                    (_jf_node[0].get("tests") or {}).get("add"))
+                   if _jf_node else None))
         check("jf5 a scope that only ADDS files says so instead of claiming a "
               "release - the line names the direction the derivation actually "
               "went: %r" % (txt[:140],),

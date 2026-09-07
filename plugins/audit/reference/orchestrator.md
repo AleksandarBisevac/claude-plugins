@@ -163,7 +163,11 @@ never hardcode branch names, package ids, skills, or build tools here:
   wrong in this document for as long as it existed, and neither is a rule prose can be trusted to
   remember.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
-- If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command.
+- If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command **you type
+  yourself**. You do not need to for `run-test-gate.py`: it applies the preamble to every gate
+  command it resolves, because it spawns its own shell and a preamble exported into a different one
+  reaches nothing. That was F253 — two gate rows recorded exit 127, a `PATH` problem, as evidence,
+  and a committed ledger carries a false failure for as long as it exists.
 - Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` and fix any findings
   before proceeding (exit 0 = valid, 1 = findings, 2 = unreadable; `WARNING:` lines are advisory).
@@ -339,7 +343,8 @@ report, because `git switch -c` is about to fail anyway.
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)
      - `regression` → implement the fix and add a test locking the corrected behavior (`task.tests.add`).
      - `gate-only` → no new test; only ensure `task.tests.gate` stays green.
-   - It must run `task.tests.gate` (running `meta.nodePreamble` first, un-piped, if set) and report pass/fail per
+   - It must run `task.tests.gate` (through `run-test-gate.py`, which applies `meta.nodePreamble`
+     itself) and report pass/fail per
      gate plus a structured **outcome** = `{ technical, descriptive }`. It must distinguish
      **"gates ran and failed"** from **"gates could not run"** (command not found, runner crashed
      before executing tests, zero tests collected where `tests.add` expects some).
@@ -362,6 +367,19 @@ report, because `git switch -c` is about to fail anyway.
      session may hold the phase lock — and that is a designed state, not an error: the run is
      recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
      chase a refused pointer.
+   - **A widened scope CONTINUES the executor; it does not replace it.** When the plan gate refuses
+     a file the task genuinely needs, you widen `task.files` (`/audit:task scope`) and then send the
+     running executor a message telling it to carry on — you do **not** spawn a fresh one. A
+     re-spawn throws away everything it has read and re-reads it: measured on a live run, five
+     refusals out of twelve tasks were resolved by re-spawning at 60–150k tokens each, about a
+     third of that phase's whole cost. The gate was right every time; the re-spawn was the waste.
+   - **What an executor meeting a failure in a file it does not own is looking at.** Parallel
+     executors share one working tree and each runs the full gate, so a sibling mid-edit — or a
+     sibling doing red-first *correctly*, with its test written before its module — makes tsc, the
+     linter or the suite fail for reasons that are not this task's. Say so in the executor prompt.
+     Correctness is not at risk (you re-gate on a quiet tree in step 4); turns spent diagnosing a
+     neighbour's work in progress are the cost, and an executor that knows the shape stops paying
+     it. It must not "fix" a failure in a file outside its `files`.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
      For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
@@ -380,7 +398,15 @@ report, because `git switch -c` is about to fail anyway.
           **only if it lives inside `<gitRoot>`**; if it is outside (e.g. at the project dir while the
           git repo is a subdir), it cannot be committed — proceed without it (the preflight already
           warned that status history isn't versioned in that layout). **Do NOT stage the index** — a
-          task commit changes only its own phase's shard.
+          task commit changes only its own phase's shard, because two phases committing the index in
+          parallel conflict on the same lines.
+        - **That means a widened scope cannot pair with `fileIndex` at this commit, and that is
+          expected.** `task.files` lives in the shard you just staged; `fileIndex` lives in the index
+          you may not. So a task whose scope you corrected mid-run commits a state where the two
+          disagree — measured on live runs at 39 and 93 occurrences — and `manifest-revalidated`
+          records those as **deferred** rather than as breaches. It then asks the pairing of the
+          manifest **as it stands**, so the debt is real and is settled once: land the index change
+          in its own commit before sign-off. `/audit:task scope` re-derives `fileIndex` for you.
         - **Stage the journal directory too** (`journal.dir`, default `<manifest dir>/journal`) if it
           exists inside `<gitRoot>`: the audit trail records the manifest writes this commit is
           carrying, and a record committed a week later cannot be checked against the change it
@@ -475,7 +501,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
        <manifestPath> <phaseId> --record
    ```
-   (run `meta.nodePreamble` first, un-piped, if set). All commands must pass **after** any
+   (the script applies `meta.nodePreamble` itself). All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
 
    `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the

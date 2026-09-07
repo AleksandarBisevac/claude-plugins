@@ -85,6 +85,7 @@ import _evidence_io  # noqa: E402  (the test-evidence record: where it lives)
 import _journal_io  # noqa: E402  (the trail: where it lives, its rows, their stateHash)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_rules as _rules  # noqa: E402  (the validator this re-runs on old states)
+import _manifest_crossrefs as _crossrefs  # noqa: E402  (FILEINDEX_PAIRING: the one finding a task commit cannot carry)
 import _status_facts  # noqa: E402  (gitRoot-relative file paths, already one implementation)
 import usage_ledger  # noqa: E402  (which model actually ran a task)
 
@@ -815,6 +816,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
     instead of a reassuring silence.
     """
     breaches, gaps = [], []
+    pairing_deferred = 0
     commits = []
     for task in (phase.get("tasks") or []):
         if isinstance(task, dict) and task.get("commit"):
@@ -865,10 +867,56 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
             except Exception as exc:                       # defensive
                 findings = ["internal validator error: %s" % exc]
             for line in findings:
+                # F250. THE ONE FINDING A TASK COMMIT CANNOT AVOID. `task.files`
+                # lives in the phase shard and `fileIndex` lives in the index, and
+                # step 4c forbids a task commit from staging the index - for a
+                # good reason, since two phases committing it in parallel conflict
+                # on the same lines. So a task whose scope is corrected mid-run
+                # commits a shard the committed index does not yet pair with, and
+                # EVERY later commit in that phase reported it: measured on two
+                # separate live runs, 39 breaches across 10 of 12 tasks, and 93 in
+                # one phase of another. It punished the right instinct - fixing
+                # the plan when reality differed - and there was no commit ordering
+                # that avoided it.
+                #
+                # Recorded as a gap rather than a breach HERE ONLY. `validate()`
+                # keeps the finding for every whole-manifest caller, and the
+                # pairing is asserted against the CURRENT state below, so this
+                # exempts a moment rather than the rule: mid-phase it cannot be
+                # true, by sign-off it must be.
+                if _crossrefs.FILEINDEX_PAIRING in line:
+                    pairing_deferred += 1
+                    continue
                 breaches.append("%s: the manifest this commit recorded does NOT "
                                 "validate - %s" % (sha[:12], line))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # ...AND THE DEFERRAL IS PAID HERE (F250). Exempting the pairing per commit
+    # without asking it of anything would be a hole, not a fix: the rule is not
+    # "never true", it is "not true YET". The manifest as it stands now is the
+    # state sign-off is about to preserve, so that is where it is asked - and a
+    # failure is a real breach, naming how many commits deferred it so a reader
+    # can see this is the accumulated debt rather than one slip.
+    if pairing_deferred:
+        try:
+            live_findings, _lw = _rules.validate(_mio.load_manifest(
+                os.path.join(project, index_rel.replace("/", os.sep))))
+        except Exception as exc:
+            gaps.append("the pairing of task.files with fileIndex was deferred by "
+                        "%d commit(s) and the current manifest could not be loaded "
+                        "to settle it (%s)" % (pairing_deferred, exc))
+            live_findings = []
+        still = [x for x in live_findings if _crossrefs.FILEINDEX_PAIRING in x]
+        if still:
+            breaches.extend(
+                ["the manifest as it stands STILL does not pair task.files with "
+                 "fileIndex - %s" % (x,) for x in still])
+            breaches.append(
+                "%d task commit(s) deferred this pairing, which step 4c makes "
+                "unavoidable mid-phase; by sign-off it has to be settled - run "
+                "`/audit:task scope <id> --files ...` to re-derive the index"
+                % (pairing_deferred,))
 
     recorded = _recorded_states(project, phase_file_abs)
     unrecoverable = [h for h in recorded if h not in seen_hashes]

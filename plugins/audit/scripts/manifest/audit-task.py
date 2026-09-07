@@ -188,6 +188,23 @@ def _split_csv(val):
     return [part.strip() for part in val.split(",") if part.strip()]
 
 
+def _union_paths(declared, extra):
+    """`declared` plus anything in `extra` it does not already carry, order kept.
+
+    ORDER IS KEPT because the list is read by people: the files the author typed
+    stay where they typed them, and the ones derived from `tests.add` follow. A
+    `sorted(set(...))` would produce the same scope and a different document on
+    every edit, which is a diff nobody can review.
+    """
+    out = list(declared or [])
+    seen = set(out)
+    for path in (extra or []):
+        if isinstance(path, str) and path.strip() and path not in seen:
+            out.append(path)
+            seen.add(path)
+    return out
+
+
 def _parse_skills(val):
     """Three states, spelled the way the schema spells them (v0.37 B1):
     absent/empty -> [] (unconsidered; the area default stays in force);
@@ -698,7 +715,13 @@ def _build_task(task_id, title, args, phase):
         "title": title,
         "status": "pending",
         "description": args.description or "",
-        "files": _split_csv(args.files),
+        # `tests.add` IS PART OF `files`, and keeping them apart cost a real run 13
+        # hand-fixes (F258). A tdd task creates the file it names in `tests.add` by
+        # definition, so a scope that excludes it trips commit-scope on the task's
+        # own commit — and the operator who reported it put it plainly: there is no
+        # case where the divergence is wanted. Unioned rather than replaced, and the
+        # declared order is kept, so a reader still sees what the author typed first.
+        "files": _union_paths(_split_csv(args.files), args.tests_add),
         "tests": {
             "mode": mode,
             "add": list(args.tests_add or []),
@@ -813,6 +836,17 @@ def _locked_add(args, project, config, mpath, title, out):
     out("  tests.mode %s  model %s  risk %s  skills %s"
         % (task["tests"]["mode"], task["model"], task["risk"],
            json.dumps(task["skills"])))
+    if task["tests"]["mode"] == "tdd" and not task["tests"]["add"]:
+        # F254, said HERE as well as by the validator, and the reason is when. A
+        # live run created two tdd tasks with no case named, and the operator only
+        # noticed later — by which point the plan was written and the work was
+        # being handed to an executor told to prove a red first with nothing to
+        # prove it with. Validation catches it on the next `validate` call; this
+        # catches it in the sentence that says the task was created.
+        out("  NOTE: mode is 'tdd' and tests.add is empty - a red-first task "
+            "naming no case cannot be shown to have gone red. Name it with "
+            "`/audit:task scope %s --tests-add \"<case>\"`, or use --tests-mode "
+            "regression / gate-only if no new test is owed" % (task_id,))
     if not task["tests"]["gate"]:
         # `scope`'s and `retarget`'s rule at the third write site: an empty gate is
         # a designed state and silence over it reads as breakage. It is printed off
@@ -1462,6 +1496,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
     was_add = list(prior_tests.get("add") or [])
     changes = []
     if files:
+        # `files` ⊇ `tests.add` IS AN INVARIANT, not a courtesy at creation (F258).
+        # `--files` REPLACES the list, so without this a later re-scope silently
+        # released the very case file the task is still declared to create, and the
+        # next commit tripped commit-scope for a scope the operator had just fixed.
+        # The task's CURRENT `add` is used, because `--tests-add` in the same call
+        # is applied below and unions again there.
+        files = _union_paths(files, was_add)
         # F202. F197's class one field over, and not named by that entry: the row
         # went in under a bare `if files:`, so re-scoping to the list the task
         # already held printed and journaled `files: [...] -> [...]`. The chain
@@ -1514,6 +1555,17 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "tests.add",
                             "from": was_add, "to": now_add})
         tests["add"] = now_add
+        # ...and into `files` here too (F258), for `_build_task`'s reason: a case
+        # named by `tests.add` is a file this task creates, and a scope that omits
+        # it fails the task's own commit. `scope` is the verb an operator reaches
+        # for when reality differed from the plan, so it is the LAST place that
+        # should hand back a scope it knows to be short.
+        was_files = list(node.get("files") or [])
+        now_files = _union_paths(was_files, now_add)
+        if was_files != now_files:
+            changes.append({"id": tid, "field": "files",
+                            "from": was_files, "to": now_files})
+            node["files"] = now_files
     if args.gate or args.gate_clear:
         now_gate = [] if args.gate_clear else list(args.gate)
         if was_gate != now_gate:

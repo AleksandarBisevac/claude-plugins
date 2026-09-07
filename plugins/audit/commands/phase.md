@@ -91,6 +91,15 @@ and never refused, because the overlap is derived from paths a runner happens to
 heuristic that refused would manufacture false refusals. Deciding whether this gate can grade
 this work is therefore yours, and the line is what puts the question in front of you.
 
+**A runner that prints only SUITE paths still names your work.** `tests/parser.spec.ts` is matched
+to `src/parser.ts` — the stem the test is named after, across directories, because `src/` tested
+from `tests/` is the ordinary layout. Without that, a jest-shaped runner produced this line on
+almost every task while the gate really had exercised the files, and a warning that fires almost
+always is one people learn to skip past. The match is deliberately narrow: only test-shaped paths,
+only onto the exact stem they carry, so a test named after a *different* file is not coverage. A
+false overlap would tell you your work was exercised when it was not, which is the comfort this
+line exists to refuse.
+
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
 One more phase in a plan that already exists. Until this verb nothing in the tree

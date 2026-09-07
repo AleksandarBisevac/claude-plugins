@@ -165,11 +165,16 @@ def observe(git_root, branch, parent, cwd=None, run=None):
         "trees": trees,
         "contained": contained,
         "parentExists": _wt.ref_exists(git_root, parent, run=run),
+        # Where the phase branch points, for the guarded deletion (F249).
+        "branchExists": _wt.ref_exists(git_root, branch, run=run),
         "parentTree": parent_tree,
         "phaseTree": phase_tree,
         "parentDirty": parent_dirt,
         "phaseDirty": phase_dirt,
-        "standingIn": _wt.standing_in(trees, cwd or os.getcwd()),
+        # Named rather than left as None: this IS an answer, and `cleanup_plan`
+        # now refuses on the absent one (F245).
+        "standingIn": (_wt.standing_in(trees, cwd or os.getcwd())
+                       or _wt.CWD_OUTSIDE),
         # WHOSE WORKTREE IS IT. Asked here so the dry-run can say so before anything
         # runs: a phase that ran in a worktree the operator made by hand will merge
         # and will NOT be cleaned up, and being told that up front is the difference
@@ -183,8 +188,13 @@ def observe(git_root, branch, parent, cwd=None, run=None):
 
 
 def _owned_of(tree, run=None):
-    """`{"ok", "why"}` for one worktree's provenance, in `cleanup_plan`'s shape."""
-    prov = _wt.read_provenance(tree.get("path"), run=run)
+    """`{"ok", "why"}` for one worktree's provenance, in `cleanup_plan`'s shape.
+
+    The tree's CURRENT branch is handed over, so the marker has to describe the work
+    that is in it rather than merely to exist (F246).
+    """
+    prov = _wt.read_provenance(tree.get("path"), run=run,
+                               expect_branch=tree.get("branch"))
     return {"ok": prov["ours"] is True, "why": prov["basis"],
             "record": prov["record"]}
 
@@ -228,13 +238,25 @@ def plan(observation, branch, parent, policy, want_worktree=None,
         observation["parentDirty"]["dirty"],
         observation["parentDirty"]["lines"])
     if no_ff and merge["mode"] == "in-parent-worktree":
-        # The ONLY place `--no-ff` reaches, and only when the human passed it. A
-        # no-checkout `git fetch` cannot express a merge commit at all, so a
-        # `--no-ff` run with the parent checked out nowhere is refused rather than
-        # quietly fast-forwarded: those are different histories.
+        # The ONLY place `--no-ff` reaches, and only when the human passed it.
         merge = dict(merge, argv=[a for a in merge["argv"] if a != "--ff-only"])
         merge["argv"] = merge["argv"][:-1] + ["--no-ff", merge["argv"][-1]]
         merge["mode"] = "in-parent-worktree"
+    elif no_ff and merge["mode"] == "no-checkout":
+        # ...AND THE REFUSAL THIS COMMENT USED TO ONLY CLAIM (F249). A no-checkout
+        # `git fetch . <b>:<p>` cannot express a merge commit at all, so the flag was
+        # silently dropped and the run fast-forwarded and reported success — a
+        # different history than the one that was asked for, with nothing saying so.
+        # It matters twice over, because `orchestrator.md` makes `--no-ff` the
+        # documented remedy for exit 3, and in this topology that remedy could never
+        # succeed: the caller loops on 3 forever.
+        merge = dict(merge, mode="refuse", argv=[], refusal=_wt._refusal(
+            "--no-ff was asked for, and %r is checked out in no worktree - the "
+            "merge would have to be a fetch, which cannot make a merge commit"
+            % (parent,),
+            "check %r out in a worktree and run this again, or drop --no-ff and "
+            "accept the fast-forward. This refuses rather than quietly making the "
+            "other history" % (parent,)))
     # THE CLEANUP INPUTS TRAVEL, AND THE CLEANUP ITSELF IS COMPUTED TWICE. Both
     # halves of `cleanup_plan` are gated on containment, and containment is exactly
     # the fact the merge is about to change -- so a cleanup decided here, before the
@@ -250,6 +272,8 @@ def plan(observation, branch, parent, policy, want_worktree=None,
               "cwdTree": observation.get("standingIn"),
               "owned": observation.get("owned"),
               "settled": observation.get("settled"),
+              "phaseTree": observation.get("phaseTree"),
+              "branchSha": (observation.get("branchExists") or {}).get("sha"),
               "wantWorktree": want_worktree, "wantBranch": want_branch}
     cleanup = cleanup_for(inputs, branch, parent, contained)
     return {"merge": merge, "cleanup": cleanup, "cleanupInputs": inputs,
@@ -274,6 +298,12 @@ def cleanup_for(inputs, branch, parent, contained, settled=None):
         want_worktree=inputs["wantWorktree"],
         want_branch=inputs["wantBranch"],
         owned=inputs.get("owned"),
+        tree=inputs.get("phaseTree"),
+        # Where the branch points, so the deletion is guarded on that rather than
+        # re-asked of `git branch -d`, which grades from HEAD (F249). On the
+        # no-checkout path the parent is by construction checked out nowhere, so
+        # HEAD is never the parent and `-d` refuses a branch that landed.
+        branch_sha=inputs.get("branchSha"),
         settled=settled if settled is not None else inputs.get("settled"))
 
 
@@ -284,19 +314,42 @@ def _step(argv, code, out, err):
 
 
 def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
-          settled_now=None):
+          settled_now=None, stamp=None):
     """(exitCode, answer) -- the only function here that writes.
 
     Returns the pair rather than just a verdict for `commit_state`'s reason: a
     function that only exits cannot be exercised without a terminal around it, and
     every branch below has a case.
+
+    `stamp` IS CALLED BEFORE THE CLEANUP, and the order is the point (F249). It used
+    to run in `main()` after this function returned, so a cleanup that failed - and
+    `git branch -d` failing was routine, see the guarded deletion in `_worktrees` -
+    took the exit code to E_FAIL and the record of a merge that HAD LANDED was never
+    written. The phase was then unsettled for ever with its worktree already gone.
+    A deletion is a consequence of the merge; the record of the merge must not
+    depend on the consequence succeeding. It returns `{"stamped"…}` fields that are
+    merged into the answer, and a stamp that FAILS stops the cleanup, because a
+    removal nothing recorded is the state this whole module exists to prevent.
     """
     fn = _wt._runner(run)
     merge, cleanup = the_plan["merge"], the_plan["cleanup"]
     answer = {"branch": branch, "parent": parent, "mode": merge["mode"],
               "steps": [], "blocked": list(cleanup["blocked"]),
               "refusal": merge["refusal"], "dryRun": bool(dry_run),
-              "merged": False, "pending": False, "cleanupDone": []}
+              "merged": False, "pending": False, "cleanupDone": [],
+              # Set only once the parent DEMONSTRABLY contains the branch, which is
+              # the fact `mergedAt` records. False on every path that returns before
+              # that verification, so an absent key can never be read as permission.
+              "stampable": False}
+
+    # A REFUSAL OUTRANKS THE SWITCH, and the order used to be the other way round
+    # (F249). `auto: false` says "a human will merge this"; a parent branch that
+    # does not resolve, or a parent worktree holding uncommitted work, is not
+    # something a human can merge either - and `orchestrator.md` reads exit 0 plus
+    # `pending` as "signed off and deliberately unlanded". A typo'd `parentBranch`
+    # travelled up the chain as a plan.
+    if merge["mode"] == "refuse":
+        return E_FAIL, answer
 
     if not the_plan["auto"] and merge["mode"] not in ("already-contained",):
         # THE HUMAN-IN-THE-LOOP EXIT, and it is a SUCCESS. `meta.merge.auto: false`
@@ -309,11 +362,29 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
             else "(nothing to run: %s)" % (merge["mode"],)
         return E_OK, answer
 
-    if merge["mode"] == "refuse":
-        return E_FAIL, answer
     if dry_run:
+        # THE PREVIEW HAS TO PREVIEW THE CLEANUP, and it did not (F249). The plan
+        # this returns was built with `settled` read off DISK, where `mergedAt` is
+        # null by construction before sign-off — so `cleanup_plan` blocked both
+        # halves and the preview showed a merge and nothing else, while the same
+        # command without `--dry-run` removed the worktree and deleted the branch.
+        # `commands/phase.md` promises the opposite: "the preview owes it too —
+        # whether the worktree and the branch go afterwards".
+        #
+        # Recomputed here against what the merge is ABOUT to make true: contained,
+        # and settled as this run would settle it. That is a conditional preview and
+        # it says so, which is honest — the alternative is a preview of the state
+        # the repository is leaving rather than the one it is entering.
+        preview = cleanup
+        if the_plan.get("cleanupInputs"):
+            preview = cleanup_for(the_plan["cleanupInputs"], branch, parent,
+                                  _wt.CONTAINED, settled=settled_now)
         answer["plannedSteps"] = ([merge["argv"]] if merge["argv"] else []) \
-            + [s["argv"] for s in cleanup["steps"]]
+            + [s["argv"] for s in preview["steps"]]
+        answer["blocked"] = list(preview["blocked"])
+        answer["previewAssumes"] = (
+            "the merge lands - the cleanup below is what follows it, not what "
+            "this repository would allow right now")
         return E_OK, answer
 
     if merge["mode"] != "already-contained":
@@ -343,6 +414,33 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
     answer["verified"] = verified
     if verified["answer"] != _wt.CONTAINED:
         return (E_NO_BASIS if verified["answer"] == _wt.UNKNOWN else E_FAIL), answer
+
+    # THE FACT `mergedAt` RECORDS IS THIS ONE, not "this run performed a merge"
+    # (F249). `merged` is true only on the paths that ran a git write, so an
+    # ALREADY-CONTAINED phase - the idempotent re-run this command advertises, and
+    # the re-run `orchestrator.md` tells a human to make after merging by hand - had
+    # its worktree removed and its branch deleted while `mergedAt` stayed null. The
+    # phase is then unsettled for ever, so no later sweep can reap anything, and the
+    # report reads it as unmerged. The cleanup half already gates on `verified`; this
+    # makes the recording half read the same answer.
+    answer["stampable"] = True
+    if stamp is not None and not dry_run:
+        written = stamp() or {}
+        answer.update(written)
+        if not written.get("stamped"):
+            # The merge landed and nothing recorded it. Removing the worktree now
+            # would leave a phase that can never be shown finished, holding no
+            # working copy — so the cleanup does not run, and the operator is left
+            # with both halves intact and a reason.
+            answer["blocked"] = list(answer["blocked"]) + [{
+                "why": "the merge landed but `phase.mergedAt` could not be written"
+                       "%s" % (": %s" % (written.get("stampWhy"),)
+                               if written.get("stampWhy") else "",),
+                "remedy": "fix the manifest write and run this again - the cleanup "
+                          "is held back on purpose, because a worktree removed "
+                          "against an unrecorded merge cannot be reasoned about "
+                          "afterwards"}]
+            return E_FAIL, answer
 
     # Recomputed against the VERIFIED answer, not the one observed before the merge.
     # See `plan()`: the containment gate on both cleanup halves is exactly the fact
@@ -440,7 +538,8 @@ def stamp_merged(manifest_path, phase_id, when=None):
     return path, stamp
 
 
-def surviving_copy(manifest_path, project, git_root, observation, the_plan):
+def surviving_copy(manifest_path, project, git_root, observation, the_plan,
+                   phase_id=None):
     """(manifestPath, projectDir, why) -- the copy of the plan that will still exist
     when this run is over.
 
@@ -479,7 +578,34 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan):
     moved = os.path.join(tree.get("path"), rel)
     if not os.path.isfile(moved):
         return manifest_path, project, ""
+    # ...AND IT HAS TO CARRY THE PHASE. The two trees hold two checkouts, and the
+    # parent's copy is only guaranteed to know this phase once the commit that
+    # introduced it has landed there. Redirecting the stamp to a plan that has never
+    # heard of P9 used to fail silently — `stampWhy` was set and the run still exited
+    # 0, so `mergedAt` was written NOWHERE and the merge was reported as done. That
+    # is F234 coming back through the other door, so the redirect is now conditional
+    # on the destination being able to receive it.
+    if phase_id is not None and not _phase_present(moved, phase_id):
+        return manifest_path, project, (
+            "%s does not carry phase %s, so the stamp stays in the copy this run "
+            "was pointed at" % (moved, phase_id))
     return moved, tree.get("path"), ""
+
+
+def _phase_present(manifest_path, phase_id):
+    """Does this plan know `phase_id`? Read through the same resolver the stamp uses,
+    so a shard layout and a single file answer alike."""
+    path = _phase_file(manifest_path, phase_id)
+    if not path:
+        return False
+    try:
+        body = _mio.read_json(path)
+    except Exception:
+        return False
+    if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
+        return True
+    return any(isinstance(p, dict) and str(p.get("id")) == str(phase_id)
+               for p in ((body or {}).get("phases") or []))
 
 
 def record_row(project, phase_id, branch, parent, config=None):
@@ -576,16 +702,18 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n"
                          % (args.manifest, exc))
         return E_USAGE
+    # Through the shared resolver (F257), so `2`, `p2` and `P2` are one phase here
+    # and everywhere else rather than three answers per script. The `(have: …)`
+    # wording this file already printed is what the resolver carries.
+    resolved_id, why = _mio.resolve_phase_id(manifest, args.phase)
+    if resolved_id is None:
+        sys.stderr.write("ERROR: %s in %s\n" % (why, args.manifest))
+        return E_USAGE
+    args.phase = resolved_id
     phase = None
     for ph in ((manifest or {}).get("phases") or []):
-        if isinstance(ph, dict) and str(ph.get("id")) == str(args.phase):
+        if isinstance(ph, dict) and str(ph.get("id")) == resolved_id:
             phase = ph
-    if phase is None:
-        known = [str(p.get("id")) for p in ((manifest or {}).get("phases") or [])
-                 if isinstance(p, dict)]
-        sys.stderr.write("ERROR: no phase %r in %s (have: %s)\n"
-                         % (args.phase, args.manifest, ", ".join(known)))
-        return E_USAGE
 
     project = os.path.abspath(args.project)
     meta_root = ((manifest.get("meta") or {}).get("gitRoot") or ".")
@@ -607,28 +735,36 @@ def main(argv, out=print):
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
+    def _stamp():
+        """Persist `phase.mergedAt`, and report what happened in answer fields.
+
+        Handed to `close()` so it runs between the verified containment and the
+        cleanup: the record of a merge must not be contingent on a deletion that
+        happens after it (F249).
+        """
+        target, project_for_row, why = surviving_copy(
+            args.manifest, project, git_root, observation, the_plan,
+            phase_id=args.phase)
+        if not target:
+            return {"stamped": "", "stampWhy": why}
+        path, stamp_at = stamp_merged(target, args.phase)
+        if not path:
+            return {"stamped": "", "stampWhy": stamp_at}
+        record_row(project_for_row, args.phase, names["branch"], names["parent"])
+        return {"stamped": path, "stampedAt": stamp_at,
+                "stampedElsewhere": (os.path.abspath(target)
+                                     != os.path.abspath(args.manifest))}
+
     code, answer = close(git_root, the_plan, names["branch"], names["parent"],
                          dry_run=args.dry_run,
-                         settled_now=settlement(phase, merged=True))
+                         settled_now=settlement(phase, merged=True),
+                         stamp=_stamp)
     answer["branchBasis"] = names["branchBasis"]
     answer["parentBasis"] = names["parentBasis"]
 
-    if code == E_OK and answer.get("merged") and not args.dry_run:
-        target, project_for_row, why = surviving_copy(
-            args.manifest, project, git_root, observation, the_plan)
-        if not target:
-            answer["stampWhy"] = why
-        else:
-            path, stamp = stamp_merged(target, args.phase)
-            if path:
-                answer["stamped"] = path
-                answer["stampedAt"] = stamp
-                answer["stampedElsewhere"] = (
-                    os.path.abspath(target) != os.path.abspath(args.manifest))
-                record_row(project_for_row, args.phase, names["branch"],
-                           names["parent"])
-            else:
-                answer["stampWhy"] = stamp
+    # The stamp used to be written HERE, after `close()` had already done the
+    # cleanup. It now runs inside it, before the deletions — see `close()`'s
+    # `stamp` argument for why the order is the fix rather than a tidy-up.
 
     # A run STANDING IN the worktree it was asked to remove can never finish its own
     # cleanup, and that is not a defect to fix -- it is the refusal working. What was

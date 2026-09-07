@@ -250,9 +250,17 @@ function worktreePanel(){
    // confirming something other than what runs.
    const pre=await api('POST','/api/worktrees/sweep',body_);
    if(!pre.ok){out.replaceChildren(findingsBox(pre));return;}
+   // THE EMPTY STATE HAS TWO CAUSES AND THEY ARE DIFFERENT NEWS. "Every worktree
+   // is unlanded or dirty" describes the repository; "you unticked both boxes"
+   // describes the form, and the operator's next move is not the same one. The
+   // server no longer infers both verbs from an empty set, so this is reachable.
+   const noVerb=!verbWt.checked&&!verbBr.checked;
    const rows=await confirmSave({rows:()=>pre.applied,
      title:'Sweep worktrees',scope:'comp',
-     empty:'nothing to sweep — every worktree is either unlanded or dirty',
+     empty:noVerb?'nothing selected — tick “Remove worktrees” or '
+       +'“Delete branches” to say what a sweep should do'
+       :'nothing to sweep — every worktree is either not created by this plugin, '
+       +'not signed off, unlanded, or dirty',
      note:'removes directories and deletes branches — this is not undoable'});
    if(!rows)return;
    const res=await api('POST','/api/worktrees/sweep',

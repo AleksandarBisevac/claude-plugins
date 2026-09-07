@@ -1,0 +1,620 @@
+{
+  "id": "P22",
+  "title": "Field report: the contradictions a real phase run found",
+  "status": "in_progress",
+  "description": "Eight findings from one full phase run on another project (F250-F257), every one checked against the code first. Two are contradictions between a documented rule and an enforced one; one records a false failure into a permanent ledger; one sends a subagent into an action it is forbidden to take.",
+  "desiredOutcome": "A task commit can satisfy manifest-revalidated; the plan-gate refusal tells each audience something it can act on; run-test-gate honours meta.nodePreamble so no gate row records a config problem as a red; the overlap warning says 'not determinable' where that is the truth; and the tdd-with-no-cases shape is warned about.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P22.1",
+      "title": "F253: run-test-gate honours meta.nodePreamble, so a config problem stops being recorded as a red",
+      "status": "done",
+      "description": "The script spawns its own shell and has zero occurrences of nodePreamble while orchestrator.md names it four times. Two gate runs recorded exit 127 as evidence for a PATH problem, so the committed ledger carries two false failure rows for ever. Apply the preamble in the script, and say in orchestrator.md which side owns it.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "run-test-gate applies meta.nodePreamble to every gate command it resolves, joined with && so the gate's exit status survives; a whitespace-only value is not a preamble. orchestrator.md stops telling the caller to do it for this script, so the rule has one home."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_run_test_gate.py rg1b-rg1e"
+      ]
+    },
+    {
+      "id": "P22.2",
+      "title": "F251: the plan-gate refusal branches by audience, so a subagent is not told to edit the manifest",
+      "status": "done",
+      "description": "An executor may not edit the manifest and has no channel to the human, but the remedy tells it to do both. For a subagent the remedy is: report the path to the orchestrator and stop. The hook already prints an agent-addressed line, so it knows who it is talking to.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The plan-gate refusal branches on agent_id: a subagent is told to STOP and report to the orchestrator, is told it will not be re-spawned, and is named the three worse resolutions that were actually taken. The orchestrator keeps its two ways forward, plus 'continue the running subagent, do not re-spawn it'."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_require_plan.py h4/h4b/h4c/h4d"
+      ]
+    },
+    {
+      "id": "P22.3",
+      "title": "F255: the overlap warning says 'not determinable' where the runner cannot answer",
+      "status": "done",
+      "description": "Seen on 9 of 12 tasks: the runner prints suite paths while task.files lists source files, so they can never intersect for that project shape. The three-state model already exists - overlap None with a coverageBasis is the honest answer, and NO OVERLAP is reserved for a runner that did name files.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "coverage() relates a test path to the file it is named after, so a runner that prints only suite paths reports the coverage it really had - while NO OVERLAP still fires where the runner named real files and none was the task's. The match widens only onto test-shaped paths and only onto their exact stem, because a false overlap is the comfort NO OVERLAP exists to refuse."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_run_test_gate.py cv5b/cv5c/cv5d/cv5e"
+      ]
+    },
+    {
+      "id": "P22.4",
+      "title": "F254: warn on tests.mode tdd with expectRedFirst and no cases named",
+      "status": "done",
+      "description": "expectRedFirst appears in the generators and in audit-task.py and in no validation rule. A task from /audit:init arrived as 'prove a red first, with nothing to prove' on the phase's largest security change, and nothing warned.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The validator warns on tdd + expectRedFirst + no tests.add for UNFINISHED tasks only, naming both ways out; audit-task says the same in the line reporting the task was created. Narrowed to unfinished after it named 25 tasks in this repo's own plan - a case named after the task is done is not a red-first case, and a warning nobody can act on is why the class gets skipped."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__manifest_rules.py v3b/v3c/v3d/v3e, test_audit_task.py t5b/t5c"
+      ]
+    },
+    {
+      "id": "P22.5",
+      "title": "F250: a task commit can satisfy manifest-revalidated - decide which rule gives way",
+      "status": "done",
+      "description": "orchestrator.md:383 forbids staging the index; _check_file_index:487 makes a missing fileIndex entry a FINDING, and fileIndex lives in the index. 39 breaches across 10 of 12 tasks on a real run, with commit-scope clean. No commit ordering satisfies both unless every file is known before the work starts. Four options: validate the shard against the index at HEAD, downgrade to a warning in the invariant context, let a task commit stage the fileIndex subtree, or document the chore-commit-first ordering. This is a contract decision, not a lint tweak.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test__manifest_crossrefs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "Option 2 of the four, chosen because option 3 is impossible (fileIndex is a key inside the index, not a stageable subtree) and option 1 would change what the invariant means. manifest-revalidated records the task.files/fileIndex pairing as DEFERRED per commit - step 4c makes it uncarryable - and then asks it of the manifest as it stands, so the exemption is a moment and not a hole. A deferral never paid is a real breach naming how many commits owed it. orchestrator.md states the same rule once."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__invariants.py iv18b/iv18c/iv18d/iv18e"
+      ]
+    },
+    {
+      "id": "P22.6",
+      "title": "F256: the inline-eval refusal names the form the operator actually typed",
+      "status": "done",
+      "description": "Grading a stdin heredoc as an inline eval is deliberate (F31), so the classification is right and the MESSAGE is wrong: it says 'python -c / node -e' for a command that was python3 - <<PY. Hit twice in the 2.1.1 session by the maintainer. The reporter attributes it to the word 'secret' in the body, which _SECRET_TOKEN does not match - reproduce before touching any matcher.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The refusal names the shape the operator actually typed - a heredoc says heredoc, a -c says -c - and the heredoc message still states that the two are one capability. The CLASSIFICATION is unchanged (F31); only the message was wrong. The reporter's attribution to the word 'secret' was refuted: the pattern matches filename shapes, never the bare word."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_guard_secrets_read.py s51b/s51c/s51d"
+      ]
+    },
+    {
+      "id": "P22.7",
+      "title": "F252: orchestrator.md says a widened scope continues the executor rather than replacing it",
+      "status": "done",
+      "description": "Zero occurrences of re-spawn, SendMessage or agent continuation in the document. A real run re-spawned five executors at 60-150k tokens each over plan-gate widenings, about a third of the phase cost. The doc half is free; widening require-plan's free-file budget is a separate argument and is NOT part of this task.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "orchestrator.md now says a widened scope CONTINUES the executor rather than replacing it, with the measurement that made it worth saying: five re-spawns at 60-150k tokens each, about a third of one phase's cost, over refusals the gate was right to make."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "orchestrator.md step 3; _refs doc lints"
+      ]
+    },
+    {
+      "id": "P22.8",
+      "title": "F257: a phase id resolves the same way everywhere, or fails naming the ids that exist",
+      "status": "done",
+      "description": "There is no shared phase-id resolver, so a bare 2 matches no phase and the failure is whatever each script happens to say. close-phase.py already prints '(have: ...)'; spread that shape rather than inventing a second one. Decide deliberately whether a bare integer maps to P<n> or is simply refused clearly.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/resolve-branch.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "_manifest_io.resolve_phase_id is the one resolver: exact, then case-folded, then a bare integer mapped onto P<n> - but only when P<n> exists, because inventing a phase is worse than refusing. The refusal names the ids that exist, which is the wording close-phase already printed. close-phase.py and resolve-branch.py both moved onto it, driven live: /audit:phase 0 and p0 now reach P0."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__manifest_io.py rp1-rp6; resolve-branch driven live on 0 and p0"
+      ]
+    },
+    {
+      "id": "P22.9",
+      "title": "F258: tests.add is unioned into task.files and fileIndex at creation",
+      "status": "done",
+      "description": "_build_task sets files and tests.add as two independent fields, so every tdd task creates a file its own commit scope does not cover. One reporter hand-fixed 13 tasks and states there is no case where the divergence is wanted. Union at creation, into fileIndex with it - this also removes one of the two ways F250's breaches are manufactured.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "tests.add is unioned into files at BOTH writers - creation and scope - and the invariant survives a later --files that would otherwise release the case. Declared order kept, blanks and non-strings dropped."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_audit_task.py t6b/t6c/t6d, jf4/jf4b"
+      ]
+    },
+    {
+      "id": "P22.10",
+      "title": "F259: an executor knows what a sibling's half-finished work looks like",
+      "status": "done",
+      "description": "Hit in every phase of a 4-phase parallel run: tsc failing on a sibling mid-edit, and on a sibling's correct red-first test written before its module. Correctness was never at risk because the orchestrator re-gates on a quiet tree, so this is cost. The cheap half is the prompt template. Scoping the executor's gate to its own files is the other half and needs care: a narrowed gate is a different measurement, which is what NO OVERLAP exists to say.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The executor prompt says what a gate failure in a file it does not own is: a sibling mid-edit, or a sibling doing red-first correctly. Check the path against your files, say so, carry on - and do NOT fix it, because the orchestrator re-gates on a quiet tree."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "audit-executor.md; orchestrator.md step 3"
+      ]
+    },
+    {
+      "id": "P22.11",
+      "title": "F260: set-priority tells the caller it already holds the lock, instead of refusing it",
+      "status": "done",
+      "description": "Exit 3 with 'pid N is running on this host' where the pid was the operator. _locks already answers ownership for release ('is NOT yours to release'). SECURITY.md records why the comparison is three spellings and not one: a Bash-taken lock carries CLAUDE_CODE_SESSION_ID, a hook is handed session_id, and CLAUDE_PID is a third name for the same session.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "test__locks.py: a lock this session already holds is ours, by session id or by pid"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test__locks.py: a lock this session already holds is ours, by session id or by pid"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "_locks.held_by_us answers ownership by session id OR pid (three spellings of one run, per SECURITY.md), and acquire_index_lock returns a BORROWED handle instead of exit 3 when the caller already holds the lock. release_index_lock refuses to give a borrowed lock back - the dangerous half, since dropping a lock somebody still holds is worse than the refusal it replaces."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__locks.py o1-o5, test__panel_write.py bl1/bl2/bl3"
+      ]
+    },
+    {
+      "id": "P22.12",
+      "title": "F261: reproduce the journal's 'an edit the journal never saw' before changing anything",
+      "status": "done",
+      "description": "A mergedAt write through a heredoc produced the warning on a phase shard. The offered cause - heredoc-fed stdin bypasses the digest comparison - does NOT match the code: the Bash pass names no path and parses no command, it sweeps the recorded paths and compares digests, so how the program was fed cannot matter. Reproduce first. The audit trail is the one surface where a fix aimed at the wrong cause is worse than an open entry.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/tests/test_journal_writes.py",
+        "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "Reproduced first, and the offered cause was wrong: a heredoc write DOES get a row. The window is the Bash lane having no Pre pass at all - a write made by the session's first Bash call was seeded over and lost, which is pre_cache's own documented regression one lane across. journal-writes is now registered at PreToolUse on Bash and seeds only slots that do not exist, so steady state is an exists() per watched path. Hook import budget unchanged across six interpreters."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_journal_writes.py fb1/fb2/fb3; bench-hooks.py --gate"
+      ]
+    },
+    {
+      "id": "P22.13",
+      "title": "F262: one refusal, one preferred resolution - and docs/audit exemption stops contradicting the executor contract",
+      "status": "done",
+      "description": "Same guard, same cause, three outcomes in one run: content put in the wrong module, the manifest edited by the agent itself (four tasks - docs/audit/** is exempt), and work reverted for a worse UX. The gate blocking is correct; the divergence is the defect. Two halves: name one preferred resolution per audience (with F251), and resolve the exemption contradicting audit-executor.md, which puts the manifest with the orchestrator.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The manifest exemption no longer extends to subagents: a subagent editing the plan or a phase shard is refused with its own message, because a task that edits the plan it is judged by is a task nobody can review - and on a live run four of five diverging tasks took exactly that door. The orchestrator is untouched."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_require_plan.py a4b/a4c/a4d"
+      ]
+    },
+    {
+      "id": "P22.14",
+      "title": "F263: Rule #1 grades on the paths a read CALL names, not on a token anywhere in the body",
+      "status": "done",
+      "description": "Found while fixing F256 and reproduced twice in one command: writing a sentence that mentions a secret filename inside an interpreter body is refused as reading one. F-P-7 made exactly this repair on the WRITE arm after a read-only one-liner was refused as a source write and the reader routed around the guard. The read arm still has the looser shape. Stakes are asymmetric - this is Rule #1 - so it owes a red-first pair before any pattern moves: a real read still refused, prose about the same name allowed.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "test_guard_secrets_read.py: a genuine read is still refused, and prose naming the same filename is allowed"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_guard_secrets_read.py: a genuine read is still refused, and prose naming the same filename is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "Rule #1 grades on the paths a read CALL names, resolved through one hop of binding exactly as the write arm resolves its targets - plus the shell matcher for a read hidden in a subprocess list, and the extras table. Prose that merely spells a filename is no longer a read. All three arms proven load-bearing by mutation, and the four existing read cases keep passing."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_guard_secrets_read.py b8b-b8g with b1/b3/b5/b7 as the still-refused half"
+      ]
+    }
+  ]
+}

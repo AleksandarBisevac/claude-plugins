@@ -4,6 +4,113 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.1.1] - 2026-09-07
+
+**A patch, and three of its fixes are why it should not wait.** The phase review that belonged
+before 2.1.0 was run after it, and it found that the sweep could remove a worktree it had not
+measured. Two field reports from live runs on other projects arrived in the same day and are
+folded in. If you are on 2.1.0, take this one.
+
+### Fixed — the sweep could delete work it never examined
+
+- **The sweep acted on a different worktree than the one it checked.** `git worktree add --force`
+  legally puts two records on one branch. Provenance and cleanliness were measured per record and
+  then thrown away, so a plan could report *"keeping /a — not created by this plugin"* and remove
+  `/a` in the next line, judged by `/b`'s answers. The plan now carries the record it measured,
+  and the branch is not deleted while any worktree still holds it.
+- **"Do not delete the directory you are standing in" was blind one directory down.** The check was
+  path equality where its own docstring said *inside*, so from `<worktree>/src` it never fired.
+  Reproduced: `git status` calls the tree clean, `git worktree remove` exits 0, and the directory
+  and its `.env` are gone. It is containment now, with a separator boundary so `repo-P1-old` is not
+  a child of `repo-P1`, and the innermost match wins.
+- **A precondition that failed OPEN now fails closed.** "The caller did not establish where it is
+  standing" and "the caller asked, and is outside every worktree" were one value. The panel passed
+  the first one literally, so a panel served from inside a phase worktree could remove the
+  directory it was being served from.
+- **Provenance proved the plugin made *a* worktree, never *this* one.** The marker records the
+  phase and branch it was written for and only `createdBy` was read, so `git switch` inside a phase
+  worktree handed one phase's open directory to another phase's sign-off verdict. Both fields are
+  compared now, and the refusal names both sides.
+- **A malformed `tasks` array read as a fully settled phase.** A list of bare ids passed the
+  settlement gate with a `why` that asserted *"every task is terminal"* about a list it never
+  looked at. An entry it cannot read is a refusal now.
+
+### Fixed — sign-off
+
+- **`meta.merge.auto: false` turned a real refusal into exit 0.** A `parentBranch` this clone does
+  not have came back as *"deliberately unmerged"*, with the actual reason never printed. A refusal
+  outranks the switch.
+- **`--no-ff` was silently dropped** when the parent is checked out nowhere — a fetch cannot make a
+  merge commit — so the run fast-forwarded and reported success. It refuses and says why. This
+  matters twice: `--no-ff` is the documented remedy for a not-a-fast-forward exit, and in that
+  topology the remedy could never have worked.
+- **`git branch -d` refused branches that had landed.** It grades from HEAD, and after a merge into
+  a parent checked out nowhere HEAD is never the parent — measured on a real repository, exit 1 and
+  *"not fully merged"* about a branch just proven contained, after its worktree was already gone.
+  Deletion is guarded on the branch's own sha now, which refuses exactly what a force delete would
+  not: a ref that moved.
+- **`phase.mergedAt` is written before the cleanup, not after**, and a stamp that fails holds the
+  cleanup back. A deletion is a consequence of the merge; the record of the merge must not depend
+  on the consequence succeeding.
+- **An already-landed phase is stamped.** The re-run the docs tell you to make after merging by
+  hand removed the worktree, deleted the branch, and wrote no `mergedAt` — leaving the phase
+  unsettleable for ever.
+- **...and the stamp was going to a plan that did not carry the phase.** Found only because the
+  failure became load-bearing: the write was redirected to the parent's worktree, whose copy had
+  never heard of that phase, and the run exited 0 with `mergedAt` written nowhere.
+- **`--dry-run` previews the cleanup**, computed against what the merge is about to make true, and
+  says that it is conditional. It used to show the merge and nothing else while the same command
+  without the flag removed the worktree and deleted the branch.
+
+### Fixed — reported from live runs on other projects
+
+- **`run-test-gate.py` now applies `meta.nodePreamble` itself.** The documentation named it four
+  times; the script had no handling at all and spawns its own shell. Two gate runs recorded exit
+  127 — a `PATH` problem — as evidence, so a committed ledger carries false failures for ever.
+- **The plan-gate refusal speaks to the right audience.** A subagent was told to *"add a task
+  covering this file to the manifest"* — something it may not do and has no channel to ask about.
+  One executor stopped to ask its operator; in another run the same refusal produced three
+  different resolutions, four of them the agent editing the manifest itself. A subagent is now told
+  to stop and report, is told it will not be re-spawned, and **the manifest exemption no longer
+  extends to subagents**.
+- **`NO OVERLAP WITH THIS WORK` distinguishes two situations it used to render identically.** A
+  runner printing suite paths while the task declares sources now matches `tests/foo.spec.ts` to
+  `src/foo.ts` — one report saw this warning on 9 of 12 tasks for that reason alone. It still fires
+  where it was earned: the other report called it the best thing in the plugin because eslint and
+  tsc named real files and none was the Markdown that task owned. The match widens only onto
+  test-shaped paths and only onto the exact stem they carry.
+- **`tests.add` is unioned into `task.files`.** A tdd task creates the file it names, so a scope
+  that excluded it failed the task's own commit; one operator hand-fixed 13 tasks.
+- **`tdd` with no case named is warned about**, at creation and in the validator, for unfinished
+  tasks only — a case named after the task is done is not a red-first case.
+- **A task commit can satisfy `manifest-revalidated`.** `task.files` lives in the shard a task
+  commit stages and `fileIndex` lives in the index it may not, so a scope corrected mid-run
+  breached on every later commit — 39 times across 10 of 12 tasks in one run, 93 in a phase of
+  another. The pairing is deferred per commit and **asked of the manifest as it stands**, so it is
+  a moment that cannot be true rather than a rule that is waived.
+- **`set-priority.py` no longer refuses a lock you are holding yourself.**
+- **A write made by a session's first `Bash` call is journalled.** The Bash lane had no
+  pre-pass, so the first shell write of a session was seeded over and lost — `audit-journal verify`
+  then reported *"an edit the journal never saw"*, correctly. The offered cause (heredocs) was
+  reproduced and refuted before anything moved.
+- **`/audit:phase 2` resolves.** One resolver for every script: exact, case-folded, then a bare
+  integer onto `P<n>` when that phase exists — and the refusal names the ids that do.
+- **Rule #1 tells reading a secret from writing about one.** Naming a secret filename in a comment,
+  a docstring or a printed sentence inside an interpreter body was refused as reading it. It grades
+  on the paths a read call names now, keeping the shell-read matcher for a read hidden in a
+  subprocess list. The refusal also names the form you actually typed rather than always saying
+  `python -c`.
+- **The handbook can no longer advertise a flag nothing accepts.** A flag removed properly — parser,
+  tests, and a comment at each site explaining the removal — stayed "carried" because the detector
+  was a text scan that found its own obituary.
+
+### Changed
+
+- `/audit:doctor`, the panel and every `/audit:worktree` verb keep working on **git 2.34**
+  (Ubuntu 22.04 LTS): `worktree list --porcelain -z` arrived in 2.36 and there is a fallback now.
+- The orchestrator reference says a widened scope **continues** the running executor rather than
+  replacing it, and the executor prompt says what a gate failure in a file it does not own is.
+
 ## [2.1.0] - 2026-09-07
 
 **The worktree and merge half of the pipeline was prose, and prose had three

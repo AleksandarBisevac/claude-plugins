@@ -136,6 +136,26 @@
       "id": "P20",
       "title": "Faults: close the remainder",
       "shard": "phases/P20.json"
+    },
+    {
+      "id": "P21",
+      "title": "2.1.1: the sweep's safety conditions must be about the worktree they name",
+      "shard": "phases/P21.json"
+    },
+    {
+      "id": "P22",
+      "title": "Field report: the contradictions a real phase run found",
+      "shard": "phases/P22.json"
+    },
+    {
+      "id": "P23",
+      "title": "Close the register: the last two open faults",
+      "shard": "phases/P23.json"
+    },
+    {
+      "id": "P24",
+      "title": "F232: every exemption names the instrument that audits its reason",
+      "shard": "phases/P24.json"
     }
   ],
   "fileIndex": {
@@ -165,7 +185,8 @@
       "P17.1",
       "P18.8",
       "P18.9",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -197,7 +218,9 @@
     "SECURITY.md": [
       "P2.2",
       "P4.4",
-      "P18.10"
+      "P18.10",
+      "P21.2",
+      "P23.3"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -208,28 +231,33 @@
       "P13.4"
     ],
     "docs/demo-large.html": [
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "docs/index.html": [
       "P13.3",
       "P17.1",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
       "P17.1",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
-      "P17.1"
+      "P17.1",
+      "P23.3"
     ],
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
       "P2.6",
       "P17.1",
       "P18.8",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "plugins/audit/README.md": [
       "P1.6",
@@ -244,10 +272,13 @@
       "P18.8",
       "P18.5",
       "P18.9",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "plugins/audit/agents/audit-executor.md": [
-      "P4.1"
+      "P4.1",
+      "P22.10",
+      "P22.13"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1"
@@ -284,7 +315,8 @@
     "plugins/audit/commands/phase.md": [
       "P7.1",
       "P8.2",
-      "P18.5"
+      "P18.5",
+      "P23.3"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1"
@@ -340,14 +372,18 @@
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
       "P2.1",
-      "P4.2"
+      "P4.2",
+      "P22.6",
+      "P22.14"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
-      "P4.2"
+      "P4.2",
+      "P22.12"
     ],
     "plugins/audit/hooks/journal-writes.py": [
-      "P15.4"
+      "P15.4",
+      "P22.12"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4"
@@ -363,7 +399,9 @@
     "plugins/audit/hooks/require-plan.py": [
       "P1.3",
       "P2.1",
-      "P3.4"
+      "P3.4",
+      "P22.2",
+      "P22.13"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -374,7 +412,11 @@
       "P8.1",
       "P8.2",
       "P18.5",
-      "P18.9"
+      "P18.9",
+      "P22.1",
+      "P22.5",
+      "P22.7",
+      "P22.10"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -414,7 +456,8 @@
     ],
     "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
-      "P15.4"
+      "P15.4",
+      "P22.8"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -441,7 +484,9 @@
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.2",
+      "P22.11"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -566,44 +611,54 @@
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.1"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.1"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
-      "P18.9"
+      "P18.9",
+      "P21.3",
+      "P22.8"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
-      "P18.9"
+      "P18.9",
+      "P21.3"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.1"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.1"
     ],
     "tools/check-git-pipeline.py": [
       "P18.8",
-      "P18.9"
+      "P18.9",
+      "P21.3"
     ],
     "docs/handbook.html": [
       "P18.8",
       "P18.5",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
       "P18.9",
-      "P18.10"
+      "P18.10",
+      "P23.3"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -652,7 +707,8 @@
       "P18.6",
       "P20.2",
       "P20.3",
-      "P20.6"
+      "P20.6",
+      "P23.1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -660,7 +716,8 @@
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
-      "P18.9"
+      "P18.9",
+      "P21.2"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7"
@@ -676,7 +733,9 @@
       "P18.7"
     ],
     "plugins/audit/tests/test__panel_write.py": [
-      "P18.7"
+      "P18.7",
+      "P21.2",
+      "P22.11"
     ],
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7"
@@ -691,11 +750,13 @@
     ],
     "tools/gate-parity.py": [
       "P19.2",
-      "P20.2"
+      "P20.2",
+      "P23.2"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
-      "P20.2"
+      "P20.2",
+      "P23.2"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1"
@@ -725,6 +786,84 @@
     ],
     "QUICKSTART.md": [
       "P18.10"
+    ],
+    "plugins/audit/scripts/governance/run-test-gate.py": [
+      "P22.1",
+      "P22.3"
+    ],
+    "plugins/audit/tests/test_run_test_gate.py": [
+      "P22.1",
+      "P22.3"
+    ],
+    "plugins/audit/tests/test_require_plan.py": [
+      "P22.2",
+      "P22.13"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
+      "P22.5"
+    ],
+    "plugins/audit/scripts/governance/_invariants.py": [
+      "P22.5"
+    ],
+    "plugins/audit/tests/test__manifest_crossrefs.py": [
+      "P22.5"
+    ],
+    "plugins/audit/tests/test_guard_secrets_read.py": [
+      "P22.6"
+    ],
+    "plugins/audit/scripts/manifest/audit-task.py": [
+      "P22.9"
+    ],
+    "plugins/audit/tests/test_audit_task.py": [
+      "P22.9"
+    ],
+    "plugins/audit/scripts/manifest/set-priority.py": [
+      "P22.11"
+    ],
+    "plugins/audit/tests/test_set_priority.py": [
+      "P22.11"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_phases.py": [
+      "P22.4"
+    ],
+    "plugins/audit/tests/test__manifest_phases.py": [
+      "P22.4"
+    ],
+    "plugins/audit/scripts/governance/_locks.py": [
+      "P22.11"
+    ],
+    "plugins/audit/tests/test__locks.py": [
+      "P22.11"
+    ],
+    "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
+      "P22.11"
+    ],
+    "plugins/audit/tests/test_journal_writes.py": [
+      "P22.12"
+    ],
+    "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
+      "P22.12"
+    ],
+    "test_guard_secrets_read.py: a genuine read is still refused, and prose naming the same filename is allowed": [
+      "P22.14"
+    ],
+    "plugins/audit/tests/test__manifest_io.py": [
+      "P22.8"
+    ],
+    "plugins/audit/scripts/manifest/resolve-branch.py": [
+      "P22.8"
+    ],
+    "plugins/audit/scripts/_refs.py": [
+      "P23.1"
+    ],
+    "plugins/audit/tests/test__refs.py": [
+      "P23.1"
+    ],
+    "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
+      "P23.1"
+    ],
+    "test_gate_parity.py: an exemption whose reason names something the other side no longer runs is a finding": [
+      "P23.2"
     ]
   },
   "bugs": [

@@ -191,6 +191,39 @@ def _cases(check):
           and M.acquire("/nonexistent-audit-locks-xyz", "index",
                         out=lambda *_a: None) == M.E_ERR)
 
+    # F260. `set-priority.py` refused with exit 3 and `pid N is running on this
+    # host` — and that pid was the operator, mid take-lock / write / write /
+    # release, which is the flow the lock exists for. `release` has always asked
+    # whose it is; only `acquire` never did.
+    check("o1 a lock carrying THIS session's id is ours",
+          M.held_by_us({"sessionId": "sess-1", "pid": 4242},
+                       session="sess-1", pid=None)["ours"] is True,
+          repr(M.held_by_us({"sessionId": "sess-1"}, session="sess-1")))
+    check("o2 ...and so is one carrying this session's PID, because a lock taken "
+          "from Bash records $CLAUDE_CODE_SESSION_ID while a hook is handed "
+          "session_id and $CLAUDE_PID is a third name for the same run - "
+          "measured as three different values in one live session",
+          M.held_by_us({"pid": 4242}, session="sess-1", pid=4242)["ours"] is True,
+          repr(M.held_by_us({"pid": 4242}, session="sess-1", pid=4242)))
+    check("o3 ...while a stranger's lock is NOT ours, which is what keeps o1 and "
+          "o2 from being a rule that adopts every lock it finds",
+          M.held_by_us({"sessionId": "somebody-else", "pid": 999},
+                       session="sess-1", pid=4242)["ours"] is False,
+          repr(M.held_by_us({"sessionId": "somebody-else", "pid": 999},
+                            session="sess-1", pid=4242)))
+    check("o4 ...and an empty or unreadable lock is not ours either - an "
+          "unattributable lock must never be adopted, which is the same "
+          "direction `release` refuses in",
+          M.held_by_us({}, session="sess-1")["ours"] is False
+          and M.held_by_us(None, session="sess-1")["ours"] is False,
+          repr(M.held_by_us({}, session="sess-1")))
+    check("o5 ...and the answer carries WHY, so the caller can print which of "
+          "the two identities matched rather than asserting ownership bare",
+          "sessionId" in M.held_by_us({"sessionId": "s"}, session="s")["why"]
+          and "pid" in M.held_by_us({"pid": 7}, pid=7)["why"],
+          repr([M.held_by_us({"sessionId": "s"}, session="s")["why"],
+                M.held_by_us({"pid": 7}, pid=7)["why"]]))
+
 
 def _selftest():
     return _harness.run(_cases)

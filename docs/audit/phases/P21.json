@@ -1,0 +1,160 @@
+{
+  "id": "P21",
+  "title": "2.1.1: the sweep's safety conditions must be about the worktree they name",
+  "status": "in_progress",
+  "description": "Six defects found by the phase code review of 2.1.0, three of them data-loss: the sweep acts on a record it did not measure (F244), the standing-in guard is realpath equality rather than containment and cwd_tree fails open (F245), provenance is not bound to the phase or branch it names (F246), a malformed tasks array reads as settled (F247), the panel's git-write never journals and its confirm dialog names nothing (F248), and close-phase's exit codes and stamp ordering are reported but not yet reproduced (F249).",
+  "desiredOutcome": "Every removal the sweep plans is about the worktree whose provenance, settlement, containment and cleanliness were measured; no precondition fails open; the panel's git-write leaves a journal row and shows the operator what it is about to delete; and each fix carries a case proven red first.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "in_progress",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P21.1",
+      "title": "F244+F245+F246+F247: the four preconditions must be about the worktree they name",
+      "status": "done",
+      "description": "cleanup_plan must act on the measured record, not a re-lookup by branch; standing_in must test containment with an os.sep boundary and longest match; cwd_tree must be three-valued like owned and settled; provenance must compare the phaseId and branch it records; phase_settled must refuse a non-dict task rather than counting it finished.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "F244 the plan acts on the measured record; F245 standing_in is containment with an os.sep boundary and longest match, and cwd_tree is three-valued so 'not asked' refuses; F246 provenance compares the branch it records; F247 an unreadable task entry refuses instead of counting as finished. Every one reproduced first, and every fix reverted to red before it was kept."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__worktrees.py w8/w9/w10, s4-s8, pv6-pv9, q6, bd1-bd3",
+        "test_manage_worktrees.py x2b/x2c"
+      ]
+    },
+    {
+      "id": "P21.2",
+      "title": "F248: the panel's git-write emits real change rows, journals, and shows what it deletes",
+      "status": "done",
+      "description": "Emit {target,field,from,to} rows so the journal, the confirm dialog and appliedDiff all work; redact the worktree path through _journal_io; pass a real cwd_tree; stop inferring both verbs on the dry run; and make SECURITY.md's claim match what the server actually enforces.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/ui/panel/branch-convention.js",
+        "plugins/audit/tests/test__panel_write.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The sweep emits real change rows, so the journal takes them, the confirm dialog names what it is about to delete and appliedDiff can see drift; the worktree is named by basename so a committed journal carries no home directory; the panel passes a real cwd_tree and no longer infers both verbs on a dry run; SECURITY.md now says which half of the dry-run contract the server actually holds."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__panel_write.py sw1-sw6"
+      ]
+    },
+    {
+      "id": "P21.3",
+      "title": "F249: reproduce and fix close-phase's exit codes, stamp ordering and the -z floor",
+      "status": "done",
+      "description": "auto:false must not turn a refusal into exit 0; --no-ff must refuse rather than be dropped on the no-checkout path; mergedAt must be persisted before the cleanup consumes it; an already-contained phase must still be stamped; branch -d after a no-checkout merge must not be a guaranteed refusal; the dry run must preview the cleanup it will really do; and list_worktrees must not require a git newer than Ubuntu 22.04 ships.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "auto:false no longer turns a refusal into exit 0; the stamp is gated on verified containment and runs BEFORE the cleanup, and a failed stamp holds the cleanup back; branch deletion is guarded on the branch's sha instead of git's HEAD-graded branch -d; list_worktrees falls back when -z is refused, so git 2.34 works; --no-ff refuses on the no-checkout path instead of being dropped; --dry-run previews the cleanup."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test_close_phase.py a4-a6, b3/b4, n1-n3, y1-y3",
+        "check-git-pipeline.py g17b, g17c"
+      ]
+    }
+  ]
+}

@@ -310,6 +310,42 @@ def tasks_by_id(manifest):
     return {t["id"]: t for _, t in iter_tasks(manifest) if t.get("id")}
 
 
+def resolve_phase_id(manifest, wanted):
+    """`(phaseId, error)` — the phase `wanted` names, or a sentence naming the ids.
+
+    F257. There was no shared resolver, so every script answered `/audit:phase 2`
+    its own way and none of them mapped a bare integer to `P2`. A bare `<n>` is
+    what an operator types when the plan is small and the ids are `P1`…`P9`, and
+    the failure they got was whatever that script happened to print.
+
+    THREE READINGS, TIGHTEST FIRST, and none of them guesses: exact, then
+    case-insensitive (`p2` is not a different phase from `P2`), then a bare integer
+    mapped onto `P<n>` — but ONLY when `P<n>` really exists. A `2` in a plan whose
+    phases are `BF1`/`BF2` resolves to nothing rather than to something plausible,
+    because a resolver that invents a phase is worse than one that refuses.
+
+    The error NAMES the ids that exist. `close-phase.py` already printed `(have: …)`
+    and that is the shape spread here rather than a second one invented: the reader
+    of a failed lookup wants the alternatives, not a restatement of what they typed.
+    """
+    ids = [str(p.get("id")) for p in ((manifest or {}).get("phases") or [])
+           if isinstance(p, dict) and p.get("id")]
+    want = str(wanted or "").strip()
+    if not want:
+        return None, "no phase id given (have: %s)" % (", ".join(ids) or "none")
+    if want in ids:
+        return want, None
+    folded = [pid for pid in ids if pid.lower() == want.lower()]
+    if folded:
+        return folded[0], None
+    if want.isdigit():
+        for candidate in ("P" + want, "P" + str(int(want))):
+            if candidate in ids:
+                return candidate, None
+    return None, ("no phase %r in this manifest (have: %s)"
+                  % (want, ", ".join(ids) or "none"))
+
+
 def status_index(manifest):
     """`{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref
     resolves through.

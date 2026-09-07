@@ -1,0 +1,168 @@
+{
+  "id": "P23",
+  "title": "Close the register: the last two open faults",
+  "status": "in_progress",
+  "description": "F243: _plugin_options is a text scan, so a flag removed properly - parser, tests, and a comment at each site explaining the removal - stays 'carried' and the handbook can advertise it for ever. F232 general: an exemption's REASON is checked against what the other side runs only for the narrow case P19.2 covered.",
+  "desiredOutcome": "Nothing in the fault register is OPEN: an option is carried when something ACCEPTS it, and every exemption's stated reason is checked against the thing it excuses.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P23.1",
+      "title": "F243: an option is carried when something ACCEPTS it, not when a comment names it",
+      "status": "done",
+      "description": "_plugin_options() greps every command doc and every .py for a flag spelling, so removing a flag properly - parser, tests, and a comment at each site saying what went and why - leaves four comments naming it and handbook_drift stays green. That is how docs/handbook.html advertised --include-strangers through a full verify.sh and a full prove-gates sweep. The corpus becomes what ACCEPTS a flag: add_argument string literals read from the AST, plus each command document's argument-hint. A comment is prose about an option, not an option.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "tools/prove-gates.py",
+        "test__refs.py: a flag named only in a comment is not carried; one argparse defines is"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test__refs.py: a flag named only in a comment is not carried; one argparse defines is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "_plugin_options grades on what ACCEPTS a flag: AST string constants minus docstrings (a comment is not in the tree at all), the argument-hint of each command document, and --help derived from constructing an ArgumentParser. The add_argument-only rule was tried and measured wrong - materialize-proposal.py reads sys.argv by hand, so --with-deps and --drop-edges are accepted where argparse never sees them, and the narrow rule would have convicted the handbook for naming the product's own options."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "test__refs.py hb7b/hb7c/hb7d",
+        "driven live: the handbook re-advertising --include-strangers is now a finding"
+      ]
+    },
+    {
+      "id": "P23.2",
+      "title": "F232 general: every exemption's reason is checked against the thing it excuses",
+      "status": "cancelled",
+      "description": "P19.2 fixed the narrow case - exemption_reason_drift over the gate set. The general shape is still open: an exemption anywhere in the tree carries a reason nobody compares against what it excuses, so a reason can go stale silently. Derive the exemption tables rather than listing them, the way prove-gates derives its lints.",
+      "files": [
+        "tools/gate-parity.py",
+        "plugins/audit/tests/test_gate_parity.py",
+        "test_gate_parity.py: an exemption whose reason names something the other side no longer runs is a finding"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_gate_parity.py: an exemption whose reason names something the other side no longer runs is a finding"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Moved to its own phase P24: the work is a coverage rule over exemption tables, which is the NOT_A_GATE pattern and a phase rather than a task. Not in 2.1.1 - instrumentation does not go ahead of the data-loss fixes."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-07T19:42:21Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P23.3",
+      "title": "2.1.1 documentation: the handbook, the version and the fetch pins",
+      "status": "in_progress",
+      "description": "Every behaviour 2.1.1 changed that a user relies on: the plan-gate refusal now has two audiences and the manifest exemption no longer covers subagents; Rule #1 grades on reads rather than spellings; NO OVERLAP matches suite paths to the files they are named after; run-test-gate owns meta.nodePreamble; git 2.34 works. Plus the version, the three fetch pins and the derived artifacts.",
+      "files": [
+        "docs/handbook.html",
+        "plugins/audit/.claude-plugin/plugin.json",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/commands/phase.md",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

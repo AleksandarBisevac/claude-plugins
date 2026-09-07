@@ -208,6 +208,13 @@ depending on an implementation:
 - the hooks' payload handling, and every exit code except the validators' — the CI
   verdict `/audit:status --gate` returns is a fair thing to want promised and is not
   promised here, so pin the plugin version if you wire it into a pipeline,
+- **what a guard refuses, and the words it refuses with.** A guard narrows and widens as the
+  failures it exists for are measured, and 2.1.1 did both: `require-plan` stopped exempting the
+  manifest for subagents (narrower — a subagent that edited the plan now cannot), and Rule #1
+  stopped reading a secret filename in prose as a read (wider — a body that merely names one now
+  passes). Neither is a config key or a schema version, and a plan that depended on either
+  behaviour was depending on an implementation. `SECURITY.md` is where the current posture is
+  described and it is the document to read after an upgrade,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,
 - every path under `plugins/audit/scripts/` — the plugin's own modules move, and
   `CHANGELOG.md` is where a move is recorded.
