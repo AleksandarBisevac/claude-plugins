@@ -274,7 +274,7 @@
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fad5cd9",
       "outcome": {
         "summary": "_gate_sources() is a walk over scripts/, hooks/ and tools/, and the 15 lints it derives each carry a RED row and an ALLOW row. Both tables run clean over the live tree; six rows named a case the mutation did not move and were corrected against the run rather than against the reading."
       },

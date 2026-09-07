@@ -488,7 +488,7 @@
     {
       "id": "P18.10",
       "title": "Documentation and the 2.1.0 bump: handbook, COMPATIBILITY, SECURITY, CHANGELOG, plugin.json",
-      "status": "in_progress",
+      "status": "done",
       "description": "The handbook still lists --include-strangers, a flag that was removed, and its sweep card states the old two-axis rule without the provenance and settlement gates. Complete the published documentation for the worktree/merge half and finalize the 2.1.0 release notes and version.",
       "files": [
         "docs/handbook.html",
@@ -519,14 +519,17 @@
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fad5cd9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "summary": "The handbook's command row advertised --include-strangers, a flag that never shipped, and its sweep card stated the old two-condition rule; both corrected, plus the doctor card and a note on Sweep as the panel's first git write. SECURITY.md gains the route and its four fail-closed conditions. plugin.json and marketplace.json bumped to 2.1.0 with the worktree verbs in both descriptions, three README curl pins repinned, four rendered artifacts and every screenshot re-derived. The detector that let the stale flag through is recorded as F243: _plugin_options() is a text scan, so a comment explaining a removal keeps the removed flag alive."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-07T00:00:00Z",
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "_refs.handbook_drift (clean, 46 flags examined)",
+        "verify.sh --release",
+        "CI run 34090677986 (all five jobs)"
+      ]
     }
   ]
 }
