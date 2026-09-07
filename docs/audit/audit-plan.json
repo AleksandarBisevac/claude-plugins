@@ -612,13 +612,15 @@
       "P18.1",
       "P18.7",
       "P18.9",
-      "P21.1"
+      "P21.1",
+      "P23.3"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
       "P18.7",
       "P18.9",
-      "P21.1"
+      "P21.1",
+      "P23.3"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",

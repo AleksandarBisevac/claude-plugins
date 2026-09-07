@@ -131,7 +131,9 @@
         "examples/acme-store/acme-store-audit.html",
         "examples/acme-store/acme-store-audit.md",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py"
       ],
       "tests": {
         "mode": "gate-only",

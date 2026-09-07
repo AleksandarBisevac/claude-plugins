@@ -760,6 +760,22 @@ def _cases(check):
           (M.standing_in(nested, "/x/repo-P1-old", resolve=lambda p: p)
            or {}).get("path") == "/x/repo-P1-old",
           repr(M.standing_in(nested, "/x/repo-P1-old", resolve=lambda p: p)))
+    # The two sides of this comparison come from different places: git's porcelain
+    # prints POSIX separators on every platform, `os.getcwd()` on Windows gives
+    # backslashes. A boundary built from `os.sep` compares one spelling against the
+    # other and answers False - F245 silently returning on one platform. Caught by
+    # windows-latest on the 2.1.1 candidate; asserted here on every platform.
+    _mixed = [{"path": "C:/x/repo-P1", "branch": "feature/p1"}]
+    check("s5b a git-printed path and a Windows cwd are the same worktree - the "
+          "separators differ because the two answers come from different places, "
+          "and a guard that misses on that difference is not a guard",
+          (M.standing_in(_mixed, "C:\\x\\repo-P1\\src", resolve=lambda p: p)
+           or {}).get("path") == "C:/x/repo-P1",
+          repr(M.standing_in(_mixed, "C:\\x\\repo-P1\\src", resolve=lambda p: p)))
+    check("s5c ...and the boundary still holds across the spellings: "
+          "`C:\\x\\repo-P1-old` is not inside `C:/x/repo-P1`",
+          M.standing_in(_mixed, "C:\\x\\repo-P1-old", resolve=lambda p: p) is None,
+          repr(M.standing_in(_mixed, "C:\\x\\repo-P1-old", resolve=lambda p: p)))
     _deep = [{"path": "/x/repo", "branch": "main", "isMain": True},
              {"path": "/x/repo/worktrees/P1", "branch": "feature/p1"}]
     check("s6 ...and when the cwd is inside two records the INNERMOST wins, which "

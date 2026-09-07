@@ -440,15 +440,26 @@ def within_tree(root, path, resolve=None):
     makes `/x/repo-P1-old` a child of `/x/repo-P1`, and those are two worktrees whose
     only relationship is a shared prefix. Removing one because the caller is in the
     other is the same class of mistake this function exists to prevent.
+
+    AND BOTH SPELLINGS ARE ONE SEPARATOR, which is not a tidy-up either. The two
+    sides of this comparison come from different places: git's porcelain prints
+    POSIX separators on EVERY platform, while `os.getcwd()` on Windows gives
+    backslashes. A boundary built from `os.sep` then compares a slash-spelled root
+    against a backslash-spelled cwd and answers False - so on Windows the "do not
+    delete the directory you are standing in" guard would go quietly back to never
+    firing,
+    which is the whole of F245 returning on one platform. Caught by windows-latest
+    on the 2.1.1 candidate, which is the second time that leg has found a real
+    defect a green macOS run had.
     """
     fn = resolve if resolve is not None else os.path.realpath
     if not root or not path:
         return False
     try:
-        a, b = fn(root), fn(path)
+        a, b = fn(root).replace("\\", "/"), fn(path).replace("\\", "/")
     except Exception:
         return False
-    return a == b or b.startswith(a.rstrip(os.sep) + os.sep)
+    return a == b or b.startswith(a.rstrip("/") + "/")
 
 
 def standing_in(trees, cwd, resolve=None):
