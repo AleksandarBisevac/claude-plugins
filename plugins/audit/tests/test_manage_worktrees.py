@@ -133,16 +133,33 @@ def _run_cases(check, root):
     # The property is CONTAINMENT, not the absence of a dot: `myrepo-..-etc` is an
     # ordinary directory name, and asserting `".." not in path` fails a correct
     # implementation while saying nothing about the thing that matters.
+    #
+    # THE EXPECTED PARENT IS DERIVED, NOT WRITTEN. `default_path` runs its argument
+    # through `os.path.abspath`, so on Windows `/x/myrepo` comes back as
+    # `C:\x\myrepo` and a literal `"/x"` compares a resolved path against an
+    # unresolved one. That is what turned this case red on windows-latest while
+    # ubuntu and macOS stayed green, and the code under test was correct the whole
+    # time - the assertion was the platform-bound half.
+    #
+    # BOTH SEPARATORS, for the same reason one level down: `os.sep` is `/` here and
+    # `\` there, so a check against it proves the neutralising of whichever
+    # separator the RUNNER has and says nothing about the other one. A manifest
+    # travels between machines and a phase id carrying `a\b` is a traversal on
+    # Windows and an ordinary name here, so both spellings belong in the ids below
+    # and in the assertion.
+    _wt_root = "/x/myrepo"
+    _wt_parent = os.path.dirname(os.path.abspath(_wt_root))
     check("p2 a hostile phase id still composes a path in the SAME parent "
-          "directory and a basename with no separator in it - "
+          "directory and a basename with neither separator in it - "
           "`migrate-manifest.py` already checks this for shard filenames and the "
           "worktree path never did",
-          all(os.path.dirname(M.default_path("/x/myrepo", pid)) == "/x"
-              and os.sep not in os.path.basename(
-                  M.default_path("/x/myrepo", pid))
-              for pid in ("../../etc", "a/b", "..", ".", "", "  ")),
-          repr([M.default_path("/x/myrepo", p)
-                for p in ("../../etc", "..", "")]))
+          all(os.path.dirname(M.default_path(_wt_root, pid)) == _wt_parent
+              and "/" not in os.path.basename(M.default_path(_wt_root, pid))
+              and "\\" not in os.path.basename(M.default_path(_wt_root, pid))
+              for pid in ("../../etc", "a/b", "a\\b", "..\\..\\etc",
+                          "..", ".", "", "  ")),
+          repr([M.default_path(_wt_root, p)
+                for p in ("../../etc", "a\\b", "..", "")]))
     check("p3 ...and an id that sanitises away to nothing still yields a NAME "
           "rather than a bare `myrepo-`, which would be the parent's sibling with "
           "a trailing separator and reads as a mistake in every listing",
