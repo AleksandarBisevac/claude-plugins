@@ -34,7 +34,6 @@ This module carries no `--selftest` of its own; its cases live in
 import os
 import pathlib
 import shutil
-import subprocess
 import sys
 import time
 
@@ -62,6 +61,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _branch  # noqa: E402  (the naming convention, one expansion path)
+import _worktrees  # noqa: E402  (contained / not-contained / unknown, one answer)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -327,15 +327,18 @@ def check_branch_naming(rep, project, manifest, git_root):
     for parent, phase_ids in sorted(parents.items()):
         merged = None
         if git_root and shutil.which("git"):
-            try:
-                out = subprocess.run(
-                    ["git", "-C", git_root, "merge-base", "--is-ancestor",
-                     parent, dev],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=15)
-                merged = (out.returncode == 0)
-            except Exception:
-                merged = None
+            # `_worktrees.merged_into` and NOT `returncode == 0`, which is what this
+            # said until v2.1 and which collapsed THREE answers into two: exit 1 is
+            # "not contained", exit 128 is "one of these refs does not resolve in
+            # this clone", and the boolean printed the second as the first -- a
+            # definite "is NOT yet merged" accusation about a question git had
+            # refused to answer. The `except` below could not catch it either,
+            # because git exited cleanly with a non-zero code.
+            answer = _worktrees.merged_into(git_root, parent, dev)["answer"]
+            if answer == _worktrees.CONTAINED:
+                merged = True
+            elif answer == _worktrees.NOT_CONTAINED:
+                merged = False
         if merged is False:
             rep.warn("branch naming",
                      "%s merge%s into %r, which is NOT yet merged into %r - "

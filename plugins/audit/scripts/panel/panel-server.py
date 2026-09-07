@@ -166,6 +166,7 @@ _bugs_view = _panel_state._bugs_view
 _skills_of = _panel_state._skills_of
 _composition_view = _panel_state._composition_view
 areas_state = _panel_state.areas_state
+worktrees_state = _panel_state.worktrees_state
 _JOURNAL = _panel_state._JOURNAL
 _journalmod = _panel_state._journalmod
 JOURNAL_PAGE = _panel_state.JOURNAL_PAGE
@@ -350,6 +351,13 @@ def _make_handler(project, token):
                 self._json(200, policy_state(project)); return
             if path == "/api/theme":
                 self._json(200, theme_state(project)); return
+            if path == "/api/worktrees":
+                # ITS OWN ENDPOINT rather than a field on /api/state: this asks git
+                # once for the list and twice more per worktree, and folding it in
+                # would put a dozen subprocesses in front of every panel load and
+                # every save's re-render, to answer a question that changes on a
+                # different clock from the plan.
+                self._json(200, worktrees_state(project)); return
             if path == "/api/help":
                 from urllib.parse import urlparse, parse_qs
                 q = parse_qs(urlparse(self.path).query)
@@ -428,6 +436,20 @@ def _make_handler(project, token):
                                      "findings": ["bad JSON: %s" % exc]}); return
                 self._json(200,
                            _panel_write.prune_gate_events(project, body)); return
+            if path == "/api/worktrees/sweep":
+                # POST for `/api/proposal`'s reason - a sweep is an ACTION, not a
+                # replacement of a resource the client holds. It is also the ONE
+                # endpoint in this server that removes directories, which is why
+                # its writer takes the manifest lock and journals: the guard, the
+                # lock, the confirm rows and the record are the same four this
+                # server already applies to a config save.
+                try:
+                    body = self._body()
+                except Exception as exc:
+                    self._json(400, {"ok": False,
+                                     "findings": ["bad JSON: %s" % exc]}); return
+                self._json(200,
+                           _panel_write.sweep_worktrees(project, body)); return
             self._json(404, {"error": "not found"})
 
     return Handler

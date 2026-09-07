@@ -1101,9 +1101,16 @@ def cr_violations(assets):
     UI_DIR.
 
     An empty `assets` yields an empty list, and that means "nothing was checked",
-    not "every asset is LF". Both callers pass a fixed literal list of the assets
-    they have just read, so the distinction cannot bite them; a caller that built
-    the list by filtering would have to say the set was empty itself."""
+    not "every asset is LF". A caller that built the list by filtering would have to
+    say the set was empty itself.
+
+    WHO ASKS THIS, AND WHY THIS PARAGRAPH USED TO NAME CALLERS IT DID NOT HAVE
+    (F242). It read "both callers pass a fixed literal list"; measured, this
+    function had no caller anywhere outside its own suite — the rule was stated,
+    exercised over fixtures, and never applied to a shipped asset. `ua8b` asks it
+    live over `UI_ASSETS` now, and `ua8c` asserts that set is not empty, which is
+    the distinction above made about the live call rather than left to a caller to
+    remember."""
     return [name for name, text in assets if "\r" in text]
 
 

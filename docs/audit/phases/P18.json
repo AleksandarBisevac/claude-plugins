@@ -1,0 +1,532 @@
+{
+  "id": "P18",
+  "title": "Worktree lifecycle, merge target and merge policy",
+  "status": "in_progress",
+  "description": "One deterministic path for the merge/cleanup half of the pipeline: scripts/git/{_worktrees.py,close-phase.py,manage-worktrees.py} replace the prose in orchestrator.md 5c-5e and commands/worktree.md; meta.merge policy (auto, removeWorktree, deleteBranch) beside meta.developmentBranch; the panel edits both and can sweep; the doctor reports what was left behind.",
+  "desiredOutcome": "A signed-off phase lands on its parent and cleans up after itself in one scripted step, and a worktree that outlived its merge is named by the doctor and reaped by an explicit verb -- never by a boolean that cannot tell 'clean' from 'could not ask'.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P18.1",
+      "title": "_worktrees.py: the read-only core (parse, classify, plan)",
+      "status": "done",
+      "description": "Parse git worktree list --porcelain (both spellings), join worktree to phase by branch, three-answer merged_into/ref_exists/dirtiness, and the pure merge/cleanup/sweep planners. Reads git, never writes it.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "_worktrees.py: git is the registry, every question has three answers, and the planners are pure. 63 cases, seven of them proven red by mutation (redfirst).",
+        "filesTouched": [
+          "plugins/audit/scripts/git/_worktrees.py",
+          "plugins/audit/tests/test__worktrees.py",
+          "plugins/audit/scripts/_deps.py",
+          "plugins/audit/tests/test__output.py",
+          "PLUGIN-BUILD-GUIDE.md"
+        ]
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test__worktrees.py"
+      ]
+    },
+    {
+      "id": "P18.2",
+      "title": "meta.merge policy: resolver, schema, vocabulary, validator",
+      "status": "done",
+      "description": "merge_policy(meta) -> auto/removeWorktree/deleteBranch, each with its basis; meta.merge in the schema and the known-key sets; and the phase.mergedAt description corrected from 'the development branch' to the resolved parent.",
+      "files": [
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__branch.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test__help.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "meta.merge: three switches, absent reads as on, each value carrying the key that decided it. Schema, vocabulary, validator (findings AND the typo warning), and phase.mergedAt's description corrected from 'the development branch' to the resolved parent."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test__branch.py",
+        "test__manifest_rules.py"
+      ]
+    },
+    {
+      "id": "P18.3",
+      "title": "close-phase.py: the deterministic 5c-5e",
+      "status": "done",
+      "description": "Merge into the resolved parent without ever moving HEAD; write mergedAt under the lock with a journal row; cleanup in the forced order (worktree, then branch) gated on our own is-ancestor and never on git branch -d's HEAD check. Exit 3 = not a fast-forward, exit 4 = could not be asked.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.1",
+        "P18.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "close-phase.py: merge without ever moving HEAD, verified by asking a different question than the write answered, cleanup in the order git enforces. Driven live against a real repo: the merge lands from INSIDE a worktree where `git switch <parent>` fails, and the mergedAt stamp follows the merge into the tree that survives - without that it was written into the directory about to be deleted."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test_close_phase.py"
+      ]
+    },
+    {
+      "id": "P18.4",
+      "title": "manage-worktrees.py: list, add, remove, sweep",
+      "status": "done",
+      "description": "Dry-run by default; --apply needs an explicit verb. Only branches the plan names are touched; strangers are reported and left. Exit 5 = there was nothing to examine, which is not the same as 'everything is clean'.",
+      "files": [
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "manage-worktrees.py: list/add/remove/sweep, read-only by default, two-axis refusal, strangers reported and left. --include-strangers exists because the strict scope reported a clean sheet over this repo's own 29-worktree backlog - none of them goes through the plan."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test_manage_worktrees.py"
+      ]
+    },
+    {
+      "id": "P18.5",
+      "title": "Sign-off and the commands call the scripts instead of typing git",
+      "status": "done",
+      "description": "5c-5e becomes one close-phase.py call -- no second copy of the procedure. worktree.md gains list and sweep. The dry-runs print the merge target AND what the policy will do after the merge.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "plugins/audit/scripts/manifest/_branch.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.3",
+        "P18.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "orchestrator 5c-5e is one close-phase.py call with an exit-code table; worktree.md is four manage-worktrees.py verbs; phase.md's dry-run owes the post-merge policy; review.md says a re-run is safe. The pre-approved git globs stopped covering merge/delete and now say so."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "command_flag_drift",
+        "handbook_drift"
+      ]
+    },
+    {
+      "id": "P18.6",
+      "title": "Doctor: what was left behind, and the could-not-ask bug it already has",
+      "status": "done",
+      "description": "A hygiene check naming worktrees whose branch is contained in its parent, and check_branch_naming moved onto merged_into -- its merged = (returncode == 0) renders exit 128 as a definite 'is NOT yet merged'.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_policy.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "check_worktrees: the third member of the HELD/LEAKING family - what was LEFT BEHIND. It reports and never reaps, and its remedy is the read-only command. check_branch_naming moved onto merged_into: `merged = (returncode == 0)` printed exit 128 as a definite 'is NOT yet merged', proven by reverting it."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test__doctor_hygiene.py",
+        "test__doctor_policy.py"
+      ]
+    },
+    {
+      "id": "P18.7",
+      "title": "Panel: the merge target, the three switches, the worktree table and Sweep",
+      "status": "done",
+      "description": "_META_KEYS gains developmentBranch and merge; _PHASE_KEYS gains parentBranch. The Branch card grows the policy and a worktree table. POST /api/worktrees/sweep is the panel's first git write and goes through the existing write path -- lock, dry-run rows in confirmSave, journal row -- never beside it.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/ui/panel/branch-convention.js",
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.2",
+        "P18.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The Branch card grew the merge target, three switches with their basis, and a live worktree table with a Sweep button. The panel's first git write goes through the existing write path - guard, lock, dry-run rows in the confirm dialog, journal row - and composes no git command of its own. Driven live: 29 rows, 27 sweepable, no console errors, matching the CLI and the doctor exactly."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test__panel_page.py",
+        "capture-screenshots.mjs"
+      ]
+    },
+    {
+      "id": "P18.8",
+      "title": "The real-git gate, the docs and the version",
+      "status": "done",
+      "description": "Four real-repository cases in the gate that already git-inits a fixture. README rows carry the new verbs (command_flag_drift), the handbook too, and its /audit:worktree row stops claiming the command touches the manifest.",
+      "files": [
+        "tools/check-git-pipeline.py",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "PLUGIN-BUILD-GUIDE.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "plugins/audit/.claude-plugin/plugin.json"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P18.5",
+        "P18.6",
+        "P18.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "Four real-repository cases (g16-g19) in the gate that already git-inits a fixture; each proven red. COMPATIBILITY records meta.merge with absence as the load-bearing half; CHANGELOG has an Unreleased section; the README meta table carries the block. The plugin.json bump is DELIBERATELY not here: CLAUDE.md puts it in the release commit, which needs the maintainer's word."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "check-git-pipeline.py g16-g19"
+      ]
+    },
+    {
+      "id": "P18.9",
+      "title": "Provenance and settlement: never reap what the plugin did not start and finish",
+      "status": "done",
+      "description": "A worktree is reaped only when the plugin CREATED it (a provenance marker in its own admin directory) AND the phase is settled: sign-off done, every task terminal, mergedAt recorded, branch contained, tree clean. --include-strangers is removed: it adopted foreign worktrees and judged them against a guessed parent, which is the one thing this must never do.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/ui/panel/branch-convention.js",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "A worktree is reaped only when the plugin CREATED it (a marker in its own admin dir, which dies with it) AND the phase is settled: signed off, no task open, mergedAt recorded. Both gates fail CLOSED. --include-strangers is gone; `remove --path` is the human-named way to take down a foreign worktree. Proven in a real repo by g20: two worktrees identical but for one file, one reaped and one left."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "check-git-pipeline.py g20",
+        "test__worktrees.py o1-o5"
+      ]
+    },
+    {
+      "id": "P18.10",
+      "title": "Documentation and the 2.1.0 bump: handbook, COMPATIBILITY, SECURITY, CHANGELOG, plugin.json",
+      "status": "in_progress",
+      "description": "The handbook still lists --include-strangers, a flag that was removed, and its sweep card states the old two-axis rule without the provenance and settlement gates. Complete the published documentation for the worktree/merge half and finalize the 2.1.0 release notes and version.",
+      "files": [
+        "docs/handbook.html",
+        "plugins/audit/.claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "README.md",
+        "QUICKSTART.md",
+        ".claude-plugin/marketplace.json",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/demo-large.html",
+        "docs/index.html"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests,validate,plugin-validate,gate,report,lint,shots,interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

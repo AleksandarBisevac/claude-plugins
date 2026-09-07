@@ -75,6 +75,16 @@ REF = "plugins/audit/tests/test__refs.py"
 CFG = "plugins/audit/tests/test__config_rules.py"
 ADP = "plugins/audit/tests/test__ado_parent.py"
 ADC = "plugins/audit/tests/test__ado_conventions.py"
+# The suites the F231 remainder answers to. Every one of these lints was outside the
+# hand-written source list, so none of them had a row until the list became a walk.
+HLP = "plugins/audit/tests/test__help.py"
+MVO = "plugins/audit/tests/test__manifest_vocab.py"
+THM = "plugins/audit/tests/test__ui_theme.py"
+BRN = "plugins/audit/tests/test__branch.py"
+ARE = "plugins/audit/tests/test__areas.py"
+TRL = "plugins/audit/tests/test__doctor_trail.py"
+DMO = "plugins/audit/tests/test_gen_demo_manifest.py"
+BEN = "tools/bench-hooks.py"          # its cases are inline, like every tools/ file
 
 # The anchor every scripts/ row appends after: present once in every module, and
 # nothing below it depends on what follows.
@@ -212,8 +222,10 @@ _TREE_WALKS = ("py_files", "lint_py_files", "kept_files")
 # every document and rendered artifact a tool reads, which is the direction the red
 # table already covers - so each guard is added by name and the next one will have to
 # be too.
-GUARD_FILES = tuple([S + m.replace(os.sep, "/") for m in _GATE_MODULES]
-                    + list(_GATE_OUTSIDE))
+# `GUARD_FILES` USED TO BE A LITERAL HERE and is derived now, by `guard_files()`.
+# It is bound BELOW `NOT_A_GATE`, because deriving it needs that table to know which
+# tree-walking helpers are not verdicts - a hand-written copy beside a hand-written
+# source list is two lists that can disagree, and F231 is what that cost.
 
 # (lint, file, kind, anchor, payload, suite, expected case label)#
 # `count` is a number OR the word for it: the second row of each pair exists to
@@ -632,6 +644,17 @@ TABLE = (
  ("isolation_drift", "CLAUDE.md", "sub", r"PYTHONPYCACHEPREFIX",
   (r"PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE"),
   "tools/gate-parity.py", "is0"),
+ # F232 VERBATIM, and the mutation is the row that actually shipped.
+ # `render-report.py` is excused locally on a reason that NAMES the local gate
+ # making the equivalent claim; strike that name out and the reason excuses
+ # nothing - which is exactly the state `gen-demo-usage.py` sat in behind "same
+ # throwaway demo tree" while a CI step diffed the committed ledger. The mutation
+ # leaves the row, its sides and the file set untouched; only the SENTENCE stops
+ # being true, which is the one thing `compare()` cannot see.
+ ("exemption_reason_drift", "tools/gate-parity.py", "replace",
+  "check-rendered-artifacts.py, which is stronger because it compares bytes",
+  "a stronger local check compares those bytes instead of this one",
+  "tools/gate-parity.py", "er1"),
  # THE MUTATED FILE IS THE RUNNER THIS RULE WAS WRITTEN FOR, and the payload is
  # the defect verbatim: `verify.sh` kept every step log at a fixed `/tmp` path, so
  # two runs on one machine shared it and one could read the other's exit code. The
@@ -652,6 +675,118 @@ TABLE = (
  # about the disagreement and not about a probe. `ad0` runs the real pair.
  ("affected_dispatch", "tools/verify.sh", "sub", r"^    grep -v -e ",
   (r" -e '\^claude '", ""), "tools/gate-parity.py", "ad0"),
+
+ # --- F231: the remainder the hand-written source list was hiding --------------
+ # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
+ # below is the debt that list was deferring, and each is written the way the rows
+ # above are: break the thing the rule guards, and name the case that must notice.
+ #
+ # THE ONES THAT TAKE AN ARGUMENT ARE MUTATED IN THE RULE ITSELF, which is the
+ # idiom `hierarchy_violations` already uses two screens up: a pure comparator has
+ # no corpus in the tree to break, so the RED direction cripples its detection and
+ # the fixture case that expects a finding goes red.
+
+ # An agent doc that stops naming an agent. The name arrives from the agents
+ # directory, so the mutation is on the DOC side - `audit-xplorer` is not a typo
+ # nobody would make, it is the shape a rename leaves behind in one file.
+ ("agent_doc_drift", "plugins/audit/README.md", "replace",
+  "audit-explorer", "audit-xplorer", HLP, "a1"),
+ # A citation that stops resolving. `source_drift` walks every topic's sources and
+ # asks the document whether the anchor is there; retitling the heading is exactly
+ # how a citation rots, and it is invisible to every other check.
+ ("source_drift", "plugins/audit/README.md", "replace",
+  "### Monorepo areas — `meta.areas`",
+  "### Monorepo area registry — `meta.areas`", HLP, "c1"),
+ # A KNOWN_* set that stops agreeing with the schema. `meta.merge` is the newest
+ # one, which makes it the honest choice: a set added last week is the set most
+ # likely to drift, and this is the rule that would say so. `mv18` and not the
+ # scope case beside it: `mv19` counts anchors and properties, and a set losing a
+ # key moves neither.
+ ("schema_vocab_drift", S + "manifest/_manifest_vocab.py", "replace",
+  'KNOWN_MERGE = {"auto", "removeWorktree", "deleteBranch"}',
+  'KNOWN_MERGE = {"auto", "removeWorktree"}', MVO, "mv18"),
+ # A recommended subset that stops being a subset. `CLAIM_KEYS` names three fields
+ # of `phase.claim`; a fourth that the schema does not declare is the shape a
+ # rename leaves when only one side is updated.
+ ("schema_subset_drift", S + "manifest/_manifest_vocab.py", "replace",
+  'CLAIM_KEYS = ("sessionId", "host", "branch")',
+  'CLAIM_KEYS = ("sessionId", "host", "branch", "worktree")', MVO, "mv23"),
+ # An inline vocabulary at its `_unknown_keys()` call, drifted from the schema.
+ # These are the levels whose words are a set LITERAL rather than a named set, so
+ # nothing but this rule compares them with anything.
+ ("schema_inline_drift", S + "manifest/_manifest_ado.py", "replace",
+  '_unknown_keys(block, {"levels", "fetchedAt", "basis"},',
+  '_unknown_keys(block, {"levels", "fetchedAt"},', MVO, "mv29"),
+ # THE PURE COMPARATOR BEHIND IT, crippled. `vocab_drift` is what
+ # `schema_vocab_drift` hands its three inputs to; a version that reports nothing
+ # leaves every KNOWN_* set unchecked while the wrapper still runs.
+ ("vocab_drift", S + "config/_help.py", "replace",
+  "def vocab_drift(levels, sets, anchors, off_schema):",
+  "def vocab_drift(levels, sets, anchors, off_schema):\n    return []", MVO, "mv22"),
+ # ...and the same for the containment half. `mv27` rather than the live `mv23`
+ # or the omission case `mv25`: both of those assert the comparator finds NOTHING,
+ # which a comparator returning nothing satisfies. `mv27` is the one asserting the
+ # mutations land, so it is the only one a crippled version can fail.
+ ("subset_drift", S + "config/_help.py", "replace",
+  "def subset_drift(levels, sets, anchors):",
+  "def subset_drift(levels, sets, anchors):\n    return []", MVO, "mv27"),
+ # ...and for the inline half.
+ ("inline_drift", S + "config/_help.py", "replace",
+  "def inline_drift(levels, found, anchors):",
+  "def inline_drift(levels, found, anchors):\n    return []", MVO, "mv31"),
+ # A shipped asset that acquires a CARRIAGE RETURN. The payload carries a real
+ # `\r`, which is why this row exists here rather than as a `redfirst.sh` call: a
+ # shell argument cannot carry one, and the first attempt at this inserted a
+ # newline and reported the gate green for a mutation that never happened.
+ ("cr_violations", S + "ui/panel/boot.js", "replace",
+  "// SC 2.4.11 Focus Not Obscured (Minimum, AA): when a control takes focus, no",
+  "// SC 2.4.11 Focus Not Obscured (Minimum, AA): when a control takes focus, no\r",
+  THM, "ua8b"),
+ # A declared asset list that stops naming a file the directory holds. The walk
+ # then finds it undeclared, which is how a part added under `ui/` without a
+ # declaration would arrive.
+ # `panel/boot.js` rather than a stylesheet: every CSS name appears twice in this
+ # module - once in a cascade-order tuple and once in the asset list - and an
+ # anchor that matches both is an anchor `mutation()` refuses. `ua12` is the case,
+ # because it is the one reading the SHIPPED list against the shipped directory;
+ # `ua13` asks the same question of a fixture the list never named.
+ ("declared_asset_drift", S + "_ui_theme.py", "replace",
+  '    "panel/boot.js",\n', "", THM, "ua12"),
+ # The git-ref rule, crippled. `ref_violations` is the reason a branch template
+ # cannot compose a name git refuses, and a version reporting nothing lets the
+ # validator pass a manifest whose every branch operation fails at the shell.
+ ("ref_violations", S + "manifest/_branch.py", "replace",
+  "def ref_violations(name):",
+  "def ref_violations(name):\n    return []", BRN, "r1"),
+ # A document that stops carrying the reviewSkill rule verbatim. `review.md` is
+ # one of the four `_RULE_DOCS`, and rewording is exactly how a rule stated in
+ # four places stops being one rule.
+ ("rule_drift", "plugins/audit/commands/review.md", "replace",
+  "phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill",
+  "phase.reviewSkill, else the area's, else meta.reviewSkill", ARE, "p1"),
+ # The state-shape comparison, crippled. It is what tells a slot this copy wrote
+ # from one an older build left, and a version reporting nothing makes every
+ # sidecar look current.
+ ("state_shape_drift", S + "status/_doctor_trail.py", "replace",
+  "def state_shape_drift(state_dir, shape):",
+  "def state_shape_drift(state_dir, shape):\n    return []", TRL, "dt32"),
+ # A REVISIT trigger put back over a field the panel now edits - which is the
+ # state `meta.branch` sat in for releases, and the state three more rows were in
+ # when this rule was written.
+ # ONE SOURCE LINE, because the reason is a wrapped literal and an anchor spanning
+ # two of them matches no bytes at all - the first attempt at this row spelled the
+ # sentence as the reader sees it and `mutation()` reported zero occurrences.
+ ("revisit_trigger_drift", S + "demo/gen-demo-manifest.py", "replace",
+  "carried a REVISIT trigger naming the panel's phase row; the panel has ",
+  "says REVISIT when the panel's phase row grows a badge. The panel has ",
+  DMO, "rt1"),
+ # The import budget, crippled. A hook reaching past the shared floor is paid on
+ # every matching tool call, and a version reporting nothing is how that cost
+ # arrives without anybody choosing it.
+ ("budget_violations", BEN, "replace",
+  "def budget_violations(hooks_dir=None, python=None):",
+  "def budget_violations(hooks_dir=None, python=None):\n    return []",
+  BEN, "h6"),
 )
 
 
@@ -1050,6 +1185,16 @@ ALLOW = (
   "            if not any(name in text for name in groups[held])]",
   "            if not all(name in text for name in groups[held])]",
   "tools/gate-parity.py", "is2"),
+ # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
+ # COMPARISON: four of the five exempted scripts name a committed path in CI and
+ # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`
+ # is exactly what its reason says it is. Drop the diff/cmp requirement and the
+ # rule convicts all four, which is a lint people delete rather than obey. `er2`
+ # is the case that fails on that version.
+ ("exemption_reason_drift", "tools/gate-parity.py", "replace",
+  "            if not any(word in step for word in _COMPARES):",
+  "            if False:",
+  "tools/gate-parity.py", "er2"),
  # THE PUREST F116 SHAPE THIS GUARD HAS. The rule bans naming a temp root, and the
  # one line allowed to name it is the line that DERIVES a unique directory under
  # it - which is the repair every other line is told to route through. Stop
@@ -1072,6 +1217,97 @@ ALLOW = (
   'or line.startswith("  ("):',
   '        if not line.startswith("  ") or line.startswith("  ("):',
   "tools/gate-parity.py", "ad4"),
+
+ # --- F231: the same fifteen, weakened until they over-fire --------------------
+ # Every row here widens a rule until it convicts something correct, and names the
+ # case that must go red for it. Most of them name their RED twin, for the reason
+ # this table's own header gives: a suite's live-tree assertion is the only allow
+ # corpus these rules have, and a row here proves that assertion is sensitive in
+ # both directions rather than only the one it was written for.
+
+ # The membership test, inverted. `not in` is the whole rule - a doc must NAME
+ # every agent - and `in` convicts every doc that does.
+ ("agent_doc_drift", S + "config/_help.py", "replace",
+  "            if name not in text:", "            if name in text:", HLP, "a1"),
+ # The anchorless SKIP, removed. A citation may name a file and no heading; the
+ # skip is what says so. Without it every one of those is compared against the
+ # file's slugs, matches nothing, and reports as a dead link - the guard convicting
+ # the shape it exists to allow.
+ ("source_drift", S + "config/_help.py", "replace",
+  "            if not anchor:", "            if False:", HLP, "c1"),
+ # The OFF_SCHEMA exemption, dropped. Every key that table legitimately excuses
+ # - a key the plugin accepts and the schema deliberately does not declare -
+ # then reports as drift, which is the state `mv21` asserts is normal.
+ ("vocab_drift", S + "config/_help.py", "replace",
+  "        for key in sorted(vocab - schema - set(exempt)):",
+  "        for key in sorted(vocab - schema):", MVO, "mv18"),
+ # The subset rule, made an equality. A recommended subset is DRAWN FROM a level
+ # and is smaller than it by construction, so demanding both directions convicts
+ # every one of them - `mv25` is the case that says omitting is not drift.
+ ("subset_drift", S + "config/_help.py", "replace",
+  "        for key in sorted(set(recommended) - schema):",
+  "        for key in sorted(set(recommended) ^ schema):", MVO, "mv25"),
+ # The undeclared-path arm, widened past the declaration it is subtracting. Every
+ # anchored level then reports as a vocabulary `INLINE_ANCHORS` does not declare,
+ # which is every level the table exists to declare.
+ ("inline_drift", S + "config/_help.py", "replace",
+  "    for path in sorted(set(found) - set(declared)):",
+  "    for path in sorted(set(found)):", MVO, "mv29"),
+ # The CRLF test, reading the wrong byte. `\\n` is in every text file, so this
+ # convicts every shipped asset - and `ua8b` is the live claim that says so.
+ ("cr_violations", S + "_ui_theme.py", "replace",
+  'return [name for name, text in assets if "\\r" in text]',
+  'return [name for name, text in assets if "\\n" in text]', THM, "ua8b"),
+ # The documentation skip, dropped. `declared_asset_drift` walks `ui/` and
+ # compares against a list that excludes docs on both sides; counting a README as
+ # an asset reports every feature directory's own `README.md` as undeclared.
+ ("declared_asset_drift", S + "_ui_theme.py", "replace",
+  '                if f.startswith(".") or f.endswith(_DOC_SUFFIXES):',
+  '                if f.startswith("."):', THM, "ua14"),
+ # The git-ref rule, widened to a character every branch name here carries. `r3`
+ # is the ALLOW case the module already had - a legal name reports nothing - and
+ # it is what stops the rule being tightened into nonsense.
+ ("ref_violations", S + "manifest/_branch.py", "replace",
+  '_BAD_CHARS = " ~^:?*[\\\\"', '_BAD_CHARS = " ~^:?*[\\\\/"', BRN, "r3"),
+ # The rule text, compared without the whitespace normalisation. `_plain` exists
+ # because a rule that got bolded or re-wrapped is the same rule; comparing the
+ # raw bytes convicts every document that wrapped the sentence.
+ ("rule_drift", S + "manifest/_areas.py", "replace",
+  "                text = _plain(fh.read())", "                text = fh.read()",
+  ARE, "p1"),
+ # The sidecar skip, removed. A plugin's own sidecar shares the session prefix and
+ # holds one unrelated key, so reading it as this copy's slot reports drift on
+ # every project that has ever journalled a write - which is `dt33`'s case.
+ ("state_shape_drift", S + "status/_doctor_trail.py", "replace",
+  'name.startswith(shape["sidecar"]) or not ', "not ", TRL, "dt33"),
+ # The trigger test, widened to the bare word. Every row that EXPLAINS a trigger
+ # it has dropped - "it carried a REVISIT trigger naming a connector card" - then
+ # reports as carrying an active one, which is a lint punishing the repair it
+ # asked for and the shape `rt3` was written against.
+ ("revisit_trigger_drift", S + "demo/gen-demo-manifest.py", "replace",
+  '        if not any(form in text for form in ("REVISIT when", "REVISIT on",',
+  '        if not any(form in text for form in ("REVISIT", "REVISIT on",',
+  DMO, "rt3"),
+ # The floor subtraction, dropped. Every hook then reports every module it loads,
+ # including the shared floor every one of them pulls - so `h7`, the hook that
+ # imports only floor members, is convicted.
+ ("budget_violations", BEN, "replace",
+  "        allowed = set(floor) | set(granted)", "        allowed = set(granted)",
+  BEN, "h7"),
+ # The three `schema_*_drift` wrappers are proven through the comparators above,
+ # which is where their whole verdict is computed - so what is weakened here is
+ # the INPUT each one reads, and the live case that must notice is its own.
+ ("schema_vocab_drift", S + "config/_help.py", "replace",
+  "def vocab_sets(mod=None):",
+  "def vocab_sets(mod=None):\n    return {'KNOWN_GHOST': ()}", MVO, "mv18"),
+ ("schema_subset_drift", S + "config/_help.py", "replace",
+  "def vocab_subsets(mod=None):",
+  "def vocab_subsets(mod=None):\n    return {'GHOST_KEYS': ('nope',)}",
+  MVO, "mv23"),
+ ("schema_inline_drift", S + "config/_help.py", "replace",
+  "def schema_inline_drift(root=None):",
+  "def schema_inline_drift(root=None):\n    return [('ghost', 'probe')]",
+  MVO, "mv29"),
 )
 
 
@@ -1213,20 +1449,96 @@ def walks_the_tree(node):
     return False
 
 
+# The three places this repository keeps code that can judge it.
+_GATE_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
+
+
 def _gate_sources(script_dir=None, repo=None):
-    """[(path, tree)] for every file that holds a guard and could be parsed."""
-    root = script_dir or _output.SCRIPTS_DIR
+    """[(path, tree)] for every file that could hold a guard — DERIVED, not listed.
+
+    F231, and it is the hole that subsumed the one F166 closed. Both derivation arms
+    below used to iterate a HAND-WRITTEN tuple of paths, so neither of them was the
+    first filter: **being listed was.** A file nobody listed was invisible to every
+    arm at once, including the arm added to reach lints whose names say nothing —
+    and `coverage()` cannot report a lint it never derives, so the table went on
+    looking complete while fifteen lints had no proof at all.
+
+    A WALK now, over `_GATE_ROOTS`. Adding a FILE is free; adding a LINT costs rows,
+    which is the way round it should always have been.
+
+    TWO THINGS THE WALK FOUND ON ITS FIRST RUN, both fixed rather than excused: it
+    derived `bench-hooks.render_violations`, which is a FORMATTER whose name ended in
+    a reporting shape (renamed `render_budget_findings` — the name arm refuses by
+    construction to excuse what it reaches, and the repair was the name), and it
+    surfaced `_ui_theme.cr_violations`, a rule with no caller outside its own suite
+    (F242).
+
+    AND ONE NARROWING WAS TRIED AND MEASURED WRONG, recorded so it is not tried
+    again: refusing functions that take a required argument looks right — those are
+    comparators, and `vocab_drift`, `subset_drift` and `inline_drift` really are the
+    pure halves of the three `schema_*_drift` lints beside them. It also removes
+    `hierarchy_violations`, `conformance_violations`, `provenance_tag_violations`
+    and `removal_helper_drift`, every one a real lint with rows in both tables. A
+    required argument does not tell a comparator from a rule; only what the caller
+    does with it would, and an AST walk over one function cannot see that.
+
+    `script_dir` still overrides the plugin half so a case can point the whole
+    derivation at a fixture tree; when it is given, nothing else is walked.
+    """
     repo_root = repo or REPO
-    paths = ([os.path.join(root, rel) for rel in _GATE_MODULES]
-             + [os.path.join(repo_root, rel.replace("/", os.sep))
-                for rel in _GATE_OUTSIDE])
+    if script_dir is not None:
+        roots = [script_dir]
+    else:
+        roots = [os.path.join(repo_root, rel.replace("/", os.sep))
+                 for rel in _GATE_ROOTS]
     out = []
-    for path in paths:
-        try:
-            out.append((path, ast.parse(io.open(path, encoding="utf-8").read())))
-        except (OSError, SyntaxError):
-            continue
+    for root in roots:
+        for dirpath, _dirs, files in os.walk(root):
+            if "__pycache__" in dirpath:
+                continue
+            for name in sorted(files):
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, name)
+                try:
+                    out.append((path,
+                                ast.parse(io.open(path, encoding="utf-8").read())))
+                except (OSError, SyntaxError):
+                    continue
     return out
+
+
+def guard_files(repo=None):
+    """Repo-relative paths an ALLOW row may mutate: every file holding a lint.
+
+    DERIVED off `_gate_sources` for the reason the sources themselves now are. It
+    was a hand-written tuple beside a hand-written source list, so the two could
+    disagree and the only symptom would have been an ALLOW row that could not be
+    written — which reads as the rule being awkward rather than as a list being
+    short.
+
+    A file earns a place by HOLDING a lint, not by being walked: `a3`'s property is
+    that an ALLOW row mutates the guard and never the thing the guard watches, and
+    admitting every file under the roots would admit every document and artifact a
+    tool reads.
+    """
+    repo_root = repo or REPO
+    excused = set(name for name, _why in NOT_A_GATE)
+    out = set()
+    for path, tree in _gate_sources(repo=repo_root):
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
+                continue
+            if (node.name.endswith(_GATE_SHAPES) or node.name in _GATE_NAMED
+                    or (walks_the_tree(node) and node.name not in excused)):
+                out.add(os.path.relpath(path, repo_root).replace(os.sep, "/"))
+                break
+    return tuple(sorted(out))
+
+
+# Bound after the two functions it needs, and after `NOT_A_GATE` above them: a
+# tree-walking helper that is not a verdict must not drag its file in here.
+GUARD_FILES = guard_files()
 
 
 def gate_names(script_dir=None, repo=None):
@@ -1251,6 +1563,16 @@ def gate_names(script_dir=None, repo=None):
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
                 continue
+            # A NARROWING WAS TRIED HERE AND MEASURED WRONG, which is worth more
+            # than the space it costs. The idea was that a function you must hand
+            # data to is a comparator rather than a rule - it would have removed
+            # `vocab_drift`, `subset_drift` and `inline_drift`, which really are the
+            # pure halves of the three `schema_*_drift` lints beside them. It also
+            # removed `hierarchy_violations`, `conformance_violations`,
+            # `provenance_tag_violations` and `removal_helper_drift`, every one of
+            # which is a real lint with rows in both tables. A required argument
+            # does not tell a comparator from a rule; only what the caller does
+            # with it would, and `_needs_an_argument` cannot see that.
             if node.name.endswith(_GATE_SHAPES) or node.name in _GATE_NAMED:
                 found.append(node.name)
             elif walks_the_tree(node) and node.name not in excused:

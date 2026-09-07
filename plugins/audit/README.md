@@ -453,7 +453,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:doctor` | `[--deep] [--json] [--color auto\|always\|never]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:logs` | `prune [--older-than DAYS] [--dry-run] [--json]` | Prune the local feeds this plugin writes under `logsDir` — today `<logsDir>/plan-gate-events.jsonl`, the file the plan gate appends to and the panel's **Plan gate** card renders. `prune` drops the rows that no longer belong: a `file` that resolves **outside this repository** (the plugin manages and references only the consuming repo), and a line that is not a JSON object (the panel's reader already discards those, so they occupy the file while showing up nowhere). `--older-than DAYS` adds an age pass and is **off unless given** — the feed already self-trims by size, and an old verdict is still a true record of this repo, so a default would be a number with no basis. Both counts print, including at zero, and removed rows are counted by class and never echoed. `--dry-run` reports the identical counts and writes nothing. **This one writes**: the verb is mandatory, and the blast radius is the one file — the journal is deliberately out of reach. |
 | `/audit:guide` | `<question about the audit plugin>` | Answer a question about the plugin itself — what a config key does, how the plan gate grades, what the journal can and cannot prove — from the plugin's own README, reference docs, schemas and `SECURITY.md`, with a citation for every claim. Read-only and cheap; it changes nothing. |
-| `/audit:worktree` | `<phaseId> [--remove]` | Create (or remove) a **git worktree** for a phase so you can run it in a parallel session — Claude does the `git worktree add` + derives the phase branch, then prints the `cd … && claude` line. Never edits the manifest. |
+| `/audit:worktree` | `<list\|add\|remove\|sweep> [phaseId]` · `[--path DIR]` `[--force]` · sweep: `[--apply]` `[--remove-worktrees]` `[--delete-branches]` `[--prune]` `[--json]` | The **git worktrees** this plan owns. `list` shows each one with the phase it belongs to and whether its branch is contained in its parent; `add` sets one up so a phase can run in a parallel session and prints the `cd … && claude` line; `remove` takes one down (`--path <dir>` for one this plan does not name); `sweep` reports what may be reaped — **read-only until `--apply`**, which needs at least one verb. A worktree is reaped only when **the plugin created it**, its **phase has signed off** with no task left open and `mergedAt` recorded, its branch is contained in its parent, and its tree is clean — because removal also destroys ignored files (`.env`, `node_modules`) that `git status` never mentions. Anything else is reported and left alone. Never edits the manifest. |
 | `/audit:task` | `add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] \| scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] \| move <taskId> --to <phaseId> \| cancel <id> --reason "<why>"` | Add a tracked task — every answer is a flag the caller may pass, and the command asks only for what is missing (including a skills step with the explicit `null — none applies` choice) before calling `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. `cancel` closes a task — or a whole phase, cascading to the work still open inside it — as **terminal but not done**, recording the reason (into `outcome.descriptive` / the phase `summary`), the moment, and a `task.cancel`/`phase.cancel` journal row. A blank reason is refused: a status flipped with no why is the hand-edit the verb replaces. **`scope`** gives a **pending** task its `files` — and optionally `--tests-mode` / `--tests-add` / `--gate` / `--gate-clear` — through the same lock, revalidate-or-roll-back and journal row as `add`, **re-deriving** `fileIndex` rather than appending to it so files the task no longer claims are released. It exists because `/audit:sync pull sprint` imports tasks with `files: []` and told the reader to scope them, while no verb could: the only route was the hand edit this command replaces, and `fileIndex` is what the plan gate matches an edit against — so an unscoped phase ran with its central guard inert. A started task is refused, because its scope is what its attempts were judged against. `--gate-clear` is the only spelling for the EMPTY gate a task can reach — `--gate ""` writes a gate holding an empty command, which is a gate that cannot run rather than the absence of one — and it refuses alongside `--gate` for the reason `/audit:phase retarget` does. **`add` takes it too**: creation is where the copy of the phase's gate is made, and until `add` read the flag it accepted it and wrote the phase's gate anyway, so a new task nothing in the repo could grade had to be rescoped the moment it existed. **`scope` also reaches `--risk`, `--blocked-by` and `--depends-on`** — the fields of the new-task template that nothing could correct once set, since the panel's composition card reaches `model` and `skills` instead. A task parked behind a `dependsOn` id could only be freed by `cancel` plus a fresh `add`, losing the id, the journal continuity and the description somebody wrote; `risk` is the sharpest of them, because it feeds the executor's model floor and whether a commit needs human confirmation and it is judged before the work is looked at. An empty value of either id list empties the field — a comma list of ids has no value that reads as content, which is why they need no `--clear` twin — and a call that moved either one reports whether the task is ready now. The `model` is deliberately NOT re-derived from a new risk, and the report says so: that field belongs to `/audit:panel` and `add --model`. **`priority` moved.** `/audit:phase priority <phaseId> <tier\|--clear>` is the spelling — the field is `phase.priority` and no task has one — and `/audit:task priority` still works as the legacy spelling of it. `/audit:task cancel <phaseId>` likewise still closes a whole phase; `/audit:phase cancel` is where that is spelled now. |
 | `/audit:bug` | `add "<title>" \| list [all\|<status>] \| fix <bugId> [--phase <id>] \| close <bugId> [wontfix]` | Track bugs in the manifest's top-level `bugs[]`: `add` reports one, `list` shows the table, `fix` materializes a **red-first TDD** task in a `BF<n>` phase (repro test must fail on current code), `close` resolves it. |
 | `/audit:sync` | `connect \| push [bugs\|tasks\|all] [--task <id> \| --phase <id>] \| pull [bugs\|sprint] \| parents \| status` | Sync the manifest with Azure DevOps work items — `connect` is the guided, read-only path to a first working connector (transport, which auth path is actually in effect, a Work-Items probe that proves access without creating anything, and the board's process template), writing `meta.ado` only at the end and only after you confirm; `push` mirrors bugs/tasks outward, `pull` imports assigned ADO bugs, `parents` caches the board's backlog levels and the parent-shaped items on it (read-only against ADO; it writes two `meta.ado` caches and no work item), `status` shows a drift table. Explicit, idempotent, one direction per invocation; configured via `meta.ado`. |
@@ -657,8 +657,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -818,6 +818,7 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `repo` / `title` | Repo name + human title (title heads the report + browser tab). | — |
 | `developmentBranch` | Branch phase branches fork from and merge back into. | `main` |
 | `branchPrefix` | Prefix for per-phase branches → `audit/<phaseId>-<slug>`. | `audit` |
+| `merge` | What sign-off does once a phase's tasks are done — `{auto, removeWorktree, deleteBranch}`. **Absent reads as ON, per key**, so an existing plan behaves exactly as it did. `auto: false` is human-in-the-loop: the phase is reviewed, gated and committed, and the run stops before the merge and prints the command (that is a success, and nothing is stamped). | all on |
 | `gitRoot` | Git repo root relative to the project dir (set when git lives in a subdir). | `.` |
 | `reviewSkill` | Skill run at phase sign-off; `null` → tests are the signer. | `null` |
 | `areas` | Registry of the areas a phase's `area` tag can name — `{tag: {root, description, reviewSkill?, skills?}}`. See below. | — |
@@ -1603,15 +1604,52 @@ the open worktrees before it writes.
 
 To run two phases at once:
 
-Use **`/audit:worktree <phaseId>`** — Claude runs `git worktree add`, derives the phase branch, and
+Use **`/audit:worktree add <phaseId>`** — it sets the worktree up, derives the phase branch, and
 prints the `cd … && claude` line for you:
 
 ```
-/audit:worktree P2      # → ../<repo>-P2 on branch audit/p2-…; open a session there, run /audit:phase P2
-/audit:worktree P3      # → a second worktree for P3, in parallel
-# …then merge both branches into develop — the shards don't conflict — and /audit:worktree P2 --remove.
+/audit:worktree add P2    # → ../<repo>-P2 on branch audit/p2-…; open a session there, run /audit:phase P2
+/audit:worktree add P3    # → a second worktree for P3, in parallel
 ```
 (Or do it by hand: `git worktree add ../audit-P2 -b audit/p2 develop`, one Claude session per worktree.)
+
+**You do not have to clean up afterwards.** Sign-off lands each phase on its resolved parent and
+then removes the worktree and deletes the branch, because `meta.merge` says so and all three of its
+switches default to on. The shards do not conflict, so two phases merging back is not a merge
+conflict waiting to happen.
+
+Two things are worth knowing before you rely on that:
+
+- **A run cannot remove the worktree it is standing in.** Git would delete the caller's own
+  directory, silently, with exit 0 — so the plugin refuses and hands you the command to finish from
+  the main tree. Sign-off in a worktree therefore merges and stamps, and the last step is one
+  command elsewhere.
+- **Nothing is ever reaped over uncommitted work**, and never with `--force` on the plugin's own
+  initiative — `git worktree remove` also destroys ignored files (`.env`, `node_modules`) that
+  `git status` never mentioned.
+- **Nothing the plugin did not create is ever reaped, at all.** `add` records that it made a
+  worktree; the sweep touches only worktrees carrying that record. A worktree you opened yourself,
+  or a colleague's, looks exactly like the plugin's from the outside — same branch shape, same
+  merge state — so nothing but an explicit record can tell them apart, and guessing deletes
+  somebody's working copy.
+
+For the worktrees that outlived a run — an interrupted session, an abandoned phase, or a repository
+that filled up before any of this existed — `/audit:worktree sweep` reports what may go and what
+stays and why. It is read-only until you name a verb:
+
+```
+/audit:worktree sweep                                    # what would go, and what stays and why
+/audit:worktree sweep --apply --remove-worktrees --delete-branches
+```
+
+**A repository can hold many worktrees and have none the sweep may touch.** That is the normal
+state of a repository that predates this, or one where the worktrees were made by hand, and the
+output says so in its own words rather than reporting a clean sheet. Those come down one at a time,
+named by you:
+
+```
+/audit:worktree remove --path ../my-repo-experiment
+```
 
 ## Extending (three layers, no plugin editing)
 
@@ -1668,7 +1706,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.0.1/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.1.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

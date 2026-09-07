@@ -217,6 +217,15 @@ python3 tools/capture-demo-gif.py --check
 # rewritten sits in its `BASELINE` with a reason that is itself checked.
 python3 tools/check-committed-pii.py
 
+# ...and the third question about the same committed files: the example's usage
+# ledger is DERIVED from its manifest, so a phase added to the example desynchronises
+# the two silently. This regenerates it and diffs. It ran only in CI until F232, and
+# it cost a red run on a release candidate that had already been built, tagged and
+# pushed - the exemption that permitted the absence read "same throwaway demo tree",
+# which described a different check. `verify.sh` runs it with a temp dir for you.
+python3 plugins/audit/scripts/demo/gen-demo-usage.py \
+    examples/acme-store/audit-plan.json --out-dir "$(mktemp -d)"
+
 # the browser gates. NOTHING ELSE can prove the report paints and stays interactive,
 # or that the panel's controls do what their labels say: a selftest asserts what the
 # CSS SAYS. The panel leg is the long one.

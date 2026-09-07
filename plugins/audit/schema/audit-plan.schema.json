@@ -130,6 +130,25 @@
             }
           }
         },
+        "merge": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "What phase sign-off does once every task is done. Absent, or any key absent, reads as ON — that is the behaviour reference/orchestrator.md already describes, so turning a switch off is the deliberate act. Read by _branch.merge_policy, which reports each value WITH the key that decided it. Lives here beside developmentBranch (the merge target) and branch (the name) rather than in .claude/audit.config.json, so branch decisions have one home.",
+          "properties": {
+            "auto": {
+              "type": "boolean",
+              "description": "Merge the phase branch into its resolved parent at sign-off. Default true. false is the human-in-the-loop switch: sign-off completes review, gates and the sign-off commit, then STOPS before the merge and prints the exact command it would have run. It is not a failure — a phase that is signed off but lands through a pull request is a real state the plugin previously could not express."
+            },
+            "removeWorktree": {
+              "type": "boolean",
+              "description": "Remove the git worktree holding the phase branch after a successful merge. Default true. Never removes a worktree that is dirty, locked, or the one the running process is standing in, and never uses --force on its own. Note that `git worktree remove` also destroys IGNORED files (a .env, a node_modules) which `git status` never mentions."
+            },
+            "deleteBranch": {
+              "type": "boolean",
+              "description": "Delete the phase branch after a successful merge (`git branch -d`, never -D). Default true. Gated on `git merge-base --is-ancestor <branch> <parent>` and never on git's own check, which grades reachability from HEAD and will happily delete a branch that never reached its declared parentBranch. The worktree is always removed first: git refuses to delete a branch checked out in any worktree."
+            }
+          }
+        },
         "gitRoot": {
           "type": "string",
           "description": "Path (relative to the project directory) of the git repository root, where all git operations and build/gate commands run. Default '.' (the project directory IS the git root — the normal case). Set to e.g. 'test' when the git repo / workspace lives in a subdirectory; the orchestrator then runs `git -C <gitRoot>` and strips the prefix when staging. Keep it in sync with the hooks' `gitRoot` in .claude/audit.config.json."
@@ -932,7 +951,7 @@
             "string",
             "null"
           ],
-          "description": "ISO timestamp after ff-merge to the development branch."
+          "description": "ISO timestamp after the phase branch reached its RESOLVED PARENT — phase.parentBranch ?? meta.developmentBranch — which is not always the development branch. This said 'the development branch' flatly until v2.1, while sign-off has merged into the resolved parent for as long as parentBranch has existed: a phase integrating into a story branch stamped this field and had not reached development at all. Absent/null means the branch has not landed; it is never written by a run that stopped before the merge (meta.merge.auto false)."
         },
         "ado": {
           "$ref": "#/$defs/adoLink",

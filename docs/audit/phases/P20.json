@@ -1,0 +1,290 @@
+{
+  "id": "P20",
+  "title": "Faults: close the remainder",
+  "status": "in_progress",
+  "description": "The open faults after P19, worked to completion.",
+  "desiredOutcome": "F230, F231, F232's broad half and BUG-6 are each either fixed with a red-first proof, or closed with the evidence that settles them - none left as a sentence.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": "F230, F232's broad half, F239's general half and F242 are fixed and proven red; BUG-6 is closed as not reproducible with four refuted hypotheses; F231 is sized from an estimate to a measurement.",
+  "tasks": [
+    {
+      "id": "P20.1",
+      "title": "F230: the dirt window gets a clock the writer owns",
+      "status": "done",
+      "description": "",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The dirt window is three rungs, narrowest first: this writer's own previous look, else the session's earliest look, else the shared file mtime. Rung 3 alone was F230 - every agent rewrites that file, so a peer agent's pass moved a peer session's window. os2c/os2d reproduce it in two runs differing by one call; red from both ends."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test_guard_bash_writes.py os2c/os2d"
+      ]
+    },
+    {
+      "id": "P20.2",
+      "title": "F232 broad + F239 general: an exemption's REASON is checked against what the other side runs",
+      "status": "done",
+      "description": "",
+      "files": [
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gate_parity.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "exemption_reason_drift: a CI step that COMPARES a committed file while running an exempted script must have a reason naming a local gate that exists. The comparison is the discriminator - four of five exempted scripts only read a committed path. revisit_trigger_drift: a REVISIT trigger naming a panel surface the panel now edits has fired; three more had, unread. Both proven red and quiet."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "gate-parity er1/er2",
+        "gen-demo-manifest rt1-rt4"
+      ]
+    },
+    {
+      "id": "P20.3",
+      "title": "F231: prove-gates derives its file set instead of listing it",
+      "status": "done",
+      "description": "",
+      "files": [
+        "tools/prove-gates.py",
+        "tools/bench-hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "F231 sized from an estimate to a measurement: 15 lints owe 30 verified mutation rows, one was a misnamed formatter (fixed: render_violations -> render_budget_findings), one is a rule with no caller (F242), and the obvious narrowing was measured wrong. The walk was reverted so prove-gates stays green; all of it is in _gate_sources' docstring."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "prove-gates.py --selftest (37/37)"
+      ]
+    },
+    {
+      "id": "P20.4",
+      "title": "BUG-6: reproduce against real data or close it with the evidence",
+      "status": "done",
+      "description": "",
+      "files": [
+        "docs/audit/audit-plan.json",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "BUG-6 does not reproduce. Four hypotheses driven in a real browser and all refuted, including the two the report itself offered. Closed as wontfix/not-reproducible with the evidence in its notes, so a fresh sighting reopens it knowing what is already ruled out."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "browser probe: 3 viewports, DOM order and painted position"
+      ]
+    },
+    {
+      "id": "P20.5",
+      "title": "F242: the CRLF rule is applied, not merely asserted",
+      "status": "done",
+      "description": "cr_violations had no caller outside its own suite - the rule was stated and never applied, and its docstring claimed two callers it did not have. ua8b asks it live over UI_ASSETS; ua8c asserts that set is real.",
+      "files": [
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/tests/test__ui_theme.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "ua8b asks cr_violations live over UI_ASSETS and ua8c asserts the set is real; the docstring stops claiming callers it does not have. Proven red by one CRLF in a shipped asset."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": [
+        "test__ui_theme.py ua8b/ua8c"
+      ]
+    },
+    {
+      "id": "P20.6",
+      "title": "F231: prove-gates derives its file set, and the remainder is paid",
+      "status": "done",
+      "description": "The source set becomes a walk over scripts/, hooks/ and tools/. The 15 lints that arrive owe a RED row and an ALLOW row each - 30 verified mutations - and the coverage rule stays red until the last of them lands.",
+      "files": [
+        "tools/prove-gates.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test__ui_theme.py",
+        "plugins/audit/tests/test__branch.py",
+        "plugins/audit/tests/test__areas.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "tools/bench-hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "_gate_sources() is a walk over scripts/, hooks/ and tools/, and the 15 lints it derives each carry a RED row and an ALLOW row. Both tables run clean over the live tree; six rows named a case the mutation did not move and were corrected against the run rather than against the reading."
+      },
+      "startedAt": "2026-09-07T00:00:00Z",
+      "completedAt": "2026-09-07T00:00:00Z",
+      "verifiedBy": [
+        "prove-gates.py (both tables, whole tree)",
+        "prove-gates.py --selftest a1/a2/a4",
+        "verify.sh"
+      ]
+    }
+  ]
+}

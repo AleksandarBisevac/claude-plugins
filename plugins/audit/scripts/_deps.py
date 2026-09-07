@@ -152,6 +152,15 @@ LAYERS = (
      # is a second answer waiting to disagree with the first. It reaches nothing
      # but `_output` and git.
      "_commit_trail",
+     # `_worktrees` answers "which worktrees exist, whose phase is each, and what
+     # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
+     # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both
+     # L4, and layer-mates that cannot import each other), plus `close-phase` and
+     # `manage-worktrees` at L7 - and a second enumeration of git's worktree list
+     # would BE a second answer. It reaches nothing but `_output` and git: the
+     # branch names, the parent names and the cwd all arrive as ARGUMENTS, which is
+     # what keeps it here rather than one layer up beside `_branch`'s readers.
+     "_worktrees",
      # `_locks` is `audit-lock.py`'s read side: where a lock lives, what it may be
      # called, and whether its holder is alive. It reaches nothing but `_output`,
      # and it had to land at L1 rather than beside its command because
@@ -570,6 +579,23 @@ LAYERS = (
      # gate went red. It reaches `_invariants` (L4) for the phase lookup, the git
      # root and the action name the pair share.
      "commit-audit-state",
+     # `close-phase` is the same shape one step LATER, and for the sharpest version
+     # of the same reason: sign-off steps 5c-5e were git commands in prose, and
+     # prose cannot be trusted with a sequence whose steps git enforces the order
+     # of. It never moves HEAD (`git switch <parent>` is unavailable from inside
+     # the worktree the phase ran in), and it gates branch deletion on
+     # `merge-base --is-ancestor <branch> <parent>` rather than on `git branch -d`,
+     # which grades against HEAD and deletes branches that never reached their
+     # declared parent. It reaches `_branch` (L1) for the names, `_worktrees` (L1)
+     # for the plan, `_manifest_io` (L1) for the stamp and `_journal_io` (L1) for
+     # the row.
+     "close-phase",
+     # `manage-worktrees` is the other half of the same domain: the account of what
+     # `/audit:worktree` created, which until now was a path composed in prose and
+     # recorded nowhere. An entry point for the layer's usual reason, and it reaches
+     # the same L1 pair - `_branch` for the plan's own branch names, `_worktrees`
+     # for git's list and the sweep plan.
+     "manage-worktrees",
      # `run-test-gate` (F193) is the same shape one step earlier: a door the
      # orchestrator PROSE reaches through Bash, doing the thing prose cannot be
      # trusted to remember. It brackets a phase's gate with a working-tree

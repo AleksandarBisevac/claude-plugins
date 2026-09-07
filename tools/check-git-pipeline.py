@@ -680,6 +680,260 @@ def check_invariants_have_a_basis(fx):
 # What the order costs is that a reordering breaks checks silently, so each one
 # above says what it needs and what it leaves behind, and the only check that
 # damages the tree puts it back under `finally`.
+# --- the worktree/merge half, against a real repository -----------------------
+# These four are the only place `close-phase.py` and `manage-worktrees.py` meet real
+# git. Their selftests drive an injected runner and can prove every branch of the
+# planners; what they cannot prove is that GIT behaves the way the plan assumed, and
+# three of the assumptions in `reference/orchestrator.md` were wrong for years.
+#
+# Each builds its own worktree and puts the tree back under `finally`, so they may
+# run in any order and leave nothing for the checks after them.
+
+WT_BRANCH = "feature/wt/p9-parallel"
+
+
+def _wt_manifest(branch=WT_BRANCH, phase_id="P9"):
+    """A manifest whose one phase has already been branched, which is the state
+    sign-off actually meets - `phase.branch` set, `mergedAt` still null."""
+    body = manifest_body()
+    body["phases"].append({
+        "id": phase_id, "title": "parallel", "status": "in_progress",
+        "blockedBy": [], "testGate": [], "branch": branch,
+        "baseRef": None, "mergedAt": None, "tasks": [],
+    })
+    return body
+
+
+def _wt_add(fx, path, branch):
+    """A linked worktree on a NEW branch cut from the development branch."""
+    return git(fx, "worktree", "add", "-q", path, "-b", branch, FIXTURE_BRANCH)
+
+
+def _wt_drop(fx, path, branch):
+    """Put the tree back: remove the worktree, delete the branch, clear records."""
+    git(fx, "worktree", "remove", "--force", path)
+    git(fx, "branch", "-D", branch)
+    git(fx, "worktree", "prune")
+
+
+def check_close_phase_from_worktree(fx):
+    """THE ONE THE OLD PROSE COULD NOT DO. Sign-off inside a linked worktree, with
+    the development branch checked out in the main tree.
+
+    `reference/orchestrator.md` step 5c said `git switch <parent>`, and from here
+    that is `fatal: '<parent>' is already used by worktree at '<main tree>'`, exit
+    128 - so the documented sign-off was unavailable on exactly the runs
+    `/audit:worktree` recommends. This asserts the merge LANDS, and asserts the old
+    command still fails, because a check that only proved the new path would not
+    say why the new path exists.
+    """
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-p9")
+    # SETTLE THE MAIN TREE BEFORE CUTTING THE BRANCH, and the order is the whole
+    # point. Earlier checks leave it dirty on purpose - `g13` writes a file
+    # precisely to prove the shell-write guard sees it - and this plugin refuses to
+    # merge into a worktree with uncommitted changes, so settling is necessary. But
+    # settling AFTER the worktree exists puts a commit on the parent the phase
+    # branch does not have, which is a divergence: the check then exits 3 for its
+    # own fixture's reason. `finally` resets to `fx["head"]`, so neither travels.
+    git(fx, "add", "-A")
+    git(fx, "commit", "-q", "-m", "fixture: settle the tree before the merge")
+    code, out = _wt_add(fx, wt, WT_BRANCH)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        with io.open(os.path.join(wt, "b.txt"), "w", encoding="utf-8") as fh:
+            fh.write("work\n")
+        run([fx["git"], "add", "-A"], wt, fx["env"])
+        run([fx["git"], "commit", "-q", "-m", "task work"], wt, fx["env"])
+        _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
+        switch_code, switch_out = run(
+            [fx["git"], "switch", FIXTURE_BRANCH], wt, fx["env"])
+        # THE MANIFEST GOES IN THE WORKTREE, NOT IN THE MAIN TREE. Writing it at
+        # `fx["root"]` leaves the parent's worktree dirty, and this plugin refuses
+        # to merge into a dirty tree - so the check would exit 1 on its own fixture
+        # and read as the feature being broken. The run's `--project .` is the
+        # worktree, which is the copy it must find.
+        wt_manifest = os.path.join(wt, MANIFEST_REL.replace("/", os.sep))
+        with io.open(wt_manifest, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(_wt_manifest(), indent=1, sort_keys=True))
+        path = _resolve_script("close-phase.py")
+        if path is None:
+            return False, "no close-phase.py under scripts/"
+        code, out = run([sys.executable, path, MANIFEST_REL, "P9",
+                         "--project", ".", "--keep-worktree", "--keep-branch"],
+                        wt, fx["env"])
+        _, after = git(fx, "rev-parse", FIXTURE_BRANCH)
+        contained, _ = git(fx, "merge-base", "--is-ancestor", WT_BRANCH,
+                           FIXTURE_BRANCH)
+        return (switch_code != 0 and code == 0 and contained == 0
+                and after.strip() != before.strip()), (
+            "git switch from the worktree exited %r (%s); close-phase exited %r; "
+            "%s moved %s -> %s; contained=%r; %s"
+            % (switch_code, (switch_out or "").strip().split("\n")[0][:60],
+               code, FIXTURE_BRANCH, before.strip()[:8], after.strip()[:8],
+               contained, (out or "").strip().replace("\n", " | ")[:200]))
+    finally:
+        _wt_drop(fx, wt, WT_BRANCH)
+        git(fx, "reset", "--hard", "-q", fx["head"])
+        write_manifest(fx, manifest_body())
+
+
+def check_close_phase_already_contained(fx):
+    """A phase that already landed makes NO git write and exits 0.
+
+    The two write paths disagree here and that is why it is asked first: measured,
+    `git merge --ff-only` calls this state `Already up to date.` exit 0 while
+    `git fetch . <b>:<p>` calls it `! [rejected] (non-fast-forward)` exit 1 -
+    byte-identical to a real divergence. The assertion is on the OUTPUT as well as
+    the code: a run that reported a conflict about a landed phase would still exit
+    0 if only the code were read.
+    """
+    branch = "feature/wt/p9-landed"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-landed")
+    code, out = _wt_add(fx, wt, branch)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        write_manifest(fx, _wt_manifest(branch=branch))
+        _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
+        code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
+                           "--project", ".", "--keep-worktree", "--keep-branch")
+        _, after = git(fx, "rev-parse", FIXTURE_BRANCH)
+        return (code == 0 and "non-fast-forward" not in (out or "")
+                and "already-contained" in (out or "")
+                and before.strip() == after.strip()), (
+            "exit %r; %s unchanged=%r; output: %s"
+            % (code, FIXTURE_BRANCH, before.strip() == after.strip(),
+               (out or "").strip().split("\n")[0][:80]))
+    finally:
+        _wt_drop(fx, wt, branch)
+        write_manifest(fx, manifest_body())
+
+
+def check_close_phase_refuses_diverged(fx):
+    """The parent moved during the phase: exit 3, and NOTHING written.
+
+    Its own sentinel because it is the normal case on a team repository and the
+    orchestrator has a human question attached to it - `--no-ff`, or stop. Folded
+    into 1 it would be indistinguishable from "the tree was dirty".
+    """
+    branch = "feature/wt/p9-diverged"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-div")
+    code, out = _wt_add(fx, wt, branch)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        with io.open(os.path.join(wt, "c.txt"), "w", encoding="utf-8") as fh:
+            fh.write("theirs\n")
+        run([fx["git"], "add", "-A"], wt, fx["env"])
+        run([fx["git"], "commit", "-q", "-m", "phase work"], wt, fx["env"])
+        # ...and the development branch advances too, so neither is an ancestor.
+        # THE MANIFEST IS COMMITTED, not merely written: an uncommitted manifest
+        # leaves the parent's worktree dirty, this plugin refuses to merge into a
+        # dirty tree, and the check would exit 1 for its own fixture's reason
+        # rather than for the divergence it is asserting.
+        write_manifest(fx, _wt_manifest(branch=branch))
+        with io.open(os.path.join(fx["root"], "d.txt"), "w",
+                     encoding="utf-8") as fh:
+            fh.write("ours\n")
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "development moved on")
+        _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
+        code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
+                           "--project", ".")
+        _, after = git(fx, "rev-parse", FIXTURE_BRANCH)
+        return (code == 3 and before.strip() == after.strip()), (
+            "exit %r (want 3); %s unchanged=%r; %s"
+            % (code, FIXTURE_BRANCH, before.strip() == after.strip(),
+               (out or "").strip().split("\n")[-1][:70]))
+    finally:
+        _wt_drop(fx, wt, branch)
+        git(fx, "reset", "--hard", "-q", fx["head"])
+        write_manifest(fx, manifest_body())
+
+
+def check_sweep_leaves_strangers(fx):
+    """A worktree the plan does not name survives `--apply`, and is reported.
+
+    The safety property of the sweep, asserted where it is real: a filter would make
+    the same decision and say nothing about it, and a silent skip over somebody
+    else's worktree is indistinguishable from not having looked.
+    """
+    stranger = "somebody/else"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-stranger")
+    code, out = _wt_add(fx, wt, stranger)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        code, out = script(fx, "manage-worktrees.py", "sweep", MANIFEST_REL,
+                           "--project", ".", "--apply", "--remove-worktrees",
+                           "--delete-branches")
+        still_there = os.path.isdir(wt)
+        _, listed = git(fx, "worktree", "list")
+        return (still_there and stranger in (listed or "")
+                and "not this plan's" in (out or "")), (
+            "exit %r; the stranger's directory survived=%r; named in the "
+            "output=%r" % (code, still_there, "not this plan's" in (out or "")))
+    finally:
+        _wt_drop(fx, wt, stranger)
+
+
+def check_sweep_only_reaps_what_it_created(fx):
+    """TWO WORKTREES, IDENTICAL BUT FOR ONE FILE. Both are named by the plan, both
+    sit on a settled phase, both hold a branch contained in the parent, both are
+    clean. One was created by `manage-worktrees.py add` and carries the provenance
+    marker; the other was created by hand with `git worktree add`.
+
+    The sweep must take the first and leave the second, and no other signal in the
+    repository can tell them apart - which is exactly why the rule cannot be derived
+    from branch names and merge state, and why a flag that adopted "strangers" on
+    those two signals was deleting other people's working copies.
+    """
+    ours = os.path.join(os.path.dirname(fx["root"]),
+                        os.path.basename(fx["root"]) + "-ours")
+    theirs = os.path.join(os.path.dirname(fx["root"]),
+                          os.path.basename(fx["root"]) + "-theirs")
+    b_ours, b_theirs = "feature/wt/p9-ours", "feature/wt/p8-theirs"
+    git(fx, "add", "-A")
+    git(fx, "commit", "-q", "-m", "fixture: settle the tree before the sweep")
+    body = manifest_body()
+    for pid, branch in (("P9", b_ours), ("P8", b_theirs)):
+        body["phases"].append({
+            "id": pid, "title": "parallel", "status": "done",
+            "blockedBy": [], "testGate": [], "branch": branch,
+            "baseRef": None, "mergedAt": "2026-01-01T00:00:00Z", "tasks": [],
+        })
+    write_manifest(fx, body)
+    git(fx, "add", "-A")
+    git(fx, "commit", "-q", "-m", "fixture: the plan both worktrees belong to")
+    code, out = script(fx, "manage-worktrees.py", "add", MANIFEST_REL, "P9",
+                       "--project", ".", "--path", ours)
+    if code != 0:
+        return False, "the plugin could not create its own worktree: %s" \
+                      % (out or "").strip()[:200]
+    hand, hand_out = _wt_add(fx, theirs, b_theirs)
+    if hand != 0:
+        return False, "could not create the hand-made worktree: %s" \
+                      % (hand_out or "").strip()
+    try:
+        code, out = script(fx, "manage-worktrees.py", "sweep", MANIFEST_REL,
+                           "--project", ".", "--apply", "--remove-worktrees",
+                           "--delete-branches")
+        return (not os.path.isdir(ours) and os.path.isdir(theirs)), (
+            "exit %r; the plugin's own worktree survived=%r (want False); the "
+            "hand-made one survived=%r (want True)"
+            % (code, os.path.isdir(ours), os.path.isdir(theirs)))
+    finally:
+        _wt_drop(fx, ours, b_ours)
+        _wt_drop(fx, theirs, b_theirs)
+        git(fx, "reset", "--hard", "-q", fx["head"])
+        write_manifest(fx, manifest_body())
+
+
 CHECKS = (
     ("g1  branch resolution reads the repository's git identity",
      check_branch_identity),
@@ -709,6 +963,16 @@ CHECKS = (
      check_prompt_hook_wiring),
     ("g15 the invariants have a basis to examine, not `no-basis`",
      check_invariants_have_a_basis),
+    ("g16 sign-off lands the phase from INSIDE a worktree, where `git switch "
+     "<parent>` cannot run at all", check_close_phase_from_worktree),
+    ("g17 an already-landed phase makes no git write, and is not reported as a "
+     "conflict", check_close_phase_already_contained),
+    ("g18 a parent that moved during the phase is exit 3, and nothing is written",
+     check_close_phase_refuses_diverged),
+    ("g19 a sweep leaves a worktree this plan does not name, and says so",
+     check_sweep_leaves_strangers),
+    ("g20 the sweep reaps the worktree the plugin created and leaves the "
+     "hand-made one beside it", check_sweep_only_reaps_what_it_created),
 )
 
 

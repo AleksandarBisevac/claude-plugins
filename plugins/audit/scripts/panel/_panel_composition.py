@@ -36,6 +36,7 @@ _output.install_path()
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _branch                # noqa: E402  (the naming convention, one expansion path)
+import _worktrees             # noqa: E402  (git's worktree list + the containment answer, at layer 1)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
@@ -354,6 +355,16 @@ def _branch_info(manifest):
         "exampleFrom": (sample or {}).get("id") or "P2 (no phase in the plan yet)",
         "exampleInitials": "Jane Doe",
         "violations": made["violations"],
+        # WHERE the branch lands and WHAT HAPPENS AFTER, resolved the same way and
+        # for the same reason as the template: absent reads as on, and a card that
+        # showed three switches without saying which of them the file actually
+        # carries would be describing a policy that might not be the one running.
+        "developmentBranch": meta.get("developmentBranch")
+                             or _branch.DEFAULT_PARENT,
+        "developmentBasis": ("meta.developmentBranch"
+                             if meta.get("developmentBranch")
+                             else "default '%s'" % (_branch.DEFAULT_PARENT,)),
+        "mergePolicy": _branch.merge_policy(meta),
     }
 
 
@@ -995,6 +1006,81 @@ def _composition_view(manifest, boundary=None):
         "branchInfo": _branch_info(manifest),
         "phases": phases_out, "tasks": tasks_out,
     }
+
+
+def worktree_rows(git_root, manifest):
+    """{"rows", "error", "examined"} — every linked worktree, judged.
+
+    ITS OWN ENDPOINT AND NOT PART OF THE COMPOSITION PAYLOAD, deliberately. This
+    asks git once for the list and then twice more PER worktree (containment,
+    dirtiness); folding it into `/api/state` would put a dozen subprocess calls in
+    front of every panel load and in front of every save's re-render, to answer a
+    question that changes on a different clock from the plan.
+
+    `error` is a sentence and never an empty list: a git that would not answer and a
+    repository with no worktrees are two states, and the card has to say which.
+    """
+    if not git_root:
+        return {"rows": [], "examined": 0,
+                "error": "no git root, so there are no worktrees to describe"}
+    listing = _worktrees.list_worktrees(git_root)
+    if listing["error"]:
+        return {"rows": [], "examined": 0, "error": listing["error"]}
+    meta = (manifest or {}).get("meta") or {}
+    development = meta.get("developmentBranch") or _branch.DEFAULT_PARENT
+    parent_by_branch, phase_by_branch, phases = {}, {}, {}
+    for phase in ((manifest or {}).get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        name = phase.get("branch")
+        if name:
+            parent_by_branch[str(name)] = _branch.parent_branch(meta,
+                                                                phase)["branch"]
+            phase_by_branch[str(name)] = str(phase.get("id"))
+            phases[str(name)] = phase
+    rows = []
+    for rec in listing["trees"]:
+        if rec.get("isMain"):
+            continue
+        branch = rec.get("branch")
+        parent = parent_by_branch.get(branch, development)
+        contained = (_worktrees.merged_into(git_root, branch, parent)["answer"]
+                     if branch else _worktrees.UNKNOWN)
+        dirt = ({"dirty": None, "lines": []} if rec.get("prunable")
+                else _worktrees.dirtiness(rec.get("path")))
+        prov = _worktrees.read_provenance(rec.get("path"))
+        phase = phases.get(branch)
+        settled = (_worktrees.phase_settled(phase, _mio.TERMINAL)
+                   if phase is not None
+                   else {"settled": False,
+                         "why": "no phase in this plan carries this branch"})
+        rows.append({
+            "path": rec.get("path"),
+            "branch": branch,
+            "phaseId": phase_by_branch.get(branch),
+            "parent": parent,
+            "parentIsGuess": branch not in parent_by_branch,
+            "contained": contained,
+            "dirty": dirt["dirty"],
+            "dirtyCount": len(dirt["lines"]),
+            "locked": rec.get("locked"),
+            "prunable": rec.get("prunable"),
+            "ours": prov["ours"] is True,
+            "oursWhy": prov["basis"],
+            "settled": settled["settled"],
+            "settledWhy": settled["why"],
+            # FOUR conditions, as ONE field the card colours by - and the first two
+            # are about permission rather than safety. A table that showed only
+            # "landed and clean" would invite exactly the sweep this plugin must
+            # never make: somebody else's worktree, on a branch that happens to be
+            # merged.
+            "sweepable": (prov["ours"] is True
+                          and settled["settled"]
+                          and contained == _worktrees.CONTAINED
+                          and dirt["dirty"] is False
+                          and not rec.get("locked")),
+        })
+    return {"rows": rows, "examined": len(rows), "error": ""}
 
 
 def areas_state(project):

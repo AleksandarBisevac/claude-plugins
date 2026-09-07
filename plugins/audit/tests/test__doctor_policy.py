@@ -517,6 +517,85 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- check_branch_naming: three answers, not two -------------------------
+    # Driven through a REAL repository for the same reason `check_worktrees`'
+    # cases are: the defect being pinned is an EXIT CODE git produces, and a stub
+    # returning it would be asserting the stub's opinion of git.
+    if shutil.which("git"):
+        import subprocess
+        root = _harness.fixture_root("dpbranch")
+        try:
+            repo = os.path.join(root, "repo")
+            os.makedirs(repo)
+            env = dict(os.environ, GIT_CONFIG_GLOBAL=os.path.join(root, "gc"),
+                       GIT_CONFIG_SYSTEM=os.devnull)
+
+            def git(*args):
+                return subprocess.run(["git"] + list(args), cwd=repo, env=env,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+
+            git("init", "-q", "-b", "main", ".")
+            git("config", "user.email", "t@example.com")
+            git("config", "user.name", "T T")
+            with open(os.path.join(repo, "a.txt"), "w") as fh:
+                fh.write("base\n")
+            git("add", "-A")
+            git("commit", "-qm", "base")
+            # The story branch must be AHEAD of main, not merely forked from it:
+            # branched at the same commit it is already an ancestor, the check
+            # correctly says nothing, and dp42 would fail against a working
+            # implementation.
+            git("checkout", "-q", "-b", "story/open")
+            with open(os.path.join(repo, "b.txt"), "w") as fh:
+                fh.write("story\n")
+            git("add", "-A")
+            git("commit", "-qm", "story work")
+            git("checkout", "-q", "main")
+
+            _BN = "branch naming"
+            unmerged = {"meta": {"developmentBranch": "main"},
+                        "phases": [{"id": "P2", "status": "pending",
+                                    "parentBranch": "story/open"}]}
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, unmerged, repo)
+            check("dp42 a story branch that exists and has NOT reached the "
+                  "development branch is warned about by name - the case that "
+                  "makes this check worth having, and the allow case for dp43",
+                  "WARNING" in _levels(rep, _BN)
+                  and "NOT yet merged" in _detail(rep, _BN),
+                  _detail(rep, _BN)[-70:])
+
+            ghost = {"meta": {"developmentBranch": "main"},
+                     "phases": [{"id": "P2", "status": "pending",
+                                 "parentBranch": "no/such/branch"}]}
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, ghost, repo)
+            check("dp43 a parentBranch this clone does not have is reported as "
+                  "COULD NOT SAY, never as a definite 'is NOT yet merged'. "
+                  "`git merge-base --is-ancestor` exits 128 on an unresolvable "
+                  "ref, and `merged = (returncode == 0)` - the shape this check "
+                  "carried until v2.1 - printed that as an accusation about a "
+                  "question git had refused to answer",
+                  "could not say" in _detail(rep, _BN)
+                  and "NOT yet merged" not in _detail(rep, _BN),
+                  _detail(rep, _BN)[-90:])
+
+            git("checkout", "-q", "-b", "story/landed")
+            git("checkout", "-q", "main")
+            git("merge", "-q", "--ff-only", "story/landed")
+            landed = {"meta": {"developmentBranch": "main"},
+                      "phases": [{"id": "P2", "status": "pending",
+                                  "parentBranch": "story/landed"}]}
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, landed, repo)
+            check("dp44 ...and a parent that HAS reached the development branch "
+                  "produces no warning at all - the second direction, without "
+                  "which dp42 could be a check that warns about every phase",
+                  _levels(rep, _BN) == ["OK"], repr(_levels(rep, _BN)))
+        finally:
+            _harness.remove_tree(root)
+
 
 def _selftest():
     return _harness.run(_cases)

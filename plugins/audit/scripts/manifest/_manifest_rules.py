@@ -110,6 +110,7 @@ PROP_ID_RE = _vocab.PROP_ID_RE
 KNOWN_ROOT = _vocab.KNOWN_ROOT
 KNOWN_META = _vocab.KNOWN_META
 KNOWN_BRANCH = _vocab.KNOWN_BRANCH
+KNOWN_MERGE = _vocab.KNOWN_MERGE
 KNOWN_ADO = _vocab.KNOWN_ADO
 KNOWN_PHASE = _vocab.KNOWN_PHASE
 CLAIM_KEYS = _vocab.CLAIM_KEYS
@@ -226,6 +227,23 @@ def _check_branch(manifest):
                          "expands to nothing and collapses the separator with it; "
                          "known: %s"
                          % (ph, ", ".join("{%s}" % k for k in _branch.PLACEHOLDERS)))
+
+    mblk = meta.get("merge")
+    if mblk is not None and not isinstance(mblk, dict):
+        f.append("meta.merge: not an object")
+        return (f, w)
+    if isinstance(mblk, dict):
+        _vocab._unknown_keys(mblk, KNOWN_MERGE, "meta.merge", w)
+        for key in _branch.MERGE_KEYS:
+            if key in mblk and not isinstance(mblk[key], bool):
+                # A FINDING and not a warning, because the coercion is silent and
+                # asymmetric: `"false"` is a non-empty string, so a switch written
+                # as text reads as TRUE and the branch somebody meant to keep is
+                # deleted. There is no reading of a non-boolean here that is safe
+                # to guess at.
+                f.append("meta.merge.%s: not a boolean (%r) - a non-boolean would "
+                         "be coerced, and the string 'false' coerces to TRUE"
+                         % (key, mblk[key]))
 
     cfg = _branch.config(meta)
     for phase in (manifest.get("phases") or []):

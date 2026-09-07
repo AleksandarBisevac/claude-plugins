@@ -2531,12 +2531,24 @@ def _cases(check):
           # says it more exactly than one line doing both ever did.
           "const bcard=branchCard(comp,patch);" in M.UI_HTML
           and "c.append(tcard,meta,bcard);" in M.UI_HTML)
-    check("bn2 the card writes patch.meta.branch and NOTHING else on the form's "
-          "draft - it rides the Composition save, so a stray write to another "
-          "meta key would be saved under a confirm dialog that never listed it",
-          _bcard.count("patch.meta.") == 1
+    # The card writes THREE meta keys now (naming, the merge target, the policy)
+    # and the claim is unchanged in substance: every key it touches must be one the
+    # confirm dialog enumerates, or a save would carry a change nothing listed. So
+    # the assertion moved from "exactly one" to "every one of them, and no other" -
+    # derived from `_META_FORM_KEYS` rather than restated, which is what stops it
+    # going stale the next time the card grows a control.
+    _bwrites = sorted(set(
+        l.split("patch.meta.")[1].split("=")[0].split(";")[0].strip()
+        for l in _bcard.splitlines() if "patch.meta." in l))
+    check("bn2 every meta key the card writes on the form's draft is one the "
+          "confirm dialog enumerates - it rides the Composition save, so a stray "
+          "write to another key would be saved under a dialog that never listed "
+          "it. Written as a SUBSET of the form keys, not as a count: the count "
+          "was the assertion until the card grew the merge target and the policy, "
+          "and a count is what a growing card outgrows",
+          _bwrites and set(_bwrites) <= set(M._META_FORM_KEYS)
           and "patch.meta.branch=draft" in _bcard,
-          repr([l for l in _bcard.splitlines() if "patch.meta." in l]))
+          repr(_bwrites))
     check("bn3 THE LOAD-BEARING ONE: the worked example is READ from the payload, "
           "never composed here. `_branch.expand`'s separator rule has cases - an "
           "empty placeholder takes the separator behind it - and a second copy in "
@@ -4032,7 +4044,7 @@ def _cases(check):
           "%d table builder(s) between renderComp and renderAdoCard: %r"
           % (len(_ir_tables), _ir_classes),
           _ir_script is not None and _ir_slice != ""
-          and _ir_classes == ["comp", "regtbl", "regtbl adosm"])
+          and _ir_classes == ["comp", "regtbl", "wt", "regtbl adosm"])
     _ir_bare = sorted([c for c, has in _ir_tables if not has])
     check("ir1 SC 1.3.1: every table the Composition tab builds emits header "
           "cells - the three stateMap grids it paints were 12 and 15 <td> with "

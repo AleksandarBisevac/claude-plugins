@@ -154,6 +154,27 @@ _evidence_view = _composition.evidence_view
 _empty_evidence = _composition.empty_evidence
 areas_state = _composition.areas_state
 
+
+def worktrees_state(project):
+    """`GET /api/worktrees` — the live worktree table for the Branch card.
+
+    Resolves the git root the way every other reader here does and hands the
+    question to `_composition.worktree_rows`, which asks git. A separate endpoint
+    rather than a field on `build_state`: see the route's own comment — this is
+    subprocess-heavy and changes on a different clock from the plan.
+    """
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
+    manifest = {}
+    if mpath and os.path.isfile(mpath):
+        try:
+            manifest = _mio.load_manifest(mpath) or {}
+        except Exception:
+            manifest = {}
+    git_root = os.path.realpath(os.path.join(project,
+                                             (config or {}).get("gitRoot") or "."))
+    return _composition.worktree_rows(git_root, manifest)
+
 # NOT `_composition._proposals_view` any more. The Proposals tab and
 # `/audit:propose list` render the same array, so the derivation belongs to the
 # module that owns proposals rather than to the panel - `_proposals` sits at layer

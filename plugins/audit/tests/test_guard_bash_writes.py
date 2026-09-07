@@ -1361,7 +1361,15 @@ def _cases(check):
     s = "bw-os2b"
     seed(s, state_dir=osd)
     _same = _other("sess-tied", tool_edited=["src/tied.ts"])
-    _t = os.path.getmtime(str(osd / ("bash-writes-%s.json" % s)))
+    # TIED TO THIS WRITER'S OWN LAST LOOK, not to the file's mtime (F230). Those
+    # were the same value while the window came from the shared file; they are not
+    # any more, and that difference IS the fix — the file's mtime moves when any
+    # agent of this session passes, and the boundary must not. The property the
+    # case pins is unchanged: equal is not newer.
+    with open(str(osd / ("bash-writes-%s.json" % s)), "r") as _fh:
+        _looks = (json.load(_fh).get("agentsAt") or {})
+    _t = max([v for v in _looks.values() if isinstance(v, (int, float))]
+             or [os.path.getmtime(str(osd / ("bash-writes-%s.json" % s)))])
     os.utime(str(_same), (_t, _t))
     _ok2b, _got2b = _harness.attempt(
         M.decide, payload("Bash", sid=s, command="python3 tools/gen.py"),
@@ -1374,6 +1382,50 @@ def _cases(check):
           _v2b == "warn" and "src/tied.ts" in _d2b
           and "CANNOT say the command wrote them" not in _d2b,
           repr((_v2b, _d2b)))
+
+    # --- F230: a PEER AGENT's pass must not move a PEER SESSION's window --------
+    # The residue F227's fix could not reach. Every agent of one session rewrites
+    # the one state file, so while `since` came from that file's mtime, one agent
+    # passing moved the boundary for all of them: a sibling session that had
+    # plainly acted inside the window fell outside it, its claim was dropped, and
+    # the path was reported instead. The cost was noise rather than a false
+    # accusation - the withdrawal still came off - but noise that arrives by
+    # SCHEDULING is the kind nobody can reproduce, and this is the pair that
+    # reproduces it.
+    #
+    # The two halves differ by ONE call. Anything else that told them apart would
+    # be the fixture explaining the result rather than the product.
+    def _peer_window(with_agent_pass):
+        sid = "bw-f230-%s" % ("agent" if with_agent_pass else "solo",)
+        seed(sid, state_dir=osd)
+        _age_session(sid)
+        _other("sess-f230-%s" % ("a" if with_agent_pass else "s",),
+               tool_edited=["src/theirs.ts"])
+        if with_agent_pass:
+            # A PEER AGENT of MY session passes, rewriting the shared file. Under
+            # the old rule this alone moved the far end of my window past the
+            # sibling session's write.
+            M.decide(payload("Bash", sid=sid, command="ls -la", agent="peer"),
+                     cfg=cfg, state_dir=osd, dirty=[])
+        ok, got = _harness.attempt(
+            M.decide, payload("Bash", sid=sid, command="python3 tools/gen.py",
+                              agent="mine"),
+            cfg=cfg, state_dir=osd, dirty=["src/theirs.ts"])
+        return got if ok else ("EXC", str(got))
+
+    _f230_solo = _peer_window(False)
+    _f230_peer = _peer_window(True)
+    check("os2c F230: a peer SESSION's claim is honoured whether or not a peer "
+          "AGENT of my session passed in between. The two runs differ by one "
+          "call, and under the shared-mtime window the second one reported the "
+          "path instead - the boundary had moved because somebody else looked",
+          _f230_solo[0] == "silent" and _f230_peer[0] == "silent",
+          "solo=%r withAgentPass=%r" % (_f230_solo[0], _f230_peer[0]))
+    check("os2d ...and both attribute it to the sibling session by name, so the "
+          "pair is asserting the same ANSWER rather than merely the same verdict "
+          "- 'silent' is also what a guard that had stopped looking would say",
+          "sess-f230-s" in _f230_solo[1] and "sess-f230-a" in _f230_peer[1],
+          repr((_f230_solo[1][:60], _f230_peer[1][:60])))
 
     s = "bw-os3"
     seed(s, state_dir=osd)

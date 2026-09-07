@@ -1,0 +1,111 @@
+{
+  "id": "P19",
+  "title": "Faults: the exemptions nobody reads, and the demo that proves it",
+  "status": "in_progress",
+  "description": "The open faults, worked by name.",
+  "desiredOutcome": "F239 and F232 are closed with their causes rather than their symptoms: a demo fixture that carries what the panel renders, and a local gate for the one check that only ever ran in CI. F230, F231 and BUG-6 are re-stated with what each actually costs, so the next session picks one knowing the size.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": "F239 and F232's narrow half are closed with their causes rather than their symptoms. BUG-6 did not reproduce and carries the evidence. F230 is located to one line; F231 and F232's broad half are sized and left named.",
+  "tasks": [
+    {
+      "id": "P19.1",
+      "title": "F239: carry meta.branch in the demo and retire the exemption whose trigger fired",
+      "status": "done",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "The demo carries meta.branch and the exemption row is gone; the branch card's screenshot now shows a convention instead of an empty one. The general defect - nobody checks an exemption's own REVISIT trigger - is recorded in its place rather than deleted with it."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P19.2",
+      "title": "F232: the ledger reproducibility check runs locally, and its exemption row goes",
+      "status": "done",
+      "description": "",
+      "files": [
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        ".github/workflows/ci.yml",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/test_gate_parity.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "summary": "verify.sh runs the ledger reproducibility check and the ABSENT_BY_DESIGN row is deleted rather than reworded - there is no absence left to excuse. Proven red by mutating one committed ledger row. The general defect (nothing checks an exemption's REASON) stays open in its place."
+      },
+      "startedAt": "2026-09-06T00:00:00Z",
+      "completedAt": "2026-09-06T00:00:00Z",
+      "verifiedBy": []
+    }
+  ]
+}

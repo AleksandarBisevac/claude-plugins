@@ -122,6 +122,10 @@ claude-plugins/                           # this repo (personal, public)
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add + /audit:phase add + cancel doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
+        git/                              # the git domain: the worktree/branch half of the pipeline, as code rather than prose
+          _worktrees.py                   # which worktrees exist, whose phase each is, and what may be reaped
+          close-phase.py                  # sign-off 5c-5e as one step: merge into the resolved parent, stamp it, clean up
+          manage-worktrees.py             # list / add / remove / sweep: the account of what /audit:worktree created
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
@@ -268,6 +272,7 @@ L1:
   _refs -> _output
   _ui_theme -> _output
   _usage_core -> _output
+  _worktrees -> _output
 
 L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
@@ -293,7 +298,7 @@ L2:
 L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
-  _doctor_hygiene -> _locks, _output
+  _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _output, _report_html, _status_facts
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output, _policy
@@ -305,11 +310,11 @@ L3:
 
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
-  _doctor_policy -> _branch, _doctor_report, _output
+  _doctor_policy -> _branch, _doctor_report, _output, _worktrees
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _evidence_io, _journal_io, _locks, _output, _panel_paths
@@ -327,7 +332,7 @@ L5:
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
 
 L6:
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L7:
@@ -340,11 +345,13 @@ L7:
   audit-task -> _areas, _manifest_io, _output, _panel_write, _proposals, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
+  close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
+  manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
@@ -809,6 +816,119 @@ Its lock, project resolution, snapshot and rollback are `_panel_write`'s functio
 copies: two writers with two rollbacks are two answers, and reaching `audit-task.py` through the
 loader would have been an entry point loading an entry point — the edge `KNOWN_LAYER_DEBT` exists
 to keep at zero new entries.
+
+### `plugins/audit/scripts/git/_worktrees.py`
+Which worktrees this repository has, whose phase each one is, and what may be reaped. The
+worktree/branch half of the pipeline was prose until this module: `commands/worktree.md` composed
+a path and recorded it nowhere, and `reference/orchestrator.md` steps 5c–5e were git commands the
+model typed. Nothing could enumerate what had been created, so nothing could clean it up.
+
+**Git is the registry, not the manifest.** A `phase.worktree` field would be a second source of
+truth that goes stale the moment somebody moves a directory. `git worktree list --porcelain`
+already gives the authoritative (path, branch) pair, and the phase is joined onto it through
+`phase.branch` — so a worktree made by hand, at a path nobody predicted, is still seen and still
+judged.
+
+**Every question has three answers, and the third is loud.** `merged_into()` returns `contained`,
+`not-contained` or `unknown`; `ref_exists()` and `dirtiness()` return `True`/`False`/`None` on the
+same principle. The cost of collapsing them is live one directory over:
+`_doctor_policy.check_branch_naming` writes `merged = (out.returncode == 0)`, which turns exit 128
+— a `parentBranch` this clone does not have — into a definite *"is NOT yet merged"* accusation.
+
+**The word is `contained`, not `merged`.** `git merge-base --is-ancestor` answers 1 for a
+squash-merged branch: the work IS in the parent and the tip is not an ancestor of it. Nothing here
+says "never merged" about that branch, and `detail` carries the sentence that explains the answer.
+
+**The planners are pure, and that is what makes them testable.** `merge_plan()`, `cleanup_plan()`
+and `sweep_plan()` take the observations as arguments and return the argv a caller would run, so
+their cases drive the exit-128 and could-not-ask branches without a repository. `_branch` is a
+layer-mate and cannot be imported, so branch and parent names arrive as arguments too — which is
+what keeps this module at L1 where four surfaces can share the one answer.
+
+**Two refusals are the plugin's own and say so.** Git fast-forwards over unrelated dirt in the
+parent worktree and exits 0; git also removes the worktree the calling process is standing in,
+silently, with exit 0 and empty output. Both are refused here, worded as this plugin's rule —
+a refusal that misattributes itself to git is one the operator disproves in a single command.
+
+**Cleanup order is a contract, not a preference.** `git branch -d` refuses for a branch checked
+out in ANY worktree, so removal comes strictly before deletion; and deletion is gated on
+`merge-base --is-ancestor <branch> <parent>` rather than on `git branch -d`'s own net, which
+grades reachability from HEAD and will delete a branch that never reached its declared parent.
+
+### `plugins/audit/scripts/git/close-phase.py`
+Sign-off steps 5c–5e as one command. It merges the phase branch into its resolved parent, writes
+`phase.mergedAt`, and performs whatever cleanup `meta.merge` asks for — each step planned in full
+before the first write, and each result read back by asking a *different* question than the write
+answered.
+
+**It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
+a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
+the sign-off the orchestrator documented was unavailable on exactly the runs `/audit:worktree`
+recommends. Instead the merge happens **in the worktree that already holds the parent**, or — when
+nothing holds it — as a no-checkout fast-forward. One path works from inside a worktree, from the
+main tree and from a bare checkout.
+
+**`meta.merge.auto: false` exits 0, not 1.** It is the human-in-the-loop switch: review, gates and
+the sign-off commit all happen, then the run stops before the merge and prints the command it would
+have run. A phase that is signed off and lands through a pull request is a real state, and the
+plugin previously had no way to say it. Nothing is stamped on that path — a plan that records a
+merge that did not happen is worse than one that records nothing.
+
+**Two exit codes exist so callers can tell three failures apart.** `3` is *not a fast-forward* —
+the parent moved while the phase ran, which is the normal case on a team repo and has a human
+question attached. `4` is *could not be asked* — git absent, or refusing to describe the worktrees.
+Folded into `1` they would be indistinguishable from "the tree was dirty", and a caller would retry
+the wrong one.
+
+**The verification is a second computation, not a re-reading of the first.** After the merge the
+ancestry is re-asked with `merge-base --is-ancestor`; comparing the merge command's own output
+against itself would be a check that cannot go red. Cleanup runs only after that answer is
+`contained`, and stops at the first refusal — the steps are ordered because git enforces the order.
+
+### `plugins/audit/scripts/git/manage-worktrees.py`
+`list`, `add`, `remove`, `sweep` — the account of what `/audit:worktree` created, which the prose
+composed as a path (`../<repo>-<phaseId>`) and then recorded nowhere. Git's own list is the
+registry; the phase is joined onto it through `phase.branch`.
+
+**The sweep refuses on two axes, and the second one is why.** A branch contained in its parent
+means the *commits* are safe; it says nothing about the working tree. This project's own history
+carries the worked example — a batch of worktrees whose branches were all merged and whose trees
+still held unstaged edits, which is why retiring them cost six hundred lines of hand-written
+evidence. So a worktree goes only when its branch is contained **and** its tree is clean, and
+everything else is kept with the reason printed beside it.
+
+**Read-only by default, and the verb is mandatory** — the grammar `/audit:logs prune` already uses.
+`--apply` needs at least one of `--remove-worktrees` / `--delete-branches` / `--prune`; `--apply`
+alone is a usage error, because "sweep everything" is not something this command infers. That
+default is not timidity: `git worktree remove` destroys *ignored* files without complaint — a
+`.env` or a `node_modules` that `git status` never mentioned — so the irreversible half needs an
+explicit ask.
+
+**Provenance decides what may be reaped, and it is not derivable from git.** `add` writes a marker
+into the worktree's own admin directory — what `git rev-parse --git-dir` prints from inside it —
+and the sweep touches only worktrees carrying it. The placement earns three properties: git
+tolerates unknown files there, no manifest write is needed, and **the marker dies with its
+subject**, so it can never outlive the worktree and authorise removing whatever next occupies the
+path.
+
+**`--include-strangers` was here and was removed, and the reason is worth keeping.** It widened the
+sweep past the branches the plan names, judging the adopted worktrees against
+`meta.developmentBranch` — a guess at a parent they never declared. It was added because the strict
+sweep found nothing on this project's own repository: *every* linked worktree there was a stranger,
+because parallel agent sessions and hand `git worktree add` calls do not go through the plan. That
+was a real observation and the wrong conclusion. A worktree somebody opened by hand is
+indistinguishable from ours by branch name and merge state, so a flag adopting on those two signals
+deletes other people's working copies on the strength of a guess. `remove --path <dir>` is the
+replacement: one directory, named by a human.
+
+**And settlement is a separate question from containment.** A branch contained in its parent says
+the commits are safe. `phase_settled` asks whether the plugin is *finished*: sign-off passed, no
+task still open, `mergedAt` recorded — three marks, and the first missing one is the reason
+reported. A phase can be merged early and still be running.
+
+**Exit 5 means there was nothing to examine.** A sweep that looked at nothing and a sweep that
+looked at everything and found it healthy are otherwise the same exit code and very nearly the same
+sentence, and only one of them describes a repository somebody should feel good about.
 
 ### `plugins/audit/scripts/manifest/_commit_trail.py` + `repair-commits.py`
 Is every recorded `task.commit` still reachable, and what to write when one is not. The manifest

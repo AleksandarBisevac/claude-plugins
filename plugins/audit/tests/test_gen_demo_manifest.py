@@ -336,6 +336,37 @@ def _cases(check):
                    if not (isinstance(v, str) and len(v.strip()) >= 40))
     check("every exemption states a reason, not a shrug: %r" % (_mute,),
           bool(M.SCHEMA_EXEMPTIONS) and _mute == [])
+    # --- F239: a REVISIT trigger nobody reads ---------------------------------
+    _rt_live = M.revisit_trigger_drift()
+    check("rt1 THE LIVE CLAIM: no exemption is excusing itself on a REVISIT "
+          "trigger that has already come true. `meta.branch` sat behind 'REVISIT "
+          "when the panel grows a meta.branch card' for releases after the panel "
+          "grew one, and the case above could not see it - a row that is "
+          "carried-or-exempted stays green while its own stated condition goes "
+          "stale underneath it: %r" % (_rt_live,),
+          _rt_live == [])
+    check("rt2 ...and it fires on exactly that shape, so rt1 is not a rule that "
+          "cannot speak: a trigger naming the panel over a field the panel edits "
+          "is reported, and the same trigger over a field it does not edit is not",
+          [k for k, _w in M.revisit_trigger_drift(
+              exemptions={"phase.priority": "REVISIT when the panel grows one."},
+              panel_paths={"phases[].priority"})] == ["phase.priority"]
+          and M.revisit_trigger_drift(
+              exemptions={"phase.priority": "REVISIT when the panel grows one."},
+              panel_paths={"meta.branch"}) == [])
+    check("rt3 a row EXPLAINING a trigger it has dropped is not reported - a "
+          "trigger is a sentence that says WHEN, and a lint reading the bare word "
+          "would report the repair it asked for, for ever",
+          M.revisit_trigger_drift(
+              exemptions={"phase.priority": "it carried a REVISIT trigger naming "
+                                            "the panel's phase row; dropped."},
+              panel_paths={"phases[].priority"}) == [])
+    check("rt4 ...and a trigger this cannot EVALUATE is left alone rather than "
+              "guessed at: one naming something other than a panel surface is "
+              "not a condition this rule has any way to test",
+          M.revisit_trigger_drift(
+              exemptions={"phase.x": "REVISIT when the ledger grows a column."},
+              panel_paths={"phases[].x"}) == [])
     # The property that makes the lint worth having, asked directly: a field
     # ADDED to the schema must arrive as a gap. Asked with a doctored copy of
     # the real schema rather than by editing the file, because the claim is

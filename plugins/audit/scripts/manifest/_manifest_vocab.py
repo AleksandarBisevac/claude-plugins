@@ -112,6 +112,11 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # stays valid — an existing manifest must keep producing the same
               # names. _check_branch_naming reads meta.branch first.
               "branch",
+              # v2.1: what sign-off does once the tasks are done — merge, remove the
+              # worktree, delete the branch. Beside developmentBranch (the target)
+              # and branch (the name) rather than in the config file, so branch
+              # decisions have one home. _branch.merge_policy reads it.
+              "merge",
               "runtimeBoot", "nodePreamble", "commit", "buildCommands", "ado",
               # report rendering (render-report.py): narrative summary box +
               # custom output-file basename. Neither affects orchestration.
@@ -218,6 +223,13 @@ KNOWN_ADO = {"organization", "project", "areaPath", "iterationPath", "types",
 # meta.ado is: a typo like `slugMaxLen` or `defaulttype` would otherwise be a
 # convention that silently never applies.
 KNOWN_BRANCH = {"template", "defaultType", "types", "initials", "slugMaxLength"}
+
+# Keys inside meta.merge (what sign-off does after the tasks are done). Enumerated
+# for the same reason, and the cost of a typo here is worse than a convention that
+# never applies: `removeWorktrees` instead of `removeWorktree` reads as ABSENT, and
+# absent reads as ON — so a switch somebody turned off would stay on, silently, and
+# the thing they were protecting would be deleted.
+KNOWN_MERGE = {"auto", "removeWorktree", "deleteBranch"}
 
 KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                "description", "desiredOutcome", "testGate", "baseRef", "branch",
@@ -406,6 +418,7 @@ SCHEMA_ANCHORS = (
     ("KNOWN_META", "meta"),
     ("KNOWN_ADO", "meta.ado"),
     ("KNOWN_BRANCH", "meta.branch"),
+    ("KNOWN_MERGE", "meta.merge"),
     ("KNOWN_PHASE", "phases[]"),
     ("KNOWN_TASK", "phases[].tasks[]"),
     ("KNOWN_BUG", "bugs[]"),

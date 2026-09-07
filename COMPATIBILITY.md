@@ -64,6 +64,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   to, and its tasks with it; **absent keeps meaning tracked**, which is what makes
   adding the key free — a plan that never writes it behaves exactly as it did before,
   so it is a minor. Ceasing to read it, or reversing what absence means, is a major.
+- **`meta.merge` is under the same promise, and absence is the load-bearing half.**
+  Three booleans — `auto`, `removeWorktree`, `deleteBranch` — decide what phase
+  sign-off does once every task is done. **Absent reads as ON, per key rather than
+  per block**, and that is what makes adding them free: a plan that never writes the
+  block behaves exactly as it did before, and a plan carrying `{"auto": false}`
+  still removes the worktree and deletes the branch, because the three answer
+  different questions. Ceasing to read a key, or reversing what its absence means,
+  is a major. `meta.developmentBranch` was already read and stays read; what is new
+  is that `phases[].parentBranch` overriding it is now settable from the panel, which
+  changes no meaning.
 - **`testEvidence` is under the same promise, and is deliberately three keys.**
   A task or a phase may carry `{runId, status, at}` pointing at the run that last
   exercised it. **Absent means no run has been recorded** — never "failed" — which is

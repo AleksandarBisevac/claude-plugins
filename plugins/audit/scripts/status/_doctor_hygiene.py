@@ -55,6 +55,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
+import _branch  # noqa: E402  (where a phase's branch lands, at layer 1)
+import _worktrees  # noqa: E402  (git's worktree list + the containment answer, L1)
 
 
 # The panel's per-project files: basename, the label a row uses, WHY that row
@@ -147,6 +149,116 @@ def check_locks(rep, git_root, project, manifest_rel):
         rep.ok("locks", "%d lock(s) held by a live run: %s"
                % (len(rows), "; ".join("%s (%s)" % (r["name"], r["basis"])
                                        for r in rows)))
+
+
+def check_worktrees(rep, git_root, manifest):
+    """What was LEFT BEHIND — the third member of this module's family.
+
+    `check_locks` answers what is HELD and `check_local_artifacts` what is LEAKING;
+    a worktree whose branch already reached its parent is neither, and until this
+    check existed nothing in the plugin ever looked. The residue is real and grows in
+    one direction: `git worktree prune` clears a record and LEAVES ITS BRANCH, so
+    every abandoned parallel run deposits an orphan branch too.
+
+    THE COUNT IS COMPUTED, NEVER WRITTEN. `_output.prose_number_claims()` fails a
+    present-tense number in a docstring for exactly this reason, and a diagnostic is
+    the last place a stale figure belongs.
+
+    IT REPORTS AND NEVER REAPS. The doctor is read-only by contract, so the remedy is
+    the command that would do it — and that command is itself read-only until the
+    human names a verb. `check_branch_naming` used to be the only merge probe here
+    and its advice was "do NOT delete"; this is the other half of that sentence, and
+    it is separate because the two answer different questions: that one asks whether
+    a phase's PARENT has landed, this one whether the phase's own branch has.
+    """
+    if not (git_root and shutil.which("git")):
+        rep.ok("worktrees", "git cannot be asked here, so nothing is claimed about "
+                            "what earlier runs left behind")
+        return
+    listing = _worktrees.list_worktrees(git_root)
+    if listing["error"]:
+        rep.warn("worktrees", "git would not list the worktrees: %s"
+                 % (listing["error"],),
+                 "run `git worktree list --porcelain` by hand; an unreadable list "
+                 "is not an empty one")
+        return
+    linked = [r for r in listing["trees"] if not r.get("isMain")]
+    if not linked:
+        rep.ok("worktrees", "no linked worktree exists, so there is nothing to "
+                            "have been left behind")
+        return
+
+    meta = (manifest or {}).get("meta") or {}
+    development = meta.get("developmentBranch") or _branch.DEFAULT_PARENT
+    parent_by_branch = {}
+    for phase in ((manifest or {}).get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        name = phase.get("branch")
+        if name:
+            parent_by_branch[str(name)] = _branch.parent_branch(meta,
+                                                                phase)["branch"]
+
+    landed, unknown, prunable, foreign = [], [], [], []
+    for rec in linked:
+        if rec.get("prunable"):
+            prunable.append(rec.get("path"))
+            continue
+        branch = rec.get("branch")
+        if not branch:
+            continue                       # detached: no branch to have landed
+        # WHOSE IT IS, BEFORE WHETHER IT LANDED. A worktree the plugin did not
+        # create is never swept, so reporting it as residue and pointing at `sweep`
+        # would send the reader to a command that will decline. A remedy that does
+        # not work is worse than none: it teaches people the tool is broken.
+        if _worktrees.read_provenance(rec.get("path"))["ours"] is not True:
+            foreign.append("%s (%s)" % (rec.get("path"), branch))
+            continue
+        parent = parent_by_branch.get(branch, development)
+        answer = _worktrees.merged_into(git_root, branch, parent)["answer"]
+        if answer == _worktrees.CONTAINED:
+            landed.append("%s (%s -> %s)" % (rec.get("path"), branch, parent))
+        elif answer == _worktrees.UNKNOWN:
+            unknown.append("%s (%s)" % (rec.get("path"), branch))
+
+    # `some_of` and not `"; ".join(...)`: a count in front of a list that has been
+    # cut short is the F205 defect, and `truncated_evidence_violations()` fails it.
+    # On a repository with a real backlog this line is otherwise hundreds of
+    # characters wide and nobody reads the remedy at the end of it.
+    if prunable:
+        rep.warn("worktrees",
+                 "%d worktree record(s) point at a directory that is gone: %s"
+                 % (len(prunable), _output.some_of(prunable, sep="; ")),
+                 "`git worktree prune` clears the records - note it LEAVES the "
+                 "branches, which is how an orphan branch outlives its worktree")
+    if unknown:
+        # Named rather than folded into "nothing to do": a question git refused is
+        # not an answer, and a reader who is not told will read silence as clean.
+        rep.warn("worktrees",
+                 "%d worktree(s) whose branch could not be compared with its "
+                 "parent: %s" % (len(unknown), _output.some_of(unknown, sep="; ")),
+                 "the parent branch may not exist in this clone; check "
+                 "`phase.parentBranch` and `meta.developmentBranch`")
+    if foreign:
+        # A REPORT, NOT A FINDING, and the remedy is a hand command. These are
+        # somebody's working copies; the plugin will not touch them, and telling the
+        # reader that plainly is the whole content of this row.
+        rep.warn("worktrees",
+                 "%d worktree(s) this plugin did not create: %s"
+                 % (len(foreign), _output.some_of(foreign, sep="; ")),
+                 "nothing here will remove them. Take one down when you want it "
+                 "gone: `/audit:worktree remove --path <dir>`")
+    if landed:
+        rep.warn("worktrees",
+                 "%d worktree(s) this plugin created hold a branch that already "
+                 "reached its parent: %s"
+                 % (len(landed), _output.some_of(landed, sep="; ")),
+                 "`/audit:worktree sweep` lists what may go and what stays and "
+                 "why - it is read-only until you pass --apply and a verb")
+    elif not prunable and not unknown and not foreign:
+        rep.ok("worktrees",
+               "%d linked worktree(s), none holding a branch that has already "
+               "landed" % (len(linked),))
 
 
 def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):

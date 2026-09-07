@@ -229,7 +229,7 @@ const cfRow=(target,field,from,to)=>({target,field,from:cfNorm(from),to:cfNorm(t
  */
 function compChanges(patch){
  const comp=STATE.composition||{meta:{},phases:[],tasks:[]},rows=[];
- for(const k of ['reviewSkill','buildCommands','branch'])
+ for(const k of ['reviewSkill','buildCommands','branch','developmentBranch','merge'])
   if(patch.meta&&(k in patch.meta)&&!cfSame(comp.meta[k],patch.meta[k]))
    rows.push(cfRow('meta',k,comp.meta[k],patch.meta[k]));
  // Indexed by manifest ids, which carry no `pattern` in the schema - so no

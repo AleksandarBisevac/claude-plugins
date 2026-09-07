@@ -62,6 +62,7 @@ second reader of the same files:
     dropped in silence and the summary went on calling the change covered.
 """
 import ast
+import glob
 import io
 import os
 import re
@@ -133,8 +134,18 @@ ABSENT_BY_DESIGN = (
     ("plugins/audit/scripts/demo/gen-demo-manifest.py", LOCAL_SIDES,
      "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; the "
      "local set checks the COMMITTED artifacts instead"),
-    ("plugins/audit/scripts/demo/gen-demo-usage.py", LOCAL_SIDES,
-     "same throwaway demo tree"),
+    # `gen-demo-usage.py` WAS EXEMPT HERE, on the reason "same throwaway demo tree",
+    # and that sentence described a different check (F232). Two of its three runs in
+    # ci.yml do build a throwaway tree; the third regenerates the COMMITTED example
+    # ledger and diffs it against what the repository ships. Nothing local asked, so
+    # a phase added to the example desynchronised the two and the failure surfaced
+    # only after a release commit had been built, tagged and pushed.
+    #
+    # `verify.sh` runs that third one now, so there is no absence left to excuse —
+    # which is why this is a deletion rather than a better sentence. The GENERAL
+    # defect the entry names is still open: nothing compares an exemption's REASON
+    # against what the other side actually does, so a row can stay green while its
+    # sentence stops being true.
     ("plugins/audit/scripts/report/render-report.py", LOCAL_SIDES,
      "rendered into /tmp as a smoke test; locally the equivalent claim is "
      "check-rendered-artifacts.py, which is stronger because it compares bytes"),
@@ -956,6 +967,117 @@ def gates_in(path):
     return found
 
 
+_CI_STEP_RE = re.compile(r"^\s*- name:", re.M)
+_REASON_GATE_RE = re.compile(r"[A-Za-z0-9_./-]+\.(?:py|sh|mjs)")
+_COMPARES = ("diff ", "diff\t", "cmp ", "cmp\t")
+
+
+def _ci_steps(text):
+    """The workflow's steps as whole blocks of text, split on `- name:`.
+
+    Whole blocks and not lines, because the question below is about what a STEP
+    does: F232's step invoked the exempted script on one line and compared a
+    committed file three lines later, and a line-at-a-time reader sees neither
+    half as evidence about the other.
+    """
+    marks = [m.start() for m in _CI_STEP_RE.finditer(text)]
+    return [text[a:b] for a, b in zip(marks, marks[1:] + [len(text)])]
+
+
+def _committed_tokens(step, repo):
+    """Paths in this step that the repository actually carries, globs expanded.
+
+    Globbed because a committed set is often named as one - F232's step iterated
+    `examples/acme-store/.claude/usage/*.jsonl`, which no `os.path.exists` will
+    ever answer True for.
+    """
+    out = []
+    for token in re.findall(r"[A-Za-z0-9_./*-]+", step):
+        if "/" not in token or token.startswith("/tmp") or token.startswith("/dev"):
+            continue
+        # A token of nothing but separators globs to the repository root, which is
+        # committed in the least useful possible sense. It reached the report as
+        # evidence once, which is why it is refused here rather than tolerated.
+        if not os.path.basename(token.rstrip("/")):
+            continue
+        if glob.glob(os.path.join(repo, token)):
+            out.append(token)
+    return out
+
+
+def exemption_reason_drift(repo=None, table=None):
+    """[(gate, problem)] for a row whose REASON stopped being true of the other side.
+
+    THE HOLE F232 NAMED, and the shape it actually took. `compare()` verifies that
+    an exempted gate is genuinely absent from the sides its row names, and that the
+    row still corresponds to something real. It never asks whether the SENTENCE is
+    true of what the other side does - so `gen-demo-usage.py` sat behind "same
+    throwaway demo tree" while one of its three CI steps regenerated a COMMITTED
+    ledger and diffed it against what the repository ships. The row was green, the
+    reason described a different check, and the failure surfaced only after a
+    release commit had been built, tagged and pushed.
+
+    THE RULE, and it is narrow on purpose. When a CI step both invokes an exempted
+    script AND compares a file this repository commits, that step is asserting
+    something about shipped bytes rather than smoking a throwaway tree - so the row
+    excusing its absence locally must NAME the local gate that makes the equivalent
+    claim, and that gate must actually be named by a local side. A reason that names
+    none is a reason that excuses nothing.
+
+    WHY IT DOES NOT SIMPLY FORBID COMMITTED PATHS: measured over this table, five of
+    the exempted scripts name a committed path in CI and four of them only READ one
+    - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...` renders a
+    committed manifest into a throwaway directory, which is exactly what its reason
+    says. A lint on the path alone fires on all four, and a lint that fires on
+    correct rows is one people delete. The COMPARISON is the discriminator.
+
+    Returns rows rather than raising, like every other check here, so the report can
+    carry several at once.
+    """
+    repo = repo or REPO
+    rows = table if table is not None else ABSENT_BY_DESIGN
+    try:
+        ci = io.open(os.path.join(repo, CI_REL), encoding="utf-8").read()
+    except OSError as exc:
+        return [(CI_REL, "unreadable, so no reason can be checked against it: %s"
+                 % (exc,))]
+    local = set()
+    for label, rel in SIDES:
+        if label == "ci.yml":
+            continue
+        found = gates_in(os.path.join(repo, rel))
+        local |= (found or set())
+    steps = _ci_steps(ci)
+    out = []
+    for gate, sides, reason in rows:
+        if "ci.yml" in sides or not gate.endswith((".py", ".sh")):
+            continue                       # exempt from CI itself, or not a script
+        for step in steps:
+            if gate not in step:
+                continue
+            if not any(word in step for word in _COMPARES):
+                continue
+            carried = _committed_tokens(step, repo)
+            if not carried:
+                continue
+            # Matched by BASENAME. A reason writes `check-rendered-artifacts.py`
+            # the way a person says it, and the side names `tools/check-…`; an
+            # equality on the full string calls a correct row drift, which this
+            # did on its first run.
+            bases = set(os.path.basename(g) for g in local)
+            named = [g for g in _REASON_GATE_RE.findall(reason)
+                     if os.path.basename(g) in bases]
+            if named:
+                continue
+            out.append((gate,
+                        "a CI step compares committed file(s) (%s) while running "
+                        "it, so the step asserts something about shipped bytes - "
+                        "but the reason names no local gate that makes the same "
+                        "claim: %r" % (", ".join(sorted(set(carried))[:3]), reason)))
+            break
+    return out
+
+
 def compare(read, table=None):
     """{"missing": [(gate, side, note)], "stale_exemptions": [...]} from READ sets.
 
@@ -1043,6 +1165,13 @@ def parity(repo=None):
         return {"missing": [], "stale_exemptions": unreadable, "counts": counts}
     result = compare(read)
     result["counts"] = counts
+    # ...and the question `compare()` cannot ask: is each row's REASON still true of
+    # what the other side does (F232). Reported as a stale exemption, because that
+    # is exactly what it is - a row that excuses nothing any more - and folding it
+    # into `missing` would send the reader to add a gate rather than fix a sentence.
+    result["stale_exemptions"] = sorted(
+        list(result["stale_exemptions"])
+        + [(gate, "ci.yml", why) for gate, why in exemption_reason_drift(repo)])
     return result
 
 
@@ -1678,6 +1807,35 @@ def _cases(check):
            and _mini_watch["labels"] == _mini_watch["read"] == _mini_watch["planted"]
            and _mini_extra["read"] != _mini_extra["labels"]
            and _mini_unplanted["planted"] != _mini_unplanted["read"]))
+
+    # --- F232: is each exemption's REASON still true of the other side? --------
+    _er_live = exemption_reason_drift()
+    check("er1 THE LIVE CLAIM: every row in ABSENT_BY_DESIGN whose CI step "
+          "compares a committed file names a local gate that makes the same "
+          "claim, and that gate is one a local side really runs. This is the "
+          "case that goes red the day a reason stops being true of the check it "
+          "excuses - which `compare()` cannot see, because the row, its sides "
+          "and the file set all stay correct: %r" % (_er_live,),
+          _er_live == [])
+    # The discriminator, asserted on a step that only READS. Four of the five
+    # exempted scripts name a committed path in CI and only read it; a rule on the
+    # path alone convicts all four, and a lint that fires on correct rows is one
+    # people delete rather than obey.
+    _er_readonly = exemption_reason_drift(table=(
+        ("plugins/audit/scripts/status/audit-status.py", DOC_SIDES,
+         "a reason naming no local gate at all"),))
+    _er_compared = exemption_reason_drift(table=(
+        ("plugins/audit/scripts/demo/gen-demo-usage.py", LOCAL_SIDES,
+         "same throwaway demo tree"),))
+    check("er2 the COMPARISON is what makes a step evidence, not the committed "
+          "path: an exempted script whose CI step merely READS one is clean even "
+          "with a reason that names nothing, while F232's own row - a step that "
+          "diffs the committed ledger - is reported. Both directions, because "
+          "either alone is a rule that fires on everything or on nothing: "
+          "%r / %r" % (_er_readonly, [g for g, _w in _er_compared]),
+          _er_readonly == []
+          and [g for g, _w in _er_compared]
+          == ["plugins/audit/scripts/demo/gen-demo-usage.py"])
 
     _broken, _why_broken = pinned_env_groups("def run_one(:\n")
     _entryless, _why_entryless = pinned_env_groups("x = 1\n")

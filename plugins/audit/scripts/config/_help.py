@@ -114,6 +114,20 @@ COMPOSITION_PATHS = {
     "branchTypes": "meta.branch.types",
     "branchInitials": "meta.branch.initials",
     "branchSlugMax": "meta.branch.slugMaxLength",
+    # Where a phase lands, and what happens once it has. Same card, same form save,
+    # and the same F187 shape as the three ADO settings below: the merge TARGET was
+    # reachable only by hand-editing the manifest, and it is the key every reader of
+    # a sign-off report depends on.
+    "developmentBranch": "meta.developmentBranch",
+    "mergePolicy": "meta.merge",
+    "mergeAuto": "meta.merge.auto",
+    "mergeRemoveWorktree": "meta.merge.removeWorktree",
+    "mergeDeleteBranch": "meta.merge.deleteBranch",
+    # The worktree table has no manifest key of its own: it describes git. It
+    # points at the policy that governs what may be swept, which is the page a
+    # reader who clicked it actually wants.
+    "worktreeTable": "meta.merge",
+    "phaseParentBranch": "phases[].parentBranch",
     "phaseReviewModel": "phases[].review.model",
     "phasePriority": "phases[].priority",
     "phaseAdoParent": "phases[].adoParent",

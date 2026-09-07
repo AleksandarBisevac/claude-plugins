@@ -199,6 +199,51 @@ def _cases(check):
               "A very long phase title that runs on and on", 20).endswith("-"),
           repr(M.slugify("A very long phase title that runs on and on", 20)))
 
+    # --- merge policy ---------------------------------------------------------
+    _dflt = M.merge_policy({})
+    check("mp1 a manifest that says nothing about merging gets every switch ON - "
+          "that is what reference/orchestrator.md already describes, so every "
+          "existing plan keeps behaving exactly as it did and turning one OFF is "
+          "the deliberate act",
+          all(_dflt[k] is True for k in M.MERGE_KEYS),
+          repr(dict((k, _dflt[k]) for k in M.MERGE_KEYS)))
+    check("mp2 ...and it says so: an unset switch reports a `default` basis, not "
+          "the key it does not have. A run that deleted somebody's branch owes an "
+          "answer to 'who asked for that', and 'default' is a different answer "
+          "from 'meta.merge.deleteBranch'",
+          "default" in _dflt["deleteBranchBasis"]
+          and "meta.merge" not in _dflt["deleteBranchBasis"],
+          repr(_dflt["deleteBranchBasis"]))
+    _off = M.merge_policy({"merge": {"auto": False}})
+    check("mp3 a HALF-WRITTEN block switches off only what it names - "
+          "{'auto': false} still removes the worktree and deletes the branch, "
+          "because the three answer different questions. Reading the block as "
+          "all-or-nothing would silently disable two switches nobody touched",
+          _off["auto"] is False and _off["removeWorktree"] is True
+          and _off["deleteBranch"] is True,
+          repr(dict((k, _off[k]) for k in M.MERGE_KEYS)))
+    check("mp4 ...and the basis is per KEY, so the one that was set and the two "
+          "that defaulted are told apart",
+          _off["autoBasis"] == "meta.merge.auto"
+          and "default" in _off["removeWorktreeBasis"],
+          "%s / %s" % (_off["autoBasis"], _off["removeWorktreeBasis"]))
+    check("mp5 an explicit `true` is still reported as EXPLICIT - it agrees with "
+          "the default, and a basis that collapsed the two would lose the fact "
+          "that somebody wrote it down on purpose",
+          M.merge_policy({"merge": {"deleteBranch": True}})["deleteBranchBasis"]
+          == "meta.merge.deleteBranch",
+          M.merge_policy({"merge": {"deleteBranch": True}})["deleteBranchBasis"])
+    check("mp6 a merge block that is not an object is ignored rather than "
+          "crashing the resolver - the validator is what REFUSES it, and a "
+          "resolver that raised would take /audit:status down with it",
+          M.merge_policy({"merge": []})["auto"] is True,
+          repr(M.merge_policy({"merge": []})["auto"]))
+    check("mp7 every key the resolver reads is in MERGE_KEYS, and every one of "
+          "them has a default - a key readable with no default reads as False "
+          "on a KeyError-free path, which is the switch turning itself off",
+          set(M.DEFAULT_MERGE) == set(M.MERGE_KEYS),
+          repr(sorted(M.DEFAULT_MERGE)))
+
     # --- pre-approved globs ---------------------------------------------------
     check("g1 the globs are DERIVED from meta.branch.types, so a team that adds "
           "a type gets it pre-approved without editing the orchestrator",

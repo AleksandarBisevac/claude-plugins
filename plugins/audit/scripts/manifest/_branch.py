@@ -186,6 +186,55 @@ def parent_branch(meta, phase):
             "is_development": True}
 
 
+# --- merge policy ---------------------------------------------------------------
+
+# What happens once a phase's tasks are all done. Three switches, all ON by default,
+# because that is the behaviour `reference/orchestrator.md` already describes as the
+# normal path -- turning one off is the deliberate act, not turning it on.
+MERGE_KEYS = ("auto", "removeWorktree", "deleteBranch")
+DEFAULT_MERGE = {"auto": True, "removeWorktree": True, "deleteBranch": True}
+
+
+def merge_policy(meta):
+    """What sign-off does after the tasks are done, and which key decided each half.
+
+    IT LIVES BESIDE `parent_branch` AND NOT IN THE CONFIG FILE, and that is the whole
+    placement argument. `.claude/audit.config.json` has exactly one git key
+    (`gitRoot`); the merge TARGET is already `meta.developmentBranch` and the branch
+    NAME is already `meta.branch`. A policy about what happens after that merge,
+    stored in the other file, would create a second home for branch decisions and the
+    "which one wins" question `COMPATIBILITY.md` treats as a major release.
+
+    ABSENT READS AS ON, per key rather than per block. A manifest carrying
+    `{"auto": false}` still removes the worktree and deletes the branch when the
+    human merges by hand -- the three answer different questions and a half-written
+    block must not silently switch off the two it does not mention. It is also the
+    grammar the panel already speaks: agreeing with the default DELETES the key, so a
+    round trip through the form leaves the file as it found it.
+
+    `auto: false` IS THE HUMAN-IN-THE-LOOP SWITCH. It does not make sign-off fail; it
+    makes it stop before the merge and print the command it would have run. A phase
+    that is reviewed, gated and committed but not merged is a real and reasonable
+    state on a team that lands work through a pull request, and the plugin had no way
+    to say it.
+
+    Every value carries the key that produced it for `config()`'s reason: a run that
+    deleted somebody's branch owes an answer to "who asked for that", and `default`
+    is a different answer from `meta.merge.deleteBranch`.
+    """
+    meta = meta or {}
+    blk = meta.get("merge")
+    out = {}
+    for key in MERGE_KEYS:
+        if isinstance(blk, dict) and key in blk:
+            out[key] = bool(blk[key])
+            out[key + "Basis"] = "meta.merge.%s" % (key,)
+        else:
+            out[key] = DEFAULT_MERGE[key]
+            out[key + "Basis"] = "default (absent reads as on)"
+    return out
+
+
 # --- expansion ----------------------------------------------------------------
 
 def expand(template, values):
@@ -289,11 +338,16 @@ def ref_violations(name):
 def approved_globs(meta):
     """The `<type>/*` patterns branch operations may run unconfirmed.
 
-    `reference/orchestrator.md` pre-approves `git switch -c`, `git switch`,
-    `git merge --ff-only` and `git branch -d` for these. Derived rather than
-    written down because the failure mode of a stale list is a permission prompt
-    on every branch operation — loud, but confusing enough to be blamed on the
-    harness rather than on the config.
+    `reference/orchestrator.md` pre-approves `git switch -c` and `git switch` for
+    these — PHASE ENTRY, which is the only branch operation the orchestrator still
+    composes itself. Merging, deleting and every worktree verb moved into
+    `close-phase.py` and `manage-worktrees.py`, and are approved as the script calls
+    they now are; this list stopped covering them and says so rather than carrying
+    half its verbs as decoration.
+
+    Derived rather than written down because the failure mode of a stale list is a
+    permission prompt on every branch operation — loud, but confusing enough to be
+    blamed on the harness rather than on the config.
     """
     cfg = config(meta)
     if cfg["basis"] == "meta.branch":

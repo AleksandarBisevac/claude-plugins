@@ -4,6 +4,92 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.1.0] - 2026-09-07
+
+**The worktree and merge half of the pipeline was prose, and prose had three
+things wrong.** `/audit:worktree` composed a path and recorded it nowhere, so
+nothing could enumerate what it had created and nothing ever cleaned up; sign-off
+steps 5c–5e were git commands the model typed. Measured on the repository that
+dogfoods this plugin: 29 linked worktrees, 27 of them holding branches that had
+already reached their parent.
+
+### Added
+
+- **`/audit:worktree` grew `list`, `remove` and `sweep`** beside `add`, and every
+  verb is a script call rather than a paragraph. `sweep` is **read-only until you
+  pass `--apply`** plus a verb — `--remove-worktrees`, `--delete-branches`,
+  `--prune`. **Four conditions, and the first two are about permission rather than
+  safety:** the plugin must have *created* the worktree (`add` records that in the
+  worktree's own admin directory, where it dies with its subject), the phase must be
+  *settled* — signed off, no task still open, `mergedAt` recorded — and only then
+  does "branch contained in its parent" and "tree clean" decide. A worktree you
+  opened yourself, or a colleague's, is indistinguishable from the plugin's by branch
+  name and merge state, so nothing but an explicit record can tell them apart.
+  `remove --path <dir>` is how a worktree the plugin did not create comes down: one
+  directory, named by the person who wants it gone.
+- **`meta.merge`** — three switches deciding what sign-off does once a phase's
+  tasks are done: `auto`, `removeWorktree`, `deleteBranch`. All three are on when
+  absent, so every existing plan behaves exactly as it did. **`auto: false` is the
+  human-in-the-loop switch**: the phase is still reviewed, gated and committed, and
+  the run stops before the merge and prints the command. It exits **0** — that is a
+  choice, not a failure — and stamps nothing.
+- **The panel edits where a phase lands, and shows what is left over.** The Branch
+  card gained the merge target (`meta.developmentBranch`, reachable only by hand
+  before), the three switches with the key that decided each, and a live worktree
+  table with a Sweep button. That button is the panel's first git write and goes
+  through the same path as a config save: the loopback guard, the manifest lock, a
+  dry run whose rows fill the existing confirm dialog, and a journal row.
+- **`/audit:doctor` reports what earlier runs left behind** — worktrees whose branch
+  already reached its parent, records pointing at deleted directories, and branches
+  it could not compare. It reports and never reaps: the remedy it prints is the
+  read-only command.
+
+### Fixed
+
+- **Sign-off could not complete inside a worktree.** `git switch <parent>` fails
+  there with `fatal: '<parent>' is already used by worktree at …` — so the
+  documented sign-off was unavailable on exactly the runs `/audit:worktree`
+  recommends. The merge now happens in the worktree that already holds the parent,
+  or as a fast-forward with no checkout at all. Nothing moves your HEAD.
+- **`phase.mergedAt` was written into the directory about to be deleted.** A phase
+  that ran in a worktree stamped its own copy of the plan, and the surviving copy
+  still read `null`. The stamp now follows the merge.
+- **`git branch -d` was trusted to know whether a phase had landed.** It grades
+  reachability from HEAD, not from the phase's declared parent — measured, it
+  deleted a branch whose `parentBranch` was `develop` while the work had only
+  reached `main`, exit 0. Deletion is now gated on
+  `git merge-base --is-ancestor <branch> <parent>`.
+- **`/audit:doctor` turned a question git refused into an accusation.**
+  `check_branch_naming` read `merge-base --is-ancestor`'s exit code as a boolean, so
+  exit 128 — a `parentBranch` this clone does not have — printed as a definite
+  *"is NOT yet merged"*. It now answers contained / not-contained / **could not
+  say**.
+- **`phase.mergedAt`'s schema description** said "the development branch" while
+  sign-off has merged into the *resolved parent* for as long as `parentBranch` has
+  existed.
+- **The shell-write notice went quiet for the rest of a session once agents ran.**
+  `guard-bash-writes` reports a `Bash` write no tool edit and no `in_progress` task
+  accounts for, and it bounds "recently" by when the guard last looked. Agents in one
+  session share a state file, so a peer's look moved everyone's window forward and a
+  write could land inside it unreported. Each writer now carries its own look, taken
+  from the state file's own mtime — the same clock the sibling-session comparison
+  reads — and a writer with none falls back to the session's floor, which is what an
+  older copy's state file produces. A look that could not be established is not
+  recorded at all: an unbounded window silences the guard, which is the failure this
+  replaces.
+
+### Documentation
+
+- **The handbook's `/audit:worktree` row named a flag that does not exist**
+  (`--include-strangers`, built and then removed once it was clear that adopting
+  worktrees on a guessed parent is exactly what a sweep must never do), and its sweep
+  card still stated the old two-condition rule without the provenance and settlement
+  gates. Both are corrected, `/audit:doctor`'s card now names the residue it reports,
+  and the panel section documents Sweep as its first git write and how it is fenced.
+- **`SECURITY.md` gains the route.** `POST /api/worktrees/sweep` takes no path, no
+  branch and no force parameter, executes only what the shared planner returned, and
+  its four conditions all fail closed — removing one of them is a major.
+
 ## [2.0.1] - 2026-09-01
 
 **A patch, and it finishes what 2.0.0 left half-done.** The portability verdict reached the

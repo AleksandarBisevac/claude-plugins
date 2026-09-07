@@ -148,13 +148,20 @@ never hardcode branch names, package ids, skills, or build tools here:
 - **Git: read / pull / commit allowed.** Commit after each successful task and after phase sign-off.
   **NEVER `git push` or force-push.** All other `git reset`/`rebase`/`clean` require explicit human confirmation.
   If `meta.commit.coauthor` is set, end every commit message with it.
-- **Branch operations pre-approved:** `git switch -c <glob>`, `git switch <glob>`,
-  `git merge --ff-only <glob>`, `git branch -d <glob>` for every glob
-  `resolve-branch.py <manifestPath> --globs` prints. All other branch/checkout ops need confirmation.
+- **Branch operations pre-approved:** `git switch -c <glob>` and `git switch <glob>` for every glob
+  `resolve-branch.py <manifestPath> --globs` prints — that is **phase entry**, and it is the only
+  branch operation you still compose yourself. All other branch/checkout ops need confirmation.
   **Derive the globs, do not assume them** — a manifest using `meta.branch` has one per type
   (`feature/*`, `bugfix/*`, …) while a `meta.branchPrefix` manifest has exactly one. Guessing
   costs a confirmation prompt on every branch operation, which reads as a harness fault rather
   than a config one.
+- **Merging, deleting and worktrees go through scripts, not through you.** `close-phase.py` (sign-off
+  step 5) and `manage-worktrees.py` (`/audit:worktree`) own `git merge`, `git branch -d`,
+  `git fetch . <b>:<p>` and every `git worktree` verb. They are pre-approved as the *script* calls
+  they are. This is not tidiness: `git switch <parent>` is unavailable from inside a worktree, and
+  `git branch -d` grades against HEAD rather than against the phase's declared parent — both were
+  wrong in this document for as long as it existed, and neither is a rule prose can be trusted to
+  remember.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command.
 - Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
@@ -505,8 +512,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    everything are the same exit code; only the count separates them, and only runners that
    report one can be counted — where the count is unknowable the script says so rather than
    filling it in.
-3. **`invariantsChecked`** — run, from the project directory and **before** the branch is deleted in
-   step 5e (deleting it takes with it the reflog this reads):
+3. **`invariantsChecked`** — run, from the project directory and **before** step 5c, because
+   `close-phase.py` deletes the branch by default and that takes with it the reflog this reads.
+   The ordering is not advice: it is why this step is numbered ahead of the landing step rather
+   than beside it:
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/verify-invariants.py" <manifestPath> <phaseId>
    ```
@@ -537,24 +546,68 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       Stage the journal directory **and the evidence directory** here too, for the same reason as
       the task commits: the sign-off gate's own run was recorded a moment ago, and its row has to
       reach the same clone as the pointer that names it.
-   c. **Merge into the phase's RESOLVED PARENT** (`resolve-branch.py … --phase <phaseId>` prints
-      it; `phase.parentBranch ?? meta.developmentBranch`): `git switch <parent>`;
-      `git merge --ff-only <branch>`.
-      **When that parent is not the development branch, the sign-off report must say so** — name
-      the branch the work merged into and state that it has NOT reached the development branch
-      until that parent is itself merged. `resolve-branch.py` prints exactly that sentence; a
-      report that stays quiet reads as "landed", which is the one thing it must not do. For the
-      same reason `git branch -d <branch>` is NOT safe here while the parent is unmerged: say it
-      rather than running it.
-      **If ff-merge fails** (the development branch advanced during the phase — the normal case on team
-      repos), ask the human (AskUserQuestion) to choose:
-      1. **`git merge --no-ff <branch>`** (recommended) — preserves the phase branch history and keeps every
-         `task.commit` SHA (and the `bug.fixedIn` derived from it) valid.
-      2. **Stop** — leave the branch unmerged for manual resolution.
-      **Never rebase the phase branch** — rebasing rewrites the SHAs recorded in the manifest.
-   d. Write `phase.mergedAt = <ISO now>` (Edit on the now-merged branch). Then **ADO echo** the
-      phase: its PBI (when `phase.ado` is linked) moves to the done-state (section below).
-   e. Optionally clean up: `git branch -d <branch>` (safe after a completed merge).
+   c. **Land the phase — through the script, not by hand:**
+      ```
+      python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
+          --project <projectDir>
+      ```
+      It merges into the phase's **resolved parent** (`phase.parentBranch ?? meta.developmentBranch`),
+      writes `phase.mergedAt`, and performs whatever `meta.merge` asks for — steps c, d and e used
+      to be three paragraphs of git here and are one call now. `--dry-run` prints the plan without
+      writing. **Do not compose these git commands yourself**; three of them were wrong in this
+      document for as long as it existed:
+
+      - **`git switch <parent>` CANNOT RUN from a worktree.** `/audit:worktree` exists to run
+        phases in linked worktrees, and inside one the parent is already checked out in the main
+        tree: `fatal: '<parent>' is already used by worktree at '<path>'`, exit 128. The
+        documented sign-off was unavailable on exactly the runs this file recommends. The script
+        merges **in the worktree that already holds the parent**, or — when nothing holds it —
+        fast-forwards without a checkout. It never moves your HEAD.
+      - **`git branch -d` grades against HEAD, not against the parent.** Measured: it deleted a
+        branch whose `parentBranch` was `develop` while the work had only reached `main`, exit 0.
+        The script gates deletion on `git merge-base --is-ancestor <branch> <parent>` and never on
+        git's own net.
+      - **The two merge paths disagree about an already-landed phase.** `git merge --ff-only` says
+        `Already up to date.` exit 0; `git fetch . <b>:<p>` says `! [rejected] (non-fast-forward)`
+        exit 1 — byte-identical to a real divergence. The script asks the ancestry first, so an
+        already-landed phase is never reported as a conflict.
+
+      **Read the exit code, because three of them are not "it failed":**
+
+      | exit | means | what to do |
+      |---|---|---|
+      | 0 | the parent contains the branch — merged now, or already did | continue to (d) |
+      | 0 + `NOT MERGED` in the output | `meta.merge.auto` is **false** | the human merges; the phase is signed off and deliberately unlanded. Say so in the report and **do not** stamp `mergedAt` yourself |
+      | 3 | **not a fast-forward** — the parent moved during the phase | ask the human (AskUserQuestion): `--no-ff` (recommended — preserves the branch history and keeps every `task.commit` SHA, and the `bug.fixedIn` derived from it, valid), or stop and leave it unmerged. **Never rebase**: that rewrites the SHAs the manifest records |
+      | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help |
+      | 1 | a precondition failed or git refused | the output names the path or ref that has to change |
+
+      **When the resolved parent is not the development branch, the sign-off report must say so** —
+      name the branch the work merged into and state that it has NOT reached the development branch
+      until that parent is itself merged. `resolve-branch.py … --phase <phaseId>` prints exactly
+      that sentence; a report that stays quiet reads as "landed", which is the one thing it must
+      not do.
+   d. `close-phase.py` wrote `phase.mergedAt` — **into the copy of the plan that survives**, which
+      is not always the one you are looking at: a phase that ran in a worktree merges into the
+      parent's tree, and the worktree is removed moments later. The output names the file it wrote.
+      Then **ADO echo** the phase: its PBI (when `phase.ado` is linked) moves to the done-state
+      (section below).
+   e. Cleanup is `meta.merge`'s to decide and the script's to do — `removeWorktree` and
+      `deleteBranch`, both on by default. **It cleans up only what the plugin started and has
+      finished with**, and the refusals below are the rule working rather than something to route
+      around:
+      - **A worktree the plugin did not create is never removed.** `/audit:worktree add` records
+        that it made one; a worktree the human opened by hand carries no such record and is left
+        alone, whatever its branch did. Say so in the sign-off report — the merge happened and the
+        directory stayed, and a reader who is not told will go looking for a bug.
+      - **A phase that has not settled is not cleaned up either** — sign-off passed, no task still
+        open, the merge recorded. A branch can be contained in its parent while the phase is
+        mid-flight.
+      - A run **standing inside** the worktree it was asked to remove cannot finish its own
+        cleanup (git would delete the caller's own directory, silently, exit 0); the output hands
+        you the command to finish from the main tree.
+      - A **dirty** worktree is never removed, because removal also destroys ignored files — a
+        `.env`, a `node_modules` — that `git status` never mentioned.
 
 ## ADO echo (best-effort, linked items only)
 

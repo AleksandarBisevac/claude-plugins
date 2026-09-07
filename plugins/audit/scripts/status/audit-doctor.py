@@ -164,6 +164,7 @@ check_completions = _completions.check_completions
 check_evidence_pointers = _completions.check_evidence_pointers
 
 check_locks = _hygiene.check_locks
+check_worktrees = _hygiene.check_worktrees
 check_local_artifacts = _hygiene.check_local_artifacts
 
 
@@ -220,6 +221,7 @@ def diagnose(project, deep=False):
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)
     check_locks(rep, git_root, project, manifest_rel)
+    check_worktrees(rep, git_root, manifest)
     check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root)
     return rep
 

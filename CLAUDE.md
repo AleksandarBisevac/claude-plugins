@@ -188,6 +188,10 @@ ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND vs HEAD
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
+python3 plugins/audit/scripts/demo/gen-demo-usage.py \
+    examples/acme-store/audit-plan.json --out-dir <tmp>   # the committed ledger is
+                                           # DERIVED, so it is diffed against a fresh
+                                           # run; verify.sh does this for you
 python3 tools/capture-demo-gif.py --check  # the demo GIF's preconditions
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 node tools/capture-screenshots.mjs --check

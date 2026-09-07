@@ -639,6 +639,9 @@ def _cases(check):
                                   "scripts/demo/_demo_cast.py",
                                   "scripts/demo/gen-demo-manifest.py",
                                   "scripts/demo/gen-demo-usage.py",
+                                  "scripts/git/_worktrees.py",
+                                  "scripts/git/close-phase.py",
+                                  "scripts/git/manage-worktrees.py",
                                   "scripts/governance/_evidence_io.py",
                                   "scripts/governance/_invariants.py",
         "scripts/governance/_journal_io.py",
@@ -760,6 +763,9 @@ def _cases(check):
                                      "plugins/audit/scripts/demo/_demo_cast.py",
                                      "plugins/audit/scripts/demo/gen-demo-manifest.py",
                                      "plugins/audit/scripts/demo/gen-demo-usage.py",
+                                     "plugins/audit/scripts/git/_worktrees.py",
+                                     "plugins/audit/scripts/git/close-phase.py",
+                                     "plugins/audit/scripts/git/manage-worktrees.py",
                                      "plugins/audit/scripts/governance/_evidence_io.py",
                                      "plugins/audit/scripts/governance/_invariants.py",
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -980,14 +986,16 @@ def _cases(check):
               _installed[0] == M.SCRIPTS_DIR
               and all(d in sys.path for d in _installed))
         check("ip3 the day a script moved has arrived: the list is SCRIPTS_DIR plus "
-              "every domain under it - config/, demo/, governance/, manifest/, panel/ "
-              "(the largest, seven files), report/ (the first ever created), status/ "
-              "and usage/, in the walk's own sorted order rather than the order they "
-              "were created. The list is now COMPLETE - the eighth and last domain "
-              "landed with it, and the root holds only the cross-cutting modules. "
-              "It said `exactly one directory` for as long as the tree was flat, and "
-              "editing it is what each move COSTS - the mechanism is no longer a "
-              "no-op and this is where that is stated: %r" % (_installed,),
+              "every domain under it - config/, demo/, git/, governance/, manifest/, "
+              "panel/, report/ (the first ever created), status/ and usage/, in the "
+              "walk's own sorted order rather than the order they were created, and "
+              "the root holds only the cross-cutting modules. This line used to call "
+              "the domain set COMPLETE and name a last one; git/ arrived after that "
+              "and the sentence was simply false, which is what a document claiming "
+              "to be finished about a growing thing always becomes. It said `exactly "
+              "one directory` for as long as the tree was flat, and editing it is "
+              "what each move COSTS - the mechanism is no longer a no-op and this is "
+              "where that is stated: %r" % (_installed,),
               # `install_path()` MUST see a probe directory - `test__loader.py`
               # writes one into the real tree and needs it on sys.path - so the
               # filtering is in what this case COMPARES and never in the
@@ -1000,6 +1008,7 @@ def _cases(check):
               == [M.SCRIPTS_DIR,
                              os.path.join(M.SCRIPTS_DIR, "config"),
                              os.path.join(M.SCRIPTS_DIR, "demo"),
+                             os.path.join(M.SCRIPTS_DIR, "git"),
                              os.path.join(M.SCRIPTS_DIR, "governance"),
                              os.path.join(M.SCRIPTS_DIR, "manifest"),
                              os.path.join(M.SCRIPTS_DIR, "panel"),

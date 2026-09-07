@@ -121,12 +121,28 @@
       "id": "P17",
       "title": "release v0.32.0",
       "shard": "phases/P17.json"
+    },
+    {
+      "id": "P18",
+      "title": "Worktree lifecycle, merge target and merge policy",
+      "shard": "phases/P18.json"
+    },
+    {
+      "id": "P19",
+      "title": "Faults: the exemptions nobody reads, and the demo that proves it",
+      "shard": "phases/P19.json"
+    },
+    {
+      "id": "P20",
+      "title": "Faults: close the remainder",
+      "shard": "phases/P20.json"
     }
   ],
   "fileIndex": {
     ".claude-plugin/marketplace.json": [
       "P1.8",
-      "P2.6"
+      "P2.6",
+      "P18.10"
     ],
     ".gitattributes": [
       "BF2.1"
@@ -134,7 +150,8 @@
     ".github/workflows/ci.yml": [
       "P2.5",
       "P4.4",
-      "P9.2"
+      "P9.2",
+      "P19.2"
     ],
     ".gitignore": [
       "P4.4"
@@ -145,13 +162,17 @@
       "P5.3",
       "P6.1",
       "P7.2",
-      "P17.1"
+      "P17.1",
+      "P18.8",
+      "P18.9",
+      "P18.10"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
       "P4.4",
       "P11.3",
-      "P15.5"
+      "P15.5",
+      "P19.2"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -160,31 +181,44 @@
       "P7.2",
       "P11.3",
       "P15.2",
-      "P15.3"
+      "P15.3",
+      "P18.1",
+      "P18.3",
+      "P18.4",
+      "P18.8",
+      "P18.9"
     ],
     "README.md": [
       "P2.3",
       "P4.4",
-      "P7.2"
+      "P7.2",
+      "P18.10"
     ],
     "SECURITY.md": [
       "P2.2",
-      "P4.4"
+      "P4.4",
+      "P18.10"
     ],
     "docs/audit/audit-plan.json": [
-      "P2.7"
+      "P2.7",
+      "P20.4"
     ],
     "docs/examples/azure-pipelines.yml": [
       "P3.2",
       "P13.4"
     ],
+    "docs/demo-large.html": [
+      "P18.10"
+    ],
     "docs/index.html": [
       "P13.3",
-      "P17.1"
+      "P17.1",
+      "P18.10"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
-      "P17.1"
+      "P17.1",
+      "P18.10"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -193,7 +227,9 @@
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
       "P2.6",
-      "P17.1"
+      "P17.1",
+      "P18.8",
+      "P18.10"
     ],
     "plugins/audit/README.md": [
       "P1.6",
@@ -204,7 +240,11 @@
       "P5.3",
       "P6.1",
       "P7.2",
-      "P8.1"
+      "P8.1",
+      "P18.8",
+      "P18.5",
+      "P18.9",
+      "P18.10"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1"
@@ -243,7 +283,8 @@
     ],
     "plugins/audit/commands/phase.md": [
       "P7.1",
-      "P8.2"
+      "P8.2",
+      "P18.5"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1"
@@ -252,7 +293,8 @@
       "P7.1"
     ],
     "plugins/audit/commands/review.md": [
-      "P7.1"
+      "P7.1",
+      "P18.5"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -284,7 +326,8 @@
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
       "P5.1",
-      "P15.4"
+      "P15.4",
+      "P20.1"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4"
@@ -329,14 +372,17 @@
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
       "P8.1",
-      "P8.2"
+      "P8.2",
+      "P18.5",
+      "P18.9"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
       "P3.1",
       "P5.1",
       "P5.2",
-      "P7.2"
+      "P7.2",
+      "P18.2"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4"
@@ -345,7 +391,11 @@
       "P15.1",
       "P15.2",
       "P15.3",
-      "P15.4"
+      "P15.4",
+      "P18.1",
+      "P18.3",
+      "P18.4",
+      "P18.7"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -355,7 +405,8 @@
       "P10.2",
       "P10.5",
       "P12.1",
-      "P9.1"
+      "P9.1",
+      "P18.7"
     ],
     "plugins/audit/scripts/_loader.py": [
       "P10.1",
@@ -374,10 +425,12 @@
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
-      "P15.4"
+      "P15.4",
+      "P18.7"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
-      "P12.3"
+      "P12.3",
+      "P18.7"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -386,7 +439,9 @@
       "P15.4"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
-      "P12.4"
+      "P12.4",
+      "P18.7",
+      "P18.9"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -407,7 +462,8 @@
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
-      "P14.3"
+      "P14.3",
+      "P18.6"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1"
@@ -426,7 +482,10 @@
     ],
     "plugins/audit/scripts/demo/gen-demo-manifest.py": [
       "P10.3",
-      "P15.4"
+      "P15.4",
+      "P18.2",
+      "P19.1",
+      "P20.2"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -446,7 +505,8 @@
       "P12.3",
       "P12.4",
       "P12.5",
-      "P14.1"
+      "P14.1",
+      "P18.7"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -500,7 +560,171 @@
       "P9.1"
     ],
     "tools/capture-screenshots.mjs": [
-      "BF1.2"
+      "BF1.2",
+      "P20.4"
+    ],
+    "plugins/audit/scripts/git/_worktrees.py": [
+      "P18.1",
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/tests/test__worktrees.py": [
+      "P18.1",
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/git/close-phase.py": [
+      "P18.3",
+      "P18.9"
+    ],
+    "plugins/audit/tests/test_close_phase.py": [
+      "P18.3",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/git/manage-worktrees.py": [
+      "P18.4",
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/tests/test_manage_worktrees.py": [
+      "P18.4",
+      "P18.7",
+      "P18.9"
+    ],
+    "tools/check-git-pipeline.py": [
+      "P18.8",
+      "P18.9"
+    ],
+    "docs/handbook.html": [
+      "P18.8",
+      "P18.5",
+      "P18.10"
+    ],
+    "COMPATIBILITY.md": [
+      "P18.8",
+      "P18.9",
+      "P18.10"
+    ],
+    "plugins/audit/scripts/manifest/_branch.py": [
+      "P18.2",
+      "P18.5"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_vocab.py": [
+      "P18.2"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_rules.py": [
+      "P18.2"
+    ],
+    "plugins/audit/tests/test__branch.py": [
+      "P18.2",
+      "P20.6"
+    ],
+    "plugins/audit/tests/test__manifest_rules.py": [
+      "P18.2"
+    ],
+    "plugins/audit/tests/test__help.py": [
+      "P18.2",
+      "P18.7",
+      "P20.6"
+    ],
+    "plugins/audit/commands/worktree.md": [
+      "P18.5",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/status/_doctor_hygiene.py": [
+      "P18.6",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/status/_doctor_policy.py": [
+      "P18.6"
+    ],
+    "plugins/audit/tests/test__doctor_hygiene.py": [
+      "P18.6",
+      "P18.9"
+    ],
+    "plugins/audit/tests/test__doctor_policy.py": [
+      "P18.6"
+    ],
+    "plugins/audit/tests/test_audit_doctor.py": [
+      "P18.6"
+    ],
+    "tools/prove-gates.py": [
+      "P18.6",
+      "P20.2",
+      "P20.3",
+      "P20.6"
+    ],
+    "plugins/audit/scripts/panel/_panel_composition.py": [
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/ui/panel/branch-convention.js": [
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/scripts/ui/panel/write-confirmation.js": [
+      "P18.7"
+    ],
+    "plugins/audit/tests/test__panel_page.py": [
+      "P18.7",
+      "P18.9"
+    ],
+    "plugins/audit/tests/test_panel_server.py": [
+      "P18.7"
+    ],
+    "plugins/audit/tests/test__panel_composition.py": [
+      "P18.7"
+    ],
+    "plugins/audit/tests/test__panel_write.py": [
+      "P18.7"
+    ],
+    "plugins/audit/tests/test__panel_state.py": [
+      "P18.7"
+    ],
+    "plugins/audit/tests/test_gen_demo_manifest.py": [
+      "P19.1",
+      "P20.2",
+      "P20.6"
+    ],
+    "tools/verify.sh": [
+      "P19.2"
+    ],
+    "tools/gate-parity.py": [
+      "P19.2",
+      "P20.2"
+    ],
+    "plugins/audit/tests/test_gate_parity.py": [
+      "P19.2",
+      "P20.2"
+    ],
+    "plugins/audit/tests/test_guard_bash_writes.py": [
+      "P20.1"
+    ],
+    "plugins/audit/scripts/ui/panel/overview.js": [
+      "P20.4"
+    ],
+    "tools/bench-hooks.py": [
+      "P20.3",
+      "P20.6"
+    ],
+    "plugins/audit/scripts/_ui_theme.py": [
+      "P20.5"
+    ],
+    "plugins/audit/tests/test__ui_theme.py": [
+      "P20.5",
+      "P20.6"
+    ],
+    "plugins/audit/tests/test__manifest_vocab.py": [
+      "P20.6"
+    ],
+    "plugins/audit/tests/test__areas.py": [
+      "P20.6"
+    ],
+    "plugins/audit/tests/test__doctor_trail.py": [
+      "P20.6"
+    ],
+    "QUICKSTART.md": [
+      "P18.10"
     ]
   },
   "bugs": [
@@ -613,11 +837,11 @@
     {
       "id": "BUG-6",
       "title": "panel: a task's detail row renders away from the row it was opened on",
-      "status": "open",
+      "status": "wontfix",
       "severity": "med",
       "reportedAt": "2026-09-01T09:00:00+02:00",
       "reportedBy": "the maintainer, reading the panel after v2.0.1",
-      "description": "Opening a task in the panel draws its information row somewhere other than under the row that was opened - reported as rendering at the bottom. NOT YET REPRODUCED, and that is recorded rather than assumed: overview.js appends the data-evdetail row immediately after its own data-ovtask row, and evRollCells returns plain spans rather than toggles, so neither the append order nor a shared OVF.evOpen key explains it. Either the surface is the Composition tab instead, or the cause is CSS or re-render order. Reproduce in a browser before changing any code.",
+      "description": "Opening a task in the panel draws its information row somewhere other than under the row that was opened - reported as rendering at the bottom. NOT YET REPRODUCED, and that is recorded rather than assumed: overview.js appends the data-evdetail row immediately after its own data-ovtask row, and evRollCells returns plain spans rather than toggles, so neither the append order nor a shared OVF.evOpen key explains it. Either the surface is the Composition tab instead, or the cause is CSS or re-render order. Reproduce in a browser before changing any code. REPRODUCTION ATTEMPT 2026-09-06, driven in a real browser against a generated demo project (3 phases, 4 tasks, evidence present): NOT REPRODUCED, and both hypotheses the report itself offered are refuted. (1) Overview tab, one task opened: the data-evdetail row lands at index taskRow+1, exactly one detail row open, no page errors. (2) Composition tab cannot be the surface - it renders ZERO [data-evtog] elements, so there is nothing there to open. (3) Two tasks opened at once: each detail row sits under its own task row, so no shared key moves the first. What remains untested is a real repository's data rather than the generator's, and a viewport narrow enough to change wrapping. Closing this needs the reporter's word, not this evidence alone.",
       "repro": [
         "open the panel, expand a phase, open a task's detail, and read where the detail row lands relative to the row that was pressed"
       ],
@@ -628,7 +852,7 @@
       ],
       "taskId": null,
       "fixedIn": null,
-      "notes": "Nothing drives data-evdetail: `grep -rn evdetail tools/` finds no gate, which is why this could be wrong with every check green. The fix owes a browser assertion that the detail is the NEXT SIBLING of its task row, not merely that it exists somewhere."
+      "notes": "NOT REPRODUCIBLE on this build, 2026-09-06. Four hypotheses tested by driving a real browser, all refuted: (1) Overview, one task open - the detail row is at taskRow+1; (2) the Composition tab cannot be the surface, it renders zero [data-evtog]; (3) two tasks open at once - each detail row under its own task row; (4) mobile/tablet/wide viewports - the row PAINTS directly below its own, 0px gap, no console errors anywhere. Closed as not-reproducible rather than fixed: nothing was changed, so a fresh sighting with the conditions reopens it and this note says what has already been ruled out."
     }
   ],
   "deferred": {

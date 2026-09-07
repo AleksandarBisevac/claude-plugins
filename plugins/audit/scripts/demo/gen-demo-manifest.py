@@ -647,6 +647,25 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             "createdISO": _iso(BASE),
             "developmentBranch": "main",
             "branchPrefix": "audit",
+            # Carried since F239: the panel has a card that renders this, and the
+            # demo is where that screenshot comes from. The template is the full
+            # four-placeholder shape rather than the default, so the picture shows
+            # a convention a reader can learn something from - and `initials` is
+            # fixed rather than derived, because the derived one would be whoever
+            # ran the generator and would put a real person into a committed image.
+            "branch": {"template": "{type}/{initials}/{phase}-{slug}",
+                       "defaultType": "feature",
+                       "types": ["feature", "bugfix", "hotfix", "release",
+                                 "docs", "refactor", "test", "chore"],
+                       "initials": "ab", "slugMaxLength": 30},
+            # Carried rather than exempted, and NOT at its defaults on purpose. The
+            # panel grows a card that renders this policy and the demo is where that
+            # screenshot comes from, so an all-default block would paint a card that
+            # teaches nothing. `auto: false` is the human-in-the-loop shape a team
+            # landing work through pull requests actually writes, which is the one
+            # worth a reader seeing.
+            "merge": {"auto": False, "removeWorktree": True,
+                      "deleteBranch": True},
             "gitRoot": ".",
             "reportBasename": "demo-large",
             "reportSummary": (
@@ -773,15 +792,17 @@ SCHEMA_EXEMPTIONS = {
         "hand-typed copy of the schema URL (there is no shared constant) or file "
         "I/O inside a generate() documented as pure; CI validates the generated "
         "manifest against the schema BY PATH instead.",
-    "meta.branch":
-        "the branch-naming convention. It decides what `git switch -c` is handed "
-        "and NOTHING the demo renders: the report and the panel show a phase's "
-        "`branch` string, which this fixture already carries verbatim, not the "
-        "template that produced it. Carrying a template here would exercise "
-        "`_branch.compose` against a fixture nobody branches from - the real "
-        "coverage is `tests/test__branch.py`, which composes names, and "
-        "`test_resolve_branch.py`, which runs the door. REVISIT when the panel "
-        "grows a meta.branch card: the demo is where its screenshot comes from.",
+    # `meta.branch` WAS EXEMPT HERE and is carried now (F239). Its row read "REVISIT
+    # when the panel grows a meta.branch card: the demo is where its screenshot
+    # comes from" -- and the panel grew one, and nothing said so. The trigger had
+    # been true for releases while the exemption sat unchanged, so every capture of
+    # that card was of an empty convention.
+    #
+    # THE GENERAL DEFECT IS NOT CLOSED BY CARRYING THE KEY. An exemption's REVISIT
+    # condition is checked by nobody: the suite asserts every schema field is
+    # carried or exempted, and never asks whether a row's own stated trigger has
+    # come true. That is F232 one register over, and it is recorded rather than
+    # papered over by this deletion.
     "phase.parentBranch":
         "which branch THIS phase forks from and merges into. Absent means "
         "`meta.developmentBranch`, which is the answer for every phase in this "
@@ -815,8 +836,12 @@ SCHEMA_EXEMPTIONS = {
         "committed screenshots show that order. The field is index-only, so in "
         "the sharded form it would also have to be stamped on a stub this "
         "generator does not build. Coverage lives in tests/test__priority.py "
-        "(the comparator) and tests/test_set_priority.py (the write). REVISIT "
-        "when the panel's phase row grows a priority badge worth a screenshot.",
+        "(the comparator) and tests/test_set_priority.py (the write). This row "
+        "carried a REVISIT trigger naming the panel's phase row; the panel has "
+        "edited priority for some time and the trigger had fired unread (F239). "
+        "It is dropped rather than re-armed, because the reason above never "
+        "depended on it: carrying a pin would reorder the ready list under "
+        "committed screenshots whatever the panel renders.",
     "phase.adoParent":
         "which EXISTING Azure DevOps work item this phase hangs under. The "
         "fixture carries no `meta.ado` at all - the demo is a plan, not a "
@@ -824,9 +849,11 @@ SCHEMA_EXEMPTIONS = {
         "project the demo does not have, and every surface that renders it "
         "would print a link to nothing. Coverage is "
         "tests/test__ado_parent.py (the resolution and the hierarchy tiers) "
-        "and tests/test_resolve_ado_parent.py (the door). REVISIT when the "
-        "demo grows a connector card worth a screenshot, which is the same "
-        "trigger meta.branch carries.",
+        "and tests/test_resolve_ado_parent.py (the door). It carried a REVISIT "
+        "trigger naming a connector card - the same one meta.branch carried, and "
+        "fired just as unread (F239). Dropped, and the reason stands without it: "
+        "the fixture has no meta.ado, so an id here would name a work item in a "
+        "project the demo does not have however much of a card the panel grows.",
     "task.adoParent":
         "the same field one level down, honoured only when "
         "meta.ado.phaseWorkItems is false. Same reason and same revisit "
@@ -841,8 +868,9 @@ SCHEMA_EXEMPTIONS = {
         "field with a VISIBLE default: absent means tracked, so a fixture that "
         "omits it is already demonstrating the common case. Coverage is "
         "tests/test__ado_tracked.py (the resolution and the inheritance) and "
-        "tests/test_resolve_ado_tracked.py (the door). REVISIT on the same "
-        "trigger as phase.adoParent - a demo that grows a connector card.",
+        "tests/test_resolve_ado_tracked.py (the door). It shared phase.adoParent's "
+        "REVISIT trigger and was dropped with it (F239): no board, no distinction, "
+        "whatever the panel paints.",
     "adoParent.id":
         "a field of adoParent, which this fixture does not take. An id is the "
         "one part that cannot be invented: it names a real work item on a real "
@@ -900,6 +928,89 @@ SCHEMA_EXEMPTIONS = {
         "`movedFrom` here would advertise a join to rows the demo does not have - "
         "the fixture would contradict itself.",
 }
+
+
+def _schema_path_as_panel_path(key):
+    """A `SCHEMA_EXEMPTIONS` key in the spelling `_help.COMPOSITION_PATHS` uses.
+
+    Two vocabularies for one thing: this table says `phase.priority` because it
+    walks a document, and the help map says `phases[].priority` because it names a
+    place in the schema. Neither spelling is wrong and neither is going to change,
+    so the translation lives here, once, rather than in the head of whoever next
+    compares them.
+    """
+    if key.startswith("phase."):
+        return "phases[]." + key.split(".", 1)[1]
+    if key.startswith("task."):
+        return "phases[].tasks[]." + key.split(".", 1)[1]
+    return key
+
+
+def revisit_trigger_drift(exemptions=None, panel_paths=None):
+    """[(key, problem)] for an exemption whose REVISIT trigger has already fired.
+
+    F239, and the general defect that entry names rather than the one instance it
+    was found through. Every row here may carry a sentence beginning REVISIT, which
+    states the condition under which the exemption stops being right. **Nothing read
+    those sentences.** `test_gen_demo_manifest` asserts each schema field is either
+    carried or exempted, and never asks whether a row's own stated trigger has come
+    true — so `meta.branch` sat behind "REVISIT when the panel grows a meta.branch
+    card" for releases after the panel grew one, and every screenshot of that card
+    was of an empty convention.
+
+    THE CHECKABLE CORE OF A TRIGGER THAT NAMES THE PANEL. A trigger of the shape
+    "REVISIT when the panel/demo grows a … card" is asking whether the panel edits
+    this field, and `_help.COMPOSITION_PATHS` is the map that answers — it is what
+    the panel's own help drawer resolves a lever through, so it cannot drift from
+    what the panel actually renders without the drawer breaking first.
+
+    WHAT IT DELIBERATELY DOES NOT DO: it does not demand the field be carried. Two
+    of these rows argue substantively as well — an `adoParent` id in a fixture with
+    no `meta.ado` would render a link to nothing, and that is true whatever the
+    panel grows. The repair for a fired trigger is to drop the stale sentence and
+    keep the standing reason, or to carry the field; forcing the second would make
+    a lint the answer to an argument it has not read.
+
+    Triggers that name something else are not read at all, and that is stated rather
+    than left as a gap: a condition this cannot evaluate is one it must not pretend
+    to have evaluated.
+    """
+    rows = SCHEMA_EXEMPTIONS if exemptions is None else exemptions
+    if panel_paths is None:
+        try:
+            panel_paths = set(_loader.load_script("_help.py").COMPOSITION_PATHS
+                              .values())
+        except Exception as exc:
+            return [("<_help>", "could not be read, so no trigger can be checked "
+                                "against the panel: %s" % (exc,))]
+    out = []
+    for key, reason in sorted(rows.items()):
+        text = str(reason or "")
+        # A TRIGGER IS A SENTENCE THAT SAYS *WHEN*, and the distinction is not
+        # pedantry: a row that has DROPPED a fired trigger explains it in place -
+        # "it carried a REVISIT trigger naming a connector card" - and a rule
+        # reading the bare word would report that row for ever, which is a lint
+        # that punishes the repair it asked for. The imperative forms are what an
+        # active trigger is written in.
+        if not any(form in text for form in ("REVISIT when", "REVISIT on",
+                                             "REVISIT with", "REVISIT if")):
+            continue
+        # THE WORDS, NOT ONE PHRASE. The first cut looked for "panel" or "demo
+        # grows" and missed `phase.adoTracked`, whose trigger reads "a demo that
+        # grows a connector card" — one word apart, same condition, and the row
+        # would have gone on excusing itself for a wording difference. Every term
+        # here is a name for something the panel PAINTS, which is what these
+        # triggers are all about.
+        if not any(word in text for word in
+                   ("panel", "card", "badge", "screenshot")):
+            continue                       # a trigger this cannot evaluate
+        if _schema_path_as_panel_path(key) in panel_paths:
+            out.append((key,
+                        "its REVISIT trigger names a panel surface, and the panel "
+                        "edits %s now - the condition has come true and the row "
+                        "was never re-read"
+                        % (_schema_path_as_panel_path(key),)))
+    return out
 
 
 def load_schema():

@@ -35,11 +35,24 @@ tokens are no more decidable than one when a rule has a carve-out nobody remembe
 `$ARGUMENTS` = the phase id (plus optional `--dry-run`).
 
 **If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section instead —
-read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target), and STOP.
+read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target, and **what
+happens after the merge**), and STOP.
 The branch and the merge target both come from
 `resolve-branch.py <manifestPath> --phase <phaseId>` — never composed here — and when the
 merge target is not `meta.developmentBranch`, the plan says so: signing off there does not put
 the work on the development branch.
+
+**What happens after the merge is `meta.merge`'s answer, and the preview owes it too** — whether
+the branch will be merged at all (`auto`), and whether the worktree and the branch go afterwards
+(`removeWorktree`, `deleteBranch`). All three default to on, so a plan that says nothing about
+merging behaves exactly as it always has; a plan with `auto: false` signs the phase off and leaves
+the landing to a human, which the preview must say rather than let the reader assume a merge.
+`close-phase.py … --dry-run` prints the whole thing, including the exact git command it would run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
+    --project <projectDir> --dry-run
+```
 
 Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
 

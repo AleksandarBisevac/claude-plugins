@@ -217,6 +217,23 @@ straight answer:
   derived from the project's own `manifestPath`, re-checked against the project
   root; there is no path parameter on the route to traverse with. The rendered
   file is served back through the panel's token-guarded origin.
+- `/audit:panel`'s **Sweep** button is the panel's **only route that mutates git**,
+  and it is deliberately the narrowest one in the surface. `POST /api/worktrees/sweep`
+  takes **no path, no branch and no force parameter** — nothing a caller sends names
+  what gets removed. The route resolves the plan, hands it to the same
+  `_worktrees.sweep_plan()` the CLI calls, and executes only what that planner
+  returned, in the planner's order (worktree first, branch second, because git
+  refuses the reverse). It runs behind the loopback and token guards, takes the
+  manifest write lock, requires the browser to confirm a dry run first, and appends
+  a journal row.
+  **Four conditions, all failing closed, and the first two are about permission
+  rather than safety:** the worktree must carry the plugin's own provenance marker
+  (written by `add` into the worktree's admin directory, which git deletes with it —
+  so it cannot be forged by moving a directory), the phase must be settled (signed
+  off, no task open, `mergedAt` recorded), the branch must be contained in its
+  parent, and the tree must be clean. A worktree somebody else opened is reported
+  and never touched, from either side. Removing one of those is a **major**: it
+  widens what a confirmed click can delete.
 
 ## The audit trail: tamper-evident, not tamper-proof
 

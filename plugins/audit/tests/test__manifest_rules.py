@@ -778,6 +778,32 @@ def _cases(record):
           "tag: must be a non-empty string or null",
           lambda m: _with_ado(m, tag="  "))
 
+    # --- meta.merge: what sign-off does once the tasks are done ---------------
+    # `_check_branch` had NO cases at all before this block — the whole meta.branch
+    # validation path was unasserted, which is why the four here are written as two
+    # refusals and two allows rather than as refusals alone.
+    check("mg1 a well-formed merge block is clean, which is the case that goes "
+          "red if the rule below is tightened until it refuses everything", None,
+          lambda m: m["meta"].update(merge={"auto": False,
+                                            "removeWorktree": True,
+                                            "deleteBranch": False}))
+    check("mg2 no merge block at all is clean - the whole feature is additive or "
+          "it is a breaking change nobody asked for", None,
+          lambda m: m["meta"].pop("merge", None))
+    check("mg3 a switch written as a STRING is a finding, not a warning: the "
+          "coercion is silent and asymmetric, and 'false' is a non-empty string "
+          "that coerces to TRUE - so the branch somebody meant to keep is deleted",
+          "meta.merge.deleteBranch: not a boolean",
+          lambda m: m["meta"].update(merge={"deleteBranch": "false"}))
+    check("mg4 merge that is not an object at all is a finding",
+          "meta.merge: not an object",
+          lambda m: m["meta"].update(merge=["auto"]))
+    check("mg5 a MISSPELLED switch warns by name - it reads as absent, absent "
+          "reads as ON, so a switch somebody turned off would silently stay on "
+          "and delete the thing they were protecting",
+          None, lambda m: m["meta"].update(merge={"removeWorktrees": False}),
+          expect_warning="unknown key 'removeWorktrees'")
+
     # The `c5`-`c8` CLI exit-code cases used to sit here. They are about
     # `validate-manifest.py`'s `main()`, not about a rule, and they went to
     # `test_validate_manifest.py` when the rules moved out from under it.

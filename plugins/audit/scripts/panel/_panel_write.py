@@ -101,6 +101,8 @@ import _priority              # noqa: E402  (what a valid tier is, and who holds
 import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
 #                                            the SAME rule /audit:logs prune runs)
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
+import _branch                # noqa: E402  (where a phase's branch lands, at layer 1)
+import _worktrees             # noqa: E402  (the worktree list, the sweep plan, the runner)
 import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
 import _config_rules          # noqa: E402  (PORTABILITY_MODES: the enum this reads a tier from)
 
@@ -401,6 +403,117 @@ def proposal_action(project, body):
     lines = message if isinstance(message, list) else [message]
     return {"ok": True, "message": " · ".join(str(x) for x in lines if x),
             "warnings": payload.get("warnings") or []}
+
+
+SWEEP_VERB_KEYS = (("removeWorktrees", "removeWorktrees"),
+                   ("deleteBranches", "deleteBranches"),
+                   ("prune", "prune"))
+
+
+def sweep_worktrees(project, body):
+    """`POST /api/worktrees/sweep` — the panel's FIRST git write, and the only one.
+
+    THE BOUNDARY THIS MOVES, AND HOW IT IS HELD. Every other git call in the panel
+    is a read — `rev-parse`, `config --list`. This one removes directories, so it
+    goes through the SAME path as every other panel write rather than beside it:
+    the loopback + token guard the handler already applies, the manifest write lock
+    (a running `/audit` blocks it, and vice versa), a dry-run half whose rows feed
+    the confirm dialog the operator already knows, and a hash-chained journal row.
+
+    IT COMPOSES NO GIT COMMAND OF ITS OWN. The plan comes from
+    `_worktrees.sweep_plan` and the argv it carries is executed verbatim; the panel
+    contributes the lock and the record and nothing else. A second opinion about
+    which worktrees may go, held by the surface with the button on it, is the one
+    place that disagreement would be discovered by whoever pressed it.
+
+    `apply` is opt-in per verb, exactly as the CLI is: an `apply` naming no verb is
+    refused rather than read as "all of them".
+    """
+    if not isinstance(body, dict):
+        return _not_a_json_object()
+    verbs = tuple(name for key, name in SWEEP_VERB_KEYS if body.get(key) is True)
+    apply_it = body.get("apply") is True
+    if apply_it and not verbs:
+        return {"ok": False,
+                "findings": ["apply named no verb - removeWorktrees, "
+                             "deleteBranches or prune. 'sweep everything' is not "
+                             "inferred here any more than it is on the CLI"]}
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
+    if not mpath or not os.path.isfile(mpath):
+        return {"ok": False,
+                "findings": ["no manifest to sweep against - run /audit:init "
+                             "first"]}
+    try:
+        manifest = _mio.load_manifest(mpath)
+    except Exception as exc:
+        return {"ok": False, "findings": ["cannot read the manifest: %s" % (exc,)]}
+    # Same spelling `_panel_runstate.lock_dir` uses, and the same reason it uses
+    # realpath: on macOS the project directory reached through a symlink and the
+    # path git prints are different strings for one directory.
+    git_root = os.path.realpath(os.path.join(project,
+                                             (config or {}).get("gitRoot") or "."))
+    if not os.path.isdir(git_root):
+        return {"ok": False,
+                "findings": ["no git root at %s, so there are no worktrees to "
+                             "sweep" % (git_root,)]}
+
+    meta = (manifest or {}).get("meta") or {}
+    wanted, parents, phases = {}, {}, {}
+    for phase in ((manifest or {}).get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        name = phase.get("branch")
+        if name:
+            wanted[str(name)] = str(phase.get("id"))
+            parents[str(name)] = _branch.parent_branch(meta, phase)["branch"]
+            phases[str(name)] = phase
+    listing = _worktrees.list_worktrees(git_root)
+    if listing["error"]:
+        return {"ok": False, "findings": [listing["error"]]}
+    trees = listing["trees"]
+    # `includeStrangers` was read here and is deliberately gone, with the flag that
+    # fed it. The panel is the surface with the button on it, so it is the LAST place
+    # that should be able to adopt a worktree this plugin did not create - and a
+    # widened scope over a guessed parent is what that flag was.
+    obs = _worktrees.observe_for_sweep(git_root, trees, wanted, parents,
+                                       phase_by_branch=phases,
+                                       terminal=_mio.TERMINAL)
+    plan = _worktrees.sweep_plan(
+        trees, wanted, parents, obs["contained"], obs["dirty"],
+        cwd_tree=None, verbs=verbs or ("removeWorktrees", "deleteBranches"),
+        owned_by_path=obs["owned"], settled_by_branch=obs["settled"])
+    rows = ["%s %s" % (step["action"], action.get("path") or "")
+            for action in plan["actions"] for step in action["steps"]]
+    if not apply_it:
+        # The read-only half, and it returns the SAME rows the confirm dialog
+        # renders for a config save: one grammar for "here is what I am about to
+        # change", whether the change is a JSON key or a directory.
+        return {"ok": True, "applied": rows, "plan": plan, "dryRun": True}
+
+    lock = _acquire_write_lock(project, read_config(project), None)
+    if lock.get("blocked"):
+        return lock["response"]
+    done, failure = [], None
+    try:
+        for action in plan["actions"]:
+            for step in action["steps"]:
+                code, out, err = _worktrees._git(git_root, step["argv"])
+                if code != 0:
+                    failure = (err or out or "git exited %r" % (code,)).strip()
+                    break
+                done.append("%s %s" % (step["action"], action.get("path") or ""))
+            if failure:
+                break
+    finally:
+        _release_write_lock(lock)
+    result = {"ok": failure is None, "applied": done, "plan": plan,
+              "dryRun": False}
+    if failure:
+        result["findings"] = [failure]
+    result.update(_journal(project, read_config(project), "worktrees.sweep",
+                           _output.posix_rel(git_root, project) or ".", done))
+    return result
 
 
 def write_ado(project, body):

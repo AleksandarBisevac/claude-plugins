@@ -334,6 +334,153 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- check_worktrees: what was LEFT BEHIND --------------------------------
+    # Driven through a REAL git repository, because the whole check is a question
+    # put to git twice — `worktree list` and `merge-base --is-ancestor` — and a
+    # stubbed answer would assert the stub.
+    if shutil.which("git"):
+        wt = _harness.fixture_root("dhwt")
+        try:
+            repo = os.path.join(wt, "repo")
+            os.makedirs(repo)
+            env = dict(os.environ, GIT_CONFIG_GLOBAL=os.path.join(wt, "gc"),
+                       GIT_CONFIG_SYSTEM=os.devnull)
+
+            def git(*args, **kw):
+                cwd = kw.pop("cwd", repo)
+                return subprocess.run(["git"] + list(args), cwd=cwd, env=env,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+
+            git("init", "-q", "-b", "dev", ".")
+            git("config", "user.email", "t@example.com")
+            git("config", "user.name", "T T")
+            with open(os.path.join(repo, "a.txt"), "w") as fh:
+                fh.write("base\n")
+            git("add", "-A")
+            git("commit", "-qm", "base")
+
+            plan = {"meta": {"developmentBranch": "dev"},
+                    "phases": [{"id": "P2", "branch": "audit/p2"},
+                               {"id": "P3", "branch": "audit/p3"}]}
+
+            def own(name):
+                """Mark a worktree as the plugin's, the way `add` does.
+
+                Written into the worktree's OWN admin directory, which is where the
+                product reads it from - a fixture that stubbed the read would be
+                asserting the stub, and this check's whole job is to tell a worktree
+                the plugin made from one it did not.
+                """
+                res = subprocess.run(["git", "rev-parse", "--git-dir"],
+                                     cwd=os.path.join(wt, name), env=env,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+                adm = res.stdout.decode().strip()
+                with open(os.path.join(adm, "audit-worktree.json"), "w") as fh:
+                    fh.write('{"createdBy": "audit"}')
+
+            rep = base.Report()
+            M.check_worktrees(rep, repo, plan)
+            check("dh20 a repository with no linked worktree reports OK and says "
+                  "there was nothing to have been left behind - NOT silence, and "
+                  "not a warning about an empty set",
+                  _levels(rep, "worktrees") == ["OK"]
+                  and "nothing to have been left behind" in _detail(rep,
+                                                                   "worktrees"),
+                  _detail(rep, "worktrees")[:70])
+
+            # A worktree whose branch has NOT landed: the check must leave it alone.
+            git("worktree", "add", "-q", os.path.join(wt, "p3"), "-b",
+                "audit/p3", "dev")
+            own("p3")
+            with open(os.path.join(wt, "p3", "b.txt"), "w") as fh:
+                fh.write("work\n")
+            git("add", "-A", cwd=os.path.join(wt, "p3"))
+            git("commit", "-qm", "work", cwd=os.path.join(wt, "p3"))
+            rep = base.Report()
+            M.check_worktrees(rep, repo, plan)
+            check("dh21 a worktree whose branch has NOT reached its parent is not "
+                  "reported as residue - it is work in progress, and a diagnostic "
+                  "that called it leftover would be telling the human to delete "
+                  "the thing they are working on",
+                  _levels(rep, "worktrees") == ["OK"],
+                  "%r %s" % (_levels(rep, "worktrees"),
+                             _detail(rep, "worktrees")[:50]))
+
+            # ...and one whose branch HAS landed: the whole point of the check.
+            git("worktree", "add", "-q", os.path.join(wt, "p2"), "-b",
+                "audit/p2", "dev")
+            own("p2")
+            rep = base.Report()
+            M.check_worktrees(rep, repo, plan)
+            check("dh22 a worktree holding a branch that already reached its "
+                  "parent IS reported, with the path, the branch and the parent - "
+                  "this is the residue nothing in the plugin ever looked for, and "
+                  "the reason a repository accumulates worktrees for ever",
+                  "WARNING" in _levels(rep, "worktrees")
+                  and "audit/p2" in _detail(rep, "worktrees")
+                  and "dev" in _detail(rep, "worktrees"),
+                  _detail(rep, "worktrees")[:90])
+            _fix = " ".join(r["fix"] or "" for r in rep.rows
+                            if r["check"] == "worktrees")
+            check("dh23 ...and the remedy names the READ-ONLY command and says so "
+                  "- the doctor reports and never reaps, so a remedy that handed "
+                  "over `--apply` would be a diagnostic recommending an "
+                  "irreversible act it had not measured",
+                  "sweep" in _fix and "read-only" in _fix,
+                  _fix[:90])
+
+            # A phase whose declared parent does not exist in this clone. The
+            # answer is UNKNOWN, and the whole point is that it is not silence and
+            # not an accusation.
+            ghost = {"meta": {"developmentBranch": "dev"},
+                     "phases": [{"id": "P2", "branch": "audit/p2",
+                                 "parentBranch": "no/such/branch"}]}
+            rep = base.Report()
+            M.check_worktrees(rep, repo, ghost)
+            check("dh24 a parent branch this clone does not have is reported as "
+                  "COULD-NOT-COMPARE, not as 'already landed' and not as silence "
+                  "- `git merge-base --is-ancestor` exits 128 there, and the "
+                  "boolean that read it as 'not contained' is the bug this check "
+                  "was written beside",
+                  "WARNING" in _levels(rep, "worktrees")
+                  and "could not be compared" in _detail(rep, "worktrees"),
+                  _detail(rep, "worktrees")[:90])
+            check("dh25 ...and it is NOT reported as residue on that path: a "
+                  "question git refused is never an answer that something may be "
+                  "deleted",
+                  "already reached its parent" not in _detail(rep, "worktrees"),
+                  _detail(rep, "worktrees")[:60])
+
+            # A worktree the plugin did not create, alongside two that it did.
+            git("worktree", "add", "-q", os.path.join(wt, "byhand"), "-b",
+                "mine/own", "dev")
+            rep = base.Report()
+            M.check_worktrees(rep, repo, plan)
+            _fixfor = " ".join(r["fix"] or "" for r in rep.rows
+                               if r["check"] == "worktrees")
+            check("dh26 a worktree the plugin did NOT create is reported "
+                  "separately and its remedy is a HAND command - `sweep` will "
+                  "decline to touch it, and a diagnostic that pointed there would "
+                  "send the reader to a command that does nothing, which teaches "
+                  "them the tool is broken",
+                  "did not create" in _detail(rep, "worktrees")
+                  and "remove --path" in _fixfor,
+                  _detail(rep, "worktrees")[:80])
+            check("dh27 ...and it is NOT counted among the ones that may be swept: "
+                  "the residue row is about worktrees this plugin owns, and mixing "
+                  "the two would put a number in front of a remedy that cannot "
+                  "reach all of them",
+                  "mine/own" not in _detail(rep, "worktrees").split(
+                      "did not create")[-1].split("reached its parent")[-1],
+                  "foreign is not in the landed row")
+        finally:
+            _harness.remove_tree(wt)
+    else:
+        _harness.skip(check, "dh20 check_worktrees against a real repository",
+                      "git", "git is not on PATH")
+
 
 def _selftest():
     return _harness.run(_cases)

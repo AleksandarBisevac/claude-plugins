@@ -645,9 +645,15 @@
       <div class="cmd-body">
         <p>The first thing to run when something behaves oddly. Reports the interpreter the hooks use,
           git root, config, manifest and shard integrity, the active plan-gate tier, build runners,
-          whether hooks have ever fired, whether the capability policy is inert, and whether every
-          <code>testEvidence</code> pointer names a run this checkout holds. <code>--deep</code> adds
-          the journal chain.</p>
+          whether hooks have ever fired, whether the capability policy is inert, whether every
+          <code>testEvidence</code> pointer names a run this checkout holds, and what earlier runs
+          left behind in git &mdash; worktrees whose branch already reached its parent, records
+          pointing at directories somebody deleted by hand, and branches it could not compare.
+          <code>--deep</code> adds the journal chain.</p>
+        <p><strong>It reports the residue and never reaps it.</strong> The remedy it prints is the
+          read-only command, and for a worktree this plugin did not create it prints
+          <code>remove --path &lt;dir&gt;</code> &mdash; a diagnostic that deleted somebody's working
+          directory would be the last one anyone let run.</p>
       </div>
     </div>
 
@@ -748,14 +754,29 @@
     <div class="grid2">
       <div class="cmd">
         <div class="cmd-line">
-          <span class="c">/audit:worktree &lt;phaseId&gt; [--remove]</span>
-          <span class="badge b-write">writes manifest</span>
+          <span class="c">/audit:worktree &lt;list|add|remove|sweep&gt; [phaseId]</span>
+          <span class="badge b-write">writes git</span>
         </div>
         <div class="cmd-body">
-          <p>A git worktree for a phase, plus its branch, so two people can run two phases at once:
-            open a session in the printed path and run <code>/audit:phase</code> there.
-            <strong>Sharded manifests merge back conflict-free</strong>, which is why that layout
-            exists.</p>
+          <p>The git worktrees this plan owns. <code>add</code> sets one up for a phase so two
+            people can run two phases at once: open a session in the printed path and run
+            <code>/audit:phase</code> there. <strong>Sharded manifests merge back
+            conflict-free</strong>, which is why that layout exists.</p>
+          <p><code>sweep</code> is for the ones that outlived a run. It is <strong>read-only until
+            you pass <code>--apply</code></strong> plus a verb, and it reaps a worktree only when
+            <strong>four</strong> things hold. Two are about permission: this plugin must have
+            <em>created</em> it — <code>add</code> writes that record inside the worktree's own
+            admin directory, where git deletes it along with its subject — and the phase must be
+            <em>settled</em>: signed off, no task still open, <code>mergedAt</code> stamped. Only
+            then do the two about safety apply: the branch is contained in its parent, and the tree
+            is clean. Every one of them fails closed.</p>
+          <p><strong>A worktree you opened yourself is not the plugin's to remove</strong>, and by
+            branch name and merge state it is indistinguishable from one the plugin made — which is
+            why nothing but an explicit record is allowed to decide. Those are reported and left
+            alone; <code>remove --path &lt;dir&gt;</code> is how one comes down, named by the person
+            who wants it gone. The clean-tree rule matters for the same reason in the other
+            direction: removal also destroys ignored files (<code>.env</code>,
+            <code>node_modules</code>) that <code>git status</code> never mentioned.</p>
         </div>
       </div>
       <div class="cmd">
@@ -1557,7 +1578,11 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
         <p>Where a run stands, and what the tests said. The live view; it refreshes from disk while
           you watch.</p></div>
       <div class="tab"><h4>Plan &amp; models</h4>
-        <p>Per-phase review model, per-task skills and models.</p></div>
+        <p>Per-phase review model, per-task skills and models &mdash; and the Branch card, which is
+          where a phase's landing place is decided: the branch-name convention, the merge target
+          (<code>meta.developmentBranch</code>, and per phase <code>parentBranch</code>), the three
+          <code>meta.merge</code> switches, and a live table of this plan's worktrees with a
+          <strong>Sweep</strong> button.</p></div>
       <div class="tab"><h4>Usage</h4>
         <p>Token spend by phase, task, model, author and time &mdash; <code>/audit:usage</code>'s
           data.</p></div>
@@ -1620,6 +1645,18 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
       run the same script from either side, and so does the config validator. The gaps above are
       missing paths, not second implementations, which is why a change made in the panel shows up in
       <code>/audit:status</code> immediately.</p>
+
+    <div class="note">
+      <div class="label">Sweep is the panel's first git write, and it is worth knowing how</div>
+      <p>Until this release the panel ran git for reading only. <strong>Sweep is the exception, and
+        it goes through the same path as saving the config</strong> rather than beside it: the
+        loopback and token guards, the manifest write lock &mdash; so a running
+        <code>/audit</code> blocks it &mdash; a dry run whose rows fill the ordinary confirmation
+        dialog, and a hash-chained journal entry. The button never assembles a git command of its
+        own; it calls the same planner the CLI's <code>sweep</code> calls, so both sides refuse for
+        the same four reasons and neither can be the lenient one. There is no
+        <code>--force</code>: a dirty worktree is named and left.</p>
+    </div>
   </section>
 
   <!-- 09 ------------------------------------------------------------------ -->
@@ -1772,7 +1809,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
           <tr><td><code>/audit:task</code></td><td><code>add</code> &middot; <code>scope</code> &middot; <code>move</code> &middot; <code>cancel</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>partial</em> &mdash; Plan &amp; models edits levers, not structure</td></tr>
           <tr><td><code>/audit:bug</code></td><td><code>add "&lt;title&gt;"</code> &middot; <code>list</code> <code>[all|&lt;status&gt;]</code> &middot; <code>fix &lt;bugId&gt;</code> <code>[--phase]</code> &middot; <code>close &lt;bugId&gt;</code> <code>[wontfix]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; bugs are listed, not edited</td></tr>
           <tr><td><code>/audit:propose</code></td><td><code>list</code> <code>[all]</code> &middot; <code class="alt">materialize&nbsp;&lt;PROP-id&gt;|<wbr>--all</code> &middot; <code>drop</code> &middot; <code>revive</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td>Proposals &mdash; same script from both sides</td></tr>
-          <tr><td><code>/audit:worktree</code></td><td><code>&lt;phaseId&gt;</code> <code>[--remove]</code></td><td><span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only</td></tr>
+          <tr><td><code>/audit:worktree</code></td><td><code>&lt;list|add|remove|sweep&gt;</code> <code>[phaseId]</code> <code>[--path DIR]</code> <code>[--force]</code> &middot; sweep: <code>[--apply]</code> <code>[--remove-worktrees]</code> <code>[--delete-branches]</code> <code>[--prune]</code> <code>[--json]</code></td><td><span class="badge b-write">git worktrees</span></td><td>Branch card &mdash; the worktree table and its Sweep button</td></tr>
           <tr><td><code>/audit:layout</code></td><td><code>&lt;sharded|single-file&gt;</code> <code>[--dry-run]</code> <code>[--renumber]</code> <code>[--force]</code></td><td><span class="badge b-write">manifest</span> <span class="badge b-lock">lock</span></td><td><em>none</em> &mdash; CLI only</td></tr>
           <tr><td><code>/audit:panel</code></td><td><code>[stop|status]</code> <code>[--port &lt;n&gt;]</code></td><td><span class="badge b-write">manifest</span></td><td>n/a &mdash; it <em>is</em> the panel</td></tr>
           <tr><td><code>/audit:sync push</code></td><td><code>[bugs|tasks|all]</code> <code>[--task | --phase]</code></td><td><span class="badge b-ado">ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; CLI only, and it writes to somebody's board</td></tr>

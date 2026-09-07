@@ -64,7 +64,8 @@ import _config_rules  # noqa: E402  (the rules that decide what this form may of
 # takes the lock, validates, journals and patches only the index (meta lives on the
 # index; a registry save must never rewrite a phase shard). /api/areas is a thin
 # front door onto it rather than a second writer.
-_META_KEYS = ("reviewSkill", "buildCommands", "branch", "areas", "ado")
+_META_KEYS = ("reviewSkill", "buildCommands", "branch", "developmentBranch",
+              "merge", "areas", "ado")
 # ...of which these have no control on the Composition form: they are written by
 # their own endpoint, so the confirm dialog's client-side change list must NOT
 # enumerate them or it would compute a row for a field nobody can edit there. The
@@ -95,7 +96,14 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # CREATION. Nothing wrote it afterwards. A registry you can curate while nothing
 # can be assigned to it is half a feature, and the missing half is the one every
 # reader of an area total depends on.
-_PHASE_KEYS = ("reviewModel", "priority", "adoParent", "adoTracked", "area")
+# `parentBranch` joins under the criterion spelled above: it is COMPOSITION, not
+# structural CRUD. It names no id, moves no dependency and creates nothing - it says
+# where one phase integrates, which `_branch.parent_branch` already resolves for
+# every other surface. It was reachable ONLY by hand-editing JSON, which is the same
+# gap F187 recorded for `meta.areas`: a lever every reader of a sign-off report
+# depends on, and nothing to set it with.
+_PHASE_KEYS = ("reviewModel", "priority", "adoParent", "adoTracked", "area",
+               "parentBranch")
 _TASK_KEYS = ("model", "skills")
 
 
@@ -289,6 +297,35 @@ COMPOSITION_HELP = {
                       "when that name does not initial usefully; leave it empty to use "
                       "git's.",
     "branchSlugMax": "Cap on the slug taken from the phase title.",
+    # Where a phase lands, and what happens once it has:
+    "developmentBranch": "The branch phases fork from and merge back into unless "
+                         "one names its own. Empty = 'main'. This was reachable "
+                         "only by hand-editing the manifest until now.",
+    "mergePolicy": "What sign-off does once every task in a phase is done. All "
+                   "three are ON when the manifest says nothing, which is what "
+                   "every existing plan already does.",
+    "mergeAuto": "Merge the phase branch into its parent at sign-off. Turn it OFF "
+                 "for human-in-the-loop: the phase is still reviewed, gated and "
+                 "committed, and sign-off stops before the merge and prints the "
+                 "command. That is a success, not a failure.",
+    "mergeRemoveWorktree": "Remove the phase's git worktree after a successful "
+                           "merge. Never removes one that is dirty, locked, or "
+                           "the one a run is standing in - and note that removal "
+                           "also destroys ignored files (.env, node_modules) that "
+                           "git status never mentions.",
+    "mergeDeleteBranch": "Delete the phase branch after a successful merge (-d, "
+                         "never -D). Gated on whether the branch reached ITS "
+                         "parent, not on git's own check, which grades against "
+                         "HEAD and will delete a branch that never got there.",
+    "worktreeTable": "The git worktrees this repository has right now, and whether "
+                     "each one's branch has already reached its parent. A worktree "
+                     "is only ever swept when its branch has landed AND its tree is "
+                     "clean.",
+    "phaseParentBranch": "The branch THIS phase forks from and merges back into, "
+                         "overriding the development branch. Use it for a phase "
+                         "that integrates into a story branch or a release line - "
+                         "sign-off then says the work has NOT reached the "
+                         "development branch until that parent is itself merged.",
     "phaseReviewModel": "Model used for this phase's sign-off review.",
     "phasePriority": "Which phase the pipeline reaches for first among the tasks "
                      "that are ALREADY ready. It never makes an unready task "

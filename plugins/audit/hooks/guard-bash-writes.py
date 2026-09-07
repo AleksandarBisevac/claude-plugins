@@ -61,6 +61,7 @@ State: <stateDir>/bash-writes-<session_id>.json
   {"toolEdited": [rel...], "seenDirty": [rel...], "warned": [rel...],
    "baselined": bool, "gitTimeout": bool, "otherTrees": [abs path...],
    "bgLaunches": [{"program", "at"}...], "agents": {writer: position},
+   "agentsAt": {writer: epoch},
    "agentSeq": int}
   `otherTrees` is the ONLY key here that is not a repo-relative path, and the
   difference is load-bearing: every rel in this file is a path in the ONE tree
@@ -641,7 +642,7 @@ def default_state():
     therefore the exact key set `_save_state` writes, every time."""
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
             "gitTimeout": False, "otherTrees": [], "bgLaunches": [],
-            "agents": {}, "agentSeq": 0}
+            "agents": {}, "agentSeq": 0, "agentsAt": {}}
 
 
 def _state_file(state_dir, session_id):
@@ -664,7 +665,12 @@ def _load_state(state_dir, session_id):
                     # Absent in a slot an older copy wrote, and 0 is the reading
                     # that says so: no position has been issued in this file yet,
                     # which is what `_sequenced` migrates on.
-                    "agentSeq": int(data.get("agentSeq") or 0)}
+                    "agentSeq": int(data.get("agentSeq") or 0),
+                    # Absent in a slot an older copy wrote, and an empty map is
+                    # the reading that says so: no writer has a look of its own
+                    # yet, so each falls back to the session's mtime on its first
+                    # pass exactly as it always did (F230).
+                    "agentsAt": dict(data.get("agentsAt") or {})}
     except Exception:
         pass
     return default_state()
@@ -921,6 +927,76 @@ def record_agent_pass(state, writer):
     return prev if isinstance(prev, (int, float)) else None
 
 
+def session_look_floor(state):
+    """The EARLIEST look any writer of this session recorded, or None.
+
+    The middle rung of the fallback below `record_agent_look`. A writer with no
+    look of its own has been in this checkout at most as long as its session has,
+    so the session's earliest recorded look is an honest bound on it - wider than a
+    look of its own, which errs toward honouring a sibling's claim, and still
+    BOUNDED, so a genuinely stale claim stays outside it.
+
+    The rung it replaces is the shared file's mtime, and that is the whole point:
+    the mtime is moved by every agent's pass, which is F230.
+    """
+    stamps = [v for v in (state.get("agentsAt") or {}).values()
+              if isinstance(v, (int, float)) and v > 0]
+    return min(stamps) if stamps else None
+
+
+def record_agent_look(state, writer, stamp):
+    """Stamp when THIS writer last looked at the tree. Returns the previous stamp.
+
+    F230, and it is the residue F227's fix could not reach. `record_agent_pass`
+    above gave every writer a POSITION of its own, which is what `peer_agent_basis`
+    needs — an ordering question, answered exactly by one shared file. But
+    `_other_sessions` asks a different question of a different population: did a
+    SIBLING SESSION act inside my window, decided by comparing that session's file
+    mtime against `since`. A position cannot be compared with an mtime, so `since`
+    was still the SHARED state file's mtime — and every agent of this session
+    rewrites that file, so one agent's pass moved the boundary for all of them.
+
+    Measured both ways when F230 was recorded: with no peer-agent pass in between, a
+    peer session's claim is honoured and the path stays silent; with one agent pass
+    in between, the same claim falls outside the window and the path is reported.
+    The cost is noise rather than a false accusation — F227's withdrawal still comes
+    off — but it is noise that arrives by scheduling, which is the kind nobody can
+    reproduce.
+
+    A SEPARATE MAP, NOT A SECOND FIELD IN `agents`. That map holds positions and, on
+    a file an older build wrote, epochs — `_sequenced` exists entirely to renumber
+    those. Putting a clock back into it would resurrect exactly the ambiguity that
+    function was written to end. `agentsAt` is absent in every older file, and
+    absent means "this writer has no look of its own yet", which the caller answers
+    with the session's mtime — the previous behaviour, kept for the one case where
+    it was never wrong.
+
+    Capped like `agents`, keeping the most RECENT stamps: the writers whose windows
+    are still being asked about. Dropping one costs a per-writer bound and falls
+    back to the shared one, which is the direction that was already being lived
+    with rather than a new failure.
+    """
+    looks = dict(state.get("agentsAt") or {})
+    prev = looks.get(writer)
+    # A NON-POSITIVE STAMP IS NOT A LOOK AND IS NOT STORED. `_state_mtime` answers
+    # 0.0 before the file exists, which is the very first pass of a session - and
+    # storing that would hand the next pass a window starting at the epoch.
+    # Unbounded means every sibling claim is honoured and the guard goes silent for
+    # the rest of the session; measured exactly that way while this was written,
+    # with `ex2`, `cd2` and `bg10` all turning from warn to silent on one line.
+    if isinstance(stamp, (int, float)) and stamp > 0:
+        looks[writer] = stamp
+    if len(looks) > _AGENT_CAP:
+        newest = sorted(looks.items(),
+                        key=lambda kv: kv[1] if isinstance(kv[1], (int, float))
+                        else 0.0)[-_AGENT_CAP:]
+        looks = dict(newest)
+    state["agentsAt"] = looks
+    if isinstance(prev, (int, float)) and prev > 0:
+        return prev
+    return None
+
+
 def _position_of(item):
     """The position half of an `agents` item, for sorting. Never raises.
 
@@ -1130,6 +1206,18 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     now = _now()
     writer = writer_id(data)
     since_writer = record_agent_pass(state, writer)
+    # ...and the same pass stamped for the one question a position cannot answer:
+    # `_other_sessions` compares against sibling state files' MTIMES, so the stamp
+    # has to be comparable with those (F230).
+    #
+    # THE STAMP IS THE FILE'S MTIME, NOT `_now()`, and the reason is measured
+    # rather than aesthetic. The far end this is compared against is a SIBLING
+    # STATE FILE'S MTIME, so reading the same clock removes a cross-clock
+    # comparison entirely. `_now()` was tried and is worse for a second reason: the
+    # agent fixtures freeze it deliberately (positions must not depend on a
+    # platform timer), and a window built on a frozen clock is a window of width
+    # zero that silences the guard - `ag11` and `ag14` said so immediately.
+    since_look = record_agent_look(state, writer, _state_mtime(sd, session_id))
 
     # branch 1: remember files edited through the gated tools
     if tool in _EDIT_TOOLS:
@@ -1264,10 +1352,27 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         return ("warn", OTHER_TREE_TEMPLATE % (tree["tree"], tree["basis"],
                                                tree["watching"]))
 
-    # Read before this pass overwrites the file: it is the moment this session
-    # last looked at the tree, and therefore the far end of the window in which
-    # everything below became dirty.
-    since = _state_mtime(sd, session_id)
+    # The far end of the window everything below became dirty in, in THREE rungs,
+    # narrowest first and each one wider than the last (F230):
+    #
+    #   1. this writer's OWN previous look - exact, and the answer in the case that
+    #      matters, an agent that has been here before;
+    #   2. the session's EARLIEST recorded look - honest for a writer's first pass,
+    #      which has been in this checkout at most as long as its session has;
+    #   3. the shared file's mtime - only when this session has recorded no look at
+    #      all, which is its very first pass, where nothing else exists to ask.
+    #
+    # Rung 3 ALONE was the bug. Every agent of one session rewrites that file, so a
+    # peer AGENT's pass moved the boundary and a peer SESSION's claim fell outside a
+    # window it was plainly inside - the path was then reported rather than
+    # attributed, by scheduling. Each rung widens, and widening errs toward
+    # honouring somebody else's claim, which is the direction that costs the guard
+    # a finding rather than costing somebody a false accusation.
+    since = since_look
+    if since is None:
+        since = session_look_floor(state)
+    if since is None:
+        since = _state_mtime(sd, session_id)
 
     new = [f for f in dirty if f not in state["seenDirty"]]
     state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))

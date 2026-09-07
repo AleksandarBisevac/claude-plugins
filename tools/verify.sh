@@ -322,6 +322,30 @@ run "docs/index.html is still a byte copy" docs_index_is_copy
 # the writer proves the writer was fixed; only reading the committed file proves
 # nothing else writes there and no older artifact is still shipping.
 run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
+# F232: THIS RAN ONLY IN CI, AND IT COST A RED RUN ON A RELEASE CANDIDATE. The
+# example's usage ledger is COMMITTED and DERIVED — `gen-demo-usage.py` builds it
+# from the manifest — so a phase added to the example silently desynchronises the
+# two, and nothing local asked. `gate-parity.py` permitted the absence through an
+# ABSENT_BY_DESIGN row reading "same throwaway demo tree", which describes a
+# different check: the throwaway-tree runs are elsewhere in ci.yml, and this one
+# compares a file this repository ships. That row is gone with this line.
+ledger_reproducible() {
+  regen=$(mktemp -d "${TMPDIR:-/tmp}/verify-ledger-XXXXXX")
+  trap 'rm -rf "$regen"' RETURN
+  python3 plugins/audit/scripts/demo/gen-demo-usage.py \
+    examples/acme-store/audit-plan.json --out-dir "$regen" >/dev/null || return 1
+  for f in examples/acme-store/.claude/usage/*.jsonl; do
+    cmp -s "$f" "$regen/$(basename "$f")" && continue
+    echo "the committed ledger no longer matches a fresh deterministic run:"
+    echo "  $f"
+    echo "fix: python3 plugins/audit/scripts/demo/gen-demo-usage.py \\"
+    echo "       examples/acme-store/audit-plan.json \\"
+    echo "       --out-dir examples/acme-store/.claude/usage"
+    return 1
+  done
+  return 0
+}
+run "committed example ledger is reproducible from the generator" ledger_reproducible
 # CI HAS RUN THIS ALL ALONG AND THIS FILE DID NOT. It replays the plan gate refusing
 # an unplanned edit and asserts the deny still names the file and the way out, so a
 # reworded gate would have shipped a GIF of something the product no longer does.

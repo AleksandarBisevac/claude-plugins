@@ -605,6 +605,23 @@ def _cases(check):
     check("ua8 a LONE \\r counts too - the check is about the byte, not about "
           "the CRLF pair, so old-Mac endings are not waved through",
           M.cr_violations([("report.css", "a{}\rb{}")]) == ["report.css"])
+    # THE LIVE CLAIM, and until F242 there was none. ua6-ua8 prove the FUNCTION
+    # over fixtures; nothing asked it about the real assets, so the rule was
+    # stated, asserted and never applied - its docstring even claimed "both
+    # callers" it no longer had. `declared_asset_drift` two cases down is called
+    # live in exactly this way, which is the pattern rather than a new one.
+    _ua_real = [(n, M.read_asset(n)) for n in M.UI_ASSETS]
+    check("ua8b THE LIVE CLAIM: no shipped `ui/` asset carries a \\r. The pins "
+          "that assemble both surfaces compare BYTES, so one CRLF checkout of one "
+          "part reddens a page rather than a stylesheet, and the error names the "
+          "assembly instead of the file: %r"
+          % (M.cr_violations(_ua_real),),
+          M.cr_violations(_ua_real) == [])
+    check("ua8c ...over a REAL set rather than an empty one - `cr_violations([])` "
+          "is also `[]`, and telling 'every asset is LF' from 'nothing was read' "
+          "is the distinction the function's own docstring insists on: %d asset(s)"
+          % (len(_ua_real),),
+          len(_ua_real) > 1 and all(t for _n, t in _ua_real))
 
     # unreadable_assets. Two failure shapes, and each proves a different half.
     _notutf8 = "not-utf8.css"
