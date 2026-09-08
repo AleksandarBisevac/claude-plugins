@@ -655,6 +655,14 @@ TABLE = (
   "check-rendered-artifacts.py, which is stronger because it compares bytes",
   "a stronger local check compares those bytes instead of this one",
   "tools/gate-parity.py", "er1"),
+ # AN EXEMPTION TABLE RENAMED OUT FROM UNDER ITS CLASSIFICATION. The row in
+ # `AUDITED_EXEMPTIONS` then names a subject that does not exist, which is the
+ # register's own recurring shape one level up: an excuse that outlived the thing
+ # it excused. Mutated in the module that OWNS the table rather than in the
+ # classifier, so this is the guarded thing breaking and not the guard.
+ ("exemption_audit_drift", S + "_ui_theme.py", "replace",
+  "CONTRAST_EXEMPTIONS = (", "CONTRAST_EXEMPTIONS_RENAMED = (",
+  "tools/gate-parity.py", "ea1"),
  # THE MUTATED FILE IS THE RUNNER THIS RULE WAS WRITTEN FOR, and the payload is
  # the defect verbatim: `verify.sh` kept every step log at a fixed `/tmp` path, so
  # two runs on one machine shared it and one could read the other's exit code. The
@@ -734,6 +742,20 @@ TABLE = (
  ("inline_drift", S + "config/_help.py", "replace",
   "def inline_drift(levels, found, anchors):",
   "def inline_drift(levels, found, anchors):\n    return []", MVO, "mv31"),
+ # F265, and the mutation IS the defect that shipped: a command doc advertising a
+ # value its parser refuses. `/audit:status --view pending` was documented and
+ # exited 2 through a green gate set, because nothing asked a parser what a flag's
+ # values were. `ch7` is the live case over the real command surface.
+ ("command_choice_drift", "plugins/audit/commands/status.md", "replace",
+  "[--view active|archived|all]", "[--view active|pending|archived|all]",
+  HLP, "ch7"),
+ # ...and the comparator's own half, crippled the way `inline_drift`'s is above: a
+ # `choice_drift` that answers nothing lets every disagreement through while the
+ # walk around it goes on looking busy.
+ ("choice_drift", S + "config/_help.py", "replace",
+  "def choice_drift(cmd, advertised, accepted, unreadable):",
+  "def choice_drift(cmd, advertised, accepted, unreadable):\n    return []",
+  HLP, "ch2"),
  # A shipped asset that acquires a CARRIAGE RETURN. The payload carries a real
  # `\r`, which is why this row exists here rather than as a `redfirst.sh` call: a
  # shell argument cannot carry one, and the first attempt at this inserted a
@@ -1195,6 +1217,14 @@ ALLOW = (
   "            if not any(word in step for word in _COMPARES):",
   "            if False:",
   "tools/gate-parity.py", "er2"),
+ # THE DERIVATION, WIDENED PAST THE THING IT SEPARATES. A reason is a SENTENCE;
+ # the length floor is what tells an excuse from a label, and `{"P1": "done"}` is
+ # data. Drop it to nothing and every string-to-string map in the tree becomes an
+ # exemption owed a classification - a rule demanding rows about label tables,
+ # which is a lint people delete rather than obey. `ea1` is the live case.
+ ("exemption_audit_drift", "tools/gate-parity.py", "replace",
+  "_REASON_MIN = 30", "_REASON_MIN = 0",
+  "tools/gate-parity.py", "ea1"),
  # THE PUREST F116 SHAPE THIS GUARD HAS. The rule bans naming a temp root, and the
  # one line allowed to name it is the line that DERIVES a unique directory under
  # it - which is the repair every other line is told to route through. Stop
@@ -1253,6 +1283,20 @@ ALLOW = (
  ("inline_drift", S + "config/_help.py", "replace",
   "    for path in sorted(set(found) - set(declared)):",
   "    for path in sorted(set(found)):", MVO, "mv29"),
+ # The hint read TOO LOOSELY. Only the pipe-separated form makes a claim about a
+ # set; widen the needle to swallow a metavar and `--phase <id>` becomes a
+ # one-value list no parser declares, so every correctly written command is
+ # convicted. `ch7` is the live claim that the real surface is clean, which is
+ # exactly what an over-firing needle takes away.
+ ("command_choice_drift", S + "config/_help.py", "replace",
+  r'([a-z][a-z0-9-]*(?:\|[a-z][a-z0-9-]*)+)")',
+  r'([<a-z][a-z0-9-.,>]*(?:\|[a-z][a-z0-9-]*)*)")', HLP, "ch7"),
+ # The refusing half, dropped. Report only the values the parser has that the doc
+ # lacks and the direction F265 actually shipped in - a doc promising a value the
+ # parser rejects - stops being reported at all, while the walk still looks busy.
+ ("choice_drift", S + "config/_help.py", "replace",
+  "            if value not in got:",
+  "            if False:", HLP, "ch2"),
  # The CRLF test, reading the wrong byte. `\\n` is in every text file, so this
  # convicts every shipped asset - and `ua8b` is the live claim that says so.
  ("cr_violations", S + "_ui_theme.py", "replace",

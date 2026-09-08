@@ -1,7 +1,7 @@
 {
   "id": "P18",
   "title": "Worktree lifecycle, merge target and merge policy",
-  "status": "in_progress",
+  "status": "done",
   "description": "One deterministic path for the merge/cleanup half of the pipeline: scripts/git/{_worktrees.py,close-phase.py,manage-worktrees.py} replace the prose in orchestrator.md 5c-5e and commands/worktree.md; meta.merge policy (auto, removeWorktree, deleteBranch) beside meta.developmentBranch; the panel edits both and can sweep; the doctor reports what was left behind.",
   "desiredOutcome": "A signed-off phase lands on its parent and cleans up after itself in one scripted step, and a worktree that outlived its merge is named by the doctor and reaped by an explicit verb -- never by a boolean that cannot tell 'clean' from 'could not ask'.",
   "testGate": [
@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": null,
+  "summary": "The worktree and merge half of sign-off stopped being prose the model typed. `scripts/git/` holds `_worktrees.py` (git is the registry, not the manifest; every question has three answers and `could-not-ask` is loud), `close-phase.py` (5c-5e as one call, never moves HEAD, exit 3 = not-a-fast-forward and exit 4 = could-not-be-asked) and `manage-worktrees.py` (`list|add|remove|sweep`, refusing on two axes: a branch contained in its parent says the commits are safe and says nothing about the working tree). `meta.merge` carries the policy beside the merge target. Ten probes against a throwaway repo overturned three assumptions before any code was written - `git fetch . b:p` invents a missing target branch, and `git branch -d` grades against HEAD rather than the declared parent.",
   "tasks": [
     {
       "id": "P18.1",
@@ -531,5 +531,10 @@
         "CI run 34090677986 (all five jobs)"
       ]
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T21:41:41Z.4325ca",
+    "status": "passed",
+    "at": "2026-09-08T21:41:41Z"
+  }
 }

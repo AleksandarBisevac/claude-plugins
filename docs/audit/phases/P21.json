@@ -1,7 +1,7 @@
 {
   "id": "P21",
   "title": "2.1.1: the sweep's safety conditions must be about the worktree they name",
-  "status": "in_progress",
+  "status": "done",
   "description": "Six defects found by the phase code review of 2.1.0, three of them data-loss: the sweep acts on a record it did not measure (F244), the standing-in guard is realpath equality rather than containment and cwd_tree fails open (F245), provenance is not bound to the phase or branch it names (F246), a malformed tasks array reads as settled (F247), the panel's git-write never journals and its confirm dialog names nothing (F248), and close-phase's exit codes and stamp ordering are reported but not yet reproduced (F249).",
   "desiredOutcome": "Every removal the sweep plans is about the worktree whose provenance, settlement, containment and cleanliness were measured; no precondition fails open; the panel's git-write leaves a journal row and shows the operator what it is about to delete; and each fix carries a case proven red first.",
   "testGate": [
@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "in_progress",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": null,
+  "summary": "Shipped as 2.1.1. Every removal the sweep plans is now about the worktree whose provenance, settlement, containment and cleanliness were measured - three of the twenty fixes were data-loss defects. `within_tree` was normalising with `os.sep` while git prints `/`, so the containment guard was silently returning on Windows; cases s5b/s5c assert it on every platform now.",
   "tasks": [
     {
       "id": "P21.1",
@@ -156,5 +156,10 @@
         "check-git-pipeline.py g17b, g17c"
       ]
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T21:57:09Z.f9e609",
+    "status": "passed",
+    "at": "2026-09-08T21:57:09Z"
+  }
 }

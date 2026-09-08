@@ -658,6 +658,63 @@ def _cases(check):
     check("p6 it names where the field text came from, so a reader can go read "
           "the source", pay["schemas"]["config"].endswith(".json"))
 
+    # --- (ch) a documented flag's VALUES against the parser that takes them -----
+    # F265. `/audit:status --view pending` was advertised by the command doc and
+    # refused by the parser, and the whole gate set was green: `command_flag_drift`
+    # compares flag NAMES between two documents and asks no parser anything. These
+    # cases are the instrument, and they are pure so the failure modes can be
+    # driven without a repository.
+    check("ch1 the hint is read for VALUE LISTS, not for flags: `--view a|b|c` "
+          "yields its three, and a flag with a free-form metavar yields nothing "
+          "because there is nothing to compare",
+          M.advertised_choices(
+              "'[--gate] [--phase <id>] [--view active|archived|all] "
+              "[--color auto|always|never]'")
+          == {"--view": ["active", "archived", "all"],
+              "--color": ["auto", "always", "never"]})
+    check("ch2 THE DEFECT THAT SHIPPED: a value the doc advertises and the "
+          "parser refuses is a finding that names both sides",
+          [p for _s, p in M.choice_drift(
+              "status.md", {"--view": ["active", "pending", "archived", "all"]},
+              {"--view": set(("active", "archived", "all"))}, {})]
+          == ["--view: the doc advertises 'pending', which the parser refuses "
+              "(it takes active, all, archived)"])
+    check("ch3 ...and the SAME FAULT FACING THE OTHER WAY is reported too - a "
+          "value the parser takes that the doc never mentions is a capability "
+          "nobody can find, which is this repo's oldest defect",
+          [p for _s, p in M.choice_drift(
+              "status.md", {"--view": ["active", "all"]},
+              {"--view": set(("active", "archived", "all"))}, {})]
+          == ["--view: the parser accepts 'archived', which the doc never "
+              "advertises"])
+    check("ch4 agreement is silence - a rule that fired on a correct pair would "
+          "be routed around by the first person who read it",
+          M.choice_drift("status.md", {"--view": ["active", "archived", "all"]},
+                         {"--view": set(("active", "archived", "all"))}, {}) == [])
+    check("ch5 A FLAG NO PARSER OWNS IS A FINDING, NOT A SKIP: a doc could "
+          "otherwise opt out of this check by advertising a flag nothing "
+          "implements, and silence would read exactly like agreement",
+          [p for _s, p in M.choice_drift(
+              "status.md", {"--view": ["active"]}, {},
+              {"audit-status.py": "exposes no build_parser()"})]
+          == ["--view: no parser named by this command declares it "
+              "(audit-status.py: exposes no build_parser())"])
+    check("ch6 ...but an unreadable script is CONTEXT, not a finding of its own: "
+          "with the flag matched, a doc that merely PRINTS another tool's command "
+          "in its prose is silent. This was got wrong first and convicted "
+          "`doctor.md` for showing a `run-test-gate.py` invocation - a guard that "
+          "fires on a correct document is one somebody routes around",
+          M.choice_drift("status.md", {"--view": ["active"]},
+                         {"--view": set(("active",))},
+                         {"helper.py": "exposes no build_parser()"}) == [])
+    # THE LIVE ONE. Everything above is a fixture; this is the tree, and it is
+    # what makes the rule shippable rather than an argument written on the day it
+    # landed.
+    _ch_live = M.command_choice_drift()
+    check("ch7 ...and the real command surface agrees with its own parsers "
+          "right now, in both directions: %r" % (_ch_live,),
+          _ch_live == [])
+
 
 def _selftest():
     return _harness.run(_cases)

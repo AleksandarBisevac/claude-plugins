@@ -771,6 +771,42 @@ def _cases(check):
           and _es_def.get("additionalProperties") is True
           and _es_def.get("type") == "object")
 
+    # --- segments: the fold over STATUS ------------------------------------
+    # Asked of STATUS itself rather than of a written-out list, so a word added
+    # to the vocabulary cannot land in a segment nobody chose for it: an
+    # unclassified member would leave `_unfiled` non-empty and fail here on the
+    # day it is added, which is the only day the choice is cheap.
+    _seg_map = dict((s, M.segment_of(s)) for s in M.STATUS)
+    _unfiled = sorted(s for s, seg in _seg_map.items() if seg not in M.SEGMENTS)
+    check("mv46 `segment_of` folds EVERY member of STATUS into a segment, the "
+          "two terminal words into `archived` and the two live ones into "
+          "`active` - and an unknown word into `pending` rather than into a "
+          "segment of its own, because a status this build does not recognise "
+          "is work the validator is about to flag and hiding it is the one "
+          "outcome that helps nobody. STATUS -> segment: %r; unfiled: %r"
+          % (_seg_map, _unfiled),
+          _unfiled == []
+          and _seg_map["done"] == "archived" and _seg_map["cancelled"] == "archived"
+          and _seg_map["in_progress"] == "active" and _seg_map["blocked"] == "active"
+          and _seg_map["pending"] == "pending"
+          and M.segment_of("weird") == "pending" and M.segment_of(None) == "pending")
+
+    # VIEW_SEGS is the reader-facing half, and the case that matters is the one
+    # that bit the report first: `active` is active AND pending, because both are
+    # work nobody has finished, and a view that meant only `active` would open on
+    # an empty table for every plan whose work has not been started yet.
+    _view_union = set()
+    for _segs in M.VIEW_SEGS.values():
+        _view_union |= set(_segs)
+    check("mv47 `VIEW_SEGS` reaches every segment - a segment no view names is "
+          "a segment no reader can ask for - and `active` means active AND "
+          "pending. VIEW_SEGS=%r, union=%r vs SEGMENTS=%r"
+          % (M.VIEW_SEGS, sorted(_view_union), M.SEGMENTS),
+          _view_union == set(M.SEGMENTS)
+          and M.VIEW_SEGS["active"] == ("active", "pending")
+          and M.VIEW_SEGS["archived"] == ("archived",)
+          and M.VIEW_SEGS["all"] == M.SEGMENTS)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -60,6 +60,7 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (tokens + labels shared with the panel)
 import _areas  # noqa: E402  (one home for tag derivation; stdlib-only, no cycle)
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
+import _manifest_vocab as _vocab  # noqa: E402  (the words, and the segment fold over them)
 import _priority  # noqa: E402  (what a valid tier is - one answer, shared with the CLI)
 
 
@@ -188,35 +189,23 @@ def _area_tag_span(tag, owners):
 
 
 # --- segments (D1, v0.36) -----------------------------------------------------
-# The order the segments render in: the work in motion first, then the queue,
-# then the archive. A dict, not an if-chain, so the emitter and the selftest
-# read one table.
-SEG_ORDER = ("active", "pending", "archived")
+# THE FOLD MOVED DOWN A LAYER AND THESE ARE BINDINGS, not copies. It was defined
+# here, at layer 2 — and `/audit:status`'s facts module is layer 2 as well, so it
+# could not import this (same layer is not downward) and would have had to paste a
+# second copy to render `--view`. It now lives beside the `STATUS` tuple it folds,
+# in `_manifest_vocab` at layer 1, where every surface can reach one answer.
+#
+# The local names stay because this module's emitter and both of its suites read
+# them, and because `SEG_ORDER` says something here that `SEGMENTS` does not: it is
+# the ORDER the segments render in — work in motion first, then the queue, then the
+# archive. `test__report_html.py` pins these with `is`, which fails on a pasted-back
+# literal and passes on an alias, exactly as `_manifest_rules`' re-exports are pinned.
+SEG_ORDER = _vocab.SEGMENTS
+VIEW_SEGS = _vocab.VIEW_SEGS
+_seg_of = _vocab.segment_of
+# The label is the one part that is genuinely this surface's: a heading in a page,
+# in this page's register. Nothing else renders these words.
 SEG_LABEL = {"active": "Active", "pending": "Pending", "archived": "Archived"}
-# The two views a reader picks between, plus the escape hatch. `active` is the
-# default and means "everything still to come or in hand" — active AND pending,
-# because both are work nobody has finished.
-VIEW_SEGS = {"active": ("active", "pending"),
-             "archived": ("archived",),
-             "all": SEG_ORDER}
-
-
-def _seg_of(status):
-    """Which segment a phase files under, from its ROLLED-UP status.
-
-    in_progress and blocked are both "someone is (or should be) on this now";
-    the archive holds both TERMINAL states — `done` (it landed) and `cancelled`
-    (it will not be done) — because the question a reader asks of the top of
-    this table is "what is left", and finished-by-dropping is finished.
-    Everything else — pending, an unknown vocabulary value, a phase with no
-    status at all — is work still to come. Unknowns land in pending on purpose:
-    a segment that silently swallowed a typo'd status would hide the phase the
-    validator is about to flag."""
-    if status in ("done", "cancelled"):
-        return "archived"
-    if status in ("in_progress", "blocked"):
-        return "active"
-    return "pending"
 
 
 # --- fragment builders ------------------------------------------------------

@@ -100,6 +100,49 @@ ADO_ORIGIN_CREATED = "created"
 ADO_ORIGIN_IMPORTED = "imported"
 ADO_ORIGIN = (ADO_ORIGIN_CREATED, ADO_ORIGIN_IMPORTED)
 
+# --- segments: the FOLD over STATUS that every surface renders by ----------------
+# `STATUS` is what a phase may SAY; a segment is what a reader ASKS of it — is this
+# in motion, still to come, or finished. Three surfaces need that fold: the report's
+# phase table, the panel's Overview select, and `/audit:status --view`.
+#
+# IT LIVES HERE, BESIDE THE TUPLE IT FOLDS, and that is a layer fact rather than a
+# taste one. It was `_report_html`'s, which is layer 2 — and `_status_facts` is layer
+# 2 as well, so a status renderer could not have imported it (same layer is not
+# downward) and would have had to keep a second copy. A vocabulary copied is as many
+# vocabularies as there are copies, all of which agree until one of them learns a
+# word. `overview.js`'s `segOf` is the JavaScript twin and is pinned by name in
+# `test__panel_page.py`: no function crosses the two languages, so a pin is the only
+# thing that can hold those two to one answer.
+#
+# The order is the reading order: work in motion first, then the queue, then the
+# archive.
+SEGMENTS = ("active", "pending", "archived")
+# The two views a reader picks between, plus the escape hatch. `active` is the
+# default and means "everything still to come or in hand" — active AND pending,
+# because both are work nobody has finished.
+VIEW_SEGS = {"active": ("active", "pending"),
+             "archived": ("archived",),
+             "all": SEGMENTS}
+
+
+def segment_of(status):
+    """Which segment a phase files under, from its ROLLED-UP status.
+
+    in_progress and blocked are both "someone is (or should be) on this now";
+    the archive holds both TERMINAL states — `done` (it landed) and `cancelled`
+    (it will not be done) — because the question a reader asks of the top of
+    this table is "what is left", and finished-by-dropping is finished.
+    Everything else — pending, an unknown vocabulary value, a phase with no
+    status at all — is work still to come. Unknowns land in pending on purpose:
+    a segment that silently swallowed a typo'd status would hide the phase the
+    validator is about to flag."""
+    if status in ("done", "cancelled"):
+        return "archived"
+    if status in ("in_progress", "blocked"):
+        return "active"
+    return "pending"
+
+
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
 # The "legacy" names below were removed from the schema in v0.3.0 but remain

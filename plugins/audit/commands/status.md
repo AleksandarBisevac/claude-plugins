@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: print manifest status — phases, tasks, bugs, the ready-now list and what each pending task is waiting on; or, with --gate, turn that same state into a CI pass/fail verdict over conditions you pick with --fail-on. Read-only, no locks, no mutations.'
-argument-hint: '[--gate] [--fail-on <c1,c2,...>] [--phase <id>] [--json] [--color auto|always|never]'
+argument-hint: '[--gate] [--fail-on <c1,c2,...>] [--phase <id>] [--view active|archived|all] [--json] [--section <key>] [--color auto|always|never]'
 allowed-tools: Bash
 ---
 
@@ -38,14 +38,51 @@ is in the output already.
 Pass `$ARGUMENTS` through unchanged. `--json` emits the machine-readable rollup
 instead, for CI or another tool.
 
+`--section <key>` (with `--json` only) prints **one top-level key** of that same
+payload rather than all of it — a projection, never a reshape, so the bare `--json`
+output is unchanged and no key stops being emitted. It exists because a caller that
+needs one array should not have to carry the whole rollup to reach it; the orchestrator's
+budget check reads `--json --section usage`. A key this payload does not have is a usage
+error (exit 2) naming the sections it does have, rather than `null`: `usage` is absent
+exactly when metering is off, and `null` cannot tell that apart from a plan that recorded
+nothing.
+
+## What the default shows, and how to see the rest
+
+**The table lists the work in hand, not the whole plan.** By default it shows the phases
+that are `in_progress`, `blocked` or still `pending`, and folds the finished ones —
+`done` and `cancelled` — into a single line that says how many phases and how many task
+rows it left out, and which flag brings them back. A plan whose phases are *all*
+finished opens on everything instead, because a completed plan greeting its reader with
+an empty table would be the fold's own failure. Those are the same three views and the
+same default the HTML report's toggle and the panel's Overview select already use.
+
+This matters more the longer a plan runs: the render is printed verbatim, so its length
+is paid on every call, and a plan's archive only ever grows.
+
+```
+/audit:status                 # the work in hand (default)
+/audit:status --view all      # every phase — the pre-2.1.2 render, byte for byte
+/audit:status --view archived # only what is finished
+```
+
 `--phase <id>` scopes the **human render** to one phase - the table lists that phase
-alone, and the render says so on a line of its own. **Totals stay whole-plan**: the
-overall line, the usage line and the bug counts are the project's, not the phase's,
-because a phase view that silently rescoped them would misreport the project. **And it
-does not scope the other modes** - `--gate` evaluates its conditions over the whole
-manifest and `--json` emits the whole rollup, whatever `--phase` says, so
-`--phase P3 --gate` still gates on a task in P7. That last reading has already been got
-wrong here. An id no phase carries is a usage error (exit 2) naming the ids there are.
+alone, and the render says so on a line of its own. `--view <segment>` scopes it to a
+segment. **Totals stay whole-plan under both**: the overall line, the usage line and the
+bug counts are the project's, not the view's, because a scoped table that silently
+rescoped them would misreport the project. **And neither scopes the other modes** -
+`--gate` evaluates its conditions over the whole manifest and `--json` emits the whole
+rollup, whatever `--phase` or `--view` says, so `--phase P3 --gate` still gates on a task
+in P7 and `--view active --gate` still trips on a task in a finished phase. That last
+reading has already been got wrong here. An id no phase carries is a usage error
+(exit 2) naming the ids there are, and so is a `--view` value that is not one of the
+three. When both are given `--phase` wins: it names one phase, which is narrower than any
+segment.
+
+**There is no `--view pending`, deliberately.** `active` already means active *and* pending
+— both are work nobody has finished, which is the question this table is read for — and
+the views are one vocabulary shared with the report's toggle and the panel's select. A
+fourth spelling here would be a fourth only here.
 
 ## Gate mode (`--gate`, `--fail-on`)
 

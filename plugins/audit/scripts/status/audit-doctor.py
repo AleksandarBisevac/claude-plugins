@@ -257,7 +257,19 @@ def render(rep, project, pt=None):
     return "\n".join(lines)
 
 
-def main(argv):
+def build_parser():
+    """The option surface, MODULE LEVEL so something other than a process can read it.
+
+    It was built inside `main()`, which meant the only way to learn what
+    `--color` accepts was to start the command and read the error it printed.
+    `_refs.command_choice_drift()` compares the value lists a command doc
+    advertises against the ones its parser really takes, and it asks argparse
+    rather than the AST for them — because `choices=list(_cli_fmt.MODES)` is a
+    call, not a literal, and a checker that read the source would have to
+    re-implement enough of Python to evaluate it. Lifting this out is what makes
+    the answer askable; `audit-status.py` and `audit-usage.py` were already this
+    shape, so this is the tree becoming uniform rather than a new convention.
+    """
     ap = argparse.ArgumentParser(
         prog="audit-doctor.py",
         description="Diagnose an audit plugin setup. Read-only.")
@@ -270,7 +282,11 @@ def main(argv):
                     help="ANSI color for the terminal render (auto colors "
                          "only a TTY and respects NO_COLOR; --json never "
                          "colors)")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv):
+    args = build_parser().parse_args(argv)
 
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):

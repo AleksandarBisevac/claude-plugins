@@ -790,13 +790,20 @@
       </div>
       <div class="cmd">
         <div class="cmd-line">
-          <span class="c">/audit:status [--gate] [--fail-on &hellip;]</span>
+          <span class="c">/audit:status [--view &hellip;] [--gate] [--fail-on &hellip;]</span>
           <span class="badge b-read">read-only</span>
         </div>
         <div class="cmd-body">
           <p>Phases, tasks, bugs, the ready-now list, what each pending task waits on, and a
             <code>tests</code> column carrying what the run that last exercised it said. No locks, no
             mutations &mdash; safe mid-phase.</p>
+          <p><strong>It lists the work in hand, not the whole plan.</strong> Finished phases
+            &mdash; <code>done</code> and <code>cancelled</code> &mdash; fold into one line saying
+            how many phases and task rows it left out; <code>--view all</code> brings them back,
+            <code>--view archived</code> shows only those. A plan whose phases are all finished
+            opens on everything, because an empty table answers nothing. Same three views, and the
+            same default, as the report's toggle and the panel's Overview select. The render is
+            printed verbatim, so what it costs you is its length &mdash; and an archive only grows.</p>
         </div>
       </div>
     </div>
@@ -1805,7 +1812,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
           <tr><td><code>/audit:status</code></td><td><code>[--gate]</code> <code>[--fail-on &hellip;]</code> <code>[--phase ID]</code> <code>[--json]</code> <code>[--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td>Overview &mdash; the live view of the same state</td></tr>
           <tr><td><code>/audit:doctor</code></td><td><code>[--deep]</code> <code>[--json]</code> <code>[--color &hellip;]</code></td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; CLI only</td></tr>
           <tr><td><code>/audit:report</code></td><td><code>[--out-dir &lt;dir&gt;]</code> <code>[--share]</code></td><td><span class="badge b-read">read-only</span></td><td>Export report, from any tab</td></tr>
-          <tr><td><code>/audit:usage</code></td><td><code class="alt">[--by&nbsp;phase|<wbr>task|<wbr>model|<wbr>author|<wbr>agent|<wbr>day|<wbr>month]</code> <code>[--phase]</code> <code>[--author]</code> <code>[--area]</code> <code>[--since 7d]</code> <code>[--format md|ascii]</code> <code>[--json]</code> <code>[--backfill]</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
+          <tr><td><code>/audit:usage</code></td><td><code class="alt">[--by&nbsp;phase|<wbr>task|<wbr>model|<wbr>author|<wbr>agent|<wbr>attr|<wbr>branch|<wbr>session|<wbr>hour|<wbr>day|<wbr>month]</code> <code>[--phase]</code> <code>[--author]</code> <code>[--area]</code> <code>[--since 7d]</code> <code>[--format md|ascii]</code> <code>[--json]</code> <code>[--backfill]</code></td><td><span class="badge b-read">read-only</span></td><td>Usage</td></tr>
           <tr><td><code>/audit:guide</code></td><td><code>&lt;question&gt;</code></td><td><span class="badge b-read">read-only</span></td><td>Help drawer</td></tr>
           <tr><td><code>/audit:sync status</code></td><td>&mdash;</td><td><span class="badge b-read">read-only</span></td><td><em>none</em> &mdash; the ADO card shows manifest counts, never the board</td></tr>
           <tr><td><code>/audit:sync connect</code></td><td>&mdash;</td><td><span class="badge b-read">reads ADO</span> <span class="badge b-write">manifest</span></td><td><em>none</em> &mdash; the card edits <code>meta.ado</code> once connected</td></tr>

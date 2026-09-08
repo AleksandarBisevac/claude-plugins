@@ -4,6 +4,96 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.2.0] - 2026-09-09
+
+**A minor, because the default output of a command you already run is different.** `--view all`
+gives you the previous render byte for byte, and nothing about the machine surface moved: `--json`
+is unchanged key for key. Two flags are new.
+
+### Changed — `/audit:status` lists the work in hand, not the whole plan
+
+- **The default render narrows to the live phases, and says what it folded.** `commands/status.md`
+  orders the model to print this command's stdout verbatim, so the render's *length* is what every
+  call costs — and a plan's archive only grows. Finished phases (`done`, `cancelled`) now fold into
+  a single line naming how many phases and how many task rows are out of sight and the flag that
+  brings them back. A plan whose phases are all finished opens on everything instead, because an
+  empty table answers nothing.
+
+  **`--view active|archived|all` is the flag, and `--view all` is the previous render byte for
+  byte.** `active` means active *and* pending — both are work nobody has finished — so there is no
+  fourth spelling. The three words, and the default rule behind them, are the report's toggle and the
+  panel's Overview select — `_seg_of` moved down to `_manifest_vocab` beside the `status` tuple it
+  folds so the three surfaces read one answer rather than three copies. Like `--phase`, it scopes
+  the human render alone: totals stay whole-plan, `--gate` grades the whole manifest, and `--json`
+  emits the whole rollup.
+
+- **`--json --section <key>` prints one top-level key of the payload.** Additive: the bare `--json`
+  output is byte-identical, no key stops being emitted and nothing is reordered, so
+  `COMPATIBILITY.md`'s promise is untouched. It exists because the orchestrator's budget check read
+  the entire rollup to reach one array inside `usage`, and now reads `--json --section usage`
+  instead. A key the payload does not have is a usage error naming the ones it has, rather than
+  `null` — `usage` is absent exactly when metering is off, and `null` cannot say which of those two
+  it means.
+
+### Fixed — from a field report: a guard people route around, and a commit commitlint refuses
+
+- **Rule #1 stopped refusing an interpreter body that merely *contains* shell-read text.** Its
+  second arm greped the whole body, so a list of example commands — a fixture, a table, a test
+  case about this very guard — was graded as reading a secret. Measured: a data-only body was
+  refused while the same text as prose was not. It blocked three commands in one session here, and
+  both the reporter and this repository worked around it the same way — write the script to a
+  scratchpad file and run it from there, **which is worse for security than what was refused**.
+  That is the failure mode this project names by its own rule: a guard people learn to step around
+  guards nothing.
+
+  The arm now grades the *arguments of a call that actually shells out* — `subprocess.run`,
+  `os.system`, `child_process.exec…` — and no other text in the body. `subprocess.run(["cat",
+  ".env"])` is still refused. The cost is stated rather than discovered and is **one shape, not a
+  class**: a command assembled into a variable escapes only in a heredoc, because the inline `-c`
+  form is still caught by the outer shell lane. Both halves are asserted.
+
+- **`commit-audit-state.py` writes `chore(audit-state): <phase> — …` instead of
+  `audit-state(<phase>):`.** The old type is unknown to conventional-commit tooling, so husky +
+  commitlint rejected the commit **after** the script had staged the files, leaving the caller to
+  finish by hand. Taking the type from `meta.commit.type`, as suggested, would have destroyed the
+  property the literal exists for; moving the literal to the **scope** keeps both — `chore` is in
+  commitlint's default enum, and `git log --grep audit-state` still separates these from task
+  commits for ever, because a task commit's scope is its phase id and nothing in a manifest can
+  reach the scope.
+
+### Fixed — four `/audit:usage --by` values nobody could find
+
+- **`--by attr`, `--by branch`, `--by session` and `--by hour` all worked and none was documented.**
+  Found on the first run of a new check rather than by reading: nothing in this repository compared
+  a documented flag's **values** against the parser that takes them. `_refs.command_flag_drift`
+  compares flag *names* between the command doc and the README — two documents, no parser — so the
+  value list inside an `argument-hint` was unread text.
+
+  `_help.command_choice_drift()` now constructs each command's parser and asks argparse itself,
+  **in both directions**: a value the doc advertises and the parser refuses is a promise the product
+  breaks for anyone who copies it, and a value the parser takes that the doc omits is a capability
+  nobody can find. It asks argparse rather than the source because four of the five value lists in
+  the plugin spell `choices=list(_cli_fmt.MODES)` or `sorted(_vocab.VIEW_SEGS)` — calls, not
+  literals — which is also why `audit-doctor.py` grew a `build_parser()`: its option surface had to
+  be reachable without starting a process.
+
+### Fixed — work computed for output nobody prints
+
+- **The usage block stopped sweeping the ledger for aggregates the terminal never shows.**
+  `byModel` and `byAuthor` are `--json`-only and were a quarter of this command's whole runtime;
+  `byPhase` is read for one clause that prints only while a phase is running, and `budgets` renders
+  nothing unless a phase declares one. Each is now computed where something reads it. The usage
+  line is pinned byte-identical, because a saving a reader can see is a change rather than a
+  saving. `--json` and `--gate` still receive the whole block. The `since`/`until` window is
+  deliberately still unused: narrowing it would change an all-time figure, and a number that
+  quietly changes meaning is worse than one that took longer.
+
+- **The evidence boundary is read on the paths that consume it.** It was read on every invocation
+  behind a comment calling it *"a directory listing and a JSON read"*. It is not: every row of every
+  recorded run is parsed so that one `min(ts)` can be taken. The human render is byte-identical
+  with a boundary and without one — that, rather than the cost, is what licenses the change — so
+  `--json`, `--gate` and `--discovery` still compute it and the terminal render no longer does.
+
 ## [2.1.1] - 2026-09-07
 
 **A patch, and three of its fixes are why it should not wait.** The phase review that belonged

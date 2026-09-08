@@ -224,13 +224,35 @@ def _cases(check):
               and "phaseId" in _journal_io.DETAILS_KEYS)
 
         subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
-        check("cas8 the commit type is a fixed literal and not `meta.commit.type` "
-              "- the manifest may set that to anything, so only a literal is a "
-              "spelling a task commit can never collide with, and `git log "
-              "--grep` can tell the two apart for ever: %r" % (subject,),
-              subject.startswith("%s(%s):" % (M.COMMIT_TYPE, PHASE))
-              and not subject.startswith("chore(")
-              and M.COMMIT_TYPE != "chore")
+        # F268 REVERSED HALF OF THIS PIN, and the trigger is named rather than
+        # implied. The property it exists for is separability: a spelling a task
+        # commit can never collide with, so `git log --grep` tells the two apart
+        # for ever. That property was originally spent on the TYPE, which made the
+        # subject `audit-state(P1):` - an unknown conventional-commit type, which
+        # husky+commitlint rejects AFTER the script has staged the files. Reported
+        # from a live project, and the original decision never weighed it.
+        #
+        # The fix keeps both: `chore` is in commitlint's default type-enum so the
+        # commit lands, and the fixed literal moves to the SCOPE, where nothing a
+        # manifest sets can reach it - `meta.commit.type` chooses a task commit's
+        # TYPE, never its scope, which is the phase id. So the case now asserts
+        # the property instead of the spelling.
+        check("cas8 the separating literal is a fixed SCOPE, not `meta.commit.type` "
+              "- the manifest may set that to anything, so only a literal nothing "
+              "in the manifest reaches can never collide, and `git log --grep "
+              "%s` still tells the two apart for ever. The phase id stays in the "
+              "subject, where it is still greppable: %r"
+              % (M.COMMIT_SCOPE, subject),
+              subject.startswith("%s(%s): " % (M.COMMIT_TYPE, M.COMMIT_SCOPE))
+              and M.COMMIT_SCOPE not in ("", None)
+              and PHASE in subject)
+        check("cas8b ...and the type is one conventional-commit tooling accepts, "
+              "which is the whole of the repair: a repo with husky+commitlint "
+              "refuses an unknown type, and it refuses it AFTER this script has "
+              "staged the files, leaving the caller to commit by hand: %r"
+              % (M.COMMIT_TYPE,),
+              M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
+                                "perf", "refactor", "revert", "style", "test"))
 
         # --- called again ------------------------------------------------------
         code, text = _run(fx)

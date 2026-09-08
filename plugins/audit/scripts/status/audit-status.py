@@ -75,6 +75,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _manifest_vocab as _vocab  # noqa: E402  (the words, and the segment fold --view reads)
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
@@ -359,13 +360,33 @@ def _load_validator():
 
 
 # --- usage summary --------------------------------------------------------------
-def usage_summary(manifest, manifest_path, project_dir=None):
+def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     """Compact token-usage block for the rollup, or None when there is no ledger.
 
     Kept OUT of `rollup` so that function stays a pure dict -> dict transform; the
     ledger is I/O and belongs to the caller. Never raises: a missing, empty or
     unreadable ledger simply means no usage key, and every consumer treats that as
-    "metering not in use" rather than an error."""
+    "metering not in use" rather than an error.
+
+    `full=False` DROPS THE AGGREGATES THE TERMINAL RENDER NEVER READS. Each of
+    `byModel`, `byAuthor` and `byPhase` is another sweep of every ledger row, and
+    the human render prints the first two never and the third only when a phase
+    is running — measured on this repository, the two it never prints were a
+    quarter of the whole command's runtime, spent to produce nothing. What is
+    dropped is ABSENT rather than empty: an empty `byModel` would claim no model
+    was recorded, which is a different and false statement.
+
+    THE DEFAULT IS TRUE ON PURPOSE. A library that computes everything and lets
+    one caller ask for less fails safe; the reverse hands every future caller a
+    subset it did not know it was getting. The narrowing is `main()`'s, on the
+    one path that was measured — the same split `render_status(view=None)` makes:
+    policy at the command, not in the thing the command calls.
+
+    `totals` is never dropped, and neither is the ledger read behind it: the line
+    prints those two numbers. The `since`/`until` window `read_ledger` offers is
+    deliberately unused, because narrowing it would change an all-time figure a
+    reader has been shown before, and a number that quietly changes meaning is
+    worse than a number that took longer to compute."""
     try:
         ul = _loader.load_script("usage_ledger.py", modname="usage_ledger",
                                   cache=False)
@@ -391,7 +412,33 @@ def usage_summary(manifest, manifest_path, project_dir=None):
         return None
     try:
         total = ul.totals(rows)
-        by_phase = ul.aggregate(rows, "phase")
+        # WHICH OPTIONAL SWEEPS ARE WORTH THEIR PASS, asked of the MANIFEST so the
+        # answer is a function of the plan and the flag alone: the same plan
+        # narrowed twice gives the same block both times, and no caller can hand
+        # this function a shape by accident.
+        phases = (manifest.get("phases") or []) if isinstance(manifest, dict) else []
+        dicts = [p for p in phases if isinstance(p, dict)]
+        # `byPhase` is read by `_usage_line` for exactly one clause - the tokens of
+        # the phase that is RUNNING - so with nothing running there is no clause to
+        # print and no reason to sweep for it.
+        #
+        # THIS TEST MUST KEEP AGREEING WITH `_usage_line`'s, and the two ask
+        # different objects. That one reads the ROLLUP (`summary["phases"]`); this
+        # one reads the MANIFEST, because `usage_summary` runs before a rollup
+        # exists. They agree today because `_status_facts` passes a phase's status
+        # straight through rather than deriving it - checked, not assumed - so if a
+        # rollup ever computes that field from its tasks, this is the line that
+        # silently stops the "this phase" clause from printing. Anything that makes
+        # the rollup derive a phase status owes this test a second look.
+        want_phase = full or any(p.get("status") == "in_progress" for p in dicts)
+        # `budgets` renders nothing unless a phase declares one. The truth test is
+        # `phase_budgets`' own, restated as a QUESTION rather than reimplemented as
+        # an answer: whether to pay for the pass, not what the pass would return.
+        want_budgets = full or any(
+            isinstance(p.get("budgetUSD"), (int, float))
+            and not isinstance(p.get("budgetUSD"), bool)
+            and p.get("budgetUSD") > 0
+            for p in dicts)
         # Trimmed at the door (F160): the plan schema asks only that
         # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates
         # and `_usage_line` below printed "rates as of" followed by nothing - a
@@ -403,28 +450,32 @@ def usage_summary(manifest, manifest_path, project_dir=None):
         # config file's copy of this key.
         as_of_raw = meta_usage.get("pricingAsOf") \
             if isinstance(meta_usage, dict) else None
-        return {
+        # One shape for every aggregate, so a key added to one is added to all.
+        def _slice(grouped):
+            return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
+                        "msgs": v["msgs"]} for k, v in grouped.items()}
+
+        block = {
             "ledgerDir": ledger_dir,
             "pricingAsOf": (as_of_raw.strip() or None)
             if isinstance(as_of_raw, str) else None,
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,
             "totals": total,
-            "byPhase": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
-                            "msgs": v["msgs"]} for k, v in by_phase.items()},
-            "byModel": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
-                            "msgs": v["msgs"]}
-                        for k, v in ul.aggregate(rows, "model").items()},
-            "byAuthor": {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
-                             "msgs": v["msgs"]}
-                         for k, v in ul.aggregate(rows, "author").items()},
+        }
+        if want_phase:
+            block["byPhase"] = _slice(ul.aggregate(rows, "phase"))
+        if full:
+            block["byModel"] = _slice(ul.aggregate(rows, "model"))
+            block["byAuthor"] = _slice(ul.aggregate(rows, "author"))
+        if want_budgets:
             # `phase_budgets` is reused verbatim, not re-derived: it already returns
             # spent/budget/pct/over per phase and encodes the rule that 0, negative,
             # boolean and non-numeric all mean "no budget" rather than a budget of
             # zero. Re-implementing that here is how the three existing copies of it
             # would become four.
-            "budgets": ul.phase_budgets(manifest, rows),
-        }
+            block["budgets"] = ul.phase_budgets(manifest, rows)
+        return block
     except Exception:
         return None
 
@@ -531,7 +582,8 @@ def _evidence_cell(holder):
     return _clip(status, EVIDENCE_CELL_MAX) if status else "-"
 
 
-def render_status(manifest, summary, width=18, only_phase=None, pt=None):
+def render_status(manifest, summary, width=18, only_phase=None, pt=None,
+                  view=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
@@ -547,7 +599,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None):
     """
     pt = pt or _cli_fmt.PLAIN
     lines = _header_lines(manifest, summary, width, pt=pt)
-    lines += _phase_table_lines(manifest, summary, only_phase)
+    lines += _phase_table_lines(manifest, summary, only_phase, view)
     lines += _ready_lines(manifest, summary, pt=pt)
     lines += _area_lines(summary, pt=pt)
     lines += _bug_lines(manifest, summary, pt=pt)
@@ -604,7 +656,7 @@ def _header_lines(manifest, summary, width=18, pt=None):
     return out
 
 
-def _phase_table_lines(manifest, summary, only_phase=None):
+def _phase_table_lines(manifest, summary, only_phase=None, view=None):
     """The phase-by-phase table: one header row, then a block per phase.
 
     Column widths are computed across EVERY task, then the header is printed
@@ -614,17 +666,36 @@ def _phase_table_lines(manifest, summary, only_phase=None):
     `widths` is why `fmt_row` is a closure, and why this block is one function:
     the rows and the measurement of the rows cannot be separated.
 
-    `only_phase` scopes only which phases are LISTED. The overall line, the usage
-    line and the bug counts stay whole-plan on purpose (they are `_header_lines`'
-    business): a phase view that silently rescoped the totals would misreport the
-    project, so the scope note says so where the scoping happens.
+    `only_phase` and `view` scope only which phases are LISTED. The overall line,
+    the usage line and the bug counts stay whole-plan on purpose (they are
+    `_header_lines`' business): a phase view that silently rescoped the totals
+    would misreport the project, so the scope note says so where the scoping
+    happens.
+
+    `view` is a `_vocab.VIEW_SEGS` key, and `None` means every phase. THE DEFAULT
+    PICK IS NOT HERE: which view a reader opens on is a CLI policy, `main()` owns
+    it, and leaving it there is what keeps every pre-flag caller of this function
+    byte-identical. `only_phase` wins when both are given — it names one phase,
+    which is narrower than any segment, and two filters silently intersecting is
+    how a reader ends up staring at an empty table.
+
+    The fold NAMES ITS REMAINDER, both halves of it, and the flag that undoes it.
+    A cap that goes quiet reads as "that is all of them", which is the failure
+    `READY_LIST_MAX` already refuses one block down; and the counts are computed
+    here rather than written anywhere, which is the house rule
+    `_output.prose_number_claims()` enforces on prose and this line honours by
+    construction.
     """
     unmet = unmet_refs(manifest)
     ready = set(summary["ready"])
     by_id = {p.get("id"): p for p in (manifest.get("phases") or [])
              if isinstance(p, dict)}
+    segs = _vocab.VIEW_SEGS.get(view) if view else None
     shown_phases = [p for p in summary["phases"]
-                    if not only_phase or p.get("id") == only_phase]
+                    if (only_phase and p.get("id") == only_phase)
+                    or (not only_phase
+                        and (segs is None
+                             or _vocab.segment_of(p.get("status")) in segs))]
     out = []
     if only_phase:
         out.append("  scoped to phase %s - totals above are whole-plan"
@@ -732,6 +803,21 @@ def _phase_table_lines(manifest, summary, only_phase=None):
                        % _clip(", ".join(unmet[pe["id"]]), 70))
         for r in all_rows.get(pe.get("id")) or []:
             out.append(fmt_row(r))
+
+    # WHAT THE VIEW LEFT OUT, said where it was left out. Both counts, because
+    # they answer different questions - how much of the PLAN is out of sight, and
+    # how much of the OUTPUT the fold actually bought - and the view is named so
+    # the line carries the basis that makes it true rather than an unattributed
+    # number. Emitted only when something really was hidden: `--view all` folds
+    # nothing, and a line reporting a remainder of zero is noise.
+    if not only_phase and segs is not None:
+        hidden = [p for p in summary["phases"]
+                  if _vocab.segment_of(p.get("status")) not in segs]
+        if hidden:
+            rows = sum(len((by_id.get(p.get("id")) or {}).get("tasks") or [])
+                       for p in hidden)
+            out.append("  --view %s hides %d phase(s) and %d task row(s) - "
+                       "--view all shows them" % (view, len(hidden), rows))
     return out
 
 
@@ -1211,6 +1297,14 @@ def build_parser():
     p.add_argument("--discovery", action="store_true",
                    help="with --json only: add a `discovery` block naming the "
                         "skills and agents this project can actually see")
+    # --section <key>: with --json only, print ONE top-level key of the same
+    # payload. A projection, never a reshape - the bare payload is untouched, so
+    # COMPATIBILITY's promise that an emitted key keeps being emitted is not put in
+    # play. It exists because the orchestrator's budget step read the whole rollup
+    # to reach one array inside `usage`.
+    p.add_argument("--section", default=None, metavar="KEY",
+                   help="with --json only: print one top-level key of the "
+                        "payload instead of all of it")
     p.add_argument("--gate", action="store_true",
                    help="evaluate the fail conditions; exit 1 when any trips")
     p.add_argument("--fail-on", dest="fail_on", default=None, metavar="c1,c2,...",
@@ -1222,6 +1316,15 @@ def build_parser():
     p.add_argument("--phase", default=None, metavar="ID",
                    help="scope the human render to one phase (totals stay "
                         "whole-plan)")
+    # --view <segment>: scope the HUMAN render to a segment of the plan, the same
+    # four words the report's toggle and the panel's Overview select already use.
+    # NO DEFAULT HERE, deliberately: `None` means "the reader did not choose", and
+    # main() then picks the way both of those surfaces pick. A default spelled
+    # `"active"` in this table would open a finished plan on an empty table.
+    p.add_argument("--view", default=None, choices=sorted(_vocab.VIEW_SEGS),
+                   help="scope the human render to a segment of the plan "
+                        "(default: active unless nothing is active or pending; "
+                        "totals stay whole-plan)")
     # --color auto|always|never: ANSI for the human render only (--json and
     # --gate output stay plain). Resolution lives in _cli_fmt - the one place
     # CLI color lives.
@@ -1252,9 +1355,14 @@ def main(argv):
     want_json = args.as_json
     want_gate = args.gate
     want_discovery = args.discovery
+    want_section = args.section
     if want_discovery and not want_json:
         sys.stderr.write("usage: --discovery requires --json (it enriches the "
                          "machine payload only)\n")
+        return 2
+    if want_section is not None and not want_json:
+        sys.stderr.write("usage: --section requires --json (it projects the "
+                         "machine payload, and a render has no sections)\n")
         return 2
 
     gitmodules = args.submodules
@@ -1315,15 +1423,30 @@ def main(argv):
     except Exception as exc:  # defensive
         findings, warnings = ["internal validator error: %s" % exc], []
 
-    # The boundary is read UNCONDITIONALLY, beside the usage ledger and for the
-    # same reason: the payload must not describe a different plan depending on
-    # which flags were passed. A consumer reading `beforeBoundary` off `--json`
-    # gets the same classification the gate acted on, and the invariant block's
-    # opt-in shape is not a precedent here -- that one costs several git calls per
-    # started phase, this one is a directory listing and a JSON read.
+    # THE HUMAN RENDER IS THE ONLY NARROWED PATH, for both of the reads below.
+    # `--json` is a machine contract and must describe the same plan whatever else
+    # was passed; `--gate` reads `usage.budgets` for its two budget conditions and
+    # the boundary for `no-test-evidence`. So both of those ask for everything, and
+    # the terminal render -- the one caller measured paying for work it never
+    # prints -- asks for what it prints.
+    #
+    # THE BOUNDARY'S OLD COMMENT HERE WAS WRONG, and it is worth saying why rather
+    # than only deleting it. It called this read "a directory listing and a JSON
+    # read", which is what made reading it on every invocation look free.
+    # `_evidence_io.read_rows` walks the directory and `json.loads` every row of
+    # every recorded run; `earliest_recorded` then takes a single `min(ts)` out of
+    # all of it. That is a full parse per run recorded, and this repository has no
+    # evidence directory, which is the only reason nobody here ever felt it.
+    # What licenses the deferral is not the cost, though -- it is that the human
+    # render is BYTE-IDENTICAL with a boundary and without one (`eb1`). The
+    # consumers are `--json`'s `evidenceBoundary` key, the panel that reads it, and
+    # the gate's excuse note; each of those still gets it.
+    want_boundary = want_json or want_gate or want_discovery
     summary = rollup(manifest, findings, warnings,
-                     usage=usage_summary(manifest, manifest_path),
-                     boundary=boundary_for(manifest_path))
+                     usage=usage_summary(manifest, manifest_path,
+                                         full=(want_json or want_gate)),
+                     boundary=boundary_for(manifest_path) if want_boundary
+                     else None)
 
     if want_discovery:
         # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
@@ -1355,7 +1478,20 @@ def main(argv):
             "passed": [c for c in conditions if c not in failed],
         }
 
-    if want_json:
+    if want_json and want_section is not None:
+        # A KEY THIS PAYLOAD DOES NOT HAVE IS AN ERROR, not a `null`. `usage` is
+        # absent exactly when metering is off and `gate` exactly when --gate was
+        # not passed, so printing `null` would answer "the plan recorded nothing"
+        # to a question that was really "is anything recording at all" - and the
+        # caller cannot tell those apart from the same four characters. Naming the
+        # sections this payload HAS says which of the two it is, and is the shape
+        # --fail-on already uses for an unknown condition.
+        if want_section not in summary:
+            sys.stderr.write("ERROR: no section %r in this payload (have: %s)\n"
+                             % (want_section, ", ".join(sorted(summary))))
+            return 2
+        print(json.dumps(summary[want_section], indent=2))
+    elif want_json:
         print(json.dumps(summary, indent=2))
     elif not want_gate:
         # A bare invocation now renders for a human. It used to print raw JSON and
@@ -1369,7 +1505,22 @@ def main(argv):
                                  % (only_phase, manifest_path, ", ".join(
                                      str(k) for k in known)))
                 return 2
-        print(render_status(manifest, summary, only_phase=only_phase, pt=pt))
+        # THE DEFAULT PICK, and it is copied rather than invented: the identical
+        # expression decides `_report_page`'s starting view and `overview.js`'s.
+        # Open on what is still to do, unless there is none of it left - a
+        # finished plan greeting its reader with an empty table would be the
+        # fold's own failure wearing a flag. It lives HERE and not in the
+        # renderer because which view a reader opens on is a policy of the
+        # command, and every other caller of `render_status` must keep rendering
+        # every phase.
+        view = args.view
+        if view is None:
+            segs_present = set(_vocab.segment_of(p.get("status"))
+                               for p in summary["phases"])
+            view = ("active" if (segs_present & set(("active", "pending")))
+                    else "all")
+        print(render_status(manifest, summary, only_phase=only_phase, pt=pt,
+                            view=view))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in

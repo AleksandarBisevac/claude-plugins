@@ -1,7 +1,7 @@
 {
   "id": "P20",
   "title": "Faults: close the remainder",
-  "status": "in_progress",
+  "status": "done",
   "description": "The open faults after P19, worked to completion.",
   "desiredOutcome": "F230, F231, F232's broad half and BUG-6 are each either fixed with a red-first proof, or closed with the evidence that settles them - none left as a sentence.",
   "testGate": [
@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": "F230, F232's broad half, F239's general half and F242 are fixed and proven red; BUG-6 is closed as not reproducible with four refuted hypotheses; F231 is sized from an estimate to a measurement.",
+  "summary": "F230, F231, F232's broad half and BUG-6 each closed with a red-first proof or with the evidence that settles them. F231's remainder turned `prove-gates`' hand-written source list into a walk, which is how several lints were found to have had no row at all - including the annotation arm of `house_style_violations()`, unenforced while CLAUDE.md named it as their enforcer.",
   "tasks": [
     {
       "id": "P20.1",
@@ -286,5 +286,10 @@
         "verify.sh"
       ]
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T21:52:00Z.96d6a7",
+    "status": "passed",
+    "at": "2026-09-08T21:52:00Z"
+  }
 }

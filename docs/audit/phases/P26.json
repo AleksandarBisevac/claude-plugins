@@ -1,0 +1,119 @@
+{
+  "id": "P26",
+  "title": "F265: a documented flag's VALUES are checked against the parser that takes them",
+  "status": "done",
+  "description": "P25's review found a defect the whole gate set was blind to: commands/status.md advertised --view active|pending|archived|all while the parser took three, so a value copied out of the documentation exited 2. _refs.command_flag_drift compares flag NAMES between two documents and never asks a parser anything, so nothing in the tree could see it. Measured: 10 argparse flags in the plugin constrain their values and 5 command docs advertise a value list; the other four were correct, so this is a missing instrument rather than a backlog. A static AST reader resolves only 1 of the 5 - the rest spell choices=list(_cli_fmt.MODES) or sorted(_vocab.VIEW_SEGS) - so the check must construct the parser and read argparse's own answer.",
+  "desiredOutcome": "Every value list a command doc advertises is exactly the set its parser accepts, in both directions, and a script that hides its parser is a finding rather than a silent skip.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      "The first version reported a census hole whenever a command doc named a script with no readable parser, which convicted `doctor.md` for printing a `run-test-gate.py` invocation in its prose. Narrowed to context on a real finding; the wrong test case that had frozen it (ch6) was corrected too."
+    ]
+  },
+  "summary": "F265, found by shipping it inside P25: `commands/status.md` advertised `--view active|pending|archived|all` while the parser took three, and the whole gate set was green because nothing compares a documented flag's VALUES to what its parser accepts. `_help.command_choice_drift()` constructs each command's parser and asks argparse itself, in both directions - it cannot read the source, because four of the five value lists in the plugin are calls rather than literals. It earned its keep on the first run: F266, four `/audit:usage --by` values that worked and were documented nowhere. The first version over-fired and convicted `doctor.md` for printing another tool's command in its prose; the live case caught it.",
+  "tasks": [
+    {
+      "id": "P26.1",
+      "title": "audit-doctor.py exposes build_parser(), so its options are reachable without running it",
+      "status": "done",
+      "description": "audit-status.py and audit-usage.py already build their parser in a module-level build_parser(); audit-doctor.py builds it inside main(), where nothing but a process can reach it. Extract it to match, which is a refactor with no behaviour change - main() calls build_parser().parse_args(argv) - and is what lets a lint ask argparse for a flag's choices instead of guessing them from the AST.",
+      "files": [
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "test_audit_doctor.py: build_parser() is reachable and its --color choices are _cli_fmt.MODES, and main() still parses the same arguments"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P26.2",
+      "title": "_help.command_choice_drift(): the advertised values are the parser's, both directions",
+      "status": "done",
+      "description": "For every command doc carrying an argument-hint, find the value lists it advertises (--flag a|b|c), resolve the doc to the scripts it names, construct each script's parser and read the flag's choices off argparse itself. A value advertised and not accepted is the defect that shipped; a value accepted and not advertised is the same fault facing the other way and is reported too. A doc that names a script with no build_parser() is a FINDING rather than a skip, or a script could opt out of the check by hiding its parser. IT LIVES IN _help AND NOT _refs, and that is a layer fact: constructing a parser needs _loader, and _refs is layer 1 beside it, so it cannot import it - which is exactly why schema_vocab_drift sits in _help too, a layer up from the vocabulary it grades. Cases in test__help.py and rows in both prove-gates tables, since a lint with a row in neither is invisible to the coverage rule itself.",
+      "files": [
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/tests/test__help.py",
+        "tools/prove-gates.py",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test__help.py: a doc advertising a value the parser refuses is a finding, and so is a value the parser takes that the doc omits",
+          "test__help.py: a command doc whose script exposes no parser is reported rather than skipped"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P26.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    }
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T21:36:02Z.26f782",
+    "status": "passed",
+    "at": "2026-09-08T21:36:02Z"
+  }
+}

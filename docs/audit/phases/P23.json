@@ -1,7 +1,7 @@
 {
   "id": "P23",
   "title": "Close the register: the last two open faults",
-  "status": "in_progress",
+  "status": "done",
   "description": "F243: _plugin_options is a text scan, so a flag removed properly - parser, tests, and a comment at each site explaining the removal - stays 'carried' and the handbook can advertise it for ever. F232 general: an exemption's REASON is checked against what the other side runs only for the narrow case P19.2 covered.",
   "desiredOutcome": "Nothing in the fault register is OPEN: an option is carried when something ACCEPTS it, and every exemption's stated reason is checked against the thing it excuses.",
   "testGate": [
@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": null,
+  "summary": "The register closed to zero OPEN. An option is carried when something ACCEPTS it - the AST reads string constants minus docstrings, because `materialize-proposal.py` reads `sys.argv` by hand and a stricter rule convicted flags it really takes. P23.2 was cancelled with its reason recorded; the 2.1.1 documentation half shipped with the tag.",
   "tasks": [
     {
       "id": "P23.1",
@@ -118,7 +118,7 @@
     {
       "id": "P23.3",
       "title": "2.1.1 documentation: the handbook, the version and the fetch pins",
-      "status": "in_progress",
+      "status": "done",
       "description": "Every behaviour 2.1.1 changed that a user relies on: the plan-gate refusal now has two audiences and the manifest exemption no longer covers subagents; Rule #1 grades on reads rather than spellings; NO OVERLAP matches suite paths to the files they are named after; run-test-gate owns meta.nodePreamble; git 2.34 works. Plus the version, the three fetch pins and the derived artifacts.",
       "files": [
         "docs/handbook.html",
@@ -159,12 +159,17 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
+        "technical": "Shipped with v2.1.1: plugin.json reads 2.1.1, the v2.1.1 tag exists and CHANGELOG.md carries its section. Verified in the tree rather than assumed from the session record.",
         "descriptive": null
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
       "verifiedBy": []
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T22:07:29Z.c3e74e",
+    "status": "passed",
+    "at": "2026-09-08T22:07:29Z"
+  }
 }

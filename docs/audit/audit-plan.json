@@ -24,6 +24,11 @@
       "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+    },
+    "evidenceSince": {
+      "at": "2026-09-08T21:36:02Z",
+      "runId": "2026-09-08T21:36:02Z.26f782",
+      "basis": "the first run this plan recorded; work completed before it could not carry evidence"
     }
   },
   "phases": [
@@ -156,6 +161,26 @@
       "id": "P24",
       "title": "F232: every exemption names the instrument that audits its reason",
       "shard": "phases/P24.json"
+    },
+    {
+      "id": "P25",
+      "title": "/audit:status: narrow the default view, and stop paying for output nobody prints",
+      "shard": "phases/P25.json"
+    },
+    {
+      "id": "P26",
+      "title": "F265: a documented flag's VALUES are checked against the parser that takes them",
+      "shard": "phases/P26.json"
+    },
+    {
+      "id": "P27",
+      "title": "release v2.2.0",
+      "shard": "phases/P27.json"
+    },
+    {
+      "id": "P28",
+      "title": "Field report: the guard that gets routed around, and a commit type commitlint refuses",
+      "shard": "phases/P28.json"
     }
   ],
   "fileIndex": {
@@ -186,7 +211,11 @@
       "P18.8",
       "P18.9",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P25.6",
+      "P25.7",
+      "P26.2",
+      "P27.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -207,7 +236,8 @@
       "P18.3",
       "P18.4",
       "P18.8",
-      "P18.9"
+      "P18.9",
+      "P25.1"
     ],
     "README.md": [
       "P2.3",
@@ -232,24 +262,28 @@
     ],
     "docs/demo-large.html": [
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P27.1"
     ],
     "docs/index.html": [
       "P13.3",
       "P17.1",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P27.1"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
       "P17.1",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P27.1"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
       "P17.1",
-      "P23.3"
+      "P23.3",
+      "P27.1"
     ],
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
@@ -257,7 +291,8 @@
       "P17.1",
       "P18.8",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P27.1"
     ],
     "plugins/audit/README.md": [
       "P1.6",
@@ -273,7 +308,11 @@
       "P18.5",
       "P18.9",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P25.6",
+      "P25.7",
+      "P26.2",
+      "P27.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -334,7 +373,9 @@
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
-      "P8.3"
+      "P8.3",
+      "P25.6",
+      "P25.7"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1"
@@ -374,7 +415,8 @@
       "P2.1",
       "P4.2",
       "P22.6",
-      "P22.14"
+      "P22.14",
+      "P28.1"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -416,7 +458,8 @@
       "P22.1",
       "P22.5",
       "P22.7",
-      "P22.10"
+      "P22.10",
+      "P25.5"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -448,7 +491,8 @@
       "P10.5",
       "P12.1",
       "P9.1",
-      "P18.7"
+      "P18.7",
+      "P26.2"
     ],
     "plugins/audit/scripts/_loader.py": [
       "P10.1",
@@ -493,7 +537,8 @@
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
-      "P15.4"
+      "P15.4",
+      "P25.1"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -508,7 +553,8 @@
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
       "P14.3",
-      "P18.6"
+      "P18.6",
+      "P26.1"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1"
@@ -518,7 +564,12 @@
       "P6.1",
       "P10.3",
       "P10.6",
-      "P14.2"
+      "P14.2",
+      "P25.2",
+      "P25.3",
+      "P25.4",
+      "P25.5",
+      "P25.7"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -654,7 +705,9 @@
       "P18.8",
       "P18.5",
       "P18.10",
-      "P23.3"
+      "P23.3",
+      "P25.6",
+      "P26.2"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -667,7 +720,8 @@
       "P18.5"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
-      "P18.2"
+      "P18.2",
+      "P25.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2"
@@ -682,7 +736,8 @@
     "plugins/audit/tests/test__help.py": [
       "P18.2",
       "P18.7",
-      "P20.6"
+      "P20.6",
+      "P26.2"
     ],
     "plugins/audit/commands/worktree.md": [
       "P18.5",
@@ -703,14 +758,17 @@
       "P18.6"
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
-      "P18.6"
+      "P18.6",
+      "P26.1"
     ],
     "tools/prove-gates.py": [
       "P18.6",
       "P20.2",
       "P20.3",
       "P20.6",
-      "P23.1"
+      "P23.1",
+      "P24.1",
+      "P26.2"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -753,12 +811,14 @@
     "tools/gate-parity.py": [
       "P19.2",
       "P20.2",
-      "P23.2"
+      "P23.2",
+      "P24.1"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
       "P20.2",
-      "P23.2"
+      "P23.2",
+      "P24.1"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1"
@@ -778,7 +838,8 @@
       "P20.6"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
-      "P20.6"
+      "P20.6",
+      "P25.1"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6"
@@ -811,7 +872,8 @@
       "P22.5"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
-      "P22.6"
+      "P22.6",
+      "P28.1"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9"
@@ -856,16 +918,46 @@
       "P22.8"
     ],
     "plugins/audit/scripts/_refs.py": [
-      "P23.1"
+      "P23.1",
+      "P26.2"
     ],
     "plugins/audit/tests/test__refs.py": [
-      "P23.1"
+      "P23.1",
+      "P26.2"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
     ],
     "test_gate_parity.py: an exemption whose reason names something the other side no longer runs is a finding": [
       "P23.2"
+    ],
+    "test_gate_parity.py: a table in neither classification is a finding, and a row for a table that no longer exists is one too": [
+      "P24.1"
+    ],
+    "plugins/audit/tests/test__report_html.py": [
+      "P25.1"
+    ],
+    "plugins/audit/tests/test_render_report.py": [
+      "P25.1"
+    ],
+    "plugins/audit/tests/test_audit_status.py": [
+      "P25.2",
+      "P25.3",
+      "P25.4",
+      "P25.5",
+      "P25.7"
+    ],
+    "plugins/audit/commands/usage.md": [
+      "P26.2"
+    ],
+    "plugins/audit/scripts/governance/commit-audit-state.py": [
+      "P28.2"
+    ],
+    "plugins/audit/tests/test_commit_audit_state.py": [
+      "P28.2"
+    ],
+    "plugins/audit/tests/test__invariants.py": [
+      "P28.2"
     ]
   },
   "bugs": [

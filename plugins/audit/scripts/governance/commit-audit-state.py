@@ -104,12 +104,24 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR s
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
-# A CONVENTIONAL TYPE OF ITS OWN, and it is not decoration. A task commit's type
-# comes from `meta.commit.type`, which a manifest may set to anything -- so a fixed
-# literal is the only spelling a task commit cannot collide with, and `git log
-# --grep` can separate the two for ever. A reader who meets one of these in a log
-# has to be able to tell, without opening it, that it carries no implementation.
-COMMIT_TYPE = "audit-state"
+# A FIXED LITERAL SEPARATES THIS FROM A TASK COMMIT, and it is not decoration. A
+# task commit's type comes from `meta.commit.type`, which a manifest may set to
+# anything -- so the separator has to be something nothing in the manifest can
+# reach, and `git log --grep audit-state` then tells the two apart for ever. A
+# reader who meets one of these in a log has to be able to tell, without opening
+# it, that it carries no implementation.
+#
+# F268: THE LITERAL IS THE SCOPE, NOT THE TYPE, and that is a reversal of the
+# original spelling with its trigger named. `audit-state(P1):` put the literal in
+# the TYPE position, which made it an unknown conventional-commit type -- and a
+# repository with husky+commitlint rejects the commit AFTER this script has staged
+# the files, leaving the caller to finish by hand. Reported from a live run; the
+# first decision never weighed it. `chore` is in commitlint's default type-enum so
+# the commit lands, and the scope is where `meta.commit.type` cannot reach, since
+# a task commit's scope is its phase id. Both properties kept, one spelling
+# changed. The phase id moves into the subject, where it is still greppable.
+COMMIT_TYPE = "chore"
+COMMIT_SCOPE = "audit-state"
 DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
 
 # The three things this commit may carry, each with the word its line is reported
@@ -283,7 +295,8 @@ def commit_message(phase_id, subject, coauthor):
     per paragraph, so the trailer is a trailer and not a second sentence of the
     subject line.
     """
-    lines = ["%s(%s): %s" % (COMMIT_TYPE, phase_id, subject or DEFAULT_SUBJECT)]
+    lines = ["%s(%s): %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, phase_id,
+                                  subject or DEFAULT_SUBJECT)]
     if coauthor:
         lines.append(str(coauthor))
     return lines

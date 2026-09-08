@@ -155,6 +155,52 @@ def _cases(check):
           "creating one", "allow",
           bash("python3 -c \"open('build/.env','w').write('K=1')\""))
 
+    # THE HALF F263 LEFT. Its first arm was narrowed to the paths a read call
+    # NAMES; its second still grepped the WHOLE body for shell-read text, so a
+    # body carrying that text as DATA - a list of fixtures, a table of examples,
+    # a test case about this very guard - was refused as reading a secret.
+    #
+    # Reported from a live project and reproduced three times in one session here,
+    # and both the reporter and this session routed around it the same way: write
+    # the script to a scratchpad file and run it from there. That is WORSE for
+    # security than what was blocked, and it is the failure this repository names
+    # by its own rule - a guard people learn to step around guards nothing.
+    _expect("b8h a body holding shell-read text as DATA reads nothing: a list of "
+          "example commands is a fixture, not an execution, and refusing it is "
+          "what taught two independent users to route around this guard", "allow",
+          bash("python3 - <<'PY'\n"
+               "cases = ['cat .env', 'grep TOKEN .env']\n"
+               "for c in cases:\n"
+               "    print(len(c))\nPY"))
+    _expect("b8i ...and the same shape one layer in: a case table ABOUT this "
+          "guard, which is the file you are reading and the thing that cannot be "
+          "written while the rule grades data", "allow",
+          bash("python3 - <<'PY'\n"
+               "EXPECTED = {'cat .env': 'block', 'echo hi': 'allow'}\n"
+               "print(sorted(EXPECTED))\nPY"))
+    # THE KNOWN COST, and it is NARROWER than it first looked - which is why it is
+    # measured here rather than described. Narrowing arm 2 to the arguments of a
+    # shell-out call means a command assembled into a NAME is out of its reach; but
+    # the INLINE `-c` form is still refused, because the outer shell lane greps the
+    # command text and `['cat','.env']` carries the verb and the token in one
+    # clause. So the miss exists for the HEREDOC shape alone, where the body is
+    # handed to the eval arm and nothing else looks at it.
+    _expect("b8j the inline form of a variable-assembled read is STILL refused - "
+          "not by the arm narrowed here but by the outer shell lane, which reads "
+          "the command text. Defence in depth, and the reason this cost is one "
+          "shape rather than a class", "block",
+          bash("python3 -c \"import subprocess; a=['cat','.env']; subprocess.run(a)\""))
+    _expect("b8k KNOWN COST, stated so it is a decision and not a discovery: in a "
+          "HEREDOC the body reaches only the eval arm, so a command assembled "
+          "into a name and passed by reference is missed. Same direction of risk "
+          "arm 1 already accepts - and the alternative was measured twice: a "
+          "guard that refuses data is one people route around, which guards "
+          "nothing at all", "allow",
+          bash("python3 - <<'PY'\n"
+               "import subprocess\n"
+               "argv = ['cat', '.env']\n"
+               "subprocess.run(argv)\nPY"))
+
     # --- Bash shell-verb reads ---
     _expect("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
     _expect("b12 printenv blocked", "block", bash("printenv"))

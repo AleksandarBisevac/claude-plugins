@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: token spend attributed by phase, task, model, author and time — with cache economics, cost-per-task and a usage trend. Read-only (never mutates the manifest).'
-argument-hint: '[--by phase|task|model|author|agent|day|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--format md|ascii] [--json] [--backfill]'
+argument-hint: '[--by phase|task|model|author|agent|attr|branch|session|hour|day|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--format md|ascii] [--json] [--backfill]'
 allowed-tools: Bash
 ---
 

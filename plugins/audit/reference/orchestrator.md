@@ -80,8 +80,12 @@ mutating commands (`next`, `run`, `phase`, `review`, `resume`) run all of 1–6 
 6. **Budget check** (`next`, `run`, `phase` — after the lock, so an ask keeps it). Only when
    the target phase declares `budgetUSD` AND metering has recorded something; otherwise skip
    silently. Read it, never recompute it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json` carries
-   `usage.budgets.phases[]` with `spent`, `budget`, `pct` and `over` already resolved.
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json --section usage`
+   carries `budgets.phases[]` with `spent`, `budget`, `pct` and `over` already resolved.
+   **`--section` is why this is not the whole rollup.** This step needs one array and used to
+   read the entire payload to reach it, which on a long-lived plan is tens of kilobytes of
+   context spent per phase start. The projection is the same payload's key, not a
+   recomputation of it, so nothing here can disagree with what `--json` says.
    - **`pct` under 80** — say nothing. A phase inside its budget is not news.
    - **`pct` 80–99** — one line, once per phase per session:
      `[BUDGET] <id> at <pct>% (<spent> of <budget>) — <n> task(s) still to run.` Then continue.

@@ -1,7 +1,7 @@
 {
   "id": "P22",
   "title": "Field report: the contradictions a real phase run found",
-  "status": "in_progress",
+  "status": "done",
   "description": "Eight findings from one full phase run on another project (F250-F257), every one checked against the code first. Two are contradictions between a documented rule and an enforced one; one records a false failure into a permanent ledger; one sends a subagent into an action it is forbidden to take.",
   "desiredOutcome": "A task commit can satisfy manifest-revalidated; the plan-gate refusal tells each audience something it can act on; run-test-gate honours meta.nodePreamble so no gate row records a config problem as a red; the overlap warning says 'not determinable' where that is the truth; and the tdd-with-no-cases shape is warned about.",
   "testGate": [
@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": null,
+  "summary": "Two field reports from live runs on other projects, which contradicted each other on NO OVERLAP and were both right - the fix is the match, never a mute. Fourteen tasks: a task commit can satisfy manifest-revalidated, the plan-gate refusal tells each audience something it can act on, `run-test-gate` honours `meta.nodePreamble`, and the secret-read arm stopped grading prose that merely names a secret file.",
   "tasks": [
     {
       "id": "P22.1",
@@ -616,5 +616,10 @@
         "test_guard_secrets_read.py b8b-b8g with b1/b3/b5/b7 as the still-refused half"
       ]
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T22:02:19Z.f99d37",
+    "status": "passed",
+    "at": "2026-09-08T22:02:19Z"
+  }
 }

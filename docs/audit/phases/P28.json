@@ -1,0 +1,106 @@
+{
+  "id": "P28",
+  "title": "Field report: the guard that gets routed around, and a commit type commitlint refuses",
+  "status": "in_progress",
+  "description": "A field report from a live project, two of whose four items are fixed here before 2.2.0 goes out because both were reproduced rather than accepted. (1) guard-secrets-read refuses an interpreter body that merely CONTAINS shell-read text: `_eval_reads_a_secret`'s second arm greps the WHOLE body with BASH_FILE_READ, so a list of fixture strings executing nothing is graded as reading a secret. Measured: a data-only body is REFUSED while the same text as prose is quiet. It blocked this session three times and both the reporter and this session routed around it by writing a script to a scratchpad file and running it from there - which is worse for security than what was blocked, and is the failure mode this repository names by its own rule. F263 narrowed the first arm for exactly this reason and left the second. (2) commit-audit-state.py builds `audit-state(P1):`, an unknown conventional-commit type, so husky+commitlint repos reject it after the files are staged. The reporter's suggested fix - take the type from meta.commit.type - would destroy the separability the code deliberately holds: a fixed literal is the only spelling a task commit cannot collide with. Both properties are kept instead.",
+  "desiredOutcome": "A body that only mentions a secret read is not refused, a body that really runs one still is, and an audit-state commit lands on a repo with commitlint without losing the prefix `git log --grep` separates it by.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P28.1",
+      "title": "Rule #1's shell arm grades what the body RUNS, not every string it holds",
+      "status": "done",
+      "description": "`_eval_reads_a_secret` arm 2 runs BASH_FILE_READ over the whole interpreter body. Narrow it to the argument text of a call that actually shells out - subprocess.run/call/check_output/Popen, os.system, os.popen, child_process.exec/execSync/spawn, and a backtick form - so `subprocess.run(['cat', '<dotenv>'])` still refuses and a body holding that text as data does not. The known cost is stated rather than discovered: a command assembled into a variable and passed by name is missed, which is the same direction of risk arm 1 already accepts, and the alternative is measured - a guard that fires on data is one two independent users have now routed around.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_guard_secrets_read.py: a body holding shell-read text as DATA is not refused, while subprocess.run(['cat', dotenv]) still is",
+          "test_guard_secrets_read.py: the missed shape - a command built into a variable - is asserted as a known cost so it cannot be discovered as a surprise"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:57:24Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P28.2",
+      "title": "The audit-state commit uses a conventional type, keeping the prefix that separates it",
+      "status": "done",
+      "description": "`audit-state(P1): ...` is rejected by commitlint, which knows no such type, and the script has already staged the files by then. `chore(audit-state): P1 - ...` keeps both properties the current form was chosen for: `chore` is in the default conventional set so the commit lands, `audit-state` stays a fixed literal no task commit can collide with, and the phase id moves into the subject where it is still greppable. Nothing in the code reads the prefix back - `_invariants.audit_state_commits` finds these through the journal trail - so the change is safe for every reader but the human one it is for.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_commit_audit_state.py: the subject is a conventional type with the audit-state scope and the phase id, and commitlint's type-enum would accept it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:57:24Z",
+      "verifiedBy": []
+    }
+  ]
+}

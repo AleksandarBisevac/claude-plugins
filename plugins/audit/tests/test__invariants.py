@@ -196,7 +196,11 @@ def _audit_state(root, audit, index_path, kind, with_evidence=True):
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
     _git(root, "add", *staged)
-    _git(root, "commit", "-q", "-m", "audit-state(P1): fixture")
+    # The spelling `commit-audit-state.py` really writes (F268): the fixed literal
+    # is the SCOPE, so the type is one commitlint accepts. Nothing here parses the
+    # subject - `audit_state_commits` finds these through the journal trail - but a
+    # fixture that spells it the old way is a second answer waiting to be believed.
+    _git(root, "commit", "-q", "-m", "chore(audit-state): P1 - fixture")
     sha = _head(root)
     _state_row(root, sha)
     return sha

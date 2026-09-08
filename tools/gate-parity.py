@@ -1078,6 +1078,265 @@ def exemption_reason_drift(repo=None, table=None):
     return out
 
 
+# --- who audits an exemption's REASON (F232) ----------------------------------
+# `exemption_reason_drift` above answers that question for ONE table. This half
+# answers it for the tree: every exemption carrying a reason must name the
+# instrument that reads it, or say why it can have none.
+#
+# THE DERIVATION IS BY SHAPE, and the shape cannot tell an exemption from a help
+# table - `FIELD_HELP`, `PRESETS` and `VERDICT_HELP` are all `{subject: sentence}`
+# and excuse nothing. That is the same first-filter problem `prove-gates` has with
+# lint names, and this is its answer: derive everything the shape reaches, and let
+# a table declare itself out in a row that is itself checked. A classification made
+# once by hand and then enforced is worth more than a cleverer rule that is wrong
+# about the next table somebody adds.
+_EXEMPTION_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
+
+# WHO AUDITS EACH TABLE, and the value NAMES A FUNCTION this tree defines - checked,
+# so a row cannot outlive the instrument it points at. That check is what stops this
+# becoming the thing `NOT_A_GATE`'s own rule forbids: a row that silences something
+# and can never be wrong.
+#
+# TWO STRENGTHS, SPELLED APART, because collapsing them would make this table assert
+# more than it can show:
+#
+#   `reason` — the SENTENCE is compared against the world. Only two tables have this,
+#     and each one cost a defect to build: `exemption_reason_drift` knows what a CI
+#     step that diffs a committed file means, `revisit_trigger_drift` resolves "the
+#     panel grows a card" through `_help.COMPOSITION_PATHS`.
+#   `live`  — the SUBJECT is checked to still be there, so a row that excuses nothing
+#     is reported. Weaker, and it is the half both F232 instances ultimately needed:
+#     a row survives its subject long before its sentence stops being true.
+#
+# A table with neither is a finding, which is the whole point of deriving them.
+AUDITED_EXEMPTIONS = {
+    "ABSENT_BY_DESIGN": ("reason", "exemption_reason_drift"),
+    "SCHEMA_EXEMPTIONS": ("reason", "revisit_trigger_drift"),
+    "NOT_A_GATE": ("live", "coverage"),
+    "ALLOW_EXEMPT": ("live", "prove"),
+    "HANDBOOK_ABSENT_VERBS": ("live", "handbook_drift"),
+    "HANDBOOK_FOREIGN_OPTIONS": ("live", "handbook_drift"),
+    "UNLINKED_BY_DESIGN": ("live", "doc_link_drift"),
+    "PROSE_SCAN_EXEMPT": ("live", "prose_number_claims"),
+    "SHARED_CONCERNS": ("live", "shared_concern_violations"),
+    "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
+    "SCRATCH_EXEMPT": ("live", "scratch_isolation"),
+    "BASELINE": ("live", "dead_baseline"),
+    "KNOWN_CONFIG_MIRRORS": ("reason", "config_read_violations"),
+    "PANEL_ROUTE_READERS": ("reason", "panel_route_violations"),
+    "PANEL_ROUTE_UNREACHED": ("reason", "panel_route_violations"),
+    "TOOL_FIXTURE_BASENAMES": ("live", "tool_basename_drift"),
+    # ...and the two whose instrument is a CASE rather than a function. This tree's
+    # suites lint other files' source, so an auditor living in one is not a lesser
+    # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a
+    # RETIRED one alike so the list may only shrink and only deliberately.
+    "KNOWN_LAYER_DEBT": ("reason", "plugins/audit/tests/test__deps.py r2"),
+    "EXCLUDED": ("live", "plugins/audit/tests/test__refs.py t2"),
+}
+
+# ...and the tables the shape reaches that excuse nothing. `{subject: sentence}` is
+# how this tree writes help text, remedies and message fragments too, and no rule
+# that reads only the shape can tell those from an excuse - which is why the
+# classification is made once by hand and then enforced, rather than guessed at
+# every run. Each row says WHY, because a row that silences nothing can never be
+# wrong and would sit here for ever.
+NOT_AN_EXEMPTION = {
+    "COMPOSITION_HELP": "panel help text: what each composition lever means, shown "
+                        "in the drawer beside the control it describes",
+    "FIELD_HELP": "panel help text for the config fields, same drawer",
+    "PRESETS": "theme presets - a named palette per preset, not an excuse",
+    "VERDICT_HELP": "what each invariant verdict means, printed beside it",
+    "_EVAL_SHAPE": "the two spellings of an inline eval, used to name the form the "
+                   "operator actually typed in a refusal (F256)",
+    "_TEV_WHY": "the report's explanation of a testEvidence state, rendered to a "
+                "reader rather than excusing anything",
+    "_TEV_GAP_WHY": "the same, for the states where a pointer resolves to nothing - "
+                    "read by a person looking at a report, excusing no rule",
+    "SYNTHETIC": "the wordings a synthetic PII verdict is printed with, so an empty "
+                 "run cannot read as a clean one",
+    "FINDINGS": "what each release-publication finding means, printed with it",
+    "_ALWAYS": "a RULE table, and the opposite of an exemption: every row is a "
+               "history rewrite this hook always refuses, with the why it prints",
+    "_PANEL_FILES": "the panel's own local files, with the remedy the doctor prints "
+                    "when one is tracked - subjects of a check, not excuses from it",
+    "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "
+                            "each with the comment that explains it in the file",
+}
+
+# The reason has to be a SENTENCE. A one-word value is a label - `{"P1": "done"}` -
+# and a table of labels is data rather than a set of excuses somebody has to stand
+# behind. Measured against the real tables: the shortest live reason is well over
+# this, and the shortest help-table value is too, so this separates data from prose
+# and NOT exemptions from help.
+_REASON_MIN = 30
+
+
+def _reason_table_names(source):
+    """Every module constant in `source` shaped `{subject: sentence}`.
+
+    Both spellings the tree uses: a dict, and a tuple/list of pairs whose LAST
+    element is the sentence. Read from the AST, so a name assembled at runtime or
+    mentioned in a comment is not one.
+    """
+    out = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return out
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        name = target.id
+        if not (name.isupper() or name.lstrip("_").isupper()):
+            continue
+        value = node.value
+        sentences = []
+        if isinstance(value, ast.Dict) and value.values:
+            sentences = list(value.values)
+        elif isinstance(value, (ast.Tuple, ast.List)) and value.elts \
+                and all(isinstance(e, (ast.Tuple, ast.List)) and e.elts
+                        for e in value.elts):
+            sentences = [e.elts[-1] for e in value.elts]
+        if not sentences:
+            continue
+        if all(isinstance(s, ast.Constant) and isinstance(s.value, str)
+               and len(s.value) >= _REASON_MIN for s in sentences):
+            out.append(name)
+    return out
+
+
+def exemption_tables(repo=None):
+    """`{name: path}` — every reason-carrying table this tree declares."""
+    root = repo or REPO
+    found = {}
+    for sub in _EXEMPTION_ROOTS:
+        base = os.path.join(root, sub.replace("/", os.sep))
+        for dirpath, _dirs, files in os.walk(base):
+            for fname in sorted(files):
+                if not fname.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, fname)
+                try:
+                    with open(path, "r", encoding="utf-8") as fh:
+                        text = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                rel = os.path.relpath(path, root).replace(os.sep, "/")
+                for name in _reason_table_names(text):
+                    found.setdefault(name, rel)
+    return found
+
+
+def _instrument_missing(repo, who):
+    """"" when the named auditor is really there, else why it is not.
+
+    Two spellings, both falsifiable by renaming the thing they name: a bare word is
+    a function and must be defined somewhere under the walked roots; `<path> <case>`
+    is a suite case and the file must exist and carry that case id.
+    """
+    root = repo or REPO
+    who = who.strip()
+    if not who:
+        return ("names no instrument, so the row asserts an audit nobody performs")
+    if " " in who:
+        rel, case = who.rsplit(" ", 1)
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            return ("names a case in %s and that file cannot be read, so the audit "
+                    "it claims cannot be happening" % (rel,))
+        if ('"%s ' % (case,)) not in text and ("'%s " % (case,)) not in text:
+            return ("names case %r in %s and no case by that id is there any more"
+                    % (case, rel))
+        return ""
+    needle = "def %s(" % (who,)
+    for sub in _EXEMPTION_ROOTS + ("plugins/audit/tests",):
+        base = os.path.join(root, sub.replace("/", os.sep))
+        for dirpath, _dirs, files in os.walk(base):
+            for fname in files:
+                if not fname.endswith(".py"):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, fname), "r",
+                              encoding="utf-8") as fh:
+                        if needle in fh.read():
+                            return ""
+                except (OSError, UnicodeDecodeError):
+                    continue
+    return ("names %r as its auditor and nothing under the walked roots defines a "
+            "function by that name - the row outlived its instrument" % (who,))
+
+
+def exemption_audit_drift(repo=None, audited=None, not_exemptions=None):
+    """[(name, problem)] — a reason-carrying table nobody audits, or a dead row.
+
+    F232's general half. Two defects were recorded before this existed and both had
+    the same shape: a row whose SENTENCE had stopped being true while the row stayed
+    green — `gen-demo-usage.py` behind "same throwaway demo tree" while CI diffed a
+    committed ledger, and `meta.branch` behind "REVISIT when the panel grows a card"
+    for releases after the panel grew one. Each was fixed with its own instrument.
+    What was missing is the rule that every such table HAS one.
+
+    BOTH DIRECTIONS, for `NOT_A_GATE`'s reason: a table added later must not opt out
+    by being forgotten, and a row must not outlive the table it classifies. A row
+    that silences nothing can never be wrong, which is the shape this refuses.
+    """
+    audited = AUDITED_EXEMPTIONS if audited is None else audited
+    not_exemptions = (NOT_AN_EXEMPTION if not_exemptions is None
+                      else not_exemptions)
+    found = exemption_tables(repo)
+    # THE CLASSIFICATION IS NOT ITSELF CLASSIFIED, and saying so is cheaper than the
+    # regress. Both tables below are `{subject: sentence}` and the derivation reaches
+    # them, so without this the rule would demand a row about itself - and the row
+    # about the row after that. They are audited by THIS function, which checks every
+    # subject is still derived and every reason is a sentence; a classification whose
+    # own rows rot is what `exemption_audit_drift` reports on its next run.
+    for own in ("AUDITED_EXEMPTIONS", "NOT_AN_EXEMPTION"):
+        found.pop(own, None)
+    out = []
+    for name in sorted(found):
+        if name in audited and name in not_exemptions:
+            out.append((name, "is classified twice - it cannot both carry excuses "
+                              "somebody audits and excuse nothing"))
+        elif name not in audited and name not in not_exemptions:
+            out.append((name, "carries a reason per entry and nothing says who "
+                              "reads it: add it to AUDITED_EXEMPTIONS naming the "
+                              "instrument, or to NOT_AN_EXEMPTION saying why it "
+                              "excuses nothing (found in %s)" % (found[name],)))
+    for name in sorted(set(audited) | set(not_exemptions)):
+        if name not in found:
+            out.append((name, "is classified here and no reason-carrying table by "
+                              "that name exists any more - the row outlived its "
+                              "subject"))
+    # ...and the instrument each row names must EXIST. Without this the table would
+    # be the shape `NOT_A_GATE` forbids: a row that silences a finding and can never
+    # itself be wrong. Two spellings, because an auditor here legitimately lives in
+    # either place - a function, or a case in a suite that lints another file's
+    # source, which is how half this tree's rules are written.
+    for name, row in sorted(audited.items()):
+        if name not in found:
+            continue
+        strength, who = (row if isinstance(row, tuple) else ("live", row))
+        if strength not in ("reason", "live"):
+            out.append((name, "claims an unknown strength %r - a row says whether "
+                              "the SENTENCE is audited or only the subject's "
+                              "liveness, and those are different promises"
+                        % (strength,)))
+        gone = _instrument_missing(repo, str(who))
+        if gone:
+            out.append((name, gone))
+    for name, why in sorted(not_exemptions.items()):
+        if name in found and len(str(why).strip()) < _REASON_MIN:
+            out.append((name, "is excused from the rule with a label rather than a "
+                              "reason a reader can disagree with"))
+    return out
+
+
 def compare(read, table=None):
     """{"missing": [(gate, side, note)], "stale_exemptions": [...]} from READ sets.
 
@@ -1171,7 +1430,15 @@ def parity(repo=None):
     # into `missing` would send the reader to add a gate rather than fix a sentence.
     result["stale_exemptions"] = sorted(
         list(result["stale_exemptions"])
-        + [(gate, "ci.yml", why) for gate, why in exemption_reason_drift(repo)])
+        + [(gate, "ci.yml", why) for gate, why in exemption_reason_drift(repo)]
+        # ...and the same question asked of the TREE rather than of one table
+        # (F232's general half): every exemption carrying a reason must name the
+        # instrument that reads it. Reported here because it is the same kind of
+        # answer - a row that has stopped meaning anything - and because this
+        # command is already the one four sides are compared by, so the rule
+        # needs no fifth place to be run from.
+        + [(name, "exemption tables", why)
+           for name, why in exemption_audit_drift(repo)])
     return result
 
 
@@ -1836,6 +2103,71 @@ def _cases(check):
           _er_readonly == []
           and [g for g, _w in _er_compared]
           == ["plugins/audit/scripts/demo/gen-demo-usage.py"])
+
+    # --- F232's GENERAL half: every exemption names who audits its reason ------
+    # Two defects were recorded before this existed and both had one shape - a row
+    # whose sentence had stopped being true while the row stayed green. Each was
+    # fixed with its own instrument; what was missing is the rule that every such
+    # table HAS one, so a third instance is a finding rather than a discovery.
+    _ea_live = exemption_audit_drift()
+    check("ea1 THE LIVE CLAIM: every reason-carrying table in this tree is "
+          "classified, and every instrument a row names really exists: %r"
+          % (_ea_live,),
+          _ea_live == [])
+    _ea_tables = exemption_tables()
+    check("ea2 ...over a derivation that reached a REAL set, not an empty one - "
+          "an empty walk classifies nothing and clears everything, which is the "
+          "silence this whole rule exists to refuse. %d tables found, and the "
+          "two the classification is made OF are excluded by name because "
+          "classifying the classification is a regress"
+          % (len(_ea_tables),),
+          len(_ea_tables) >= 20
+          and "ABSENT_BY_DESIGN" in _ea_tables
+          and "FIELD_HELP" in _ea_tables,
+          repr(sorted(_ea_tables)[:6]))
+    _ea_expect = sorted(set(_ea_tables) - {"AUDITED_EXEMPTIONS",
+                                           "NOT_AN_EXEMPTION"})
+    check("ea3 a table in NEITHER classification is reported, which is how one "
+          "added later cannot opt out by being forgotten - EVERY derived table "
+          "except the two the classification is made of",
+          [n for n, _w in exemption_audit_drift(
+              audited={}, not_exemptions={})] == _ea_expect,
+          repr([n for n, _w in exemption_audit_drift(
+              audited={}, not_exemptions={})][:4]))
+    _ea_ghost = exemption_audit_drift(
+        audited=dict(AUDITED_EXEMPTIONS, GONE_TABLE=("live", "x")),
+        not_exemptions=NOT_AN_EXEMPTION)
+    check("ea4 ...and a row for a table that no longer exists is reported too - "
+          "the other direction, without which the table becomes the place a "
+          "retired excuse goes to keep being green: %r"
+          % ([n for n, _w in _ea_ghost],),
+          [n for n, _w in _ea_ghost] == ["GONE_TABLE"])
+    _ea_noinst = exemption_audit_drift(
+        audited=dict(AUDITED_EXEMPTIONS,
+                     ABSENT_BY_DESIGN=("reason", "no_such_auditor_anywhere")),
+        not_exemptions=NOT_AN_EXEMPTION)
+    check("ea5 ...and an instrument that does not exist is reported, which is "
+          "what stops this table being the shape NOT_A_GATE forbids: a row that "
+          "silences a finding and can never itself be wrong: %r"
+          % ([n for n, _w in _ea_noinst],),
+          [n for n, _w in _ea_noinst] == ["ABSENT_BY_DESIGN"])
+    _ea_case = exemption_audit_drift(
+        audited=dict(AUDITED_EXEMPTIONS,
+                     KNOWN_LAYER_DEBT=("reason",
+                                       "plugins/audit/tests/test__deps.py zz9")),
+        not_exemptions=NOT_AN_EXEMPTION)
+    check("ea6 ...and the same for an auditor named as a CASE, because half this "
+          "tree's rules are cases in suites that lint another file's source - a "
+          "spelling that could not be checked would be the loophole: %r"
+          % ([n for n, _w in _ea_case],),
+          [n for n, _w in _ea_case] == ["KNOWN_LAYER_DEBT"])
+    _ea_label = exemption_audit_drift(
+        audited=AUDITED_EXEMPTIONS,
+        not_exemptions=dict(NOT_AN_EXEMPTION, FIELD_HELP="help"))
+    check("ea7 ...and a table excused with a LABEL rather than a reason is "
+          "reported, for `NOT_A_GATE`'s reason one register over: an excuse "
+          "nobody can disagree with is not one: %r" % ([n for n, _w in _ea_label],),
+          [n for n, _w in _ea_label] == ["FIELD_HELP"])
 
     _broken, _why_broken = pinned_env_groups("def run_one(:\n")
     _entryless, _why_entryless = pinned_env_groups("x = 1\n")

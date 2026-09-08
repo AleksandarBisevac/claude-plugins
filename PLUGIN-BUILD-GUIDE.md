@@ -286,7 +286,7 @@ L2:
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
-  _report_html -> _areas, _manifest_io, _output, _priority, _ui_theme
+  _report_html -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
   _usage_coverage -> _output, _usage_core
@@ -341,7 +341,7 @@ L7:
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _manifest_io, _output, _panel_write, _proposals, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output

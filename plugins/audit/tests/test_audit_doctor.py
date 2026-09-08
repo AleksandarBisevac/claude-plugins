@@ -1425,6 +1425,30 @@ def _cases(check):
     finally:
         sh.rmtree(tmp, ignore_errors=True)
 
+    # --- the parser is reachable without running the command --------------------
+    # audit-status.py and audit-usage.py already build theirs in a module-level
+    # `build_parser()`; this one built it inside `main()`, where the only way to
+    # learn what `--color` accepts was to start a process and read an error. That
+    # is what `_refs.command_choice_drift` needs, and a check that has to guess a
+    # flag's values from the AST is a check that gets them wrong on
+    # `choices=list(_cli_fmt.MODES)`.
+    _p = M.build_parser()
+    _color = [a for a in _p._actions if "--color" in (a.option_strings or [])]
+    check("build_parser() is reachable and OWNS the options: --color's choices "
+          "are `_cli_fmt.MODES` itself, not a second spelling of them. found=%r"
+          % ([sorted(a.choices or []) for a in _color],),
+          len(_color) == 1
+          and sorted(_color[0].choices) == sorted(_cli_fmt.MODES))
+    # ...and the extraction changed nothing a caller can see. Asserted by PARSING,
+    # because a `build_parser()` that main() does not use would satisfy the case
+    # above and leave the command running on a parser nobody checked.
+    _ns = _p.parse_args(["--json", "--deep", "--color", "never"])
+    check("...and it is the parser the command actually runs on: every flag "
+          "main() reads is on it, with the same destinations. parsed=%r"
+          % (sorted(vars(_ns)),),
+          _ns.as_json is True and _ns.deep is True and _ns.color == "never"
+          and hasattr(_ns, "project"))
+
 
 def _selftest():
     return _harness.run(_cases)

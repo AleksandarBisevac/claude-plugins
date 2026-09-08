@@ -23,6 +23,7 @@ import _report_html as M                           # noqa: E402
 import _ui_theme as _theme                         # noqa: E402  (as _report_html imports it)
 import _areas                                      # noqa: E402
 import _manifest_io                                # noqa: E402
+import _manifest_vocab as _vocab                   # noqa: E402  (owns the segment fold this module binds to)
 # `_report_html` may NOT import this - the two are layer-mates and the import
 # graph refuses the edge - so the evidence-gap vocabulary is spelled in both and
 # compared HERE. A suite may import anything, which is what makes this the only
@@ -409,6 +410,19 @@ def _cases(check):
           set(M.VIEW_SEGS) == {"active", "archived", "all"}
           and M.VIEW_SEGS["active"] == ("active", "pending")
           and M.VIEW_SEGS["all"] == M.SEG_ORDER)
+    # ...and all three are the LAYER-1 vocabulary, not a copy of it. Pinned with
+    # `is`, which is the only assertion that can tell the two apart: a pasted-back
+    # literal satisfies every equality above and fails here. This matters because
+    # the fold now has a third reader - `/audit:status --view` - and the moment two
+    # of the three carry their own copy, they agree until one of them learns a word.
+    # `_manifest_rules`' re-exports are pinned the same way, for the same reason.
+    check("the segment fold IS `_manifest_vocab`'s and is not re-stated here: a "
+          "second copy is how a vocabulary stops being one, and only `is` can "
+          "see the difference. _seg_of=%r vs segment_of=%r"
+          % (M._seg_of, _vocab.segment_of),
+          M._seg_of is _vocab.segment_of
+          and M.SEG_ORDER is _vocab.SEGMENTS
+          and M.VIEW_SEGS is _vocab.VIEW_SEGS)
 
     # --- tm / sha: the two table cells a reader has to ACT on --------------------
     check("tm the completion cell carries the clock, not just the day - two "

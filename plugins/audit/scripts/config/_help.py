@@ -1241,6 +1241,148 @@ def schema_inline_drift(root=None):
             + inline_drift(schema_level_keys(root, pairs), scan["found"], anchors))
 
 
+# --- a documented flag's VALUES, against the parser that takes them ---------------
+# F265, and it shipped inside the change that added the flag it caught:
+# `commands/status.md` advertised `--view active|pending|archived|all` while the
+# parser took three, so a value copied straight out of the documentation exited 2.
+# Every gate was green and every one of them was honest — `_refs.command_flag_drift`
+# compares flag NAMES between the command doc and the README, two documents, and
+# asks no parser anything. The value list inside an `argument-hint` was unread text.
+#
+# WHY IT ASKS ARGPARSE AND NOT THE AST. Measured across the plugin: of the five
+# value lists a command doc advertises, a static reader resolves ONE. The rest
+# spell `choices=list(_cli_fmt.MODES)` or `choices=sorted(_vocab.VIEW_SEGS)` —
+# calls, not literals — so a source-reading version would have to re-implement
+# enough of Python to evaluate them, and a lint that computes the wrong answer is
+# worse than no lint. Constructing the parser is the whole trick, and it is why
+# `audit-doctor.py` grew a `build_parser()`: the option surface has to be reachable
+# without starting a process.
+#
+# AND WHY IT LIVES HERE RATHER THAN BESIDE `command_flag_drift` IN `_refs`. That
+# module is layer 1, and so is `_loader` — the one thing that can load a script as
+# a library — so `_refs` may not import it. `schema_vocab_drift` above is at this
+# layer for exactly the same reason: the walk that can SEE the thing does, a layer
+# up from the thing itself.
+_HINT_CHOICES = re.compile(r"(--[a-z][a-z0-9-]*)\s+([a-z][a-z0-9-]*(?:\|[a-z][a-z0-9-]*)+)")
+_DOC_SCRIPT = re.compile(r"scripts/[A-Za-z0-9_/-]+\.py")
+
+
+def advertised_choices(hint):
+    """{flag: [value, ...]} — every VALUE LIST a command's `argument-hint` shows.
+
+    Only the pipe-separated form, because that is the only one that makes a
+    claim this check can grade. `--phase <id>` and `--fail-on <c1,c2,...>` name a
+    metavar rather than a set, and a rule that read those would be inventing a
+    promise the document never made.
+    """
+    return dict((m.group(1), m.group(2).split("|"))
+                for m in _HINT_CHOICES.finditer(hint or ""))
+
+
+def parser_choices(parser):
+    """{flag: set(choices)} — what an argparse parser really accepts.
+
+    Read off `_actions` rather than re-derived: argparse is the thing the command
+    runs on, so it is the only answer that cannot be a second opinion. Actions
+    with no `choices` contribute nothing — an unconstrained flag has no value set
+    to disagree about.
+    """
+    out = {}
+    for action in getattr(parser, "_actions", ()):
+        if not getattr(action, "choices", None):
+            continue
+        for flag in (action.option_strings or ()):
+            if flag.startswith("--"):
+                out[flag] = set(str(c) for c in action.choices)
+    return out
+
+
+def choice_drift(cmd, advertised, accepted, unreadable):
+    """[(cmd, problem), ...] — where a command doc and its parsers disagree.
+
+    BOTH DIRECTIONS, and they are different defects. A value the doc advertises
+    and the parser refuses is a promise the product breaks for anyone who copies
+    it — the shape F265 was. A value the parser takes and the doc omits is a
+    capability nobody can find, which is the defect `command_flag_drift` already
+    exists for, one level down from the flag to its values.
+
+    `unreadable` is `{script: why}` for a script the command names whose options
+    could not be read, and it is CONTEXT ON A REAL FINDING rather than a finding
+    of its own. That distinction was got wrong first: reporting a census hole
+    whenever one existed convicted `doctor.md` for printing a `run-test-gate.py`
+    invocation in its prose — a pointer to another tool, not a parser this command
+    runs on. A guard that fires on a correct document is a guard somebody routes
+    around, and the live case is what caught it.
+
+    Hiding a parser still cannot buy silence, because the risk only exists when a
+    flag goes unmatched — and that is already the finding below, which names the
+    unreadable scripts as the reason it could not answer.
+    """
+    out = []
+    for flag in sorted(advertised):
+        want = list(advertised[flag])
+        got = accepted.get(flag)
+        if got is None:
+            why = ", ".join("%s: %s" % (s, unreadable[s])
+                            for s in sorted(unreadable)) or "no parser declares it"
+            out.append((cmd, "%s: no parser named by this command declares it "
+                              "(%s)" % (flag, why)))
+            continue
+        for value in want:
+            if value not in got:
+                out.append((cmd, "%s: the doc advertises %r, which the parser "
+                                 "refuses (it takes %s)"
+                                 % (flag, value, ", ".join(sorted(got)))))
+        for value in sorted(got):
+            if value not in want:
+                out.append((cmd, "%s: the parser accepts %r, which the doc never "
+                                 "advertises" % (flag, value)))
+    return out
+
+
+def command_choice_drift(root=None):
+    """[(command, problem), ...] — the whole command surface, both directions.
+
+    A command with no `argument-hint`, or one whose hint shows no value list, is
+    not a finding: there is nothing there that claims a set. Silence is an answer
+    when the document made no claim, and only then.
+    """
+    base = plugin_root(root)
+    cmd_dir = os.path.join(base, "commands")
+    out = []
+    for name in sorted(os.listdir(cmd_dir) if os.path.isdir(cmd_dir) else []):
+        if not name.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(cmd_dir, name), "r", encoding="utf-8") as fh:
+                body = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((name, "unreadable: %s" % (exc,)))
+            continue
+        hint = re.search(r"^argument-hint:\s*(.+)$", body[:4096], re.MULTILINE)
+        advertised = advertised_choices(hint.group(1) if hint else "")
+        if not advertised:
+            continue
+        accepted, unreadable = {}, {}
+        for rel in sorted(set(_DOC_SCRIPT.findall(body))):
+            leaf = os.path.basename(rel)
+            try:
+                mod = _loader.load_script(leaf, modname="cc_" + leaf[:-3].replace("-", "_"))
+            except Exception as exc:
+                unreadable[leaf] = "will not load (%s)" % (exc,)
+                continue
+            build = getattr(mod, "build_parser", None)
+            if not callable(build):
+                unreadable[leaf] = "exposes no build_parser()"
+                continue
+            try:
+                accepted.update(parser_choices(build()))
+            except Exception as exc:
+                unreadable[leaf] = "build_parser() raised (%s)" % (exc,)
+        out += choice_drift(name, advertised, accepted, unreadable)
+    return out
+
+
 # --- the payload -----------------------------------------------------------------
 DOCS = ("config", "manifest")
 

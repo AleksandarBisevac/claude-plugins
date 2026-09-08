@@ -1,7 +1,7 @@
 {
   "id": "P24",
   "title": "F232: every exemption names the instrument that audits its reason",
-  "status": "pending",
+  "status": "done",
   "description": "Thirty module constants share the {subject: sentence} shape and the shape cannot tell an exemption from a help table, so the classification is the work - the same first-filter problem F231 paid off, and the NOT_A_GATE pattern is the answer this repository already owns. Derive the tables, require each to name its reason-checker or a reason it can have none, both directions checked. The user-visible argument is that four defects in two field reports were one shape: a claim in the product that nothing checks against reality.",
   "desiredOutcome": "Every exemption table in the tree either names the instrument that audits its reasons, or carries a checked reason why it cannot - and a table added later cannot opt out by being forgotten.",
   "testGate": [
@@ -21,9 +21,59 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "not recorded",
     "findings": []
   },
-  "summary": null,
-  "tasks": []
+  "summary": "F232 closed with the instrument rather than the argument: `exemption_audit_drift()` derives every module constant shaped `{subject: sentence}` and requires each to name the function that audits its reasons or a checked reason it can have none, both directions. Its first measurement overturned the claim that opened the phase - several tables already had reason-audits.",
+  "tasks": [
+    {
+      "id": "P24.1",
+      "title": "F232: derive the exemption tables and require each to name its reason-auditor",
+      "status": "done",
+      "description": "The NOT_A_GATE pattern over exemption tables: walk scripts/hooks/tools for a module constant shaped {subject: sentence}, and require each to appear in REASON_AUDITED (naming the function that reads its reasons) or NOT_AN_EXEMPTION (why it excuses nothing). Both directions, so a table added later cannot opt out by being forgotten and a row cannot outlive its subject.",
+      "files": [
+        "tools/gate-parity.py",
+        "plugins/audit/tests/test_gate_parity.py",
+        "test_gate_parity.py: a table in neither classification is a finding, and a row for a table that no longer exists is one too",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_gate_parity.py: a table in neither classification is a finding, and a row for a table that no longer exists is one too"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "exemption_audit_drift, AUDITED_EXEMPTIONS and NOT_AN_EXEMPTION are in tools/gate-parity.py with two citing rows in tools/prove-gates.py, and gate-parity.py runs green reporting that every declared exemption is still real. Verified by running it.",
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    }
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T22:12:39Z.5ffd3f",
+    "status": "passed",
+    "at": "2026-09-08T22:12:39Z"
+  }
 }

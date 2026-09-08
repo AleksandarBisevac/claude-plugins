@@ -49,9 +49,11 @@ import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT, to read the command doc)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-status imports it)
+import _manifest_vocab as _vocab                   # noqa: E402  (as audit-status imports it)
 import _cli_fmt                                    # noqa: E402  (as audit-status imports it)
 
 M = _loader.load_script("audit-status.py", modname="audit_status")
@@ -535,6 +537,52 @@ def _cases(_record):
     check("s35 no scope note when unscoped",
           "scoped to phase" not in _txt)
 
+    # --- (vw) --view: the segment fold, at the RENDER level ---------------------
+    # The base fixture is exactly the shape this exists for: P1 is `done` (the
+    # archive) and P2 is `pending` (still to come). `view=None` means "every
+    # phase" - the DEFAULT PICK is main()'s, not the renderer's, because which
+    # view a reader opens on is a CLI policy and rendering it is not. That split
+    # is what keeps every pre-flag caller of `render_status` byte-identical.
+    _vw_all = M.render_status(_fx, _sum, view=None)
+    _vw_act = M.render_status(_fx, _sum, view="active")
+    _vw_arc = M.render_status(_fx, _sum, view="archived")
+    _hdr_view = "\n".join(M._header_lines(_fx, _sum, 18))
+    _rdy_view = "\n".join(M._ready_lines(_fx, _sum))
+    check("vw1 `view=None` is every phase - the renderer's default cannot be a "
+          "narrowing, or every existing caller would silently change",
+          _vw_all == _txt)
+    check("vw2 --view active lists the unfinished phase and not the archived "
+          "one; --view archived is the mirror. Both directions, because a view "
+          "that returned everything would pass either one alone",
+          ("P2.1" in _vw_act.split("READY NOW")[0]
+           and "P1.1" not in _vw_act.split("READY NOW")[0]
+           and "P1.1" in _vw_arc.split("READY NOW")[0]
+           and "P2.1" not in _vw_arc.split("READY NOW")[0]),
+          _vw_act.split("READY NOW")[0][-300:])
+    check("vw3 the fold NAMES ITS REMAINDER and the flag that undoes it - a "
+          "silent fold reads as 'that is all of them', which is the worse "
+          "failure and the one READY NOW's own cap already refuses",
+          "--view all" in _vw_act
+          and "1 phase(s)" in _vw_act and "1 task row(s)" in _vw_act,
+          [ln for ln in _vw_act.splitlines() if "--view all" in ln])
+    check("vw4 ...and it says so only when something really was folded: under "
+          "`all` there is no remainder, so there is no line about one",
+          "--view all" not in _vw_all)
+    # The same structural pin rs2 makes for --phase, for the same reason: a view
+    # that rescoped the totals would misreport the project. Asserted on the BYTES
+    # of the header and READY NOW blocks, which a rescoped header would still
+    # print the sentence for.
+    check("vw5 --view reaches the phase table and nothing else - header and "
+          "READY NOW come out byte-identical under every view, while the render "
+          "as a whole does change",
+          _vw_act.startswith(_hdr_view) and _vw_arc.startswith(_hdr_view)
+          and _rdy_view in _vw_act and _rdy_view in _vw_arc
+          and _vw_act != _vw_all and _vw_arc != _vw_all)
+    check("vw6 --phase wins when both are given: it names ONE phase, which is "
+          "narrower than any segment, and two filters silently intersecting is "
+          "how a reader ends up staring at an empty table",
+          "P1.1" in M.render_status(_fx, _sum, only_phase="P1", view="active"))
+
     check("s31 a short list is not annotated as folded",
           "more" not in M.render_status(_few, M.rollup(_few, [], []))
           .split("READY NOW")[1].split("BUGS")[0])
@@ -925,6 +973,53 @@ def _cases(_record):
         check("u9 usage_summary survives a torn ledger line",
               M.usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
                             project_dir=_empty)["totals"]["tokens"] == 35)
+
+        # --- (ug) the passes nothing on the human path reads -----------------
+        # Each of `byModel`, `byAuthor` and `byPhase` is a full extra sweep of
+        # every ledger row, and the terminal render prints none of the first two
+        # ever and the third only when a phase is running. `full` is the opt-out
+        # and it DEFAULTS TO TRUE, deliberately: the safe direction for a library
+        # is to compute everything and let one caller ask for less, which is the
+        # same split `render_status(view=None)` makes one block up.
+        _ug_path = os.path.join(_empty, "docs", "audit", "m.json")
+        _ug_full = M.usage_summary({}, _ug_path, project_dir=_empty)
+        _ug_thin = M.usage_summary({}, _ug_path, project_dir=_empty, full=False)
+        check("ug1 the narrowed block OMITS the two aggregates no terminal "
+              "render reads - absent rather than empty, because an empty "
+              "`byModel` would claim no model was recorded, which is false. "
+              "keys: %r" % (sorted(_ug_thin),),
+              "byModel" not in _ug_thin and "byAuthor" not in _ug_thin)
+        check("ug2 ...and the DEFAULT still carries them, so the narrowing is "
+              "something a caller asks for and never something it is handed. "
+              "keys: %r" % (sorted(_ug_full),),
+              "byModel" in _ug_full and "byAuthor" in _ug_full
+              and _ug_full["byModel"] == {"claude-opus-5": _ug_full["byModel"]
+                                          ["claude-opus-5"]})
+        check("ug3 `byPhase` follows the render that reads it: with no phase "
+              "in_progress the line never looks at it, so it is not computed - "
+              "and `budgets` the same, since no phase here declares one",
+              "byPhase" not in _ug_thin and "budgets" not in _ug_thin
+              and "byPhase" in _ug_full and "budgets" in _ug_full)
+        _ug_run = M.usage_summary(
+            {"phases": [{"id": "P1", "status": "in_progress"}]},
+            _ug_path, project_dir=_empty, full=False)
+        check("ug4 SECOND DIRECTION: a plan with something running DOES get "
+              "`byPhase`, because that is exactly when the usage line prints a "
+              "'this phase' clause. A narrowing that dropped it unconditionally "
+              "would pass ug3 and silently delete a number a reader acts on",
+              "byPhase" in _ug_run and "P1" in _ug_run["byPhase"])
+        # THE SAVING MUST BE INVISIBLE. Asserted on the BYTES of the line, not on
+        # the payload: the whole claim of this change is that a reader cannot
+        # tell, and a payload comparison would not have said that.
+        _ug_sum_f = M.rollup(_fx, [], [], usage=_ug_full)
+        _ug_sum_t = M.rollup(_fx, [], [], usage=_ug_thin)
+        check("ug5 the usage LINE is byte-identical either way - the reader is "
+              "the one who must not be able to tell: %r"
+              % (M._usage_line(_ug_sum_t, _ug_thin),),
+              M._usage_line(_ug_sum_f, _ug_full)
+              == M._usage_line(_ug_sum_t, _ug_thin)
+              and M._budget_lines(_ug_sum_f, _ug_full)
+              == M._budget_lines(_ug_sum_t, _ug_thin))
         # --- the rate basis, trimmed at the door (F160) --------------------
         # The plan schema asks only `minLength: 1` of `meta.usage.pricingAsOf`,
         # so a string of spaces VALIDATES - and `_usage_line` tests the value
@@ -1248,6 +1343,122 @@ def _cases(_record):
           and _cli_fmt.strip(_o_alw) == _o_def)
     check("cc3 an unknown --color value is a usage error (exit 2)",
           M.main([cpath, "--color", "sometimes"]) == 2)
+
+    # --- (cv) --view end to end: where the DEFAULT PICK lives -------------------
+    # The renderer's default is "every phase" (vw1); the narrowing is main()'s
+    # choice, and this is the only place it can be measured. The rule is copied
+    # from `_report_page` and `overview.js` rather than invented: open on `active`
+    # unless there is nothing active or pending to show, in which case open on
+    # `all` - because a finished plan greeting its reader with an empty table is
+    # the fold's own failure wearing a flag.
+    _cv_m = _mio.load_manifest(cpath)
+    _cv_f, _cv_w = vm.validate(_cv_m)
+    _cv_sum = M.rollup(_cv_m, _cv_f, _cv_w,
+                       usage=M.usage_summary(_cv_m, cpath),
+                       boundary=M.boundary_for(cpath))
+    _cv_c, _cv_o = _cli_out([cpath])
+    _cv_ac, _cv_ao = _cli_out([cpath, "--view", "all"])
+    _cv_jd, _o_def_json = _cli_out([cpath, "--json"])
+    check("cv1 the DEFAULT narrows: the fixture's archived phase is not listed, "
+          "the unfinished one is, and the line saying so names the flag back",
+          _cv_c == 0 and "P1.1" not in _cv_o.split("READY NOW")[0]
+          and "P2.1" in _cv_o.split("READY NOW")[0] and "--view all" in _cv_o,
+          _cv_o.split("READY NOW")[0][-300:])
+    check("cv2 ...and --view all is BYTE-IDENTICAL to the unnarrowed render, so "
+          "the escape hatch really is the old command and not a near-miss of it",
+          _cv_ac == 0 and _cv_jd == 0
+          and _cv_ao == M.render_status(_cv_m, _cv_sum) + "\n")
+    # SECOND DIRECTION. A plan with nothing left to do must NOT open on an empty
+    # table - the same guard `_report_page`'s `defview` carries.
+    fd, fpath = tempfile.mkstemp(suffix=".json")
+    _done_fx = copy.deepcopy(_fixture())
+    for _dp in _done_fx["phases"]:
+        _dp["status"] = "done"
+        for _dt in (_dp.get("tasks") or []):
+            _dt["status"] = "done"
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_done_fx, fh)
+    _cv_fc, _cv_fo = _cli_out([fpath])
+    check("cv3 a finished plan opens on `all`, not on an empty table: with no "
+          "active or pending phase left there is nothing for `active` to show, "
+          "and a blank table is the one output that answers no question",
+          _cv_fc == 0 and "P1.1" in _cv_fo.split("READY NOW")[0]
+          and "--view all" not in _cv_fo,
+          _cv_fo.split("READY NOW")[0][-300:])
+    os.unlink(fpath)
+    # --view scopes the HUMAN render alone, exactly as --phase does. Both halves,
+    # because each is a different way to misreport the project: a gate that
+    # stopped grading hidden phases would pass a build over a blocked task, and a
+    # payload that dropped them would hand a machine a subset it thinks is whole.
+    _cv_jc, _cv_jo = _cli_out([cpath, "--view", "active", "--json"])
+    check("cv4 --view scopes neither --json nor --gate: the payload still "
+          "carries every phase, and the gate still trips on a task in a phase "
+          "the human render would not have listed",
+          _cv_jc == 0
+          and [p["id"] for p in json.loads(_cv_jo)["phases"]] == ["P1", "P2"]
+          and _cv_jo == _o_def_json,
+          _cv_jo[:120])
+    check("cv5 an unknown --view value is a usage error (exit 2) - nothing is "
+          "silently widened to `all`, which would answer a different question "
+          "than the one that was asked",
+          M.main([cpath, "--view", "everything"]) == 2)
+    # EVERY VALUE THE COMMAND DOC ADVERTISES IS ACCEPTED, asked of the doc rather
+    # than of a list written here. This shipped wrong once inside this very
+    # change: the frontmatter offered `active|pending|archived|all` while the
+    # parser took three, so `/audit:status --view pending` - copied straight out
+    # of the documentation - exited 2. No gate could see it, because
+    # `_refs.command_flag_drift` compares flag NAMES between two documents and
+    # never asks the parser what a flag's values are. This case asks.
+    _cv_hint = ""
+    try:
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "status.md"),
+                  "r", encoding="utf-8") as _fh:
+            _cv_hint = re.search(r"^argument-hint:\s*(.+)$", _fh.read(4096),
+                                 re.MULTILINE).group(1)
+    except Exception:
+        pass
+    _cv_adv = re.search(r"--view\s+([a-z|]+)", _cv_hint)
+    _cv_vals = _cv_adv.group(1).split("|") if _cv_adv else []
+    _cv_rej = [v for v in _cv_vals if M.main([cpath, "--view", v]) != 0]
+    check("cv6 every --view value the command doc ADVERTISES is one the parser "
+          "accepts - a documented value that exits 2 is a promise the product "
+          "breaks for anyone who copies it. advertised=%r rejected=%r"
+          % (_cv_vals, _cv_rej),
+          _cv_vals and _cv_rej == [])
+    check("cv7 ...and the other direction, so the doc cannot go quiet about a "
+          "value either: what it advertises is exactly `VIEW_SEGS`. doc=%r "
+          "code=%r" % (sorted(_cv_vals), sorted(_vocab.VIEW_SEGS)),
+          sorted(_cv_vals) == sorted(_vocab.VIEW_SEGS))
+
+    # --- (eb) the evidence boundary is read where it is CONSUMED ---------------
+    # `boundary_for` was called on every invocation behind a comment calling it "a
+    # directory listing and a JSON read". It is not: `_evidence_io.read_rows`
+    # parses every row of every recorded run and `earliest_recorded` takes one
+    # `min(ts)` out of all of it. eb1 is the property that makes deferring it
+    # safe, and it is asserted on the BYTES rather than argued from the call
+    # graph: the terminal render does not read the boundary, so a render that
+    # never computed one is the same render.
+    _eb_bnd = {"at": "2026-01-01T00:00:00Z",
+               "sources": {"key": "2026-01-01T00:00:00Z", "ledger": None},
+               "basis": "the plan states recording began 2026-01-01T00:00:00Z",
+               "unknown": []}
+    check("eb1 the human render is byte-identical with a populated boundary and "
+          "with none - which is the whole licence for not computing one on that "
+          "path, and the only form of it that is evidence",
+          M.render_status(_cv_m, M.rollup(_cv_m, _cv_f, _cv_w,
+                                          boundary=_eb_bnd))
+          == M.render_status(_cv_m, M.rollup(_cv_m, _cv_f, _cv_w,
+                                             boundary=None)))
+    check("eb2 ...while --json still carries `evidenceBoundary`, because that is "
+          "a consumer: the panel and any other reader of the payload get the "
+          "same block they always did",
+          "evidenceBoundary" in json.loads(_o_def_json))
+    _eb_c, _eb_o = _cli_out([cpath, "--gate", "--fail-on", "no-test-evidence"])
+    check("eb3 SECOND CONSUMER: the gate condition that EXISTS to excuse work "
+          "against the boundary still has one to excuse it against - deferring "
+          "the read past the one path that ignores it must not reach this one. "
+          "exit=%r" % (_eb_c,),
+          _eb_c in (0, 1))
     os.unlink(cpath)
 
     # --- (dv) --json --discovery: the init/task suggestion helper (v0.38 B) ------
@@ -1288,6 +1499,33 @@ def _cases(_record):
     check("dv5 --discovery without --json is a usage error (exit 2) - it "
           "enriches the machine payload only",
           M.main([dpath, "--discovery"]) == 2)
+
+    # --- (sc) --section: a PROJECTION of the payload, never a reshape of it -----
+    # The orchestrator's budget step reads the whole rollup to get one array out
+    # of `usage`. `--section` hands it that key alone. It is additive by
+    # construction - the bare payload is untouched (dv1 still pins it byte for
+    # byte) and nothing is reordered - which is what keeps COMPATIBILITY's promise
+    # intact: a key it emits goes on being emitted.
+    _sc_full = json.loads(_o_dj)
+    _sc_c, _sc_o = _cli_out([dpath, "--json", "--section", "tasks"])
+    check("sc1 --section emits that key of the SAME payload, exactly - not a "
+          "recomputation of it, which is how the projection and the whole would "
+          "start disagreeing",
+          _sc_c == 0 and json.loads(_sc_o) == _sc_full["tasks"],
+          _sc_o[:160])
+    check("sc2 ...and it is genuinely smaller, which is the entire point: %d vs "
+          "%d bytes" % (len(_sc_o), len(_o_dj)),
+          len(_sc_o) < len(_o_dj))
+    _sc_uc, _sc_uo = _cli_out([dpath, "--json", "--section", "frobnicate"])
+    check("sc3 an unknown section is a usage error (exit 2) that NAMES the "
+          "sections this payload has - the same shape --fail-on already uses, "
+          "and the reason it matters more here: a section absent because "
+          "metering is off is news, and printing `null` for it would be a claim "
+          "that the plan recorded nothing",
+          _sc_uc == 2 and _sc_uo == "")
+    check("sc4 --section without --json is a usage error - it projects the "
+          "machine payload, and there is nothing to project out of a render",
+          M.main([dpath, "--section", "tasks"]) == 2)
     os.unlink(dpath)
 
     # hermetic project/home fixtures for the block itself

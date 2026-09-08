@@ -1,0 +1,325 @@
+{
+  "id": "P25",
+  "title": "/audit:status: narrow the default view, and stop paying for output nobody prints",
+  "status": "done",
+  "description": "A field observation - 'it prints the whole plan with every phase; imagine 100 phases' - measured to two separate costs. The render is 196 lines / 15,952 bytes on this repo's own 26-phase plan, and commands/status.md orders the model to print that stdout VERBATIM, so the volume is the model's own output budget and it grows linearly with phases. Separately, usage_summary() is 67 of the 70 ms spent in main() and produces one 78-character line, a quarter of it computing byModel/byAuthor that the human render never reads; and boundary_for() is read unconditionally behind a comment claiming it is 'a directory listing and a JSON read' when it is a full NDJSON scan for one min(ts). The default narrows to the segments the panel and report already default to, the archive folds to a line that states what it folded, and each measured cost is paid only where it is consumed.",
+  "desiredOutcome": "The default /audit:status shows the work in hand and says what it folded; the old render is one flag away; the machine contract is byte-identical; and no ledger pass is computed for a key the caller will not read.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      "The command doc advertised `--view pending`, which the parser refuses; fixed across three surfaces and guarded by cv6/cv7 in both directions (P25.7).",
+      "`usage_summary.want_phase` asks the manifest while `_usage_line` asks the rollup; verified they cannot disagree today because `_status_facts` passes phase status through, and the coupling is now named in a comment."
+    ]
+  },
+  "summary": "A field observation - 'it prints the whole plan with every phase; imagine 100 phases' - measured to two costs. `commands/status.md` orders the render printed VERBATIM, so its LENGTH is the model's own output budget: 196 lines / 15,952 bytes on this plan, of which 19 finished phases carried 67 of the 106 task rows. The default now lists the work in hand and folds the rest into a line naming both remainders and the flag that undoes it - 83 lines / 6,540 bytes - reusing the report's and panel's own three views by moving `segment_of` down to `_manifest_vocab` beside the STATUS tuple it folds. Separately, `usage_summary` stopped sweeping the ledger for aggregates the terminal never prints and the evidence boundary is read where it is consumed (F264: its comment priced that read wrong, and the wrong price was the argument for doing it every time). The human path went 70.2 ms -> 50.4 ms; `--json` is byte-identical and gained `--section`, which took the orchestrator's budget read from 65,372 bytes to 8,181.",
+  "tasks": [
+    {
+      "id": "P25.1",
+      "title": "The segment vocabulary moves to layer 1, beside the STATUS tuple it folds",
+      "status": "done",
+      "description": "_seg_of/SEG_ORDER/VIEW_SEGS live in _report_html (layer 2). _status_facts is layer 2 as well, so a status renderer cannot import them - same layer is not downward - and would have to keep a second copy. Move them to _manifest_vocab (layer 1) as SEGMENTS/VIEW_SEGS/segment_of, beside STATUS, which is the tuple segment_of folds. _report_html keeps its local names as bindings so both existing suites go on pinning the name they pin, and a new case asserts the two ARE one function so a second copy cannot come back.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test__manifest_vocab.py: segment_of folds every STATUS member and sends an unknown word to pending",
+          "test__report_html.py: _report_html._seg_of IS _manifest_vocab.segment_of, so a second copy cannot come back"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.2",
+      "title": "--view narrows the human render, and the fold states what it folded",
+      "status": "done",
+      "description": "_phase_table_lines gains view=, applied to shown_phases exactly where only_phase already filters - its own docstring already carries the rule that scoping the LIST must not rescope the totals. The default is picked by the same expression _report_page.py and overview.js use: active unless nothing active or pending is present, else all. The fold line names both counts and the flag that undoes it, computed with % rather than written, and prints only when something was folded. --view scopes the human render alone: --gate grades the whole manifest and --json emits the whole rollup, and --phase wins when both are given.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_status.py: the default picks active on a live plan and all on a finished one",
+          "test_audit_status.py: the fold line states both counts; a silent fold is the failure",
+          "test_audit_status.py: totals, usage line and bug counts are byte-identical between --view active and --view all",
+          "test_audit_status.py: --view scopes neither --gate nor --json"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.3",
+      "title": "The ledger passes are computed only where something reads them",
+      "status": "done",
+      "description": "usage_summary gains full=, set from --json. byModel and byAuthor are 18 of its 67 ms and nothing in this repository reads them off this command - they exist for --json consumers. aggregate(rows,'phase') is read by _usage_line only when a phase is in_progress, and phase_budgets only when a phase declares budgetUSD, so both are computed on that condition or on full. read_ledger and totals stay: the usage line prints them. The since/until window is deliberately NOT used - it would change a printed all-time number, and a number that quietly changed meaning is worse than a slow one. The saving must be invisible: the usage line is pinned byte-identical.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_status.py: byModel and byAuthor are absent without --json and present with it",
+          "test_audit_status.py: the usage line is byte-identical before and after the deferral"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.4",
+      "title": "The evidence boundary is read where it is consumed, and its comment stops claiming otherwise",
+      "status": "done",
+      "description": "boundary_for is called unconditionally, justified by a comment saying it is 'a directory listing and a JSON read'. Measured, that is false: _evidence_io.read_rows walks the directory and json.loads every row of every file, and earliest_recorded takes one min(ts) out of all of it - invisible here only because this repository has no evidence directory. Its consumers are the gate's excused line, the gate soundness block and the rollup key that --json and the panel read; the human render has none. So compute it for --gate, --json and --discovery. The acceptance criterion is a proof, not an assumption: the human render must be byte-identical on a fixture that HAS an evidence directory, and if it is not, the deferral is dropped. The comment is corrected either way, because the claim in it is wrong regardless of the outcome.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_status.py: the human render is byte-identical on a fixture carrying an evidence directory, with and without the deferral"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.5",
+      "title": "--json --section projects one key, and the orchestrator's budget read stops carrying the whole rollup",
+      "status": "done",
+      "description": "The orchestrator's budget step reads --json - 64,254 bytes into context - to get usage.budgets.phases[]. --section <key> emits one top-level key of the same rollup: additive, so the default --json stays byte-identical, no key is removed and nothing is reordered, which leaves COMPATIBILITY untouched. An unknown key is a usage error naming the ones there are, the same shape --fail-on already uses. reference/orchestrator.md moves its budget read onto it.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_status.py: --section usage equals the same key of the full payload, exactly",
+          "test_audit_status.py: an unknown --section key exits 2 and names the known keys"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.6",
+      "title": "Every surface that describes the command learns the two new flags",
+      "status": "done",
+      "description": "commands/status.md gains --view and --section in its argument-hint, folds both into the paragraph that already says --phase scopes the human render alone, and states the new default with the flag that restores the old one. README must carry every flag in that hint or _refs.command_flag_drift fails by name; docs/handbook.html reads the command's options; CHANGELOG records that the default narrowed and how to get the whole plan back.",
+      "files": [
+        "plugins/audit/commands/status.md",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "lint",
+          "report"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P25.7",
+      "title": "Review fixes: the documented --view values must be the ones the parser takes",
+      "status": "done",
+      "description": "The phase review found one defect introduced by this phase and one coupling worth naming. THE DEFECT: commands/status.md, the plugin README and the CHANGELOG advertised --view active|pending|archived|all while VIEW_SEGS carries three, so /audit:status --view pending - copied out of the documentation - exited 2. The whole gate set was green because nothing compares a documented flag's VALUES to what its parser accepts; command_flag_drift compares flag NAMES between two documents. Adding a fourth view was rejected as the fix: the JS twin SEG_VIEWS is pinned byte-for-byte with three, the report's toggle reads the same table, and active already means active AND pending. THE COUPLING: usage_summary's want_phase asks the manifest for an in_progress phase while _usage_line asks the rollup; verified they agree because _status_facts passes phase status through, and named in a comment so a future rollup that DERIVES it is warned.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_status.py: every --view value the command doc advertises is accepted by the parser, and every value the parser accepts is advertised - both directions"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P25.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-08T22:21:26Z",
+      "verifiedBy": []
+    }
+  ],
+  "testEvidence": {
+    "runId": "2026-09-08T22:17:49Z.068f53",
+    "status": "passed",
+    "at": "2026-09-08T22:17:49Z"
+  }
+}

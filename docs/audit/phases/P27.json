@@ -1,0 +1,75 @@
+{
+  "id": "P27",
+  "title": "release v2.2.0",
+  "status": "in_progress",
+  "description": "P18-P26 signed off and the tree is green, so the work goes out. MINOR rather than patch, decided by the maintainer: two new flags (/audit:status --view and --json --section) are new functionality, and the DEFAULT human render changes - somebody pinning ~2.1.x would get a different output from a command they already run. COMPATIBILITY.md protects meta.version and the config keys the plugin reads, not terminal layout, so no promise is broken either way; the version is what tells a reader which of those two happened. One commit bumps plugin.json, finalizes the CHANGELOG section and carries the annotated tag, and the followers a bump stales are redone in the order tools/verify.sh --release prints: README curl pins, rendered artifacts, docs/index.html as a byte copy of the example report, then screenshots - capture FOLLOWS the bump, never precedes it.",
+  "desiredOutcome": "v2.2.0 is published: one commit carrying the bump, the finalized CHANGELOG and the annotated tag; every follower redone in order; CI green on that commit before the push; and a GitHub Release created for the tag so the README's fetch pins resolve to a page a reader lands on.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P27.1",
+      "title": "Bump to 2.2.0 and redo every follower the bump stales, in order",
+      "status": "in_progress",
+      "description": "plugin.json to 2.2.0; CHANGELOG [Unreleased] becomes [2.2.0] with today's date; the three curl pins in plugins/audit/README.md move from v2.1.1 to v2.2.0 so a reader fetches the files this release ships; the committed rendered artifacts re-render because each stamps the version that produced it, in the page and again in its embedded Markdown twin; docs/index.html is a byte copy so it follows the artifact it copies; screenshots come last because each image records the version it was shot at, and capturing before the bump invalidates every picture. Then tools/verify.sh --release, which asserts the followers rather than repairing them.",
+      "files": [
+        "plugins/audit/.claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

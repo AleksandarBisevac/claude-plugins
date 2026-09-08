@@ -448,6 +448,45 @@ def _eval_read_targets(clause):
     return out
 
 
+# The calls that hand text to a shell. Arm 2 below grades THEIR arguments and no
+# other text in the body, which is the whole of F267: `BASH_FILE_READ` over a whole
+# interpreter body cannot tell `subprocess.run(["cat", ".env"])` from a list of
+# example commands that runs nothing, and this repository's own test fixtures are
+# the second kind.
+_SHELL_OUT_CALL = re.compile(
+    r"\b(?:subprocess\s*\.\s*(?:run|call|check_call|check_output|Popen)"
+    r"|os\s*\.\s*(?:system|popen|execv?p?e?)"
+    r"|commands\s*\.\s*getoutput"
+    r"|child_process\s*\.\s*(?:exec|execSync|execFile|execFileSync|spawn|spawnSync)"
+    r"|(?:exec|execSync|spawnSync)"
+    r"|Kernel\s*\.\s*system|IO\s*\.\s*popen)\s*\(",
+    re.IGNORECASE,
+)
+
+
+def _shell_out_arguments(clause):
+    """The argument text of every call in `clause` that hands something to a shell.
+
+    Balanced to the closing parenthesis rather than to the next one, so a nested
+    call inside the argument list — `subprocess.run(shlex.split(cmd))` — is kept
+    whole instead of being cut at its first `)`. An unbalanced tail (a body cut
+    mid-call by a heredoc, say) contributes what there is: refusing to answer
+    would be a silent pass, and the arm asking this is a guard.
+    """
+    out = []
+    for m in _SHELL_OUT_CALL.finditer(clause):
+        depth, start = 1, m.end()
+        i = start
+        while i < len(clause) and depth:
+            if clause[i] == "(":
+                depth += 1
+            elif clause[i] == ")":
+                depth -= 1
+            i += 1
+        out.append(clause[start:i])
+    return out
+
+
 def _eval_reads_a_secret(clause, extras):
     """Does this interpreter body READ a secret, as opposed to mentioning one?
 
@@ -456,9 +495,16 @@ def _eval_reads_a_secret(clause, extras):
 
       1. a read call NAMES the path — the definite case, resolved through one hop
          of binding exactly as the write arm resolves its targets;
-      2. the body carries a SHELL read of it — `subprocess.run(["cat", ".env"])`
-         is a read no Python-shaped pattern would see, and `BASH_FILE_READ` is the
-         same matcher the shell lane already trusts for that sentence;
+      2. a call that SHELLS OUT is handed a read of it — `subprocess.run(["cat",
+         ".env"])` is a read no Python-shaped pattern would see, and
+         `BASH_FILE_READ` is the same matcher the shell lane already trusts for
+         that sentence. It is applied to the ARGUMENTS of such a call and to no
+         other text in the body (F267): grepping the whole body cannot tell that
+         call from a list of example commands, and this repository's own fixtures
+         for this guard are the second kind. Both users who met it — a live
+         project and this repository — routed around it by writing the script to a
+         scratchpad file and running it from there, which is worse for security
+         than what was refused;
       3. a project-configured extra names one of the read targets.
 
     What this stops refusing is a body that merely SPELLS the name: a phase summary
@@ -467,15 +513,22 @@ def _eval_reads_a_secret(clause, extras):
     refusal said *Reading a secret file* about a sentence that read nothing.
 
     The direction of the risk is stated rather than hidden: this can miss a read
-    spelled in a way none of the three sees. The alternative is what was measured —
-    a guard that fires on prose is one people route around, and this register
-    already carries that lesson under its own entry.
+    spelled in a way none of the three sees — including, after F267, a command
+    assembled into a NAME and passed to `subprocess.run(argv)`, which arm 2 no
+    longer reaches. That miss is ONE SHAPE rather than a class, and the difference
+    was measured: the inline `-c` form is still refused by the outer shell lane,
+    which reads the command text, so only a HEREDOC body escapes both. `b8j` and
+    `b8k` assert each half, so the limit stays a decision on the record. The
+    alternative is what was measured twice — a guard that fires on prose, or on
+    data, is one people route around, and this register already carries that
+    lesson under its own entry.
     """
     targets = _eval_read_targets(clause)
     if any(SECRET_TOKEN_RE.search(t) for t in targets):
         return True
-    if BASH_FILE_READ.search(clause) or DOT_SOURCE_SECRET.search(clause):
-        return True
+    for argument in _shell_out_arguments(clause):
+        if BASH_FILE_READ.search(argument) or DOT_SOURCE_SECRET.search(argument):
+            return True
     return bool(targets) and _hits_extra(" ".join(targets), extras)
 
 
