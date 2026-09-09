@@ -209,7 +209,14 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    key entirely when nothing was detected or the user selected nothing), defaults elsewhere), `phases`,
    top-level `fileIndex` built from every task's `files`, `bugs: []`, `deferred`, `proposals`.
    Task `files` and `fileIndex` keys are **project-dir-relative** (they include the `gitRoot` prefix,
-   e.g. `test/src/foo.ts` when `gitRoot` is `test`). When `gitRoot` is not `.`, prefer writing the
+   e.g. `test/src/foo.ts` when `gitRoot` is `test`).
+   **A file the task must CREATE belongs in `files` too, before it exists.** `files` is what the plan
+   gate matches an edit against, and the gate asks the manifest, never the disk — so a declared path
+   that is not there yet is a legitimate creation target and `/audit:task add` reports it as
+   `note: not on disk (a new file?)` rather than as a problem. Leave it out and the executor is
+   refused on its **first** write with no legal way forward: a live run wrote a task whose
+   description ordered three new files while `files` named only the three it read, and the run
+   dead-ended there. Say what the task will create, not only what it will read. When `gitRoot` is not `.`, prefer writing the
    manifest INSIDE the git root (set `manifestPath` accordingly, e.g. `test/docs/audit/audit-plan.json`,
    and mirror `gitRoot` into `.claude/audit.config.json`) so the orchestrator can commit its status
    history; note this to the user.
