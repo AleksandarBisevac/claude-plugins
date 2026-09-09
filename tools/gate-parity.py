@@ -1118,6 +1118,11 @@ AUDITED_EXEMPTIONS = {
     "HANDBOOK_FOREIGN_OPTIONS": ("live", "handbook_drift"),
     "UNLINKED_BY_DESIGN": ("live", "doc_link_drift"),
     "PROSE_SCAN_EXEMPT": ("live", "prose_number_claims"),
+    # The prohibitions this repo states and does NOT enforce. `check-prohibitions`
+    # reads each row's reason for length and asks the document whether the rule it
+    # excuses is still stated - so the table cannot go stale quietly, and a rule
+    # that gains a hook has to leave it.
+    "ADVISORY": ("reason", "prohibition_drift"),
     "SHARED_CONCERNS": ("live", "shared_concern_violations"),
     "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
     "SCRATCH_EXEMPT": ("live", "scratch_isolation"),

@@ -440,6 +440,14 @@ TABLE = (
  # mutation reddens the version-pin family, of which `p1` is one.
  ("command_flag_drift", "plugins/audit/commands/status.md", "suffix",
   r"^argument-hint:", " [--probe-flag]", REF, "cf1"),
+ # F282. A prohibition the document states and nothing accounts for. The mutation
+ # is the shape the rule exists for: somebody writes a new **NEVER** and no hook
+ # is asked whether anything stops it. `orchestrator.md` is the subject because it
+ # is the document that governs every run and, measured, the one nothing checks.
+ ("prohibition_drift", "plugins/audit/reference/orchestrator.md", "replace",
+  "## Reporting",
+  "## Reporting\n\n**NEVER `git cherry-pick` onto a phase branch.**",
+  "tools/check-prohibitions.py", "pr0"),
  # F191. The pointer that says a human's own words go in unchanged. Removed from
  # ONE doc, because that is the shape the fault had: three commands said nothing
  # and the fourth's silence was the one that got a paraphrase into the chain.
@@ -1283,6 +1291,15 @@ ALLOW = (
  ("inline_drift", S + "config/_help.py", "replace",
   "    for path in sorted(set(found) - set(declared)):",
   "    for path in sorted(set(found)):", MVO, "mv29"),
+ # The needle widened from a BOLDED prohibition to any sentence carrying the word.
+ # `orchestrator.md` says "never goes out of date" about a manifest and "never
+ # recompute it" about a budget - prose about a thing, not a rule about an action -
+ # so a matcher that took the bare word convicts the document for explaining
+ # itself, which is the over-fire this narrowing was chosen against.
+ ("prohibition_drift", "tools/check-prohibitions.py", "replace",
+  r'_BOLD_NEVER = re.compile(r"\*\*[^*]*\bNEVER\b[^*]*\*\*")',
+  r'_BOLD_NEVER = re.compile(r"[^.\n]*\bnever\b[^.\n]*", re.I)',
+  "tools/check-prohibitions.py", "pr0"),
  # The hint read TOO LOOSELY. Only the pipe-separated form makes a claim about a
  # set; widen the needle to swallow a metavar and `--phase <id>` becomes a
  # one-value list no parser declares, so every correctly written command is
