@@ -427,6 +427,19 @@ report, because `git switch -c` is about to fail anyway.
           `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
           a shell command inside a `Bash` call included — NEVER append those actions by hand (two
           writers means duplicate rows and a doctor that cannot trust the count).
+        - **Commit with an explicit pathspec** — `git commit -- <the paths you just staged>` — and not
+          a bare `git commit`. **The index does not arrive empty.** A previous task's `git mv` leaves
+          paths staged, and a bare commit sweeps every one of them into this task's commit. That is
+          not hypothetical: it is where two `commit-scope` breaches on one commit came from, and by
+          the time `verify-invariants.py` reports them the only remedy is a rebase this document
+          forbids. The pathspec is the whole fix, and it costs nothing when the index was clean.
+        - **And re-`git add` anything `git mv` moved.** `git mv` stages the file at its **pre-edit**
+          content, so a task that moves a file and then edits it commits the OLD bytes unless the new
+          path is added again. **No gate can catch this**, and that is why it is called out here
+          rather than left to one: `run-test-gate.py` measures the WORKING TREE, and this defect
+          lives in the INDEX — the tests pass on the files you have while the commit carries files
+          nobody ran. A live run came within one commit of shipping a shared module importing a
+          feature while the manifest recorded the opposite.
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
@@ -742,6 +755,30 @@ report events as they happen; those stay yours.
 
 ## Reporting
 
-After any mutating command, print a final summary: tasks completed this run (with one-line outcomes), the
+**Report when the command's contract is DISCHARGED, and not before.** This section used to open
+with "after any mutating command", which is the sentence that lost a run: `/audit:phase` had 20
+ready tasks in 8 waves, wave 1 committed, the summary named the next ready tasks exactly as this
+section prescribes — and the run stopped there and sat idle for a day. Nothing had gone wrong.
+Printing "the next ready task(s)" is what a FINISHED command does, so writing it mid-loop makes an
+unfinished run look complete to everyone including the model writing it.
+
+So the trigger is the contract, not the turn:
+
+- **`/audit:phase <id>` is discharged** when no task in the phase is ready AND sign-off has run.
+  A wave completing discharges nothing. **A turn boundary is not a stopping point** — neither is a
+  commit, a green gate, or a convenient place to summarise. If tasks remain ready, the next thing
+  you do is launch them.
+- **`/audit:run <id>` is discharged** when that task is `done`, `blocked`, or stopped at a human
+  action item.
+- **A progress note between waves is something you emit while CONTINUING**, never instead of
+  continuing. Make the remainder visible in it — `wave 2 of 8 — 16 of 20 tasks still ready` reads
+  as an unfinished job, where `next up is wave 2` reads as a plan somebody else will action.
+
+Then print the final summary: tasks completed this run (with one-line outcomes), the
 phase sign-off result if reached, and the next ready task(s) (`/audit:next` / `/audit:phase <id>`). Keep
 the manifest the single source of truth — never track status elsewhere. Release the lock.
+
+**Stopping early is legitimate in exactly the cases this document names** — attempts exhausted, an
+infrastructure failure, a red sign-off gate, a `risk: "high"` confirmation, a budget at or over
+100%. Each has its own step and its own words. If none of them fired, the run is not finished and
+there is nothing to report yet.
