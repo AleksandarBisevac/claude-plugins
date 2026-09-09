@@ -48,7 +48,10 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # the F189 verb), rt (retarget, the F190 verb), gc (F196: the empty gate a task
 # could not reach), jf (F197: the prior state the trail attests), ag (F201: the
 # empty gate at CREATION), fn (F202: the files row for a change that did not
-# happen), sf (F199: the three task fields `scope` did not reach).
+# happen), sf (F199: the three task fields `scope` did not reach), sn (F208: the
+# task with no `tests` object), qg (F207: add-phase's empty gate), wd (F271: the
+# widening `scope` refused on the very task it exists for), pb (F275: the owning
+# phase's blockedBy, the readiness term this file's own copy never carried).
 def _cases(check):
     import contextlib
     import shutil
@@ -1029,22 +1032,51 @@ def _cases(check):
         # task is blocked by, and `_mio.iter_tasks` yields nothing at all for
         # such a phase -- so the phase half of that index is a separate walk.
         # These are the cases that go red if the two are ever folded into one.
+        #
+        # THEY PASS A NODE THAT IS IN THE MANIFEST, found by id, because that is
+        # what the three call sites pass and what F275 turned the lookup into. A
+        # synthetic dict handed in from outside answers about no task at all -
+        # and it was exactly that shape, a task dict with no phase attached to
+        # it, which hid the fourth readiness term here for as long as it did.
         _wm = {"phases": [
             {"id": "P0", "title": "groundwork", "status": "done"},
             {"id": "P1", "title": "next", "status": "in_progress", "tasks": [
-                {"id": "P1.1", "title": "t", "status": "pending"}]},
+                {"id": "P1.1", "title": "t", "status": "pending"},
+                {"id": "P1.2", "title": "behind a done phase", "status": "pending",
+                 "blockedBy": ["P0"], "dependsOn": []},
+                {"id": "P1.3", "title": "behind a live phase", "status": "pending",
+                 "blockedBy": ["P1"], "dependsOn": []},
+                {"id": "P1.4", "title": "behind a sibling", "status": "pending",
+                 "blockedBy": [], "dependsOn": ["P1.1"]},
+                {"id": "P1.5", "title": "malformed refs", "status": "pending",
+                 "blockedBy": [None, 7, [1, 2]], "dependsOn": []}]},
         ]}
+
+        def wnode(manifest, nid):
+            """The node `nid` names, taken OUT of the manifest - which is what
+            every call site passes and what the id lookup has to resolve."""
+            for _ph in (manifest.get("phases") or []):
+                if _ph.get("id") == nid:
+                    return _ph
+                for _t in (_ph.get("tasks") or []):
+                    if _t.get("id") == nid:
+                        return _t
+            return {}
+
         # DONE on purpose: a phase missing from the index reads back as None,
         # which is already "not done", so a PENDING blocker would let the folded
         # version and this one agree and prove nothing.
-        check("w1 a ref to a task-less DONE phase counts as satisfied",
-              M._waiting_on(_wm, {"blockedBy": ["P0"], "dependsOn": []}) == [])
+        check("w1 a ref to a task-less DONE phase counts as satisfied: %r"
+              % (M._waiting_on(_wm, wnode(_wm, "P1.2")),),
+              M._waiting_on(_wm, wnode(_wm, "P1.2")) == [])
         # The other direction, and it looks vacuous by design: it is the only
         # case that fails if `_waiting_on` ever becomes "nothing is ever waiting".
-        check("w2 ...while a ref to a phase that is NOT done is still reported",
-              M._waiting_on(_wm, {"blockedBy": ["P1"], "dependsOn": []}) == ["P1"])
-        check("w3 a task ref resolves through the same index",
-              M._waiting_on(_wm, {"dependsOn": ["P1.1"]}) == ["P1.1"])
+        check("w2 ...while a ref to a phase that is NOT done is still reported: "
+              "%r" % (M._waiting_on(_wm, wnode(_wm, "P1.3")),),
+              M._waiting_on(_wm, wnode(_wm, "P1.3")) == ["P1"])
+        check("w3 a task ref resolves through the same index: %r"
+              % (M._waiting_on(_wm, wnode(_wm, "P1.4")),),
+              M._waiting_on(_wm, wnode(_wm, "P1.4")) == ["P1.1"])
         # w4: this call site tested `!= "done"` while audit-status' readiness
         # used ("done", "cancelled"), so a task blocked by a CANCELLED task was
         # ready to /audit:status and still waiting to /audit:task add - one
@@ -1052,15 +1084,19 @@ def _cases(check):
         # and this line never followed. The rule now has one home.
         _wc = {"phases": [{"id": "P1", "title": "p", "status": "in_progress",
                            "tasks": [{"id": "P1.1", "title": "dropped",
-                                      "status": "cancelled"}]}]}
+                                      "status": "cancelled"},
+                                     {"id": "P1.2", "title": "waiter",
+                                      "status": "pending",
+                                      "blockedBy": ["P1.1"],
+                                      "dependsOn": []}]}]}
         check("w4 a ref to a CANCELLED task counts as satisfied, exactly as "
               "/audit:status' readiness has always counted it: %r"
-              % (M._waiting_on(_wc, {"blockedBy": ["P1.1"]}),),
-              M._waiting_on(_wc, {"blockedBy": ["P1.1"]}) == [])
+              % (M._waiting_on(_wc, wnode(_wc, "P1.2")),),
+              M._waiting_on(_wc, wnode(_wc, "P1.2")) == [])
         # w5-w6: same unvalidated-input class audit-status carries. A
         # non-hashable ref used to raise inside the index lookup here too.
         try:
-            _wbad = M._waiting_on(_wm, {"blockedBy": [None, 7, [1, 2]]})
+            _wbad = M._waiting_on(_wm, wnode(_wm, "P1.5"))
         except Exception as _wexc:
             _wbad = "RAISED %s: %s" % (type(_wexc).__name__, _wexc)
         check("w5 a malformed ref does not raise here either - the same defect "
@@ -1069,6 +1105,31 @@ def _cases(check):
         check("w6 ...and _waiting_on returns only strings, so whatever joins "
               "them cannot die on the row: %r" % (_wbad,),
               isinstance(_wbad, list) and all(isinstance(x, str) for x in _wbad))
+        # w7-w8: F275, the fourth term of the readiness rule. `reference/
+        # orchestrator.md` lists four and this function carried two, so a task
+        # whose PHASE was parked read as ready - and `/audit:status`, reading
+        # `_status_facts`, said the opposite about the same manifest. The suffix
+        # is what makes the answer usable: a bare `P0` here would send a reader
+        # looking for a task by that name.
+        _wp = {"phases": [
+            {"id": "P0", "title": "environment", "status": "pending"},
+            {"id": "P1", "title": "the work", "status": "pending",
+             "blockedBy": ["P0"], "tasks": [
+                 {"id": "P1.1", "title": "t", "status": "pending",
+                  "blockedBy": [], "dependsOn": []}]}]}
+        check("w7 a task whose own refs are all clear is STILL waiting when its "
+              "PHASE is blocked, and the ref says which term it came from: %r"
+              % (M._waiting_on(_wp, wnode(_wp, "P1.1")),),
+              M._waiting_on(_wp, wnode(_wp, "P1.1")) == ["P0 (phase)"])
+        # THE PAIRED NEGATIVE. A version that appended the phase's `blockedBy`
+        # without asking whether it was satisfied would pass w7 forever while
+        # reporting every task in every phase as waiting.
+        _wp2 = json.loads(json.dumps(_wp))
+        _wp2["phases"][0]["status"] = "done"
+        check("w8 SECOND-DIRECTION CASE: ...and when that phase blocker is DONE "
+              "the task is ready again, so the term is evaluated rather than "
+              "merely appended: %r" % (M._waiting_on(_wp2, wnode(_wp2, "P1.1")),),
+              M._waiting_on(_wp2, wnode(_wp2, "P1.1")) == [])
 
         # ---- (sc) F189: `scope`, the verb the importer's own instruction needed
         # `pull sprint` writes `files: []` and tells the reader to scope before
@@ -1112,10 +1173,17 @@ def _cases(check):
               and _idx2.get("src/a.ts") == ["P2.1"])
         code, txt = run(["scope", "P2.1", "--files", "src/b.ts",
                          "--project-dir", sc_proj])
-        check("sc4 a task that is not pending is REFUSED, and the refusal says "
-              "why: its scope is what its attempts were judged against: %r"
-              % (txt[:90],),
-              code == 2 and "only rewrites a PENDING task" in txt)
+        # F271 NARROWED THIS REFUSAL AND DID NOT REMOVE IT. What is refused here
+        # is a task whose work is SETTLED - `done`, and `cancelled` next to it -
+        # which is a different sentence from the one a started task meets,
+        # because a settled task has no widening left to offer: its commit was
+        # graded against the files it names and its sign-off accepted that
+        # grading. The wd group holds the started half.
+        check("sc4 a task whose work is SETTLED is refused outright, and the "
+              "refusal names what settled it rather than the status alone: %r"
+              % (txt[:120],),
+              code == 2 and "is done" in txt and "its scope is settled" in txt
+              and "the sign-off accepted that grading" in txt)
         code, txt = run(["scope", "P2", "--files", "src/b.ts",
                          "--project-dir", sc_proj])
         check("sc5 a PHASE id is refused by name - a phase silently scoping its "
@@ -1253,17 +1321,26 @@ def _cases(check):
               code == 2 and "retarget needs one of" in txt)
         # F190's OTHER half of the pending rule: an attempted task keeps an
         # outcome describing work judged under the scope it had.
+        #
+        # THE CALL CHANGED WITH F271 AND THE CLAIM DID NOT. This used to pass
+        # `--files src/a.ts` at a task holding none, which is a WIDENING and is
+        # now accepted (the wd group drives that). `--description` is the field
+        # the entry's own reason is sharpest about: the outcome answers the
+        # description, so rewriting it is precisely what would make the record
+        # describe something else.
         at_proj, at_mp = mk("p-attempted", base_manifest())
         _am = _mio.load_manifest(at_mp)
         _am["phases"][1]["tasks"][1]["attempts"] = 1
         _panel_write._atomic_write_json(at_mp, _am)
-        code, txt = run(["scope", "P2.3", "--files", "src/a.ts",
+        code, txt = run(["scope", "P2.3", "--description", "a different job",
                          "--project-dir", at_proj])
-        check("rt9 scope refuses a PENDING task that has already been attempted "
-              "- status alone is not the test, because a task put back to pending "
-              "still carries an outcome judged under its old scope: %r"
-              % (txt[:90],),
-              code == 2 and "already been attempted" in txt)
+        check("rt9 scope refuses a change that is NOT a widening on a PENDING "
+              "task that has already been attempted - status alone is not the "
+              "test, because a task put back to pending still carries an outcome "
+              "judged under its old scope: %r" % (txt[:90],),
+              code == 2 and "already been attempted" in txt
+              and (task_in(at_mp, "P2.3") or {}).get("description")
+              != "a different job")
 
         # ---- (gc) F196: the empty gate a task could not reach ----------------
         # `/audit:phase retarget` took `--gate-clear` in the release that gave
@@ -1773,9 +1850,14 @@ def _cases(check):
               % ((_sfj.get("ready"), _sfj.get("waitingOn")),),
               _sfj.get("ready") is False and _sfj.get("waitingOn") == ["P2.2"]
               and [r["field"] for r in _sfj.get("changes") or []] == ["risk"])
-        # THE PENDING GUARD IS THE WHOLE CALL, not a per-field rule: F190's reason
-        # (an attempt was judged under the old scope) covers the new fields
-        # identically, which is what the entry asked for.
+        # THE GUARD IS PER-CHANGE NOW, AND THIS COMMENT USED TO SAY THE OPPOSITE.
+        # It read "THE PENDING GUARD IS THE WHOLE CALL, not a per-field rule",
+        # which F271 replaced: a started task will take a WIDENING of `files` or
+        # `tests.add`, because that is the one change `_invariants.commit_scope`
+        # cannot re-judge an already-recorded commit over. What is unchanged is
+        # this case's own claim - `risk` REPLACES a value the attempt ran under,
+        # so F190's reason still covers it exactly as it covers the other two
+        # fields F199 added, and the sentence the caller meets is still F190's.
         sfa_proj, sfa_mp = mk("sf-attempted", sfm)
         _sfa = _mio.load_manifest(sfa_mp)
         _sfa["phases"][1]["tasks"][2]["attempts"] = 2
@@ -1808,6 +1890,241 @@ def _cases(check):
               sf_handoff(sf_add_txt, "P2.4") != ""
               and sf_handoff(sf_add_txt, "P2.4")
               == sf_handoff(sf_scope_txt, "P2.3"))
+
+        # ---- (wd) F271: `scope` refused the case it exists for ---------------
+        # `reference/orchestrator.md` prescribes `/audit:task scope` for the
+        # moment the plan gate refuses a file a RUNNING task genuinely needs -
+        # and a task in that moment is `in_progress` with an attempt on it, the
+        # two states the pending-and-never-attempted guard excluded. So the
+        # documented remedy was unreachable in exactly its own scenario.
+        # Measured live: hit three times in one phase, and the only escape each
+        # time was hand-editing the shard and the index under the lock, which is
+        # the operation this verb exists to replace.
+        #
+        # THESE CASES TEST THE DIRECTION, NOT THE FIELD, because direction is
+        # what the permission is about. `_invariants.commit_scope` grades a
+        # RECORDED commit against the task's CURRENT `files`, so growing that
+        # list can only turn a breach into a pass; shrinking it can turn a commit
+        # that was clean when it was made into a breach, which is a verdict
+        # changed after the fact on work nobody can go back and redo.
+        wdm = base_manifest()
+        # The state orchestrator step 2 leaves a task in: `in_progress` AND
+        # `attempts` incremented, in one step. Both signals are set here on
+        # purpose - wd9 is the fixture that separates them.
+        wdm["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 1, "maxAttempts": 3,
+            "description": "the running task", "risk": "low", "model": "sonnet",
+            "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": ["src/known.ts", "src/known.test.ts"],
+            "tests": {"mode": "tdd", "expectRedFirst": True,
+                      "add": ["src/known.test.ts"], "gate": ["test"]}})
+        wdm["fileIndex"]["src/known.ts"] = ["P2.3"]
+        wdm["fileIndex"]["src/known.test.ts"] = ["P2.3"]
+        wd_proj, wd_mp = mk("wd-widen", wdm)
+        os.makedirs(os.path.join(wd_proj, "src"), exist_ok=True)
+        for _wdf in ("known.ts", "known.test.ts", "needed.ts", "extra.ts"):
+            with open(os.path.join(wd_proj, "src", _wdf), "w") as _fh:
+                _fh.write("x\n")
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/known.ts,src/known.test.ts,src/needed.ts",
+                         "--project-dir", wd_proj])
+        _wdt = task_in(wd_mp, "P2.3") or {}
+        _wdi = (_mio.load_manifest(wd_mp).get("fileIndex") or {})
+        check("wd1 an in_progress task WITH an attempt on it takes a widening of "
+              "`files`, and the fileIndex the plan gate reads gains the path - "
+              "which is the whole errand, since the gate is what refused the "
+              "file in the first place: %r"
+              % ((code, _wdt.get("files"), _wdi.get("src/needed.ts")),),
+              code == 0
+              and _wdt.get("files") == ["src/known.ts", "src/known.test.ts",
+                                        "src/needed.ts"]
+              and _wdi.get("src/needed.ts") == ["P2.3"])
+        check("wd2 ...and the report DATES it: which attempt the scope grew "
+              "during, and what it gained. A widening that read like an ordinary "
+              "scope would leave every record already carrying this task's id to "
+              "be read as though the list had always been this one: %r"
+              % (txt[-260:],),
+              "WIDENED during attempt 1, while the task is in_progress" in txt
+              and "files +src/needed.ts" in txt)
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/known.ts,src/known.test.ts,src/needed.ts,"
+                         "src/extra.ts", "--json", "--project-dir", wd_proj])
+        try:
+            _wdj = json.loads(txt)
+        except ValueError:
+            # sf12's lesson: a refused call prints a sentence, and letting that
+            # reach `json.loads` bare stops the body dead instead of failing one
+            # case.
+            _wdj = {}
+        check("wd3 --json carries the same two facts as data, and `attempt` is "
+              "the number rather than a flag - a machine surface must not be the "
+              "one place `recorded_attempt`'s three answers collapse into two: %r"
+              % ((_wdj.get("widened"), _wdj.get("attempt")),),
+              _wdj.get("widened") is True and _wdj.get("attempt") == 1)
+        with open(wd_mp, "rb") as _fh:
+            _wd_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--files", "src/needed.ts",
+                         "--project-dir", wd_proj])
+        with open(wd_mp, "rb") as _fh:
+            _wd_after = _fh.read()
+        check("wd4 SECOND-DIRECTION CASE: a NARROWING of that same field on that "
+              "same task is still refused and writes no byte - append-only is "
+              "the whole permission, and a guard reading 'files was passed' "
+              "rather than 'files only grew' would let a commit that was clean "
+              "when it was made become a breach: %r" % (txt[:230],),
+              code == 2 and _wd_after == _wd_before
+              and "`files` would drop src/known.ts, src/extra.ts" in txt)
+        code, txt = run(["scope", "P2.3", "--risk", "high",
+                         "--project-dir", wd_proj])
+        check("wd5 ...and a field with no safe direction is refused whichever way "
+              "it moves, naming the field and the move rather than only the task: "
+              "`risk` REPLACES a value the attempt ran under, so F190's sentence "
+              "is still the one the caller meets: %r" % (txt[:240],),
+              code == 2 and "already been attempted (1)" in txt
+              and '`risk` would move from "low" to "high"' in txt)
+        code, txt = run(["scope", "P2.3", "--tests-add", "src/known.test.ts",
+                         "--tests-add", "src/needed.test.ts",
+                         "--project-dir", wd_proj])
+        _wdt = task_in(wd_mp, "P2.3") or {}
+        check("wd6 `tests.add` widens on the same terms, and the case it names "
+              "lands in `files` with it (F258) - a task that CREATES a test file "
+              "owns it, so a widening naming one without the other hands back a "
+              "scope the task's own commit fails: %r"
+              % ((code, (_wdt.get("tests") or {}).get("add")),),
+              code == 0
+              and (_wdt.get("tests") or {}).get("add") == ["src/known.test.ts",
+                                                           "src/needed.test.ts"]
+              and "src/needed.test.ts" in (_wdt.get("files") or []))
+        code, txt = run(["scope", "P2.3", "--tests-add", "src/needed.test.ts",
+                         "--project-dir", wd_proj])
+        check("wd7 SECOND-DIRECTION CASE: ...and dropping a case from "
+              "`tests.add` is refused for `files`' reason - the two are one "
+              "permission, so a guard that listed only `files` would leak the "
+              "narrowing through the field beside it: %r" % (txt[:230],),
+              code == 2
+              and "`tests.add` would drop src/known.test.ts" in txt)
+        _wd_rows = [r for r in (fnmod.read_all(wd_proj) if fnmod else [])
+                    if r.get("action") == "task.scope"]
+        _wd_last = _wd_rows[-1] if _wd_rows else {}
+        check("wd8 the trail records the ATTEMPT the widening landed under, and "
+              "says WIDENED in the summary `audit-journal list` prints - the "
+              "`attempt` key had to join `_journal_io.DETAILS_KEYS` for the "
+              "first half, an allow-list that drops an unlisted key in silence, "
+              "and a row reading like every other scope would need `details` "
+              "opened for the second: %r"
+              % ((_wd_last.get("summary"),
+                  (_wd_last.get("details") or {}).get("attempt")),),
+              (_wd_last.get("details") or {}).get("attempt") == 1
+              and "WIDENED" in (_wd_last.get("summary") or "")
+              and "during attempt 1" in (_wd_last.get("summary") or ""))
+        wd0 = base_manifest()
+        # THE TWO SIGNALS PULLED APART. A task moved to `in_progress` whose
+        # attempt has not been written down yet is mid-flight with nothing to
+        # count, and it is the fixture that says the refusal's basis is read
+        # rather than assumed.
+        wd0["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 0, "risk": "low",
+            "files": ["src/known.ts"],
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]}})
+        wd0["fileIndex"]["src/known.ts"] = ["P2.3"]
+        wd0_proj, wd0_mp = mk("wd-noattempt", wd0)
+        code, txt = run(["scope", "P2.3", "--risk", "high",
+                         "--project-dir", wd0_proj])
+        check("wd9 the refusal carries the basis that is TRUE of the task in "
+              "hand: one with no attempt recorded cannot be told it 'has already "
+              "been attempted (0)', so the head names the status and what has "
+              "been matching its edits instead: %r" % (txt[:210],),
+              code == 2 and "P2.3 is in_progress" in txt
+              and "already been attempted" not in txt
+              and "matching its edits to that list" in txt)
+        wdc = base_manifest()
+        wdc["phases"][1]["tasks"][1].update({
+            "status": "cancelled", "attempts": 1, "files": ["src/known.ts"]})
+        wdc["fileIndex"]["src/known.ts"] = ["P2.3"]
+        wdc_proj, wdc_mp = mk("wd-cancelled", wdc)
+        code, txt = run(["scope", "P2.3", "--files", "src/known.ts,src/more.ts",
+                         "--project-dir", wdc_proj])
+        check("wd10 a CANCELLED task is refused outright, widening and all - the "
+              "other half of sc4's settled rule, and the half a guard written "
+              "around `done` alone lets through: %r" % (txt[:120],),
+              code == 2 and "is cancelled" in txt
+              and "its scope is settled" in txt
+              and (task_in(wdc_mp, "P2.3") or {}).get("files")
+              == ["src/known.ts"])
+        wdp_proj, wdp_mp = mk("wd-pending", base_manifest())
+        code, txt = run(["scope", "P2.3", "--files", "src/fresh.ts",
+                         "--project-dir", wdp_proj])
+        check("wd11 SECOND-DIRECTION CASE: an ordinary PENDING, never-attempted "
+              "scope keeps its full freedom and says nothing about widening - a "
+              "line printed off the state alone would fire on every call, and a "
+              "guard that fired on every call would leave the verb narrower than "
+              "it was before this entry: %r" % (txt[:160],),
+              code == 0 and "WIDENED" not in txt and "append-only" not in txt)
+
+        # ---- (pb) F275: readiness ignored the owning phase's blockedBy -------
+        # `reference/orchestrator.md`'s readiness rule has FOUR terms and the
+        # fourth is the task's PHASE's `blockedBy`. `_waiting_on` carried two, so
+        # `add` and `scope` printed a copyable `ready now -- /audit:run <id>` for
+        # a task whose phase was parked - while `/audit:status`, reading
+        # `_status_facts`, said the opposite about the same manifest. Reported
+        # from a live run. The w group tests the lookup; these two drive the
+        # verbs, because the handoff sentence is what an operator acts on.
+        pbm = base_manifest()
+        pbm["phases"][2]["blockedBy"] = ["P2"]
+        pbm["phases"][2]["tasks"] = [
+            {"id": "P3.1", "title": "parked behind its phase", "status": "pending",
+             "description": "imported", "files": [],
+             "tests": {"mode": "gate-only", "expectRedFirst": False,
+                       "add": [], "gate": []},
+             "model": "sonnet", "skills": [], "risk": "low",
+             # A SATISFIED task-level ref, deliberately: removing it moves a ref
+             # field (which is what makes `scope` print readiness at all) and
+             # leaves the task with nothing of its OWN to wait on, so the only
+             # thing that can still hold it is the term this entry is about.
+             "blockedBy": [], "dependsOn": ["P2.1"], "attempts": 0}]
+        pb_proj, pb_mp = mk("pb-phaseblocked", pbm)
+        code, txt = run(["scope", "P3.1", "--depends-on", "",
+                         "--project-dir", pb_proj])
+        check("pb1 `scope` does not hand back a runnable command for a task "
+              "whose PHASE is blocked - it names the blocker and says which term "
+              "it came from, because a bare id there sends the reader looking "
+              "for a task by that name: %r" % (txt[-120:],),
+              code == 0 and "waiting on: P2 (phase)" in txt
+              and "ready now" not in txt)
+        code, txt = run(["add", "More of the same", "--phase", "P3",
+                         "--project-dir", pb_proj])
+        check("pb2 ...and neither does `add`, which reaches the same answer "
+              "through the same lookup - both call sites held the owning phase "
+              "already and neither was asking it: %r" % (txt[-120:],),
+              code == 0 and "waiting on: P2 (phase)" in txt
+              and "ready now" not in txt)
+        # P2.3 is PENDING, so this leaves the task with an unmet ref of its OWN
+        # as well as an unmet phase: the only shape that shows the two terms side
+        # by side, and one a single-term answer cannot produce.
+        code, txt = run(["scope", "P3.1", "--depends-on", "P2.3", "--json",
+                         "--project-dir", pb_proj])
+        try:
+            _pbj = json.loads(txt)
+        except ValueError:
+            _pbj = {}
+        check("pb3 ...and the machine surface carries both terms, in the order a "
+              "reader meets them - own refs first, then the phase's, suffixed: %r"
+              % ((_pbj.get("ready"), _pbj.get("waitingOn")),),
+              _pbj.get("ready") is False
+              and _pbj.get("waitingOn") == ["P2.3", "P2 (phase)"])
+        # THE PAIRED NEGATIVE. A term appended without being evaluated would pass
+        # pb1-pb3 forever while reporting every task in every blocked-by-anything
+        # phase as waiting - including the ones whose blocker has landed.
+        pbm2 = base_manifest()
+        pbm2["phases"][2]["blockedBy"] = ["P1"]
+        pb2_proj, pb2_mp = mk("pb-phaseclear", pbm2)
+        code, txt = run(["add", "Ready under a satisfied phase", "--phase", "P3",
+                         "--project-dir", pb2_proj])
+        check("pb4 SECOND-DIRECTION CASE: a phase whose OWN blockedBy is done "
+              "holds nothing back, so the handoff is printed - the term is "
+              "evaluated rather than merely appended: %r" % (txt[-90:],),
+              code == 0 and "ready now -- /audit:run P3.1" in txt)
 
         # ---- (qg) F207: add-phase reaches the EMPTY gate ---------------------
         # The THIRD verb of one shape. `--gate-clear` sits on the shared parser, so

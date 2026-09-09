@@ -685,6 +685,33 @@ def _cases(check):
           repr(M.normalise_details({"phaseId": "P2", "cancelledId": "P2",
                                     "cascaded": ["P2.1"], "nonsense": 1})))
 
+    # --- `attempt` joined the allow-list (F271) -------------------------------
+    # `/audit:task scope` now accepts a WIDENING of `files` on a task that is
+    # already running, and without the attempt on the row a trail cannot tell a
+    # scope written BEFORE the work from one that grew DURING it - every reader
+    # would take the second for the first. Same three tests `reason` and `runId`
+    # passed: `task.attempts` is a field of the PLAN and not something observed
+    # about the machine, the value is bounded like every other, and the number is
+    # already in the manifest the row is about.
+    _widen = {"taskId": "P2.3", "phaseId": "P2", "attempt": 2,
+              "changes": [{"id": "P2.3", "field": "files",
+                           "from": ["a.ts"], "to": ["a.ts", "b.ts"]}]}
+    check("wa1 a widening's attempt SURVIVES into the row's details as a "
+          "number, beside the changes it dates",
+          M.normalise_details(_widen).get("attempt") == 2,
+          repr(M.normalise_details(_widen)))
+    # A RECORDED ZERO IS A VALUE, which is `_manifest_io.recorded_attempt`'s whole
+    # shape: two documented paths take the count back down, so 0 is a thing the
+    # plan SAYS. A clip or a truthiness test that dropped it would leave the row
+    # unable to tell "scoped before any attempt" from "nobody recorded one", and
+    # those are the two readings this key exists to separate.
+    check("wa2 ...and a recorded ZERO survives too - the one value a truthiness "
+          "test would silently turn into an absent key, which is the exact "
+          "ambiguity the key was added to remove",
+          M.normalise_details({"taskId": "P2.3", "attempt": 0})
+          == {"taskId": "P2.3", "attempt": 0},
+          repr(M.normalise_details({"taskId": "P2.3", "attempt": 0})))
+
     # ROWS WRITTEN BEFORE THE KEY WAS ADDED, captured from the pre-change tree
     # (`git archive HEAD`) rather than regenerated here -- a fixture the current
     # code produced could not tell "old rows still verify" from "the current code
