@@ -531,17 +531,39 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    read it, because the overlap comes from paths a runner happens to print and a heuristic that
    refuses manufactures false refusals. Where the runner prints no paths the line says the
    question is not knowable from its output, which is not the same answer and is never spelled
-   like it. `--task <taskId>` narrows the question to one task.
+   like it. `--task <taskId>` narrows the question to one task. The line NAMES a bounded sample
+   of the paths the runner actually printed (F270), which is what tells "these are my suites and
+   none of them touched my files" apart from "these are `node_modules` stack frames and a config
+   file" — two counts could not, and the line was reported firing on every gate run of one
+   session because of it.
 
    **`GATE MUTATED THE TREE` refuses the commit step regardless of the gate's exit code.** Do
-   not commit on that run: the diff carries work no task owns and no review saw. Revert those
-   files, then either use the read-only spelling of the check (`--check` not `--write`,
-   `ruff check` not `ruff --fix`) or `/audit:phase retarget <phaseId> --gate <read-only entry>`.
+   not commit on that run: the gate rewrote a file the work under test DECLARES, so its own
+   verdict is a claim about bytes it produced. Revert those files, then either use the read-only
+   spelling of the check (`--check` not `--write`, `ruff check` not `ruff --fix`) or
+   `/audit:phase retarget <phaseId> --gate <read-only entry>`.
+
+   **`TREE CHANGED OUTSIDE THIS WORK` is a REPORT and moves the exit code not at all (F273).**
+   Paths moved in the window that the work under test does not declare. `git status --porcelain`
+   describes the WHOLE repository, so a task you are running in parallel — this file tells you to
+   do that whenever `files` are disjoint — puts its executor's writes inside every sibling's
+   bracket. Porcelain reports *what* moved and never *who* moved it, so this line cannot separate
+   that from a gate writing outside its own subject, and it refuses neither. **Read it before you
+   commit**: check the paths against what else you have running, and stage by name.
+
+   **`GATE COULD NOT RUN` is not the task's failure (F276).** A step exited non-zero having run
+   ZERO checks — a missing command, a runner that died before its first test, a port it could not
+   bind in a sandbox. This is the "infrastructure failure" arm of step 4c below, now measured
+   rather than judged: fix the runner and re-run, do **not** spend a retry on the task, and do
+   **not** record it as a red suite. `GATE TIMED OUT` is the same shape one cause over — the step
+   was stopped at its bound and reached no verdict, so read nothing about the work into it.
 
    **`NO CHECK RAN` is not green.** A gate that skipped everything and a gate that verified
-   everything are the same exit code; only the count separates them, and only runners that
-   report one can be counted — where the count is unknowable the script says so rather than
-   filling it in.
+   everything are the same exit code; only the count separates them. jest, vitest, mocha and
+   pytest are read from their own summary lines, and only the words that mean a check EXECUTED
+   are counted — a skipped test is exactly what this line exists to catch. Where the count is
+   unknowable the script says so rather than filling it in, and `observations.countsBasis` on the
+   recorded row says which steps were counted and which printed nothing it could read.
 3. **`invariantsChecked`** — run, from the project directory and **before** step 5c, because
    `close-phase.py` deletes the branch by default and that takes with it the reflog this reads.
    The ordering is not advice: it is why this step is numbered ahead of the landing step rather

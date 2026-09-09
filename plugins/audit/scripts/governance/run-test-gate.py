@@ -139,16 +139,69 @@ DEFAULT_TIMEOUT_SECONDS = 3600
 # purpose: this runs after a step has already overrun its whole budget.
 GRACE_SECONDS = 5
 
+# How many characters of a sample a basis line may spend before `_output.some_of`
+# stops and says how many it did not show. In CHARACTERS rather than elements,
+# which is that helper's whole argument: a step name is short and a
+# `node_modules/...` stack frame is not, so an element count says nothing about
+# how long the line comes out. These strings are copied verbatim into a COMMITTED
+# ledger row, so the budget is a size limit on the record and not only on a
+# terminal.
+SAMPLE_BUDGET = 160
+
 # --- how much did it do -------------------------------------------------------
 # Runners that report their own step count, and the words they end a step with.
 # Read as a COUNT and never as a verdict - the verdict is the exit code's job, and
-# what was missing is the SIZE of the thing behind it. A runner absent from this
-# table yields `None`, which is reported as "not knowable from this runner" and
-# never as zero: guessing zero would refuse a passing gate, and guessing one would
-# bless a skipped one.
+# what was missing is the SIZE of the thing behind it. A runner absent from BOTH
+# tables below yields `None`, which is reported as "not knowable from this runner"
+# and never as zero: guessing zero would refuse a passing gate, and guessing one
+# would bless a skipped one.
 _STEP_WORDS = {
     "pre-commit": ("Passed", "Failed", "Skipped"),
 }
+
+# ...AND THE TABLE ABOVE WAS ONE ENTRY WIDE, WHICH MADE A DOCUMENTED RULE
+# UNREACHABLE (F276). `reference/orchestrator.md` step 4c asks a caller to tell
+# "the gates ran and failed" apart from "the gates could NOT run: missing command,
+# runner crash before tests, zero tests collected" -- and every real test runner
+# answered `None` to "how many ran", so the zero that distinction turns on could
+# not occur outside a `pre-commit` gate. Measured live: `mongodb-memory-server`
+# could not bind a port in a sandbox, the suite died at exit 48 with no test
+# executed, and the ledger recorded GATE RED against the task's name.
+#
+# MATCHED ON THE OUTPUT, NOT ON THE COMMAND, which is the half `_STEP_WORDS`
+# cannot do: a gate entry is as often `npm test`, `yarn test` or `make check` as
+# it is the runner's own name, and the summary line is the runner's signature
+# either way. `_STEP_WORDS` is still asked FIRST, so a `pre-commit` gate that
+# wraps a test hook keeps counting hooks and not the tests inside one of them.
+#
+# THE WORDS ARE THE ONES THAT MEAN A CHECK EXECUTED, and `skipped`, `pending`,
+# `todo`, `deselected` and `total` are deliberately absent from every row. A
+# skipped check is the exact thing `NO CHECK RAN` exists to catch, so counting
+# jest's own `N total` -- which includes them -- would re-open F193's second
+# failure mode one runner along. `error` is out for the same reason from the
+# other end: a pytest collection error is a test that never started.
+_SUMMARY_PAIR = re.compile(r"(\d+) ([a-z]+)")
+# The phrasing both vitest and pytest use for "there were none", which carries no
+# `N word` pair at all and would otherwise read as a runner this cannot count.
+_NO_TESTS = re.compile(r"\bno tests\b")
+_SUMMARY_READERS = (
+    # jest:   `Tests:       1 failed, 2 skipped, 3 passed, 6 total`
+    ("jest", re.compile(r"^[ \t]*Tests:[ \t]+(.*)$", re.M), ("passed", "failed")),
+    # vitest: `Tests  1 failed | 4 passed (5)`, `Tests  no tests`. No colon, which
+    # is what keeps this off jest's line, and `Test Files` is a different word.
+    ("vitest", re.compile(r"^[ \t]*Tests[ \t]+(.*)$", re.M), ("passed", "failed")),
+    # mocha:  `  5 passing (23ms)` and `  1 failing` on SEPARATE lines, which is
+    # why every match is joined before the pairs are read out of it.
+    ("mocha", re.compile(r"^[ \t]*(\d+ (?:passing|failing|pending).*)$", re.M),
+     ("passing", "failing")),
+    # pytest: `=== 3 passed in 0.12s ===`, and bare under `-q`. `no tests ran` and
+    # `1 error` are both real summaries reporting zero, so both must MATCH here
+    # and count nothing, rather than falling through as "not knowable".
+    ("pytest",
+     re.compile(r"^[=\s]*((?:no tests ran|\d+ \w+(?:, \d+ \w+)*)"
+                r" in [\d.]+m?s.*)$", re.M),
+     ("passed", "failed", "xpassed", "xfailed")),
+)
 
 
 def _porcelain(project):
@@ -188,6 +241,85 @@ def _porcelain(project):
         return None
     return set(ln for ln in out.stdout.decode("utf-8", "replace").splitlines()
                if ln.strip())
+
+
+# --- whose writes did the bracket catch ---------------------------------------
+def _norm(path):
+    """One spelling for a path, so two readings of one file compare equal."""
+    text = str(path or "").replace("\\", "/").strip()
+    while text.startswith("./"):
+        text = text[2:]
+    return text.rstrip("/")
+
+
+def _declared_by(line, declared):
+    """Whether a porcelain LINE names a path the work under test declares.
+
+    Every path the line names is asked and not only the one that exists now
+    (`_evidence_io.porcelain_paths`): a rename takes a declared file away under
+    one name and brings it back under another, and either half is the gate
+    rewriting its own subject.
+
+    A DECLARED ENTRY IS ALSO TRIED AS A DIRECTORY PREFIX, which widens toward the
+    refusing class on purpose. A manifest entry naming a directory means the
+    files under it, and the direction a guard may be wrong in is claiming a path
+    it might own rather than handing it to the half that only reports.
+    """
+    for path in _ev.porcelain_paths(line):
+        path = _norm(path)
+        for entry in declared:
+            if path == entry or path.startswith(entry + "/"):
+                return True
+    return False
+
+
+def classify_mutations(mutated, owns):
+    """`(owned, foreign, basis)` - whose writes the tree bracket caught (F273).
+
+    `_porcelain` describes the WHOLE repository with no pathspec, so the bracket
+    sees every write that lands between its two snapshots and not only the
+    gate's. `reference/orchestrator.md` encourages running tasks with disjoint
+    `files` in PARALLEL, which makes a sibling executor's writes land inside that
+    window as a matter of course. Measured live on a project whose gates are all
+    read-only -- `eslint` with no `--fix`, `tsc --noEmit`, `vitest run`,
+    `vite build` -- one run named a file owned by a DIFFERENT task, and another
+    went red across dozens of paths and green on an identical re-run.
+    `GATE MUTATED THE TREE` refuses the commit step whatever the gate's own exit
+    code says, so a false positive there halts a correct run.
+
+    THE REPAIR IS A CLASSIFICATION AND NEVER A MUTE. That same verdict correctly
+    revealed a second session writing into one working directory on another
+    project, and that has to keep working - so this is two sets with two meanings
+    and two responses, not one set with the volume turned down.
+
+    AND THE COST IS REAL, SO IT IS STATED HERE RATHER THAN FOUND LATER. F193
+    ITSELF -- a docs task whose `pre-commit run --all-files` gate rewrote five
+    backend source files -- lands in `foreign` under `--task`, because those
+    files are precisely what that task does not declare. Porcelain reports WHAT
+    moved and never WHO moved it, so a gate writing outside its own subject and a
+    sibling writing anywhere at all are indistinguishable from these two
+    snapshots. That half is therefore reported with both readings named, and no
+    longer refused. What still refuses is `owned`: a gate that rewrote the files
+    it was grading has made its own verdict a claim about bytes it produced, and
+    there is no benign reading of that one.
+
+    NOTHING IS GUESSED WHERE NOTHING IS KNOWN. With no declared files there is no
+    ownership to sort by, so both halves come back None and the basis says so;
+    `render` then attributes the whole set to the gate, which is what it did
+    before this existed and the direction a guard is allowed to be wrong in.
+    """
+    if mutated is None:
+        return None, None, "no comparison was made, so nothing can be attributed"
+    declared = [_norm(f) for f in (owns or [])
+                if isinstance(f, str) and f.strip()]
+    if not declared:
+        return None, None, ("the work under test declares no files, so a changed "
+                            "path can be attributed neither to it nor away from it")
+    owned, foreign = [], []
+    for line in mutated:
+        (owned if _declared_by(line, declared) else foreign).append(line)
+    return owned, foreign, ("%d of %d changed path(s) are declared by the work "
+                            "under test" % (len(owned), len(mutated)))
 
 
 # --- what state was actually tested -------------------------------------------
@@ -304,6 +436,30 @@ def _elapsed_ms(started):
     return int((time.monotonic() - started) * 1000)
 
 
+def summary_count(text):
+    """How many checks a runner's own SUMMARY line says executed, or None (F276).
+
+    Derived from the runner's arithmetic and never from this reader's: counting
+    output lines would go wrong the first time a suite name wrapped or a reporter
+    was configured, and re-adding jest's categories to check its `total` would
+    disagree with jest the first time it grew one.
+
+    None IS STILL THE ANSWER FOR A RUNNER WITH NO SUMMARY HERE, and that is the
+    rule this widening had to keep rather than the rule it replaces. A reader
+    that returned 0 for "I did not recognise this output" would refuse every
+    passing gate whose runner is not in the table above.
+    """
+    for _name, line_re, words in _SUMMARY_READERS:
+        found = line_re.findall(text)
+        if not found:
+            continue
+        joined = " ".join(found)
+        pairs = _SUMMARY_PAIR.findall(joined)
+        if pairs or _NO_TESTS.search(joined):
+            return sum(int(n) for n, word in pairs if word in words)
+    return None
+
+
 def ran_count(command, text):
     """How many checks a runner reported doing, or None when it does not say."""
     words = None
@@ -312,14 +468,66 @@ def ran_count(command, text):
             words = tup
             break
     if words is None:
-        return None
+        return summary_count(text or "")
     passed, failed, _skipped = words
     ran = 0
-    for line in text.splitlines():
+    for line in (text or "").splitlines():
         stripped = line.rstrip()
         if stripped.endswith(passed) or stripped.endswith(failed):
             ran += 1
     return ran
+
+
+def counts_basis(steps):
+    """Why `ranTotal` is the number it is - or why it is not a number at all.
+
+    WRITTEN BY NOTHING BEFORE THIS, WHILE BEING READ BY FOUR THINGS.
+    `observations.countsBasis` has been copied by `_evidence_io.row_for` since
+    the ledger existed, and the panel and the report both render it - so every
+    committed row carried `None` there and the panel printed a hard-coded
+    sentence in its place. A three-valued count whose unknown arm ships without
+    the basis that explains the unknown is precisely the shape this repo's own
+    rule refuses: the claim went out and the thing that makes it checkable did
+    not.
+
+    THE PARTIAL CASE IS THE ONE WORTH THE FUNCTION. `ranTotal` is the sum over
+    the steps that ANSWERED, so on a mixed gate it is a floor and not a size, and
+    a reader with the number alone cannot tell that from a complete count.
+    """
+    if not steps:
+        return "no step reported, so there is no count to explain"
+    counted = [st for st in steps if st.get("ran") is not None]
+    silent = [str(st.get("name")) for st in steps if st.get("ran") is None]
+    if not counted:
+        return ("no step printed a summary this reader can count (%s), so the "
+                "size of this gate is not knowable from its output"
+                % (_output.some_of(silent, budget=SAMPLE_BUDGET),))
+    if silent:
+        return ("%d of %d step(s) printed a summary this reader counted; %s did "
+                "not, so this total is a floor and not a size"
+                % (len(counted), len(steps),
+                   _output.some_of(silent, budget=SAMPLE_BUDGET)))
+    return ("counted from each runner's own summary line, over %d step(s)"
+            % (len(steps),))
+
+
+def never_started(exit_code, ran, outcome):
+    """Whether a non-zero step never got as far as running a check (F276).
+
+    `orchestrator.md` step 4c has always drawn this line -- "gates could NOT run
+    ... zero tests collected where `tests.add` expects some -> this is NOT the
+    task's failure" -- and nothing implemented it, so a runner that died before
+    its first test was recorded as a red suite with the task's name on the row.
+    That is a false red in a COMMITTED record, which outlives the session that
+    could have explained it.
+
+    READ FROM A POSITIVE ZERO ONLY, the rule `run_status` already follows: `ran
+    is None` means the runner does not say, which is not evidence that nothing
+    ran, and `None == 0` is False rather than a branch to write. A step that
+    already carries an `outcome` keeps it: `_shell` observed something more
+    specific than this can infer.
+    """
+    return not outcome and exit_code != 0 and ran == 0
 
 
 # --- did it touch what the task owns ------------------------------------------
@@ -415,6 +623,18 @@ def coverage(task_files, named):
     if subjects:
         basis += ("; %d of them are test paths, matched to the files they are "
                   "named after" % (len([n for n in named if _subject_of(n)]),))
+    # F270. TWO COUNTS ARE NOT A DIAGNOSIS. `NO OVERLAP WITH THIS WORK` was
+    # reported firing on every gate run of one session, including tasks whose own
+    # suite went green - and at that rate a line becomes noise people skip, which
+    # is the opposite of what it is for. The reported cause was wrong: `named` is
+    # not empty, it is UNRELATED. `_PATHISH` harvests `node_modules` stack frames,
+    # `jest.config.js`, the echoed command line, URLs and dotted identifiers, so
+    # the overlap is a real empty set over a real path set and the verdict is
+    # literally true and practically useless. Naming a bounded sample is what
+    # lets a reader see in one second that the runner printed config files and
+    # stack frames rather than suites - the thing two counts can never show.
+    basis += ("; among them: %s"
+              % (_output.some_of(sorted(named), budget=SAMPLE_BUDGET),))
     return hits, basis
 
 
@@ -778,6 +998,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
                     "ran": ran_count(command, text),
                     "durationMs": _elapsed_ms(step_started)}
             step.update(facts or {})
+            # AFTER the wrapper's own facts, never instead of them: `_shell`
+            # observed the failure to spawn directly, and an inference must not
+            # overwrite an observation. No basis key is written beside this
+            # because the step already carries both halves of it - `exit` and a
+            # `ran` of zero ARE the evidence, and a second copy could disagree
+            # with them.
+            if never_started(step["exit"], step["ran"], step.get("outcome")):
+                step["outcome"] = CANNOT_RUN
             steps.append(step)
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
@@ -817,6 +1045,17 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     else:
         mutated = sorted(after - before)
         basis = "git described the tree before and after"
+    owned_changes, foreign_changes, own_basis = classify_mutations(mutated, owns)
+    if mutated:
+        # Appended to `treeBasis` rather than given a key of its own, because the
+        # ledger, the report and the panel all render THAT string already: a
+        # fourth field would reach the terminal and none of the three surfaces
+        # where a committed row is read.
+        #
+        # AND ONLY WHERE SOMETHING MOVED. "0 of 0 changed path(s) are declared"
+        # is a basis with no claim under it, which this file's own rule calls
+        # noise - and it would be on the overwhelming majority of rows.
+        basis = "%s; %s" % (basis, own_basis)
     counts = [s["ran"] for s in steps if s["ran"] is not None]
     named = files_named("".join(texts)) if texts else None
     overlap, cbasis = coverage(owns, named)
@@ -824,7 +1063,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     failed = failed_steps(steps)
     return {"steps": steps, "testedState": state,
             "treeMutated": mutated, "treeBasis": basis,
-            "ranTotal": ran_total, "durationMs": _elapsed_ms(started),
+            # THE FULL SET STAYS `treeMutated`, and the split is additive: the
+            # ledger keeps recording every path that moved, so nothing a reader
+            # could have seen before this is lost, and a consumer that never
+            # heard of the split reads exactly what it read before.
+            "treeMutatedOwned": owned_changes,
+            "treeMutatedForeign": foreign_changes,
+            "ranTotal": ran_total, "countsBasis": counts_basis(steps),
+            "durationMs": _elapsed_ms(started),
             "status": run_status(steps, failed, ran_total, cancelled_by),
             # ALWAYS PRESENT, None WHEN NOTHING STOPPED THE RUN - the shape
             # `treeMutated` and `overlap` already use. A key that appeared only on
@@ -848,6 +1094,31 @@ def render(res, out=print):
     if res["failed"]:
         out("GATE RED: %s" % ", ".join(res["failed"]))
         code = E_FAIL
+    # THE NO-VERDICT WORDS HAD NO ARM HERE AT ALL, and that was worth finding
+    # before F276 widened the count vocabulary: with `failed` empty, `treeMutated`
+    # empty and `ranTotal` unknowable, a run whose step never STARTED fell all the
+    # way through to `GATE GREEN` and exit 0. `run_status` had said `could-not-run`
+    # the whole time and this function printed the opposite of it. Widening the
+    # count without these two arms would have turned an exit-48 sandbox failure
+    # from a false red into a false GREEN, which is strictly the worse of the two.
+    unstarted = [st["name"] for st in res["steps"]
+                 if st.get("outcome") == CANNOT_RUN]
+    stalled = [st["name"] for st in res["steps"]
+               if st.get("outcome") == TIMED_OUT]
+    if unstarted:
+        out("GATE COULD NOT RUN: %s never got as far as a check. That is an "
+            "INFRASTRUCTURE failure and not this work's - a missing command, a "
+            "runner that died before its first test, a port it could not bind - "
+            "so it is not a red suite and must not be recorded as one. Fix the "
+            "runner and re-run; do not spend a retry on the task."
+            % (", ".join(unstarted),))
+        code = E_FAIL
+    if stalled:
+        out("GATE TIMED OUT: %s was stopped at its bound rather than answering. "
+            "No verdict was reached, so this is neither green nor red - raise "
+            "--timeout or fix the hang, and read nothing about the work into it."
+            % (", ".join(stalled),))
+        code = E_FAIL
     if res.get("cancelledBy") is not None:
         # SAID EVEN WHEN THE GATE ALSO FAILED, and printed from the FACT rather
         # than from the status word: `run_status` puts `failed` above `cancelled`,
@@ -863,20 +1134,46 @@ def render(res, out=print):
             "the orchestrator, and commit-audit-state.py at the next "
             "/audit:resume is what makes this durable.")
         code = E_FAIL
-    if res["treeMutated"]:
+    # F273. TWO SETS, TWO MEANINGS, TWO RESPONSES - see `classify_mutations` for
+    # what each one can and cannot claim.
+    owned_changes = res.get("treeMutatedOwned")
+    foreign_changes = res.get("treeMutatedForeign") or []
+    if owned_changes is None:
+        # No ownership to sort by, so the whole set is attributed to the gate:
+        # what this line did before the split existed, and the direction a guard
+        # may be wrong in. The basis printed under it is what stops that reading
+        # as a classification somebody actually made.
+        owned_changes, foreign_changes = res["treeMutated"] or [], []
+    if owned_changes:
         # Said even when the gate also failed: two different facts, and a reader
         # who fixed the failure would otherwise meet the rewrite afterwards.
         # `None` and `[]` are both silent HERE because neither names a file - the
         # difference between them is a claim about the tree, and it is printed by
         # the basis line below rather than being read out of a falsy value.
-        out("GATE MUTATED THE TREE: %s" % ", ".join(res["treeMutated"]))
-        out("  a gate is a measurement. Do NOT commit on this run - the diff now "
-            "carries work no task owns and no review saw. Revert those files, "
-            "then either use the read-only spelling of the check (`--check` "
-            "rather than `--write`, `ruff check` rather than `ruff --fix`) or "
-            "scope the gate to the task's own files.")
+        out("GATE MUTATED THE TREE: %s" % ", ".join(owned_changes))
+        out("  a gate is a measurement, and this one rewrote the very files it "
+            "was grading. Do NOT commit on this run - the diff now carries work "
+            "no review saw. Revert those files, then either use the read-only "
+            "spelling of the check (`--check` rather than `--write`, `ruff "
+            "check` rather than `ruff --fix`) or scope the gate to the task's "
+            "own files.")
         code = E_FAIL
-    if res["ranTotal"] == 0:
+    if foreign_changes:
+        out("TREE CHANGED OUTSIDE THIS WORK: %s" % ", ".join(foreign_changes))
+        out("  none of those is a file the work under test declares, and this "
+            "bracket cannot say who wrote them: a gate writing outside its own "
+            "subject and a SIBLING writer - a parallel task's executor, or a "
+            "second session in this working directory - move the same paths. "
+            "NOT refused here, because refusing on the half that cannot be "
+            "attributed is what halted correct runs. Check them against what "
+            "else is running before you commit.")
+    if (owned_changes or foreign_changes) and res.get("treeBasis"):
+        out("  basis: %s" % res["treeBasis"])
+    if res["ranTotal"] == 0 and not unstarted:
+        # `unstarted` OWNS THIS SENTENCE WHEN IT FIRES. The claim below is "that
+        # is exit 0", and a step that died at exit 48 having collected no test
+        # makes it false - the same zero, a different fact, and the line above
+        # already said which.
         out("NO CHECK RAN: every step reported zero checks. That is exit 0 and it "
             "is not a verdict - a gate that skipped everything and a gate that "
             "verified everything are the same exit code, and this is the one that "
@@ -905,8 +1202,20 @@ def render(res, out=print):
         out("  coverage: %d declared file(s) named by the run: %s"
             % (len(res["overlap"]), ", ".join(res["overlap"])))
     if code == E_OK:
-        out("GATE GREEN: %s, tree unchanged%s"
-            % (", ".join(s["name"] for s in res["steps"]) or "no commands",
+        # THE TREE CLAUSE IS COMPUTED, because this line was making two claims it
+        # had no basis for: `tree unchanged` printed unchanged over a run where
+        # git could not describe the tree at ALL, and - once the split above
+        # existed - over one where paths outside the work really had moved. A
+        # green verdict is the last place a sentence may say more than was
+        # measured.
+        if res["treeMutated"] is None:
+            tree = "tree NOT compared"
+        elif foreign_changes:
+            tree = "no declared file changed"
+        else:
+            tree = "tree unchanged"
+        out("GATE GREEN: %s, %s%s"
+            % (", ".join(s["name"] for s in res["steps"]) or "no commands", tree,
                "" if res["ranTotal"] is None
                else ", %d check(s) ran" % res["ranTotal"]))
     return code
@@ -1130,8 +1439,14 @@ def main(argv, out=print):
         # The overlap is absent from this expression ON PURPOSE: it is reported,
         # not enforced, and a machine reader that wants to act on it has the
         # field. Folding it in here would make the decision this entry declined.
-        return E_OK if res["status"] == "passed" and not res["treeMutated"] \
-            else E_FAIL
+        # `treeMutatedForeign` is absent for the same reason and a second one -
+        # it is the half nothing can attribute (F273) - which leaves the OWNED
+        # writes, or, where ownership is unknown, the whole set exactly as
+        # before.
+        blocking = res["treeMutatedOwned"]
+        if blocking is None:
+            blocking = res["treeMutated"]
+        return E_OK if res["status"] == "passed" and not blocking else E_FAIL
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
     # reader who assumed otherwise would credit the wrong declaration.

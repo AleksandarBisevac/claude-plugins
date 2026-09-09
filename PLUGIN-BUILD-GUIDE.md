@@ -2591,6 +2591,23 @@ a commit built on it carries work no task owns and no review saw. Any difference
 Measured live: a docs task's `pre-commit run --all-files` rewrote five backend source files —
 `isort` and `black` are fix-in-place and reported `Passed` *because* they had.
 
+**Whose writes, though — the bracket has no pathspec** (F273). It describes the whole
+repository, so every write landing in its window is caught, including a **sibling executor's**,
+which this file's own orchestrator reference invites by running tasks with disjoint `files` in
+parallel. Measured live on a project whose gates are all read-only (`eslint` with no `--fix`,
+`tsc --noEmit`, `vitest run`): one run named a file owned by a *different* task, another went
+red across dozens of paths and green on an identical re-run — and the verdict refuses the commit
+step, so a false positive there halts a correct run. The changed set is therefore split by the
+`files` the work under test declares. Paths **inside** it are the gate rewriting its own
+subject: `GATE MUTATED THE TREE`, unchanged, still refusing. Paths **outside** it print
+`TREE CHANGED OUTSIDE THIS WORK` and do **not** refuse — porcelain reports *what* moved and
+never *who* moved it, so a gate writing outside its subject and a second session writing
+anywhere produce the same two snapshots, and the line names both readings. That is a real cost
+stated rather than hidden: F193's own incident lands in the reported half under `--task`, and
+what still refuses is the half where a gate's verdict is a claim about bytes it produced
+itself. With no declared files there is nothing to sort by, so both halves are `None` and the
+whole set is attributed to the gate — the direction a guard may be wrong in.
+
 **`-uall` is load-bearing, and its limit is stated rather than left to be assumed** (F224).
 Without it git collapses a **wholly untracked** directory to one `?? dir/` entry, so a
 fix-in-place gate that *creates* a file inside one moves no porcelain line and the bracket
@@ -2609,6 +2626,33 @@ the task's two markdown files, SKIPPED every hook on a Python-only config: exit 
 verified, task done. One design, both failure modes, and the exit code separated neither from
 a verdict. A runner that does not report a count yields `None`, printed as not-knowable —
 guessing zero would refuse a passing gate and guessing one would bless a skipped one.
+
+**And the count vocabulary was one entry wide, which made a documented rule unreachable**
+(F276). Only `pre-commit` reported a step count, so jest, vitest, mocha and pytest all answered
+`None` — and with it, `orchestrator.md`'s "gates could NOT run … zero tests collected"
+distinction had nothing to turn on. Each of those runners prints one line of its own arithmetic
+and it is now read, matched on the **output** rather than on the command, because a gate entry
+is as often `npm test` or `make check` as it is the runner's own name (`_STEP_WORDS` is still
+asked first, so a `pre-commit` gate wrapping a test hook keeps counting hooks). Only the words
+that mean a check EXECUTED are counted: jest's `N total` includes skipped tests, so reading it
+would bless the gate that skipped everything. A step that exits **non-zero having run zero
+checks** is `could-not-run` — infrastructure, not the task's failure — and prints
+`GATE COULD NOT RUN` instead of recording a red suite against the task's name. Measured live:
+`mongodb-memory-server` could not bind a port in a sandbox, the suite died at exit 48 with no
+test executed, and the ledger recorded GATE RED.
+
+**`render` had no arm for either no-verdict word at all**, which is why widening the count had
+to close that first: with `failed` empty and the tree clean, a run that never started, and one
+stopped at its bound, both fell through to `GATE GREEN` and exit 0 while `status` said otherwise
+— a false red turning into a false green is strictly the worse trade. `GATE COULD NOT RUN` and
+`GATE TIMED OUT` are printed from the steps' own `outcome`, never from the status word, so a
+run that is two things says both.
+
+**`observations.countsBasis` is written here for the first time.** It has been copied into every
+evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
+existed, while nothing ever set it — a three-valued count shipping without the basis that
+explains its unknown arm. It says which steps were counted, which printed no summary this reader
+can parse, and, on a mixed gate, that the total is a floor and not a size.
 
 Exit 0 passed / 1 a command failed, or the tree moved, or nothing ran / 2 could not be asked.
 An **empty** gate exits 0 and is reported as itself, never as green: `audit-task.py:_phase_gate`

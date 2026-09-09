@@ -374,6 +374,144 @@ def _cases(check):
           res["treeMutated"] == [] and res["failed"] == []
           and res["treeBasis"].startswith("git described"))
 
+    # --- F273: whose writes did the bracket catch? -------------------------
+    # `_porcelain` has no pathspec, so the bracket sees EVERY write that lands in
+    # its window and not only the gate's -- and `orchestrator.md` encourages
+    # running tasks with disjoint `files` in parallel, which puts a sibling
+    # executor's writes in that window as a matter of course. Measured live on a
+    # project whose gates are all read-only: one run named a file owned by a
+    # DIFFERENT task, another went red across dozens of paths and green on an
+    # identical re-run. `GATE MUTATED THE TREE` refuses the commit step whatever
+    # the gate's exit code says, so a false positive there halts a correct run.
+    #
+    # NO CASE ABOVE EXERCISES A CONCURRENT EXTERNAL WRITER, and that gap is
+    # exactly why this was reachable: every mutation fixture in this file writes
+    # from INSIDE the runner seam, which is the gate's own hand. `ow1` is the one
+    # that writes something the work under test does not declare.
+    own = _harness.fixture_root("run-test-gate-owned-")
+    subprocess.run(["git", "init", "-q", own], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.makedirs(os.path.join(own, "src"))
+    os.makedirs(os.path.join(own, "other"))
+    with open(os.path.join(own, "base.txt"), "w") as fh:
+        fh.write("base\n")
+    for arg in (["add", "--", "base.txt"],
+                ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", own] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def _sibling_writes(project, _command, _timeout=None):
+        # A READ-ONLY gate -- `vitest run` names nothing it writes -- while a
+        # parallel task's executor writes a file of ITS own. The bracket cannot
+        # tell the two apart by timing, only by ownership.
+        with open(os.path.join(project, "other", "sibling.ts"), "w") as fh:
+            fh.write("written by somebody else\n")
+        return 0, " Tests  3 passed (3)\n", {}
+
+    res = M.run_gate(own, [("test", "npx vitest run")], runner=_sibling_writes,
+                     owns=["src/mine.ts"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("ow1 THE FAULT: a read-only gate is not accused of a SIBLING's write. "
+          "The changed path is not one the work under test declares, so it is "
+          "reported as what it is -- something else is writing here -- and the "
+          "commit-refusing verdict does NOT fire. Before this, a parallel run "
+          "with disjoint files halted on a gate that had written nothing: %r"
+          % ((res["treeMutatedOwned"], res["treeMutatedForeign"], code),),
+          code == M.E_OK and res["treeMutatedOwned"] == []
+          and any("other/sibling.ts" in ln for ln in res["treeMutatedForeign"])
+          and "TREE CHANGED OUTSIDE THIS WORK" in text
+          and "GATE MUTATED THE TREE" not in text
+          and "no declared file changed" in text
+          and "tree unchanged" not in text)
+    os.remove(os.path.join(own, "other", "sibling.ts"))
+
+    def _rewrites_own_subject(project, _command, _timeout=None):
+        with open(os.path.join(project, "src", "mine.ts"), "w") as fh:
+            fh.write("rewritten by the gate\n")
+        return 0, "Tests:       2 passed, 2 total\n", {}
+
+    res = M.run_gate(own, [("test", "npx jest")], runner=_rewrites_own_subject,
+                     owns=["src/mine.ts"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("ow2 THE PAIRED POSITIVE, and it is the half that matters: a gate "
+          "that rewrote the very file it was grading still says GATE MUTATED "
+          "THE TREE and still refuses. A repair that classified everything as "
+          "somebody else's would pass ow1 exactly as this does: %r"
+          % ((res["treeMutatedOwned"], code),),
+          code == M.E_FAIL and res["treeMutatedForeign"] == []
+          and any("src/mine.ts" in ln for ln in res["treeMutatedOwned"])
+          and "GATE MUTATED THE TREE" in text
+          and "TREE CHANGED OUTSIDE THIS WORK" not in text)
+    os.remove(os.path.join(own, "src", "mine.ts"))
+
+    def _rewrites_both(project, _command, _timeout=None):
+        for rel in (("src", "mine.ts"), ("other", "sibling.ts")):
+            with open(os.path.join(project, *rel), "w") as fh:
+                fh.write("x\n")
+        return 0, "Tests:       2 passed, 2 total\n", {}
+
+    res = M.run_gate(own, [("test", "npx jest")], runner=_rewrites_both,
+                     owns=["src/mine.ts"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("ow3 ...and a window that caught BOTH says both, in two sentences "
+          "with two responses -- the rule `render` already follows for a gate "
+          "that failed and also rewrote the tree. One line refuses and the "
+          "other reports, and folding them into one set would have to pick a "
+          "meaning for paths that have two: %r" % (text[:80],),
+          code == M.E_FAIL
+          and len(res["treeMutatedOwned"]) == 1
+          and len(res["treeMutatedForeign"]) == 1
+          and "GATE MUTATED THE TREE" in text
+          and "TREE CHANGED OUTSIDE THIS WORK" in text)
+    for rel in (("src", "mine.ts"), ("other", "sibling.ts")):
+        os.remove(os.path.join(own, *rel))
+
+    _r_out, _r_for, _r_b = M.classify_mutations(
+        ["R  src/mine.ts -> other/moved.ts"], ["src/mine.ts"])
+    _r_out2, _r_for2, _r_b2 = M.classify_mutations(
+        ["R  other/was.ts -> src/mine.ts"], ["src/mine.ts"])
+    check("ow4 a RENAME is asked about BOTH of its names. `XY <old> -> <new>` "
+          "takes a declared file away under one name and brings one back under "
+          "another, and either half is the gate rewriting its own subject -- so "
+          "a reader that kept only the name that exists now would hand the "
+          "first of these to the half that merely reports: %r / %r"
+          % (_r_out, _r_out2),
+          _r_out == ["R  src/mine.ts -> other/moved.ts"] and _r_for == []
+          and _r_out2 == ["R  other/was.ts -> src/mine.ts"] and _r_for2 == [])
+    _q_out, _q_for, _q_b = M.classify_mutations(
+        ['?? "src/caf\\303\\251.ts"'], ["src/café.ts"])
+    check("ow5 ...and a path git QUOTED is unquoted before it is compared. Git "
+          "spells a non-ASCII byte as a three-digit octal escape inside quotes, "
+          "so a reader that only stripped the quotes would compare "
+          "`caf\\303\\251.ts` against `café.ts`, find no match, and hand a "
+          "declared file to the reporting half in silence: %r" % (_q_out,),
+          _q_out == ['?? "src/caf\\303\\251.ts"'] and _q_for == [])
+    _n_out, _n_for, _n_basis = M.classify_mutations([" M a.py"], [])
+    check("ow6 THE SECOND DIRECTION: with NO declared files there is no "
+          "ownership to sort by, so both halves are None and the basis says "
+          "which -- never an empty `foreign`, which would read as 'nothing was "
+          "attributed to the gate' and silence rg5 and ud1 outright. `render` "
+          "then attributes the whole set to the gate, the direction a guard may "
+          "be wrong in: %r" % ((_n_out, _n_for, _n_basis),),
+          _n_out is None and _n_for is None
+          and "declares no files" in _n_basis)
+    res = M.run_gate(own, [("test", "npx jest")], runner=_rewrites_own_subject,
+                     owns=["src/mine.ts"])
+    check("ow7 the ownership answer rides on `treeBasis`, the string the LEDGER "
+          "and the report already render -- not on a fourth key that would "
+          "reach the terminal and none of the three surfaces where a committed "
+          "row is read: %r" % (res["treeBasis"],),
+          "git described the tree" in res["treeBasis"]
+          and "declared by the work under test" in res["treeBasis"])
+    os.remove(os.path.join(own, "src", "mine.ts"))
+
     # --- the other failure mode: nothing ran -------------------------------
     def _all_skipped(_project, _command, _timeout=None):
         return 0, ("check yaml.....................Skipped\n"
@@ -424,6 +562,179 @@ def _cases(check):
           "so the limit is stated instead of filled in: %r" % (lines,),
           M.render(res, out=lines.append) == M.E_OK
           and "not knowable from this runner" in "\n".join(lines))
+
+    # --- F276: the count vocabulary was one entry wide --------------------
+    # `_STEP_WORDS` held `pre-commit` and nothing else, so jest, vitest, mocha
+    # and pytest all answered "not knowable" to "how many ran" -- which made the
+    # `NO CHECK RAN` branch, and the whole "gates could NOT run" distinction
+    # `orchestrator.md` step 4c prescribes, unreachable for every real test
+    # runner. Measured live: `mongodb-memory-server` could not bind a port in a
+    # sandbox, the suite died at exit 48 with no test executed, and the ledger
+    # recorded GATE RED with the task's name on it.
+    check("ct1 jest is counted from its own summary, and from the words that "
+          "mean a check EXECUTED rather than from `N total` -- jest's total "
+          "includes SKIPPED tests, so reading it would bless the gate that "
+          "skipped everything, which is F193's second failure mode one runner "
+          "along: %r"
+          % (M.summary_count("Tests:  1 failed, 2 skipped, 3 passed, 6 total\n"),),
+          M.summary_count("Tests:  1 failed, 2 skipped, 3 passed, 6 total\n") == 4
+          and M.summary_count("Tests:       0 total\n") == 0)
+    check("ct2 vitest is read off `Tests`, never off `Test Files` -- files are "
+          "not checks -- and its own `no tests` is a POSITIVE zero rather than "
+          "a runner this cannot read: %r"
+          % ((M.summary_count(" Test Files  2 passed (2)\n"
+                              "      Tests  1 failed | 4 passed (5)\n"),
+              M.summary_count("      Tests  no tests\n")),),
+          M.summary_count(" Test Files  2 passed (2)\n"
+                          "      Tests  1 failed | 4 passed (5)\n") == 5
+          and M.summary_count(" Test Files  1 passed (1)\n"
+                              "      Tests  no tests\n") == 0)
+    check("ct3 mocha prints its summary across SEPARATE lines, so every match "
+          "is joined before the pairs are read out of it -- and `pending` is "
+          "counted by neither, because a pending test did not run: %r"
+          % (M.summary_count("\n  5 passing (23ms)\n  1 failing\n  2 pending\n"),),
+          M.summary_count("\n  5 passing (23ms)\n  1 failing\n  2 pending\n") == 6
+          and M.summary_count("\n  0 passing (1ms)\n") == 0)
+    check("ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule "
+          "entirely -- and both of its zero shapes are POSITIVE zeros: `no "
+          "tests ran` collected nothing, and `1 error` is a test that never "
+          "started, which is the exact reading F276 turns on: %r"
+          % ((M.summary_count("1 failed, 2 passed in 0.03s\n"),
+              M.summary_count("==== no tests ran in 0.01s ====\n"),
+              M.summary_count("==== 1 error in 0.01s ====\n")),),
+          M.summary_count("1 failed, 2 passed in 0.03s\n") == 3
+          and M.summary_count("===== 3 passed in 0.12s =====\n") == 3
+          and M.summary_count("==== no tests ran in 0.01s ====\n") == 0
+          and M.summary_count("==== 1 error in 0.01s ====\n") == 0)
+    check("ct5 THE RULE THE WIDENING HAD TO KEEP: a runner this still cannot "
+          "read answers None and NEVER zero. Returning 0 for 'I did not "
+          "recognise this output' would refuse every passing gate whose runner "
+          "is not in the table: %r"
+          % (M.summary_count("/repo/src/a.ts\n  1:1  error  x\n"
+                             "1 problem (1 error, 0 warnings)\n"),),
+          M.summary_count("/repo/src/a.ts\n1 problem (1 error, 0 warnings)\n")
+          is None
+          and M.summary_count("Done in 1.53s.\n") is None
+          and M.summary_count("") is None)
+    check("ct6 the summary is matched on the OUTPUT and not on the command, "
+          "which is the half `_STEP_WORDS` cannot do: a gate entry is as often "
+          "`npm test` or `make check` as it is the runner's name, and the "
+          "summary line is the runner's signature either way: %r"
+          % (M.ran_count("npm test", "Tests:       4 passed, 4 total\n"),),
+          M.ran_count("npm test", "Tests:       4 passed, 4 total\n") == 4
+          and M.ran_count("make check", "\n  7 passing (9ms)\n") == 7)
+    check("ct7 ...and `_STEP_WORDS` is still asked FIRST, so a `pre-commit` "
+          "gate wrapping a test hook keeps counting HOOKS and not the tests "
+          "inside one of them. Two counters over one text is a number that "
+          "changes meaning with the reader that got there first: %r"
+          % (M.ran_count("pre-commit run --all-files",
+                         "pytest................Passed\n"
+                         "1 failed, 2 passed in 0.03s\n"),),
+          M.ran_count("pre-commit run --all-files",
+                      "pytest................Passed\n"
+                      "1 failed, 2 passed in 0.03s\n") == 1)
+
+    # --- F276: a gate that COULD NOT RUN is not a gate that FAILED --------
+    def _sandbox_died(_project, _command, _timeout=None):
+        # The live shape: the port could not be bound, the suite died, and jest
+        # still printed its summary -- reporting zero tests.
+        return 48, ("MongoMemoryServer: Instance failed to start\n"
+                    "Test Suites: 1 failed, 1 total\n"
+                    "Tests:       0 total\n"), {}
+
+    res_nr = M.run_gate(tmp, [("test", "npx jest")], runner=_sandbox_died)
+    check("nr1 THE FAULT: a step that exited NON-ZERO having run ZERO checks is "
+          "an INFRASTRUCTURE failure, not this work's. It was recorded `failed` "
+          "with the task's name on a committed row, because the step carried no "
+          "outcome and `failed` sits at the top of the precedence: %r"
+          % ((res_nr["status"], res_nr["failed"], res_nr["ranTotal"]),),
+          res_nr["status"] == M.CANNOT_RUN and res_nr["failed"] == []
+          and res_nr["steps"][0].get("outcome") == M.CANNOT_RUN
+          and res_nr["ranTotal"] == 0)
+
+    def _real_red(_project, _command, _timeout=None):
+        return 1, "Tests:       1 failed, 3 passed, 4 total\n", {}
+
+    res_red = M.run_gate(tmp, [("test", "npx jest")], runner=_real_red)
+    check("nr2 THE PAIRED POSITIVE: a suite that RAN and came back non-zero is "
+          "still `failed`, and the task still owns it. A repair that read the "
+          "exit code alone would pass nr1 by calling every red gate "
+          "infrastructure: %r" % ((res_red["status"], res_red["ranTotal"]),),
+          res_red["status"] == "failed" and res_red["failed"] == ["test"]
+          and res_red["ranTotal"] == 4)
+    res_skip = M.run_gate(tmp, [("lint", "pre-commit run --files a.md")],
+                          runner=_all_skipped)
+    check("nr3 ...and the other direction: exit ZERO with zero checks is still "
+          "`no-checks` and not infrastructure. A rule reading only the count "
+          "would swallow F193's skipped-everything gate into a word that names "
+          "a different repair: %r" % (res_skip["status"],),
+          res_skip["status"] == "no-checks"
+          and res_skip["steps"][0].get("outcome") is None)
+    check("nr4 ...and a count that is None does not earn it either. `None == 0` "
+          "is False rather than a branch to write, and 'the runner does not "
+          "say' is not evidence that nothing ran: %r"
+          % ((M.never_started(1, None, None), M.never_started(1, 0, None),
+              M.never_started(0, 0, None),
+              M.never_started(1, 0, M.TIMED_OUT)),),
+          M.never_started(1, 0, None) is True
+          and M.never_started(1, None, None) is False
+          and M.never_started(0, 0, None) is False
+          and M.never_started(1, 0, M.TIMED_OUT) is False)
+    lines = []
+    code = M.render(res_nr, out=lines.append)
+    text = "\n".join(lines)
+    check("nr5 AND `render` HAD NO ARM FOR IT AT ALL, which is what made the "
+          "widening dangerous rather than merely incomplete: with `failed` "
+          "empty, the tree clean and the status already reading `could-not-run`, "
+          "this printed GATE GREEN and exited 0. A false red became a false "
+          "GREEN, which is strictly the worse of the two: %r" % (text[-90:],),
+          code == M.E_FAIL and "GATE COULD NOT RUN" in text
+          and "GATE GREEN" not in text and "NO CHECK RAN" not in text)
+
+    def _stalled(_project, _command, timeout=None):
+        return -9, "", {"outcome": M.TIMED_OUT, "timeoutSeconds": timeout}
+
+    lines = []
+    code = M.render(M.run_gate(tmp, [("test", "pytest -q")], runner=_stalled),
+                    out=lines.append)
+    check("nr6 ...and the same hole was under `timed-out`, so it is closed in "
+          "the same place. A run stopped at its bound printed GATE GREEN too, "
+          "and no gate in this file could see it because nothing rendered a "
+          "timed-out run: %r" % ("\n".join(lines)[-80:],),
+          code == M.E_FAIL and "GATE TIMED OUT" in "\n".join(lines)
+          and "GATE GREEN" not in "\n".join(lines))
+
+    # --- F276: the count ships with the basis that explains it ------------
+    check("cb1 `countsBasis` is WRITTEN. `_evidence_io.row_for` has copied it "
+          "into every row since the ledger existed and nothing ever set it, so "
+          "each committed row carried null there and the panel printed a "
+          "hard-coded sentence in its place -- a three-valued count shipped "
+          "without the basis that explains its unknown arm: %r"
+          % (res_red.get("countsBasis"),),
+          "summary line" in (res_red.get("countsBasis") or ""))
+    def _one_counts(_project, command, _timeout=None):
+        if "jest" in command:
+            return 0, "Tests:  2 passed, 2 total\n", {}
+        return 0, "no findings\n", {}
+
+    res_mixed = M.run_gate(tmp, [("a", "npx jest"), ("b", "eslint .")],
+                           runner=_one_counts)
+    check("cb2 ...and a MIXED gate says the total is a FLOOR and not a size. "
+          "`ranTotal` sums the steps that ANSWERED, so a reader holding the "
+          "number alone cannot tell a partial count from a complete one, and "
+          "the step that printed no summary is NAMED: %r"
+          % ((res_mixed["ranTotal"], res_mixed["countsBasis"]),),
+          res_mixed["ranTotal"] == 2
+          and "floor and not a size" in (res_mixed["countsBasis"] or "")
+          and "b" in (res_mixed["countsBasis"] or ""))
+    res_silent = M.run_gate(tmp, [("test", "make check")], runner=_quiet)
+    check("cb3 ...and with nothing countable at all the basis says WHICH steps "
+          "printed no summary, rather than leaving `ranTotal: null` to be read "
+          "as a bug in the gate: %r"
+          % ((res_silent["ranTotal"], res_silent["countsBasis"]),),
+          res_silent["ranTotal"] is None
+          and "not knowable" in (res_silent["countsBasis"] or "")
+          and "test" in (res_silent["countsBasis"] or ""))
 
     # --- a failing gate, and both facts at once ---------------------------
     def _fail_and_rewrite(project, _command, _timeout=None):
@@ -570,6 +881,45 @@ def _cases(check):
           % (sorted(M.files_named("Passed\n  src/a.ts:12 ok\n2 files\n") or []),),
           M.files_named("Passed 9 tests ok") is None
           and "src/a.ts" in (M.files_named("  src/a.ts:12 ok") or set()))
+
+    # --- F270: NO OVERLAP has to be diagnosable when it fires -------------
+    # Reported firing on every gate run of one session, including tasks whose own
+    # suite went green -- and at that rate the line becomes noise people skip,
+    # which is the opposite of what it is for. THE REPORTED MECHANISM WAS WRONG:
+    # `named` is not empty (`files_named` already answers None for that, and
+    # `coverage` already renders it as not-knowable -- cv4 above). `named` is
+    # NON-EMPTY and simply unrelated, because `_PATHISH` harvests stack frames,
+    # config files, the echoed command line and dotted identifiers. So the
+    # verdict is literally true over a real path set, and two counts cannot show
+    # a reader why.
+    _noise = (["jest.config.js", "package.json"]
+              + ["node_modules/pkg%02d/dist/index.js" % n for n in range(40)])
+    _miss270, _b270 = M.coverage(["src/mine.ts"], set(_noise))
+    check("cv11 THE FAULT: the basis NAMES what the runner printed, so a reader "
+          "sees in one second that these are config files and stack frames "
+          "rather than suites. Two counts -- 42 named, 1 declared -- are both "
+          "true and neither is a diagnosis, and `named` escaped `run_gate` "
+          "nowhere at all before this: %r" % (_b270,),
+          _miss270 == [] and "node_modules/pkg00/dist/index.js" in _b270
+          and "jest.config.js" in _b270)
+    _shown270 = len([p for p in _noise if p in _b270])
+    check("cv12 ...and the sample is BOUNDED and says exactly how many it did "
+          "NOT show, never silently short -- `_output.some_of`'s whole "
+          "contract, and the reason a count printed in front of a list and the "
+          "list itself cannot disagree about how much of the set is on screen. "
+          "This string is copied verbatim into a COMMITTED row, so the budget "
+          "is a limit on the record and not only on a terminal: shown=%d of %d"
+          % (_shown270, len(_noise)),
+          0 < _shown270 < len(_noise)
+          and "and %d more" % (len(_noise) - _shown270) in _b270)
+    _hit270, _bhit = M.coverage(["src/mine.ts"], set(["src/mine.ts", "x/y.ts"]))
+    check("cv13 ...and the sample rides on the SAME basis the overlapping case "
+          "prints, so the ledger, the report and the panel all get it without a "
+          "field of their own. A sample attached only to the empty verdict "
+          "would be missing from every row that is worth comparing it with: %r"
+          % (_bhit,),
+          _hit270 == ["src/mine.ts"] and "among them:" in _bhit
+          and "src/mine.ts" in _bhit)
 
     # --- what the manifest says the work owns -----------------------------
     check("cv7 the phase's declaration is the UNION of its tasks' files, "
