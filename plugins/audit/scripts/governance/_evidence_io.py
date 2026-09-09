@@ -127,25 +127,73 @@ STEP_KEYS = ("name", "exit", "ran", "durationMs", "outcome", "timeoutSeconds",
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis", "dirtyDigest",
               "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
+# The C-style escapes git writes INSIDE a quoted porcelain path. Git quotes a
+# path whose bytes it will not print raw - a double quote, a backslash, a control
+# character, and (under the default `core.quotePath`) every non-ASCII byte as a
+# three-digit octal escape. A reader that only stripped the quotes would hold
+# `caf\303\251.ts` and compare it against `café.ts`, which is a match it would
+# miss rather than a match it would invent - silent, and in the unsafe direction
+# for anything asking whose file moved.
+_C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13,
+              '"': 34, "\\": 92}
 
 
 def _now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _path_of(entry):
-    """The path a `git status --porcelain` line is about, or the entry itself.
+def _unquote(text):
+    """A C-quoted porcelain path as the name on disk; anything else unchanged.
 
-    Porcelain is `XY <path>`, and a rename is `XY <old> -> <new>` where the NEW
-    name is the one that exists now. Anything that does not look like a porcelain
-    line is passed through, so a caller holding bare paths is not made to know
-    which shape this expects."""
+    Returns the token EXACTLY AS GIVEN when the escape sequence is not one git
+    writes, and that direction is the deliberate one: a path this cannot spell
+    then fails to match, which a caller sees, where a guessed spelling would
+    match some other file, which nobody sees.
+    """
+    if len(text) < 2 or not (text.startswith('"') and text.endswith('"')):
+        return text
+    body, out, i = text[1:-1], bytearray(), 0
+    try:
+        while i < len(body):
+            if body[i] != "\\":
+                out.extend(body[i].encode("utf-8"))
+                i += 1
+            elif body[i + 1] in _C_ESCAPES:
+                out.append(_C_ESCAPES[body[i + 1]])
+                i += 2
+            else:
+                out.append(int(body[i + 1:i + 4], 8))
+                i += 4
+    except (IndexError, ValueError):
+        return text
+    return out.decode("utf-8", "replace")
+
+
+def porcelain_paths(entry):
+    """EVERY path one `git status --porcelain` line names, oldest first.
+
+    `XY <path>` names one. `XY <old> -> <new>` names TWO, and both of them
+    matter to a caller asking whose file the line is about: a rename takes one
+    name away and brings another, so a reader that kept only the new one would
+    miss a declared file renamed OUT of the work under test. `_path_of` is the
+    narrower question - which name exists NOW - and is the last of these.
+
+    Anything that does not look like a porcelain line is passed through as a
+    single path, so a caller holding bare paths is not made to know which shape
+    this expects.
+    """
     text = str(entry or "")
     if len(text) > 3 and text[2] == " " and not text[:2].strip(" ?!MADRCU"):
         text = text[3:]
-    if _PORCELAIN_RENAME in text:
-        text = text.split(_PORCELAIN_RENAME)[-1]
-    return text.strip().strip('"')
+    return [_unquote(part.strip()) for part in text.split(_PORCELAIN_RENAME)]
+
+
+def _path_of(entry):
+    """The path a `git status --porcelain` line is about, or the entry itself.
+
+    The NEW name of a rename, because that is the one that exists now and this
+    is what a stored row shows a reader."""
+    return porcelain_paths(entry)[-1]
 
 
 def _paths(project, entries):

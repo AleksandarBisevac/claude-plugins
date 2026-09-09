@@ -95,7 +95,20 @@ tree and a gate that checked nothing each turn the run red and say which, while
 none of the paths it printed is a file this phase's tasks declare. That last one is reported
 and never refused, because the overlap is derived from paths a runner happens to print and a
 heuristic that refused would manufacture false refusals. Deciding whether this gate can grade
-this work is therefore yours, and the line is what puts the question in front of you.
+this work is therefore yours, and the line is what puts the question in front of you — with a
+bounded sample of the paths the runner actually printed under it, so you can see whether they
+are suites or stack frames without re-running anything.
+
+**`TREE CHANGED OUTSIDE THIS WORK` moves the exit code not at all either.** Paths changed during
+the gate that this work does not declare. The bracket describes the whole repository, so a task
+running in PARALLEL puts its executor's writes inside every sibling's window; porcelain reports
+what moved and never who moved it, so this is reported with both readings named rather than
+refused. `GATE MUTATED THE TREE` is the other half — a declared file, which the gate itself was
+grading — and that one still refuses.
+
+**`GATE COULD NOT RUN` is not a red suite.** The step exited non-zero having run zero checks:
+a missing command, a runner that died before its first test. Fix the runner and re-run rather
+than spending a retry on the task, and do not let it be recorded as the task's failure.
 
 **A runner that prints only SUITE paths still names your work.** `tests/parser.spec.ts` is matched
 to `src/parser.ts` — the stem the test is named after, across directories, because `src/` tested
