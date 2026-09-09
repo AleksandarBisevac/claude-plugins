@@ -65,7 +65,13 @@ Otherwise run the full preflight (steps 1–5, including the lock) and emit **Pr
 2. Execute every **ready** task in the phase in parallel where safe (disjoint `files` and satisfied
    `dependsOn`), sequentially otherwise. (**Execute the task** performs phase entry — branch,
    `baseRef`, phase status — on its first run.)
-3. Re-evaluate readiness and repeat until no task in the phase is ready.
+3. Re-evaluate readiness and repeat until no task in the phase is ready. **A wave finishing is not
+   a stopping point.** Twenty ready tasks is eight waves, not eight commands: committing wave 1 and
+   reporting "next up is wave 2" leaves this command undischarged, and a run that did exactly that
+   sat idle for a day with nothing wrong — lock held, manifest valid, sixteen tasks ready. Emit
+   progress between waves *while continuing*, and say how much is left (`wave 2 of 8 — 16 of 20
+   still ready`), because a remainder nobody states is a remainder nobody acts on. See
+   **Reporting** in the orchestrator for when this command is actually finished.
 4. When **all** tasks in the phase are `done`, run **Phase sign-off** (orchestrator).
 
 Then follow **Reporting** and release the lock.
