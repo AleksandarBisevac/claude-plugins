@@ -111,16 +111,18 @@ NA = "not-applicable"
 # any notion of severity: a reader comparing the two documents should not have to
 # re-sort one of them in their head.
 #
-# `audit-state-scope` has no section of its own to sit beside, and it is placed
-# next to `commit-scope` rather than at the end for that reason. It asks
-# `commit-scope`'s question -- what did this commit stage, and was it allowed to --
-# about a DIFFERENT commit, and the two allow-lists differ in exactly one entry
-# (the task's `files`, which one permits and the other forbids). A reader
-# comparing two commit-shaped rules needs them adjacent; separated, the difference
-# that matters reads as an omission.
-CHECK_NAMES = ("commit-scope", "audit-state-scope", "evidence-committed",
-               "branch-history", "manifest-revalidated", "high-risk-model",
-               "base-ref")
+# `audit-state-scope` and `index-scope` have no section of their own to sit
+# beside, and they are placed next to `commit-scope` rather than at the end for
+# that reason. Each asks `commit-scope`'s question -- what did this commit stage,
+# and was it allowed to -- about a DIFFERENT commit, and the three allow-lists
+# differ entry by entry: a task commit may stage the task's `files` and the audit
+# state commit may not, and a manifest-index commit may stage the one path both
+# the others forbid and nothing whatever besides. A reader comparing three
+# commit-shaped rules needs them adjacent; separated, the differences that matter
+# read as omissions.
+CHECK_NAMES = ("commit-scope", "audit-state-scope", "index-scope",
+               "evidence-committed", "branch-history", "manifest-revalidated",
+               "high-risk-model", "base-ref")
 
 # A commit whose file list `git show --name-only` will not print. Stated as a
 # constant because the empty output it produces is indistinguishable from "this
@@ -373,34 +375,41 @@ AUDIT_STATE_SCOPE_BASIS = (
     % (ACTION_STATE_COMMITTED,))
 
 
-def audit_state_commits(project, phase_id, config=None):
-    """`(shas, unnamed, why)` - the audit-state commits this phase's trail records.
+def recorded_commits(project, phase_id, action, noun, config=None):
+    """`(shas, unnamed, why)` - the commits of one class this phase's trail records.
 
     `shas is None` means nobody could look and `why` says so; that is a different
-    answer from an empty list, which means this phase has never committed audit
-    state. `unnamed` counts rows that claim such a commit and do not carry its
-    SHA - a claim whose basis is missing, which is reported rather than dropped.
+    answer from an empty list, which means this phase has never made a commit of
+    this class. `unnamed` counts rows that claim one and do not carry its SHA - a
+    claim whose basis is missing, which is reported rather than dropped.
 
-    FOUND THROUGH THE JOURNAL AND NOWHERE ELSE, because there is nowhere else: an
-    audit-state commit is not a `task.commit` and the manifest does not name it.
-    That is exactly why the journal being OFF has to read as no-basis below rather
-    than as nothing to check.
+    FOUND THROUGH THE JOURNAL AND NOWHERE ELSE, because there is nowhere else:
+    neither an audit-state commit nor a manifest-index commit is a `task.commit`,
+    and the manifest names neither. That is exactly why the journal being OFF has
+    to read as no-basis below rather than as nothing to check.
+
+    ONE WALK FOR BOTH CLASSES, parameterised by the action and by the `noun` its
+    two sentences name (article included, because "an audit-state commit" and "a
+    manifest-index commit" do not share one). The readers differ in the action
+    they look for and in nothing else, and a second copy of this loop would be a
+    second answer to "was the journal readable" - the question whose wrong answer
+    prints `not-applicable` over a check that had stopped looking.
     """
     config = _journal_io.load_config(project) if config is None else config
     if not _journal_io.enabled(config):
-        return None, 0, ("the journal is disabled here, so an audit-state commit "
-                         "leaves no row naming it and none can be found - this is "
-                         "not evidence that none was made")
+        return None, 0, ("the journal is disabled here, so %s leaves no row "
+                         "naming it and none can be found - this is not evidence "
+                         "that none was made" % (noun,))
     try:
         rows = _journal_io.read_all(project, config=config)
     except Exception as exc:                                   # defensive
-        return None, 0, ("the journal could not be read (%s), so no audit-state "
-                         "commit could be found" % (exc,))
+        return None, 0, ("the journal could not be read (%s), so %s could not be "
+                         "found" % (exc, noun))
     shas, unnamed = [], 0
     for row in rows:
         if not isinstance(row, dict):
             continue
-        if str(row.get("action") or "") != ACTION_STATE_COMMITTED:
+        if str(row.get("action") or "") != action:
             continue
         details = row.get("details")
         details = details if isinstance(details, dict) else {}
@@ -412,6 +421,17 @@ def audit_state_commits(project, phase_id, config=None):
         elif sha not in shas:
             shas.append(sha)
     return shas, unnamed, ""
+
+
+def audit_state_commits(project, phase_id, config=None):
+    """`(shas, unnamed, why)` - the audit-state commits this phase's trail records.
+
+    A name of its own rather than the generic call at each site: the action and
+    the noun that belong to this class are decided ONCE here, so a caller cannot
+    pair the audit-state action with the index commit's sentences.
+    """
+    return recorded_commits(project, phase_id, ACTION_STATE_COMMITTED,
+                            "an audit-state commit", config=config)
 
 
 def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
@@ -488,6 +508,126 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                             % (sha[:12], path))
     return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, breaches, gaps,
                   examined)
+
+
+# --- manifest-index scope -----------------------------------------------------
+# The action a manifest-index commit records, spelled ONCE and read from here by
+# the writer and by the reader below, for `ACTION_STATE_COMMITTED`'s reason word
+# for word: the writer is `commit-manifest-index.py`, an ENTRY POINT nothing may
+# import, so the constant cannot live beside the code that appends the row, and
+# this module is the lowest one both halves can reach.
+ACTION_INDEX_COMMITTED = "audit.index.committed"
+
+INDEX_SCOPE_BASIS = (
+    "git show --name-only <commit> for every `%s` journal row naming this phase - "
+    "the rows are how such a commit is found at all, since nothing in the "
+    "manifest points at one - against the manifest INDEX and nothing else at all. "
+    "The phase's own manifest file is deliberately NOT on that list: a commit "
+    "carrying the shared index AND a phase's file is exactly the shape two "
+    "parallel phases conflict on, and carrying them in separate commits is the "
+    "whole reason this class exists" % (ACTION_INDEX_COMMITTED,))
+
+
+def index_commits(project, phase_id, config=None):
+    """`(shas, unnamed, why)` - the manifest-index commits this phase's trail records.
+
+    A name of its own beside `audit_state_commits`, for that function's reason:
+    the action and the noun belonging to this class are decided once, here, so no
+    caller can pair one class's action with the other's sentences.
+    """
+    return recorded_commits(project, phase_id, ACTION_INDEX_COMMITTED,
+                            "a manifest-index commit", config=config)
+
+
+def index_scope(phase, git_root, project, index_rel, phase_file_rel, config=None):
+    """A manifest-index commit carried the index, and nothing at all beside it.
+
+    THE ALLOW-LIST IS ONE ENTRY LONG, and that is the point rather than an
+    austerity. `/audit:task add --files` and `/audit:phase add` write `fileIndex`
+    and a phase stub into the shared index, and step 4c forbids a task commit from
+    staging it -- so until this class existed nothing committed the index at all
+    and the debt just accumulated. What makes the repair safe is the narrowness:
+    a commit carrying ONLY the shared file can be landed, cherry-picked or
+    re-derived on its own, while a commit carrying the index AND a phase's work
+    cannot be separated from the work when two branches meet on that file.
+
+    THE PHASE'S OWN MANIFEST FILE THEREFORE KEEPS ITS OWN SENTENCE, the mirror of
+    the one `commit_scope` and `audit_state_scope` write about the index. There
+    the index is the named intruder; here it is the only thing allowed and the
+    shard is the intruder, and reporting that pair in the same words as a stray
+    README would price the expensive mistake as the cheap one.
+
+    IN THE SINGLE-FILE LAYOUT `manifest_files` returns the identity pair, so the
+    index IS the phase's file and the sentence above has no subject. The writer
+    refuses to make this commit there at all, so the rows this reads should not
+    exist; the guard is kept anyway, because a check that would convict a
+    hand-made commit of staging the only manifest there is would be reporting the
+    layout rather than a breach.
+    """
+    breaches, gaps = [], []
+    shas, unnamed, why = index_commits(project, (phase or {}).get("id"),
+                                       config=config)
+    if shas is None:
+        return result("index-scope", INDEX_SCOPE_BASIS, [], [why], 0)
+    if not shas and not unnamed:
+        return result("index-scope", INDEX_SCOPE_BASIS, [], [], 0, applies=False)
+    if unnamed:
+        gaps.append("%d journal row(s) record a manifest-index commit for this "
+                    "phase without naming it, so those commits cannot be read"
+                    % (unnamed,))
+    if not index_rel:
+        # Nothing to compare against. A commit whose every path was called a
+        # breach would be this module reporting a manifest that lives outside the
+        # repository, which is a different finding and one `stage_targets` already
+        # degrades past on the writing side.
+        return result("index-scope", INDEX_SCOPE_BASIS, [],
+                      gaps + ["the manifest index is not inside the git root, so "
+                              "what such a commit staged cannot be compared "
+                              "against it"], 0)
+    ok, git_why = _git_available(git_root)
+    if not ok:
+        return result("index-scope", INDEX_SCOPE_BASIS, [], gaps + [git_why], 0)
+
+    examined = 0
+    for sha in shas:
+        code, parents = _git(git_root, ["rev-list", "--parents", "-n", "1", sha])
+        if code is None or code != 0:
+            gaps.append("the recorded manifest-index commit %s does not resolve "
+                        "in this clone, so its file list cannot be read"
+                        % (sha[:12],))
+            continue
+        if len(parents.split()) > _MERGE_PARENTS:
+            gaps.append("%s is a merge commit, and `git show --name-only` prints "
+                        "no files for one - an empty list here would read as a "
+                        "commit that staged nothing" % (sha[:12],))
+            continue
+        code, out = _git(git_root, ["show", "--name-only", "--pretty=format:", sha])
+        if code is None or code != 0:
+            gaps.append("git would not print the file list of the manifest-index "
+                        "commit %s" % (sha[:12],))
+            continue
+        examined += 1
+        staged = [ln.strip().replace("\\", "/")
+                  for ln in out.splitlines() if ln.strip()]
+        for path in staged:
+            if path == index_rel:
+                continue
+            if (phase_file_rel and path == phase_file_rel
+                    and phase_file_rel != index_rel):
+                breaches.append("manifest-index commit %s staged this phase's "
+                                "manifest file (%s) as well as the index (%s). "
+                                "The two in one commit is the shape that makes "
+                                "parallel phases conflict on merge, and keeping "
+                                "them apart is the only thing this commit class "
+                                "buys" % (sha[:12], phase_file_rel, index_rel))
+                continue
+            breaches.append("manifest-index commit %s staged %s, and this class "
+                            "carries the manifest index (%s) and nothing else. A "
+                            "commit that carries the shared file alone can be "
+                            "landed or re-derived on its own; one that also "
+                            "carries work cannot be separated from it"
+                            % (sha[:12], path, index_rel))
+    return result("index-scope", INDEX_SCOPE_BASIS, breaches, gaps, examined)
 
 
 # --- evidence committed -------------------------------------------------------
@@ -1103,6 +1243,11 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
         # check comes to allow a directory the other reports.
         audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                           journal_rel, evidence_rel),
+        # THE SAME `index_rel` AND `phase_file_rel` the two above are given, and
+        # the argument order is the one that reads: this check's allow-list is
+        # the index, and the phase's file is the thing it must NOT carry, so the
+        # pair arrives the other way round from `audit_state_scope`'s.
+        index_scope(phase, git_root, project, index_rel, phase_file_rel),
         evidence_committed(git_root, phase_file_rel, evidence_rel),
         branch_history(phase, git_root),
         manifest_revalidated(phase, git_root, project, index_rel,
