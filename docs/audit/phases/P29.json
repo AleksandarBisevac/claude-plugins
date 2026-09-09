@@ -1,0 +1,234 @@
+{
+  "id": "P29",
+  "title": "Two field reports: the remedies the documents prescribe and the code refuses",
+  "status": "in_progress",
+  "description": "Nine findings from two live projects, and the shape they share is worth naming: in four of them a document already prescribes the right behaviour and the code does not deliver it. orchestrator.md prescribes /audit:task scope for a plan-gate refusal while audit-task.py refuses every task that has hit one; it prescribes 'infrastructure failure - gates could NOT run' while run-test-gate.py records a crashed runner as a failed suite; it documents four readiness terms while audit-task counts two; it tells a human to 'land the index change in its own commit' while nothing can. The remaining three are guards and verdicts that grade text or the wrong subject: GATE MUTATED THE TREE fires on a sibling writer under the parallelism the orchestrator itself recommends, NO OVERLAP names two counts and not the paths that produced them, and guard-history-rewrite refused this repository's own commit documenting the rule it enforces. One reported finding was refuted by measurement rather than accepted: files a task must create CAN be pre-registered, and the dead end came from the scope verb alone.",
+  "desiredOutcome": "Every remedy these documents prescribe is reachable in the case it is written for; every verdict names its own subject rather than a neighbour's; and no guard in the set refuses prose that performs nothing.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P29.1",
+      "title": "F277, F274: a turn boundary is not a stopping point, and a bare commit sweeps a stale index",
+      "status": "done",
+      "description": "F277: the Reporting section opened with 'after any mutating command', so printing the next ready tasks mid-loop was the documented thing to do - and it is what a FINISHED command does. A 20-task phase stopped after wave 1 and sat idle for a day with nothing wrong: lock held, manifest valid, 16 tasks ready. Reporting now triggers on the CONTRACT being discharged, names what discharges each command, and says a progress note between waves is emitted while continuing rather than instead of it; phase.md step 3 carries the same. F274: step 4c said 'stage the task's files' and never warned that the index does not arrive empty - a previous task's git mv leaves paths staged and a bare git commit sweeps them in, the source of two commit-scope breaches on one commit, unfixable by then because the remedy is a history rewrite the same document forbids. It now prescribes an explicit pathspec. And the sharper half beside it, verified on a throwaway repo rather than asserted: git mv stages the PRE-EDIT content, so a moved-then-edited file commits the old bytes unless re-added - measured, working tree EDITED while index and commit both ORIGINAL. No gate can catch that, because the gate reads the working tree and the defect is in the index.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/phase.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T07:18:42Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P29.2",
+      "title": "F278, F272: the history guard grades the operation, and init declares what a task will create",
+      "status": "done",
+      "description": "F278: guard-history-rewrite's patterns read \\bgit\\b[^|;&]*\\bVERB\\b, so any text between the two counted - a commit MESSAGE naming one of these operations was graded as performing it. It refused this repository's own commit documenting the rule, then refused the probe written to measure it, and one of the four measured refusals was a git log --grep search, which is a read. Same class as guard-secrets-read's F267, same repair: the verb must sit in SUBCOMMAND position, git then global options only. The reset and amend arms had it too. Known cost pinned rather than discovered: text spelling a whole forbidden command still fires, which is the property that keeps an sh -c evasion caught. F272 was REFUTED as reported - require-plan never stats the target, so a declared not-yet-existing path is a legitimate creation target and audit-task already says '(a new file?)'. The real gap was /audit:init writing a task whose description ordered three new files while files named only the three it read; init.md now says to declare what a task will create.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/commands/init.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_guard_history_rewrite.py: naming an operation is not performing it, in both directions, with the known cost asserted"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T07:18:42Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P29.3",
+      "title": "F271, F275: the scope verb reaches the case it exists for, and readiness counts the phase",
+      "status": "done",
+      "description": "F271: orchestrator.md:374 prescribes /audit:task scope to widen task.files when the plan gate refuses a file a running task needs, while audit-task.py refuses unless status is pending and attempts is zero - and a task that has just hit the plan gate is in_progress with attempts >= 1 by definition. Hit three times in one phase; the only escape was hand-editing the shard and the index under the lock, which is the operation the verb replaces. The refusals are not wrong, they are too wide: their reason (F190) is about a task put back to pending whose outcome describes work judged under the old scope. Append-only widening is the operation that cannot invalidate a past judgement, because _invariants' audit-state-scope grades a past commit against the CURRENT files - widening can only relax it, narrowing would tighten it retroactively. F275: _waiting_on reads task.blockedBy + dependsOn and never the owning phase's, while _status_facts.ready_tasks and orchestrator.md:188-191 both count four terms - so add and scope print a copyable 'ready now -- /audit:run <id>' for a task whose phase is blocked. Both call sites already hold the phase in a local.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_task.py: an append-only widen is accepted on an in_progress task and journalled with the attempt number, while any narrowing keeps the refusal",
+          "test_audit_task.py: readiness counts the owning phase's blockedBy, so a blocked phase's task is not offered as ready"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T07:18:42Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P29.4",
+      "title": "F273, F276, F270: three gate verdicts that name the wrong subject",
+      "status": "done",
+      "description": "F273: _porcelain brackets the WHOLE repo with no pathspec, so under the parallelism orchestrator.md recommends a sibling executor writing mid-run trips GATE MUTATED THE TREE - observed naming a file owned by a different task, and once red across 78 paths then green on an identical rerun. The verdict carries commit-refusing force, so a false positive halts a correct run. The ownership set exists at main:1105 and never reaches the verdict or the renderer. Classify by ownership rather than mute, because the same verdict correctly revealed a second session writing into one working directory. F276: a runner that died before running anything is recorded as a failed suite, and the root cause is that _STEP_WORDS has ONE entry (pre-commit), so ranTotal is None rather than 0 for every real runner and the NO CHECK RAN branch can never fire in production - the distinction orchestrator.md demands is unreachable because the count vocabulary is one entry wide. Also observations.countsBasis is read by _evidence_io and written by nothing. F270: the reported mechanism was wrong - files_named already returns None for 'printed no paths' and coverage renders that as 'not knowable'. What happens is that _PATHISH harvests node_modules frames, config files, URLs and even 'e.g', so named is non-empty and unrelated: the verdict is literally true and practically useless. Name a bounded sample of what the runner printed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/phase.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_run_test_gate.py: a concurrent external writer is labelled apart from the gate rewriting its own subject",
+          "test_run_test_gate.py: a runner that exits non-zero having run nothing records could-not-run rather than failed",
+          "test_run_test_gate.py: an empty overlap names a bounded sample of the paths the runner printed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T08:25:37Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P29.5",
+      "title": "F269: the manifest index gets a sanctioned route into a commit",
+      "status": "done",
+      "description": "In the sharded layout the index holds meta, fileIndex, bugs, deferred, proposals and the phase stubs. A task commit may not stage it - _invariants.commit_scope makes that its own named breach, because a task commit carrying the index is what makes two parallel phases conflict on merge, the property the sharded layout was introduced to buy. commit-audit-state.py's stage_targets binds the index path and discards it, and audit-state-scope breaches on it independently. So nothing commits it, and structural edits accumulate until somebody notices; the reporter committed them by hand three times in one evening. Single-file layout is immune because the manifest IS the index. orchestrator.md:407-413 already tells a human to 'land the index change in its own commit before sign-off' while naming no command, no staging step and no place in the sequence - that sentence is the specification nobody implemented. Widening stage_targets was rejected: it satisfies commit-audit-state's own property, since its allow-list and staged set are the same list, but it destroys the parallel-merge property both invariant checks defend and turns cas17 red on purpose. A commit that carries the index and nothing else is what is safe, and it is what the prose already asks for.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_commit_audit_state.py: the index route stages the index and refuses anything else in the git index",
+          "test__invariants.py: a commit of the new class carrying anything but the index is a breach",
+          "check-git-pipeline.py: the route against a real git repository, including the single-file refusal"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T08:25:37Z",
+      "verifiedBy": []
+    }
+  ]
+}

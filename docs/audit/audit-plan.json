@@ -181,6 +181,11 @@
       "id": "P28",
       "title": "Field report: the guard that gets routed around, and a commit type commitlint refuses",
       "shard": "phases/P28.json"
+    },
+    {
+      "id": "P29",
+      "title": "Two field reports: the remedies the documents prescribe and the code refuses",
+      "shard": "phases/P29.json"
     }
   ],
   "fileIndex": {
@@ -237,7 +242,9 @@
       "P18.4",
       "P18.8",
       "P18.9",
-      "P25.1"
+      "P25.1",
+      "P29.5",
+      "P29.4"
     ],
     "README.md": [
       "P2.3",
@@ -345,7 +352,8 @@
       "P5.1",
       "P6.1",
       "P7.2",
-      "P8.1"
+      "P8.1",
+      "P29.2"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -355,7 +363,9 @@
       "P7.1",
       "P8.2",
       "P18.5",
-      "P23.3"
+      "P23.3",
+      "P29.1",
+      "P29.4"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1"
@@ -459,7 +469,10 @@
       "P22.5",
       "P22.7",
       "P22.10",
-      "P25.5"
+      "P25.5",
+      "P29.1",
+      "P29.5",
+      "P29.4"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -480,7 +493,8 @@
       "P18.1",
       "P18.3",
       "P18.4",
-      "P18.7"
+      "P18.7",
+      "P29.5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -699,7 +713,8 @@
     "tools/check-git-pipeline.py": [
       "P18.8",
       "P18.9",
-      "P21.3"
+      "P21.3",
+      "P29.5"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -852,11 +867,13 @@
     ],
     "plugins/audit/scripts/governance/run-test-gate.py": [
       "P22.1",
-      "P22.3"
+      "P22.3",
+      "P29.4"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
-      "P22.3"
+      "P22.3",
+      "P29.4"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -866,7 +883,8 @@
       "P22.5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
-      "P22.5"
+      "P22.5",
+      "P29.5"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5"
@@ -876,10 +894,12 @@
       "P28.1"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
-      "P22.9"
+      "P22.9",
+      "P29.3"
     ],
     "plugins/audit/tests/test_audit_task.py": [
-      "P22.9"
+      "P22.9",
+      "P29.3"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11"
@@ -951,13 +971,46 @@
       "P26.2"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
-      "P28.2"
+      "P28.2",
+      "P29.5"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
-      "P28.2"
+      "P28.2",
+      "P29.5"
     ],
     "plugins/audit/tests/test__invariants.py": [
-      "P28.2"
+      "P28.2",
+      "P29.5"
+    ],
+    "plugins/audit/hooks/guard-history-rewrite.py": [
+      "P29.2"
+    ],
+    "plugins/audit/tests/test_guard_history_rewrite.py": [
+      "P29.2"
+    ],
+    "plugins/audit/scripts/governance/_journal_io.py": [
+      "P29.3"
+    ],
+    "plugins/audit/tests/test__journal_io.py": [
+      "P29.3"
+    ],
+    "plugins/audit/scripts/governance/_evidence_io.py": [
+      "P29.4"
+    ],
+    "plugins/audit/scripts/governance/commit-manifest-index.py": [
+      "P29.5"
+    ],
+    "plugins/audit/scripts/governance/_scoped_commit.py": [
+      "P29.5"
+    ],
+    "plugins/audit/tests/test_commit_manifest_index.py": [
+      "P29.5"
+    ],
+    "plugins/audit/tests/test__scoped_commit.py": [
+      "P29.5"
+    ],
+    "plugins/audit/tests/test__output.py": [
+      "P29.5"
     ]
   },
   "bugs": [

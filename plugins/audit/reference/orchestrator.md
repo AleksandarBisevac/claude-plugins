@@ -564,6 +564,16 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    that from a gate writing outside its own subject, and it refuses neither. **Read it before you
    commit**: check the paths against what else you have running, and stage by name.
 
+   **What makes not-refusing affordable is step 4c's pathspec, and the two are one decision.**
+   Before it, a gate that rewrote files outside its subject reached the commit through a bare
+   `git commit` — that is F193, where a documentation task came within one command of carrying
+   +33/-62 of backend reformatting. Committing with an explicit pathspec means those paths cannot
+   ride in whoever wrote them, so the remaining exposure is that they sit in the working tree
+   unnoticed, and a line that names them is the answer to that. **Weaken either half and the other
+   stops being enough**: refuse on the unattributable half and correct parallel runs halt again;
+   drop the pathspec and a foreign rewrite is back in somebody's commit with only a printed line
+   between it and the reader.
+
    **`GATE COULD NOT RUN` is not the task's failure (F276).** A step exited non-zero having run
    ZERO checks — a missing command, a runner that died before its first test, a port it could not
    bind in a sandbox. This is the "infrastructure failure" arm of step 4c below, now measured
