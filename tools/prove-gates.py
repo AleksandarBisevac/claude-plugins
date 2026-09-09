@@ -637,6 +637,17 @@ TABLE = (
  ("config_read_violations", S + "_deps.py", "replace",
   "    block = _block_accessor(node, roots)",
   "    block = None", DEP, "ck18"),
+ # THE DEFECT ITSELF, PUT BACK. `_evidence_io.row_for` read
+ # `result.get("countsBasis")` while nothing wrote that key, so every recorded
+ # evidence row carried `None` in the one field built to explain a count with
+ # three answers. The mutation is that state exactly - the producer stops
+ # writing the key and the reader is left asking for it - and it is the tree
+ # that is broken here rather than the guard, which is what makes this the RED
+ # direction. `dk2b` is the live claim over the real tree; the fixture pair in
+ # `dk3` proves the same rule where a reader can see both halves at once.
+ ("dict_key_violations", S + "governance/run-test-gate.py", "replace",
+  '"ranTotal": ran_total, "countsBasis": counts_basis(steps),',
+  '"ranTotal": ran_total,', DEP, "dk2b"),
 
  # --- F229: the meta-gate, whose silence takes four documents down with it ----
  # THE MUTATED FILE IS A DOCUMENT, because a document is what this rule watches.
@@ -1202,6 +1213,15 @@ ALLOW = (
  ("config_read_violations", S + "_deps.py", "replace",
   "    return block if block in roots else None",
   "    return block or None", DEP, "ck21"),
+ # THE OVER-FIRE THIS RULE IS ONE CHARACTER AWAY FROM. The whole guard is the
+ # membership test between a key that was READ and the key set the value is known
+ # to carry; drop it and every dict read in the tree is a finding, which is the
+ # version of this lint that gets deleted in a week rather than obeyed. `dk4` is
+ # the pair written for exactly this - the same producer and reader as `dk3` with
+ # the key WRITTEN - so it fails on a rule that fires unconditionally while `dk3`
+ # goes on passing.
+ ("dict_key_violations", S + "_deps.py", "replace",
+  "                if key in carried:", "                if False:", DEP, "dk4"),
  # --- F229: the quiet half for the meta-gate ----------------------------------
  # THE NARROWING IS "NAMING A MEMBER NAMES THE FAMILY", and the rule argues it out
  # loud: the runner pins every spelling a lookup reads, and a document that listed
