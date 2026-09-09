@@ -2236,6 +2236,35 @@ def _cases(check):
     # The RULE lives once, in `reference/manifest-conventions.md`; the command docs
     # carry a pointer. This asserts both halves, because a pointer at a heading
     # nobody kept is a pointer at nothing and every doc would still pass.
+    # --- (rt) F290: printing it is not delivering it --------------------------
+    # `status.md` said "Print its stdout verbatim", and a live run read that as
+    # discharged - the Bash tool had run and its stdout WAS printed, to the tool
+    # result, so the reply said "the report above" and the operator saw nothing.
+    # A tool result is collapsed behind the tool call. Nothing in the plugin said
+    # so, and the same phrasing sits in a dozen docs.
+    _rtd = M.render_target_drift()
+    check("rt1 every command whose OUTPUT is the deliverable says WHERE it goes, "
+          "not only that it goes verbatim - the one instruction in this plugin "
+          "whose failure is silent, because the model believes it answered and "
+          "the reader sees nothing: %r" % (_rtd,),
+          not _rtd["missing"] and _rtd["checked"] == len(M.RENDER_DOCS))
+    check("rt2 ...and the set really was READ: a check that narrowed what it "
+          "looked at while keeping the claim it makes is this repo's oldest "
+          "defect, so an unreadable doc is a finding rather than a skip and the "
+          "count has to reach every named file: checked=%d of %d"
+          % (_rtd["checked"], len(M.RENDER_DOCS)),
+          _rtd["checked"] == len(M.RENDER_DOCS) and len(M.RENDER_DOCS) >= 7)
+    # SCOPED ON PURPOSE, and this is the case that says why. `verbatim` also
+    # describes text going INTO a manifest - `bug.md` embeds a repro that way -
+    # and a rule that fired there would be asking a bug report to explain the
+    # terminal. So the set is named, and a doc outside it owes nothing.
+    check("rt3 the rule is scoped to docs whose output is the deliverable: "
+          "`bug.md` and `layout.md` say `verbatim` about something else and are "
+          "not in the set, so the check cannot convict a doc for a word it uses "
+          "for a different job: %r" % (sorted(M.RENDER_DOCS),),
+          "bug.md" not in M.RENDER_DOCS and "layout.md" not in M.RENDER_DOCS
+          and "status.md" in M.RENDER_DOCS)
+
     _vrd = M.verbatim_rule_drift()
     check("vb1 every command doc that asks a human for text bound for the journal "
           "says it goes in UNCHANGED - the flag is the needle, not a doc list, so "

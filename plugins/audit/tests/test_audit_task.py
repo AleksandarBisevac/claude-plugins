@@ -30,6 +30,7 @@ import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (SCRIPTS_DIR, to read a sibling's source)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
@@ -1173,17 +1174,21 @@ def _cases(check):
               and _idx2.get("src/a.ts") == ["P2.1"])
         code, txt = run(["scope", "P2.1", "--files", "src/b.ts",
                          "--project-dir", sc_proj])
-        # F271 NARROWED THIS REFUSAL AND DID NOT REMOVE IT. What is refused here
-        # is a task whose work is SETTLED - `done`, and `cancelled` next to it -
-        # which is a different sentence from the one a started task meets,
-        # because a settled task has no widening left to offer: its commit was
-        # graded against the files it names and its sign-off accepted that
-        # grading. The wd group holds the started half.
-        check("sc4 a task whose work is SETTLED is refused outright, and the "
-              "refusal names what settled it rather than the status alone: %r"
-              % (txt[:120],),
-              code == 2 and "is done" in txt and "its scope is settled" in txt
-              and "the sign-off accepted that grading" in txt)
+        # F271 NARROWED THIS REFUSAL, F283 SPLIT WHAT WAS LEFT, and neither
+        # removed it. The call above REPLACES `src/a.ts` with `src/b.ts`, so it
+        # is a NARROWING - and a narrowing is refused on a done task for the one
+        # reason that is true of a done task: its commit was graded against the
+        # list it holds, so dropping an entry moves a judgement already made.
+        # (What F283 opened is the other shape, a WIDENING, which settles the
+        # index rather than re-judging anything - the st group holds it.)
+        check("sc4 a NARROWING on a task whose commit was already graded is "
+              "refused, and the refusal names the grading rather than the "
+              "status alone - `done` is not `running` and must not borrow the "
+              "started sentence: %r" % (txt[:120],),
+              code == 2 and "is done" in txt
+              and "graded against the files it names" in txt
+              and "a judgement that has already been made" in txt
+              and "it is running against the scope" not in txt)
         code, txt = run(["scope", "P2", "--files", "src/b.ts",
                          "--project-dir", sc_proj])
         check("sc5 a PHASE id is refused by name - a phase silently scoping its "
@@ -2045,11 +2050,14 @@ def _cases(check):
         wdc_proj, wdc_mp = mk("wd-cancelled", wdc)
         code, txt = run(["scope", "P2.3", "--files", "src/known.ts,src/more.ts",
                          "--project-dir", wdc_proj])
-        check("wd10 a CANCELLED task is refused outright, widening and all - the "
-              "other half of sc4's settled rule, and the half a guard written "
-              "around `done` alone lets through: %r" % (txt[:120],),
+        check("wd10 a CANCELLED task is refused outright, widening and all - and "
+              "F283's split is exactly here: `done` takes a widening because "
+              "there is an index to settle, `cancelled` does not because nothing "
+              "will ever be committed against it. A guard written around either "
+              "word alone gets one of the two wrong: %r" % (txt[:140],),
               code == 2 and "is cancelled" in txt
-              and "its scope is settled" in txt
+              and "its scope cannot grow" in txt
+              and "no pairing here to settle" in txt
               and (task_in(wdc_mp, "P2.3") or {}).get("files")
               == ["src/known.ts"])
         wdp_proj, wdp_mp = mk("wd-pending", base_manifest())
@@ -2061,6 +2069,98 @@ def _cases(check):
               "guard that fired on every call would leave the verb narrower than "
               "it was before this entry: %r" % (txt[:160],),
               code == 0 and "WIDENED" not in txt and "append-only" not in txt)
+
+        # ---- (st) F283: `done` settles the RECORD, not the INDEX -------------
+        # The product prescribed a remedy and refused it in the same breath. At
+        # sign-off `_invariants.manifest_revalidated` prints, as its own repair,
+        # "run `/audit:task scope <id> --files ...` to re-derive the index" - and
+        # sign-off runs only when every task is `done`, which this verb refused.
+        # A live run spent 172,417 tokens on three fix-run subagents before that
+        # surfaced. F271 widened the STARTED rule five hours earlier and left the
+        # SETTLED one, so `done` was exactly the half that bites where it hurts.
+        #
+        # What licenses opening it was checked in the code rather than argued:
+        # `_invariants.commit_scope` reads `task.files` LIVE, so growing the list
+        # can only move a staged path INTO `allowed`. The pair st1/st4 is the
+        # point - a guard written around "terminal" alone lets neither through,
+        # and one written around "done" alone lets the wrong one through.
+        stm = base_manifest()
+        stm["phases"][1]["tasks"][0].update({
+            "status": "done", "attempts": 1, "files": ["src/known.ts"],
+            "commit": "a" * 40,
+            "outcome": {"technical": "graded against src/known.ts",
+                        "descriptive": None}})
+        stm["fileIndex"]["src/known.ts"] = ["P2.1"]
+        st_proj, st_mp = mk("st-done", stm)
+        code, txt = run(["scope", "P2.1", "--files", "src/known.ts,src/late.ts",
+                         "--project-dir", st_proj])
+        _st_task = task_in(st_mp, "P2.1") or {}
+        _st_idx = (_mio.load_manifest(st_mp).get("fileIndex") or {})
+        check("st1 a DONE task takes an append-only widening, and the index is "
+              "re-derived with it - which is the settlement sign-off asks for "
+              "and the whole reason the refusal was split: %r" % (txt[:120],),
+              code == 0
+              and _st_task.get("files") == ["src/known.ts", "src/late.ts"]
+              and _st_idx.get("src/late.ts") == ["P2.1"])
+        check("st2 ...and the report says WHAT it settled and what it did not: a "
+              "line that read like the mid-flight one would claim the plan gate "
+              "now matches paths nobody is editing, and silence would let a "
+              "reader take this for a record of new work: %r" % (txt[:200],),
+              "already done will take it" in txt
+              and "does NOT record new work" in txt
+              and "Follow-up work is a new task" in txt
+              and "the plan gate now matches" not in txt)
+        _stmod = _panel_write._journalmod()
+        _st_rows = [r for r in (_stmod.read_all(st_proj) if _stmod else [])
+                    if r.get("action") == "task.scope"]
+        check("st3 ...and the row DATES it, because a settlement written into a "
+              "finished task's record is exactly the thing a reader will later "
+              "ask when happened: %r" % (_st_rows[-1:],),
+              len(_st_rows) == 1
+              and "WIDENED" in (_st_rows[0].get("summary") or "")
+              and "done" in (_st_rows[0].get("summary") or "")
+              and (_st_rows[0].get("details") or {}).get("attempt") == 1)
+        stn_proj, stn_mp = mk("st-done-narrow", stm)
+        code, txt = run(["scope", "P2.1", "--files", "src/other.ts",
+                         "--project-dir", stn_proj])
+        check("st4 SECOND DIRECTION: a NARROWING on the same done task is still "
+              "refused, so opening the settled rule bought a settlement and not "
+              "a licence to rewrite what was graded - and the refusal names the "
+              "grading, which is the one thing true of a task that is finished "
+              "rather than running: %r" % (txt[:140],),
+              code == 2 and "is done" in txt
+              and "graded against the files it names" in txt
+              and (task_in(stn_mp, "P2.1") or {}).get("files") == ["src/known.ts"])
+
+        # THE LIVE CLAIM, and the case that would have caught the original
+        # contradiction: the remedy `_invariants` PRINTS at sign-off has to be a
+        # command this verb accepts. Read out of the invariant's own text rather
+        # than restated here, so a reworded breach cannot drift away from the
+        # verb it names.
+        # READ, NOT CAUGHT. An earlier draft wrapped this in `except Exception:
+        # pass`, and a missing import made it swallow a NameError and assert on
+        # an empty string - the case reported PASS on nothing. A suite that
+        # cannot read the file it is comparing must fail, not shrug.
+        with open(os.path.join(_output.SCRIPTS_DIR, "governance",
+                               "_invariants.py"), "r", encoding="utf-8") as _fh:
+            _inv_src = _fh.read()
+        _names_scope = "/audit:task scope" in _inv_src \
+            and "re-derive the index" in _inv_src
+        # ...and the verb really takes it. `st1` proved the widening lands; this
+        # asserts the JOIN - that the command the invariant prints is the command
+        # this verb accepts on the status the invariant will be looking at.
+        sti_proj, sti_mp = mk("st-remedy", stm)
+        code, txt = run(["scope", "P2.1", "--files", "src/known.ts,src/paired.ts",
+                         "--project-dir", sti_proj])
+        check("st5 the repair `manifest_revalidated` PRINTS at sign-off names "
+              "`/audit:task scope … to re-derive the index`, and every id it can "
+              "name is `done` by then - so this verb has to accept it on a done "
+              "task. The two were written apart and contradicted each other in "
+              "production for five weeks: prints=%r accepts=%r"
+              % (_names_scope, code),
+              _names_scope and code == 0
+              and (_mio.load_manifest(sti_mp).get("fileIndex") or {})
+              .get("src/paired.ts") == ["P2.1"])
 
         # ---- (pb) F275: readiness ignored the owning phase's blockedBy -------
         # `reference/orchestrator.md`'s readiness rule has FOUR terms and the

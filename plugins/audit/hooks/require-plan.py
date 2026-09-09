@@ -667,8 +667,18 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             "manifest belongs to the orchestrator, and widening a scope from "
             "inside a task is how a plan stops describing the work.\n"
             "Do this: STOP, and report to the orchestrator that %s is outside "
-            "your task's `files` and why you need it. It will widen the scope "
-            "and tell you to carry on - you will not be re-spawned.\n"
+            "your task's `files` and why you need it. It will either widen the "
+            "scope and tell you to carry on, or add a task for the work - "
+            "either way you will not be re-spawned.\n"
+            # F284. THIS USED TO PROMISE THE WIDENING FLATLY, and at sign-off
+            # that promise was false. `_config.in_progress_task_map` reads only
+            # `in_progress` tasks, and sign-off runs when every task is `done` -
+            # so nothing is covered there, and no widening of a finished task
+            # changes that (F283's widening settles an index; it does not open an
+            # edit). A live run spent three fix-run subagents finding that out.
+            # A refusal that names a remedy the reader cannot reach is worse than
+            # one that names none: it sends them to spend the spawn twice.
+
             "Do NOT: edit the manifest yourself (it is exempt from this gate, "
             "which does not make it yours), put the change somewhere it does "
             "not belong to dodge the refusal, or abandon work you have already "

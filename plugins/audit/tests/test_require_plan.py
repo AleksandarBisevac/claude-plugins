@@ -647,6 +647,18 @@ def _cases(check):
         _vs == "block" and "YOU ARE A SUBAGENT" in _ms
         and "report to the orchestrator" in _ms
         and "add a task covering this file" not in _ms, repr(_ms))
+    # F284. THE REMEDY IT NAMES HAS TO EXIST WHERE THE READER IS STANDING. This
+    # sentence promised a widening flatly, and at sign-off that is false:
+    # `in_progress_task_map` reads only `in_progress` tasks, sign-off runs when
+    # every task is `done`, so nothing is covered - and widening a finished task
+    # settles an index without opening an edit. A live run spent three fix-run
+    # subagents discovering that. A refusal naming a remedy the reader cannot
+    # reach is worse than one naming none: it sends them to spend the spawn twice.
+    hok("h4b2 the remedy it promises is the one the orchestrator can actually "
+        "reach: BOTH routes, because widening is unavailable at sign-off and a "
+        "flat promise of it was measured false",
+        "either widen the scope" in _ms and "add a task for the work" in _ms
+        and "It will widen the scope\nand tell you" not in _ms, repr(_ms))
     hok("h4c ...and it names the three worse resolutions that were actually "
         "taken, because an agent that only hears 'no' invents one",
         "edit the manifest yourself" in _ms

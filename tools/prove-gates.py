@@ -440,6 +440,13 @@ TABLE = (
  # mutation reddens the version-pin family, of which `p1` is one.
  ("command_flag_drift", "plugins/audit/commands/status.md", "suffix",
   r"^argument-hint:", " [--probe-flag]", REF, "cf1"),
+ # F290. A command doc that says to print its output and not WHERE. The mutation
+ # is the sentence as it stood before this entry: "print it verbatim" with no
+ # target, which a live run read as discharged by the Bash tool having run - so
+ # the operator got a collapsed tool result and the model believed it answered.
+ ("render_target_drift", "plugins/audit/commands/status.md", "replace",
+  "**Print it in your own reply, inside a fenced block.**",
+  "**Print it promptly and completely.**", REF, "rt1"),
  # F282. A prohibition the document states and nothing accounts for. The mutation
  # is the shape the rule exists for: somebody writes a new **NEVER** and no hook
  # is asked whether anything stops it. `orchestrator.md` is the subject because it
@@ -1311,6 +1318,14 @@ ALLOW = (
  ("inline_drift", S + "config/_help.py", "replace",
   "    for path in sorted(set(found) - set(declared)):",
   "    for path in sorted(set(found)):", MVO, "mv29"),
+ # The doc set shrunk, which is how this check goes quiet without going wrong: the
+ # remaining files still carry the pointer, `missing` stays empty, and the claim
+ # "every command whose output is the deliverable" now covers fewer of them. `rt2`
+ # is the floor that catches a narrowed scan keeping its old claim.
+ ("render_target_drift", S + "_refs.py", "replace",
+  'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md", "next.md",',
+  'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md",',
+  REF, "rt2"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -

@@ -12,6 +12,8 @@ Run
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/usage/audit-usage.py" <manifestPath> --format md $ARGUMENTS
 ```
 
+**Print it in your own reply, inside a fenced block** — a tool result is collapsed behind the tool
+call, so running the command is not delivering it.
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it — and do
 NOT wrap it in a code fence.** The output is already markdown (pipe tables, bullets); a fence
 would disable the table rendering it exists for. The script renders its own final output for a

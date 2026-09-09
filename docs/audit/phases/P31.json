@@ -1,0 +1,347 @@
+{
+  "id": "P31",
+  "title": "Third field report: the remedy the product prescribes and refuses in the same breath",
+  "status": "in_progress",
+  "description": "A third live report, and its sharpest item is one the plugin says to itself. At sign-off, _invariants.manifest_revalidated prints as its own repair: 'by sign-off it has to be settled - run /audit:task scope <id> --files ... to re-derive the index'. Every id it can name is done by then, and scope refused every done task - so the product hands you a command it refuses in the same breath. A live run spent 172,417 tokens on three fix-run subagents before finding that out. F271 widened the STARTED rule this week and left the SETTLED one, which is exactly the half that bites at sign-off. Analysis also found it is worse than reported: during sign-off the plan gate is at deny with ZERO covered files, because in_progress_task_map reads only in_progress tasks and every task is done by then - so a finding inside a task's files would not have helped either. The remaining items are a shell-fragile description that silently dropped the decisive clause of a brief, a commit verb that cannot converge and only explains itself on the second run, a write-guard that flags the plugin's own CLI writers because they file no claim, and a phase title that nothing can rename though a branch name derives from it.",
+  "desiredOutcome": "No remedy this product prescribes is refused by the product at the moment it prescribes it; a brief cannot lose its decisive clause in silence; and the surfaces that warn about their own sanctioned writes say which writer they mean.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P31.1",
+      "title": "F283: a done task's scope may still settle its index, and the sign-off route is documented",
+      "status": "done",
+      "description": "scope refused _mio.TERMINAL whole. Split it: cancelled stays refused, because nothing will be committed against it so there is no pairing to settle and no run a wider list could describe. done accepts an append-only widening, and the reasons were checked in the code rather than argued - commit_scope reads task.files LIVE and reports staged paths outside it, so growing the list can only move a path INTO allowed and never the reverse; and the fileIndex re-derivation the write performs is exactly the settlement manifest_revalidated asks for. The honest objection that remains is about the record rather than any verdict, so the journal row dates which attempt it grew during and the report says plainly that this settles the index rather than recording new work. Separately, orchestrator.md's Phase sign-off step 1 now names the route for a finding in a file no task declares - a NEW task, before anything is spawned - because that is new work needing its own commit, gate run and evidence row, and because the measured cost of not saying so was three refused subagents.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_task.py: a done task accepts an append-only widening and its report says the settlement is not new work",
+          "test_audit_task.py: a cancelled task still refuses, and the refusal says why the two differ",
+          "test_audit_task.py: the remedy manifest_revalidated prints at sign-off is one scope actually accepts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "scope splits TERMINAL: cancelled refused, done accepts an append-only widening. Six cases (sc4, wd10, st1-st5), each proven red by a mutation that moves its own claim - including st5, which reads the remedy out of _invariants' source and asserts the verb accepts it, so the two cannot drift apart again.",
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T11:00:21Z",
+      "verifiedBy": []
+    },
+    {
+      "status": "done",
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "render_target_drift pins one literal across the seven docs whose output is the deliverable, following _areas.rule_drift rather than repeating a rule in a dozen files. rt1/rt2 proven red; rows in both prove-gates tables.",
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T15:44:39Z",
+      "verifiedBy": [],
+      "id": "P31.2",
+      "title": "F290: a command that asks for its output printed says WHERE",
+      "description": "commands/status.md said 'Print its stdout verbatim', and a live run read that as discharged - the Bash tool had run and its stdout WAS printed, to the tool result, so the reply said 'the report above' and the operator saw nothing. In Claude Code a tool result is collapsed behind the tool call. Nothing anywhere in the plugin says tool output is invisible to the user, and the same phrasing sits in a dozen command docs. Rather than repeating a rule in twelve files - one copy and eleven lies by this repository's own reckoning - one literal is pinned across the docs whose OUTPUT is the deliverable, following _areas.rule_drift's pattern for exactly this shape. Scoped to a named set because `verbatim` also describes text going INTO a manifest, and a rule that fired there would ask a bug report to explain the terminal.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/commands/logs.md",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/propose.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test__refs.py: a doc telling you to print output verbatim without saying where is a finding, both directions"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "done",
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "The subagent refusal named both routes. Nothing had pinned the promise text, which is why it could be false for five weeks; h4b2 pins it now and goes red on the flat form.",
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-09T15:51:10Z",
+      "verifiedBy": [],
+      "id": "P31.3",
+      "title": "F284: the refusal stops promising a widening the orchestrator may not have",
+      "description": "require-plan tells a refused subagent 'It will widen the scope and tell you to carry on'. Measured, that is false at sign-off: in_progress_task_map reads only in_progress tasks, every task is done by then, so NO file is covered and the gate is at deny because phase.status is still in_progress. F283's widening settles an index and does not unblock an edit, so the honest instruction depends on where the run is: mid-flight the orchestrator widens, at sign-off it adds a task. The refusal must say which rather than promise one.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_require_plan.py: the subagent refusal names both routes rather than promising a widening that may not exist"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "in_progress",
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "id": "P31.4",
+      "title": "F285: a brief cannot lose its decisive clause in silence",
+      "description": "Backticks in --description were consumed by the shell before audit-task.py saw them; the stored brief lost the condition that was its most important fact, and the script accepted and wrote it. Two things were measured over the 129 real description strings in this plan: space-before-comma catches the reported damage at ZERO false positives, and the intuitive unbalanced-backtick check is REFUTED - the shell removes both delimiters so the count stays even. The input repair follows the dialect that exists: five ADO scripts already take a path with '-' meaning stdin, and there is no --*-file flag anywhere in the plugin.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_task.py: a description carrying a shell-eaten gap is reported, and an ordinary sentence is not",
+          "test_audit_task.py: --description - reads the brief from stdin, so backticks never meet a shell"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "in_progress",
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "id": "P31.5",
+      "title": "F286: the trailing journal row is explained on the run that creates it",
+      "description": "The audit.state.committed row names the SHA, so it is appended after the commit and can never be inside it. That is inherent. The explanation exists and is well written - the module docstring says it at length, and a purpose-built sentence fires on a second run - but the run that CREATES the condition prints the SHA, the staged paths, and nothing about the row just written. So the operator meets a dirty tree first and the explanation second, which is one run too late.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test_commit_audit_state.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_commit_audit_state.py: the successful run says the trail row it just wrote rides along with the next commit"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "in_progress",
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "id": "P31.6",
+      "title": "F287: the plugin's own CLI writers file a claim, so the guard stops flagging them",
+      "description": "After commit-audit-state.py ran, guard-bash-writes warned that a shell command wrote into the append-only journal; audit-journal.py verify then reported the chain clean. The guard already has a sanctioned-writer notion and it is deliberately NOT a path exemption - it reads per-writer claim sidecars, and its own recorded reasoning says honouring another session's claim would let real tampering pass. The gap is that _journal_io.record_plugin_write is a general API no CLI script calls: only journal-writes.py (session key) and _panel_write.py (the 'panel' key) file claims. Two constraints on the repair: a CLI invoked from Bash has no session id in argv so it needs a fixed writer key the way the panel has one, and _plugin_wrote iterates a hard-coded key tuple while guard-bash-writes may not import scripts/ - so the constant must be mirrored and pinned by a test exactly as PANEL_WRITER is. Separately the notice's own disambiguation list offers 'a panel save, or an edit and a shell command in one message' and does not name 'a plugin script you ran via Bash', which is the case that actually fired.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_guard_bash_writes.py: a journal write a plugin CLI claimed is not flagged, and one nothing claimed still is",
+          "test__journal_io.py: the writer key the hook mirrors is the one the scripts file under"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "in_progress",
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "id": "P31.7",
+      "title": "F288: a phase can be renamed, and the rename reaches everything the title feeds",
+      "description": "/audit:phase retarget takes --gate/--area/--outcome/--description and no --title, and phase.title is written at creation and never again - the panel does not touch it. So a phase whose scope widened keeps a title describing half of it. A rename is NOT cosmetic and that is why it needs a verb: _branch.slugify's docstring is literally 'phase.title -> the {slug} segment', consumed into '<prefix>/{phase}-{slug}'; sync.md maps phase to '[<phaseId>] <title>' and pushes on the next sync; and five render sites read it. Plus a storage wrinkle that settles verb-versus-hand-edit: under the sharded layout title is duplicated into the index stub and merged back with the body winning, so a hand rename touching only the shard leaves the stub stale. The branch consequence needs a decision rather than a default - a phase already on a branch must not silently resolve to a different one.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "docs/handbook.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "test_audit_task.py: retarget --title rewrites the shard AND the index stub, and refuses when the phase is already on a branch the title would move"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    },
+    {
+      "status": "in_progress",
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "id": "P31.8",
+      "title": "F289: /audit:init asks what shares a file's data path, not only what a task reads",
+      "description": "Two of three review findings in one live phase were the same shape - a sibling component sharing a data path that no task's files covered. The reporter calls it a plan-authoring gap and the code agrees: init.md has no coupling vocabulary at all, files is populated straight from 'files from the finding', and the explorer's return contract is a flat per-finding list with no field for what else is on that data path. The precedent for the repair is already in the file and stops one noun short: 'Say what the task will create, not only what it will read' was added this week for F272. Its missing sibling is 'say what shares this file's data path'. This is prose plus a contract field, not a static analysis - nothing here should pretend to compute coupling in an audited codebase.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/agents/audit-explorer.md",
+        "plugins/audit/agents/audit-reviewer.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "lint"
+        ]
+      }
+    }
+  ]
+}

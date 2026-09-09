@@ -771,6 +771,64 @@ VERBATIM_RULE_DOC = "reference/manifest-conventions.md"
 VERBATIM_RULE_HEADING = "## The operator's words go in unchanged"
 
 
+# F290. A COMMAND THAT ASKS FOR ITS OUTPUT PRINTED HAS TO SAY WHERE.
+#
+# `commands/status.md` said "Print its stdout verbatim", and a live run read that
+# as discharged: the Bash tool had run, its stdout WAS printed - to the tool
+# result - so the reply said "the report above" and the operator saw nothing. In
+# Claude Code a tool result is collapsed behind the tool call, so "above" is a
+# click away and, to the reader, the report never arrived.
+#
+# Nothing anywhere in the plugin said tool output is invisible to the user, and
+# the same phrasing sits in a dozen command docs, so the same failure was
+# available to all of them.
+#
+# WHY A PINNED SENTENCE RATHER THAN A DOZEN INDEPENDENT EDITS. Repeating a rule in
+# a dozen files is what this repository calls one copy and eleven lies.
+# `_areas.rule_drift` is the house answer to a rule that must appear in several
+# documents: one literal, a table of the documents that owe it, and a check that
+# they still carry it. This is that, for the one instruction whose failure mode is
+# silent - the operator sees nothing and the model believes it delivered.
+RENDER_TRIGGER = "verbatim"
+RENDER_POINTER = "in your own reply"
+# The docs whose OUTPUT is the deliverable. A doc that mentions `verbatim` about
+# something else - `bug.md` embedding a repro into a description, `layout.md`
+# relaying a lock refusal - owes nothing here, which is why this is a named set
+# rather than every file the word appears in.
+RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md", "next.md",
+               "phase.md", "propose.md")
+
+
+def render_target_drift(repo_root=None):
+    """{"missing": [command, ...], "checked": n} -- docs that say to print output
+    without saying WHERE it has to go.
+
+    Subset, like `verbatim_rule_drift` beside it: the pointer has to be present
+    and where it sits is the author's business. A doc in the set that stopped
+    saying `verbatim` is not a finding - it has nothing left to qualify - but one
+    that cannot be READ is, because a check that quietly narrowed what it looked
+    at while keeping the claim it makes is this repository's oldest defect.
+    """
+    root = repo_root or REPO_ROOT
+    cdir = os.path.join(root, PLUGIN_REL, "commands")
+    out, checked = [], 0
+    for name in RENDER_DOCS:
+        try:
+            with open(os.path.join(cdir, name), "r",
+                      encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError as exc:
+            out.append("%s <unreadable: %s>" % (name[:-3], exc))
+            continue
+        body = text.split("---", 2)[-1]
+        if RENDER_TRIGGER not in body:
+            continue
+        checked += 1
+        if RENDER_POINTER not in body:
+            out.append(name[:-3])
+    return {"missing": out, "checked": checked}
+
+
 def verbatim_rule_drift(repo_root=None):
     """{"missing": [command, ...], "checked": n, "ruleDoc": bool} -- docs that ask
     a human for text bound for the journal without saying it goes in unchanged.

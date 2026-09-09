@@ -14,7 +14,8 @@ show the next ready task and what would run, and STOP without mutating.
 
 Otherwise run the full preflight (steps 1–5, including acquiring the lock) and emit **Progress output**.
 
-0. **Print the entry view first, verbatim:**
+0. **Print the entry view first, verbatim — in your own reply, inside a fenced block.** A tool
+   result is collapsed behind the tool call, so running it is not showing it:
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath>` — it names
    every ready task, in order, with what the rest are waiting on. Do not re-tabulate it and
    do not re-derive the readiness rule by hand; the first entry under READY NOW is the task

@@ -14,6 +14,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> $A
 
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it.**
 
+**Print it in your own reply, inside a fenced block.** Running the command is not delivering it:
+a tool result is collapsed behind the tool call, so the reader cannot see it and "the output
+above" points at nothing. A live run ended with the report the operator had asked for sitting
+one click away, and the model believing it had answered.
+
 It already renders the whole report: an overall line with a progress bar, the usage
 line when metering is on, one aligned table across every phase (markers `[x]` done ·
 `[~]` in_progress · `[!]` blocked · `[ ]` pending), what each pending task is waiting

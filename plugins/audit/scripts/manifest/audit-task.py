@@ -396,7 +396,18 @@ def _rescope_refusal(tid, task, blockers):
     expensive route for a change the verb now takes.
     """
     attempt = _mio.recorded_attempt(task)
-    if attempt:
+    status = (task or {}).get("status")
+    if status == "done":
+        # F283's THIRD HEAD. A done task is not running and may have no attempt
+        # recorded, so both heads below say something false about it - one would
+        # claim a gate is matching edits nobody is making, the other needs a
+        # number this task may not carry. What is true of it is the grading: its
+        # commit was measured against the list it holds, and a narrowing would
+        # move that judgement after the fact.
+        head = ("[audit-task] %s is done -- the commit it recorded was graded "
+                "against the files it names, so dropping one now would move a "
+                "judgement that has already been made." % (tid,))
+    elif attempt:
         head = ("[audit-task] %s has already been attempted (%s) -- its outcome "
                 "describes work judged under the current scope, so rescoping it "
                 "would make that record describe something else."
@@ -404,7 +415,7 @@ def _rescope_refusal(tid, task, blockers):
     else:
         head = ("[audit-task] %s is %s -- it is running against the scope it "
                 "has, and the plan gate has been matching its edits to that "
-                "list since it started." % (tid, (task or {}).get("status")))
+                "list since it started." % (tid, status))
     return ("%s Refused: %s. WIDENING is the one change that cannot re-judge "
             "what already happened, so `files` and `tests.add` may still GAIN "
             "entries here -- pass the list the task holds plus the new ones. "
@@ -1638,19 +1649,36 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("[audit-task] scope takes a TASK id; %r is %s"
             % (tid, "not in this manifest" if kind is None else "a " + kind))
         return E_USAGE
-    # THE ONLY REFUSAL LEFT THAT READS THE TASK ALONE (F271). Every other
-    # question this verb asks about a started task is about the CHANGE, so it
-    # cannot be answered until `changes` exists -- see the append-only guard
-    # further down. `_mio.TERMINAL` rather than a fourth spelling of
-    # `("done", "cancelled")`: readiness, the validator and this refusal all mean
-    # the same two words by "settled", and the one time this file spelled that
-    # set itself it got it wrong (see `_waiting_on`).
-    if node.get("status") in _mio.TERMINAL:
-        out("[audit-task] %s is %s -- its scope is settled: the commit it "
-            "recorded was graded against the files it names and the sign-off "
-            "accepted that grading, so nothing written here would describe the "
-            "run that happened. Add the follow-up as a new task."
-            % (tid, node.get("status")))
+    # F283. `cancelled` IS SETTLED; `done` IS NOT, AND THE DIFFERENCE WAS
+    # MEASURED RATHER THAN REASONED. This refusal used to cover `_mio.TERMINAL`
+    # whole, which made the plugin contradict itself out loud: at sign-off
+    # `_invariants.manifest_revalidated` prints, as its own repair,
+    #
+    #   "by sign-off it has to be settled - run `/audit:task scope <id>
+    #    --files ...` to re-derive the index"
+    #
+    # and every id it can name is `done` by then, so the command it hands you
+    # exits 2. A remedy the product prescribes and refuses in the same breath is
+    # worse than no remedy: a live run spent 172,417 tokens on three fix-run
+    # subagents before finding that out.
+    #
+    # WHAT A WIDENING ON A DONE TASK ACTUALLY MOVES, checked in the code rather
+    # than argued: `commit_scope` reads `task.files` LIVE and reports staged
+    # paths outside it, so growing the list can only move a path INTO `allowed` -
+    # it relaxes, never tightens. And the `fileIndex` re-derivation this write
+    # performs is exactly the settlement `manifest_revalidated` is asking for.
+    # The honest objection that remains is about the RECORD, not about any
+    # verdict: the task's `outcome` describes a run judged under the narrower
+    # list. So the row says which attempt it grew during and the report says the
+    # widening settles the index rather than describing new work.
+    #
+    # `cancelled` stays refused. Nothing settles an index for work that will not
+    # be done, and a cancelled task growing a scope is a record nobody can read.
+    if node.get("status") == "cancelled":
+        out("[audit-task] %s is cancelled -- its scope cannot grow: nothing "
+            "will be committed against it, so there is no pairing here to "
+            "settle and no run for a wider list to describe. Add the work as a "
+            "new task." % (tid,))
         return E_USAGE
     # F190. STATUS IS NOT THE WHOLE TEST, and it is not the whole test in the
     # other direction either: a task that ran, failed and was put back to
@@ -1900,10 +1928,24 @@ def _locked_scope(args, project, config, mpath, tid, out):
                 if item not in (row["from"] or []):
                     gained.append("%s +%s" % (row["field"], item))
         out("  WIDENED %s: %s" % (_attempt_phrase(node), ", ".join(gained)))
-        out("  append-only, which is why a task that is not pending will take "
-            "it: nothing was released, so no commit already graded against "
-            "this task's `files` can turn into a breach, and the plan gate now "
-            "matches the paths it was refusing")
+        # WHY IT WAS TAKEN, and the reason differs by status because what the
+        # widening BUYS differs. Mid-flight it unblocks the plan gate, which is
+        # refusing an edit right now. On a finished task nothing is being edited:
+        # what it buys is the `fileIndex` settlement `manifest_revalidated` asks
+        # for at sign-off, and saying "the plan gate now matches" there would name
+        # a benefit nobody is collecting.
+        if node.get("status") == "done":
+            out("  append-only, which is why a task that is already done will "
+                "take it: nothing was released, so no commit graded against "
+                "this task's `files` can turn into a breach, and the `fileIndex` "
+                "re-derived below is the settlement sign-off asks for. This does "
+                "NOT record new work - the task's outcome still describes the "
+                "run that happened. Follow-up work is a new task.")
+        else:
+            out("  append-only, which is why a task that is not pending will "
+                "take it: nothing was released, so no commit already graded "
+                "against this task's `files` can turn into a breach, and the "
+                "plan gate now matches the paths it was refusing")
     if (node.get("tests") or {}).get("gate") == [] \
             and any(row["field"] == "tests.gate" for row in changes):
         # `retarget`'s empty-gate line, and the MEANING differs so the sentence

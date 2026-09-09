@@ -40,7 +40,9 @@ one question it deliberately will not ask itself, and reporting the handoff.
 
 ## Subcommand: `list`
 
-Read-only; no lock. Run it and **print the output verbatim** — the table is what the
+Read-only; no lock. Run it and **print the output verbatim, in your own reply and inside a fenced
+block** — a tool result is collapsed behind the tool call, so running it is not showing it. The
+table is what the
 script prints, not a shape to reproduce from this file:
 
 ```bash

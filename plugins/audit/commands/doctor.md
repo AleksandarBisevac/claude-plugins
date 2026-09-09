@@ -13,6 +13,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-doctor.py" --project "$(pwd)
 ```
 
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it.**
+**Print it in your own reply, inside a fenced block** — a tool result is collapsed behind the tool
+call, so running the command is not delivering it.
 It already renders plain ASCII with one line per check, an indented `->` fix under anything
 actionable, and a totals line. Re-narrating it costs tokens and loses the alignment that
 makes the output scannable.

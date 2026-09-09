@@ -12,7 +12,9 @@ Run
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-logs.py" --project "$(pwd)" $ARGUMENTS
 ```
 
-**Print its stdout verbatim. Do NOT re-format, summarize or re-tabulate it.** It already
+**Print its stdout verbatim, in your own reply and inside a fenced block** — a tool result is
+collapsed behind the tool call, so running the command is not delivering it. Do NOT re-format,
+summarize or re-tabulate it. It already
 renders one line per fact with an aligned label column, and the two counts it exists to
 show are positional.
 

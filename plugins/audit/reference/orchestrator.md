@@ -513,6 +513,24 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
    general-purpose subagent with the same rules if the agent type is unavailable. **If the resolved review skill is
    null**, skip this step — tests are the signer.
+
+   **A finding in a file NO task declares gets a NEW TASK, before you spawn anything.**
+   `/audit:task add "<the finding>" --phase <phaseId> --files <the file>` works while the phase is
+   in sign-off; it lands `pending` and prints `ready now -- /audit:run <id>`. Then run that task
+   the ordinary way. **Do not reach for `/audit:task scope` here** — it refuses a `done` task on
+   purpose, and every task is `done` by the time you are reading this step. Its refusal names this
+   route, but by then you have spent the spawn.
+
+   That order matters and it was measured: a live run spawned three fix-run subagents for findings
+   in undeclared files, `require-plan` refused all three before an edit landed — correctly, the
+   file was in no task's scope — and they had to be re-driven after the tasks were created by hand.
+   **172,417 tokens.** The plan gate was doing its job; the sequence was wrong, and this paragraph
+   is the sequence.
+
+   And the reason it is a new task rather than a widened one: the fix is **new work**. It needs its
+   own commit, its own gate run and its own evidence row. Widening a finished task would make it
+   claim a file its recorded commit never staged, and its `outcome` describe a run that did not
+   happen.
 2. **`testGateGreen`** — run the gate **through the script**, not by hand:
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \

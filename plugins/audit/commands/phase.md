@@ -56,7 +56,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phase
 
 Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
 
-0. **Print the scoped entry view first, verbatim:**
+0. **Print the scoped entry view first, verbatim — in your own reply, inside a fenced block.** A
+   tool result is collapsed behind the tool call, so running it is not showing it:
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --phase <phaseId>` —
    the phase's tasks, their statuses, what each is waiting on, and the whole-plan totals.
    Deterministic, so it costs nothing to lay out. The per-task **Progress output** lines below
