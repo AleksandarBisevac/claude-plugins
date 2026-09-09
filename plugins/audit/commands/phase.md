@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] | add "<title>" --outcome "<what success is>" [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
+argument-hint: '<phaseId> [--dry-run] | add "<title>" --outcome "<what success is>" [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -203,9 +203,20 @@ already prints, and `/audit:status` to see the phase in the plan.
 ## Subcommand: `retarget <phaseId>`
 
 Correct a phase that already exists: `--gate <entry>` (repeatable) or `--gate-clear`,
-`--area a,b`, `--outcome TEXT`, `--description TEXT`. Runs
+`--area a,b`, `--outcome TEXT`, `--description TEXT`, `--rename TITLE`. Runs
 `scripts/manifest/audit-task.py retarget` — same lock, same revalidate-or-roll-back,
 same journal shape as `add`.
+
+**`--rename` is the flag, not `--title`** — the positional slot on this verb is called
+`title` and carries the phase id, so a `--title` flag would shadow it.
+
+**And a rename is refused once the phase is on a branch.** A title is not a label here:
+`_branch.slugify` turns it into the branch's `{slug}`, so before phase entry the title
+decides which branch will be cut and renaming is exactly right. Afterwards the readers
+part company — `close-phase.py` and `manage-worktrees.py` prefer the recorded
+`phase.branch`, `resolve-branch.py` composes from the title unconditionally — and a
+renamed phase would have two names with no reader agreeing on which. Rename before entry,
+or leave the title as the record of what the branch was cut for.
 
 **Why a verb and not a flag on `add`.** The values already exist and are wrong.
 `/audit:init` and `/audit:sync pull sprint` synthesize a phase and choose its

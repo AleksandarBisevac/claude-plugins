@@ -188,16 +188,21 @@ def _apply(raw_index, phase_id, tier):
 def _journal_row(project, config, mpath, phase_id, was, now):
     """One `phase.priority` row -- audit-task.py's shape and its fail-soft
     contract: a write that HAPPENED must never be reported as failed because the
-    record of it could not be."""
+    record of it could not be.
+
+    `append_from_cli` for audit-task.py's reason too (F287): this is a script run
+    from Bash, so no session slot and no panel slot can claim the journal file its
+    append dirties, and `guard-bash-writes` reports an unclaimed one as a shell
+    write into the append-only trail."""
     mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append"):
+    if mod is None or not hasattr(mod, "append_from_cli"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     summary = "%s priority %s -> %s" % (
         phase_id, "none" if was is None else was,
         "none" if now is None else now)
     cfg = None if config else {"manifestPath": _output.posix_rel(mpath, project)}
     try:
-        ok = bool(mod.append(project, {
+        ok = bool(mod.append_from_cli(project, {
             "action": "phase.priority",
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path.

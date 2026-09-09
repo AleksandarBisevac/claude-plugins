@@ -52,9 +52,11 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # happen), sf (F199: the three task fields `scope` did not reach), sn (F208: the
 # task with no `tests` object), qg (F207: add-phase's empty gate), wd (F271: the
 # widening `scope` refused on the very task it exists for), pb (F275: the owning
-# phase's blockedBy, the readiness term this file's own copy never carried).
+# phase's blockedBy, the readiness term this file's own copy never carried),
+# eb (F285: the brief a shell had already eaten, and the stdin route out).
 def _cases(check):
     import contextlib
+    import io
     import shutil
     import subprocess
 
@@ -62,6 +64,22 @@ def _cases(check):
         lines = []
         code = M.main(argv, out=lines.append)
         return code, "\n".join(lines)
+
+    def run_on_stdin(argv, text):
+        """`run`, with a real stream where stdin is -- the eb group's route.
+
+        `sys.stdin` is SWAPPED rather than the module stubbed: `read_brief` reads
+        whatever stream it is handed, so this hands it one, which is input and not
+        a fake of the code under test. `test_check_ado_item.py` drives the same
+        `-` dialect the same way, and the restore is unconditional because a
+        selftest that left `sys.stdin` a StringIO would break every case after it.
+        """
+        real = sys.stdin
+        sys.stdin = io.StringIO(text)
+        try:
+            return run(argv)
+        finally:
+            sys.stdin = real
 
     def base_manifest():
         return {
@@ -1309,6 +1327,110 @@ def _cases(check):
               "null - the conventions default it to absent, and a null would "
               "make an untagged phase claim to have considered the question",
               code == 0 and "area" not in _rtp)
+        # ---- (rn) F288: a phase can be renamed, and a rename is not a label ---
+        # Reported from a live run: a phase whose scope widened kept a title
+        # describing half of it, and nothing could change it - `phase.title` is
+        # written at creation and never again, the panel does not touch it, and
+        # `retarget` had no flag for it.
+        #
+        # THE GUARD IS THE INTERESTING HALF, and it comes from a divergence
+        # measured in the tree rather than from caution: `_branch.slugify` turns
+        # the title into the branch's `{slug}`, `close-phase.py` and
+        # `manage-worktrees.py` both prefer a recorded `phase.branch`, and
+        # `resolve-branch.py` composes from the title UNCONDITIONALLY. So renaming
+        # a phase that is already on a branch leaves three readers with two
+        # answers. Before entry there is nothing to disagree with, and that is
+        # when a widened scope is usually noticed.
+        _rn = base_manifest()
+        _rn["phases"][2].update({"status": "pending", "branch": None,
+                                 "title": "Residual type-safety debt"})
+        rn_proj, rn_mp = mk("rn-rename", _rn)
+        code, txt = run(["retarget", "P3", "--rename", "Type safety and the "
+                         "assertion debt behind it", "--project-dir", rn_proj])
+        _rnp = _mio.load_manifest(rn_mp)["phases"][2]
+        check("rn1 a phase that has not entered can be renamed, and the write "
+              "moves the title the branch slug is composed from: %r"
+              % (_rnp.get("title"),),
+              code == 0
+              and _rnp.get("title") == "Type safety and the assertion debt "
+                                       "behind it")
+        _rnb = base_manifest()
+        _rnb["phases"][2].update({"status": "in_progress",
+                                  "branch": "audit/p3-already-cut",
+                                  "title": "already cut"})
+        rnb_proj, rnb_mp = mk("rn-oncut", _rnb)
+        code, txt = run(["retarget", "P3", "--rename", "something else",
+                         "--project-dir", rnb_proj])
+        check("rn2 SECOND DIRECTION: a phase already ON a branch is refused, and "
+              "the refusal names the three readers rather than saying 'no' - a "
+              "rename there gives the phase two names and no reader agreeing on "
+              "which: %r" % (txt[:120],),
+              code == 2 and "already on branch" in txt
+              and "resolve-branch.py" in txt
+              and _mio.load_manifest(rnb_mp)["phases"][2].get("title")
+              == "already cut")
+        # THE SHARDED LAYOUT IS WHERE A RENAME CAN HALF-LAND, and it did until
+        # this case: `title` is one of `_mio._STUB_KEYS`, so the index carries a
+        # COPY of it, and `_write_add` rewrites the index only when the fileIndex
+        # moved. The shard took the new title and the stub kept the old one - a
+        # reader of the index alone, which is the entire point of a stub, got the
+        # name the phase was created with. Read off the RAW index rather than the
+        # assembled manifest, because assembly merges the stub with the body and
+        # the body wins: the very read that hides this.
+        _rns = base_manifest()
+        _rns["phases"][2].update({"status": "pending", "branch": None,
+                                  "title": "Residual type-safety debt"})
+        rns_proj, rns_mp = mk("rn-sharded", _rns, sharded=True)
+        code, txt = run(["retarget", "P3", "--rename", "Type safety and the "
+                         "assertion debt behind it", "--project-dir", rns_proj])
+        _rns_idx = _mio.read_json(rns_mp)
+        _rns_stub = [s for s in _rns_idx["phases"]
+                     if isinstance(s, dict) and s.get("id") == "P3"][0]
+        _rns_body = _mio.load_manifest(rns_mp)["phases"][2]
+        check("rn3 ...and in the SHARDED layout the rename reaches the index "
+              "STUB too, not only the shard body - a stub is what a reader of "
+              "the index alone is answered from, so a stale copy there is the "
+              "phase having two names: stub=%r body=%r"
+              % (_rns_stub.get("title"), _rns_body.get("title")),
+              code == 0 and _mio.is_sharded(_rns_idx)
+              and _rns_stub.get("title") == "Type safety and the assertion "
+                                            "debt behind it"
+              and _rns_stub.get("title") == _rns_body.get("title"))
+        # THE OTHER DIRECTION, and it needs its own reader. `y3` asks whether the
+        # index file is byte-identical, which a refresh that rewrites the same
+        # values passes -- so it cannot see a stub refresh that fires when nothing
+        # moved. The written-paths list can: the stub design exists so a phase RUN
+        # touches only its shard, and a write that names the index has given that
+        # up whether or not the bytes came out the same.
+        code, txt = run(["add", "Sharded add, no stub key moved", "--phase",
+                         "P2", "--project-dir", rns_proj, "--json"])
+        _rns_written = []
+        try:
+            _rns_written = (json.loads(txt) or {}).get("written") or []
+        except Exception:
+            pass
+        check("rn5 ...and a write that moves NO stub key still leaves the index "
+              "alone: only the shard is written, which is what lets two phase "
+              "branches merge without a manifest conflict: %r" % (_rns_written,),
+              code == 0 and _rns_written
+              and not [p for p in _rns_written if p.endswith("audit-plan.json")])
+        # DRIVEN, not introspected: `audit-task.py` builds its parser inside
+        # `main()`, so there is no `build_parser()` to ask - the same shape P26.1
+        # extracted for `audit-doctor.py`, and the reason `_help.command_choice_
+        # drift` cannot read this script's flag values either. Worth knowing; not
+        # this task's to fix.
+        _rn_code, _rn_txt = run(["retarget", "P3", "--title", "shadowed",
+                                 "--project-dir", rnb_proj])
+        check("rn4 ...and the flag is `--rename` rather than `--title`: this "
+              "verb's POSITIONAL slot is called `title` and carries the phase "
+              "id, so `--title` would shadow the id and read as the one thing it "
+              "is not. argparse refuses it as unknown - on STDERR, which this "
+              "helper does not collect, so the exit code is the assertion: "
+              "code=%r out=%r" % (_rn_code, _rn_txt[:60]),
+              _rn_code == 2
+              and _mio.load_manifest(rnb_mp)["phases"][2].get("title")
+              == "already cut")
+
         code, txt = run(["retarget", "P1", "--gate-clear",
                          "--project-dir", rt_proj])
         check("rt6 a DONE phase is refused: its sign-off was given against the "
@@ -2268,6 +2390,137 @@ def _cases(check):
               code == 2 and "opposite things" in txt
               and len(_mio.load_manifest(qg_mp)["phases"])
               == len(_qg_before["phases"]))
+
+        # ---- (eb) F285: the brief the shell had already eaten ----------------
+        # Reported from a live project. `--description "... `<the condition>`,
+        # returning the response untouched otherwise."` -- the backticks are
+        # COMMAND SUBSTITUTION inside double quotes, so the shell ran the
+        # condition as a command and put its output (nothing) in its place. What
+        # reached argparse had a hole in it exactly where the clause the author
+        # had marked as the point used to be, and this script wrote it. The whole
+        # treatment was `default=""`.
+        #
+        # THE FIXTURE IS THE DAMAGED STRING ITSELF, byte for byte as it was
+        # stored, because a check written against a shape somebody invented is a
+        # check that happens to agree with the incident rather than one that
+        # catches it.
+        _EATEN = ("transformErrorResponse gating on , returning the response "
+                  "untouched otherwise.")
+        _WHOLE = ("transformErrorResponse gating on `if (response.status "
+                  "!== 409) return response`, returning the response untouched "
+                  "otherwise.")
+        eb_proj, eb_mp = mk("eb-brief", base_manifest())
+        with open(eb_mp, "rb") as _fh:
+            _eb_before = _fh.read()
+        code, txt = run(["add", "Gate the error path", "--phase", "P2",
+                         "--description", _EATEN, "--project-dir", eb_proj])
+        with open(eb_mp, "rb") as _fh:
+            _eb_after = _fh.read()
+        check("eb1 the brief the shell ate is REFUSED off argv and the manifest "
+              "is byte identical - the fault was that it was accepted and "
+              "written, so the exit code alone is not the assertion: %r"
+              % (txt[:90],),
+              code == 2 and _eb_after == _eb_before)
+        check("eb2 ...and the refusal says WHAT IT SAW and WHERE TO PUT IT. A "
+              "reader told only that their input is malformed retypes the same "
+              "command and the same shell eats the same clause again, so the "
+              "message carries the offending span and the `-` route: %r"
+              % (txt[:200],),
+              "gating on , returning" in txt
+              and "--description -" in txt
+              and "BRIEF" in txt)
+        # SECOND-DIRECTION CASE, and the one that decides whether this can ship:
+        # an ordinary sentence with a comma in it is most of the corpus.
+        code, txt = run(["add", "Ordinary brief", "--phase", "P2",
+                         "--description",
+                         "gating on the status, returning it untouched "
+                         "otherwise.", "--project-dir", eb_proj])
+        _eb_ok = [t for t in (_mio.tasks_by_id(_mio.load_manifest(eb_mp))
+                              or {}).values()
+                  if t.get("title") == "Ordinary brief"]
+        check("eb3 SECOND-DIRECTION CASE: a description carrying an ordinary "
+              "comma is written unchanged - a guard that fires on correct input "
+              "is a guard somebody routes around within the day: %r"
+              % ([t.get("description") for t in _eb_ok],),
+              code == 0 and len(_eb_ok) == 1
+              and _eb_ok[0].get("description")
+              == "gating on the status, returning it untouched otherwise.")
+        # The repair itself. `-` is the dialect five ADO scripts here already
+        # speak; a brief that comes this way never meets a shell at all.
+        code, txt = run_on_stdin(["add", "From stdin", "--phase", "P2",
+                                  "--description", "-",
+                                  "--project-dir", eb_proj], _WHOLE + "\n")
+        _eb_in = [t for t in (_mio.tasks_by_id(_mio.load_manifest(eb_mp))
+                              or {}).values()
+                  if t.get("title") == "From stdin"]
+        check("eb4 `--description -` reads the brief off STDIN and stores it "
+              "VERBATIM, backticks and the condition included - the trailing "
+              "newline a heredoc always adds is the only thing dropped: %r"
+              % ([t.get("description") for t in _eb_in],),
+              code == 0 and len(_eb_in) == 1
+              and _eb_in[0].get("description") == _WHOLE)
+        # THE DOOR, and it is what makes refusing defensible rather than a trap.
+        code, txt = run_on_stdin(["add", "Gap on purpose", "--phase", "P2",
+                                  "--description", "-",
+                                  "--project-dir", eb_proj], _EATEN + "\n")
+        _eb_gap = [t for t in (_mio.tasks_by_id(_mio.load_manifest(eb_mp))
+                               or {}).values()
+                   if t.get("title") == "Gap on purpose"]
+        check("eb5 ...and the SAME text on that route is written rather than "
+              "refused: the check's evidence is that a shell handled the value, "
+              "which is untrue here, and a guard whose only escape is to mangle "
+              "your own prose has no escape: %r"
+              % ([t.get("description") for t in _eb_gap],),
+              code == 0 and len(_eb_gap) == 1
+              and _eb_gap[0].get("description") == _EATEN)
+        _eb_verbs = {}
+        for _v, _argv in (("scope", ["scope", "P2.3"]),
+                          ("add-phase", ["add-phase", "Later work",
+                                         "--outcome", "shipped"]),
+                          ("retarget", ["retarget", "P2"])):
+            _eb_verbs[_v] = run(_argv + ["--description", _EATEN,
+                                         "--project-dir", eb_proj])[0]
+        check("eb6 EVERY verb that writes a description refuses it, not just "
+              "`add`: four of them take the flag off one global parser and each "
+              "writes the value straight into the manifest, so a check living "
+              "inside one of them is a check the other three do not have: %r"
+              % (_eb_verbs,),
+              sorted(_eb_verbs.values()) == [2, 2, 2])
+        with open(eb_mp, "rb") as _fh:
+            _eb_pre_empty = _fh.read()
+        code, txt = run_on_stdin(["add", "Nothing on stdin", "--phase", "P2",
+                                  "--description", "-",
+                                  "--project-dir", eb_proj], "   \n")
+        with open(eb_mp, "rb") as _fh:
+            _eb_post_empty = _fh.read()
+        check("eb7 `-` with nothing on stdin is a usage error naming the "
+              "heredoc, not a task written with an empty brief - that is the "
+              "same silent loss one step further on, and it is the shape a "
+              "whole backticked description collapses to: %r" % (txt[:120],),
+              code == 2 and _eb_post_empty == _eb_pre_empty
+              and "BRIEF" in txt)
+        check("eb8 the gap is read at every POSITION an eaten span can leave "
+              "one, because the reported damage happened to sit before a comma "
+              "and the next one will not: %r"
+              % ([M.shell_eaten_gap(s) and M.shell_eaten_gap(s)[0]
+                  for s in ("the  flag is read", "it is set by .",
+                            "wrap ( ) around it")],),
+              M.shell_eaten_gap("the  flag is read")
+              and M.shell_eaten_gap("it is set by .")
+              and M.shell_eaten_gap("wrap ( ) around it"))
+        check("eb9 SECOND-DIRECTION CASE: the shapes ordinary technical prose "
+              "really produces are NOT gaps - two spaces after a full stop is a "
+              "typing convention, an indented continuation line is a line, and a "
+              "bare `.` in a quoted command is a PATH (the one false positive "
+              "the whole plan produced, before the full stop had to end a "
+              "sentence): %r"
+              % ([M.shell_eaten_gap(s)
+                  for s in ("It ends here.  And starts again.",
+                            "a line\n   indented on",
+                            "run git fetch . b:p here")],),
+              not M.shell_eaten_gap("It ends here.  And starts again.")
+              and not M.shell_eaten_gap("a line\n   indented on")
+              and not M.shell_eaten_gap("run git fetch . b:p here"))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

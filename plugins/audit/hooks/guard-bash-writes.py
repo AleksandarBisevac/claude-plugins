@@ -92,10 +92,12 @@ Read-only sidecars: <stateDir>/bash-writes-plugin-<key>.json {"pluginWrote": [re
   the journal check, so the plugin's own append is never blamed on the next
   shell command (F-F3). One slot per writer, each with a SINGLE writer, because
   hooks on one event run in parallel: `<sid>` is this session's, written by
-  journal-writes.py, and `panel` is the panel server's, written by
-  `_panel_write` (F104 — a detached process this plugin launched, whose appends
-  the session's slot can never name because the session did not make them).
-  A PEER SESSION'S slot is not read: see `_plugin_wrote`.
+  journal-writes.py; `panel` is the panel server's, written by `_panel_write`
+  (F104 — a detached process this plugin launched, whose appends the session's
+  slot can never name because the session did not make them); and `cli` is the
+  plugin's own scripts, written by `_journal_io.append_from_cli` (F287 — a script
+  run from Bash is handed no session id, so the session's slot cannot name its
+  appends either). A PEER SESSION'S slot is not read: see `_plugin_wrote`.
 
 Config: `.claude/audit.config.json` → bashWriteCheck.enabled (default true).
 Non-git repos, git errors/timeouts (5 s) → silent. ALWAYS exits 0.
@@ -118,15 +120,17 @@ import _config  # noqa: E402
 # `test_guard_bash_writes.py`'s k1 drives the REAL writer, so a drift here goes red.
 _SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
 
-# The sidecar's name and the panel's key, mirrored from `_journal_io`
-# (`PLUGIN_WRITE_SIDECAR`, and `_panel_write.PANEL_JOURNAL_WRITER`) for the one
-# reason a hook ever mirrors a constant: it may not import from `scripts/`. The
-# (pw) group drives the REAL panel writer and reads it back through the function
-# below, so a drift in either spelling goes red rather than going quiet -- and
-# quiet is the direction that matters, because an empty sidecar is
-# indistinguishable from "the plugin appended nothing".
+# The sidecar's name and the two fixed writer keys, mirrored from `_journal_io`
+# (`PLUGIN_WRITE_SIDECAR`, `CLI_JOURNAL_WRITER`, and
+# `_panel_write.PANEL_JOURNAL_WRITER`) for the one reason a hook ever mirrors a
+# constant: it may not import from `scripts/`. The (pw) and (cw) groups drive the
+# REAL writers and read them back through the function below, so a drift in any
+# spelling goes red rather than going quiet -- and quiet is the direction that
+# matters, because an empty sidecar is indistinguishable from "the plugin
+# appended nothing".
 PLUGIN_SIDECAR = "bash-writes-plugin-%s.json"
 PANEL_WRITER = "panel"
+CLI_WRITER = "cli"
 
 # --- the git call -------------------------------------------------------------
 # `-uall` is load-bearing, and the measurement is the reason it survives a profile:
@@ -170,6 +174,13 @@ WARN_TEMPLATE = (
 # simply wrote there, because "the audit trail changed and the plugin did not do
 # it" is worth one line either way. `verify` is named rather than described: it is
 # the command that says whether the chain still holds.
+#
+# THE DISAMBIGUATION LIST NAMES THE CASE THAT ACTUALLY FIRED, which it did not
+# before (F287): a plugin script run from Bash. `append_from_cli` claims those
+# writes now, so the ordinary run is silent -- but the claim is fail-soft and the
+# state directory it lands in is resolved from the script's `--project` while this
+# hook resolves its own from `CLAUDE_PROJECT_DIR`, so a reader can still meet this
+# notice over a sanctioned CLI write and needs the option offered by name.
 JOURNAL_TEMPLATE = (
     "[bash-write-guard] That shell command wrote into the append-only audit "
     "journal: %s. The journal records who changed the plan and the config; it is "
@@ -178,8 +189,9 @@ JOURNAL_TEMPLATE = (
     "been REFUSED here. This is a non-blocking notice; the change was NOT "
     "reverted. Run `audit-journal.py verify` to see whether the chain still holds "
     "- if verify says the chain holds and the newest row is fresh, this was "
-    "likely the plugin itself (a panel save, or an edit and a shell command in "
-    "one message). Otherwise, tell the human what wrote there."
+    "likely the plugin itself (a plugin script you ran via Bash, a panel save, "
+    "or an edit and a shell command in one message). Otherwise, tell the human "
+    "what wrote there."
 )
 
 # Same fact as require-plan's lock denial, delivered late because a shell write
@@ -709,14 +721,25 @@ def _plugin_wrote(state_dir, session_id):
     event run in PARALLEL, so each sidecar has exactly one writer (the hook
     that made the journal write) and this one only ever looks.
 
-    TWO SLOTS, NOT ONE, AND NOT EVERY SLOT IN THE DIRECTORY. The panel server is
-    a detached process this plugin launched, and it writes the journal too -- so
-    its appends were reported as this session's shell writes, with a clean chain
-    behind them and nothing but a manual check to say so (F104). It cannot use
-    the session's slot: the session did not write those rows. It gets a fixed key
-    of its own, because a panel is one per project (`panel-server` refuses a
-    second) and a per-process key would fragment the claim exactly as it
-    fragmented the journal.
+    MORE THAN ONE SLOT, AND NOT EVERY SLOT IN THE DIRECTORY. The tuple below is
+    the list, and it is deliberately not counted in prose: it grew once already,
+    and a sentence counting it would have been wrong from that day.
+
+    The panel server is a detached process this plugin launched, and it writes
+    the journal too -- so its appends were reported as this session's shell
+    writes, with a clean chain behind them and nothing but a manual check to say
+    so (F104). It cannot use the session's slot: the session did not write those
+    rows. It gets a fixed key of its own, because a panel is one per project
+    (`panel-server` refuses a second) and a per-process key would fragment the
+    claim exactly as it fragmented the journal.
+
+    THE PLUGIN'S CLI SCRIPTS ARE A WRITER OF THEIR OWN, and they were the one this
+    guard went on flagging (F287): `commit-audit-state.py` appends a row, the
+    journal file goes dirty, and the next Bash command drew the notice about a
+    write the plugin had just made -- with `audit-journal.py verify` reporting
+    the chain clean behind it. A script run from Bash is handed no session id, so
+    it cannot use the session's slot either; it files under `CLI_WRITER` and
+    `_journal_io.append_from_cli` is the one place that does it.
 
     A PEER SESSION'S SLOT IS DELIBERATELY NOT READ. `test_guard_bash_writes`'s k2
     is the reason: a journal write nothing claims is the `sed`-shaped write this
@@ -725,7 +748,7 @@ def _plugin_wrote(state_dir, session_id):
     sid = _SAFE_SID.sub("-", str(session_id or "")).strip("-.")
     sid = (sid or "no-session")[:40]
     out = set()
-    for key in (sid, PANEL_WRITER):
+    for key in (sid, PANEL_WRITER, CLI_WRITER):
         out |= _sidecar_rels(state_dir, key)
     return out
 

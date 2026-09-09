@@ -38,6 +38,7 @@ import _invariants                                 # noqa: E402
 import _journal_io                                 # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
+import _scoped_commit                              # noqa: E402  (the SHARED renderer, and the clause both lines rest on)
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
 
 M = _loader.load_script("commit-audit-state.py", "cas")
@@ -464,6 +465,62 @@ def _cases(check):
               row_target == _journal_io.repo_relative_or_token(
                   fx["root"], _evidence_io.evidence_dir(fx["root"]))
               and row_target != SHARD_REL)
+
+        # --- the row is explained on the run that WROTE it (F286) -------------
+        # A FRESH REPOSITORY RATHER THAN `fx`. The claim is about the run that
+        # CREATES the condition, and `fx` has been run twice by now - the second
+        # run committed nothing, so reading its output would be asking whether a
+        # line appeared on a run where it was never due.
+        fresh = repos.make(leave_dirty=True)
+        _exhaust(fresh)
+        code, text = _run(fresh)
+        trail_dirty = [ln for ln in _porcelain(fresh)
+                       if "docs/audit/journal" in ln]
+        check("cas27 the run that CREATES the dirty trail is the run that "
+              "explains it. The row names the SHA, so it is appended AFTER the "
+              "commit and can never be inside it - and an operator who is not "
+              "told meets a modified journal on a tree just reported as "
+              "committed and works it out on a second run, which is one run too "
+              "late. The working tree is read as well, so this asserts a TRUE "
+              "sentence and not merely a printed one: %r / %r"
+              % (text, trail_dirty),
+              code == 0
+              and "written AFTER it and is therefore not in it" in text
+              and "rides along with the next commit" in text
+              and trail_dirty)
+
+        check("cas28 ...and the refusal and this notice rest on ONE spelling of "
+              "what a journal row does, so the run that declines and the run "
+              "that commits cannot come to describe the trail differently. They "
+              "are NOT the same sentence and neither contains the other - "
+              "`ONLY_THE_TRAIL` also argues that committing the row would never "
+              "terminate, which is a claim about a state this line is never "
+              "printed in - so the CLAUSE is shared and the rest is not: %r"
+              % (_scoped_commit.RIDES_ALONG,),
+              _scoped_commit.RIDES_ALONG in M.ONLY_THE_TRAIL
+              and _scoped_commit.RIDES_ALONG in _scoped_commit.TRAIL_ROW_WRITTEN
+              and M.ONLY_THE_TRAIL not in _scoped_commit.TRAIL_ROW_WRITTEN
+              and _scoped_commit.TRAIL_ROW_WRITTEN not in M.ONLY_THE_TRAIL)
+
+        # `journal_off` is `build()`'s flag for exactly this state: a disabled
+        # journal makes `_journal_io.append` raise, `record_row` fail-softs to
+        # False, and the commit still happens. The real route to a commit with no
+        # row, rather than a stubbed return value that would prove only that the
+        # branch can be reached.
+        silent = repos.make(leave_dirty=True, journal_off=True)
+        _exhaust(silent)
+        before_silent = _head(silent)
+        code, text = _run(silent)
+        check("cas29 ...and when NO row was written the line is not printed - "
+              "the commit says the trail could not be written instead. The pair "
+              "for cas27 over one branch: a sentence telling a reader a row is "
+              "waiting for the next commit when none was appended sends them to "
+              "look for something that does not exist, which is worse than "
+              "silence: %r" % (text,),
+              code == 0 and _head(silent) != before_silent
+              and _state_rows(silent) == []
+              and "journal row could NOT be written" in text
+              and "rides along with the next commit" not in text)
     finally:
         repos.close()
 

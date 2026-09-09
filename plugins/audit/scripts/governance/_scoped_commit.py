@@ -180,6 +180,39 @@ def answer(skipped, committed=False, commit=None, staged=None, refused="",
             "journalled": journalled, "quiet": quiet}
 
 
+# WHAT A JOURNAL ROW DOES, SPELLED ONCE. Both commands here append a row that
+# NAMES the commit's SHA, so the row is written after the commit and can never be
+# inside it; this clause is what becomes of it afterwards.
+# `commit-audit-state.ONLY_THE_TRAIL` composes this same constant into its
+# refusal, because that refusal and the notice below are two different runs'
+# answers to ONE fact - and two spellings of that fact is how the run that
+# refuses and the run that commits come to disagree about where a row goes.
+RIDES_ALONG = ("a journal row rides along with the next commit rather than "
+               "earning one")
+
+# F286: SAID ON THE RUN THAT CREATES THE CONDITION, not on the next one. The row
+# lands after the commit, so a successful run leaves the trail uncommitted in a
+# tree it has just reported as committed - and an operator who has not read this
+# module meets the dirty file first and the explanation second, on a second run.
+# Reported from a live project, which took two runs on a clean tree to work it
+# out.
+#
+# IT IS SHARED BECAUSE BOTH VERBS HAVE THE PROPERTY, checked rather than assumed:
+# `commit-manifest-index.py` never stages the journal at all - its allow-list is
+# the index and nothing else - so its row is outside its commit too, and this
+# line is a lie in neither. A line that were true of only one of them would
+# belong in that command, not here.
+#
+# BOTH DIRECTIONS ARE PINNED IN `tests/test_commit_audit_state.py` (cas27, cas29)
+# rather than beside this module's own cases, because the claim is only worth
+# anything end to end: that it prints on a run that really committed AND really
+# appended a row, and that it does not print on a run whose row could not be
+# written at all.
+TRAIL_ROW_WRITTEN = ("the journal row naming this commit was written AFTER it "
+                     "and is therefore not in it, so the trail is left "
+                     "uncommitted: %s" % (RIDES_ALONG,))
+
+
 def render(result, prefix, out=print):
     """Print what happened, in the order somebody reading a terminal needs it.
 
@@ -187,6 +220,11 @@ def render(result, prefix, out=print):
     differs between the two callers - which is why this is one function. The lines
     themselves must not diverge: two verbs that report a refusal in two shapes
     teach a reader that the shape means something, and here it does not.
+
+    THE LAST LINE IS A PAIR AND NEVER A DEFAULT. A row that was written and a row
+    that could not be are different states of the world, so each gets its own
+    sentence; `journalled` is what decides, because a line claiming the trail
+    holds a row when it does not is worse than saying nothing at all.
     """
     for line in result["skipped"]:
         out("  degraded: %s" % (line,))
@@ -201,7 +239,9 @@ def render(result, prefix, out=print):
     out("%s committed %s" % (prefix, result["commit"][:12]))
     for path in result["staged"]:
         out("    %s" % (path,))
-    if not result["journalled"]:
+    if result["journalled"]:
+        out("  %s" % (TRAIL_ROW_WRITTEN,))
+    else:
         out("  the commit was made and the journal row could NOT be written, so "
             "nothing in the trail points at it")
 

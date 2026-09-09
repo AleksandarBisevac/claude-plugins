@@ -589,7 +589,8 @@
       "P26.1"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
-      "BF1.1"
+      "BF1.1",
+      "P31.6"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -709,7 +710,8 @@
       "P18.3",
       "P18.9",
       "P21.3",
-      "P22.8"
+      "P22.8",
+      "P31.6"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -920,7 +922,8 @@
       "P29.3",
       "P31.1",
       "P31.4",
-      "P31.7"
+      "P31.7",
+      "P31.6"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -930,7 +933,8 @@
       "P31.7"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
-      "P22.11"
+      "P22.11",
+      "P31.6"
     ],
     "plugins/audit/tests/test_set_priority.py": [
       "P22.11"
@@ -1031,10 +1035,12 @@
       "P31.6"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
-      "P29.4"
+      "P29.4",
+      "P31.6"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
-      "P29.5"
+      "P29.5",
+      "P31.6"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
@@ -1057,6 +1063,9 @@
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2"
+    ],
+    "plugins/audit/scripts/manifest/repair-commits.py": [
+      "P31.6"
     ]
   },
   "bugs": [

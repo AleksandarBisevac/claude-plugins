@@ -1041,7 +1041,7 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
 
     <div class="cmd">
       <div class="cmd-line">
-        <span class="c">/audit:phase retarget &lt;phaseId&gt; [--gate &hellip;] [--gate-clear] [--outcome &hellip;]</span>
+        <span class="c">/audit:phase retarget &lt;phaseId&gt; [--gate &hellip;] [--gate-clear] [--outcome &hellip;] [--rename &hellip;]</span>
         <span class="badge b-write">writes manifest</span>
         <span class="badge b-lock">takes lock</span>
       </div>
@@ -1050,6 +1050,10 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
           repair when a gate turns out to rewrite the tree. Refused on a phase already
           <code>done</code> or <code>cancelled</code>, whose sign-off was given against the gate it
           had.</p>
+        <p><code>--rename</code> changes the phase title, and it is the one option here with a
+          deadline: the title is what the branch name is slugified from, so it may be corrected
+          while the phase is still waiting and is refused once the branch has been cut. After that
+          the title is the record of what the branch was cut for.</p>
       </div>
     </div>
 

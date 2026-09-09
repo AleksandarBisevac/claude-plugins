@@ -150,7 +150,13 @@ Every prompt must include:
 - **Hard rules** (restated even though the agent knows them): read-only; NEVER read secret
   files (`.env`, credentials, keys) — names only; skip vendored/generated code.
 - **Return format**: ONLY a JSON array of findings, each
-  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
+  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "coupledPaths": [{"path", "shared"}], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
+- **Coupling**: `coupledPaths` is what else is on the same data path as the files a finding
+  names — another module reading or writing the same store, the other side of the same
+  request/response or event shape, another file built from the same schema or generated type.
+  Each entry names the path AND the store, shape or type both sides touch; an entry that
+  cannot name what is shared is not a coupled path but a hunch, and `[]` is the answer when
+  there is none, so silence never doubles as absence.
 
 Parse each result; findings that don't parse as JSON get one retry prompt, then are dropped (report the drop).
 
@@ -196,7 +202,27 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      escalate to your strongest tier (`opus`) for `risk: "high"`. Do NOT route audit-fix tasks to
      `haiku` — a botched cheap attempt burns retries (`maxAttempts`) plus a reviewer round, costing
      more than one clean `sonnet` pass.
-   - `files` from the finding; `blockedBy`/`dependsOn` only where a real ordering exists.
+   - `files` from the finding, **plus every `coupledPaths` entry the fix would leave wrong**;
+     `blockedBy`/`dependsOn` only where a real ordering exists.
+
+     **Say what shares this file's data path, not only what the finding named.** One question,
+     asked once per coupled path: *if the executor makes this change and never opens that file,
+     is that file now wrong?* The sibling that writes the column this fix renames, the client
+     that parses the response field this fix drops, the caller built from the type this fix
+     regenerates — each is wrong the moment the fix lands, so each is this task's work and
+     belongs in `files`. A file that merely reads the same store through a shape the fix does
+     not touch is context, not work: name it in the task `description` as something to check
+     and leave it out. On a live phase, two of the three sign-off findings were the same shape
+     — a sibling on a data path no task's `files` covered — and once a phase is `in_progress`
+     the plan gate refuses that edit even to an executor that spots the sibling for itself: a
+     subagent is told to stop and report, never to widen its own scope.
+
+     **The other direction is not the safe one.** `files` is the plan gate's entire definition
+     of a task's scope, so a task that claims everything sharing a data path with its own files
+     has the codebase as its scope and the gate then permits every edit and guards nothing.
+     A coupled path that is real work but not THIS task's work is a separate task with
+     `dependsOn` pointing here — never an extra path on this one.
+
      **Never route a task at files inside a git submodule** (paths under a `.gitmodules` entry):
      the orchestrator commits from the parent repo and cannot stage submodule-internal files. If a
      finding lands inside a submodule, either scope a SEPARATE manifest with `meta.gitRoot` set to

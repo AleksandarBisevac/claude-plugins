@@ -68,7 +68,11 @@ per add is the class of error the script exists to delete.
      `/audit:propose materialize <PROP-id>` as the alternative before creating a
      parallel task by hand.
 2. **Gather the answers** (ask only for what's missing; propose sensible defaults):
-   - `--description` — problem, approach, key decisions.
+   - `--description` — problem, approach, key decisions. **If the brief contains
+     backticks, pass it on stdin with `--description -`** (see *A brief the shell
+     has eaten is refused* below) — inside double quotes a backtick span is
+     command substitution, and the shell deletes it before this script is
+     started.
    - `--files a,b` — repo-relative paths this task touches (Glob/Grep to verify they
      exist; the script notes misses but allows new-file paths).
    - `--tests-mode` (`tdd` for incorrect current behavior / `regression` for
@@ -110,23 +114,73 @@ per add is the class of error the script exists to delete.
        unconsidered (`[]`, the default), where the area default stays in force.
      Then `--skills a,b`, `--skills null`, or omit the flag for unconsidered.
    - `--blocked-by` / `--depends-on` — comma-separated ids (omit when none).
-3. **Run it** (Bash):
+3. **Run it** (Bash) — the brief on **stdin**, which is the only form a shell
+   cannot rewrite:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add "<title>" \
-           --phase <id> --description "<why & how>" --files a,b \
-           --tests-mode regression --risk low --skills a,b
+           --phase <id> --description - --files a,b \
+           --tests-mode regression --risk low --skills a,b <<'BRIEF'
+   <why & how — backticks, quotes and $ signs all survive this route>
+   BRIEF
    ```
+   `--description "<why & how>"` still works and is fine for a brief with no
+   backticks in it; the heredoc form is the one to reach for by default, because
+   whether a brief needs it is a judgement made *before* seeing what the shell
+   did.
    **Print the script's output verbatim — validator findings and warnings
    included. Do NOT re-format, summarize, or "improve" it.** The report already
    names the id, what was written, the journal outcome, and whether the task is
    ready now (with the `/audit:run <taskId>` handoff).
 4. **Exit codes**: `0` done. `2` usage — the message names the choices (ambiguous
-   phase, done phase, reserved id, missing manifest): ask the human, adjust, re-run.
+   phase, done phase, reserved id, missing manifest, a `--description` off argv
+   with a shell-eaten hole in it): ask the human, adjust, re-run.
    `1` the add would leave the manifest invalid — it was rolled back byte-for-byte
    and the findings are printed; fix the inputs (e.g. a `--blocked-by` id that does
    not resolve) and re-run. `3` the index lock is held by a live run — stop; do not
    take it over. `4` the lock looks abandoned — confirm with the human
    (AskUserQuestion), then re-run the same add with `--takeover`.
+
+### A brief the shell has eaten is refused
+
+**`--description` carries the operator's own words and reaches the script through a
+shell.** Inside double quotes a backtick span is **command substitution**: the shell
+runs whatever sits between the backticks and puts its output there instead — for a
+sentence of prose, nothing. Measured live: a brief that backticked the one condition
+the work turned on was stored as `… gating on , returning the response untouched
+otherwise.` The clause marked as the point was the clause that was deleted, the
+script accepted it, and a whole phase ran against a brief with a hole in it.
+
+So a `--description` that arrives **off argv** carrying the whitespace such a
+deletion leaves behind — a gap before a comma, a run of spaces inside a sentence, a
+full stop with nothing in front of it — is **refused**, exit `2`, before the lock is
+taken and with nothing written. The message names the span it saw and the route out.
+
+**The route out is `--description -`**, and it is the fix rather than a bypass: the
+brief is read from **stdin**, which no shell rewrites and which this stores verbatim.
+`-` where a value goes means stdin throughout this plugin — `scripts/manifest/check-ado-item.py`
+and its ADO siblings read a payload the same way — so there is no `--description-file`
+to learn.
+
+```bash
+… scope <taskId> --description - <<'BRIEF'
+transformErrorResponse gating on `if (response.status !== 409) return response`,
+returning the response untouched otherwise.
+BRIEF
+```
+
+**Quote the heredoc word.** `<<'BRIEF'` turns expansion off; a bare `<<BRIEF` expands
+its body exactly as the double quotes did, and you get the same hole a different way.
+
+**Text arriving on stdin is not checked**, deliberately. The refusal's evidence is
+that a *shell* handled the value, which is not true there — and a guard whose only
+escape is to mangle your own prose is a guard that gets routed around. So a brief
+that genuinely contains one of those shapes has somewhere to go: this route, which
+writes it exactly as typed. What is **not** refused is an absent description; a task
+with none shows as having none on every surface that renders it, and this is about
+the brief that still *reads* complete and is not.
+
+Every verb here that takes `--description` refuses the same way, because the flag
+is one flag on one parser and each of them writes the value straight into the manifest.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 
@@ -180,7 +234,9 @@ before it runs.
 Give a task the files it touches, and optionally its tests, its
 description and the three fields that decide how and when it runs:
 `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
-(repeatable), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`,
+(repeatable), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`
+(or `--description -` to read the brief from stdin — see *A brief the shell has
+eaten is refused* above, and prefer it whenever the text holds backticks),
 `--risk low|med|high`, `--blocked-by ids`, `--depends-on ids`. Runs `scripts/manifest/audit-task.py scope` — the same
 lock, the same revalidate-or-roll-back, the same journal row shape as `add`. At least
 one of them is required; a call that would change nothing is refused.

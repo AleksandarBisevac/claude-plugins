@@ -29,6 +29,14 @@ single shared file would conflict on every merge -- the one thing the sharded
 manifest layout exists to avoid. The writer id and the month come from
 `_journal_io`, so the two records name the same writer the same way.
 
+EVERY ANCHOR ROW HERE GOES THROUGH `_journal_io.append_from_cli` (F287), not
+`append`. `run-test-gate.py` is the only caller of the functions here that write
+one, and it is a script the operator runs from Bash: nothing else can claim the
+journal file the append dirties -- the journal-writes hook files its claim under a
+session id no script is handed, and the panel files under its own -- so an
+unclaimed row made the NEXT Bash command draw `guard-bash-writes`' notice about a
+write this plugin had just made itself.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__evidence_io.py` -- see `plugins/audit/tests/_harness.py`.
 """
@@ -388,7 +396,7 @@ def record(project, result, scope, ids, identity, published=None, config=None):
     for key in ("taskId", "phaseId"):
         if row.get(key):
             details[key] = row[key]
-    appended = _journal_io.append(project, {
+    appended = _journal_io.append_from_cli(project, {
         "action": ACTION_RECORDED,
         "actor": {"sessionId": identity.get("sessionId"),
                   "via": identity.get("via") or "unknown"},
@@ -581,7 +589,7 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
     for key in ("taskId", "phaseId"):
         if ids.get(key) is not None:
             details[key] = str(ids[key])
-    _journal_io.append(project, {
+    _journal_io.append_from_cli(project, {
         "action": ACTION_MOVED.get(scope, ACTION_MOVED["phase"]),
         "actor": {"sessionId": session_id, "via": "evidence"},
         "target": _journal_io.repo_relative_or_token(project, path),
@@ -1008,7 +1016,7 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
         details["runId"] = derived["runId"]
     if phase_id is not None:
         details["phaseId"] = str(phase_id)
-    _journal_io.append(project, {
+    _journal_io.append_from_cli(project, {
         "action": ACTION_SINCE,
         "actor": {"sessionId": session_id, "via": "evidence"},
         "target": repo_relative_or_token(project, manifest_path),

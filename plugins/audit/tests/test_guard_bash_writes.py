@@ -509,6 +509,91 @@ def _cases(check):
           "replacing the other would satisfy pw1 and pw2 and lose the case the "
           "(k) group is about", _pw_both, _pw_detail)
 
+    # (cw) F287: THE PLUGIN'S OWN CLI SCRIPTS ARE THE WRITER THIS GUARD WENT ON
+    # FLAGGING. Reported from a live project: `commit-audit-state.py` ran, the
+    # journal file it appended to went dirty, and the NEXT Bash command drew "that
+    # shell command wrote into the append-only audit journal ... an edit tool would
+    # have been REFUSED here" - while `audit-journal.py verify` reported the chain
+    # clean behind it. The plugin warned about itself, on a path it owns.
+    #
+    # NEITHER EXISTING SLOT COULD NAME IT. The session's slot is written by the
+    # journal-writes HOOK under a session id, and a script invoked from Bash is
+    # handed no session id at all; the panel's slot belongs to a detached server
+    # that did not make this write. So the fix is a third fixed key and NOT a path
+    # exemption - exempting the journal directory would delete the guard, which is
+    # what cw2 is here to keep true.
+    #
+    # DRIVEN THROUGH THE REAL CLI, for (k)'s and (pw)'s reason: `CLI_WRITER` here
+    # and `_journal_io.CLI_JOURNAL_WRITER` are two literals in two files a hook may
+    # not share an import with, so a case that planted the sidecar by hand would
+    # pin the guard against itself and go on passing after either side drifted.
+    _cas = _loader.load_script("commit-audit-state.py",
+                               modname="commit_audit_state_for_cw", cache=False)
+    cwproj = tmp / "cliwriter"
+    (cwproj / "docs" / "audit").mkdir(parents=True, exist_ok=True)
+    plant_plan(cwproj)
+    cwsd = cwproj / ".claude" / "state"
+    cwcfg = _config._deep_merge(_config.DEFAULTS, {})
+    os.environ["CLAUDE_PROJECT_DIR"] = str(cwproj)
+    _cw_detail = ""
+    _cw_silent = _cw_other = _cw_every = False
+    try:
+        for _sid in ("bw-cw1", "bw-cw2"):
+            seed(_sid, use_cfg=cwcfg, state_dir=cwsd, cwd=cwproj)
+        _cwpath = _cas.record_row(str(cwproj), "P1", "a" * 40, config=cwcfg)
+        _cwrel = _config.rel_path(cwproj, _cwpath) if _cwpath else None
+        _cwv, _cwd = M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
+                               "session_id": "bw-cw1", "cwd": str(cwproj)},
+                              cfg=cwcfg, state_dir=cwsd, dirty=[_cwrel])
+        _cw_silent = bool(_cwpath) and _cwrel is not None and _cwv == "silent"
+        _cw_detail = "wrote=%r rel=%r verdict=%r %r" % (_cwpath, _cwrel, _cwv, _cwd)
+        # SECOND DIRECTION, and the one a path exemption would have destroyed: a
+        # journal file NOTHING claims is the `sed`-shaped write this template
+        # exists for. The CLI's claim file is sitting right there while this runs.
+        _cwother = "docs/audit/journal/2026-08.0badc0de0badc0de.jsonl"
+        _cwv2, _cwd2 = M.decide({"tool_name": "Bash",
+                                 "tool_input": {"command": "x"},
+                                 "session_id": "bw-cw2", "cwd": str(cwproj)},
+                                cfg=cwcfg, state_dir=cwsd, dirty=[_cwother])
+        _cw_other = _cwv2 == "warn" and "append-only audit journal" in _cwd2
+        # EVERY SLOT, not one instead of another: a reader that swapped the panel's
+        # key for the CLI's would satisfy cw1 and cw2 and silently drop F104, and
+        # one that swapped the session's would drop F-F3. Each claim is left by the
+        # REAL function that files it for that writer, on a path of its own, so the
+        # three cannot collapse into one row's file.
+        _jw3 = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                            modname="journal_writes_for_cw", cache=False)
+        _cwsess = str(cwproj / "docs" / "audit" / "journal" / "2026-08.sess.jsonl")
+        _cwpanel = str(cwproj / "docs" / "audit" / "journal" / "2026-08.pane.jsonl")
+        _jw3.record_plugin_write(str(cwproj), cwcfg,
+                                 {"session_id": "bw-cw1"}, _cwsess)
+        _panel_write._claim_panel_write(_config._load_journal_lib(),
+                                        str(cwproj), cwcfg, _cwpanel)
+        _cwset = M._plugin_wrote(cwsd, "bw-cw1")
+        _cw_every = (_cwrel in _cwset
+                     and _config.rel_path(cwproj, _cwsess) in _cwset
+                     and _config.rel_path(cwproj, _cwpanel) in _cwset)
+        _cw_detail += " | set=%r" % (sorted(_cwset),)
+    except Exception as exc:  # pragma: no cover
+        _cw_detail = "cli-writer integration error: %s" % exc
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    check("cw1 a row a plugin CLI appended is SILENT on the next Bash pass - "
+          "`commit-audit-state.py` leaves its own claim through "
+          "`_journal_io.append_from_cli`, and the guard subtracts it",
+          _cw_silent, _cw_detail)
+    check("cw2 ...while a journal file no writer claims still warns, with the "
+          "CLI's claim file present - a path exemption would have passed cw1 by "
+          "deleting the guard, and this is what says it did not",
+          _cw_other, _cw_detail)
+    check("cw3 ...and the session's slot, the panel's and the CLI's are ALL "
+          "read: any one replacing another would satisfy cw1 and cw2 and lose a "
+          "fault the (k) or (pw) group is about", _cw_every, _cw_detail)
+    check("cw4 the journal notice offers the case that actually fired - a "
+          "plugin script the reader ran via Bash - and not only a panel save",
+          "a plugin script you ran via Bash" in M.JOURNAL_TEMPLATE,
+          M.JOURNAL_TEMPLATE)
+
     # (f) REAL git integration: init a repo, dirty it, no `dirty` injection
     s = "bw-f"
     _detail_f = ""

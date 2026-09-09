@@ -223,9 +223,13 @@ def record_row(project, phase_id, sha, index_abs, config=None):
 
     FAIL-SOFT, `_journal_io.append`'s own contract: a commit that HAPPENED must
     not be reported as not having happened because the trail could not be written.
+
+    `append_from_cli`, NOT `append` (F287): this command is run from Bash, and an
+    append no writer claims is reported by `guard-bash-writes` as a shell write
+    into the append-only trail on the next Bash command.
     """
     config = _journal_io.load_config(project) if config is None else config
-    return _journal_io.append(project, {
+    return _journal_io.append_from_cli(project, {
         "action": _invariants.ACTION_INDEX_COMMITTED,
         "actor": {"via": "commit-manifest-index"},
         "target": _journal_io.repo_relative_or_token(project, index_abs),

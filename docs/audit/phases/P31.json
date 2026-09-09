@@ -1,7 +1,7 @@
 {
   "id": "P31",
   "title": "Third field report: the remedy the product prescribes and refuses in the same breath",
-  "status": "in_progress",
+  "status": "done",
   "description": "A third live report, and its sharpest item is one the plugin says to itself. At sign-off, _invariants.manifest_revalidated prints as its own repair: 'by sign-off it has to be settled - run /audit:task scope <id> --files ... to re-derive the index'. Every id it can name is done by then, and scope refused every done task - so the product hands you a command it refuses in the same breath. A live run spent 172,417 tokens on three fix-run subagents before finding that out. F271 widened the STARTED rule this week and left the SETTLED one, which is exactly the half that bites at sign-off. Analysis also found it is worse than reported: during sign-off the plan gate is at deny with ZERO covered files, because in_progress_task_map reads only in_progress tasks and every task is done by then - so a finding inside a task's files would not have helped either. The remaining items are a shell-fragile description that silently dropped the decisive clause of a brief, a commit verb that cannot converge and only explains itself on the second run, a write-guard that flags the plugin's own CLI writers because they file no claim, and a phase title that nothing can rename though a branch name derives from it.",
   "desiredOutcome": "No remedy this product prescribes is refused by the product at the moment it prescribes it; a brief cannot lose its decisive clause in silence; and the surfaces that warn about their own sanctioned writes say which writer they mean.",
   "testGate": [
@@ -19,12 +19,17 @@
   "branch": null,
   "mergedAt": null,
   "review": {
-    "tool": null,
-    "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "tool": "code-review",
+    "model": "opus",
+    "status": "passed",
+    "findings": [
+      "P31.7 shipped half of its own declared outcome: `retarget --rename` moved the title in the shard and left the index STUB carrying the old one, which is exactly the storage wrinkle the task description names. Found by building a sharded fixture the first live drive had not; fixed inside the task (the file was already in its `files`), with rn3 and rn5 proving both directions - the refresh, and that a write moving no stub key still leaves the index alone, which is what lets two phase branches merge cleanly.",
+      "P31.6 was implemented WIDER than its declared `files`, and rightly: the reported writer was one of seven CLI-reachable journal writers that filed no claim, including `audit-journal.py append`, which the guard's own notice cites as a legitimate writer. The scope was settled afterwards through `/audit:task scope` on the done task - the F283 route this same phase restored - which is also how F294 was found.",
+      "Three agent reports contained claims I could not take at face value and re-derived: P31.4's corpus figures (mine differ, the verdict does not), P31.5's byte-identity of ONLY_THE_TRAIL (checked against HEAD), and every red-first table (re-run in the primary tree rather than read).",
+      "Recorded rather than fixed here, each with a measurement: F291 (the explorer's return contract is written in two files and nothing compares them), F292 (PLUGIN-BUILD-GUIDE.md still describes the pre-F268 commit spelling), F293 (--reason and --outcome carry the same shell risk as --description, and an unquoted heredoc still slips past the new guard), F294 (`files ⊇ tests.add` copies SENTENCES into a task's scope: 8 already in the plan, 94 more one call away), F295 (25 of 50 sampled (verb, flag) pairs on audit-task.py are accepted and silently ignored)."
+    ]
   },
-  "summary": null,
+  "summary": "Eight findings from a third live report, and the one that named the phase was the product prescribing a remedy it refuses in the same breath: at sign-off `manifest_revalidated` tells you to run `/audit:task scope <id>` on ids that are all `done`, and the verb exited 2 on every one of them. `scope` now splits TERMINAL - `cancelled` refused, `done` accepting an append-only widening, because growing a list can only relax a scope and the fileIndex re-derivation IS the settlement being asked for. Around it: a phase can be renamed and the rename reaches the branch slug it feeds and the index stub that duplicates it, refused once a branch is cut because three readers would then give two answers; a brief the shell has eaten is refused off argv and has a stdin route that cannot be eaten; the run that leaves the journal dirty is the run that explains it; the plugin's own CLI scripts file a write claim, so the guard stops flagging the plugin and still flags everything else; `/audit:init` asks what shares a file's data path; commands that ask for their output printed say WHERE; and the subagent refusal stops promising a widening sign-off cannot deliver. Verified live rather than by reading, in throwaway projects and a real git repository, with every new case proven red-first in both directions. Five further faults were found along the way and recorded rather than folded in.",
   "tasks": [
     {
       "id": "P31.1",
@@ -149,7 +154,7 @@
       }
     },
     {
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "risk": "med",
@@ -159,11 +164,11 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "shell_eaten_gap() reads five residue positions a shell leaves when it eats part of an argument; resolve_description() runs in main() before dispatch and before the lock, so a refused call costs no lock, no journal row and no rollback - and it covers all FOUR write sites, including retarget, which the brief did not name. --description - reads the brief off stdin in the dialect check-ado-item.py already uses, dropping only trailing newlines. Re-derived on my own corpus: 0 hits over 152 description strings and 0 over 606 adjacent prose strings, while the damaged brief is caught and `git fetch . b:p` is not. Nine cases (eb1-eb9), each proven red by a mutation moving its own claim; eb1 and the stdin boundary re-proven in the primary tree, and the whole thing driven live in zsh.",
+        "descriptive": "A brief that reached the manifest missing exactly the clause its author thought worth quoting is now refused instead of written, and the refusal points at the route no shell can damage. The refusal is affordable because the way past it is the better input path, not a re-worded brief."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-09T16:39:53Z",
       "verifiedBy": [],
       "id": "P31.4",
       "title": "F285: a brief cannot lose its decisive clause in silence",
@@ -188,7 +193,7 @@
       }
     },
     {
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "risk": "low",
@@ -198,11 +203,11 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_scoped_commit.render's success path prints TRAIL_ROW_WRITTEN, gated on `journalled` so it is a pair and never a default. The shared fact - a row names the SHA, so it lands outside the commit - is one constant, _scoped_commit.RIDES_ALONG, composed by both the notice and commit-audit-state.ONLY_THE_TRAIL; that refusal renders byte-identically to HEAD, checked rather than asserted. Placed in the shared renderer because commit-manifest-index.py has the same property (the journal is not on its allow-list), so the line is a lie in neither. cas27/cas28/cas29 added; cas27 and cas29 re-proven red-first in the primary tree. 30/30, 10/10, 18/18.",
+        "descriptive": "The run that leaves the journal dirty is now the run that says so. It used to take a second run on a clean tree to learn why a tree just reported as committed had a modified file in it."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-09T16:29:31Z",
       "verifiedBy": [],
       "id": "P31.5",
       "title": "F286: the trailing journal row is explained on the run that creates it",
@@ -226,7 +231,7 @@
       }
     },
     {
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "risk": "high",
@@ -236,11 +241,11 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io.append_from_cli() appends and files the claim under one fixed writer key, CLI_JOURNAL_WRITER = 'cli', mirrored in guard-bash-writes as CLI_WRITER because a hook may not import scripts/; _plugin_wrote now reads (sid, PANEL_WRITER, CLI_WRITER). The config is resolved once and handed to both halves, because the claim's slot is stateDir-relative and two loads could file it where the guard is not looking. Deliberately NOT a path exemption: exempting the journal directory would delete the guard, and mutating it that way goes red across six cases. Seven CLI writers converted, derived by an AST walk for append calls with two or more arguments rather than by search. pw6 states the rule - every journal append under scripts/ claims or goes red by name - so the eighth writer cannot arrive silently.",
+        "descriptive": "Running the plugin's own commands from a shell no longer makes the next command draw a warning about the plugin's own write. The guard still speaks for a journal write nobody claimed, which is the write it exists for - driven live in a real repository, both directions."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-09T16:45:03Z",
       "verifiedBy": [],
       "id": "P31.6",
       "title": "F287: the plugin's own CLI writers file a claim, so the guard stops flagging them",
@@ -249,6 +254,13 @@
         "plugins/audit/hooks/guard-bash-writes.py",
         "plugins/audit/scripts/governance/_journal_io.py",
         "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/scripts/manifest/repair-commits.py",
         "plugins/audit/tests/test_guard_bash_writes.py",
         "plugins/audit/tests/test__journal_io.py"
       ],
@@ -267,7 +279,7 @@
       }
     },
     {
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "risk": "high",
@@ -277,11 +289,11 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "retarget --rename TITLE writes phase.title through the same lock, revalidate-or-roll-back and journal row as every other manifest mutation. --rename and not --title: the verb's positional slot is already called title and carries the phase id. Refused once phase.branch is recorded, because resolve-branch.py:111 composes the branch from the title unconditionally while close-phase.py:133 and manage-worktrees.py:134 prefer the recorded name - three readers, two answers. THE SHARDED HALF WAS NOT FREE, which the phase review caught: _write_add rewrites the index only when the fileIndex moved, so the shard took the new title and the index stub kept the old one; _STUB_KEYS are now compared against the body and the index is dirtied only when one actually moved, which keeps the property that a phase RUN touches no index. rn1-rn5, every one proven red-first in both directions, and driven live on throwaway projects in both layouts.",
+        "descriptive": "A phase whose scope widened can be given a title that describes it - while it is still waiting - and the rename reaches every place the title is stored, not only the one the reader happens to load. After the branch is cut the title is the record of what the branch was cut for, and the verb says so instead of silently disagreeing with itself."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-09T16:57:08Z",
       "verifiedBy": [],
       "id": "P31.7",
       "title": "F288: a phase can be renamed, and the rename reaches everything the title feeds",
@@ -308,7 +320,7 @@
       }
     },
     {
-      "status": "in_progress",
+      "status": "done",
       "model": "opus",
       "skills": [],
       "risk": "low",
@@ -318,11 +330,11 @@
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-explorer.md gained a coupling rule and a coupledPaths field shaped {path, shared}; the `shared` key forces the explorer to name the store, wire shape or generated type both sides touch, and [] is required so looked-and-found-none is not did-not-look. init.md restates the contract for its documented fallback path and carries the sibling paragraph to F272's at the bullet where `files` is populated, with the both-directions rule: a coupled path the fix would leave wrong is this task's work, and a task that claims its whole data path has the codebase as its scope. audit-reviewer.md narrows preExisting to what the change inherited. No analyser, no Python.",
+        "descriptive": "The plan now asks what else is on a file's data path, which is where two of three findings in a live phase came from. It asks for the name of the thing shared, so the answer is checkable rather than a feeling of relatedness."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-09-09T16:29:31Z",
       "verifiedBy": [],
       "id": "P31.8",
       "title": "F289: /audit:init asks what shares a file's data path, not only what a task reads",
@@ -343,5 +355,10 @@
         ]
       }
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-09T17:08:43Z.ecffea",
+    "status": "passed",
+    "at": "2026-09-09T17:08:43Z"
+  }
 }

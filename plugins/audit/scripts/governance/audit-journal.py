@@ -128,7 +128,7 @@ def cmd_append(args, out):
             "nothing written")
         return 0
     try:
-        row, _path = _append(project, {
+        row, path = _append(project, {
             "action": args.action, "target": args.target or "",
             "summary": args.summary or "",
             "details": getattr(args, "_details", None),
@@ -137,6 +137,14 @@ def cmd_append(args, out):
     except Exception as exc:
         out("[audit-journal] could not append: %s" % exc)
         return 1
+    # THE CLAIM `append_from_cli` LEAVES, left by hand here because this command
+    # needs `row` for the line below and only the raising `_append` returns it
+    # (F287). Without it the append this command just made is reported by
+    # `guard-bash-writes` as a shell write into the append-only trail on the next
+    # Bash command -- and this command is the one the guard's own notice names as
+    # a legitimate writer, which made the notice contradict itself.
+    _journal_io.record_plugin_write(project, config,
+                                    _journal_io.CLI_JOURNAL_WRITER, path)
     out("[audit-journal] %s %s  %s" % (row["ts"], row["action"],
                                        row["hash"][:12]))
     return 0

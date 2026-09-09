@@ -501,6 +501,14 @@ PLUGIN_WRITE_SIDECAR = "bash-writes-plugin-%s.json"
 PLUGIN_WRITE_KEY = "pluginWrote"
 MAX_WRITER_KEY_CHARS = 40
 
+# The fixed key every CLI writer files under, mirrored in `guard-bash-writes` as
+# `CLI_WRITER` (F287). A script run from Bash is handed no session id -- the id
+# reaches a hook on its stdin payload and reaches argv nowhere -- so it cannot use
+# the per-session slot `journal-writes.py` writes, and a key per process would
+# fragment the claim exactly as it would have fragmented the panel's. One key for
+# all of them is the shape the panel's own key already established.
+CLI_JOURNAL_WRITER = "cli"
+
 
 def plugin_write_sidecar(project, config, writer):
     """`<stateDir>/bash-writes-plugin-<writer>.json`, or None when there is no
@@ -1026,6 +1034,37 @@ def append(project, entry, config=None):
         return path
     except Exception:
         return False
+
+
+def append_from_cli(project, entry, config=None):
+    """`append`, plus the claim a plugin script run from Bash owes the write
+    guard (F287). Same return contract as `append`: the path, or False.
+
+    WHAT NOT CLAIMING COSTS is a notice about the plugin's own write. An append
+    puts a journal file into `git status`, and `guard-bash-writes` reports an
+    unclaimed journal file as a shell write into the append-only trail -- so
+    running `commit-audit-state.py` made the NEXT Bash command draw "that shell
+    command wrote into the append-only audit journal", with `audit-journal.py
+    verify` reporting the chain clean behind it. Nothing was broken and only a
+    manual check could say so, which is the worst shape a warning takes.
+
+    NOT A PATH EXEMPTION, and that is the design rather than an implementation
+    detail: the guard subtracts the files a writer CLAIMED and never the journal
+    directory, because a journal write nothing claims is the `sed`-shaped write
+    the guard exists for. Exempting the path would delete the guard.
+
+    THE CONFIG IS RESOLVED ONCE and handed to both halves. The claim's slot is
+    `stateDir`-relative, so letting `append` load one config while the claim
+    loaded another would file the claim where the guard is not looking -- silence
+    dressed as evidence, and invisible from either side.
+
+    Fail-soft on the claim by `append`'s own contract: a row that WAS written must
+    not be reported as unwritten because the claim could not be left."""
+    config = load_config(project) if config is None else config
+    path = append(project, entry, config=config)
+    if path:
+        record_plugin_write(project, config, CLI_JOURNAL_WRITER, path)
+    return path
 
 
 # --- verifying ----------------------------------------------------------------

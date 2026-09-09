@@ -257,11 +257,17 @@ def record_row(project, phase_id, sha, config=None):
 
     FAIL-SOFT, `_journal_io.append`'s own contract: a commit that HAPPENED must
     not be reported as not having happened because the trail could not be written.
+
+    `append_from_cli`, NOT `append` (F287): this command is run from Bash, so its
+    append put the journal file into `git status` and `guard-bash-writes` had
+    nothing claiming it -- the next shell command drew a notice about a row this
+    plugin had just written, with `audit-journal.py verify` reporting the chain
+    clean behind it.
     """
     config = _journal_io.load_config(project) if config is None else config
     target = _journal_io.repo_relative_or_token(
         project, _evidence_io.evidence_dir(project, config))
-    return _journal_io.append(project, {
+    return _journal_io.append_from_cli(project, {
         "action": _invariants.ACTION_STATE_COMMITTED,
         "actor": {"via": "commit-audit-state"},
         "target": target,
@@ -279,11 +285,19 @@ NOTHING_UNCOMMITTED = ("nothing uncommitted: the phase's manifest file, the "
                        "journal and the evidence are already in git. No commit "
                        "was made, because an empty one records nothing and "
                        "buries the ones that do.")
+# THE CLAUSE IS `_scoped_commit.RIDES_ALONG` AND NOT A SECOND TYPING OF IT. This
+# refusal and the success-path notice that module prints (F286) are two runs'
+# answers to one fact - the row names the SHA, so it lands outside the commit -
+# and they are NOT the same claim: this one says why a dirty trail is not work to
+# do and would never terminate if it were, the other says a row has just been
+# written and where it will land. What they share is exactly the clause below, so
+# the clause is shared and the rest is not; two typings of one fact is how the
+# run that refuses comes to describe a journal differently from the run that
+# commits.
 ONLY_THE_TRAIL = ("nothing uncommitted but the trail: the only thing not in git "
-                  "is a journal row, and a journal row rides along with the next "
-                  "commit rather than earning one. Committing it here would "
+                  "is a journal row, and %s. Committing it here would "
                   "anchor the last commit, need a row of its own, and never "
-                  "stop.")
+                  "stop." % (_scoped_commit.RIDES_ALONG,))
 
 
 def render(answer, out=print):

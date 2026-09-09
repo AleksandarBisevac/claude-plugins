@@ -612,9 +612,14 @@ def record_row(project, phase_id, branch, parent, config=None):
     """Anchor the merge in the trail. FAIL-SOFT, `_journal_io.append`'s contract: a
     merge that HAPPENED must not be reported as not having happened because the trail
     could not be written. `journal-writes.py` cannot see this one -- it is a
-    PostToolUse hook over Edit/Write, and this is a script."""
+    PostToolUse hook over Edit/Write, and this is a script.
+
+    Which is also why it is `append_from_cli` (F287): the hook cannot see the
+    write, so the hook's per-session claim cannot name it either, and an append no
+    writer claims is what `guard-bash-writes` reports as a shell write into the
+    append-only trail."""
     config = _journal_io.load_config(project) if config is None else config
-    return _journal_io.append(project, {
+    return _journal_io.append_from_cli(project, {
         "action": ACTION_PHASE_MERGED,
         "actor": {"via": "close-phase"},
         "target": str(phase_id),

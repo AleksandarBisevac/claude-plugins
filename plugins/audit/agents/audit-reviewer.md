@@ -20,6 +20,14 @@ Hard rules:
   history, or state. You have no edit tools by design: report, don't fix.
 - Charge findings to the DIFF, not the codebase: pre-existing problems
   outside the changed lines go into `preExisting`, not `findings`.
+- A file the diff never touched can still be charged to the diff. That rule is
+  about what the change INHERITED, not what it broke at a distance: when the
+  change alters a shape crossing a boundary — the column written, the field on a
+  response or event, the generated type — the module on the other side was right
+  before this diff and is wrong after it. It is a `findings` entry, not
+  `preExisting`. Name both sides and the store, wire shape or type they share, so
+  the fix task can be scoped to both files instead of one; a phase whose `files`
+  never covered that path is exactly how the untouched side got left behind.
 - Treat evidence-free verification claims as unverified work: a
   "verified/tested/checked" that names no exact command and exit code (or
   concrete observation) may be rejected on that basis alone.

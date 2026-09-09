@@ -14,11 +14,11 @@ Usage:
   audit-task.py add "<title>" [manifest] [--phase P2]
                 [--skills a,b | --skills null] [--model m] [--files f1,f2]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
-                [--description TEXT] [--tests-mode tdd|regression|gate-only]
+                [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>"
-                [--id P7] [--description TEXT] [--area a,b]
+                [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
                 [--project-dir DIR] [--takeover] [--json]
@@ -26,12 +26,12 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py scope <taskId> [manifest] [--files f1,f2]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
-                [--gate CMD ... | --gate-clear] [--description TEXT]
+                [--gate CMD ... | --gate-clear] [--description TEXT|-]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
                 [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT]
-                [--description TEXT] [--project-dir DIR] [--takeover] [--json]
+                [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -51,13 +51,19 @@ Usage:
   `--clear` twin -- `--blocked-by ""` empties the field, because a comma
   list of IDS has no value that reads as content the way `--gate ""` reads
   as an empty COMMAND, and `retarget --area ""` already draws that line.
+  `--description -` reads the brief off STDIN instead of off argv (F285),
+  which is where a brief goes that must reach the manifest with its
+  backticks intact; a heredoc with a QUOTED word is the shell-proof form.
+  A description consisting of the single character `-` cannot be spelled
+  from this flag, and is not a description.
 
 Exit codes:
   0  written, manifest valid
   1  refused invalid: the manifest had findings before the write (nothing
      written), or the write itself would leave it invalid (every written file
      rolled back byte-for-byte); the findings are printed either way
-  2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args
+  2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args,
+     or a `--description` off argv that a shell has already eaten part of
   3  the index lock is held by a LIVE run (audit-lock's standard message)
   4  the index lock looks abandoned -- rerun with --takeover once a human
      has confirmed (audit-lock's standard message)
@@ -110,6 +116,15 @@ Design decisions, each mirroring a precedent rather than inventing one:
     byte-for-byte and exit 1 -- this script refuses to leave an invalid
     manifest behind.
 
+  * BRIEF (F285). `--description` carries a human's own words and reaches this
+    script through a shell, which eats a backtick span before argparse sees it
+    -- silently, and usually taking the clause the author backticked BECAUSE it
+    mattered. So the flag also takes `-`, reading the brief off stdin the way
+    check-ado-item.py's `read_json` and four ADO siblings already read a payload;
+    and a value that arrives off ARGV carrying the whitespace such a deletion
+    leaves behind is refused, pointing at that route. `resolve_description` holds
+    both halves and the reasoning for refusing rather than warning.
+
   * HEAL (v0.37 A4). Reuses _panel_write._heal_phase_status on the target
     phase: a write this code makes must not persist a pending phase that
     already holds an in_progress task. The validator warning stays as the
@@ -128,6 +143,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -223,6 +239,174 @@ def _parse_skills(val):
     if val.strip() == "null":
         return None
     return _split_csv(val)
+
+
+# --- the brief, and the shell that may already have eaten part of it (F285) ----
+# A description is the operator's OWN WORDS (F191), and by the time argparse sees
+# one it has already been through a shell. Inside double quotes a backtick span is
+# COMMAND SUBSTITUTION: the shell RUNS what sits between the backticks and puts its
+# output there instead, which for a sentence of prose is nothing at all. Measured
+# live: a brief that quoted the one condition the work turned on arrived here with
+# `gating on , returning the response untouched otherwise` -- the clause its author
+# had backticked precisely BECAUSE it mattered most was the clause the shell
+# deleted. This script accepted it, wrote it, and a whole phase ran against a brief
+# with a hole in it. Nothing in the plugin had ever looked at the text.
+#
+# THE REPAIR IS THE INPUT ROUTE, and the check below only makes it findable at the
+# moment it is needed. `--description -` reads the brief off stdin, which no
+# argument parser and no QUOTED heredoc rewrites. The `-` spelling is the dialect
+# that already exists here -- `check-ado-item.read_json` and four siblings take a
+# `-` where a value goes and read stdin -- rather than the `--*-file` flag this
+# plugin has nowhere and would be the odd command out for having.
+
+
+# The shapes an eaten span leaves behind: whitespace sitting where a WORD was.
+# Each is a different POSITION the hole can open in, and each carries what a reader
+# would actually see, because "malformed" tells nobody which character to look at.
+#
+# WHAT IS DELIBERATELY ABSENT, all of it measured over the description strings this
+# repository's own plan carries. An UNBALANCED BACKTICK COUNT is the intuitive test
+# and is refuted by the mechanism: the shell removes both delimiters, so the count
+# stays even and the reported damage scores clean. A TRAILING PREPOSITION
+# ("...talking to.") over-fires on ordinary sentences already in the plan. TWO
+# SPACES AFTER A FULL STOP is a typing convention rather than a gap, which is why
+# the run below refuses to start after one -- and a run after a NEWLINE is an
+# indented continuation line, so it does not start there either.
+_GAP_SHAPES = (
+    (re.compile(r"(?<=[^\s.!?])[ \t]{2,}"),
+     "a run of spaces inside a sentence"),
+    (re.compile(r"[ \t][,;:)]"),
+     "whitespace before a mark that hugs the word in front of it"),
+    # The full stop has to be a full stop and not an ARGUMENT. A bare `.` is a
+    # path, and this plan's own prose quotes `git fetch . b:p`, which the loose
+    # form convicted -- the only false positive the whole corpus produced. So the
+    # period is only read as ending a sentence when a sentence ends after it:
+    # the string does, or the next word starts one.
+    (re.compile(r"[ \t]\.(?=\Z|\s+[A-Z(\[])"),
+     "whitespace before a full stop"),
+    (re.compile(r"\A[ \t]+"),
+     "whitespace before the first word"),
+    (re.compile(r"[ \t]+\Z"),
+     "whitespace after the last word"),
+)
+
+
+def shell_eaten_gap(text):
+    """(what it looks like, the words either side of it), or None if the brief
+    reads whole.
+
+    THE FIRST GAP AND THEN IT STOPS. A brief with two holes needs the same repair
+    as a brief with one, and printing a list of them invites the reader to grade a
+    severity that does not exist -- every one of them is a deleted clause.
+
+    The excerpt is returned rather than described so the caller can `%r` it: the
+    evidence IS whitespace, and whitespace quoted into a sentence is invisible
+    exactly where the reader has to look.
+    """
+    if not isinstance(text, str) or not text:
+        return None
+    for pattern, what in _GAP_SHAPES:
+        found = pattern.search(text)
+        if found:
+            start = max(0, found.start() - 30)
+            return what, text[start:found.end() + 30]
+    return None
+
+
+def read_brief(value, stream=None):
+    """(text, from_stdin, error) -- the description, off stdin when `value` is `-`.
+
+    ONLY THE TRAILING NEWLINES ARE DROPPED, and only those. A heredoc always ends
+    in one and nobody means it as part of the brief; a trailing SPACE, by contrast,
+    is a character the operator typed, and F191 says the operator's words go into
+    the manifest unchanged. That restraint is also what makes this route a real
+    escape from the check above -- text that comes in this way comes in verbatim,
+    so an operator whose brief genuinely holds one of the shapes has somewhere to
+    put it.
+    """
+    if value != "-":
+        return value, False, None
+    src = stream if stream is not None else sys.stdin
+    try:
+        text = src.read()
+    except Exception as exc:                  # a closed or unreadable stdin
+        return None, True, ("[audit-task] --description - was given and stdin "
+                            "could not be read: %s" % (exc,))
+    text = text.rstrip("\n")
+    if not text.strip():
+        return None, True, (
+            "[audit-task] --description - was given and stdin held no text, so "
+            "there is no brief to write -- and a description silently written "
+            "empty is the fault this route exists to fix, one step further on. "
+            "Pipe the text in, or use a heredoc:\n"
+            "    ... --description - <<'BRIEF'\n"
+            "    the description, backticks and all\n"
+            "    BRIEF")
+    return text, True, None
+
+
+def brief_gap_refusal(what, excerpt):
+    """The refusal for a `--description` that reached argv with a hole in it.
+
+    It has to say WHAT WAS SEEN and WHAT TO DO, because a reader told only that
+    their input was malformed retypes the same command -- and the same shell eats
+    the same clause a second time.
+    """
+    return (
+        "[audit-task] --description carries %s, which is what a shell leaves "
+        "behind when it eats part of an argument: inside double quotes a "
+        "backtick span is COMMAND SUBSTITUTION, so the words between the "
+        "backticks are RUN and replaced by their output -- for prose, by "
+        "nothing. Seen at: %r\n"
+        "  Refused rather than written, because the brief that would reach the "
+        "manifest is missing exactly the clause its author thought worth "
+        "quoting, and no reader downstream can tell that from ordinary prose.\n"
+        "  Pass the brief on stdin instead, which no shell rewrites and this "
+        "writes through unchanged:\n"
+        "    ... --description - <<'BRIEF'\n"
+        "    the description, backticks and all\n"
+        "    BRIEF\n"
+        "  QUOTE the heredoc word ('BRIEF'): an unquoted <<BRIEF expands its "
+        "body exactly as the double quotes did. Text arriving on stdin is not "
+        "checked for this, so if the whitespace is what you meant, that route "
+        "writes it as you typed it." % (what, excerpt))
+
+
+def resolve_description(args, out, stream=None):
+    """The exit code the run must stop on, or None to carry on.
+
+    ONE PLACE, AND BEFORE THE LOCK. Four verbs on this parser take
+    `--description` -- `add`, `add-phase`, `scope` and `retarget` -- and every one
+    of them writes the value it is handed straight into the manifest, so a check
+    living inside any of them is a check the other three do not have. Before the
+    lock because a call refused here must not cost a lock, a journal row or a
+    rollback.
+
+    WHY THE STDIN ROUTE IS NOT CHECKED. The evidence the check reads is that a
+    shell handled the text, and the whole worth of refusing is that the way out of
+    a false positive is the route the caller should be using anyway. Checking here
+    too would take that way out away and leave a brief that genuinely contains one
+    of the shapes no way into the manifest at all -- a guard with no door, which is
+    the guard this repository has three fault entries about and which was routed
+    around each time.
+
+    An EMPTY description stays legal, on the same reasoning read the other way: a
+    task with no description shows as having none, in the manifest and on every
+    surface that renders it, so it is not the silent loss this is about. What is
+    refused is a brief that still READS complete and is not.
+    """
+    text, from_stdin, error = read_brief(args.description, stream)
+    if error:
+        out(error)
+        return E_USAGE
+    args.description = text
+    if from_stdin:
+        return None
+    gap = shell_eaten_gap(text)
+    if gap:
+        out(brief_gap_refusal(gap[0], gap[1]))
+        return E_USAGE
+    return None
 
 
 # --- the refusals and report lines more than one verb spends ------------------
@@ -665,7 +849,22 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
         new_stub, body = _new_stub_and_body(body, _shard_rel_dir(raw_index))
         stub = new_stub
         index_dirty = True
+    # F288. THE STUB IS A COPY OF TWO FIELDS, AND A COPY NOTHING REFRESHES GOES
+    # STALE. `_mio._STUB_KEYS` is `("id", "title")`, and until `retarget --rename`
+    # existed no verb could change either one after the split -- so nothing here
+    # ever had to look. Measured on a sharded fixture the moment one could: the
+    # shard carried the new title while the index went on naming the phase by the
+    # one it was created with, which is the whole point of a stub answered wrongly.
+    #
+    # COMPARED, NOT REWRITTEN. The stub is deliberately minimal so a phase RUN
+    # touches only its shard and two phase branches merge without a manifest
+    # conflict; rewriting the index on every task write would put that conflict
+    # back. So the index is dirtied only when a stub key actually moved.
     if "shard" in stub:
+        for key in _mio._STUB_KEYS:
+            if key in body and stub.get(key) != body.get(key):
+                stub[key] = body[key]
+                index_dirty = True
         spath = os.path.abspath(os.path.join(base, stub["shard"]))
         if not _panel_write._within(project, spath):
             raise ValueError("refused: shard path escapes project: %s"
@@ -718,9 +917,15 @@ def _journal_row(project, config, mpath, action, summary, details):
     `via` defaulted to `unknown` where the add row says `cli`. Neither could
     be seen from the row that was written; both are the reason the builder is
     shared rather than the shape being restated a third time for `add-phase`.
+
+    THE APPEND IS `append_from_cli` (F287). `/audit:task` is run from Bash, and
+    the journal file its append dirties was reported by `guard-bash-writes` as a
+    shell write into the append-only trail on the next Bash command -- there was
+    no claim on it, because the only writers that filed one were the hook (under
+    the session id, which a script is never handed) and the panel.
     """
     mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append"):
+    if mod is None or not hasattr(mod, "append_from_cli"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     # THE PLACEMENT RULE (F-C-2): the journal lands in a sane place INSIDE
     # the named manifest's tree -- never doubled, never outside. A project
@@ -734,7 +939,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     cfg = None if config else \
         {"manifestPath": _output.posix_rel(mpath, project)}
     try:
-        ok = bool(mod.append(project, {
+        ok = bool(mod.append_from_cli(project, {
             "action": action,
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path (n3 pins it; Windows relpath says backslash).
@@ -2040,15 +2245,38 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "attested" % (pid, node.get("status")))
         return E_USAGE
 
+    # F288. A TITLE IS NOT A LABEL HERE, and that is why the rename has a guard
+    # rather than being a free field. `_branch.slugify`'s own docstring is
+    # "phase.title -> the `{slug}` segment", composed into
+    # "<prefix>/{phase}-{slug}" - so before a phase enters, its title decides
+    # which branch will be created, and renaming it is exactly right.
+    #
+    # AFTER IT ENTERS, THE READERS DISAGREE, and that is measured rather than
+    # feared: `close-phase.py` and `manage-worktrees.py` both prefer the recorded
+    # `phase.branch`, while `resolve-branch.py` composes from the title
+    # unconditionally and never looks at it. Rename a phase that is already on a
+    # branch and two of the three answer with the branch it is on while the third
+    # answers with a name nothing created. Refusing there is the honest reading
+    # until those three agree; the title stays correctable for every phase that
+    # has not entered, which is when a widened scope is usually noticed.
+    if args.rename and node.get("branch"):
+        out("[audit-task] %s is already on branch %r -- renaming it now would "
+            "leave `resolve-branch.py` composing a name from the new title while "
+            "`close-phase.py` and `manage-worktrees.py` keep using the recorded "
+            "one, so the phase would have two names and no reader agreeing on "
+            "which. Rename before phase entry, or leave the title as the record "
+            "of what this branch was cut for." % (pid, node.get("branch")))
+        return E_USAGE
+
     contradiction = _gate_contradiction(args)
     if contradiction:
         out(contradiction)
         return E_USAGE
     if not (args.gate or args.gate_clear or args.area is not None
-            or args.outcome or args.description):
+            or args.outcome or args.description or args.rename):
         out("[audit-task] retarget needs one of --gate / --gate-clear / --area / "
-            "--outcome / --description -- a call that changes nothing is a lock "
-            "taken for no reason")
+            "--outcome / --description / --rename -- a call that changes nothing "
+            "is a lock taken for no reason")
         return E_USAGE
 
     changes = []
@@ -2083,6 +2311,14 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             now = tags[0] if len(tags) == 1 else tags
             _moved("area", was, now)
             node["area"] = now
+    if args.rename:
+        # `--rename` and not `--title`: the positional slot named `title` is the
+        # PHASE ID for this verb (`cmd_retarget` reads `args.title` for it), so
+        # a `--title` flag would shadow the id in the parser and read as the one
+        # thing it is not. `--rename` is also the word an operator looking for
+        # this reaches for first.
+        _moved("title", node.get("title") or "", args.rename)
+        node["title"] = args.rename
     if args.outcome:
         _moved("desiredOutcome", node.get("desiredOutcome") or "", args.outcome)
         node["desiredOutcome"] = args.outcome
@@ -2214,6 +2450,12 @@ def main(argv, out=print):
     p.add_argument("--blocked-by", dest="blocked_by", default=None)
     p.add_argument("--depends-on", dest="depends_on", default=None)
     p.add_argument("--description", default="")
+    # F288. `retarget --rename "<new title>"`. Not `--title`: this verb's
+    # POSITIONAL slot is called `title` and carries the phase id, so the flag
+    # would shadow it. A phase title is not decoration - `_branch.slugify` turns
+    # it into the branch's `{slug}` - which is why it is corrected through a verb
+    # that can refuse rather than by hand.
+    p.add_argument("--rename", default="", metavar="TITLE")
     p.add_argument("--tests-mode", dest="tests_mode",
                    choices=["tdd", "regression", "gate-only"], default=None)
     p.add_argument("--tests-add", dest="tests_add", action="append",
@@ -2243,6 +2485,12 @@ def main(argv, out=print):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
+    # F285, and it runs for EVERY verb because the parser is global: `cancel` does
+    # not read a description, but a caller who passes one to it should not be told
+    # a different story about the same flag by a different verb.
+    stop = resolve_description(args, out)
+    if stop is not None:
+        return stop
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget}

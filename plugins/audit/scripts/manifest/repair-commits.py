@@ -198,8 +198,12 @@ def apply_repair(mpath, manifest, ans):
     # The record. Fail-soft by the journal's own contract: a repair that
     # SUCCEEDED must not be reported as failed because the note about it could
     # not be written - but the failure is said, not swallowed.
+    #
+    # `append_from_cli` (F287): this is a script the operator runs from Bash, and
+    # an append no writer claims is what `guard-bash-writes` reports as a shell
+    # write into the append-only trail on the next Bash command.
     rel = os.path.relpath(mpath, project).replace(os.sep, "/")
-    ok = bool(_journal_io.append(project, {
+    ok = bool(_journal_io.append_from_cli(project, {
         "action": "trail.repair",
         # Persisted row: "/" separators regardless of platform, like every other
         # journal path.

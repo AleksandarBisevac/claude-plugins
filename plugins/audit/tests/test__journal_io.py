@@ -58,6 +58,94 @@ def _module_consts_and_funcs(tree):
     return consts, funcs
 
 
+def _scripts_modules():
+    """Every `.py` under `scripts/`, wherever it sits. `__pycache__` is not source."""
+    out = []
+    for dirpath, dirs, files in os.walk(_harness.SCRIPTS_DIR):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        for name in sorted(files):
+            if name.endswith(".py"):
+                out.append(os.path.join(dirpath, name))
+    return sorted(out)
+
+
+def _journal_append_sites(path):
+    """[(lineno, name)] for every JOURNAL append in `path`, and for no list.
+
+    THE ARITY IS THE DISCRIMINATOR, not the name. `list.append` takes exactly one
+    argument and a journal append takes `(project, entry)`, so a call to `append`,
+    `_append` or `append_from_cli` carrying two or more arguments is one of these
+    and a one-argument call never is. A name test alone would call every list in
+    the tree a journal writer; pw7 is the case that says this one does not."""
+    with open(path, "r", encoding="utf-8") as fh:
+        tree = ast.parse(fh.read(), filename=path)
+    sites = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or len(node.args) < 2:
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            name = func.attr
+        elif isinstance(func, ast.Name):
+            name = func.id
+        else:
+            continue
+        if name in ("append", "_append", "append_from_cli"):
+            sites.append((node.lineno, name))
+    return sites
+
+
+def _names_used(path):
+    """Every identifier a module NAMES, plus the strings it hands `getattr`.
+
+    PROSE IS EXCLUDED ON PURPOSE and that is the whole reason this reads the AST:
+    a docstring saying a file leaves a claim is not a file leaving one, and every
+    writer touched by F287 explains itself in prose. `getattr` is in because
+    `_panel_write` reaches its recorder through one - an older journal module has
+    no `record_plugin_write`, and that miss is the fail-soft branch."""
+    with open(path, "r", encoding="utf-8") as fh:
+        tree = ast.parse(fh.read(), filename=path)
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            used.add(node.attr)
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+              and node.func.id == "getattr" and len(node.args) >= 2
+              and isinstance(node.args[1], ast.Constant)
+              and isinstance(node.args[1].value, str)):
+            used.add(node.args[1].value)
+    return used
+
+
+def _unclaimed_journal_writers(owner):
+    """Journal appends under `scripts/` that leave the write guard nothing to
+    subtract, as `path:line`. Also returns every site it derived, so an empty
+    finding list cannot be read as "all clear" by a walk that found nothing.
+
+    THE RULE (F287): a journal append puts its file into `git status`, and
+    `guard-bash-writes` reports a journal file no writer claimed as a shell write
+    into the append-only trail. So a site is settled when it goes through
+    `append_from_cli`, or when the file files the claim by hand - which
+    `audit-journal.py` does because it needs the ROW that only the raising
+    `_append` returns, and `_panel_write` does under the panel's own key. `owner`
+    is where both entry points are defined and is settled by definition."""
+    findings, sites = [], []
+    for path in _scripts_modules():
+        found = _journal_append_sites(path)
+        if not found:
+            continue
+        sites.extend((path, line, name) for line, name in found)
+        if os.path.basename(path) == owner:
+            continue
+        claims = "record_plugin_write" in _names_used(path)
+        for line, name in found:
+            if name != "append_from_cli" and not claims:
+                findings.append("%s:%d" % (os.path.basename(path), line))
+    return findings, sites
+
+
 def _row_shape_constants(path, root="_normalise"):
     """(names, rooted): every public module-level constant of `path` that
     BUILDING A ROW can read, found by walking out from `root` over the module's
@@ -166,7 +254,8 @@ def _cases(check):
     # second arm asserts those names still exist, so an exclusion list that had
     # rotted into typos could not pass by excluding nothing.
     _state_vocab = set(["WRITER_TOKEN_FILE", "PLUGIN_WRITE_SIDECAR",
-                        "PLUGIN_WRITE_KEY", "MAX_WRITER_KEY_CHARS"])
+                        "PLUGIN_WRITE_KEY", "MAX_WRITER_KEY_CHARS",
+                        "CLI_JOURNAL_WRITER"])
     check("b7 SECOND-DIRECTION CASE: the derivation is NARROW - the writer-state "
           "vocabulary is public and reachable, and stays out of the row shape "
           "because no row reads it: %r" % (sorted(_state_vocab & set(_derived)),),
@@ -503,6 +592,66 @@ def _cases(check):
               "save that SUCCEEDED into a save that failed",
               M.record_plugin_write(_pwp, _pwcfg, "panel", False) is None
               and M.record_plugin_write(_pwp, _pwcfg, "panel", "") is None)
+
+        # F287: THE KEY A CLI FILES UNDER AND THE KEY THE HOOK READS ARE TWO
+        # LITERALS IN TWO FILES that may not share an import - `guard-bash-writes`
+        # is a hook and the layer rule forbids it reaching into `scripts/` - so the
+        # mirror is pinned the way `PLUGIN_SIDECAR` already is. DRIVEN, not
+        # compared: `append_from_cli` is run and the slot it produced is the one
+        # the hook's own template names for the hook's own constant, so a rename on
+        # either side is red rather than quiet. Quiet is the direction that bites,
+        # because a claim filed under a key nobody reads is indistinguishable from
+        # a plugin that appended nothing.
+        _gbw = _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                         "guard-bash-writes.py"),
+                            modname="guard_bash_writes_for_pw", cache=False)
+        _cliproj = os.path.join(tmp, "cliclaim")
+        os.makedirs(_cliproj)
+        _clipath = M.append_from_cli(_cliproj, {
+            "action": "state.committed", "target": "",
+            "actor": {"via": "commit-audit-state"}}, config=_pwcfg)
+        _clislot = M.plugin_write_sidecar(_cliproj, _pwcfg, M.CLI_JOURNAL_WRITER)
+        _cliheld = _claimed(_clislot) if _clislot and os.path.exists(_clislot) \
+            else {}
+        _clihook = os.path.join(os.path.dirname(_clislot or ""),
+                                _gbw.PLUGIN_SIDECAR % _gbw.CLI_WRITER)
+        check("pw5 a CLI's append files its claim under the key the HOOK reads: "
+              "`append_from_cli` wrote %r and guard-bash-writes looks for %r - "
+              "two literals in two files a hook may not import across, so the "
+              "mirror is driven rather than asserted"
+              % (os.path.basename(_clislot or ""), os.path.basename(_clihook)),
+              bool(_clipath)
+              and _gbw.CLI_WRITER == M.CLI_JOURNAL_WRITER
+              and os.path.normpath(_clislot) == os.path.normpath(_clihook)
+              and _cliheld.get(M.PLUGIN_WRITE_KEY)
+              == [_output.posix_rel(_clipath, _cliproj)])
+
+        # THE RULE, NOT THE INSTANCE. F287 was reported against one command and was
+        # true of every script that appends: only the journal-writes hook and the
+        # panel had ever filed a claim, so each of the others made the next Bash
+        # command draw a notice about a write this plugin had just made. A case
+        # pinning that one command would have left the class open and the next
+        # writer added would reopen it in silence.
+        _unclaimed, _sites = _unclaimed_journal_writers(os.path.basename(M.__file__))
+        _anchors = set(["commit-audit-state.py", "audit-task.py",
+                        "close-phase.py", "_panel_write.py"])
+        _seen = set(os.path.basename(p) for p, _l, _n in _sites)
+        check("pw6 every journal append under `scripts/` leaves the write guard "
+              "something to subtract - through `append_from_cli`, or by filing "
+              "the claim by hand where the ROW is needed too. Unclaimed %r, "
+              "anchors found %r" % (_unclaimed, sorted(_anchors & _seen)),
+              _unclaimed == [] and _anchors <= _seen)
+        # SECOND-DIRECTION CASE, and the one that stops pw6 being satisfied by a
+        # walk that swept the whole tree in: the discriminator is the ARITY, so a
+        # module that appends to lists all day and never to the journal is not a
+        # journal writer and is not being asked for a claim it does not owe.
+        _lists = os.path.join(_harness.SCRIPTS_DIR, "_output.py")
+        check("pw7 ...and the derivation is NARROW: `_output.py` appends to lists "
+              "and never to the trail, so it is not in the writer set and pw6 is "
+              "not passing by demanding a claim of every file: %r"
+              % (_journal_append_sites(_lists),),
+              _journal_append_sites(_lists) == []
+              and os.path.basename(_lists) not in _seen)
 
         _uuid = "3f33caa7-c0c9-4a4e-9c3b-a6dbf4d111b9"
         check("r12 a real session id is byte-identical to what it always was, and "
