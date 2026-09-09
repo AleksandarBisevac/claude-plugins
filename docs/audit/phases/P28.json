@@ -1,7 +1,7 @@
 {
   "id": "P28",
   "title": "Field report: the guard that gets routed around, and a commit type commitlint refuses",
-  "status": "in_progress",
+  "status": "done",
   "description": "A field report from a live project, two of whose four items are fixed here before 2.2.0 goes out because both were reproduced rather than accepted. (1) guard-secrets-read refuses an interpreter body that merely CONTAINS shell-read text: `_eval_reads_a_secret`'s second arm greps the WHOLE body with BASH_FILE_READ, so a list of fixture strings executing nothing is graded as reading a secret. Measured: a data-only body is REFUSED while the same text as prose is quiet. It blocked this session three times and both the reporter and this session routed around it by writing a script to a scratchpad file and running it from there - which is worse for security than what was blocked, and is the failure mode this repository names by its own rule. F263 narrowed the first arm for exactly this reason and left the second. (2) commit-audit-state.py builds `audit-state(P1):`, an unknown conventional-commit type, so husky+commitlint repos reject it after the files are staged. The reporter's suggested fix - take the type from meta.commit.type - would destroy the separability the code deliberately holds: a fixed literal is the only spelling a task commit cannot collide with. Both properties are kept instead.",
   "desiredOutcome": "A body that only mentions a secret read is not refused, a body that really runs one still is, and an audit-state commit lands on a repo with commitlint without losing the prefix `git log --grep` separates it by.",
   "testGate": [
@@ -21,10 +21,12 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      "The first narrowing of Rule #1 was measured against the wrong shape: the known cost was claimed as a class when the inline `-c` form is still caught by the outer shell lane. The live probe corrected it and both halves are now asserted (b8j, b8k)."
+    ]
   },
-  "summary": null,
+  "summary": "Two items from a field report, both reproduced before being touched. Rule #1's second arm graded the WHOLE interpreter body, so a body carrying shell-read text as DATA - a fixture list, a case table about this very guard - was refused as reading a secret; it blocked three commands in this session and both the reporter and this session routed around it by writing a script to a scratchpad and running it from there, which is worse for security than what was refused. It now grades the arguments of a call that really shells out, and the residual miss is one shape rather than a class (the inline form is still caught by the outer shell lane) with both halves asserted. And `audit-state(P1):` became `chore(audit-state): P1 - ...`: the separating literal moved to the SCOPE, so commitlint accepts the type while `git log --grep audit-state` still tells these from task commits for ever. Half of `cas8` was reversed with its trigger named.",
   "tasks": [
     {
       "id": "P28.1",
@@ -102,5 +104,10 @@
       "completedAt": "2026-09-08T22:57:24Z",
       "verifiedBy": []
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-09T06:10:17Z.4ea0b4",
+    "status": "passed",
+    "at": "2026-09-09T06:10:17Z"
+  }
 }
