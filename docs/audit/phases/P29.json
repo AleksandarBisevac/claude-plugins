@@ -1,7 +1,7 @@
 {
   "id": "P29",
   "title": "Two field reports: the remedies the documents prescribe and the code refuses",
-  "status": "in_progress",
+  "status": "done",
   "description": "Nine findings from two live projects, and the shape they share is worth naming: in four of them a document already prescribes the right behaviour and the code does not deliver it. orchestrator.md prescribes /audit:task scope for a plan-gate refusal while audit-task.py refuses every task that has hit one; it prescribes 'infrastructure failure - gates could NOT run' while run-test-gate.py records a crashed runner as a failed suite; it documents four readiness terms while audit-task counts two; it tells a human to 'land the index change in its own commit' while nothing can. The remaining three are guards and verdicts that grade text or the wrong subject: GATE MUTATED THE TREE fires on a sibling writer under the parallelism the orchestrator itself recommends, NO OVERLAP names two counts and not the paths that produced them, and guard-history-rewrite refused this repository's own commit documenting the rule it enforces. One reported finding was refuted by measurement rather than accepted: files a task must create CAN be pre-registered, and the dead end came from the scope verb alone.",
   "desiredOutcome": "Every remedy these documents prescribe is reachable in the case it is written for; every verdict names its own subject rather than a neighbour's; and no guard in the set refuses prose that performs nothing.",
   "testGate": [
@@ -21,10 +21,14 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      "The brief named the wrong invariant check for F271's justification (audit-state-scope rather than commit_scope); the reasoning held, the name did not, and the implementing agent caught it before writing it down.",
+      "F273 no longer refuses a change outside the work under test, and that is only affordable because F274's explicit pathspec landed in the same phase - porcelain reports what moved and never who. The dependency between the two repairs is now written into orchestrator.md beside both, because one that lived only in a transcript is one the next editor would break.",
+      "check_index_commit_carries_only_the_index was written but absent from CHECKS, so the pipeline gate looked complete while the case never ran. Wired as g21 and proven red by a mutation that stages the shard instead."
+    ]
   },
-  "summary": null,
+  "summary": "Nine findings from two live projects, and four of them shared one shape: a document prescribed the right behaviour and the code refused it. /audit:task scope is what orchestrator.md tells you to run when the plan gate refuses a file a running task needs, and it refused every task that had hit one - append-only widening is now accepted on a started task, journalled with the attempt it grew during, because _invariants.commit_scope grades a past commit against the CURRENT files so growing the list can only relax it. Readiness counted two terms where the document and _status_facts count four, so add and scope offered a copyable /audit:run for a task whose phase was blocked; it calls the canonical answer now rather than keeping a second copy. A runner that died before running anything was recorded as a failed suite, and the cause was one layer down - the count vocabulary knew one runner, so the distinction the document demands was unreachable. And the manifest index had no route into a commit at all: commit-manifest-index.py lands the shared file alone, graded afterwards by an index-scope check that re-derives its own allow-list. The rest were verdicts naming the wrong subject: GATE MUTATED THE TREE fired on a sibling writer under the parallelism the orchestrator recommends, and NO OVERLAP printed two counts rather than the paths that produced them. Two defects nobody reported were found on the way: render had no arm for could-not-run, so widening the count vocabulary alone would have turned a false red into a false GREEN, and observations.countsBasis was read by one file and written by none. One reported finding was REFUTED by measurement - require-plan never stats the target, so a declared not-yet-existing path is a legitimate creation target and the dead end came from the scope verb alone.",
   "tasks": [
     {
       "id": "P29.1",
@@ -230,5 +234,10 @@
       "completedAt": "2026-09-09T08:25:37Z",
       "verifiedBy": []
     }
-  ]
+  ],
+  "testEvidence": {
+    "runId": "2026-09-09T08:33:24Z.df0cfb",
+    "status": "passed",
+    "at": "2026-09-09T08:33:24Z"
+  }
 }
