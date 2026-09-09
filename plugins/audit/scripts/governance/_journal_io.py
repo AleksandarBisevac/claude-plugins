@@ -192,10 +192,21 @@ DETAILS_VERSION = 2
 # id is written into the manifest this row is about. It is what lets a row in the
 # committed evidence file be tied to a row in the chain without building a second
 # chain to do it.
+#
+# `attempt` IS on this list, and it passes the same three tests. It is a FIELD OF
+# THE PLAN -- `task.attempts` is a manifest key, not something the plugin observed
+# about the machine; it is bounded like any other value; and it exposes nothing
+# new, because the number is already in the manifest the row is about. What it is
+# FOR is `/audit:task scope`, which since F271 accepts a WIDENING of `files` on a
+# task that is already running: without the attempt on the row, a trail cannot
+# tell a scope written before the work from one that grew during it, and every
+# reader would take the second for the first. The spelling is `_evidence_io`'s
+# singular `attempt` rather than the manifest's plural `attempts`, so the two
+# records join on one field name instead of on two that differ by a letter.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
-                "program", "cwd", "runId")
+                "program", "cwd", "runId", "attempt")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload

@@ -44,7 +44,10 @@ Usage:
   no such skill exists. --tests-add and --gate repeat (one value each).
   --risk, --blocked-by and --depends-on reach `scope` as well as `add`
   (F199): the same three fields `_build_task` sets at creation, correctable
-  afterwards under the same pending-and-never-attempted guard. They need no
+  afterwards while the task has not started -- once it has, only `--files`
+  and `--tests-add` are still on offer and only as a WIDENING (F271, and
+  `_locked_scope` states why append-only is the exact operation that leaves
+  a past judgement standing). They need no
   `--clear` twin -- `--blocked-by ""` empties the field, because a comma
   list of IDS has no value that reads as content the way `--gate ""` reads
   as an empty COMMAND, and `retarget --area ""` already draws that line.
@@ -155,6 +158,11 @@ import _proposals             # noqa: E402  (the id allocator `/audit:propose ma
 #                                            uses: the lowest free P<n> over live AND
 #                                            parked ids. A second one here would be a
 #                                            second answer about which ids are taken)
+import _status_facts          # noqa: E402  (unmet_refs: the ONE answer to "what is this
+#                                            waiting on". A downward edge, L7 -> L2, with
+#                                            precedent at audit-status.py, _invariants.py
+#                                            and _report_page.py -- see `_waiting_on` for
+#                                            what the second copy here got wrong)
 import _panel_write           # noqa: E402  (one answer to "where is the manifest", the
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
@@ -280,6 +288,128 @@ def _readiness_lines(waiting, tid):
     if waiting:
         return ["  waiting on: %s" % ", ".join(waiting)]
     return ["  ready now -- /audit:run %s" % tid]
+
+
+# --- widening a scope that has already governed something (F271) ---------------
+# `scope` used to refuse every task that was not pending-and-never-attempted, and
+# `reference/orchestrator.md` prescribes `/audit:task scope` for the one case that
+# description excludes: the plan gate refuses a file a RUNNING task needs, the
+# task is `in_progress` with an attempt on it, and widening `task.files` is the
+# documented remedy. So the documented remedy was unreachable in exactly its own
+# scenario, and the only escape was the hand edit `commands/task.md` forbids --
+# measured live, three times in one phase.
+#
+# THE OLD REFUSAL WAS NOT WRONG, IT WAS TOO WIDE, and the vocabulary below is what
+# narrows it to the changes its reason actually covers.
+_WIDENABLE = ("files", "tests.add")
+
+
+def _started(task):
+    """True when this task's scope has already governed something.
+
+    TWO SIGNALS, EITHER ONE ENOUGH, and they are genuinely independent rather
+    than one fact spelled twice. The orchestrator sets `in_progress` and
+    increments `attempts` in the same step, but a task that ran, failed and was
+    put back to `pending` carries the count with no status left to show for it
+    (F190's case), and a task moved to `blocked` before its first spawn carries
+    the status with no count. Reading only the status is how the guard here was
+    written the first time, and F190 is the entry that added the other half.
+    """
+    if not isinstance(task, dict):
+        return False
+    return (task.get("status") != "pending"
+            or (_mio.recorded_attempt(task) or 0) > 0)
+
+
+def _attempt_phrase(task):
+    """`during attempt N, while the task is <status>` -- or what is true instead.
+
+    `_mio.recorded_attempt` has THREE answers and this keeps all three, because
+    this line's whole job is to DATE a change and a date is the last place to
+    invent a figure: a number is named, a recorded zero says the widening landed
+    before any attempt was written down, and a task whose `attempts` is missing
+    or not an integer gets a sentence about the gap. The alternative -- defaulting
+    to 1, which is how that field has been misread here before -- would put a
+    claim with no basis on the row a reader consults to find out when the scope
+    grew.
+    """
+    status = (task or {}).get("status")
+    attempt = _mio.recorded_attempt(task)
+    if attempt is None:
+        return ("while the task is %s, which records no attempt count -- so this "
+                "cannot be dated to one" % (status,))
+    if not attempt:
+        return ("while the task is %s, before any attempt was recorded"
+                % (status,))
+    return "during attempt %s, while the task is %s" % (attempt, status)
+
+
+def _narrowings(changes):
+    """The rows in `changes` that are NOT a widening, each as a printable clause.
+
+    APPEND-ONLY IS THE EXACT OPERATION THAT CANNOT RE-JUDGE A PAST COMMIT, and
+    that is a property of a check rather than a feeling about safety.
+    `_invariants.commit_scope` grades a task's RECORDED commit against the task's
+    CURRENT `files`: every path the commit staged has to be in that list today.
+    Adding a path can only turn a breach into a pass; removing one can turn a
+    commit that was clean when it was made into a breach, which is a verdict
+    changed after the fact on work nobody can go back and redo. The plan gate
+    reads the same list forward (`hooks/_config.in_progress_task_map`), so a
+    widening only ever ALLOWS an edit that was being refused.
+
+    Every other field is refused because none of them has a safe direction:
+    `risk` and `tests.mode` REPLACE a value the attempt ran under, `description`
+    rewrites the question the outcome answered, and a ref list that GROWS blocks
+    a task that has already started -- growth is not harmless there, which is why
+    "append-only" is a rule about two named fields and not about the word.
+    """
+    out = []
+    for row in changes:
+        was, now = row.get("from") or [], row.get("to") or []
+        if row["field"] in _WIDENABLE:
+            dropped = [item for item in was if item not in now]
+            if dropped:
+                out.append("`%s` would drop %s"
+                           % (row["field"], ", ".join(str(d) for d in dropped)))
+        else:
+            out.append("`%s` would move from %s to %s"
+                       % (row["field"], json.dumps(row.get("from")),
+                          json.dumps(row.get("to"))))
+    return out
+
+
+def _rescope_refusal(tid, task, blockers):
+    """The refusal for a change `scope` will not make to a task that has moved.
+
+    TWO HEADS, ONE TAIL. The basis differs and this repo's rule is that a claim
+    carries the one that makes it true: a task can be `in_progress` with no
+    attempt recorded, and a task put back to `pending` can carry several. The
+    tail is shared because what is still on offer and what was asked for are one
+    fact each, and neither depends on which head printed.
+
+    THE `attempts` SENTENCE IS KEPT VERBATIM (F190's wording). It is what
+    `commands/task.md` quotes, and it is still true of every change this arm
+    refuses -- the outcome describes work judged under the current scope, and
+    these changes would make that record describe something else. What F271
+    changed is the LAST sentence: cancel-and-re-add is no longer the only way
+    out, so a refusal that still said it was would send an operator to the
+    expensive route for a change the verb now takes.
+    """
+    attempt = _mio.recorded_attempt(task)
+    if attempt:
+        head = ("[audit-task] %s has already been attempted (%s) -- its outcome "
+                "describes work judged under the current scope, so rescoping it "
+                "would make that record describe something else."
+                % (tid, attempt))
+    else:
+        head = ("[audit-task] %s is %s -- it is running against the scope it "
+                "has, and the plan gate has been matching its edits to that "
+                "list since it started." % (tid, (task or {}).get("status")))
+    return ("%s Refused: %s. WIDENING is the one change that cannot re-judge "
+            "what already happened, so `files` and `tests.add` may still GAIN "
+            "entries here -- pass the list the task holds plus the new ones. "
+            "For anything else, cancel the task and add the work again."
+            % (head, "; ".join(blockers)))
 
 
 # --- project resolution --------------------------------------------------------
@@ -619,20 +749,50 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
                         {"taskId": task_id, "phaseId": phase_id})
 
 
-def _journal_scope(project, config, mpath, task_id, phase_id, changes):
-    """The `task.scope` row: which fields moved, and to what.
+def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
+    """The `task.scope` row: which fields moved, to what, and under which attempt.
 
     `changes` is the allow-listed shape `_journal_io.DETAILS_KEYS` already
     carries - id/field/from/to per row - so the cascade spelling every other
     writer here uses is the one this reuses rather than inventing a `files` key
     the allow-list would drop in silence. `_journal_phase_add`'s note says what
     that costs: a field written, dropped, and believed.
+
+    `attempt` IS A NEW KEY ON THAT ALLOW-LIST (F271), and it passes the three
+    tests the list states beside itself. It names a FIELD OF THE PLAN --
+    `task.attempts` is a manifest key, not something the plugin observed about
+    the machine; it is bounded like every other value; and it exposes nothing
+    new, since the same number is in the manifest this row is about. It earns
+    its place because `scope` now accepts a WIDENING mid-run: without it a row
+    reads as though the task always had that scope, and the one question a
+    reader brings to a widened task -- was this list already there when attempt
+    two was judged, or did it grow during it -- has no answer on the trail.
+
+    THE SPELLING IS `_evidence_io`'s, singular `attempt`, deliberately: that
+    module's rows already carry the attempt an evidence row is stamped with, and
+    a journal row calling the same number `attempts` would make a reader join
+    two records on a field name that differs by a letter.
+
+    WRITTEN WHENEVER THE PLAN RECORDS ONE, including a recorded zero, and absent
+    only when `recorded_attempt` says the task records nothing. A key present
+    solely on the mid-run rows could not be told from a key nobody wrote, which
+    is the trap `_evidence_io` names one file over.
     """
     fields = ", ".join(row["field"] for row in changes)
-    summary = "%s scoped in %s: %s" % (task_id, phase_id, fields)
-    return _journal_row(project, config, mpath, "task.scope", summary,
-                        {"taskId": task_id, "phaseId": phase_id,
-                         "changes": changes})
+    attempt = _mio.recorded_attempt(task)
+    if _started(task):
+        # A DIFFERENT EVENT DESERVES A DIFFERENT SENTENCE. `audit-journal list`
+        # prints the summary and nothing else, so a mid-run widening that read
+        # like every other scope row would need `details` opened to be seen at
+        # all -- and it is the row a reader is looking for.
+        summary = ("%s WIDENED in %s %s: %s"
+                   % (task_id, phase_id, _attempt_phrase(task), fields))
+    else:
+        summary = "%s scoped in %s: %s" % (task_id, phase_id, fields)
+    details = {"taskId": task_id, "phaseId": phase_id, "changes": changes}
+    if attempt is not None:
+        details["attempt"] = attempt
+    return _journal_row(project, config, mpath, "task.scope", summary, details)
 
 
 def _journal_retarget(project, config, mpath, phase_id, changes):
@@ -665,26 +825,35 @@ def _journal_phase_add(project, config, mpath, phase_id, title, outcome):
 
 
 # --- readiness (report only) ---------------------------------------------------
-def _waiting_on(assembled, task):
-    """The blockedBy/dependsOn refs that are not done yet -- what the report
-    prints so the human knows whether /audit:run can start this now.
+def _waiting_on(assembled, node):
+    """What `node` is still waiting on -- `_status_facts.unmet_refs`' answer for
+    its id, looked up rather than recomputed.
 
-    Phases are walked directly and only the TASKS come from `_mio.iter_tasks`: a
-    task can be blocked by a whole phase, and a phase with no tasks of its own
-    yields nothing from `iter_tasks` -- so a one-pass index would forget it exists
-    and report the dependent task as ready. Phase and task ids share this map, so
-    a collision resolves task-wins rather than by document order; both callers
-    reach here only after `vm.validate` has already refused the manifest that
-    could have one (`duplicate id` is a finding, not a warning)."""
-    status = {}
-    for ph in (assembled.get("phases") or []):
-        if isinstance(ph, dict) and ph.get("id"):
-            status[ph["id"]] = ph.get("status")
-    for _ph, t in _mio.iter_tasks(assembled):
-        if t.get("id"):
-            status[t["id"]] = t.get("status")
-    refs = list(task.get("blockedBy") or []) + list(task.get("dependsOn") or [])
-    return _mio.unsatisfied(refs, status)
+    F275. THIS WAS A THIRD COPY OF THE READINESS RULE, AND IT WAS THE ONE THAT
+    HAD GONE WRONG. It read `blockedBy + dependsOn` off the TASK and stopped
+    there, while `reference/orchestrator.md`'s rule has FOUR terms and the fourth
+    is the owning PHASE's `blockedBy` -- which no task dict carries and which
+    this function, handed only a task, could not have reached. So `add` and
+    `scope` printed a copyable `ready now -- /audit:run <id>` for a task whose
+    phase was blocked, while `/audit:status` (reading `_status_facts`) said the
+    opposite about the same manifest. Measured live.
+
+    A SECOND COPY OF THIS RULE IS THE HAZARD, not a tidiness question, and the
+    note beside `_manifest_io.TERMINAL` records the first time it bit at exactly
+    this call site: the old body tested `!= "done"` while readiness counted
+    `("done", "cancelled")`, so a task blocked by a CANCELLED task was ready to
+    `/audit:status` and still waiting to `/audit:task add`. Both divergences were
+    a term this file never heard about, which is what a copy cannot be fixed
+    into: the repair is to stop having one. `unmet_refs` also spells a
+    phase-level blocker `"<id> (phase)"`, so the reader is told WHICH of the four
+    terms is unmet instead of being handed a bare id that resolves to no task.
+
+    THE ID IS THE KEY, which is what makes the phase term reachable at all -- the
+    node is found in `assembled` and its owning phase with it. Every caller has
+    just put it there (`add` appends the task, `add-phase` the phase) or found it
+    there (`scope`), so there is no call site where this can miss.
+    """
+    return _status_facts.unmet_refs(assembled).get((node or {}).get("id")) or []
 
 
 # --- the add -------------------------------------------------------------------
@@ -1383,9 +1552,32 @@ def _locked_scope(args, project, config, mpath, tid, out):
     phase ran with its central guard inert -- not failing, because it had nothing
     to match. Measured live before this existed.
 
-    PENDING ONLY. A task that has started or finished has a scope its attempts
-    were judged against, and rewriting that retroactively changes what the gate
-    allowed while the work was done. `cancel`'s rule, for `cancel`'s reason.
+    SETTLED WORK ONLY IS REFUSED OUTRIGHT (F271). A `done` or `cancelled` task
+    has a scope its commit was graded against and its sign-off accepted, and
+    nothing this verb could write to it would describe the run that happened.
+    Everything short of that -- `pending`, `in_progress`, `blocked`, with or
+    without attempts on it -- is reachable, but a task that has already STARTED
+    will take only a WIDENING: `files` and `tests.add` may gain entries, never
+    lose them, and no other field may move at all.
+
+    THE OLD RULE WAS NOT WRONG, IT WAS TOO WIDE, and its own reason is what
+    narrows it. F190 refused a started task because an `outcome` describes work
+    judged under the OLD scope, so rescoping would make that record describe
+    something else. A widening cannot: `_invariants.commit_scope` grades a
+    recorded commit against the task's CURRENT `files`, so growing that list can
+    only turn a breach into a pass and never a pass into a breach, and the plan
+    gate reads it forward, so growing it only ALLOWS an edit it was refusing.
+    Append-only is therefore the exact operation that leaves every past
+    judgement standing -- see `_narrowings` for why no other field has a safe
+    direction.
+
+    AND THE CASE IT EXISTS FOR IS THE ONE IT USED TO REFUSE.
+    `reference/orchestrator.md` prescribes `/audit:task scope` for the moment the
+    plan gate refuses a file a running task genuinely needs, and a task in that
+    moment is `in_progress` with an attempt on it -- the two states the guard
+    excluded. Measured live: hit three times in one phase, and the only escape
+    each time was hand-editing the shard and the index under the lock, which is
+    the operation this verb exists to replace.
 
     THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO (F196), for a reason that is NOT
     `retarget`'s. That verb appends to `testGate`, so the append itself left the
@@ -1446,22 +1638,27 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("[audit-task] scope takes a TASK id; %r is %s"
             % (tid, "not in this manifest" if kind is None else "a " + kind))
         return E_USAGE
-    if node.get("status") != "pending":
-        out("[audit-task] %s is %s -- scope only rewrites a PENDING task, "
-            "because a started one has a scope its attempts were judged against"
+    # THE ONLY REFUSAL LEFT THAT READS THE TASK ALONE (F271). Every other
+    # question this verb asks about a started task is about the CHANGE, so it
+    # cannot be answered until `changes` exists -- see the append-only guard
+    # further down. `_mio.TERMINAL` rather than a fourth spelling of
+    # `("done", "cancelled")`: readiness, the validator and this refusal all mean
+    # the same two words by "settled", and the one time this file spelled that
+    # set itself it got it wrong (see `_waiting_on`).
+    if node.get("status") in _mio.TERMINAL:
+        out("[audit-task] %s is %s -- its scope is settled: the commit it "
+            "recorded was graded against the files it names and the sign-off "
+            "accepted that grading, so nothing written here would describe the "
+            "run that happened. Add the follow-up as a new task."
             % (tid, node.get("status")))
         return E_USAGE
-    # F190. STATUS IS NOT THE WHOLE TEST. A task that ran, failed and was put back
-    # to `pending` still carries `attempts` and an `outcome` describing work judged
-    # under its OLD scope, so rescoping it silently would make the journal's own
-    # record of that attempt describe a scope that no longer exists.
-    if (node.get("attempts") or 0) > 0:
-        out("[audit-task] %s has already been attempted (%s) -- its outcome "
-            "describes work judged under the current scope, so rescoping it "
-            "would make that record describe something else. Cancel it and add "
-            "the work again if the scope was wrong."
-            % (tid, node.get("attempts")))
-        return E_USAGE
+    # F190. STATUS IS NOT THE WHOLE TEST, and it is not the whole test in the
+    # other direction either: a task that ran, failed and was put back to
+    # `pending` still carries `attempts` and an `outcome` describing work judged
+    # under its OLD scope, while an `in_progress` task with no attempt recorded
+    # is equally mid-flight. `_started` reads both signals; what it gates is the
+    # SHAPE of the change and no longer the call.
+    started = _started(node)
 
     contradiction = _gate_contradiction(args)
     if contradiction:
@@ -1606,6 +1803,20 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("[audit-task] %s already reads that way -- nothing written" % (tid,))
         return 0
 
+    # F271's guard, and it is placed HERE for two reasons that both come from
+    # what it grades. It asks about the CHANGE and not about the flags, so it
+    # needs `changes` -- which is also what makes `--risk med` on a task already
+    # at `med` a no-op above rather than a refusal, since a field that does not
+    # move is not a field being changed. And it is AFTER the mutations because
+    # `changes` is their record; nothing has been written yet (`_snapshot` and
+    # `_write_add` are below), so returning here leaves an in-memory `assembled`
+    # that is discarded with the frame and a manifest nobody touched.
+    if started:
+        blockers = _narrowings(changes)
+        if blockers:
+            out(_rescope_refusal(tid, node, blockers))
+            return E_USAGE
+
     # THE WHOLE POINT, and it is a re-derivation rather than an append: the task
     # is losing files as well as gaining them, and an index that only ever grew
     # would keep matching edits to a scope the task no longer claims.
@@ -1652,7 +1863,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    jres = _journal_scope(project, config, mpath, tid, phase_id, changes)
+    jres = _journal_scope(project, config, mpath, tid, phase_id, changes, node)
     # F199's payoff, and the reason it is computed unconditionally: the live case
     # was a task parked behind a `dependsOn` id, rescoped precisely so it could
     # run. "Can it run now" is the question that call was asking.
@@ -1661,6 +1872,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
                   "filesNotOnDisk": missing, "warnings": warnings,
+                  # The two facts the human report spends a paragraph on, as
+                  # data: WHICH call this was, and the attempt it landed under.
+                  # `attempt` is null when the plan records none, never 0 -- a
+                  # machine surface must not be the one place the three answers
+                  # of `recorded_attempt` collapse into two.
+                  "widened": started,
+                  "attempt": _mio.recorded_attempt(node),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         out(json.dumps(result, indent=2, sort_keys=True))
@@ -1669,6 +1887,23 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
+    if started:
+        # THE BASIS FOR AN ACCEPTANCE THAT USED TO BE A REFUSAL (F271). A reader
+        # of this transcript has to be able to tell a scope written BEFORE the
+        # work from one written DURING it, because the two say different things
+        # about every record already carrying this task's id -- and the report
+        # is where an operator meets that, not the journal. It names what was
+        # gained and when, and then why the verb was willing.
+        gained = []
+        for row in changes:
+            for item in (row["to"] or []):
+                if item not in (row["from"] or []):
+                    gained.append("%s +%s" % (row["field"], item))
+        out("  WIDENED %s: %s" % (_attempt_phrase(node), ", ".join(gained)))
+        out("  append-only, which is why a task that is not pending will take "
+            "it: nothing was released, so no commit already graded against "
+            "this task's `files` can turn into a breach, and the plan gate now "
+            "matches the paths it was refusing")
     if (node.get("tests") or {}).get("gate") == [] \
             and any(row["field"] == "tests.gate" for row in changes):
         # `retarget`'s empty-gate line, and the MEANING differs so the sentence

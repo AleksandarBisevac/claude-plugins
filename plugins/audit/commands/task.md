@@ -177,7 +177,7 @@ before it runs.
 
 ## Subcommand: `scope <taskId> [--files a,b]`
 
-Give a **pending** task the files it touches, and optionally its tests, its
+Give a task the files it touches, and optionally its tests, its
 description and the three fields that decide how and when it runs:
 `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
 (repeatable), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`,
@@ -213,7 +213,11 @@ in the panel.
 or the `/audit:run <taskId>` handoff, the same two sentences `add` prints. That
 is the question such a call is asking, and a `--blocked-by` or `--depends-on` id
 that resolves to nothing is a validator finding: exit 1, every written file rolled
-back.
+back. Readiness is the **whole** rule, all four of its terms, and the owning phase's
+`blockedBy` is the one this used to miss: a task whose phase is parked prints
+`waiting on: <id> (phase)` rather than a handoff nobody could run. Both verbs read
+`_status_facts.unmet_refs`, which is the same answer `/audit:status` gives — the two
+said opposite things about one manifest for as long as there were two copies of it.
 
 **`--gate-clear` is how a task reaches the EMPTY gate**, and it is here for a reason
 that is not `/audit:phase retarget`'s. That verb *appends* to `testGate`, so the append
@@ -238,20 +242,40 @@ forbids for adds — for the reason that applies here too.
 `fileIndex` is what the plan gate matches an edit against. An unscoped phase ran with
 its central guard **inert** — not failing, because it had nothing to match.
 
-**PENDING only, and the refusal says why**: a task that has started has a scope its
-attempts were already judged against, and rewriting that changes retroactively what the
-gate allowed while the work was done. `cancel`'s rule, for `cancel`'s reason. **Status is
-not the whole test** — a task that ran, failed and was put back to `pending` still carries
-`attempts` and an `outcome` describing work judged under the old scope, so a non-zero
-`attempts` is refused too, pointing at `cancel` plus a fresh `add`.
+**Settled work is refused outright, and a started task may only be WIDENED.** A `done`
+or `cancelled` task has a scope its commit was graded against and its sign-off accepted,
+so nothing written here would describe the run that happened — the refusal says that and
+points at a new task. Everything short of that is reachable, but once a task has started
+— `in_progress`, or put back to `pending` still carrying `attempts` — the only change it
+will take is one that **adds**: `files` and `tests.add` may gain entries, never lose them,
+and no other field may move at all. `--risk`, `--description`, `--tests-mode`, `--gate`,
+`--blocked-by` and `--depends-on` all keep the old refusal, which still points at `cancel`
+plus a fresh `add`.
+
+**Append-only is the exact operation that cannot re-judge what already happened**, which
+is why it is the one thing on offer. The invariant check grades a task's **recorded**
+commit against the task's **current** `files`, so growing that list can only turn a breach
+into a pass — while shrinking it can turn a commit that was clean when it was made into a
+breach, retroactively, on work nobody can go back and redo. The plan gate reads the same
+list forward, so a widening only ever *allows* an edit it was refusing.
+
+**And that is the case the verb exists for.** `reference/orchestrator.md` prescribes
+`/audit:task scope` for the moment the plan gate refuses a file a running task genuinely
+needs — a task which is, by then, `in_progress` with an attempt on it. Measured live: hit
+three times in one phase while the guard excluded exactly that state, and the only escape
+each time was the hand edit this file forbids. A widening **says when it happened** —
+which attempt it landed under, and what it gained — and the journal row carries the same
+attempt, because a trail that recorded only the new list would let every earlier record be
+read as though the scope had always been this one.
 
 **The fileIndex is re-derived, not appended to.** A scope call takes files away as well
 as adding them, and an index that only grew would keep matching edits to a scope the task
 no longer claims.
 
 Refuses, each naming the reason: a phase id (it takes a task), an id that is not in the
-manifest, a task that is not pending, and a call that would change nothing — a lock taken
-for no reason is worth saying out loud.
+manifest, a task whose work is settled, a change that is not a widening on a task that has
+started, and a call that would change nothing — a lock taken for no reason is worth saying
+out loud.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 
