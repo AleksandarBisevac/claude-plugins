@@ -89,6 +89,7 @@ which is what a fence pinned in `PLUGIN-BUILD-GUIDE.md` requires.
 """
 
 import ast
+import builtins
 import io
 import json
 import os
@@ -3378,6 +3379,651 @@ def config_read_violations(script_dir=None, hooks_dir=None, mirrors=None,
     return violations
 
 
+# --- one dict, one set of keys --------------------------------------------------
+# ONE FUNCTION HANDS BACK A DICT AND ANOTHER READS KEYS OFF IT, and nothing compared
+# the two halves. `_evidence_io.row_for` read `result.get("countsBasis")` while
+# nothing in this tree wrote that key, so every evidence row ever recorded carried
+# `None` in the one field built to explain a three-valued count, and the panel fell
+# back to a hardcoded string - a claim with no basis, in the field designed to hold
+# the basis. Python says nothing about this: `.get` answers `None`, `[...]` raises
+# only on the path that runs, and the consequence surfaces in a rendered page much
+# later, if ever. It was found by hand.
+#
+# WHAT COUNTS AS A STRUCTURE THIS CODEBASE PRODUCES, because the obvious scan is
+# useless. Asking "which keys are read and never written" of these two directories
+# reports scores of them, and hardly any is this tree's business: environment
+# variable names, Azure DevOps work-item fields, HTTP headers, JSON Schema keywords,
+# argparse destinations. That is the shape of the noise rather than an accident of
+# one run - most dicts a program reads were defined by somebody else, and an
+# instrument that reports those is one nobody runs. So the anchor is a PRODUCER: a
+# function whose every `return` hands back a dict literal all of whose keys are
+# string literals. Such a function IS this repository declaring a record shape, and
+# its keys are the whole of that shape.
+#
+# THE MIRROR IS DELIBERATELY NOT REPORTED, and that was measured rather than
+# preferred. A key a producer writes that no consumer reads is dead weight worth
+# knowing about, but asking it of this tree convicts most of the panel and the
+# report at once: `_panel_state.build_state`'s keys are read by the browser, and
+# `usage_ledger`'s by whatever consumes the JSON, so the finding is almost always
+# "the consumer is in another language". A rule that arrives red on the
+# architecture buys an exemption on day one, which is how an exemption table stops
+# meaning anything. Re-derive it before re-opening this:
+#
+#   grep -rn "def .*(" plugins/audit/scripts | ...   # or read the producers below
+#
+# NEITHER ARE THE DECLARED KEY ALLOW-LISTS, for the same reason and by the same
+# measurement. `_journal_io.DETAILS_KEYS` drops an unlisted key in silence, so a
+# member nothing writes is genuinely dead and the constant looks like a free second
+# anchor. It is not. Reached by NAME (`*_KEYS`, `*_FIELDS`) the scan convicts
+# constants holding CSS property names and ADO's own field vocabulary - other
+# people's structures again. Reached by USE (a membership test against the
+# constant) it convicts nearly every value enumeration in the tree, because
+# `x in NAMES` is far more often a test of a VALUE - a git subcommand, a status
+# word, a numeral - than of a key. Telling those two apart needs exactly the
+# dict-key provenance the producer anchor already computes, so the precise form of
+# that anchor is a special case of this rule rather than a second rule beside it.
+#
+# HOW A VALUE IS FOLLOWED. A key set flows from a producer's return, through a
+# local bound to that call, through the parameter of every function that call feeds,
+# and on. A subscript assignment with a literal key WIDENS the set rather than
+# ending the follow (`res["gateSource"] = source` is the tree's ordinary way of
+# adding a field, and refusing to follow it lost the whole recording chain). Every
+# OTHER way of binding a name - a tuple unpack, a loop target, `with ... as`, an
+# `except ... as`, a comprehension target, an augmented assignment - makes the name
+# UNKNOWN rather than invisible: reading a name's other bindings as the whole truth
+# is how this scan invented its one false positive, on `_help._entry`, whose
+# `target` arrives from `_deref` through a two-name unpack.
+#
+# A DICT LITERAL IS A SOURCE ONLY INSIDE THE SCOPE THAT WROTE IT. Across a call it
+# is not: a caller passing `{}` or a small ad-hoc payload does not define the
+# callee's contract, and admitting those convicted `_panel_write` and
+# `_status_facts` by the handful the first time this was run over the tree. Within
+# one scope the literal IS the structure and the reader can see all of it.
+#
+# WHAT A CALL MAY HAVE DONE TO A DICT IT WAS HANDED. A callee this scan can open is
+# read: it makes the argument UNKNOWN only if it writes into that parameter. A
+# builtin never mutates a dict handed to it, and neither does the standard library
+# reached through a module attribute (`json.dumps(row)`), so those are trusted; a
+# bare name that is neither - a nested `def`, something `_loader` produced - is not.
+# That middle position is the one that was measured: trusting everything is
+# unsound, and trusting nothing costs the recording chain and a fifth of the reads,
+# because `isinstance(result, dict)` is how this tree opens a defensive function.
+#
+# WHERE IT STOPS, said rather than implied, because a rule whose blind spot is
+# undocumented reads as coverage. At a producer reached through `_loader` (an entry
+# point is hyphenated, so no call site can name it the way this scan resolves a
+# call); at a value that arrives by tuple unpacking, which is how the demo
+# generator's fixture rows reach `row_for`; at a dict assembled rather than
+# returned as one literal, which is named in `opaque` instead of being passed over;
+# and at a key that is not a string literal at the read. A parameter with no
+# resolvable call site is not judged and is named. A parameter with SOME resolvable
+# call site is judged against those, and the finding says how many sites the scan
+# was blind to - a producer it cannot see could write the key, and the reader is
+# told to check that rather than left to discover it.
+_DICT_MUTATORS = frozenset(("update", "setdefault", "pop", "popitem", "clear"))
+
+# The fixpoint is monotone (a key set only ever grows, and UNKNOWN is absorbing),
+# so it settles; the bounds are here so a pathological tree cannot hang a lint.
+# `dict_key_contracts()` reports a bound it actually hit rather than pretending the
+# answer settled.
+_KEY_SET_ROUNDS = 8
+_CONTRACT_ROUNDS = 12
+
+_UNSET = object()
+
+
+def _literal_dict_keys(node):
+    """The string keys of a dict literal, or `None` when they cannot be listed.
+
+    `None` for `{**other}` and for a computed key: the keys are somewhere this
+    cannot see, and a partial set read as complete is a finding invented.
+    """
+    keys = set()
+    for key in node.keys:
+        if key is None:
+            return None
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            keys.add(key.value)
+            continue
+        return None
+    return frozenset(keys)
+
+
+def _scope_nodes(body):
+    """Every node under `body` that belongs to THIS scope.
+
+    A nested `def` or `lambda` is a scope of its own with its own parameters, so
+    descending into one would credit its bindings to the enclosing function.
+    """
+    pending = list(body)
+    found = []
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        found.append(node)
+        pending.extend(ast.iter_child_nodes(node))
+    return found
+
+
+def _nodes_of(scan, scope):
+    """`_scope_nodes` memoised, for the passes that walk every scope repeatedly.
+
+    The parameter fixpoint re-solves every scope once per round, and the AST walk
+    was most of the cost before this existed - measured with `cProfile`, not
+    guessed. The cache rides on `scan` rather than living in module state: this
+    tree keeps none, and a cache outliving one call would answer a fixture tree
+    with another tree's nodes.
+    """
+    found = scan["nodes"].get(id(scope))
+    if found is None:
+        found = _scope_nodes(scope.body)
+        scan["nodes"][id(scope)] = found
+    return found
+
+
+def _module_producers(tree):
+    """`(producers, opaque)` for one parsed module, both keyed by function name.
+
+    A producer's key set is the UNION over its returns: a function returning one
+    shape on one path and a wider one on another writes every key on some path,
+    and a reader asking for a key only one path supplies is reading a `None` the
+    author put there. The union is what makes "nobody writes this" true.
+    """
+    producers = {}
+    opaque = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        returns = [n for n in _scope_nodes(node.body) if isinstance(n, ast.Return)]
+        literals = [r.value for r in returns if isinstance(r.value, ast.Dict)]
+        if not literals:
+            continue
+        keysets = [_literal_dict_keys(one) for one in literals]
+        if [one for one in keysets if one is None]:
+            opaque.append((node.name, "returns a dict literal whose keys cannot "
+                                      "be listed, so nothing it hands back is "
+                                      "checked against its readers"))
+            continue
+        if [r for r in returns if not isinstance(r.value, ast.Dict)]:
+            opaque.append((node.name, "returns a dict literal on some paths and "
+                                      "something else on others, so its readers "
+                                      "are unchecked"))
+            continue
+        keys = frozenset()
+        for one in keysets:
+            keys = keys | one
+        producers[node.name] = keys
+    return producers, opaque
+
+
+def _imported_function_names(tree, sibling_names):
+    """Local name -> `(module, function)` for every `from X import f`.
+
+    The companion to `_sibling_module_aliases`, which reads the spelling that
+    binds the MODULE. Both exist in this tree, and a call spelled through either
+    is the same edge.
+    """
+    found = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.level:
+            continue
+        base = (node.module or "").split(".")[0]
+        if base not in sibling_names:
+            continue
+        for alias in node.names:
+            found[alias.asname or alias.name] = (base, alias.name)
+    return found
+
+
+def _call_destination(scan, rel, call):
+    """The `(module, function)` a call names, or `None` when it cannot be read."""
+    func = call.func
+    module = scan["module_of"][rel]
+    if isinstance(func, ast.Name):
+        if (module, func.id) in scan["functions"]:
+            return (module, func.id)
+        borrowed = scan["imported"].get(rel, {}).get(func.id)
+        if borrowed in scan["functions"]:
+            return borrowed
+        return None
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        owner = scan["aliases"].get(rel, {}).get(func.value.id)
+        if owner and (owner, func.attr) in scan["functions"]:
+            return (owner, func.attr)
+    return None
+
+
+def _mutated_parameters(node):
+    """The parameter names a function writes INTO, rather than merely reads."""
+    names = set(arg.arg for arg in
+                list(node.args.args) + list(node.args.kwonlyargs))
+    written = set()
+    for sub in _scope_nodes(node.body):
+        if isinstance(sub, ast.Assign):
+            for target in sub.targets:
+                if (isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id in names):
+                    written.add(target.value.id)
+        if isinstance(sub, ast.Delete):
+            for target in sub.targets:
+                if (isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id in names):
+                    written.add(target.value.id)
+        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr in _DICT_MUTATORS
+                and isinstance(sub.func.value, ast.Name)
+                and sub.func.value.id in names):
+            written.add(sub.func.value.id)
+    return frozenset(written)
+
+
+def _names_a_call_may_write(scan, rel, call):
+    """The argument names this call may have written into.
+
+    See the section note: a callee that can be opened is READ; a builtin and a
+    module attribute are trusted; a bare name that is neither could be anything.
+    """
+    destination = _call_destination(scan, rel, call)
+    handed = list(call.args) + [kw.value for kw in call.keywords]
+    if destination is None:
+        if isinstance(call.func, ast.Name) and not hasattr(builtins, call.func.id):
+            return set(arg.id for arg in handed if isinstance(arg, ast.Name))
+        return set()
+    written = scan["mutates"].get(destination, frozenset())
+    positional = [arg.arg for arg in scan["functions"][destination].args.args]
+    names = set()
+    for index, arg in enumerate(call.args):
+        if (isinstance(arg, ast.Name) and index < len(positional)
+                and positional[index] in written):
+            names.add(arg.id)
+    for keyword in call.keywords:
+        if (isinstance(keyword.value, ast.Name) and keyword.arg
+                and keyword.arg in written):
+            names.add(keyword.value.id)
+    return names
+
+
+def _is_self_normalisation(name, value):
+    """True for `x = x or {}` and `x = x if isinstance(x, dict) else {}`.
+
+    The house guard at the top of a defensive function. It cannot ADD a key, so
+    it contributes nothing to the union and must not be read as a rebinding that
+    loses what the name already carried - which is what made the scan blind to
+    the very read this rule was written for.
+    """
+    pending = [value]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            pending.extend(node.values)
+            continue
+        if isinstance(node, ast.IfExp):
+            pending.extend([node.body, node.orelse])
+            continue
+        if isinstance(node, ast.Dict) and not node.keys:
+            continue
+        if isinstance(node, ast.Name) and node.id == name:
+            continue
+        return False
+    return True
+
+
+def _value_key_set(scan, rel, known, value, literals):
+    """The key set an expression is known to carry, or `None` for UNKNOWN."""
+    if isinstance(value, ast.Dict):
+        return _literal_dict_keys(value) if literals else None
+    if isinstance(value, ast.Call):
+        destination = _call_destination(scan, rel, value)
+        if destination is None:
+            return None
+        return scan["producers"].get(destination)
+    if isinstance(value, ast.Name):
+        return known.get(value.id)
+    return None
+
+
+def _scope_key_sets(scan, rel, scope, owner, literals):
+    """`{local name: key set or None}` for one scope; `None` means UNKNOWN.
+
+    `owner` is the enclosing function's name, or `None` at module level.
+    `literals` says whether a dict literal counts as a source here - it does for
+    the pass that reports, and does not for the pass whose answers cross a call.
+    """
+    module = scan["module_of"][rel]
+    nodes = _nodes_of(scan, scope)
+    assigned = {}
+    modelled = set()
+    for node in nodes:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            assigned.setdefault(node.targets[0].id, []).append(node.value)
+            modelled.add(id(node.targets[0]))
+    added = {}
+    unknown = set()
+    for node in nodes:
+        # EVERY OTHER BINDING FORM MAKES THE NAME UNKNOWN. A `Store` this loop did
+        # not model is a value this scan cannot read, and treating it as absent
+        # would read the name's other bindings as the whole truth.
+        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                and id(node) not in modelled):
+            unknown.add(node.id)
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            unknown.add(node.name)
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if not (isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Name)):
+                    continue
+                read = _keyed_read(target)
+                if read is None:
+                    unknown.add(target.value.id)
+                else:
+                    added.setdefault(target.value.id, set()).add(read[1])
+        if isinstance(node, ast.Delete):
+            for target in node.targets:
+                if (isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Name)):
+                    unknown.add(target.value.id)
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _DICT_MUTATORS
+                and isinstance(node.func.value, ast.Name)):
+            unknown.add(node.func.value.id)
+        if isinstance(node, ast.Call):
+            unknown |= _names_a_call_may_write(scan, rel, node)
+    params = {}
+    if owner is not None:
+        for arg in list(scope.args.args) + list(scope.args.kwonlyargs):
+            params[arg.arg] = scan["params"].get((module, owner, arg.arg))
+    known = dict(params)
+    subjects = sorted(set(list(assigned.keys()) + list(params.keys())))
+    for _round in range(_KEY_SET_ROUNDS):
+        moved = False
+        for name in subjects:
+            parts = []
+            for value in assigned.get(name, ()):
+                if _is_self_normalisation(name, value):
+                    parts.append(frozenset())
+                    continue
+                parts.append(_value_key_set(scan, rel, known, value, literals))
+            if name in params:
+                parts.append(params[name])
+            if not parts:
+                continue
+            merged = frozenset()
+            for one in parts:
+                if one is None:
+                    merged = None
+                    break
+                merged = merged | one
+            if merged is not None:
+                merged = None if name in unknown else merged | frozenset(
+                    added.get(name, ()))
+            if known.get(name, _UNSET) != merged:
+                known[name] = merged
+                moved = True
+        if not moved:
+            break
+    return known
+
+
+def _scopes_of(scan, rel):
+    """`[(owner, node)]` - the module body, then every function in it.
+
+    Memoised on `scan` for `_nodes_of`'s reason: the fixpoint asks once a round.
+    """
+    found = scan["scopes"].get(rel)
+    if found is None:
+        found = [(None, scan["trees"][rel])]
+        for node in ast.walk(scan["trees"][rel]):
+            if isinstance(node, ast.FunctionDef):
+                found.append((node.name, node))
+        scan["scopes"][rel] = found
+    return found
+
+
+def _call_sites(scan, rel, scope, owner):
+    """`[(destination, positional key sets, keyword key sets, readable)]`.
+
+    `readable` is False for a call spread from `*args` / `**kwargs`, where no
+    argument can be matched to a parameter by position or by name.
+    """
+    known = _scope_key_sets(scan, rel, scope, owner, False)
+    sites = []
+    for node in _nodes_of(scan, scope):
+        if not isinstance(node, ast.Call):
+            continue
+        destination = _call_destination(scan, rel, node)
+        if destination is None:
+            continue
+        readable = not ([a for a in node.args if isinstance(a, ast.Starred)]
+                        or [k for k in node.keywords if k.arg is None])
+        positional = [_value_key_set(scan, rel, known, a, False) for a in node.args]
+        by_name = dict((k.arg, _value_key_set(scan, rel, known, k.value, False))
+                       for k in node.keywords if k.arg)
+        sites.append((destination, positional, by_name, readable))
+    return sites
+
+
+def _parameter_pass(scan):
+    """`(params, blind)` - one round of the parameter fixpoint.
+
+    `blind` counts, per slot, the call sites whose argument this scan could not
+    resolve. A slot fed by SOME resolvable producer is judged against those and
+    carries its blind count into the finding, because a producer the scan cannot
+    see is exactly the thing that would make the finding wrong.
+    """
+    sites = {}
+    for rel in sorted(scan["trees"]):
+        for owner, scope in _scopes_of(scan, rel):
+            for destination, positional, by_name, readable in _call_sites(
+                    scan, rel, scope, owner):
+                sites.setdefault(destination, []).append(
+                    (positional, by_name, readable))
+    params = {}
+    blind = {}
+    for destination in sorted(scan["functions"]):
+        node = scan["functions"][destination]
+        positional_names = [arg.arg for arg in node.args.args]
+        names = positional_names + [arg.arg for arg in node.args.kwonlyargs]
+        called = sites.get(destination)
+        if not called:
+            continue
+        for index, name in enumerate(names):
+            slot = (destination[0], destination[1], name)
+            merged = frozenset()
+            resolved = 0
+            unresolved = 0
+            for supplied, by_name, readable in called:
+                if not readable:
+                    unresolved += 1
+                    continue
+                if name in by_name:
+                    value = by_name[name]
+                elif index < len(positional_names) and index < len(supplied):
+                    value = supplied[index]
+                else:
+                    continue          # the call took this parameter's default
+                if value is None:
+                    unresolved += 1
+                    continue
+                merged = merged | value
+                resolved += 1
+            params[slot] = merged if resolved else None
+            blind[slot] = (resolved, unresolved)
+    return params, blind
+
+
+def dict_key_contracts(script_dir=None, hooks_dir=None):
+    """The producer/consumer key picture for `scripts/` and `hooks/`.
+
+    `{"producers", "opaque", "unreadable", "reads", "unjudged", "findings",
+      "settled"}`. `findings` is `[(subject, problem)]`; the rest is what the
+    scan looked at, returned beside the verdict so a caller can see the SIZE of
+    what was judged. A rule whose reach silently narrowed while its claim stayed
+    the same is this repository's most feared failure, so `reads` is the number
+    it must be read against and `unjudged` names what it declined to answer.
+
+    `settled` is False when the parameter fixpoint hit its round bound, which
+    would mean the key sets below are a lower bound rather than the answer.
+    """
+    trees = {}
+    unreadable = []
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                trees[rel] = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            unreadable.append((rel, "%s" % (exc,)))
+    homes = {}
+    for rel in trees:
+        homes.setdefault(os.path.basename(rel)[:-3], []).append(rel)
+    module_of = {}
+    shared = []
+    for name in sorted(homes):
+        if len(homes[name]) > 1:
+            shared.append((name, "is the basename of more than one file (%s), so "
+                                 "no call spelled through it can be attributed"
+                           % (", ".join(sorted(homes[name])),)))
+            continue
+        module_of[homes[name][0]] = name
+    sibling_names = frozenset(module_of.values())
+    producers = {}
+    opaque = []
+    functions = {}
+    mutates = {}
+    aliases = {}
+    imported = {}
+    for rel in sorted(module_of):
+        module = module_of[rel]
+        tree = trees[rel]
+        found, unlisted = _module_producers(tree)
+        for name in sorted(found):
+            producers[(module, name)] = found[name]
+        opaque.extend(("%s.%s" % (module, name), why) for name, why in unlisted)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                functions[(module, node.name)] = node
+                mutates[(module, node.name)] = _mutated_parameters(node)
+        aliases[rel] = _sibling_module_aliases(tree, sibling_names)
+        imported[rel] = _imported_function_names(tree, sibling_names)
+    scan = {"trees": dict((rel, trees[rel]) for rel in module_of),
+            "module_of": module_of, "producers": producers,
+            "functions": functions, "mutates": mutates,
+            "aliases": aliases, "imported": imported, "params": {},
+            "nodes": {}, "scopes": {}}
+    settled = False
+    blind = {}
+    for _round in range(_CONTRACT_ROUNDS):
+        params, blind = _parameter_pass(scan)
+        if params == scan["params"]:
+            settled = True
+            break
+        scan["params"] = params
+    findings = []
+    unjudged = list(shared)
+    unchecked = {}
+    reads = 0
+    for rel in sorted(scan["trees"]):
+        module = module_of[rel]
+        for owner, scope in _scopes_of(scan, rel):
+            known = _scope_key_sets(scan, rel, scope, owner, True)
+            argnames = frozenset() if owner is None else frozenset(
+                arg.arg for arg in list(scope.args.args) + list(scope.args.kwonlyargs))
+            for node in _nodes_of(scan, scope):
+                read = _keyed_read(node)
+                if read is None:
+                    continue
+                receiver, key = read
+                if isinstance(receiver, ast.Call):
+                    destination = _call_destination(scan, rel, receiver)
+                    carried = producers.get(destination) if destination else None
+                    where = "what %s.%s() returns" % destination if destination else ""
+                elif isinstance(receiver, ast.Name):
+                    carried = known.get(receiver.id)
+                    where = "`%s`" % (receiver.id,)
+                else:
+                    continue
+                if carried is None:
+                    # ONE ENTRY PER PARAMETER, NOT PER READ. This is the honest
+                    # edge of the rule and a reader has to be able to hold it:
+                    # per read it is longer than the tree has functions, and the
+                    # thing to act on is the SLOT - a contract that exists and is
+                    # unchecked - not each line that touches it.
+                    if isinstance(receiver, ast.Name) and receiver.id in argnames:
+                        slot = (rel, owner, receiver.id)
+                        if not blind.get((module, owner, receiver.id), (0, 0))[0]:
+                            unchecked.setdefault(slot, set()).add(key)
+                    continue
+                reads += 1
+                if key in carried:
+                    continue
+                missed = 0
+                if isinstance(receiver, ast.Name) and receiver.id in argnames:
+                    missed = blind.get((module, owner, receiver.id), (0, 0))[1]
+                findings.append((
+                    "%s:%d" % (rel, node.lineno),
+                    "reads %r off %s, and nothing that reaches it writes that "
+                    "key - what it does carry is %s%s"
+                    % (key, where, ", ".join(sorted(carried)) or "no key at all",
+                       ("; %d of its call sites supplied a value this scan could "
+                        "not resolve, so a producer it cannot see may write the "
+                        "key" % (missed,)) if missed else "")))
+    for rel, owner, name in sorted(unchecked):
+        missed = blind.get((module_of[rel], owner, name), (0, 0))[1]
+        unjudged.append((
+            "%s.%s(%s)" % (rel, owner, name),
+            "is read for %s, and no call site supplied a value this scan could "
+            "resolve (%d could not be read), so the keys it must carry are "
+            "declared nowhere it can see"
+            % (_output.some_of(sorted(unchecked[(rel, owner, name)]),
+                               render=repr), missed)))
+    return {"producers": producers, "opaque": sorted(opaque),
+            "unreadable": unreadable, "reads": reads,
+            "unjudged": sorted(unjudged), "findings": sorted(findings),
+            "settled": settled}
+
+
+def dict_key_violations(script_dir=None, hooks_dir=None):
+    """`(subject, problem)` for a dict key read that no producer of it writes.
+
+    Four shapes are reported, and the last three are what stop this becoming the
+    silent no-op a scan that has narrowed always becomes:
+
+      * a key read off a value this codebase produced, that no producer able to
+        reach that read writes;
+      * a file the scan could not parse, which is not a file with no dict reads
+        in it;
+      * a tree in which nothing was judged at all - a walk that has gone blind
+        prints exactly what a clean tree prints, and this is the difference;
+      * a parameter fixpoint that did not settle, which would make every key set
+        above a lower bound and every finding a guess.
+
+    `opaque` and `unjudged` are NOT violations and are deliberately not raised to
+    one. They are the honest edge of the rule - a dict assembled rather than
+    returned whole, a parameter no call site could be resolved for - and a gate
+    that failed on them would be demanding a rewrite of every builder in the
+    tree. `dict_key_contracts()` is where a reader looks at them, and
+    `_deps.py --contracts` prints them.
+    """
+    picture = dict_key_contracts(script_dir, hooks_dir)
+    violations = [(rel, "will not parse (%s), so the dicts it produces and reads "
+                        "were not checked" % (why,))
+                  for rel, why in picture["unreadable"]]
+    if not picture["settled"]:
+        violations.append(("<scan>", "the parameter key sets did not settle within "
+                                     "the round bound, so every key set is a lower "
+                                     "bound and no finding below is trustworthy"))
+    if not picture["reads"]:
+        violations.append(("<tree>", "no dict key read anywhere under scripts/ or "
+                                     "hooks/ could be traced to a producer - a "
+                                     "tree this rule finds nothing in has gone "
+                                     "blind, not clean"))
+    return violations + list(picture["findings"])
+
+
 # --- known layer debt ---------------------------------------------------------
 # HOW MANY ARE LEFT IS DELIBERATELY NOT WRITTEN HERE. The tuple below IS the count,
 # and a figure in this comment would be a second copy of it with nothing comparing
@@ -3528,5 +4174,26 @@ if __name__ == "__main__":
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())
         raise SystemExit(0)
-    sys.stderr.write("usage: _deps.py --selftest | --render\n")
+    if "--contracts" in sys.argv[1:]:
+        # THE EDGE OF THE DICT-KEY RULE, PRINTED. `dict_key_violations()` is the
+        # verdict and says nothing about what it declined to answer; this is the
+        # other half, and it exists because a scan that quietly narrowed while
+        # keeping its claim is what this repository fears most. Exit 0 either
+        # way: it is a report, not a gate.
+        _picture = dict_key_contracts()
+        _lines = ["dict key contracts under scripts/ + hooks/",
+                  "  producers        %d" % (len(_picture["producers"]),),
+                  "  key reads judged %d" % (_picture["reads"],),
+                  "  fixpoint settled %s" % (_picture["settled"],),
+                  "  findings         %d" % (len(_picture["findings"]),),
+                  "  opaque producers %d" % (len(_picture["opaque"]),),
+                  "  unchecked slots  %d" % (len(_picture["unjudged"]),),
+                  "  unreadable files %d" % (len(_picture["unreadable"]),), ""]
+        for _group in ("findings", "unreadable", "opaque", "unjudged"):
+            _lines.append("--- %s ---" % (_group,))
+            _lines.extend("  %s: %s" % row for row in _picture[_group])
+            _lines.append("")
+        _output.write_lf_lines(_lines)
+        raise SystemExit(0)
+    sys.stderr.write("usage: _deps.py --selftest | --render | --contracts\n")
     raise SystemExit(2)

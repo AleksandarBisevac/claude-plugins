@@ -2590,6 +2590,304 @@ def _cases(check):
         shutil.rmtree(_ck_named, ignore_errors=True)
 
 
+    # --- one dict, one set of keys ------------------------------------------------
+    # THE DEFECT IS RECONSTRUCTED, NOT DESCRIBED, for `ck3`'s reason word for
+    # word. `_evidence_io.row_for` read `result.get("countsBasis")` while nothing
+    # in the tree wrote that key, so every evidence row ever recorded carried
+    # `None` in the one field built to explain a count that has three answers,
+    # and the panel fell back to a hardcoded string. It was found by hand. A rule
+    # that cannot see that case is the wrong rule, so it is a fixture below and
+    # not a sentence here - and `dk3` is that fixture, spelled in the two-module
+    # shape the real one had.
+    _dk_live = M.dict_key_contracts()
+    check("dk1 the real tree is scanned and the answer is not empty: %d "
+          "producers, %d key reads traced to one, the parameter fixpoint "
+          "settled (%s), and no file the scan could not parse (%r). Every case "
+          "below asserting an empty list is worthless without this floor, "
+          "because a scan that found nothing reports exactly what a clean tree "
+          "reports - and `run_gate`/`countsBasis` is named because it is the "
+          "producer and the key the whole rule exists for"
+          % (len(_dk_live["producers"]), _dk_live["reads"],
+             _dk_live["settled"], _dk_live["unreadable"]),
+          _dk_live["settled"] and not _dk_live["unreadable"]
+          and len(_dk_live["producers"]) > 100 and _dk_live["reads"] > 400
+          and "countsBasis" in (_dk_live["producers"].get(
+              ("run-test-gate", "run_gate")) or frozenset()))
+
+    check("dk2 the edge is COUNTED rather than swallowed: a producer whose "
+          "returns cannot be listed, and a parameter no call site could be "
+          "resolved for, are named in `opaque` and `unjudged` instead of being "
+          "dropped from the scan - a walk that quietly narrowed while its claim "
+          "stayed the same is the failure this whole module is about. "
+          "opaque=%d unjudged=%d, each row carrying a reason"
+          % (len(_dk_live["opaque"]), len(_dk_live["unjudged"])),
+          len(_dk_live["opaque"]) > 10 and len(_dk_live["unjudged"]) > 10
+          and all(len(why) > 40 for _s, why in _dk_live["opaque"])
+          and all(len(why) > 40 for _s, why in _dk_live["unjudged"]))
+
+    # ASKED OF THE MODULE'S OWN DOOR rather than rebuilt off `_dk_live`, because
+    # the two halves of `dict_key_violations()` a caller trips over first - the
+    # unreadable file and the blind tree - are added by that function and by no
+    # other, so a case reading the picture alone would leave them unasserted on
+    # the real tree.
+    _dk_verdict = M.dict_key_violations()
+    check("dk2b ...and the real tree reads no dict key that nothing writes, "
+          "which is what makes this rule shippable rather than an exemption "
+          "table written on the day it landed: %r" % (_dk_verdict,),
+          _dk_verdict == [])
+
+    def _dk_scan(files):
+        """The whole contract picture for a `scripts/`-shaped fixture.
+
+        The picture rather than its `findings` alone, because half these cases
+        are about what the scan DECLINED to judge, and a helper handing back
+        only the verdict would put `opaque` and `unjudged` out of reach of the
+        cases written to keep them honest.
+        """
+        root = _ck_tree(files)
+        try:
+            return M.dict_key_contracts(
+                root, os.path.join(root, "no-hooks-here"))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    _dk_broken = _dk_scan((
+        ("producer.py",
+         'def run_gate():\n'
+         '    return {"status": "passed", "ranTotal": 3}\n'),
+        ("consumer.py",
+         'import producer\n'
+         '\n'
+         '\n'
+         'def row(result):\n'
+         '    return (result.get("status"), result.get("countsBasis"))\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    return row(producer.run_gate())\n')))
+    check("dk3 THE DEFECT ITSELF: a producer in one module, a reader in "
+          "another, and a key the reader asks for that the producer never "
+          "writes. The finding names the file and the LINE of the read, the "
+          "key, and the keys the value does carry - which is the basis a "
+          "reader needs to tell a typo from a producer that stopped writing "
+          "the field: %r" % (_dk_broken["findings"],),
+          len(_dk_broken["findings"]) == 1
+          and _dk_broken["findings"][0][0] == "consumer.py:5"
+          and "'countsBasis'" in _dk_broken["findings"][0][1]
+          and "ranTotal, status" in _dk_broken["findings"][0][1])
+
+    # THE OTHER DIRECTION, and it is the case a review cuts for looking vacuous.
+    # dk3 fails if the rule never fires; this fails if it fires unconditionally,
+    # which is the second wrong implementation of every rule that adds a
+    # comparison and the one the natural case does not cover.
+    _dk_whole = _dk_scan((
+        ("producer.py",
+         'def run_gate():\n'
+         '    return {"status": "passed", "countsBasis": "counted"}\n'),
+        ("consumer.py",
+         'import producer\n'
+         '\n'
+         '\n'
+         'def row(result):\n'
+         '    return (result.get("status"), result.get("countsBasis"))\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    return row(producer.run_gate())\n')))
+    check("dk4 ...and the same pair with the key WRITTEN is silent, over a "
+          "fixture whose reads were traced rather than missed (%d of them): %r"
+          % (_dk_whole["reads"], _dk_whole["findings"]),
+          _dk_whole["findings"] == [] and _dk_whole["reads"] == 2)
+
+    _dk_widened = _dk_scan((
+        ("producer.py",
+         'def gate():\n'
+         '    return {"status": "passed"}\n'),
+        ("caller.py",
+         'import producer\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    res = producer.gate()\n'
+         '    res["gateSource"] = "phase"\n'
+         '    return (res.get("gateSource"), res.get("subject"))\n')))
+    check("dk5 a subscript assignment with a literal key WIDENS the set rather "
+          "than ending the follow - `gateSource` is written on the line above "
+          "and is clean, `subject` is not written anywhere and is the one "
+          "finding. Refusing to follow the augmentation would lose the whole "
+          "recording chain, which is how the real producer reaches the "
+          "recorder: %r" % (_dk_widened["findings"],),
+          len(_dk_widened["findings"]) == 1
+          and "'subject'" in _dk_widened["findings"][0][1]
+          and "gateSource" in _dk_widened["findings"][0][1])
+
+    _dk_unpacked = _dk_scan((
+        ("mod.py",
+         'def _deref(node):\n'
+         '    return node, ()\n'
+         '\n'
+         '\n'
+         'def entry(node):\n'
+         '    target, _rest = _deref(node)\n'
+         '    target = target if isinstance(target, dict) else {}\n'
+         '    return {"description": target.get("description") or ""}\n'),))
+    check("dk6 a name bound by a TUPLE UNPACK is UNKNOWN, not invisible. This "
+          "is the scan's one false positive, kept as a case: `_help._entry` "
+          "takes `target` off `_deref` through a two-name unpack and then "
+          "guards it with `x if isinstance(x, dict) else {}`, and reading the "
+          "guard as the name's only binding convicts a file that is correct: "
+          "%r" % (_dk_unpacked["findings"],),
+          _dk_unpacked["findings"] == [])
+
+    _dk_adhoc = _dk_scan((
+        ("caller.py",
+         'import reader\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    return reader.grade({"kind": "skill"})\n'),
+        ("reader.py",
+         'def grade(decl):\n'
+         '    return {"kind": decl.get("kind"), "ok": decl.get("enabled")}\n')))
+    check("dk7 a dict literal at a CALL SITE does not define the callee's "
+          "contract - one caller's ad-hoc payload is not a declared shape, and "
+          "admitting those convicted `_panel_write` and `_status_facts` by the "
+          "handful the first time this ran. The slot is NAMED as unchecked "
+          "rather than passed over: %r / %r"
+          % (_dk_adhoc["findings"], _dk_adhoc["unjudged"]),
+          _dk_adhoc["findings"] == []
+          and [s for s, _w in _dk_adhoc["unjudged"]] == ["reader.py.grade(decl)"]
+          and "'enabled'" in _dk_adhoc["unjudged"][0][1]
+          and "no call site supplied a value" in _dk_adhoc["unjudged"][0][1])
+
+    _dk_mutated = _dk_scan((
+        ("producer.py",
+         'def gate():\n'
+         '    return {"status": "passed"}\n'),
+        ("stamper.py",
+         'def stamp(row):\n'
+         '    row["stampedAt"] = "now"\n'
+         '    return row\n'),
+        ("caller.py",
+         'import producer\n'
+         'import stamper\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    res = producer.gate()\n'
+         '    stamper.stamp(res)\n'
+         '    return res.get("stampedAt")\n')))
+    check("dk8 a callee that WRITES INTO the dict it was handed makes the "
+          "caller's name unknown, so `stampedAt` is not a finding. Without "
+          "reading the callee this rule would convict every builder that hands "
+          "its row to a helper, which is the over-firing that gets a lint "
+          "routed around: %r" % (_dk_mutated["findings"],),
+          _dk_mutated["findings"] == [])
+
+    _dk_guarded = _dk_scan((
+        ("producer.py",
+         'def gate():\n'
+         '    return {"status": "passed"}\n'),
+        ("reader.py",
+         'import producer\n'
+         '\n'
+         '\n'
+         'def row(result):\n'
+         '    result = result if isinstance(result, dict) else {}\n'
+         '    return {"why": result.get("countsBasis")}\n'
+         '\n'
+         '\n'
+         'def main():\n'
+         '    return row(producer.gate())\n')))
+    check("dk9 the house guard `x = x if isinstance(x, dict) else {}` keeps "
+          "what the parameter already carried, so the read behind it is still "
+          "checked. TWO rules meet here: a self-normalisation contributes no "
+          "key, and `isinstance` is a BUILTIN, which never writes into a dict "
+          "it is handed - trusting neither makes the scan blind to exactly the "
+          "read it exists for, since this is how the tree opens a defensive "
+          "function: %r" % (_dk_guarded["findings"],),
+          len(_dk_guarded["findings"]) == 1
+          and "'countsBasis'" in _dk_guarded["findings"][0][1])
+
+    _dk_mixed = _dk_scan((
+        ("mod.py",
+         'def maybe(flag):\n'
+         '    if flag:\n'
+         '        return {"a": 1}\n'
+         '    return None\n'
+         '\n'
+         '\n'
+         'def read_it(flag):\n'
+         '    return maybe(flag).get("b")\n'),))
+    check("dk10 a function returning a dict on one path and something else on "
+          "another is NOT a producer, and it is named in `opaque` rather than "
+          "dropped: its readers are unchecked and the report says so, which is "
+          "the difference between a stop and a silence: %r / %r"
+          % (_dk_mixed["findings"], _dk_mixed["opaque"]),
+          _dk_mixed["findings"] == []
+          and [s for s, _w in _dk_mixed["opaque"]] == ["mod.maybe"]
+          and "some paths" in _dk_mixed["opaque"][0][1])
+
+    _dk_spread = _dk_scan((
+        ("mod.py",
+         'def merged(other):\n'
+         '    return {"a": 1, **other}\n'
+         '\n'
+         '\n'
+         'def read_it(other):\n'
+         '    return merged(other).get("zzz")\n'),))
+    check("dk11 ...and the same for a dict literal whose keys are not all "
+          "there to be listed: `{**other}` carries keys from somewhere this "
+          "cannot see, so a partial set read as complete would be a finding "
+          "invented out of a shape nobody wrote: %r / %r"
+          % (_dk_spread["findings"], _dk_spread["opaque"]),
+          _dk_spread["findings"] == []
+          and [s for s, _w in _dk_spread["opaque"]] == ["mod.merged"]
+          and "cannot be listed" in _dk_spread["opaque"][0][1])
+
+    _dk_chained = _dk_scan((
+        ("mod.py",
+         'def gate():\n'
+         '    return {"status": "passed"}\n'
+         '\n'
+         '\n'
+         'def read_it():\n'
+         '    return gate()["nope"]\n'),))
+    check("dk12 a key read straight off the call, with no local in between, is "
+          "the same finding - and it is the arm that has no name to follow, so "
+          "a rule built only on bindings would pass over it: %r"
+          % (_dk_chained["findings"],),
+          len(_dk_chained["findings"]) == 1
+          and "'nope'" in _dk_chained["findings"][0][1]
+          and _dk_chained["findings"][0][0] == "mod.py:6")
+
+    _dk_quiet = _ck_tree((("quiet.py", "def f():\n    return 1\n"),))
+    _dk_torn = _ck_tree((
+        ("producer.py", 'def gate():\n    return {"a": 1}\n'),
+        ("reader.py", 'import producer\n\n\ndef f():\n'
+                      '    return producer.gate().get("a")\n'),
+        ("torn.py", "def f(:\n")))
+    try:
+        _dk_blind = M.dict_key_violations(
+            _dk_quiet, os.path.join(_dk_quiet, "no-hooks-here"))
+        check("dk13 a tree this rule traces no key read in is reported as "
+              "BLIND rather than as clean - the same distinction "
+              "`config_read_violations` draws, and the one that decides whether "
+              "an empty list means anything: %r" % (_dk_blind,),
+              len(_dk_blind) == 1 and _dk_blind[0][0] == "<tree>"
+              and "blind, not clean" in _dk_blind[0][1])
+        _dk_unreadable = M.dict_key_violations(
+            _dk_torn, os.path.join(_dk_torn, "no-hooks-here"))
+        check("dk14 ...and a file that will not parse is NAMED rather than "
+              "dropped from the scan, because a module nothing could read is "
+              "not a module with no dicts in it: %r" % (_dk_unreadable,),
+              [k for k, _p in _dk_unreadable] == ["torn.py"]
+              and "will not parse" in _dk_unreadable[0][1])
+    finally:
+        shutil.rmtree(_dk_quiet, ignore_errors=True)
+        shutil.rmtree(_dk_torn, ignore_errors=True)
+
+
 def _selftest():
     return _harness.run(_cases)
 
