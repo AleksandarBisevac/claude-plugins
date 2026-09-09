@@ -113,6 +113,47 @@ def _cases(check):
               "someone mid-conflict",
               v == "allow", repr((v, why)))
 
+        # --- F278: the verb has to be in SUBCOMMAND position ------------------
+        # The patterns read `\bgit\b[^|;&]*\bVERB\b`, which lets any text sit
+        # between the two - so a COMMIT MESSAGE naming one of these operations was
+        # graded as performing it. This refused a real commit documenting the rule,
+        # and then refused the probe written to measure it. It is
+        # `guard-secrets-read`'s F267 in a second hook, and it earns the same
+        # repair: grade the operation, not the text.
+        #
+        # THE PAIR IS THE POINT. gh6b-gh6e are the "prose is not an operation" half
+        # and gh7 onward are the "still refused" half; either alone is a rule that
+        # refuses everything or nothing.
+        for _cid, _cmd, _what in (
+                ("gh6b", 'git commit -m "docs: the remedy is a rebase this '
+                         'document forbids"', "a message ABOUT the rule"),
+                ("gh6c", 'git log --grep "rebase"',
+                         "a READ - nothing about `git log` rewrites anything"),
+                ("gh6d", 'git commit -m "chore: say why filter-branch is refused"',
+                         "a second verb, same shape"),
+                ("gh6e", 'git commit -m "never reset --hard onto a recorded SHA"',
+                         "the reset arm, which had the same defect")):
+            v, why = _decide(repo, _cmd)
+            check("%s naming an operation is not performing it: %s"
+                  % (_cid, _what), v == "allow", repr((v, why)))
+        # ...and the global-option forms still reach the verb, so the narrowing
+        # did not buy its quiet by going blind to a spelling git accepts.
+        v, why = _decide(repo, "git -C . rebase -i main")
+        check("gh6f a global option before the verb does NOT hide it - `git -C "
+              "<path> rebase` is the spelling a script uses, and a guard that "
+              "missed it would be quiet in exactly the automated case",
+              v == "deny", repr((v, why)))
+        # THE KNOWN COST, asserted so it is a decision on the record rather than a
+        # discovery: text spelling a WHOLE command still fires. That is the
+        # conservative direction and it is the same property that keeps an
+        # `sh -c "git rebase -i"` evasion caught.
+        v, why = _decide(repo, 'git commit -m "git rebase -i is banned here"')
+        check("gh6g KNOWN COST: a message that spells a whole forbidden command "
+              "is still refused, because the inner `git rebase` is in subcommand "
+              "position - the same property that keeps `sh -c \"git rebase -i\"` "
+              "caught, and the reason this is a narrowing rather than a mute",
+              v == "deny", repr((v, why)))
+
         # --- the refusals ------------------------------------------------------
         v, why = _decide(repo, "git reset --hard HEAD~2")
         check("gh7 a reset that orphans a recorded SHA is REFUSED, and names the "

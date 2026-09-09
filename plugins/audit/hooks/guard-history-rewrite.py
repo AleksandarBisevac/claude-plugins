@@ -49,27 +49,56 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 
+# F278. THE VERB HAS TO BE IN SUBCOMMAND POSITION, not merely somewhere in the
+# line. These patterns used to read `\bgit\b[^|;&]*\bVERB\b`, which lets any text
+# at all sit between the two — so a COMMIT MESSAGE naming one of these operations
+# was graded as performing it. Measured, all four refused:
+#
+#     git commit -m "the remedy is a rebase this document forbids"
+#     git commit -m "docs: never rebase the phase branch"
+#     git commit -m "chore: document why filter-branch is refused"
+#     git log --grep "rebase"                       <- a READ
+#
+# The last one is the tell: nothing about `git log` can rewrite anything. This is
+# `guard-secrets-read`'s F267 in a second hook — a guard grading TEXT rather than
+# the operation — and it has the same consequence, which is why it is fixed the
+# same way rather than exempted. It refused this repository's own commit
+# documenting the rule, and then refused the probe written to measure it, which is
+# a guard teaching the person it protects to work around it.
+#
+# `git`, then GLOBAL OPTIONS ONLY, then the verb. `-C <path>` and `-c <k=v>` take a
+# value and are spelled out so the value cannot be mistaken for the verb.
+_GIT_SUB = (r"\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+"
+            r"|--(?:git-dir|work-tree|namespace|exec-path)(?:=\S*|\s+\S+)"
+            r"|--[a-z][a-z-]*))*\s+")
+
+# KNOWN COST, stated rather than discovered: text that spells a WHOLE forbidden
+# command still fires — `git commit -m "git push --force is banned"` matches at the
+# inner `git`. That is the conservative direction and it is deliberate, because the
+# same property is what keeps `sh -c "git rebase -i"` caught. What is fixed is
+# prose that merely NAMES a verb, which is the shape that was refusing real work.
+
 # Operations that rewrite or discard history wholesale. There is no ancestry
 # question to ask about these: `--orphan` starts a branch with no history at all,
 # `filter-branch` rewrites every SHA it touches, and a force-push replaces what
 # other clones already have.
 _ALWAYS = (
-    (re.compile(r"\bgit\b[^|;&]*\bpush\b[^|;&]*(--force\b(?!-with-lease)|(?<![\w-])-f(?![\w-]))"),
+    (re.compile(_GIT_SUB + r"push\b[^|;&]*(--force\b(?!-with-lease)|(?<![\w-])-f(?![\w-]))"),
      "force-push replaces history other clones already have"),
-    (re.compile(r"\bgit\b[^|;&]*\bpush\b[^|;&]*--force-with-lease\b"),
+    (re.compile(_GIT_SUB + r"push\b[^|;&]*--force-with-lease\b"),
      "force-push (--force-with-lease still replaces the remote's history)"),
-    (re.compile(r"\bgit\b[^|;&]*\b(checkout|switch)\b[^|;&]*--orphan\b"),
+    (re.compile(_GIT_SUB + r"(checkout|switch)\b[^|;&]*--orphan\b"),
      "an orphan branch starts with no history, so every recorded commit is "
      "unreachable from it"),
-    (re.compile(r"\bgit\b[^|;&]*\bfilter-(branch|repo)\b"),
+    (re.compile(_GIT_SUB + r"filter-(branch|repo)\b"),
      "filter-branch/filter-repo rewrites every SHA it touches"),
-    (re.compile(r"\bgit\b[^|;&]*\brebase\b(?![^|;&]*--abort)"),
+    (re.compile(_GIT_SUB + r"rebase\b(?![^|;&]*--abort)"),
      "rebasing rewrites the SHAs recorded in the manifest "
      "(reference/orchestrator.md states this as an invariant)"),
 )
 
-_RESET_HARD = re.compile(r"\bgit\b[^|;&]*\breset\b[^|;&]*--hard\b([^|;&]*)")
-_AMEND = re.compile(r"\bgit\b[^|;&]*\bcommit\b[^|;&]*--amend\b")
+_RESET_HARD = re.compile(_GIT_SUB + r"reset\b[^|;&]*--hard\b([^|;&]*)")
+_AMEND = re.compile(_GIT_SUB + r"commit\b[^|;&]*--amend\b")
 _FLAGS = re.compile(r"(^|\s)-{1,2}[A-Za-z][\w-]*(=\S*)?")
 
 
