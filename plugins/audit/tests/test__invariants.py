@@ -124,6 +124,15 @@ def _write(path, text):
 #   unresolvable  a row naming a commit that is not in this clone (a gap)
 #   unnamed       a row claiming a commit and not saying which (a gap)
 AUDIT_STATE_KINDS = ("clean", "rogue", "index", "unresolvable", "unnamed")
+
+# The manifest-index fixtures, the same way and for the same reason. Each names
+# the ONE thing that is different about the index commit this repo carries:
+#
+#   clean       the commit carries the manifest index and nothing else
+#   with-shard  ...and this phase's own shard, which is the pair that makes two
+#               parallel phases conflict, and so has its own breach sentence
+#   with-work   ...and a source file, which is the generic breach
+INDEX_COMMIT_KINDS = ("clean", "with-shard", "with-work")
 _ABSENT_SHA = "0" * 40
 EVIDENCE_NAME = "2026-08.fixture.jsonl"
 FAILED_RUN_ID = "run-that-went-red"
@@ -206,13 +215,62 @@ def _audit_state(root, audit, index_path, kind, with_evidence=True):
     return sha
 
 
+def _index_row(root, sha):
+    """The journal row a manifest-index commit anchors itself with.
+
+    Through the REAL appender, `_state_row`'s reason one action over: the claim
+    is that a row `_journal_io.append` produced is one `index_commits` finds, and
+    a hand-made line would prove only that a dict with the right keys reads back.
+    """
+    return _journal_io.append(root, {
+        "action": M.ACTION_INDEX_COMMITTED,
+        "actor": {"via": "fixture"},
+        "target": "docs/audit/audit-plan.json",
+        "summary": "the manifest index was committed for P1",
+        "details": {"phaseId": "P1", "commit": sha}})
+
+
+def _index_commit(root, index_path, kind):
+    """Give the repo a manifest-index commit of `kind`, plus the row naming it.
+
+    The index really is EDITED first: a commit of an unchanged file is an empty
+    commit git refuses, so a fixture that only staged it would build no commit at
+    all and every case below would be grading the audit-state commit beside it.
+    """
+    index = _mio.read_json(index_path)
+    index["fileIndex"]["src/widened.py"] = ["P1.2"]
+    _write_json(index_path, index)
+    staged = ["docs/audit/audit-plan.json"]
+    if kind == "with-shard":
+        # The shared index AND this phase's own file in one commit. Not a stray
+        # path: it is the exact shape the split exists to prevent, so the check
+        # owes it a sentence of its own.
+        shard_path = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        shard = _mio.read_json(shard_path)
+        shard["summary"] = "touched by the manifest-index commit"
+        _write_json(shard_path, shard)
+        staged.append("docs/audit/phases/P1.json")
+    if kind == "with-work":
+        _write(os.path.join(root, "src", "a.py"), "a = 3  # swept in\n")
+        staged.append("src/a.py")
+    _git(root, "add", *staged)
+    # The spelling `commit-manifest-index.py` really writes: `chore` so
+    # commitlint takes it, the fixed literal in the SCOPE where no manifest can
+    # reach it. Nothing here parses the subject - the rows are how these commits
+    # are found - but a fixture spelling it another way is a second answer.
+    _git(root, "commit", "-q", "-m", "chore(audit-index): P1 - fixture")
+    sha = _head(root)
+    _index_row(root, sha)
+    return sha
+
+
 def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
           stash=False, push=False, invalid_state=False, no_base_ref=False,
           drop_branch=False, forced=False, journal_rows=0, parent_branch=None,
           journal_in_commit=False, journal_real=False,
           evidence_in_commit=False, evidence_near_miss=False,
           audit_state=None, evidence_outside=False, journal_off=False,
-          leave_dirty=False, evidence_pointer=None):
+          leave_dirty=False, evidence_pointer=None, index_commit=None):
     """A repo with one finished phase, broken in exactly the way the flags say.
 
     ONE BUILDER RATHER THAN ONE PER CASE, because the clean path has to be the
@@ -220,11 +278,13 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
     then a `breach` case is passing because its fixture differs somewhere nobody
     is comparing.
 
-    THE LAST FOUR ARE ALSO `test_commit_audit_state.py`'s FIXTURE, which is why
-    they are here rather than in a second builder over there. That suite drives
-    the command that MAKES an audit-state commit and this one grades the commits
-    it makes, so the two must start from one repository or the grader would be
-    reading a shape the writer never produces.
+    `audit_state`, `evidence_outside`, `journal_off` and `leave_dirty` ARE ALSO
+    `test_commit_audit_state.py`'s FIXTURE, and `leave_dirty` is
+    `test_commit_manifest_index.py`'s too - which is why they are here rather
+    than in a second builder over there. Those suites drive the commands that
+    MAKE these commits and this one grades the commits they make, so the three
+    must start from one repository or the grader would be reading a shape the
+    writer never produces.
     """
     audit = os.path.join(root, "docs", "audit")
     os.makedirs(os.path.join(audit, "phases"))
@@ -377,6 +437,12 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
                              % (audit_state, AUDIT_STATE_KINDS))
         state_sha = _audit_state(root, audit, index_path, audit_state,
                                  with_evidence=not evidence_outside)
+    index_sha = None
+    if index_commit:
+        if index_commit not in INDEX_COMMIT_KINDS:
+            raise ValueError("unknown index_commit %r - the kinds are %r"
+                             % (index_commit, INDEX_COMMIT_KINDS))
+        index_sha = _index_commit(root, index_path, index_commit)
     if leave_dirty:
         # WHAT A FAILED RUN LEAVES: a red gate's evidence and the code it went red
         # on, both uncommitted. The command under test has to carry the first and
@@ -440,7 +506,7 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
 
     return {"root": root, "manifest": index_path, "shard": shard_path,
             "base": base, "sha1": sha1, "sha2": sha2, "stateSha": state_sha,
-            "audit": audit}
+            "indexSha": index_sha, "audit": audit}
 
 
 class Repos(object):
@@ -698,6 +764,66 @@ def _cases(check):
               M.audit_state_commits(stated["root"], "P1")[0] == [stated["stateSha"]]
               and M.audit_state_commits(stated["root"], "P404")[0] == []
               and M.ACTION_STATE_COMMITTED == "audit.state.committed")
+
+        # --- manifest-index scope ----------------------------------------------
+        idx = _check(_phase_answer(plain), "index-scope")
+        check("iv51b a phase whose trail records no manifest-index commit is "
+              "not-applicable, not clean - `clean` here would be a verdict about "
+              "a commit nobody made, and the whole reason this class exists is "
+              "that for a long time nobody made any: %r" % (idx["verdict"],),
+              idx["verdict"] == M.NA and idx["examined"] == 0
+              and idx["breaches"] == [])
+
+        indexed = repos.get(index_commit="clean")
+        idx = _check(_phase_answer(indexed), "index-scope")
+        check("iv51c ...and a commit carrying the manifest index ALONE is "
+              "examined and clean. `examined` is asserted, so a check that "
+              "stopped finding the journal row could not pass this as a clean "
+              "phase: %r" % (idx["verdict"],),
+              idx["verdict"] == M.CLEAN and idx["examined"] == 1
+              and idx["breaches"] == [], idx["gaps"])
+
+        with_shard = repos.get(index_commit="with-shard")
+        idx = _check(_phase_answer(with_shard), "index-scope")
+        check("iv51d an index commit that ALSO staged this phase's manifest file "
+              "is a breach with its own sentence - the mirror of the one "
+              "commit-scope writes about the index. The pair in one commit is "
+              "the shape parallel phases conflict on, and the whole point of "
+              "this class is that they arrive apart: %r" % (idx["breaches"],),
+              len(idx["breaches"]) == 1 and idx["verdict"] == M.BREACH
+              and "docs/audit/phases/P1.json" in idx["breaches"][0]
+              and "parallel phases" in idx["breaches"][0])
+
+        with_work = repos.get(index_commit="with-work")
+        idx = _check(_phase_answer(with_work), "index-scope")
+        check("iv51e ...and a source file swept in beside the index is the "
+              "GENERIC breach, worded apart from the one above. Counted, and "
+              "naming the file: 'there is a line mentioning src/a.py' also "
+              "passes when every path in the commit was reported: %r"
+              % (idx["breaches"],),
+              len(idx["breaches"]) == 1 and idx["verdict"] == M.BREACH
+              and "src/a.py" in idx["breaches"][0]
+              and "parallel phases" not in idx["breaches"][0])
+
+        no_index_trail = repos.get(journal_off=True, index_commit=None)
+        idx = _check(_phase_answer(no_index_trail), "index-scope")
+        check("iv51f with the journal off the answer is no-basis and NOT "
+              "not-applicable, `audit-state-scope`'s sentence one class over: an "
+              "index commit announces itself in the trail and nowhere else, so a "
+              "disabled trail means nobody could look: %r %r"
+              % (idx["verdict"], idx["gaps"]),
+              idx["verdict"] == M.NO_BASIS and idx["breaches"] == []
+              and len(idx["gaps"]) == 1)
+
+        check("iv51g the writer and the reader share ONE spelling of this action "
+              "too, and the row the real appender produced is one `index_commits` "
+              "finds - the pair that fails if either half invents its own name. "
+              "It is NOT the audit-state action, which is what a copied constant "
+              "would have made it: %r" % (M.ACTION_INDEX_COMMITTED,),
+              M.index_commits(indexed["root"], "P1")[0] == [indexed["indexSha"]]
+              and M.index_commits(indexed["root"], "P404")[0] == []
+              and M.ACTION_INDEX_COMMITTED == "audit.index.committed"
+              and M.ACTION_INDEX_COMMITTED != M.ACTION_STATE_COMMITTED)
 
         # --- branch history ----------------------------------------------------
         hist = _check(_phase_answer(clean), "branch-history")

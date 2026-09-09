@@ -72,7 +72,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -101,6 +100,7 @@ import _evidence_io  # noqa: E402  (where the evidence record lives)
 import _invariants  # noqa: E402  (the phase lookup, the git root, the action name)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
+import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared with the index commit)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
@@ -124,6 +124,11 @@ COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-state"
 DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
 
+# What every line this command prints is stamped with. A constant because the
+# renderer is `_scoped_commit`'s and takes it as an argument -- the lines are
+# shared with the index commit and the NAME is the only thing that may differ.
+PREFIX = "[commit-audit-state]"
+
 # The three things this commit may carry, each with the word its line is reported
 # under. Ordered as the commit stages them, which is also the order step 4c names
 # them in: the plan, then the trail, then the evidence.
@@ -133,37 +138,18 @@ EVIDENCE_LABEL = "the evidence directory"
 
 
 # --- git ----------------------------------------------------------------------
-def _git(git_root, args, timeout=60):
-    """(code, stdout, stderr), or (None, "", why) when git could not be asked.
-
-    NOT `_commit_trail._git`, which `_invariants` reuses one module over, and the
-    difference is the reason rather than an oversight: that runner sends stderr to
-    DEVNULL, which is right for a READ whose absence is itself an answer and wrong
-    for a WRITE whose refusal is the only thing a human can act on. `git commit`
-    and `git add` explain themselves on stderr and nowhere else, so discarding it
-    here would turn every refusal into a bare exit code.
-    """
-    try:
-        done = subprocess.run(["git", "-C", git_root] + list(args),
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              timeout=timeout)
-    except Exception as exc:
-        return None, "", "git could not be run (%s)" % (exc,)
-    return (done.returncode,
-            done.stdout.decode("utf-8", "replace"),
-            done.stderr.decode("utf-8", "replace"))
-
-
-def _lines(text):
-    """The non-empty lines of git output, forward-slashed.
-
-    Forward slashes because `git diff --cached --name-only` prints them that way
-    on every platform while the allow-list is built from `os.path` joins, and two
-    spellings of one path would make the comparison below answer "not allowed" for
-    a path that is.
-    """
-    return [ln.strip().replace("\\", "/") for ln in (text or "").splitlines()
-            if ln.strip()]
+# ALIASES, NOT COPIES, and `_deps` attributes the edge to the import above. Each
+# is a step of the discipline a committing command owes -- the stderr-keeping git
+# runner, git's own line shape, the working-tree read that decides before staging,
+# the index read that refuses after it -- and `commit-manifest-index.py` owes the
+# same one over a different list. `_scoped_commit` owns them; a second spelling
+# here is how one of the two commands comes to permit a path the other refuses,
+# and the names are kept so a reader who knows this file still finds them here.
+_git = _scoped_commit.run_git
+_lines = _scoped_commit.lines
+_answer = _scoped_commit.answer
+uncommitted = _scoped_commit.uncommitted
+foreign_staged = _scoped_commit.foreign_staged
 
 
 # --- what this commit may carry -----------------------------------------------
@@ -219,38 +205,6 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
     return {"paths": paths, "journal": journal, "skipped": skipped}
 
 
-def uncommitted(git_root, allowed):
-    """`(paths, why)` - what is uncommitted under `allowed`, read WITHOUT staging.
-
-    ASKED OF THE WORKING TREE AND NOT OF THE INDEX, deliberately. The decision to
-    commit is taken before anything is staged, so declining leaves the index
-    exactly as it was found - there is no half-made state to unpick and no `git
-    reset` that has to guess what it was undoing.
-
-    `--untracked-files=all` because git otherwise collapses a wholly untracked
-    directory to one entry ending in `/`, and an evidence directory that has never
-    been committed is exactly that case: the collapsed form names no file, so a
-    caller asking which paths would be carried gets a directory instead of an
-    answer.
-
-    `why` is set when git would not describe the tree, which is NOT an empty list:
-    reporting "nothing is uncommitted" for a tree git refused to read is the false
-    clean sheet this whole verb exists to avoid.
-    """
-    code, out, err = _git(git_root, ["status", "--porcelain",
-                                     "--untracked-files=all", "--"] + list(allowed))
-    if code is None:
-        return [], err
-    if code != 0:
-        return [], ("git would not describe the working tree (%s)"
-                    % ((err or out).strip()[:200],))
-    # `_evidence_io._path_of` rather than a slice: a porcelain line for a RENAME is
-    # `XY <old> -> <new>` and only the second name exists now, which is a rule this
-    # tree already writes down once. `git mv` into `journal/archive/` is exactly
-    # that shape, so the case is real rather than theoretical.
-    return [_evidence_io._path_of(ln) for ln in _lines(out)], ""
-
-
 # One predicate, one signature, and it is `_invariants._under` rather than a
 # second expression of it. The rule -- a path IS the entry or sits inside it, with
 # the separator, so `evidence-notes/` is not inside `evidence/` -- has to be the
@@ -258,33 +212,7 @@ def uncommitted(git_root, allowed):
 # checker decides what was allowed, and two spellings is how a guard comes to
 # permit a path its reader forbids.
 _under = _invariants._under
-
-
-def _under_any(path, allowed):
-    """True when `path` is under ANY of `allowed`. The list form of `_under`.
-
-    Separate rather than overloaded, because the two questions differ: "is this in
-    the journal" takes one entry, "may this be staged at all" takes the whole
-    allow-list, and a single name answering both is how a caller comes to pass a
-    list where an entry was meant and get `False` for everything.
-    """
-    return any(_under(path, rel) for rel in (allowed or ()))
-
-
-def foreign_staged(git_root, allowed):
-    """`(paths, why)` - what is in the index that this commit may not carry.
-
-    `why` is set when git would not describe the index at all, which is NOT an
-    empty list: an unreadable index reported as "nothing foreign" is precisely the
-    reading that lets a staged implementation file into a commit nobody reviewed.
-    """
-    code, out, err = _git(git_root, ["diff", "--cached", "--name-only"])
-    if code is None:
-        return [], err
-    if code != 0:
-        return [], ("git would not list the staged paths (%s)"
-                    % ((err or out).strip()[:200],))
-    return [p for p in _lines(out) if not _under_any(p, allowed)], ""
+_under_any = _scoped_commit.under_any
 
 
 # --- the commit ---------------------------------------------------------------
@@ -359,23 +287,13 @@ ONLY_THE_TRAIL = ("nothing uncommitted but the trail: the only thing not in git 
 
 
 def render(answer, out=print):
-    """Print what happened, in the order somebody reading a terminal needs it."""
-    for line in answer["skipped"]:
-        out("  degraded: %s" % (line,))
-    if answer["refused"]:
-        out("[commit-audit-state] REFUSED: %s" % (answer["refused"],))
-        for path in answer["foreign"]:
-            out("    already staged: %s" % (path,))
-        return
-    if not answer["committed"]:
-        out("[commit-audit-state] %s" % (answer["quiet"],))
-        return
-    out("[commit-audit-state] committed %s" % (answer["commit"][:12],))
-    for path in answer["staged"]:
-        out("    %s" % (path,))
-    if not answer["journalled"]:
-        out("  the commit was made and the journal row could NOT be written, so "
-            "nothing in the trail points at it")
+    """Print what happened, in the order somebody reading a terminal needs it.
+
+    The lines are `_scoped_commit`'s, because the index commit prints the same
+    ones under a different name: two verbs reporting a refusal in two shapes
+    teach a reader that the shape means something, and here it does not.
+    """
+    return _scoped_commit.render(answer, PREFIX, out=out)
 
 
 # --- cli ----------------------------------------------------------------------
@@ -395,21 +313,6 @@ def build_parser():
                              "say what the run was, not what this script does")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
-
-
-def _answer(skipped, committed=False, commit=None, staged=None, refused="",
-            foreign=None, journalled=False, quiet=""):
-    """One shape for every outcome, so a caller never has to infer one from another.
-
-    `committed` is its own field rather than being read off an empty `staged`
-    list: "there was nothing to commit" and "the commit carried nothing" are
-    different claims, and a falsy list would render them identically. `quiet`
-    carries WHICH of the do-nothing states this was, for the same reason.
-    """
-    return {"committed": committed, "commit": commit,
-            "staged": list(staged or []), "skipped": list(skipped or []),
-            "refused": refused, "foreign": list(foreign or []),
-            "journalled": journalled, "quiet": quiet}
 
 
 def commit_state(manifest, phase, manifest_path, project, git_root, subject=None,
@@ -538,8 +441,8 @@ def main(argv, out=print):
     project = os.path.abspath(args.project)
     git_root = _invariants.git_root_for(manifest, project)
     if not shutil.which("git"):
-        out("[commit-audit-state] git is not on PATH, so audit state cannot be "
-            "committed at all. Nothing was staged.")
+        out("%s git is not on PATH, so audit state cannot be committed at all. "
+            "Nothing was staged." % (PREFIX,))
         return E_FAIL
 
     code, answer = commit_state(manifest, phase, args.manifest, project,

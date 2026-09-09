@@ -491,7 +491,18 @@ LAYERS = (
     # comment is rewritten rather than left standing over a table that no longer
     # matches it: a stale ARGUMENT is worse than no argument, because the next
     # reader spends their time working out why it is wrong.
-    ("_panel_state", "_report_md", "_report_usage"),
+    ("_panel_state", "_report_md", "_report_usage",
+     # `_scoped_commit` is everything two commit-a-narrow-allow-list commands
+     # share: the stderr-keeping git runner, the working-tree read that decides
+     # before staging, the index read that refuses after it, and the one answer
+     # shape and renderer both print. At L5 because it reads `_invariants` (L4)
+     # for `_under` - the one answer to "is this path inside that entry", which
+     # both the writer and the after-the-fact checker have to agree on. It is
+     # here rather than beside either command because `commit-audit-state` and
+     # `commit-manifest-index` are hyphenated ENTRY POINTS: nothing may import
+     # one, so this is the only place the two halves can meet, and a second copy
+     # of a refusal rule is how one commit comes to carry what the other forbids.
+     "_scoped_commit"),
     ("_panel_write", "_report_page"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
@@ -579,6 +590,19 @@ LAYERS = (
      # gate went red. It reaches `_invariants` (L4) for the phase lookup, the git
      # root and the action name the pair share.
      "commit-audit-state",
+     # `commit-manifest-index` is its sibling over the one path that command may
+     # never carry (F269). The sharded INDEX holds `fileIndex`, `bugs[]` and the
+     # phase stubs; step 4c forbids a task commit from staging it and
+     # `commit-audit-state` refuses it too, both correctly and for the same
+     # reason - so until this existed nothing committed the index at all and the
+     # structural edits piled up in a working tree. It carries the index and
+     # NOTHING else, which is what keeps two parallel phases off one another's
+     # commits, and it takes the index lock (`_panel_write`, L6) because unlike a
+     # shard the index is the file every structural command writes. It reaches
+     # `_invariants` (L4) for the layout test and the action name, and
+     # `_scoped_commit` (L5) for the staging discipline it shares with its
+     # sibling.
+     "commit-manifest-index",
      # `close-phase` is the same shape one step LATER, and for the sharpest version
      # of the same reason: sign-off steps 5c-5e were git commands in prose, and
      # prose cannot be trusted with a sequence whose steps git enforces the order

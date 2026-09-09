@@ -135,7 +135,9 @@ claude-plugins/                           # this repo (personal, public)
           audit-journal.py                # the CLI over it: append/verify/show/archive
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
+          _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
+          commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
@@ -330,6 +332,7 @@ L5:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
+  _scoped_commit -> _evidence_io, _invariants, _output
 
 L6:
   _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
@@ -346,7 +349,8 @@ L7:
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
-  commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output
+  commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
+  commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -2414,18 +2418,25 @@ check — `CHECK_NAMES` is the list and `verify-invariants.py --all` prints it: 
 staged only its own `files`, its phase's manifest file and the two records beside it
 (`git show --name-only`); an **audit-state** commit staged those records and *not* the task's
 `files`, found through the journal's `audit.state.committed` rows because nothing in the
-manifest names such a commit; no push, no forced update and no stash touched the phase
+manifest names such a commit; a **manifest-index** commit staged the shared index and nothing
+at all beside it, found the same way through `audit.index.committed` rows; no push, no forced
+update and no stash touched the phase
 branch (the remote-tracking refs, the branch's own reflog compared pairwise for ancestry,
 and `refs/stash`); every manifest state the phase COMMITTED still validates (each commit's
 index and shards reassembled through `git show` and run back through `_manifest_rules`); a
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
 
-`audit-state-scope` sits next to `commit-scope` rather than at the end because it asks that
-check's question about a different commit, and the two allow-lists differ in exactly one
-entry — the task's `files`, which one permits and the other forbids. Its `no-basis` case is
-its own: with `journal.enabled` false there is nowhere such a commit could announce itself,
-which is *not* evidence that none was made.
+`audit-state-scope` and `index-scope` sit next to `commit-scope` rather than at the end
+because each asks that check's question about a different commit, and the three allow-lists
+differ entry by entry — a task commit may stage the task's `files` and an audit-state commit
+may not, and a manifest-index commit may stage the one path both the others forbid and
+nothing whatever besides. Their `no-basis` case is shared and is its own: with
+`journal.enabled` false there is nowhere either commit could announce itself, which is *not*
+evidence that none was made. `index-scope` gives the phase's own manifest file its own breach
+sentence — the mirror of the one the other two write about the index — because the pair in
+one commit is the shape parallel phases conflict on, and reporting it like a stray README
+would price the expensive mistake as the cheap one.
 
 The verdict vocabulary is the design. `clean` / `breach` / `partial` / `no-basis` /
 `not-applicable`, with `examined` beside each — so a check that looked at nothing prints the
@@ -2542,6 +2553,25 @@ with the word in the output, because sign-off deletes the phase branch and a gat
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
 `/audit:status --gate --fail-on invariant-breach`.
 
+### `plugins/audit/scripts/governance/_scoped_commit.py`
+Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second
+copy of it: the git runner that keeps stderr (a refusal is the only thing a human can act on, so
+`_commit_trail._git`'s `DEVNULL` is wrong here), git's own line shape, `under_any` over
+`_invariants._under`, the working-tree read that decides **before** anything is staged, the index
+read that refuses **after** it, and the one answer shape and renderer both commands print.
+
+**Neither command can import the other** — nothing may import a hyphenated entry point — so this
+module is the only place the two halves meet, and a second spelling of a refusal rule is how one
+commit comes to carry what the other forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
+which is the one answer to "is this path inside that entry" that the writer and the after-the-fact
+checker both have to give.
+
+**What is deliberately not here: the allow-lists.** Each command derives its own, and they differ
+in exactly the entries that matter — one may stage the phase's shard and the records beside it and
+never the shared index, the other may stage only the shared index and never a phase's file. A
+shared builder taking a flag would be one function holding two safety properties, which is the
+shape in which a widened list stops being noticed.
+
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say
 there is none.** Idempotent and safe to call unconditionally; `--project` names the directory
@@ -2580,6 +2610,62 @@ is the **evidence directory** and deliberately not the phase's manifest file, be
 `_recorded_states()` reads every row naming that file as a *write* to it and a commit is not an
 edit. The append is fail-soft (`_journal_io.append`'s contract) and the failure is printed: a
 commit that happened must not be reported as not having happened.
+
+### `plugins/audit/scripts/governance/commit-manifest-index.py`
+`commit-manifest-index.py <manifest> <phaseId>` — **commit the manifest INDEX on its own, or say
+there is nothing to commit** (F269). `--project` names the directory holding `.claude/` and the
+records, `--subject` supplies the commit subject after the conventional prefix, `--takeover` takes
+a lock a human has confirmed is dead, `--json` prints the whole answer. Exit 0 it ran, 1 it could
+not, 2 usage error, 3 the lock is held by a live process, 4 the lock is stale.
+
+**The gap it closes.** In the sharded layout the index holds `meta`, `fileIndex`, `bugs[]`,
+`deferred`, `proposals` and the phase stubs. `/audit:task add --files …` writes `fileIndex` there
+and `/audit:phase add` appends a stub — while step 4c forbids a **task** commit from staging the
+index and `commit-audit-state.py` refuses it too, both correctly and for the same reason. So
+nothing committed it: the structural edits accumulated in a working tree until somebody noticed.
+Reported from a live project, committed by hand three times in one evening.
+
+**Why a commit of its own rather than a wider allow-list somewhere else.** The sharded layout
+exists so two phases can run in parallel without meeting on one file. A commit carrying a phase's
+work **and** the shared index cannot be landed, reordered or dropped without taking the work with
+it; a commit carrying the shared file **alone** can be landed, cherry-picked or thrown away and
+re-derived (`/audit:task scope` rebuilds `fileIndex`), and its conflicts stay confined to the file
+it carries. Widening `commit-audit-state.py`'s list would have satisfied that script's own
+verification — its allow-list and its staged set are one list, so nothing there could notice —
+while destroying the property both scope checks exist to defend.
+
+**What it stages: the index, and nothing else.** Not the shard, not the journal, not the evidence,
+not the task's `files`. The allow-list is one entry long and nothing downstream widens it. The
+path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
+with `git diff --cached --name-only` and compared against the same list **before** the commit —
+and read **before** staging too, so work somebody else had already staged is refused while the git
+index is still exactly as it was found. Both reads are `_scoped_commit`'s, shared with its sibling.
+
+**Under the index lock, which its sibling does not take** — the asymmetry is the point. That
+command commits a phase's own shard, which only that phase writes; this one commits the file every
+structural command writes, so a concurrent `/audit:task add` between the read and the commit would
+put half an edit into git. It is the same lock `audit-task.py` and `set-priority.py` take, borrowed
+rather than retaken when the caller already holds it.
+
+**In the single-file layout it refuses, by name.** There the manifest *is* the index —
+`_invariants.manifest_files()` returns the identity pair — so the ordinary commits already carry it
+and this route would commit the same bytes twice. The identity pair is the test, never a filename
+guess. It refuses by declining and saying which state it is in, and still exits 0: a single-file
+project has done nothing wrong by calling this, and a non-zero exit would make every single-file
+sign-off read as failed and get the step deleted within a day.
+
+**Never an empty commit**, and a fixed literal in the **scope** position. `chore(audit-index):` —
+`chore` because commitlint's default enum has to accept the type or a repository with husky refuses
+the commit *after* the file is staged (F268), and `audit-index` in the scope because a task commit's
+scope is its phase id and its type comes from `meta.commit.type`, which a manifest may set to
+anything. `git log --grep audit-index` therefore separates the three commit classes for ever.
+
+**It anchors itself in the trail.** After committing it appends an `audit.index.committed` journal
+row whose `details` carry `commit` and `phaseId` — both on `_journal_io.DETAILS_KEYS`, checked by a
+case rather than assumed, because that allow-list drops an unknown key in silence. The row is the
+only handle anything has on such a commit, and it is what `_invariants.index_scope()` reads to find
+these commits and grade them. `<phaseId>` throughout is **attribution and not scope**: the index is
+shared, and the phase id says which run made the structural change.
 
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
 Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).

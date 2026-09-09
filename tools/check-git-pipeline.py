@@ -1027,6 +1027,82 @@ def check_sweep_only_reaps_what_it_created(fx):
         write_manifest(fx, manifest_body())
 
 
+# --- the shared index, against a real repository ------------------------------
+SHARD_REL = "docs/audit/phases/P1.json"
+
+
+def _sharded(fx):
+    """Rewrite the fixture's plan into the SHARDED layout, in place.
+
+    The single-file fixture cannot exercise this at all: there the manifest IS the
+    index, `manifest_files()` returns the identity pair and the command refuses by
+    design. The layout is therefore built here rather than the check being written
+    against the fixture the other twenty use.
+    """
+    body = manifest_body()
+    phase = body["phases"][0]
+    index = dict(body)
+    index["meta"] = dict(body["meta"])
+    index["phases"] = [{"id": phase["id"], "title": phase["title"],
+                        "shard": "phases/P1.json", "status": phase["status"]}]
+    shard_dir = os.path.join(fx["root"], "docs", "audit", "phases")
+    if not os.path.isdir(shard_dir):
+        os.makedirs(shard_dir)
+    write_manifest(fx, index)
+    with io.open(os.path.join(fx["root"], SHARD_REL.replace("/", os.sep)), "w",
+                 encoding="utf-8") as fh:
+        fh.write(json.dumps(phase, indent=1, sort_keys=True))
+    return index
+
+
+def check_index_commit_carries_only_the_index(fx):
+    """A manifest-index commit lands the shared file and leaves the shard behind.
+
+    THE CLAIM IS ABOUT GIT AND CANNOT BE MADE ANYWHERE ELSE. The command's own
+    suite proves the allow-list and the refusals; what only a real repository can
+    say is that `git add -- <index>` followed by a commit produces a commit whose
+    entire file list is that one path, while a shard modified in the same tree at
+    the same moment stays uncommitted. Both halves are asserted, because "the
+    index is in the commit" also passes for a commit that swept in everything.
+    """
+    before = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        _sharded(fx)
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the sharded layout")
+        settled = git(fx, "rev-parse", "HEAD")[1].strip()
+
+        index = read_manifest(fx)
+        index["fileIndex"]["src/widened.ts"] = ["P1.1"]
+        write_manifest(fx, index)
+        shard_path = os.path.join(fx["root"], SHARD_REL.replace("/", os.sep))
+        with io.open(shard_path, encoding="utf-8") as fh:
+            shard = json.load(fh)
+        shard["title"] = "touched in the same tree"
+        with io.open(shard_path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(shard, indent=1, sort_keys=True))
+
+        code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
+                           "--project", ".")
+        head = git(fx, "rev-parse", "HEAD")[1].strip()
+        carried = [ln.strip() for ln in
+                   git(fx, "show", "--name-only", "--pretty=format:",
+                       head)[1].splitlines() if ln.strip()]
+        dirty = [ln for ln in git(fx, "status", "--porcelain")[1].splitlines()
+                 if ln.strip().endswith(SHARD_REL)]
+        ok = (code == 0 and head != settled and carried == [MANIFEST_REL]
+              and len(dirty) == 1)
+        return ok, ("exit %r; the commit carried %r (want exactly [%r]); the "
+                    "shard is still dirty=%r (want one line); output %r"
+                    % (code, carried, MANIFEST_REL, dirty,
+                       (out or "").strip()[:200]))
+    finally:
+        git(fx, "reset", "--hard", "-q", before)
+        from _suite import remove_tree   # tools/_suite.py says why it is here
+        remove_tree(os.path.join(fx["root"], "docs", "audit", "phases"))
+        write_manifest(fx, manifest_body())
+
+
 CHECKS = (
     ("g1  branch resolution reads the repository's git identity",
      check_branch_identity),
@@ -1071,6 +1147,8 @@ CHECKS = (
      check_sweep_leaves_strangers),
     ("g20 the sweep reaps the worktree the plugin created and leaves the "
      "hand-made one beside it", check_sweep_only_reaps_what_it_created),
+    ("g21 an index commit lands the shared file and leaves the shard behind",
+     check_index_commit_carries_only_the_index),
 )
 
 
