@@ -194,7 +194,13 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    and the skill order). Skip entirely when step 3.5 found no workspace.
 3. **Finding → task** using the conventions doc's new-task template. Rules:
    - Incorrect behavior (bug-like) → `tests.mode: "tdd"`, `expectRedFirst: true`,
-     `tests.add` from `suggestedTests` (each must FAIL on current code).
+     `tests.add` from `suggestedTests` (each must FAIL on current code), **each
+     entry opening with the repo-relative path of the file the case will live in**:
+     `"<testFile>: <what it asserts>"`. That leading path is what joins the task's
+     `files` and the `fileIndex`, so an entry that opens with prose leaves the case
+     file outside the scope commit-scope grades the work against, and the validator
+     warns (a finding from 3.0.0). The explorer's `suggestedTests` are prose, so
+     this is a step YOU perform rather than a value you copy.
    - Behavior-preserving change (refactor/hardening) → `"regression"`.
    - Config/docs/mechanical → `"gate-only"`.
    - `tests.gate`: entries resolving via the detected `meta.buildCommands` keys.

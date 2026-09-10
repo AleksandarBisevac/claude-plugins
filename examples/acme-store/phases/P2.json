@@ -54,7 +54,7 @@
       },
       "testEvidence": {
         "runId": "2026-06-23T16:05:00Z.2f6ac8",
-        "status": "passed",
+        "status": "gate-mutated",
         "at": "2026-06-23T16:05:00Z"
       },
       "outcome": {
@@ -88,8 +88,8 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "strips control characters from the query",
-          "caps query length"
+          "src/search/query.ts: strips control characters from the query",
+          "src/search/query.ts: caps query length"
         ],
         "expectRedFirst": true,
         "gate": [

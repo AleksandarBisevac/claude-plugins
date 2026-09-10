@@ -43,7 +43,15 @@
    the plan points at a run this checkout does not hold, and the plan calls work
    done without saying when, so nothing can place it against the moment recording
    began. None of them is a failing test and none of them can sign anything off —
-   and every one of them is something a person has to go and do. */
+   and every one of them is something a person has to go and do.
+   `gate-mutated` JOINS THEM AND IS NEITHER RED NOR GREY (F280). Every command
+   came back green, so red would send a reader hunting a failing test that does
+   not exist; what is wrong is the MEASUREMENT, the gate having rewritten the
+   files it was grading, and that repair is the gate's. The grey below is the
+   other wrong answer, because grey means "absence of evidence is not a colour"
+   and this is a finding rather than an absence. Urgency rides on `TEV_ORDER`
+   instead: hue carries the class, order carries the ranking. */
+:where(.chip,.tevn)[data-tev="gate-mutated"],
 :where(.chip,.tevn)[data-tev="no-checks"],
 :where(.chip,.tevn)[data-tev="timed-out"],
 :where(.chip,.tevn)[data-tev="could-not-run"],

@@ -285,6 +285,54 @@ def _cases(check):
               % (sorted(k for k in row if k.startswith("cancel")),),
               "cancelledBy" not in row and "cancelledBy" not in ru)
 
+        # F280. THE WORD THE RUNNER COULD NOT SAY, AND THE CACHE THAT REPEATED
+        # IT. `run_status` took no tree argument, so a gate that passed every
+        # command and rewrote the file it was grading came through here as
+        # `passed` and `pointer_for` cached that onto `task.testEvidence` -- the
+        # exit code refused the commit and the record signed the work off. What
+        # this pair checks is that the row is a CONDUIT (the verdict is the
+        # runner's, never re-derived here) and that the word arrives with the
+        # basis that makes it checkable, which is why it needed no field of its
+        # own.
+        mutating = dict(RESULT)
+        mutating["status"] = "gate-mutated"
+        mutating["failed"] = []
+        mutating["treeMutated"] = [" M src/a.py"]
+        mutating["treeBasis"] = ("git described the tree before and after; "
+                                 "%d of %d changed path(s) are declared by the "
+                                 "work under test" % (1, 1))
+        rgm = M.row_for(plain, mutating, "task", {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"])
+        check("ev33 a run that passed its commands and rewrote its own subject "
+              "reaches the row as `gate-mutated`, carrying the paths and the "
+              "attribution sentence that let it be read back. No "
+              "`treeMutatedOwned` key is invented for it: the word is already "
+              "derivable from what the row holds, and a cached classification "
+              "beside the thing that produces it is this file's own argument "
+              "against a cached count: %r"
+              % ((rgm.get("status"), rgm["observations"]["treeMutated"]),),
+              rgm.get("status") == "gate-mutated"
+              # The porcelain prefix is stripped by `_paths` on the way in, the
+              # same as for every other row - so the assertion is on the PATH
+              # this row publishes, not on the line the bracket read.
+              and rgm["observations"]["treeMutated"] == ["src/a.py"]
+              and "declared by the work under test" in (
+                  rgm["observations"]["treeBasis"])
+              and "treeMutatedOwned" not in rgm
+              and "treeMutatedOwned" not in rgm["observations"])
+        check("ev34 ...and `pointer_for` caches THAT word, unchanged. It is the "
+              "half of the fault that reached the manifest - the plan block is "
+              "what `--fail-on failing-tests` reads, and it can only be as "
+              "honest as the word handed to it: %r"
+              % (M.pointer_for(rgm),),
+              M.pointer_for(rgm)["status"] == "gate-mutated"
+              # SECOND DIRECTION: the pointer does not TRANSLATE, it copies. A
+              # writer that mapped an unfamiliar verdict onto a familiar one
+              # would pass the clause above by luck for this word and lose every
+              # future member of an enum the schema leaves open.
+              and M.pointer_for(row)["status"] == "failed"
+              and sorted(M.pointer_for(rgm)) == ["at", "runId", "status"])
+
         # THE OTHER DIRECTION OF ev11, and the contract the gate runner leans on:
         # `run-test-gate.attempt_of` hands this an explicit None for a task whose
         # plan records no `attempts`, so if a None identity value were carried

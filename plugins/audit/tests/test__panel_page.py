@@ -52,6 +52,7 @@ import _ui_theme as _theme                         # noqa: E402  (as _panel_page
 import _ado_parent as _adop                        # noqa: E402  (the marker, in the other language)
 import _ado_tracked as _adot                       # noqa: E402  (the field name, in the other language)
 import _status_facts as _facts                     # noqa: E402  (the gap classes, in the other language)
+import _report_html as _rhtml                      # noqa: E402  (TEV_LABELS: the badge words, in the other language)
 import _panel_page as M                            # noqa: E402
 
 
@@ -678,14 +679,33 @@ def _cases(check):
     # claim about THIS code and would be unenforceable over the whole page.
     _evsrc = _harness.between(M.UI_HTML, "// ---------- recorded test runs ----",
                               "function ovDetail(p){")
-    _evwords = ["Passed", "Failed", "No checks ran", "Timed out", "Cancelled",
-                "Could not run", "Empty gate", "No evidence",
-                "No gate configured", "Pointer without evidence"]
+    # DERIVED, AND THAT REMOVES A CLASS RATHER THAN AN INSTANCE. This was a
+    # hand-typed list of words, and a hand-typed list of one vocabulary is the
+    # thing this file spends most of its length refusing: it was already SHORT by
+    # `Before recording` and `Completion undated` before `Gate mutated the tree`
+    # could be missed off it too, so a word the panel stopped painting would have
+    # gone unreported and a word it never painted would have read as covered.
+    #
+    # THE SOURCE IS `_report_html.TEV_LABELS`, the same vocabulary in the other
+    # language, which makes the comparison worth more than a longer list: the two
+    # surfaces render one set of badges and a badge renamed on one of them is a
+    # page disagreeing with its own report. ev2 does this for the KEYS against
+    # the schema; this is the WORDS against the report, and the two sides are
+    # keyed differently on purpose (`none` here, `no-evidence` there) which is
+    # exactly why the values and not the keys are what can be compared.
+    _evword_block = _harness.between(_evsrc, "const EVWORD={", "};")
+    _evwords = sorted(set(_rhtml.TEV_LABELS.values()))
     _evmissing = [w for w in _evwords if ("'%s'" % w) not in _evsrc]
+    # ...and the other direction: a word the PAGE invents. `:'...'` reads the
+    # table's values, which is every position a word may sit in here.
+    _evextra = sorted(set(re.findall(r":'([^']*)'", _evword_block)) - set(_evwords))
     check("ev1 every badge the page can paint is spelled out, once, in one "
-          "table - ten words for seven verdicts a run may cache and the three "
-          "silences no run ever answers: %r missing" % (_evmissing,),
-          not _evmissing and "const EVWORD={" in _evsrc)
+          "table, and the table's words are the REPORT's - derived from "
+          "`_report_html.TEV_LABELS` rather than retyped, so a verdict either "
+          "surface learns is missing HERE the day it is added and neither can "
+          "rename a badge the other keeps: %r missing, %r invented"
+          % (_evmissing, _evextra),
+          not _evmissing and not _evextra and "const EVWORD={" in _evsrc)
     # THE ONE VOCABULARY WRITTEN IN TWO LANGUAGES, pinned rather than commented.
     # A word the ledger can cache and the page has no cell for renders through
     # the default arm, which is correct but silent; a word the page invents for a
@@ -696,7 +716,6 @@ def _cases(check):
         _ev_schema = json.load(_fh)
     _ev_enum = (((_ev_schema.get("$defs") or {}).get("testEvidence") or {})
                 .get("properties", {}).get("status", {}).get("enum") or [])
-    _evword_block = _harness.between(_evsrc, "const EVWORD={", "};")
     _ev_uncovered = [w for w in _ev_enum
                      if ("'%s':" % w) not in _evword_block
                      and ("%s:" % w) not in _evword_block]

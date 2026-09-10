@@ -31,8 +31,15 @@ proposals when `/audit:init` parked any (plus a one-line footer counting free-fo
 legacy proposals, which `/audit:propose list` still reads), a `BY AREA` rollup when the
 plan tags areas (per tag: phases and done/total tasks, ` - <owner>` when the area
 declares its advisory owner, an `untagged` footer, and — only when a phase actually
-carries several tags — the caveat that such a phase counts under each), and a
-RESUMABLE line when a phase was interrupted.
+carries several tags — the caveat that such a phase counts under each), a
+RESUMABLE line when a phase was interrupted, and an UNFINISHED block when a phase
+lock is still held while there is ready work left.
+
+**RESUMABLE and UNFINISHED are two lines about two different facts**, and each can
+be true without the other. RESUMABLE reads the phase status the plan wrote down;
+UNFINISHED reads the lock on disk. A phase left `in_progress` by a command that
+died is not the same state as a lock nobody gave back, and one heading over both
+pieces of evidence is how a reader stops trusting either.
 
 This used to be prose telling you how to lay the rollup out. That cost tokens on every
 call and produced a different layout each time — the same self-defeating shape
@@ -119,7 +126,9 @@ meanings, rendered from the same tuple the gate evaluates:
   checked **after the fact** by `scripts/governance/verify-invariants.py` against git,
   the phase shard, the journal and the usage ledger
 - `failing-tests` — a task or phase whose recorded `testEvidence.status` cannot sign
-  work off: `failed`, `no-checks` (exit 0, and still not a verdict — the gate ran and
+  work off: `failed`, `gate-mutated` (exit 0 as well — every command passed and the
+  gate rewrote the declared files it was grading, so the verdict is about bytes the
+  gate produced), `no-checks` (exit 0, and still not a verdict — the gate ran and
   found nothing to check), `timed-out`, `cancelled` (both stopped rather than
   answered) or `could-not-run` (the runner never started). `passed` and `empty-gate`
   do not trip it
@@ -134,6 +143,10 @@ meanings, rendered from the same tuple the gate evaluates:
   Graded from the repository alone and never from a home directory, so the verdict
   is the same on every runner as on the author's laptop — which is the point, since
   the machine that wrote the plan is the one machine where every name resolves
+- `unfinished-run` — a **phase lock still held while tasks are ready to run**: a
+  run that stopped mid-phase. `/audit:phase P5` means *execute every ready task,
+  then sign off*, and a run that commits one wave, names the next and stops has
+  done neither — see below
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
@@ -193,6 +206,62 @@ That question belongs to
 carries the same word where a task has one, and a phase's own verdict is a `tests
 <word>` clause on its head line.
 
+### `unfinished-run` — a run that stopped mid-phase
+
+**The state was always knowable, which is the whole point.** A phase whose lock is
+**held** while the plan still has **ready** work is a run that has not finished, and
+both halves are facts the plan and the lock file already carry. Nothing is cached and
+nothing new is written down. This exists because a real run committed its first wave
+of parallel tasks, wrote *"next up is wave 2 — P5.4, P5.10, P5.11, P5.18"* and ended
+the turn: the lock was still held, the manifest was valid, every remaining task was
+ready with its dependencies satisfied, no budget was declared and no guard had fired.
+Nothing had refused anything. It sat idle until a human asked a day later.
+
+**Three states, and the third is why this is worth having:**
+
+| lock | ready list | verdict |
+|---|---|---|
+| held | non-empty | **UNFINISHED** — a run stopped mid-phase |
+| absent | empty | finished |
+| absent | non-empty | **not running** — the ordinary state of every planned phase |
+
+That last row is the one that decides whether the signal is worth anything. A plan
+with ready work and no lock is every planned phase there has ever been, so a reading
+that tripped there would fire on every plan in the world and be muted the same day.
+The lock is the half that decides; the ready list is what says the run had somewhere
+left to go. A lock held with **nothing** ready is silent too — that run had nowhere
+to go, so a lock still on disk there is a sign-off in flight or a lock to give back,
+which is `/audit:doctor`'s question.
+
+**A stale lock counts as readily as a live one, and that is a decision.** The
+liveness verdict resolves every uncertainty *towards* live — a false "dead" costs two
+writers and a corrupted shard — so `gone` is not an absence of information, it is the
+positive finding that the holder was probed and is not there. A rule that graded only
+live locks would fall silent exactly as the abandonment became certain, which is a
+day in, which is when anyone finally looks. What liveness changes is the **repair**,
+so the sentence says which: a live holder means the run is either working or sitting
+idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
+that is gone means nothing is going to finish it, so `/audit:resume` continues it and
+`audit-lock.py release phase-<id>` gives the lock back.
+
+**Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write
+takes and gives back inside one command, so a reading that counted it would trip on
+`/audit:task add`.
+
+**It is out of the `--gate` default, and for a reason of its own.** A lock lives in
+the shared git dir rather than in the working tree, so it is never committed and
+never cloned: a fresh checkout in CI holds none, and a default carrying this would
+grade a question that checkout cannot answer. It is for the surface that can see the
+lock — the operator's terminal, and a runner that keeps its clone between jobs.
+**A project with no git repository is an answer rather than a failure**: locks live
+in the git dir, so no repository really does mean no locks, and the condition is
+silent. A lock directory that could not be *read* is the other thing entirely and
+**fails** the condition, the same three-state reading `invariant-breach` uses.
+
+**This command still takes no lock.** It reads which ones are held — one
+`rev-parse` and one directory listing, the same read `/audit:doctor` already makes —
+and never acquires, releases or takes over one.
+
 `invariant-breach` is out of the default for a different reason: it reads git several
 times per started phase, and a default that slow is a default somebody replaces. What
 it buys is the half of this plugin's rules that no hook can enforce — a task commit
@@ -227,6 +296,10 @@ act on what the output says.
 
 - **INVALID MANIFEST** — relay it and stop. `/audit:doctor` names the findings.
 - **RESUMABLE** — offer `/audit:resume`.
+- **UNFINISHED** — a phase run stopped with work still ready. The line already
+  names the phase and the command that picks it up, and which command it names
+  depends on whether the lock's holder is still there. Relay it; do not delete the
+  lock without confirming with the human that no run is live.
 - **nothing ready** — the plan is either complete or fully blocked. The `waiting on`
   column says which, per task, so do not guess.
 

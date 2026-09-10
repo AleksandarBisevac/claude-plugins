@@ -217,6 +217,17 @@ python3 tools/capture-demo-gif.py --check
 # rewritten sits in its `BASELINE` with a reason that is itself checked.
 python3 tools/check-committed-pii.py
 
+# ...and the same committed files read for CONTENT rather than bytes. One row in the
+# example's evidence ledger recorded `passed` while its own observations named a file
+# the gate had rewritten: a faithful record of the pre-F280 runner, and so a verdict
+# no current run can produce. Nothing read that ledger, because unlike the usage
+# ledger below it is hand-written narrative that no generator derives - which is the
+# defect rather than the one stale row. It measures every committed row against the
+# schema's published vocabulary (derived, never listed - COMPATIBILITY.md declines to
+# close that enum) and against itself, holds a cached `testEvidence` pointer to the
+# row it names, and REFUSES rather than passing when it compared nothing.
+python3 tools/check-example-ledgers.py
+
 # ...and the third question about the same committed files: the example's usage
 # ledger is DERIVED from its manifest, so a phase added to the example desynchronises
 # the two silently. This regenerates it and diffs. It ran only in CI until F232, and

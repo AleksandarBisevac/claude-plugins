@@ -36,7 +36,7 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "cart total is correct with two stacked percentage discounts"
+          "src/cart/total.ts: cart total is correct with two stacked percentage discounts"
         ],
         "expectRedFirst": true,
         "gate": [

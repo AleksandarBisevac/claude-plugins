@@ -9,7 +9,12 @@ lint stated rather than taste: the panel's write path sits BELOW the entry point
 so a panel reaching up to a command is an edge pointing the wrong way. Both doors
 import this, downward.
 
-WHAT LIVES HERE. The refusals, the id allocation, the collision remap, the
+WHAT LIVES HERE. The refusals, the TWO id allocation rules over one taken set
+(F296: materialize takes the lowest free id because it is re-placing a payload
+whose id collided; `/audit:phase add` takes the highest plus one because a gap in
+a live plan is a phase that happened) plus `phase_id_doc_drift`, which grades
+`commands/phase.md`'s claim about them against the code rather than trusting the
+sentence. Then the collision remap, the
 dependency closure, the plan, `run()` - which takes the index lock, applies,
 revalidates and writes - and `proposal_rows` plus `reserved_cell`, which are the
 READ side every surface renders. Orchestration is part of the rule: a caller that had to remember to lock,
@@ -39,6 +44,7 @@ the door, and the two are no longer one.
 """
 import json
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -150,11 +156,141 @@ def parked_ids(manifest, skip=()):
 
 
 def next_phase_id(taken):
-    """The lowest free `P<n>`, counting live AND parked ids."""
+    """The lowest free `P<n>`, counting live AND parked ids.
+
+    MATERIALIZE'S RULE, and it is not the rule an APPEND wants -- see
+    `next_appended_phase_id` below for the pair and F296 for what sharing one
+    cost. This verb RE-PLACES a payload whose id already collided with live
+    work, so the gap it drops into was never anybody's id and filling it costs
+    nothing.
+    """
     n = 0
     while ("P%d" % n) in taken:
         n += 1
     return "P%d" % n
+
+
+# `P<n>` and nothing else: `BF<n>` is a legal phase id the schema spells and it
+# runs its own numbering, so folding the two into one maximum would let a
+# bugfix phase push the next audit phase up. Anchored both ends so `P2.4` (a
+# TASK) cannot be read as the phase number 2.
+_PHASE_NUM = re.compile(r"\AP(\d+)\Z")
+
+
+def next_appended_phase_id(taken):
+    """The id an APPEND takes: the highest `P<n>` in `taken`, plus one.
+
+    A DIFFERENT RULE OVER THE SAME TAKEN SET, which is the whole of F296.
+    `next_phase_id` hands back the LOWEST free id; `/audit:phase add` mints an
+    id into a plan whose gaps ARE its history, and re-minting one hands the
+    caller a phase that collides with work already done under that number.
+    `meta.branch` derives a branch name from the phase id, so the collision is
+    not only in the document: measured on a copy of this repository's own plan,
+    consecutive `add-phase` calls returned `P0`, then `P30`, then `P32` -- and
+    `P30` at that moment named four branches and two merges into `main`.
+
+    THE TAKEN SET STAYS SHARED, and only the rule over it forks. Two answers to
+    "which ids are taken" is the failure `_allocate_phase_id`'s note is about:
+    this verb would eventually mint an id materialization had already promised
+    to a parked payload.
+
+    "THE HIGHEST" MEANS THE HIGHEST THAT PARSES AS `P<n>`, and everything else
+    in the set is IGNORED rather than counted or crashed on. A taken set mixes
+    shapes on purpose: this repository's own plan carries `BF1` and `BF2`
+    between its P-ids, a task id is `P<n>.<m>`, and a proposal reserves ids of
+    both kinds. `BF<n>` runs its own numbering, so folding it in would push the
+    next audit phase past a number nobody typed, and reading `P2.4` as the
+    phase number two would be reading a task as a phase.
+
+    A SET WITH NO `P<n>` IN IT ALLOCATES `P1` -- the stated rule, not a
+    fallback that happens to work. An empty plan and a plan holding only `BF1`
+    both get `P1`, because the maximum is counted from a floor of zero and
+    nothing special-cases the empty case.
+
+    THAT IS ALSO WHY IT NEVER RETURNS `P0`: the shape excludes it, so there is
+    no rule refusing zero to explain for ever afterwards. An `--id P0` the
+    CALLER names is a different question and stays accepted --
+    `examples/acme-store` ships a real `P0` phase and
+    `templates/audit-plan.starter.json` opens with one, so the id is legal,
+    the validator takes it, and only ALLOCATION changed.
+    """
+    highest = 0
+    for tid in taken:
+        found = _PHASE_NUM.match(tid) if isinstance(tid, str) else None
+        if found:
+            highest = max(highest, int(found.group(1)))
+    return "P%d" % (highest + 1)
+
+
+# --- the document's claim about the two rules above -------------------------------
+# F296 again, the half that rots. `commands/phase.md` told the reader `add-phase`
+# "continues the `P<n>` sequence", which is what the highest-plus-one rule does and
+# was NOT what the code did -- and correcting the sentence buys one green day,
+# because the next reader has no way to tell whether it still describes the
+# allocator. So the document carries a WORKED EXAMPLE instead of an adjective, and
+# this evaluates it: one taken set, both rules, both ids the sentence names.
+#
+# `_help.command_choice_drift` is the shape being copied -- ask the code, never
+# read the prose as if it were the code.
+#
+# EVERY GAP IN IT IS `\s+` AND NOT A SPACE, because prose wraps: the sentence this
+# reads is one line in the source today and will be two the next time a word is
+# added ahead of it, and a pattern that spells a single space would then report a
+# document that says exactly what it said before.
+_DOC_ID_EXAMPLE = re.compile(
+    r"holding\s+((?:`P\d+`(?:,\s+|\s+and\s+)?)+)[^`]*?"
+    r"the\s+next\s+id\s+is\s+`(P\d+)`[^`]*?`(P\d+)`")
+
+
+def phase_id_doc_drift(root=None):
+    """[problem, ...] -- where `commands/phase.md` and the two allocators disagree.
+
+    The document's `--id` paragraph states the rule as a plan and the id the next
+    append takes from it, plus the id the OTHER rule would have taken from the same
+    plan. Both are recomputed here from the sentence's own taken set, so a rule
+    that changes in the code and not in the document fails by name, and so does a
+    sentence rewritten to describe an allocator nobody has.
+
+    THE CONTRAST IS PART OF THE CHECK rather than decoration. The two rules agree
+    on a plan with no gap in it, so an example without one would pass under either
+    allocator -- which is a case that cannot go red, and the reason the sentence
+    has to name a plan whose gap the two answer differently.
+    """
+    base = _output.PLUGIN_ROOT if root is None else root
+    path = os.path.join(base, "commands", "phase.md")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        # Named rather than skipped: a document that cannot be read is not a
+        # document that agrees.
+        return ["commands/phase.md: unreadable (%s)" % (exc,)]
+    found = _DOC_ID_EXAMPLE.search(body)
+    if not found:
+        return ["commands/phase.md: the `--id` paragraph states no worked "
+                "example, so nothing here grades its claim against the "
+                "allocator - it needs the shape \"...holding `P0`, `P1` and "
+                "`P3`, the next id is `P4` ... `P2` ...\", naming the plan, the "
+                "id an append takes from it and the id the other rule would"]
+    taken = set(re.findall(r"P\d+", found.group(1)))
+    said_next, said_other = found.group(2), found.group(3)
+    out = []
+    real_next = next_appended_phase_id(taken)
+    real_other = next_phase_id(taken)
+    if said_next != real_next:
+        out.append("commands/phase.md: the `--id` example says a plan holding "
+                   "%s allocates %s, and `next_appended_phase_id` allocates %s"
+                   % (", ".join(sorted(taken)), said_next, real_next))
+    if said_other != real_other:
+        out.append("commands/phase.md: the `--id` example contrasts %s as the "
+                   "id the other rule would take, and `next_phase_id` takes %s"
+                   % (said_other, real_other))
+    if real_next == real_other:
+        out.append("commands/phase.md: the `--id` example names a plan holding "
+                   "%s, where BOTH rules answer %s - an example the two "
+                   "allocators cannot be told apart on grades neither of them"
+                   % (", ".join(sorted(taken)), real_next))
+    return out
 
 
 def remap_payload(phase, new_pid):

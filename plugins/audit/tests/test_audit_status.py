@@ -46,6 +46,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -55,6 +56,10 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-status imports it)
 import _manifest_vocab as _vocab                   # noqa: E402  (as audit-status imports it)
 import _cli_fmt                                    # noqa: E402  (as audit-status imports it)
+# The `uf` block TAKES a lock rather than writing one: `acquire`/`release` are
+# the product's own writers, so the fixture has the shape a real phase run leaves
+# on disk instead of this file's memory of it.
+import _locks as _lockmod                          # noqa: E402
 
 M = _loader.load_script("audit-status.py", modname="audit_status")
 
@@ -1655,7 +1660,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 11,
+          _missing_ap == [] and len(M.CONDITIONS) == 12,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -2179,6 +2184,163 @@ def _cases(_record):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = _bd_env
         _sh_bd.rmtree(_bd_root, ignore_errors=True)
+
+    # --- (uf) F301: a run that stopped mid-phase, driven end to end ------------
+    # The fact and its three states are pinned next door, over the same
+    # `unfinished_runs`. What only THIS suite can reach is the wiring: which
+    # invocations pay for the lock read, that the payload gains the block only
+    # when asked, that the gate line names the run, and that the HUMAN RENDER
+    # says so at all - which is the half F301 was actually about. Nothing had
+    # failed; nobody had looked.
+    #
+    # A REAL REPOSITORY AND A REAL LOCK, taken through the product's own writer,
+    # with CLAUDE_PROJECT_DIR pinned at it. Left ambient, every one of these
+    # would read the lock directory of whatever repository the suite happens to
+    # be running inside - and on a developer's machine that is this one.
+    import shutil as _sh_uf
+
+    _uf_root = tempfile.mkdtemp(prefix="audit-status-unfinished-")
+    _uf_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        def _uf_lines(summary):
+            """`_unfinished_lines` over a summary, as the renderer calls it."""
+            return M._unfinished_lines(summary)
+
+        check("uf7 with NO locks block the render block is EMPTY, so every "
+              "other caller of render_status - the panel, the report, a --json "
+              "run - is byte-identical to what it printed before this existed. "
+              "A render is not a verdict: refusing an unasked question belongs "
+              "to the condition, and this is what fails if the refusal leaks "
+              "into the report",
+              _uf_lines({}) == [] and _uf_lines({"ready": ["P5.4"]}) == [])
+        _uf_err = _uf_lines({"locks": {"error": "git exploded"},
+                             "ready": ["P5.4"]})
+        check("uf8 ...and a block that could not be READ renders as UNKNOWN "
+              "rather than under the same heading as a stopped run: 'a run "
+              "stopped' and 'we could not tell' are different news with "
+              "different repairs, and one heading over both is how a reader "
+              "stops trusting either: %r" % (_uf_err,),
+              len(_uf_err) == 2 and "unknown" in _uf_err[1]
+              and "git exploded" in _uf_err[1]
+              and "stopped mid-phase" not in _uf_err[1])
+        _uf_nogit = M.locks_block({}, os.path.join(_uf_root, "not-a-repo"))
+        check("uf9 a project that is not a git repository is an ANSWER and not "
+              "a failure - no repository really does mean no locks, which is "
+              "what /audit:doctor already says - and `scheme` is carried so a "
+              "consumer can still tell it from a repository holding nothing: %r"
+              % (_uf_nogit,),
+              _uf_nogit == {"scheme": False, "held": []}
+              and M.unfinished_runs({"locks": _uf_nogit,
+                                     "ready": ["P5.4"]}) is None)
+
+        def _uf_wired(check):
+            if not _sh_uf.which("git"):
+                for _lbl in ("uf1", "uf2", "uf3", "uf4", "uf5", "uf6"):
+                    _harness.skip(check, _lbl, "git is not on PATH, and a lock "
+                                  "lives in the git dir - there is nowhere to "
+                                  "take one", True)
+                return
+            _uf_repo = os.path.join(_uf_root, "proj")
+            os.makedirs(os.path.join(_uf_repo, "docs", "audit"))
+            subprocess.run(["git", "init", "-q", _uf_repo], check=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            _uf_plan = {"meta": {"version": 2, "title": "waves"},
+                        "phases": [{"id": "P5", "title": "eight waves",
+                                    "status": "in_progress", "tasks": [
+                                        {"id": "P5.1", "title": "wave one",
+                                         "status": "done"},
+                                        {"id": "P5.4", "title": "wave two",
+                                         "status": "pending"},
+                                        {"id": "P5.10", "title": "wave two",
+                                         "status": "pending"}]}]}
+            _uf_path = os.path.join(_uf_repo, "docs", "audit",
+                                    "audit-plan.json")
+            with open(_uf_path, "w", encoding="utf-8") as fh:
+                json.dump(_uf_plan, fh)
+            os.environ["CLAUDE_PROJECT_DIR"] = _uf_repo
+            # The identity is PASSED rather than inherited, for the reason the
+            # `ur` block next door states: `CLAUDE_PID` is set inside a live
+            # Claude session and unset in CI, so a lock taken without saying who
+            # took it records a different pid on the two.
+            _uf_sid = "f301-cli-fixture"
+            _uf_quiet = lambda *_a, **_k: None      # noqa: E731  (acquire's out)
+
+            _c1, _o1, _e1 = _cli_io([_uf_path, "--json"])
+            check("uf1 the bare --json payload carries NO locks key. It is "
+                  "pinned byte for byte against the pure rollup (dv1), and a "
+                  "lock is a fact about this checkout at this instant rather "
+                  "than about the plan the payload describes: %r"
+                  % (sorted(_parses(_o1) or {}),),
+                  _c1 == 0 and "locks" not in (_parses(_o1) or {"locks": 1}))
+            _c2, _o2, _e2 = _cli_io([_uf_path, "--gate", "--json"])
+            check("uf3 ...and neither does the DEFAULT gate: the read costs a "
+                  "git call, and a gate nobody asked this of must not pay it. "
+                  "The case that fails if the wiring becomes unconditional",
+                  _c2 == 0 and "locks" not in (_parses(_o2) or {"locks": 1}))
+            _c3, _o3, _e3 = _cli_io([_uf_path, "--gate", "--json", "--fail-on",
+                                     "unfinished-run"])
+            _uf_blob = _parses(_o3) or {}
+            check("uf2 asking for the condition DOES compute it, and the block "
+                  "travels in the payload with the verdict and its basis - so a "
+                  "pipeline reads the same evidence the exit code was taken "
+                  "from. Reads vacuous beside uf1/uf3 and is the only case that "
+                  "fails if the injection is dropped: %r"
+                  % (_uf_blob.get("locks"),),
+                  _c3 == 0 and isinstance(_uf_blob.get("locks"), dict)
+                  and _uf_blob["locks"]["scheme"] is True
+                  and _uf_blob["locks"]["held"] == []
+                  and _uf_blob["gate"]["failed"] == [])
+            # ...and now a lock, taken the way a phase run takes one.
+            _uf_took = _lockmod.held(_lockmod.acquire(
+                _uf_repo, "phase-P5", note="/audit:phase P5", session=_uf_sid,
+                pid=os.getpid(), out=_uf_quiet))
+            _c4, _o4, _e4 = _cli_io([_uf_path, "--gate", "--fail-on",
+                                     "unfinished-run"])
+            check("uf4 END TO END: the lock is held, two tasks are ready, and "
+                  "the gate FAILS naming the phase, the work left and the "
+                  "command that picks it up. This is F301 - the state was "
+                  "knowable the whole time and nothing read it: %r"
+                  % (_o4.strip()[-200:],),
+                  _uf_took and _c4 == 1
+                  and "GATE FAILED: unfinished-run" in _o4
+                  and "phase P5" in _o4 and "2 task(s) still ready" in _o4
+                  and "/audit:phase P5" in _o4 and _e4 == "")
+            _c5, _o5, _e5 = _cli_io([_uf_path])
+            check("uf6 ...and the HUMAN RENDER says it too, which is the half "
+                  "the fault was actually about: no gate had failed and nobody "
+                  "was going to run one. RESUMABLE is on the same page and is a "
+                  "DIFFERENT line from a different fact - the phase status the "
+                  "plan wrote down, against the lock on disk: %r"
+                  % (_o5.strip()[-200:],),
+                  _c5 == 0 and "UNFINISHED" in _o5
+                  and "stopped mid-phase" in _o5 and "phase P5 holds a lock"
+                  in _o5 and "RESUMABLE" in _o5)
+            # THE TRANSITION, at the CLI. Nothing about the plan changes; the
+            # lock goes back and the verdict has to go with it.
+            _lockmod.release(_uf_repo, "phase-P5", session=_uf_sid,
+                             out=_uf_quiet)
+            _c6, _o6, _e6 = _cli_io([_uf_path, "--gate", "--fail-on",
+                                     "unfinished-run"])
+            _c7, _o7, _e7 = _cli_io([_uf_path])
+            check("uf5 THE TRANSITION AND THE THIRD ROW TOGETHER: the lock is "
+                  "given back with the SAME two tasks still ready, and the gate "
+                  "PASSES while the render goes silent. That state is the "
+                  "ordinary one of every planned phase there has ever been, so "
+                  "a condition that fired here would be noise inside a day - "
+                  "and uf4 is the case that fails if it stops firing at all: %r"
+                  % (_o6.strip()[-120:],),
+                  _c6 == 0 and "GATE PASSED: unfinished-run" in _o6
+                  and _c7 == 0 and "UNFINISHED" not in _o7
+                  and "READY NOW  2 task(s)" in _o7)
+
+        _harness.stage(check, "uf", _uf_wired)
+    finally:
+        if _uf_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _uf_env
+        _sh_uf.rmtree(_uf_root, ignore_errors=True)
 
 
 def _selftest():

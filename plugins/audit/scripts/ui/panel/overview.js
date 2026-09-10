@@ -297,7 +297,8 @@ function ovExcerpt(text,term,width){
  * leaves the status enum open, so `evWord` names an unrecognised verdict instead
  * of folding it into 'failed'.
  */
-const EVWORD={passed:'Passed',failed:'Failed','no-checks':'No checks ran',
+const EVWORD={passed:'Passed',failed:'Failed',
+ 'gate-mutated':'Gate mutated the tree','no-checks':'No checks ran',
  'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
  'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
  'before-recording':'Before recording',undated:'Completion undated',
@@ -321,9 +322,17 @@ const EVGAP_UNDATED='undated';
  * @type {string[]} verdicts, most-in-need-of-a-human first. OVORDER's rule one
  * vocabulary over, so a phase's roll-up leads with what is wrong rather than
  * with whatever its first task happened to say.
+ *
+ * `gate-mutated` sits second, NOT where `run_status`' precedence puts it: that
+ * precedence answers "which single word does this run get" and reads the rewrite
+ * as a qualification of `passed`, while this list answers "which of a phase's
+ * verdicts does a reader deal with first" — and a gate that rewrote the files it
+ * was grading has left a diff nobody reviewed in the working tree, which is the
+ * most urgent thing on this page after a red suite.
  */
-const EVORDER=['failed','could-not-run','timed-out','cancelled','no-checks',
- 'dangling','undated','empty-gate','none','before-recording','no-gate','passed'];
+const EVORDER=['failed','gate-mutated','could-not-run','timed-out','cancelled',
+ 'no-checks','dangling','undated','empty-gate','none','before-recording',
+ 'no-gate','passed'];
 /**
  * The word for a verdict.
  * @param {string} k - a verdict key, from the ledger or from evState
@@ -446,8 +455,16 @@ function evMarks(run){
    why:run.treeBasis||'no tree comparison was made, so a rewrite cannot be '
      +'ruled out'});
  else if(run.treeMutated>0)marks.push({text:'tree mutated',
-   why:plural(run.treeMutated,'file was','files were')+' rewritten by the gate '
-     +'itself. A gate is a measurement: this run cannot sign anything off.'});
+   // THE COUNT IS THE WHOLE SET AND THE WHOLE SET ATTRIBUTES NOTHING (F273).
+   // This mark used to read "rewritten by the gate itself ... cannot sign
+   // anything off", which is a claim about WHO wrote them that the number it is
+   // built from cannot support - a parallel task moves the same kind of path.
+   // The verdict word is where that claim lives now: `gate-mutated` is the run
+   // whose rewrite landed on files the work under test declares (F280).
+   why:plural(run.treeMutated,'path','paths')+' moved between the two tree '
+     +'snapshots this run took. The bracket reports WHAT moved, never who moved '
+     +'it, so read the verdict beside this mark: '+EVWORD['gate-mutated']
+     +' is the one that says the gate rewrote the files it was grading.'});
  if(run.coverage==null)marks.push({text:'coverage unknown',
    why:run.coverageBasis||'the overlap with this work could not be asked for'});
  else if(run.coverage===0)marks.push({text:'no overlap',

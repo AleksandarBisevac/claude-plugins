@@ -213,6 +213,18 @@ EXTRA_ALLOWED = {
         "why": "the journal is a hash chain - each row commits to its predecessor, "
                "so this hook cannot defer hashing into a branch",
     },
+    "guard-history-rewrite.py": {
+        "modules": ("shlex",),
+        "derive": ("shlex",),
+        "why": "the guard binds to the OPERATION and not to the command text, so it "
+               "tokenizes every Bash command it is handed - the first thing it does, "
+               "with no branch to defer into, unlike `subprocess` which was deferred "
+               "into the two branches that actually shell out. It was measured before "
+               "it was allowed rather than argued for: `python3 tools/bench-hooks.py` "
+               "with no flag prints what this hook costs beside its peers, and "
+               "`import shlex` reaches only `io`, which the shared floor already "
+               "carries",
+    },
 }
 
 # `subprocess` is called out because it is the expensive one and because it has now

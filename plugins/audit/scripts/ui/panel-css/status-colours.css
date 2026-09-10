@@ -25,7 +25,13 @@
 [data-evstatus="failed"]{--st:var(--err)}
 /* Answered nothing, or answered that the record itself is wrong. Amber rather
    than red: none of these is a failing test, and `could-not-run` in particular
-   must never be rendered as one. */
+   must never be rendered as one.
+   `gate-mutated` is the one that ANSWERED and still belongs here (F280): every
+   command came back green, so red would send a reader looking for a failing test
+   that does not exist. What it refuses is its own measurement — the gate rewrote
+   the declared files it was grading. Urgency rides on `EVORDER`, which ranks it
+   second; hue carries only what kind of thing it is. */
+[data-evstatus="gate-mutated"],
 [data-evstatus="no-checks"],[data-evstatus="timed-out"],
 [data-evstatus="could-not-run"],[data-evstatus="dangling"],
 [data-evstatus="undated"],

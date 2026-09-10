@@ -69,6 +69,42 @@ describe('a verdict is one word, and it claims nothing else', () => {
     expect(wordFor(pointed, ledger({ status: null }))).toBe('Verdict not recorded');
   });
 
+  it('a gate that passed and rewrote the tree is its own word, not Passed', () => {
+    // F280. The run's commands all came back green, so the exit code alone said
+    // `passed` and the verdict line said GATE MUTATED THE TREE — two answers
+    // about one run, and the record kept the wrong one. The word is a TABLE
+    // entry rather than the humanised fallback, which is what the second
+    // expectation separates: `label('gate-mutated')` gives `Gate mutated`, so a
+    // build that never learned the word would answer the first clause of a
+    // looser case by accident.
+    const ev = ledger({ status: 'gate-mutated', treeMutated: 1 });
+    expect(wordFor(pointed, ev)).toBe('Gate mutated the tree');
+    expect(wordFor(pointed, ev)).not.toBe('Gate mutated');
+    expect(wordFor(pointed, ev)).not.toBe('Passed');
+    expect(wordFor(pointed, ev)).not.toBe('Failed');
+    // ...and the observation still rides BESIDE it. The tree was always said;
+    // what was missing was the verdict, so the repair must not have quietly
+    // moved the fact into the badge and dropped the mark.
+    expect(marksFor(pointed, ev)).toContain('tree mutated');
+  });
+
+  it('the tree marker claims WHAT moved, never who moved it', () => {
+    // The count is the whole changed set and the bracket cannot attribute it:
+    // a gate writing outside its own subject and a parallel task's executor
+    // move the same kind of path (F273). This sentence used to say the files
+    // were "rewritten by the gate itself" and that the run "cannot sign
+    // anything off" — both of which are the VERDICT's claims, and only the
+    // owned half of the set supports them.
+    const why = P.evMarks(P.evRow(row({ treeMutated: 2 }), FIELDS))
+      .find((m) => m.text === 'tree mutated').why;
+    expect(why).toContain('2 paths');
+    expect(why).not.toContain('by the gate itself');
+    expect(why).toContain('never who moved it');
+    // The verdict word is where the attribution lives now, so the mark points
+    // at it rather than restating it.
+    expect(why).toContain(P.EVWORD['gate-mutated']);
+  });
+
   it('a verdict word cannot be inherited off Object.prototype', () => {
     // A status word comes out of a file a human edits, so it can be
     // `constructor` — and an unguarded table read hands `Object.prototype`'s
@@ -300,6 +336,32 @@ describe('a phase counts its tasks apart from its own sign-off run', () => {
 
   it('a phase with no tasks rolls up to nothing rather than to a verdict', () => {
     expect(P.evTaskRoll([], ledger())).toEqual([]);
+  });
+
+  it('a mutated gate sorts straight after a red one and above every exit-0 '
+    + 'class — it leaves an unreviewed diff in the working tree', () => {
+    // The reading order is NOT `run_status`' precedence, and the two answer
+    // different questions: precedence decides which single word one run gets
+    // and reads the rewrite as a qualification of `passed`, while this decides
+    // which of a phase's verdicts a reader deals with first.
+    const ev = {
+      fields: FIELDS,
+      stepFields: ['name', 'exit', 'ran', 'durationMs', 'outcome'],
+      runs: {
+        rF: row({ runId: 'rF', status: 'failed' }),
+        rM: row({ runId: 'rM', status: 'gate-mutated', treeMutated: 1 }),
+        rZ: row({ runId: 'rZ', status: 'no-checks', ranTotal: 0 }),
+        rP: row({ runId: 'rP', status: 'passed' }),
+      },
+      files: 1, unreadable: 0,
+    };
+    const at = (id) => ({ testEvidence: { runId: id, status: 'x', at: 'x' },
+      gateSource: 'task' });
+    // Handed in an order that is neither the answer nor its reverse, so the
+    // result cannot be the input surviving unsorted.
+    const tasks = [at('rP'), at('rZ'), at('rF'), at('rM')];
+    expect(P.evTaskRoll(tasks, ev).map((r) => P.evWord(r.key)))
+      .toEqual(['Failed', 'Gate mutated the tree', 'No checks ran', 'Passed']);
   });
 
   it('an excused class counts APART from an unexcused one, and sorts below it '

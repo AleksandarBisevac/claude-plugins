@@ -1312,12 +1312,14 @@ that promise is written down.
 field existed, a task nobody has run yet and a block somebody deleted are one state, and
 every surface owes the reader that reading rather than the worst one.
 
-A recorded run answers with `passed`, `failed`, `no-checks` (it ran and found nothing to
-check), `timed-out` or `cancelled` (stopped rather than answered), `could-not-run` (the
-runner never started — emphatically not a failing test), or `empty-gate` (no gate was
-configured). That list may gain members in a later release, so anything switching on it
-needs a default arm naming the word it did not recognise instead of folding it into
-`failed`.
+A recorded run answers with `passed`, `failed`, `gate-mutated` (every command came back
+green **and** the gate rewrote files the work under test declares, so its exit code
+describes bytes the gate itself produced — not a failing test, and it signs nothing off),
+`no-checks` (it ran and found nothing to check), `timed-out` or `cancelled` (stopped rather
+than answered), `could-not-run` (the runner never started — emphatically not a failing
+test), or `empty-gate` (no gate was configured). That list may gain members in a later
+release, so anything switching on it needs a default arm naming the word it did not
+recognise instead of folding it into `failed`.
 
 **The verdict and the observations are separate marks, never one word.** A gate can fail
 *and* rewrite the tree, and a reader who fixes the failure would meet the rewrite afterwards

@@ -1,0 +1,133 @@
+{
+  "id": "P33",
+  "title": "Fourth field report, the run side: a remedy that shipped broken and a run that stops itself",
+  "status": "pending",
+  "description": "Two field reports about RUNS rather than about commands. F300: orchestrator.md\nprescribes widening a running task's files and continuing the executor, justified by a\nmeasurement, and in released 2.2.0 scope refused every in_progress task - so the\ncost-saving path was unreachable by construction. Driven against the tag it exits 2; driven\nagainst HEAD it exits 0, because P31.1 moved that gate from refusing the CALL to grading\nthe SHAPE of the change. F283 was written about the done half, so the in_progress half was\nrepaired without being named and nothing pins it.\n\nF301: a phase run with twenty ready tasks committed wave 1 and ended the turn. Nothing\nblocked it - lock held, manifest valid, sixteen tasks READY, no budget declared. The\nobligation to continue is prose nothing reads, which is F282's class in the behavioural\ndirection: every other fault here is a prescription the code refuses, this is one nothing\nenforces.",
+  "desiredOutcome": "The widen-a-running-task flow cannot regress unnamed again, and a phase run that has not finished says so in a fact something can grade.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P33.1",
+      "title": "F300: the widen-a-running-task flow is pinned, so it cannot regress unnamed twice",
+      "status": "done",
+      "description": "The behaviour is already correct at HEAD - this is the case that was never written. P31.1\nfixed the done half under F283's name and the in_progress half fell out of the same repair\nsilently, which is exactly how it could go back. Pin the documented flow itself: a task\nwith status in_progress AND attempts >= 1 - the state orchestrator.md's Execute step\nguarantees before it spawns - accepts a widening scope call and keeps the widened files.\n\nProve it red by restoring the released gate (refuse when status != pending) and confirming\nthe case names it. Then prove the OTHER direction: the shape rules F190 protects must still\nhold, so a call that would NARROW a started task's scope, or rewrite a value its attempts\nwere judged against, must still be refused - a case that only proves widening works would\nbe satisfied by deleting the gate entirely.\n\nNote for the CHANGELOG entry: this shipped broken in 2.2.0 and is fixed in the tree, so the\nrelease is the remedy. Say that plainly under 2.3.0 rather than listing it as a new feature.",
+      "files": [
+        "plugins/audit/tests/test_audit_task.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: scope widens a task that is in_progress with attempts recorded, which is the documented widen-and-continue flow"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "The behaviour was already correct at HEAD - P31.1 moved the gate from refusing the CALL to grading the SHAPE of the change - and the narrowing half turned out to be pinned six ways already by 93c22dc (wd4, wd5, wd7, wd9, rt9, st4), so nothing was duplicated. What was missing is the join to the document: wd12 reads four anchors out of orchestrator.md - the Execute step's in_progress and attempts writes, and both halves of the widen prescription - then drives the widening and asserts the fileIndex the plan gate reads gained the path. wd13 is the direction a widening-only case cannot reach: deleting the gate outright leaves wd12 green and only wd13 fires.",
+        "descriptive": "The recovery the document sells as the cheap one is now driven by a case, so it cannot go unreachable a second time unnamed."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T01:15:00Z",
+      "verifiedBy": [
+        "wd12",
+        "wd13"
+      ]
+    },
+    {
+      "id": "P33.2",
+      "title": "F301: a phase run that has not finished says so in a fact something can grade",
+      "status": "done",
+      "description": "A run stopped after wave 1 of eight and nothing could tell. The cheap repair is wording at\nthe wave boundary; the durable one is that the state is already knowable - a phase whose\nlock is HELD and whose ready list is NON-EMPTY is a run that has not finished, and both\nhalves are facts the plan and the lock file already carry. Make that a derived fact in\n_status_facts, render it where a reader and a CI job can see it, and give it a --fail-on\ncondition so a run that stopped mid-phase can be graded rather than noticed a day later.\n\nThree states must stay distinct, and folding any two is the defect: a phase with no lock\nand no ready tasks is FINISHED; one with a lock and ready tasks is UNFINISHED; one with\nready tasks and no lock is simply not running, which is the ordinary state of every planned\nphase and must never be reported as a stopped run. Getting that third one wrong turns the\nsignal into noise on every plan in the world.\n\nThe orchestrator.md wording and the anchor that ties it to this fact are NOT in this task -\nanother lane holds that file right now. Report the sentence and the anchor row you want and\nthe orchestrator will apply them.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: a phase holding its lock with a non-empty ready list is reported as an unfinished run, and a phase with neither is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "_status_facts.unfinished_runs() answers the question from the lock and the ready list - None or a non-empty list, never the empty list a threshold would read as clean. The lock block is INJECTED because _status_facts is layer 2 and may open nothing; audit-status.locks_block reads it and drops the holder's pid and session. --fail-on unfinished-run grades it, out of DEFAULT_GATE, and the human render carries it too because F301 was not a gate passing wrongly, it was nobody looking. A STALE lock counts: _locks.judge resolves uncertainty towards live, so live: False is the positive finding that the holder is gone - and the incident was noticed a day later, when the stopped session had exited, so a live-only rule would have said nothing about the case it was written for. Liveness changes the repair, not the verdict.",
+        "descriptive": "A phase run that stopped between waves now says so, and CI can fail on it instead of somebody noticing a day later."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T01:15:00Z",
+      "verifiedBy": [
+        "ur2",
+        "ur3",
+        "ur4",
+        "ur5",
+        "ur6",
+        "ur7",
+        "ur8",
+        "ur10",
+        "uf4",
+        "uf5",
+        "uf6",
+        "uf9"
+      ]
+    }
+  ]
+}

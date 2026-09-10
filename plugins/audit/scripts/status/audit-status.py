@@ -90,6 +90,8 @@ import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, 
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
+import _locks  # noqa: E402  (which phase locks are held, and whether a holder is
+#                             alive - the evidence behind --fail-on unfinished-run)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -125,6 +127,7 @@ unmet_refs = _status_facts.unmet_refs
 evaluate_gate = _status_facts.evaluate_gate
 budget_breaches = _status_facts.budget_breaches
 invariant_breaches = _status_facts.invariant_breaches
+unfinished_runs = _status_facts.unfinished_runs
 NO_SIGN_OFF_EVIDENCE = _status_facts.NO_SIGN_OFF_EVIDENCE
 KNOWN_EVIDENCE = _status_facts.KNOWN_EVIDENCE
 evidence_status = _status_facts.evidence_status
@@ -215,6 +218,68 @@ def portability_block(manifest, project):
     except Exception as exc:                       # defensive; see the docstring
         msg = " ".join(("%s: %s" % (type(exc).__name__, exc)).split())
         return {"error": "the portability scan could not run: %s" % (msg[:200],)}
+
+
+def locks_block(manifest, project):
+    """Which audit locks this clone holds — the evidence `unfinished-run` grades.
+
+    `{"scheme": bool, "held": [{"name", "live", "basis"}]}`, or a block with NO
+    `held` key when the read could not run, which
+    `_status_facts.unfinished_runs` reads as "nothing was verified" and trips on.
+    An empty list there would have been a clean bill of health produced by a
+    crash — the same shape `invariants_block` and `portability_block` above owe,
+    for the same reason.
+
+    NOT A GIT REPOSITORY IS AN ANSWER, NOT A FAILURE, and it is the product's own
+    existing reading rather than a new one: `/audit:doctor` says "no audit locks
+    held" for a project with no git root, because locks live in the shared git
+    dir and no repository really does mean no locks. So `scheme: False` comes
+    back with an empty `held`, which grades as "no run is holding anything" —
+    and the key is carried so that a consumer can still tell it apart from a
+    repository holding nothing.
+
+    THE ROW IS NARROWED ON PURPOSE. `_locks.collect` hands back the lock's whole
+    `info` — a pid, a session id, a hostname and the note the holder wrote — and
+    `_locks.refusal`'s docstring records what happened the last time a caller
+    moved that into a payload. Only the name, the verdict and the verdict's basis
+    travel; `/audit:lock status` is the door for "who holds it".
+
+    THE BASIS IS `judge`'s OWN SENTENCE, host and all, and it is kept rather than
+    reworded. It names the host because "held by this host" and "held by another
+    host" are what a reader decides on, `/audit:doctor` already prints exactly
+    this string for exactly this question, and a second host-free liveness
+    sentence written here would be a second opinion about liveness. What that
+    costs is stated instead of discovered: a terminal render and a `--gate --json`
+    payload can name the machine, so neither belongs in a committed artifact —
+    and nothing here puts one there (the rendered report never injects this
+    block).
+
+    `git_root_for` rather than the project directory, because a workspace whose
+    repository is a subdirectory keeps its locks in THAT repository's git dir.
+    Third caller of one spelling of "where git runs", which is what that
+    function's own docstring asks for.
+    """
+    try:
+        git_root = _invariants.git_root_for(manifest, project)
+        if not _locks.available(git_root):
+            return {"scheme": False, "held": []}
+        return {"scheme": True,
+                "held": [{"name": r.get("name"), "live": r.get("live"),
+                          "basis": r.get("basis")}
+                         for r in _locks.collect(git_root)]}
+    except Exception as exc:                       # defensive; see the docstring
+        return {"error": "the audit locks could not be read: %s" % (exc,)}
+
+
+def _unfinished_detail(summary):
+    """What `GATE FAILED: unfinished-run (...)` says after the name.
+
+    Rendered off `unfinished_runs`, which is the same call the verdict is taken
+    from — a line derived a second way is a second opinion that can contradict
+    the exit code.
+    """
+    found = unfinished_runs(summary) or []
+    return "%d run(s): %s" % (len(found), _output.some_of(found, sep="; "))
 
 
 def _stranded_detail(summary):
@@ -605,6 +670,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     lines += _bug_lines(manifest, summary, pt=pt)
     lines += _proposal_lines(manifest, summary, pt=pt)
     lines += _resumable_lines(manifest, summary, pt=pt)
+    lines += _unfinished_lines(summary, pt=pt)
     return "\n".join(lines)
 
 
@@ -1140,6 +1206,49 @@ def _resumable_lines(manifest, summary, pt=None):
     return []
 
 
+def _unfinished_lines(summary, pt=None):
+    """UNFINISHED — a phase lock still held while the plan has work ready to run.
+
+    F301's other half. The condition makes the state gradeable; this is what
+    makes it VISIBLE, and visibility is what the fault was actually about — no
+    gate had failed, nothing had refused, and the run simply sat there until
+    somebody asked a day later. The surface everyone checks first has to say so.
+
+    NOTHING AT ALL WHEN NOBODY LOOKED. Every other caller of `render_status` —
+    and every `--json` invocation — passes a summary with no `locks` block, and
+    a render is not a verdict: printing `unfinished_runs`' refusal there would
+    put a gate's sentence into a report nobody asked to gate. The condition is
+    where an unasked question is refused; here it is simply not asked.
+
+    TWO ARMS, BECAUSE THEY ARE TWO DIFFERENT PIECES OF NEWS. "a run stopped
+    mid-phase" and "the locks could not be read" have different repairs, and
+    collapsing them under one heading is the reading this repository refuses
+    everywhere else. Neither arm restates the sentence itself, which stays in
+    `_status_facts` so the render and the exit code cannot disagree.
+
+    NOT FOLDED INTO `RESUMABLE`, which sits directly above it. That block reads
+    the PHASE STATUS the plan wrote down; this one reads the LOCK on disk. A
+    phase left `in_progress` by an interrupted command is a different fact from a
+    lock nobody gave back, they can each be true without the other, and one
+    heading over two pieces of evidence is how a reader stops trusting either.
+    """
+    pt = pt or _cli_fmt.PLAIN
+    block = (summary or {}).get("locks")
+    if not isinstance(block, dict):
+        return []
+    if block.get("error"):
+        return ["", pt.paint("  UNFINISHED  unknown - %s" % block["error"],
+                             "warn")]
+    rows = unfinished_runs(summary)
+    if rows is None:
+        return []
+    out = ["", pt.paint("  UNFINISHED  %d phase run(s) stopped mid-phase - the "
+                        "lock is still held and there is ready work left"
+                        % len(rows), "warn")]
+    out += ["    %s" % r for r in rows]
+    return out
+
+
 # `_load_usage_fmt()` used to sit here: a runtime load of audit-usage.py — an ENTRY
 # POINT, a peer at layer 7 — purely to borrow its `bar()`. The share bar now lives in
 # _fmt (`fmt_bar`/`bar_cells`), which this file already imports for fmt_tokens/fmt_cost,
@@ -1174,13 +1283,18 @@ CONDITION_HELP = {
     # `empty-gate` says no gate was configured, which is a plan's choice and not a
     # result. `no-checks` is the one worth spelling out: it is exit 0, and a reader
     # who assumed exit 0 meant "tests passed" would be reading a green build with no
-    # tests in it as a signed-off one. `timed-out`, `cancelled` and `could-not-run`
-    # reached no verdict at all - the first two were stopped, the third never
-    # started - and a gate whose job is to refuse to sign off on unfinished evidence
-    # must refuse those too.
+    # tests in it as a signed-off one. `gate-mutated` is exit 0 as well and is the
+    # same misreading one step further on: every command came back green AND the
+    # gate rewrote the files it was grading, so the exit code describes bytes the
+    # gate produced - the run whose own verdict line says GATE MUTATED THE TREE, and
+    # the one this condition used to pass because the enum had no word for it.
+    # `timed-out`, `cancelled` and `could-not-run` reached no verdict at all - the
+    # first two were stopped, the third never started - and a gate whose job is to
+    # refuse to sign off on unfinished evidence must refuse those too.
     "failing-tests": "a recorded test run that cannot sign work off "
                      "(`testEvidence.status` on a task or phase is `failed`, "
-                     "`no-checks` - exit 0, and still not a verdict - "
+                     "`gate-mutated` - exit 0, and the gate rewrote what it was "
+                     "grading - `no-checks` - exit 0, and still not a verdict - "
                      "`timed-out`, `cancelled` or `could-not-run`, which never "
                      "started at all; `passed` and `empty-gate` do not trip it, "
                      "an ABSENT block never does because absent means no run was "
@@ -1228,6 +1342,26 @@ CONDITION_HELP = {
                        "skill only its author has is a correct observation about "
                        "a repository nobody may ever clone, and /audit:doctor "
                        "already says so at exit zero)",
+    # The lead sentence stays short for `stranded-skills`' reason - ap9 asserts
+    # the part before the first bracket survives on one line of `--help`.
+    "unfinished-run": "a phase lock still held with tasks ready to run "
+                      "(a run that stopped mid-phase, which is what F301 was: "
+                      "a wave committed, the next wave was named, and the turn "
+                      "ended. THREE STATES, and the third is the reason this is "
+                      "worth having - a lock held with ready work left is an "
+                      "unfinished run, no lock and no ready work is a finished "
+                      "plan, and NO LOCK with ready work left is every planned "
+                      "phase there has ever been, which is why it must not "
+                      "trip. A STALE lock counts as readily as a live one: the "
+                      "liveness verdict resolves every uncertainty to live, so "
+                      "`gone` is the positive finding that the holder was "
+                      "probed and is not there, and a signal that fell silent "
+                      "as the abandonment became certain would go quiet exactly "
+                      "when somebody finally looks. The sentence names which, "
+                      "because the repair differs. Opt-in and out of the --gate "
+                      "default: a lock lives in the shared git dir rather than "
+                      "in the tree, so it is never cloned and a fresh CI "
+                      "checkout holds none)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -1470,6 +1604,24 @@ def main(argv):
         summary["portability"] = portability_block(
             manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
+    # THE ONE INJECTED BLOCK THE HUMAN RENDER ASKS FOR TOO, and that asymmetry is
+    # the point rather than an oversight. F301 was not a gate that passed
+    # wrongly - no gate had been asked anything. A run stopped between waves and
+    # the state sat on disk, knowable, until a human asked a day later, so the
+    # surface a human actually opens has to carry it. The three other injected
+    # blocks are gate-only because each costs git calls per phase or a walk of
+    # the repository; this one is a single `rev-parse` and a directory listing,
+    # which is what `/audit:doctor` already pays to answer the same question.
+    #
+    # `--json` IS DELIBERATELY NOT ON THIS LIST. The bare payload is pinned byte
+    # for byte against the pure rollup (case dv1), and a lock is a fact about
+    # this checkout at this instant rather than about the plan the payload
+    # describes. Under `--gate --json` it travels, because then it was asked for.
+    if ((want_gate and "unfinished-run" in conditions)
+            or not (want_json or want_gate)):
+        summary["locks"] = locks_block(
+            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+
     if want_gate:
         failed = evaluate_gate(summary, conditions)
         summary["gate"] = {
@@ -1558,6 +1710,7 @@ def main(argv):
                     "failing-tests": _failing_tests_detail(summary),
                     "no-test-evidence": _no_evidence_detail(summary),
                     "stranded-skills": _stranded_detail(summary),
+                    "unfinished-run": _unfinished_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

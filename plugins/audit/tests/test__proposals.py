@@ -110,6 +110,118 @@ def _cases(check):
           "never keep its own id",
           "P5" not in M.parked_ids(m5, skip=("PROP-1",)))
 
+    # ---- (ap) F296: add-phase's allocator returns highest-plus-one -----------
+    # THE FIXTURE HAS A GAP IN IT, and that is the whole design of these cases:
+    # over a plan with no gap the two rules answer identically, so a taken set
+    # without one is a case that cannot go red under either allocator. `P2` is
+    # missing here, `P3` is the highest, and the two rules therefore disagree by
+    # construction.
+    _ap_taken = {"P0", "P1", "P3", "P0.1", "P3.2", "BF9"}
+    check("ap1 add-phase's allocator returns highest-plus-one over the shared "
+          "taken set, and never RETURNS P0: a gap is a phase that HAPPENED, and "
+          "`meta.branch` derives a branch name from the id, so re-minting one "
+          "hands the caller a phase colliding with the branches and merges "
+          "already carrying that number - measured live, `add-phase` returned "
+          "P30 while `p30/*` named four branches and two merges: %r"
+          % (M.next_appended_phase_id(_ap_taken),),
+          M.next_appended_phase_id(_ap_taken) == "P4"
+          and M.next_appended_phase_id(set()) == "P1"
+          and M.next_appended_phase_id({"P0"}) == "P1")
+    check("ap2 ...and MATERIALIZE keeps the lowest-free rule over the SAME set - "
+          "the taken set is shared and only the rule forks, because that verb "
+          "re-places a payload whose id collided with live work and the gap it "
+          "drops into was never anybody's: %r"
+          % (M.next_phase_id(_ap_taken),),
+          M.next_phase_id(_ap_taken) == "P2"
+          and M.next_appended_phase_id(_ap_taken)
+          != M.next_phase_id(_ap_taken))
+    check("ap3 ...and \"the highest\" means the highest that PARSES as `P<n>`: "
+          "a taken set mixes shapes on purpose - this plan carries `BF1`/`BF2` "
+          "between its P-ids, a task id is `P<n>.<m>` and a proposal reserves "
+          "both - so `BF9` (its own sequence) and `P1.7` (a task) are ignored "
+          "rather than counted, which would push the next phase past a number "
+          "nobody typed: %r"
+          % (M.next_appended_phase_id({"BF9", "P1", "P1.7"}),),
+          M.next_appended_phase_id({"BF9", "P1", "P1.7"}) == "P2"
+          # The real interleaving, off this repository's own plan shape.
+          and M.next_appended_phase_id(
+              {"P14", "BF1", "BF2", "P15", "PROP-3"}) == "P16")
+    check("ap3b ...and a set with NO `P<n>` in it allocates P1 - the stated "
+          "rule rather than a fallback that happens to work. An empty plan and "
+          "a plan holding only `BF1` are the same answer, because the maximum "
+          "is counted from a floor of zero and nothing special-cases the empty "
+          "set. That is also why `P0` is never RETURNED, while an `--id P0` a "
+          "caller names stays accepted: `examples/acme-store` ships a real P0 "
+          "phase and the starter template opens with one: %r"
+          % ([M.next_appended_phase_id(set()),
+              M.next_appended_phase_id({"BF1", "BF2"}),
+              M.next_appended_phase_id({"PROP-1"})],),
+          M.next_appended_phase_id(set()) == "P1"
+          and M.next_appended_phase_id({"BF1", "BF2"}) == "P1"
+          and M.next_appended_phase_id({"PROP-1"}) == "P1"
+          # Not a string, and a `P` with no number: neither counts and neither
+          # raises - a taken set reaches this before anything has graded it.
+          and M.next_appended_phase_id({None, 7, "P", "Pxx", "P3"}) == "P4")
+    # SECOND-DIRECTION CASE for ap1. The wrong over-correction is a floor that
+    # always fires: `max(...) + 1` clamped to some minimum above 1 would satisfy
+    # every line above while refusing to continue a plan that really does sit at
+    # P1, and a plan whose highest id is high must keep counting from there.
+    check("ap4 SECOND-DIRECTION CASE: the P0 floor is a floor and not a clamp - "
+          "a plan already at P41 allocates P42, so nothing here is being "
+          "rounded up to a constant: %r"
+          % (M.next_appended_phase_id({"P41"}),),
+          M.next_appended_phase_id({"P41"}) == "P42"
+          and M.next_appended_phase_id({"P1"}) == "P2")
+    check("ap5 `commands/phase.md`'s `--id` paragraph is graded against both "
+          "allocators rather than trusted: it carries a worked example (a plan, "
+          "the id an append takes from it, the id the other rule would have "
+          "taken) and this evaluates it - the sentence it replaced said the verb "
+          "'continues the sequence', which described a rule the code did not "
+          "have: %r" % (M.phase_id_doc_drift(),),
+          M.phase_id_doc_drift() == [])
+    # THE VACUITY GUARD for ap5, and it is not decoration: `== []` is also what
+    # a check that stopped being able to FIND the sentence would return if the
+    # missing-example branch were ever dropped, so a document with no example
+    # has to be a finding here too.
+    _ap_nodoc = tempfile.mkdtemp(prefix="audit-prop-doc-")
+    try:
+        os.makedirs(os.path.join(_ap_nodoc, "commands"))
+        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
+                     "w", encoding="utf-8") as fh:
+            fh.write("- **`--id`** - omit it. The script continues the "
+                     "`P<n>` sequence.\n")
+        _ap_missing = M.phase_id_doc_drift(root=_ap_nodoc)
+        check("ap6 ...a `--id` paragraph carrying an ADJECTIVE and no worked "
+              "example is a finding, which is what stops ap5 from being green "
+              "over a document it can no longer read: %r" % (_ap_missing,),
+              len(_ap_missing) == 1 and "no worked example" in _ap_missing[0])
+        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
+                     "w", encoding="utf-8") as fh:
+            fh.write("Over a plan holding `P0`, `P1` and `P3`, the next id is "
+                     "`P2`, and never the `P4`.\n")
+        _ap_swapped = M.phase_id_doc_drift(root=_ap_nodoc)
+        check("ap7 ...and an example naming the two ids the OTHER way round - "
+              "which is the document as it would read if the allocators were "
+              "swapped back - reports both halves, so neither number is being "
+              "read as decoration: %r" % (_ap_swapped,),
+              len(_ap_swapped) == 2
+              and any("allocates P2, and `next_appended_phase_id` allocates P4"
+                      in p for p in _ap_swapped)
+              and any("contrasts P4" in p and "takes P2" in p
+                      for p in _ap_swapped))
+        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
+                     "w", encoding="utf-8") as fh:
+            fh.write("Over a plan holding `P0` and `P1`, the next id is `P2`, "
+                     "and never the `P2`.\n")
+        _ap_flat = M.phase_id_doc_drift(root=_ap_nodoc)
+        check("ap8 ...and an example over a plan with NO GAP is a finding even "
+              "though both ids in it are right, because the two rules answer it "
+              "identically: an example the allocators cannot be told apart on "
+              "grades neither of them: %r" % (_ap_flat,),
+              len(_ap_flat) == 1 and "cannot be told apart" in _ap_flat[0])
+    finally:
+        shutil.rmtree(_ap_nodoc, ignore_errors=True)
+
     # ---- collision guard: remap inside the payload only ----
     live = _payload("P1", tasks=("x", "y"))["phase"]
     live["tasks"][1]["blockedBy"] = ["P1.1", "P0"]

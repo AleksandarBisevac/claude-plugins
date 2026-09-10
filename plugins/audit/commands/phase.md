@@ -153,10 +153,16 @@ the outcome, the gate and where it came from, and the files it wrote.
   and Phase sign-off must address it. A phase whose success cannot be stated in a
   line is already too big — that is the conventions' own splitting rule, and this is
   where it gets applied. The script refuses a blank one.
-- **`--id`** — omit it. The script continues the `P<n>` sequence over live phases AND
-  every id a parked `proposals[].payload` reserves (conventions → ID allocation), which
-  is the same allocation `/audit:propose materialize` uses. Pass it only when the human
-  named an id, and relay the refusal if it collides.
+- **`--id`** — omit it. The script takes the **highest** `P<n>` in use and adds one, over
+  live phases AND every id a parked `proposals[].payload` reserves (conventions → ID
+  allocation) — the same taken set `/audit:propose materialize` allocates against, and
+  deliberately a different rule over it. Over a plan holding `P0`, `P1` and `P3`, the next
+  id is `P4`, and never the `P2` the gap makes look free: a gap is a phase that happened,
+  `meta.branch` derives the branch name from the phase id, and re-minting the number hands
+  you a phase colliding with branches and merges already carrying it. Materialize fills
+  that gap on purpose, because it re-places a payload whose id collided with live work and
+  the gap was never anybody's. Pass `--id` only when the human named one, and relay the
+  refusal if it collides.
 - **`--gate`** — repeatable. Omitted, the gate comes from `meta.buildCommands` keys.
   The report says which of the two happened, and says so when the gate is EMPTY: a
   phase with no gate is signed off on review alone, which is a decision rather than a
@@ -183,6 +189,24 @@ shard. Then it re-reads the manifest from disk, revalidates, and **rolls every w
 file back byte-for-byte** on findings — including deleting a shard it had just created,
 so a refusal never leaves a phase body the index does not point at. Finally it appends
 a `phase.add` journal row carrying the outcome.
+
+**A flag belongs to the verb whose alternative in the hint carries it.** One `argparse`
+parser serves `add`, `retarget` and the three `/audit:task` verbs, so argparse accepts
+every flag on every one of them — and each verb's writer only read its own subset, so a
+pair like `/audit:phase add --files` or `retarget --files` is refused now with exit 2
+rather than accepted, where before it wrote nothing and reported success. The message
+names the verb that does read the flag (`--files` is read by `/audit:task add` and
+`scope`); relay it rather than retrying. **`--risk` is one of those here and not on `/audit:task`** — a phase carries
+no risk and a task does, so `/audit:phase add --risk` is refused. On the task verb it
+is exactly right; `/audit:task add --risk high` writes it.
+
+**One claim per sentence, deliberately.** A case in
+`plugins/audit/tests/test_audit_task.py` reads every `` `<verb> --<flag>` `` pair out
+of a sentence here that talks about refusing and asks the script's own table whether
+that verb really ignores the flag — so a paragraph mixing a refused pair with a
+correct one would grade the correct one as a false claim. That is the price of having
+the claim checked rather than merely written, and it is why the two halves above are
+two sentences.
 
 **Refusals, all before any write:** a missing or blank `--outcome`; an `--id` that is
 already a live phase (it says so, and offers `/audit:task add --phase <id>` when that

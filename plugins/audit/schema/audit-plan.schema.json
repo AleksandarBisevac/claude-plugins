@@ -1306,7 +1306,7 @@
         },
         "add": {
           "type": "array",
-          "description": "Assertions/tests to author. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix). For mode 'regression' they describe the guard(s) added AFTER the fix. The meaning is mode-dependent — see `expectRedFirst`.",
+          "description": "Assertions/tests to author, each written as \"<path>: <what it asserts>\" — the leading repo-relative path is what /audit:task add and scope carry into the task's `files` and the plan's `fileIndex`, so an entry opening with prose leaves that case file outside the scope commit-scope grades the task against. For mode 'tdd' these describe tests that MUST FAIL on current code (discover-then-fix), and a 'tdd' task that is not yet done or cancelled draws a validator WARNING when an entry names no file — a finding from 3.0.0 (see COMPATIBILITY.md → Validation stays additive). For mode 'regression' they describe the guard(s) added AFTER the fix, where the shape is recommended and not required. The meaning is mode-dependent — see `expectRedFirst`.",
           "items": {
             "type": "string"
           }
@@ -1339,10 +1339,11 @@
           "description": "Which run in the evidence ledger this points at. OPAQUE, AND THAT IS THE CONTRACT: the format is not a schema, it is not parsed, and nothing may read a timestamp, an ordinal or an attempt number out of it — a consumer that did would be deriving a fact from a string that is free to change spelling, and would go quietly wrong the day it does. Use it to LOOK THE RUN UP, then read the fact off what the ledger holds."
         },
         "status": {
-          "description": "What that run said, cached so a reader that does not open the ledger still has a verdict to render. 'passed' and 'failed' are the ordinary two; 'no-checks' means the gate ran and found nothing to check; 'empty-gate' means no gate was configured at all; 'timed-out' and 'cancelled' mean the run was stopped rather than answered; 'could-not-run' means the runner never started (no interpreter, an unreadable command), which is emphatically not a failing test and must never be rendered as one. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'failed'.",
+          "description": "What that run said, cached so a reader that does not open the ledger still has a verdict to render. 'passed' and 'failed' are the ordinary two; 'gate-mutated' is what 'passed' becomes when every command came back green AND the run's own tree bracket caught the gate rewriting files the work under test declares — the exit code is then a claim about bytes the gate itself produced, so it signs nothing off, and the word exists because a reader must never meet 'passed' on a run whose own verdict line said GATE MUTATED THE TREE (the paths and the attribution stay in the ledger row's `treeMutated` and `treeBasis`, which is what keeps the word checkable); 'no-checks' means the gate ran and found nothing to check; 'empty-gate' means no gate was configured at all; 'timed-out' and 'cancelled' mean the run was stopped rather than answered; 'could-not-run' means the runner never started (no interpreter, an unreadable command), which is emphatically not a failing test and must never be rendered as one. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'failed'.",
           "enum": [
             "passed",
             "failed",
+            "gate-mutated",
             "no-checks",
             "timed-out",
             "cancelled",

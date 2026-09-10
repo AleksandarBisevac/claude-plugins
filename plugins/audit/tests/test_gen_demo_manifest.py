@@ -594,9 +594,10 @@ def _cases(check):
           all(len(names) == 1 and with_runs == []
               for names, with_runs in _ungated.values()))
     check("both published sizes carry a verdict either way, a gate that checked "
-          "nothing, work with no run recorded against it, and a task nothing "
-          "grades: %r" % (_published,),
-          all(v["verdicts"] == ["failed", "no-checks", "passed"]
+          "nothing, a gate that passed and rewrote what it was grading, work "
+          "with no run recorded against it, and a task nothing grades: %r"
+          % (_published,),
+          all(v["verdicts"] == ["failed", "gate-mutated", "no-checks", "passed"]
               and v["unpointed"] > 0 and v["ungated"] == 1
               for v in _published.values()))
     _big_tiers = sorted({p["model"] for p in _big["phases"]})
@@ -686,12 +687,13 @@ def _cases(check):
               % (_dangling,), _dangling == [])
         _keys = sorted(set(v["key"] for v in _ev["tasks"].values()))
         check("...and the fixture reaches the states A ships: a verdict either "
-              "way, a gate that exited 0 having checked nothing, work not run "
+              "way, a gate that exited 0 having checked nothing, a gate that "
+              "exited 0 having rewritten the files it was grading, work not run "
               "yet, work that finished before this plan could record anything, "
-              "and a subject nothing grades - five different sentences with "
-              "five different repairs: %r" % (_keys,),
-              _keys == ["before-recording", "failed", "no-checks", "no-evidence",
-                        "no-gate", "passed"])
+              "and a subject nothing grades - each one a different sentence "
+              "with a different repair: %r" % (_keys,),
+              _keys == ["before-recording", "failed", "gate-mutated",
+                        "no-checks", "no-evidence", "no-gate", "passed"])
         # THE KEY AND THE STATE, PINNED TOGETHER. `SCHEMA_EXEMPTIONS` held
         # `meta.evidenceSince` back until a surface could tell `Before recording`
         # apart from `No evidence`, on the argument that a field published
@@ -765,16 +767,27 @@ def _cases(check):
         # and it runs over EVERY row rather than a representative one, so an arm
         # only some rows take cannot slip through.
         _gate = _loader.load_script("run-test-gate.py", modname="run_test_gate")
-        # The cancellation basis is READ OFF THE ROW rather than passed as None:
+        # EVERY INPUT IS READ OFF THE ROW rather than passed as a constant:
         # `run_status` grew a fourth input when the interrupt path learned to
-        # record, and hardcoding absence here would assert that this generator
-        # never fabricates a cancelled run instead of comparing what it did
+        # record and a fifth when the tree bracket reached the verdict (F280),
+        # and hardcoding absence for either would assert that this generator
+        # never fabricates such a run instead of comparing what it did
         # fabricate. `cancelledBy` is absent on every row today, and the day one
         # carries it this comparison still holds it to the real rule.
+        #
+        # THE FIFTH ARGUMENT IS THE REFUSED SET, and `treeMutated` is the right
+        # list to hand it ONLY because of what `_run_plan` does: a mutating run's
+        # changed paths are the task's own declared `files`, so every path here
+        # is owned and the whole set IS the owned half. `_status_of` rests on the
+        # same property and states it; if the generator ever moves a file the
+        # work does not declare, the real `run_status` will read a shorter list
+        # than this line hands it and the disagreement lands here rather than in
+        # a published fixture.
         def _real(r):
             return _gate.run_status(r["steps"], r["failed"],
                                     r["observations"]["ranTotal"],
-                                    r.get("cancelledBy"))
+                                    r.get("cancelledBy"),
+                                    r["observations"]["treeMutated"])
 
         _disagreed = [(r["runId"], r["status"], _real(r))
                       for r in _rows_b if r["status"] != _real(r)]

@@ -171,9 +171,15 @@ def _tests_add(mode, rel):
     the schema says the list's meaning is mode-dependent. So the two must be
     generated together or the fixture would ship a manifest that disagrees with
     itself about what its own tests are for.
+
+    THE `tdd` ENTRY LEADS WITH ITS PATH, and that ordering is load-bearing rather
+    than a house style: F294's union takes the path an entry NAMES so `commit_scope`
+    will allow the file the task is declared to create, and a `tdd` entry that names
+    none is a finding. The `regression` wording keeps the path mid-sentence on
+    purpose - that mode promises no new file, so nothing derives a path from it.
     """
     if mode == "tdd":
-        return ["a failing repro for %s: it must go red on current code" % rel]
+        return ["%s: a failing repro that must go red on current code" % rel]
     if mode == "regression":
         return ["a guard locking %s's corrected behaviour" % rel]
     return []                              # gate-only authors no test at all
@@ -1419,7 +1425,7 @@ def _run_result(resolved, owns, head, seed, red=None, zero=False, mutated=(),
         "treeBasis": "git described the tree before and after",
         "ranTotal": ran_total,
         "durationMs": sum(st["durationMs"] for st in steps),
-        "status": _status_of(failed, ran_total),
+        "status": _status_of(failed, ran_total, mutated),
         "overlap": overlap,
         "coverageBasis": (
             "this runner printed no file paths, so coverage is not knowable "
@@ -1430,7 +1436,7 @@ def _run_result(resolved, owns, head, seed, red=None, zero=False, mutated=(),
     }
 
 
-def _status_of(failed, ran_total):
+def _status_of(failed, ran_total, mutated):
     """The word `run-test-gate.run_status` would reach for these steps.
 
     STATED HERE AND CHECKED THERE. Loading the gate runner to ask it would be an
@@ -1446,11 +1452,23 @@ def _status_of(failed, ran_total):
     a generated plan has neither - so they are absent rather than unreachable
     branches nothing enters. And the zero is read as a POSITIVE zero: `None` means
     this runner does not report a count and must not be mistaken for "nothing ran".
+
+    `mutated` IS THE REFUSED SET AND NOT MERELY THE CHANGED ONE (F280). The real
+    `run_status` reads `attributed_mutations`' owned half, because the foreign
+    half is the one nothing can attribute; what makes the same list serve both
+    here is `_run_plan`, which sets a mutating run's changed paths to the task's
+    OWN declared `files` and nothing else. So every path this generator moves is
+    owned by construction, and the two readings coincide - which is a property of
+    the fixture rather than of the rule, and the day the generator learns to move
+    somebody else's file this argument stops holding and the comparison in
+    `tests/test_gen_demo_manifest.py` is what will say so.
     """
     if failed:
         return "failed"
     if ran_total == 0:
         return "no-checks"
+    if mutated:
+        return "gate-mutated"
     return "passed"
 
 

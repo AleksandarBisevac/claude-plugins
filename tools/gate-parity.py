@@ -1123,6 +1123,12 @@ AUDITED_EXEMPTIONS = {
     # excuses is still stated - so the table cannot go stale quietly, and a rule
     # that gains a hook has to leave it.
     "ADVISORY": ("reason", "prohibition_drift"),
+    # The sections of `orchestrator.md` that carry no anchor, each with why. F282
+    # measured the document at one anchored sentence in fourteen sections, so what
+    # this table has to stop is the honest subset quietly becoming the whole file
+    # again: a section that GAINS an anchor must leave here, and a reason a reader
+    # cannot disagree with is not a reason.
+    "UNANCHORED_SECTIONS": ("reason", "claim_drift"),
     "SHARED_CONCERNS": ("live", "shared_concern_violations"),
     "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
     "SCRATCH_EXEMPT": ("live", "scratch_isolation"),
@@ -1162,6 +1168,12 @@ NOT_AN_EXEMPTION = {
     "FINDINGS": "what each release-publication finding means, printed with it",
     "_ALWAYS": "a RULE table, and the opposite of an exemption: every row is a "
                "history rewrite this hook always refuses, with the why it prints",
+    "LIST_ANCHORS": "a RULE table too, and the opposite of an exemption twice over: "
+                    "each row DERIVES a vocabulary from the enum that owns it and "
+                    "requires a section of `orchestrator.md` to name every member, "
+                    "in both directions - so a row adds a thing the document must "
+                    "do rather than excusing it from one, and the reason on each "
+                    "row says which enum is the authority",
     "_PANEL_FILES": "the panel's own local files, with the remedy the doctor prints "
                     "when one is tracked - subjects of a check, not excuses from it",
     "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "
@@ -1176,18 +1188,60 @@ NOT_AN_EXEMPTION = {
 _REASON_MIN = 30
 
 
+def _module_sentences(tree):
+    """`{name: text}` for every module-level `NAME = "a long enough sentence"`.
+
+    A REASON MAY BE SHARED, and until F282's guard rework nothing here could see
+    one that was. `guard-history-rewrite.py` names its refusal sentences once and
+    reads each from TWO places - the regex fallback table and the tokenized arm -
+    so duplicating the text would be the defect this repository names most often.
+    The cost was silent: `_reason_table_names` matched only literal values, so the
+    day those sentences moved into constants `_ALWAYS` stopped being a reason table
+    and dropped out of the exemption audit with nothing to say so. A blind spot that
+    swallows a table is worse than a table that fails loudly, which is why this
+    resolves the name rather than asking the hook to repeat itself.
+    """
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        value = node.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found[target.id] = value.value
+    return found
+
+
+def _sentence_text(node, shared):
+    """The string a table's sentence slot holds, or None when it is not one.
+
+    A literal, or a module constant resolved through `shared`. None rather than ""
+    on purpose: an empty string and "this slot is not a sentence" are different
+    answers, and a caller comparing against `_REASON_MIN` would fold them together.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return shared.get(node.id)
+    return None
+
+
 def _reason_table_names(source):
     """Every module constant in `source` shaped `{subject: sentence}`.
 
     Both spellings the tree uses: a dict, and a tuple/list of pairs whose LAST
     element is the sentence. Read from the AST, so a name assembled at runtime or
-    mentioned in a comment is not one.
+    mentioned in a comment is not one. A sentence may also be a module constant
+    rather than a literal - see `_module_sentences` for why that had to be read.
     """
     out = []
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return out
+    shared = _module_sentences(tree)
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
@@ -1207,8 +1261,8 @@ def _reason_table_names(source):
             sentences = [e.elts[-1] for e in value.elts]
         if not sentences:
             continue
-        if all(isinstance(s, ast.Constant) and isinstance(s.value, str)
-               and len(s.value) >= _REASON_MIN for s in sentences):
+        texts = [_sentence_text(s, shared) for s in sentences]
+        if all(t is not None and len(t) >= _REASON_MIN for t in texts):
             out.append(name)
     return out
 
@@ -2130,6 +2184,27 @@ def _cases(check):
           and "ABSENT_BY_DESIGN" in _ea_tables
           and "FIELD_HELP" in _ea_tables,
           repr(sorted(_ea_tables)[:6]))
+    # ea2b. A REASON MAY BE SHARED, and this is the case that stops the derivation
+    # losing a table the day it is. `_ALWAYS` names its refusal sentences as module
+    # constants because the tokenized arm and the regex fallback must give the SAME
+    # reason - duplicating the text would be the defect this repo names most often.
+    # The literal-only reader dropped it silently, so `ea1` went on reporting a
+    # clean classification over a set one table smaller. A fixture proves the
+    # resolution rather than the real file alone, because the real file is free to
+    # stop sharing and this rule is about the SHAPE.
+    _ea_shared = _reason_table_names(
+        'WHY_ONE = "a sentence long enough to be a reason and not a label"\n'
+        'WHY_TWO = "a second sentence, equally long, equally not a label"\n'
+        "SHARED_REASONS = ((1, WHY_ONE), (2, WHY_TWO))\n")
+    _ea_unresolvable = _reason_table_names(
+        "SHARED_REASONS = ((1, WHY_MISSING), (2, WHY_ALSO_MISSING))\n")
+    check("ea2b ...and a table whose sentences are module CONSTANTS rather than "
+          "literals is still one, because a reason two readers share may not be "
+          "written twice - while a name that resolves to nothing is NOT a reason "
+          "table, so the resolution cannot become a way in for any tuple: %r / %r"
+          % (_ea_shared, _ea_unresolvable),
+          _ea_shared == ["SHARED_REASONS"] and _ea_unresolvable == []
+          and "_ALWAYS" in _ea_tables)
     _ea_expect = sorted(set(_ea_tables) - {"AUDITED_EXEMPTIONS",
                                            "NOT_AN_EXEMPTION"})
     check("ea3 a table in NEITHER classification is reported, which is how one "

@@ -465,7 +465,8 @@ report, because `git switch -c` is about to fail anyway.
 
 **A failed run is never committed by a task commit, and that is the whole problem.** A red gate
 leaves the task `in_progress` and commits nothing; an infrastructure failure stops; sign-off only
-commits once every gate is green. So `failed`, `timed-out`, `cancelled` and `could-not-run`
+commits once every gate is green. So `failed`, `gate-mutated`, `no-checks`, `timed-out`,
+`cancelled` and `could-not-run`
 evidence can sit in a working tree forever — exactly the history the record exists to keep.
 
 **The gap is narrower than "every failure", which is why this is rare.** A task commit stages the
@@ -779,6 +780,14 @@ step happens** so a long run stays legible (not one dump at the end):
   `[MERGE] ff failed — <no-ff|stopped>`).
 
 Use simple ASCII markers (`>` `[OK]` `[FAIL]` `-`) so it reads in any terminal. Keep each line to one sentence.
+
+**A phase run is not finished while its lock is held and a task is ready.** Between waves that is the
+only thing that decides whether you are done: re-read the ready list before ending a turn, and if it
+is non-empty the run continues — naming the next wave is not running it.
+`/audit:status --gate --fail-on unfinished-run` asks the same question from outside, and it fails a
+run that stopped here. This is written down because it happened: a run with twenty ready tasks
+committed wave 1 of eight, reported which four came next, and sat idle for a day with its lock still
+held and nothing refusing anything.
 
 **What NOT to lay out by hand.** The *entry view* is already rendered: run
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> [--phase <id>]`

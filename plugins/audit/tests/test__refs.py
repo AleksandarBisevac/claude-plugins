@@ -2779,6 +2779,61 @@ def _cases(check):
                    else _tk_flags.get(v)) or ())))
     _pf_resolved = sorted((v, n) for v in _AT_WRITERS for n in _AT_WRITERS[v]
                           if _at_reads(_at_src, n) is None)
+    # --- F294: the plugin's own prescribed `tests.add` entries -------------------
+    # THE RULE REACHED THIS PLUGIN'S OWN WORKFLOW AND THE CORPUS COULD NOT SEE IT.
+    # `_manifest_phases` warns when a live `tdd` task's `tests.add` entry names no
+    # file, and it was measured against the manifests this repository SHIPS - where
+    # every entry it reaches is an exempt settled task. What it was not measured
+    # against is the entries the COMMANDS generate: `commands/bug.md` prescribed the
+    # literal `"repro test that FAILS on current code: <expected> vs <actual>"`, so
+    # every `/audit:bug fix` task the plugin's own prose produced drew the warning.
+    # `commands/init.md` and `agents/audit-explorer.md` had the same shape through
+    # the explorer's free-prose `suggestedTests`. A rule measured only against a
+    # corpus is measured against half of its input.
+    #
+    # THE LEADING TOKEN IS WHAT IS GRADED, not the whole template: a prescription is
+    # a template, `<testFile>` is a placeholder the caller substitutes, and no
+    # placeholder parses as a path. What CAN be graded is that the part before the
+    # first `: ` is one token - a path or a placeholder standing in for one - rather
+    # than the sentence that used to sit there.
+    _ta_ex = re.compile(r'add: \[\s*"([^"]+)"')
+    _ta_docs = ("commands/bug.md", "commands/init.md", "commands/task.md",
+                "commands/phase.md", "commands/run.md", "commands/propose.md",
+                "reference/manifest-conventions.md",
+                "reference/orchestrator.md", "agents/audit-explorer.md")
+    _ta_found, _ta_prose = [], []
+    for _tarel in _ta_docs:
+        for _taentry in _ta_ex.findall(_product_doc(_tarel)):
+            _ta_found.append((_tarel, _taentry))
+            _talead = _taentry.split(":", 1)[0]
+            if ":" not in _taentry or " " in _talead.strip():
+                _ta_prose.append((_tarel, _taentry[:60]))
+    check("ta1 every `tests.add` entry the plugin's own docs PRESCRIBE leads with "
+          "one token before the colon - a path, or a placeholder standing in for "
+          "one - and never a sentence. `commands/bug.md` prescribed a whole clause "
+          "there, so every fix task /audit:bug materialized drew the deprecation "
+          "the plugin itself ships: %r" % (_ta_prose,),
+          _ta_prose == [])
+    check("ta1b ...over prescriptions it actually FOUND, since an empty sweep "
+          "satisfies the line above while reading nothing - and `bug.md` is named "
+          "because that is the one the review caught: %r" % (_ta_found,),
+          _ta_found != []
+          and any(rel == "commands/bug.md" for rel, _e in _ta_found))
+    # AND THE INSTRUCTION, not only the example. The three docs that hand a model
+    # `tests.add` values have to SAY the leading path is load-bearing, or the next
+    # author writes prose again and the example alone will not stop them.
+    _ta_told = dict(
+        (rel, ("fileIndex" in _product_doc(rel)
+               and ("<path>: <what it asserts>" in _product_doc(rel)
+                    or "<testFile>: " in _product_doc(rel))))
+        for rel in ("commands/bug.md", "commands/init.md",
+                    "agents/audit-explorer.md"))
+    check("ta2 ...and each of the three docs that hands a model `tests.add` values "
+          "SAYS why the leading path matters, naming `fileIndex` - the example is "
+          "what a careful reader copies and the reason is what stops the next one "
+          "inventing prose: %r" % (_ta_told,),
+          all(_ta_told.values()))
+
     check("pf2 ...over a flag set and a writer table that both actually resolved, "
           "AND over an AST every writer could be found in - "
           "a renamed function or an unparsed dest map would leave pf1 green over "

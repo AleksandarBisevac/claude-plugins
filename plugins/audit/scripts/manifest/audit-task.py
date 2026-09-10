@@ -17,12 +17,12 @@ Usage:
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>"
+  audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py cancel <id> --reason "<why>" [manifest]
+  audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py scope <taskId> [manifest] [--files f1,f2]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
@@ -30,7 +30,8 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
-                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT]
+                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT|-]
+                [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
@@ -42,6 +43,10 @@ Usage:
   means "unconsidered" and is written as [] (the area default stays in
   force). A skill literally named "null" cannot be spelled from this flag;
   no such skill exists. --tests-add and --gate repeat (one value each).
+  A --tests-add value reaches `files` through the PATH it names, written as
+  "<path>: <what it asserts>" (F294); the field is free prose, so an entry
+  naming no file adds nothing and the report says which entries those were
+  rather than guessing a filename out of a sentence.
   --risk, --blocked-by and --depends-on reach `scope` as well as `add`
   (F199): the same three fields `_build_task` sets at creation, correctable
   afterwards while the task has not started -- once it has, only `--files`
@@ -55,7 +60,11 @@ Usage:
   which is where a brief goes that must reach the manifest with its
   backticks intact; a heredoc with a QUOTED word is the shell-proof form.
   A description consisting of the single character `-` cannot be spelled
-  from this flag, and is not a description.
+  from this flag, and is not a description. Every flag in PROSE_FLAGS takes
+  that `-` and is checked the same way (F293) -- `--reason`, `--outcome` and
+  `--rename` as well as `--description`. STDIN IS ONE STREAM, so at most one
+  flag per call may claim it and a call where two do is refused before
+  anything is read, naming the two.
 
 Exit codes:
   0  written, manifest valid
@@ -63,7 +72,12 @@ Exit codes:
      written), or the write itself would leave it invalid (every written file
      rolled back byte-for-byte); the findings are printed either way
   2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args,
-     or a `--description` off argv that a shell has already eaten part of
+     a `--description` off argv that a shell has already eaten part of, or a
+     flag passed to a verb that does not READ it -- one parser serves all five,
+     so argparse accepts every flag on every verb and half of those pairs used
+     to write nothing and report success (F295). The refusal names the verb
+     that does read it; `VERB_FLAGS` is the table and the suite derives the
+     same answer off this file's call graph.
   3  the index lock is held by a LIVE run (audit-lock's standard message)
   4  the index lock looks abandoned -- rerun with --takeover once a human
      has confirmed (audit-lock's standard message)
@@ -100,9 +114,11 @@ Design decisions, each mirroring a precedent rather than inventing one:
     round -- the state every long-lived plan ends in -- had three options and
     all of them were wrong: re-run init over a finished plan, pull from a
     board, or hand-edit the index and write a shard. The phase id continues the
-    sequence through `_proposals.next_phase_id` over live AND parked ids, which
-    is the same allocation `/audit:propose materialize` uses rather than a
-    second one; `--outcome` is required for `--reason`'s reason (a phase whose
+    sequence through `_proposals.next_appended_phase_id` -- the highest `P<n>`
+    plus one -- over the same live-AND-parked taken set
+    `/audit:propose materialize` allocates against, sharing the set and not the
+    rule (F296, and `_allocate_phase_id` says what sharing both cost);
+    `--outcome` is required for `--reason`'s reason (a phase whose
     success cannot be stated in a line is a phase sign-off cannot address); and
     the sharded case writes the shard the phase does not have yet plus the
     index stub that points at it, which is the half a hand-edit forgets.
@@ -116,14 +132,17 @@ Design decisions, each mirroring a precedent rather than inventing one:
     byte-for-byte and exit 1 -- this script refuses to leave an invalid
     manifest behind.
 
-  * BRIEF (F285). `--description` carries a human's own words and reaches this
-    script through a shell, which eats a backtick span before argparse sees it
-    -- silently, and usually taking the clause the author backticked BECAUSE it
-    mattered. So the flag also takes `-`, reading the brief off stdin the way
-    check-ado-item.py's `read_json` and four ADO siblings already read a payload;
-    and a value that arrives off ARGV carrying the whitespace such a deletion
-    leaves behind is refused, pointing at that route. `resolve_description` holds
-    both halves and the reasoning for refusing rather than warning.
+  * BRIEF (F285, widened to its class by F293). A flag carrying a human's own
+    words reaches this script through a shell, which eats a backtick span before
+    argparse sees it -- silently, and usually taking the clause the author
+    backticked BECAUSE it mattered. So each such flag also takes `-`, reading the
+    text off stdin the way check-ado-item.py's `read_json` and four ADO siblings
+    already read a payload; and a value that arrives off ARGV carrying the
+    whitespace such a deletion leaves behind is refused, pointing at that route.
+    `PROSE_FLAGS` is which flags those are and why the rest are not, and
+    `resolve_briefs` holds the halves: the one-stream arbitration, the refusal
+    off argv, and the NOTE on a stdin value that already has a hole in it --
+    which is not refused, because that route is the door out of a false positive.
 
   * HEAL (v0.37 A4). Reuses _panel_write._heal_phase_status on the target
     phase: a write this code makes must not persist a pending phase that
@@ -170,10 +189,18 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (areas_of: the one area resolution every surface shares)
-import _proposals             # noqa: E402  (the id allocator `/audit:propose materialize`
-#                                            uses: the lowest free P<n> over live AND
-#                                            parked ids. A second one here would be a
-#                                            second answer about which ids are taken)
+import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer to
+#                                            "does this `tests.add` entry name a file".
+#                                            A downward edge, L7 -> L3, and the parse
+#                                            lives there because the rule that REQUIRES
+#                                            the shape grades the same field this verb
+#                                            writes - two parses would be two opinions
+#                                            about what `commit_scope` then judges)
+import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose materialize`
+#                                            allocates against - live AND parked ids - plus
+#                                            the two rules over it. A second taken set here
+#                                            would be a second answer about which ids are
+#                                            taken; the rules differ on purpose, F296)
 import _status_facts          # noqa: E402  (unmet_refs: the ONE answer to "what is this
 #                                            waiting on". A downward edge, L7 -> L2, with
 #                                            precedent at audit-status.py, _invariants.py
@@ -219,6 +246,11 @@ def _union_paths(declared, extra):
     stay where they typed them, and the ones derived from `tests.add` follow. A
     `sorted(set(...))` would produce the same scope and a different document on
     every edit, which is a diff nobody can review.
+
+    `extra` IS ALREADY PATHS, and that is F294's division of labour: this joins
+    two lists of paths and `_tests_add_paths` below is the only thing that
+    decides what a `tests.add` entry names. A union that also parsed would be
+    the place a sentence got in.
     """
     out = list(declared or [])
     seen = set(out)
@@ -227,6 +259,68 @@ def _union_paths(declared, extra):
             out.append(path)
             seen.add(path)
     return out
+
+
+def _tests_add_paths(entries):
+    """`(paths, unnamed)` -- the file each `tests.add` entry names, and every
+    entry that names none.
+
+    F294. F258 unioned `tests.add` into `files` on the rule that "a tdd task
+    creates the file it names in `tests.add` by definition", and copied the WHOLE
+    STRING to do it. The premise is false of the field: the schema documents
+    `tests.add` as "Assertions/tests to author" -- free prose -- so the scope
+    filled up with assertions and `fileIndex` grew keys no path can ever match.
+
+    THE SHARP HALF IS THE PERMISSION AND NOT THE POLLUTION, which is why the
+    parse is total here rather than best-effort. The union exists so
+    `_invariants.commit_scope` will allow the test file the task declares it will
+    create. When the entry is a sentence, the thing added to `files` is not that
+    path -- so the permission the union promised was never granted, in the common
+    case, and the task's own commit trips a scope the operator had just set.
+
+    AN ENTRY THAT NAMES NO FILE IS RETURNED RATHER THAN DROPPED. Every caller
+    prints it: a claim carries the basis that makes it true, and when the basis
+    is missing that is the thing to say. Falling back to the whole string is the
+    defect; falling back to a guessed leading token is the same defect one word
+    narrower; falling back to silence tells the operator their case file is in
+    scope when it is not.
+
+    THE PARSE ITSELF IS ASKED OF `_manifest_rules`, one layer down, and not
+    spelled here. That module's `_check_tests_add_shape` REQUIRES the shape of a
+    `tdd` task that can still be committed against, so the question "does this
+    entry name a file" is asked twice about the same manifest -- once by the verb
+    building `files` and once by the rule grading it. Two spellings of it would
+    be two opinions about the one thing `commit_scope` then judges.
+    """
+    paths, unnamed = [], []
+    for entry in (entries or []):
+        found = _rules.tests_add_path(entry)
+        if found:
+            paths.append(found)
+        else:
+            unnamed.append(entry)
+    return paths, unnamed
+
+
+def _unnamed_add_note(unnamed):
+    """The report line for `tests.add` entries that named no file, or None.
+
+    ONE SENTENCE, THREE WRITE SITES. `add` and the two `scope` branches all union
+    `tests.add` into `files`, so all three owe the same account of what the union
+    could NOT do -- and three spellings of it is how one of them ends up silent,
+    which is the state F294 found all three in.
+    """
+    if not unnamed:
+        return None
+    # The entries are listed rather than counted, and not because a count would
+    # rot here: a count tells the reader how much was lost and the STRINGS tell
+    # them which line to go and fix.
+    return ("  note: `files` gained nothing from these tests.add entries, "
+            "which name no file -- the field is free prose and the union can "
+            "only carry a path it can read. Write it as "
+            "\"<path>: <what it asserts>\" if the task creates that file, or "
+            "pass the path to --files: %s"
+            % (", ".join(repr(e) for e in unnamed),))
 
 
 def _parse_skills(val):
@@ -313,8 +407,66 @@ def shell_eaten_gap(text):
     return None
 
 
-def read_brief(value, stream=None):
-    """(text, from_stdin, error) -- the description, off stdin when `value` is `-`.
+# EVERY FLAG WHOSE VALUE IS THE OPERATOR'S OWN PROSE (F293). F285 fixed
+# `--description` and left the class, which is what this table is. `--reason` is the
+# sharpest of the rest: F191 made it a VERBATIM field precisely so nobody would
+# paraphrase it, so a clause a shell deleted out of one is silent BY DESIGN -- it
+# reaches `outcome.descriptive` or a phase `summary`, and a `task.cancel` row in the
+# hash-chained journal then attests it. `--outcome` is a phase's `desiredOutcome`,
+# which sign-off has to address; `--rename` is a phase title, which
+# `_branch.slugify` turns into a branch name.
+#
+# WHAT IS DELIBERATELY NOT HERE, because the boundary is the half that rots.
+# `--gate` carries a COMMAND rather than prose: `make check ; true` trips the gap
+# shapes and is exactly right, so checking it would convict correct input.
+# `--files`, `--area`, `--skills`, `--blocked-by` and `--depends-on` are comma lists
+# of IDENTIFIERS, where an eaten span leaves an empty element `_split_csv` already
+# drops. `--model` and `--tests-mode` are enums argparse grades.
+#
+# MEASURED BEFORE EACH ONE WAS ADDED, over every string of its shape in this
+# repository's plan, the shipped example and the starter template -- titles,
+# outcomes, summaries, descriptions and cancel reasons alike: the gap shapes fire on
+# none of them. A guard that convicts the corpus it ships with is a guard somebody
+# routes around inside a day.
+PROSE_FLAGS = ("description", "reason", "outcome", "rename")
+
+# ...AND THE TITLE, WHICH IS NOT A FLAG AT ALL. The first draft of F293 closed the
+# class for flags and left this, which put the guard on the CORRECTION path and not
+# on the path where a title first reaches the manifest: `retarget --rename "$T"`
+# refused a run of spaces while `add-phase "$T"` and `add "$T"` wrote the same
+# string verbatim. `_branch.slugify` derives the branch name from a phase title,
+# which is the argument for checking `--rename` read one door earlier.
+#
+# PER VERB, because the same positional is not the same field. `args.title` is the
+# TITLE for `add` and `add-phase` and the ID for `cancel`, `scope` and `retarget` --
+# an id is not prose, and `- ` in an id slot would mean reading an id off stdin,
+# which is not a thing. So the door and the check follow the verb, exactly as
+# `VERB_FLAGS` does one question over.
+#
+# IT NEEDS ITS OWN LABEL. `option_dests()` leaves positionals out on purpose (an
+# F295 reason: there is no way to pass a positional to the wrong verb, so there is
+# nothing to refuse), so a message about this one cannot name a `--flag` that does
+# not exist -- `--title` in particular is REFUSED by argparse, and `rn4` pins that.
+PROSE_POSITIONAL = {"add": "title", "add-phase": "title"}
+_POSITIONAL_LABEL = {"title": "the <title> argument"}
+
+
+def prose_labels(verb):
+    """{dest: what to CALL it} for every prose value `verb` carries.
+
+    The flags name themselves off the parser; the positional cannot, and the
+    label is what a refusal has to say instead of inventing a flag.
+    """
+    labels = option_dests()
+    out = dict((dest, labels[dest]) for dest in PROSE_FLAGS if dest in labels)
+    positional = PROSE_POSITIONAL.get(verb)
+    if positional:
+        out[positional] = _POSITIONAL_LABEL[positional]
+    return out
+
+
+def read_brief(value, flag, stream=None):
+    """(text, from_stdin, error) -- the value, off stdin when `value` is `-`.
 
     ONLY THE TRAILING NEWLINES ARE DROPPED, and only those. A heredoc always ends
     in one and nobody means it as part of the brief; a trailing SPACE, by contrast,
@@ -323,6 +475,10 @@ def read_brief(value, stream=None):
     escape from the check above -- text that comes in this way comes in verbatim,
     so an operator whose brief genuinely holds one of the shapes has somewhere to
     put it.
+
+    `flag` RIDES EVERY MESSAGE (F293). One route now serves every flag in
+    `PROSE_FLAGS`, and a refusal naming `--description` to somebody who typed
+    `--reason` is a refusal that sends them looking at the wrong argument.
     """
     if value != "-":
         return value, False, None
@@ -330,83 +486,176 @@ def read_brief(value, stream=None):
     try:
         text = src.read()
     except Exception as exc:                  # a closed or unreadable stdin
-        return None, True, ("[audit-task] --description - was given and stdin "
-                            "could not be read: %s" % (exc,))
+        return None, True, ("[audit-task] %s - was given and stdin "
+                            "could not be read: %s" % (flag, exc))
     text = text.rstrip("\n")
     if not text.strip():
         return None, True, (
-            "[audit-task] --description - was given and stdin held no text, so "
-            "there is no brief to write -- and a description silently written "
+            "[audit-task] %s - was given and stdin held no text, so "
+            "there is nothing to write -- and a value silently written "
             "empty is the fault this route exists to fix, one step further on. "
             "Pipe the text in, or use a heredoc:\n"
-            "    ... --description - <<'BRIEF'\n"
-            "    the description, backticks and all\n"
-            "    BRIEF")
+            "    ... %s - <<'BRIEF'\n"
+            "    the text, backticks and all\n"
+            "    BRIEF" % (flag, flag))
     return text, True, None
 
 
-def brief_gap_refusal(what, excerpt):
-    """The refusal for a `--description` that reached argv with a hole in it.
+def brief_gap_refusal(flag, what, excerpt):
+    """The refusal for a prose flag that reached argv with a hole in it.
 
     It has to say WHAT WAS SEEN and WHAT TO DO, because a reader told only that
     their input was malformed retypes the same command -- and the same shell eats
     the same clause a second time.
     """
     return (
-        "[audit-task] --description carries %s, which is what a shell leaves "
+        "[audit-task] %s carries %s, which is what a shell leaves "
         "behind when it eats part of an argument: inside double quotes a "
         "backtick span is COMMAND SUBSTITUTION, so the words between the "
         "backticks are RUN and replaced by their output -- for prose, by "
         "nothing. Seen at: %r\n"
-        "  Refused rather than written, because the brief that would reach the "
+        "  Refused rather than written, because the text that would reach the "
         "manifest is missing exactly the clause its author thought worth "
         "quoting, and no reader downstream can tell that from ordinary prose.\n"
-        "  Pass the brief on stdin instead, which no shell rewrites and this "
+        "  Pass it on stdin instead, which no shell rewrites and this "
         "writes through unchanged:\n"
-        "    ... --description - <<'BRIEF'\n"
-        "    the description, backticks and all\n"
+        "    ... %s - <<'BRIEF'\n"
+        "    the text, backticks and all\n"
         "    BRIEF\n"
         "  QUOTE the heredoc word ('BRIEF'): an unquoted <<BRIEF expands its "
-        "body exactly as the double quotes did. Text arriving on stdin is not "
-        "checked for this, so if the whitespace is what you meant, that route "
-        "writes it as you typed it." % (what, excerpt))
+        "body exactly as the double quotes did. Text arriving on stdin is never "
+        "REFUSED for this -- it is written as you typed it, with a note saying "
+        "what was seen -- so if the whitespace is what you meant, that route is "
+        "still the way in." % (flag, what, excerpt, flag))
 
 
-def resolve_description(args, out, stream=None):
+def stdin_gap_note(flag, what, excerpt):
+    """The NOTE for prose that arrived on stdin already carrying a gap.
+
+    A NOTE AND NOT A REFUSAL, and that is a decision rather than an omission.
+    The stdin route is the door out of a false positive: text arriving this way
+    is written exactly as it was typed, whatever shape it holds, because a guard
+    with no door is the guard this repository has three fault entries about and
+    which was routed around every time.
+
+    BUT SILENCE THERE LEFT ONE MEASURED HOLE. `--description - <<BRIEF` with an
+    UNQUOTED heredoc word expands its body exactly as double quotes do, so the
+    shell eats the clause BEFORE this reads it -- and the route advertised as
+    the repair delivers the damaged text with exit 0. Refusing would close the
+    door; saying nothing left the one case where the hole bites indistinguishable
+    from a brief somebody meant. So the run continues and the reader is told, at
+    the moment the evidence exists, with the two readings side by side.
+    """
+    return (
+        "[audit-task] note: the text on stdin for %s carries %s. Seen at: %r\n"
+        "  It is being written VERBATIM, because stdin is the way out of a "
+        "false positive and a guard with no door gets routed around -- so if "
+        "that whitespace is what you meant, nothing here is wrong.\n"
+        "  But if you wrote the heredoc word UNQUOTED (`<<BRIEF`), the shell "
+        "expanded the body exactly as double quotes would and the clause was "
+        "already gone before this read it. Quote it (`<<'BRIEF'`) and run "
+        "again." % (flag, what, excerpt))
+
+
+def stdin_contest_refusal(claiming, flags):
+    """The refusal for more than one flag claiming `-` in one call.
+
+    STDIN IS ONE STREAM, and more than one flag on this parser can ask for it:
+    `add-phase` takes `--description` and `--outcome`, `retarget` takes those two
+    and `--rename`. Whichever the code happened to resolve first would get the
+    whole stream and the others would get nothing -- one operator's brief written
+    into another field, verbatim, with a journal row attesting it.
+
+    NAMING THE COMPETITORS IS THE MESSAGE. The caller has to choose which flag
+    the stream belongs to, and they cannot choose between flags nobody listed.
+    """
+    return (
+        "[audit-task] %s each claim stdin with `-`, and stdin is one stream -- "
+        "whichever was read first would take the whole of it and the rest would "
+        "get nothing. Refused before reading, so nothing was consumed. Pass ONE "
+        "of them as `-` and give the others their text on the command line "
+        "(quote it), or make two calls."
+        % (" and ".join(flags.get(d, d) for d in claiming),))
+
+
+def resolve_briefs(args, out, stream=None):
     """The exit code the run must stop on, or None to carry on.
 
-    ONE PLACE, AND BEFORE THE LOCK. Four verbs on this parser take
-    `--description` -- `add`, `add-phase`, `scope` and `retarget` -- and every one
-    of them writes the value it is handed straight into the manifest, so a check
-    living inside any of them is a check the other three do not have. Before the
-    lock because a call refused here must not cost a lock, a journal row or a
+    ONE PLACE, AND BEFORE THE LOCK. Every flag in `PROSE_FLAGS` is written
+    straight into the manifest by the verb that reads it, so a check living
+    inside any one verb is a check the others do not have -- which is F285's
+    reason, applied to the class rather than to one flag. Before the lock
+    because a call refused here must not cost a lock, a journal row or a
     rollback.
 
-    WHY THE STDIN ROUTE IS NOT CHECKED. The evidence the check reads is that a
-    shell handled the text, and the whole worth of refusing is that the way out of
-    a false positive is the route the caller should be using anyway. Checking here
-    too would take that way out away and leave a brief that genuinely contains one
-    of the shapes no way into the manifest at all -- a guard with no door, which is
-    the guard this repository has three fault entries about and which was routed
-    around each time.
+    ONLY THE FLAGS THIS VERB READS CAN GET HERE. `misplaced_flag_refusal` has
+    already run, so a prose flag carrying a value is one the verb will write --
+    which is also what makes the stdin contest below exact: the flags competing
+    for the stream are the flags that would each have used it.
 
-    An EMPTY description stays legal, on the same reasoning read the other way: a
-    task with no description shows as having none, in the manifest and on every
+    WHY THE STDIN ROUTE IS NOT REFUSED. The evidence the check reads is that a
+    shell handled the text, and the whole worth of refusing is that the way out
+    of a false positive is the route the caller should be using anyway. Refusing
+    here too would take that way out away and leave prose that genuinely
+    contains one of the shapes no way into the manifest at all. `stdin_gap_note`
+    is what stops that being silence.
+
+    An EMPTY value stays legal, on the same reasoning read the other way: a task
+    with no description shows as having none, in the manifest and on every
     surface that renders it, so it is not the silent loss this is about. What is
-    refused is a brief that still READS complete and is not.
+    refused is prose that still READS complete and is not.
     """
-    text, from_stdin, error = read_brief(args.description, stream)
-    if error:
-        out(error)
+    flags = prose_labels(args.command)
+    args.stdin_notes = []
+    carried = [dest for dest in flags
+               if isinstance(getattr(args, dest, None), str)
+               and getattr(args, dest)]
+    claiming = [dest for dest in carried if getattr(args, dest) == "-"]
+    if len(claiming) > 1:
+        # BEFORE THE READ, not after: a contest resolved by reading would have
+        # already drained the stream, so a caller who fixed the call and piped
+        # the same heredoc again would be piping into a closed door.
+        out(stdin_contest_refusal(claiming, flags))
         return E_USAGE
-    args.description = text
-    if from_stdin:
-        return None
-    gap = shell_eaten_gap(text)
-    if gap:
-        out(brief_gap_refusal(gap[0], gap[1]))
+    for dest in carried:
+        flag = flags[dest]
+        text, from_stdin, error = read_brief(getattr(args, dest), flag, stream)
+        if error:
+            out(error)
+            return E_USAGE
+        setattr(args, dest, text)
+        gap = shell_eaten_gap(text)
+        if not gap:
+            continue
+        if from_stdin:
+            # COLLECTED, NOT PRINTED, and F293 shipped the printing version:
+            # this runs BEFORE dispatch and wrote three human lines to the same
+            # stream the verb then writes its JSON to, so `--json` came back as
+            # prose followed by an object and `json.load` raised on line 1. Every
+            # other advisory in these verbs is DATA in JSON mode -
+            # `filesNotOnDisk`, `testsAddNamingNoFile` - and this is now too.
+            # The human branch prints it below, once, in the same order.
+            args.stdin_notes.append(stdin_gap_note(flag, gap[0], gap[1]))
+            continue
+        out(brief_gap_refusal(flag, gap[0], gap[1]))
         return E_USAGE
+    if not args.as_json:
+        for note in args.stdin_notes:
+            out(note)
     return None
+
+
+def stdin_notes_key(args):
+    """`{"stdinNotes": [...]}` for a verb's `--json` block, or `{}`.
+
+    ONE DEFINITION, FIVE JSON BRANCHES, spelled the way `result.update(jres)`
+    beside it already is. An advisory a human is told and a machine is not is an
+    advisory two consumers disagree about, and the key is absent rather than
+    empty when there is nothing to say - which is what lets a reader tell "no
+    note" from "this release does not have them".
+    """
+    notes = list(getattr(args, "stdin_notes", None) or [])
+    return {"stdinNotes": notes} if notes else {}
 
 
 # --- the refusals and report lines more than one verb spends ------------------
@@ -1074,8 +1323,18 @@ def _waiting_on(assembled, node):
 
 # --- the add -------------------------------------------------------------------
 def _build_task(task_id, title, args, phase):
-    """The new task, fully template-initialized -- every field from the
-    conventions' New task template, exactly once, in _TEMPLATE_KEYS order."""
+    """`(task, unnamed)` -- the new task, fully template-initialized (every field
+    from the conventions' New task template, exactly once, in _TEMPLATE_KEYS
+    order), plus the `tests.add` entries that named no file.
+
+    THE SECOND HALF IS RETURNED RATHER THAN PRINTED HERE, and rather than
+    re-derived by the caller. This function is the only place that turns
+    `--tests-add` into `files`, so it is the only place that knows which entries
+    the union could not carry; `_locked_add` is where a sentence reaches the
+    operator. Deriving it twice would be two chances for the scope written and
+    the scope explained to stop being the same one -- `_build_phase`'s note about
+    its `gate` argument, read the other way round.
+    """
     risk = args.risk or "low"
     # sonnet is the floor for all fix work; risk high escalates to opus unless
     # the caller chose explicitly (commands/task.md's long-standing rule).
@@ -1095,18 +1354,25 @@ def _build_task(task_id, title, args, phase):
         gate = []
     else:
         gate = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
-    return {
+    add_paths, unnamed = _tests_add_paths(args.tests_add)
+    task = {
         "id": task_id,
         "title": title,
         "status": "pending",
         "description": args.description or "",
         # `tests.add` IS PART OF `files`, and keeping them apart cost a real run 13
-        # hand-fixes (F258). A tdd task creates the file it names in `tests.add` by
-        # definition, so a scope that excludes it trips commit-scope on the task's
-        # own commit — and the operator who reported it put it plainly: there is no
-        # case where the divergence is wanted. Unioned rather than replaced, and the
-        # declared order is kept, so a reader still sees what the author typed first.
-        "files": _union_paths(_split_csv(args.files), args.tests_add),
+        # hand-fixes (F258). A task that names a file in `tests.add` creates it, so a
+        # scope that excludes it trips commit-scope on the task's own commit — and the
+        # operator who reported it put it plainly: there is no case where the
+        # divergence is wanted. Unioned rather than replaced, and the declared order
+        # is kept, so a reader still sees what the author typed first.
+        #
+        # THE PATH THE ENTRY NAMES, NEVER THE ENTRY (F294). F258's rule said "the file
+        # it names in `tests.add` BY DEFINITION", and the field is free prose, so what
+        # the union copied was usually a sentence: `files` filled with assertions and
+        # the permission this union exists to grant was never granted. An entry that
+        # names nothing contributes nothing and is reported instead.
+        "files": _union_paths(_split_csv(args.files), add_paths),
         "tests": {
             "mode": mode,
             "add": list(args.tests_add or []),
@@ -1127,6 +1393,7 @@ def _build_task(task_id, title, args, phase):
         "completedAt": None,
         "verifiedBy": [],
     }
+    return task, unnamed
 
 
 def _locked_add(args, project, config, mpath, title, out):
@@ -1168,7 +1435,7 @@ def _locked_add(args, project, config, mpath, title, out):
         return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id)
-    task = _build_task(task_id, title, args, phase)
+    task, unnamed_add = _build_task(task_id, title, args, phase)
     missing = [f for f in task["files"]
                if not os.path.exists(os.path.join(project, f))]
 
@@ -1213,8 +1480,14 @@ def _locked_add(args, project, config, mpath, title, out):
                   "title": title, "task": task, "written": written,
                   "healed": healed, "warnings": warnings,
                   "filesNotOnDisk": missing,
+                  # F294, as data: WHICH `tests.add` entries the `files` union
+                  # could not carry. A machine surface that reported only the
+                  # resulting `files` would show a scope with nothing wrong
+                  # with it and no way to tell that a case file is outside it.
+                  "testsAddNamingNoFile": list(unnamed_add),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
+        result.update(stdin_notes_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
@@ -1243,6 +1516,9 @@ def _locked_add(args, project, config, mpath, title, out):
         out(_empty_task_gate_note(False))
     if task["files"]:
         out("  files: %d (fileIndex updated)" % len(task["files"]))
+    unnamed_note = _unnamed_add_note(unnamed_add)
+    if unnamed_note:
+        out(unnamed_note)
     for fpath in missing:
         out("  note: not on disk (a new file?): %s" % fpath)
     for row in healed:
@@ -1392,6 +1668,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
                   "reason": reason, "at": now, "cascaded": cascaded,
                   "written": written, "warnings": warnings}
         result.update(jres)
+        result.update(stdin_notes_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
@@ -1470,14 +1747,24 @@ def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
 
 
 def _allocate_phase_id(assembled):
-    """The lowest free `P<n>`, counting live ids AND every parked reservation.
+    """The highest `P<n>` in use plus one, over live ids AND every parked
+    reservation.
 
-    `_proposals.next_phase_id` over `live_ids | parked_ids` -- the SAME pair
-    `/audit:propose materialize` allocates against. A second expression of "which
-    phase ids are taken" would eventually hand this verb an id materialization
-    had already promised to a payload."""
+    ONE TAKEN SET, TWO RULES, and F58's comment above was right about the first
+    half and wrong about the second. `live_ids | parked_ids` is the SAME pair
+    `/audit:propose materialize` allocates against, because a second expression
+    of "which phase ids are taken" would eventually hand this verb an id
+    materialization had already promised to a payload. But the RULE over that
+    set is `next_appended_phase_id` and not materialize's
+    `next_phase_id`: filling a gap is harmless when re-placing a payload whose
+    id collided, and F296 is what it cost here. Measured on a copy of this
+    repository's own plan, consecutive calls to this verb returned `P0`, then
+    `P30`, then `P32` -- and `P30` at that moment named four live branches and
+    two merges into `main`, which `meta.branch` would have derived again from
+    the id this handed back.
+    """
     taken = _proposals.live_ids(assembled) | _proposals.parked_ids(assembled)
-    return _proposals.next_phase_id(taken)
+    return _proposals.next_appended_phase_id(taken)
 
 
 def _phase_id_refusal(assembled, raw_index, pid):
@@ -1680,6 +1967,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
                   "testGateBasis": gate_basis,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
+        result.update(stdin_notes_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] phase %s added -- %s" % (pid, title))
@@ -1924,15 +2212,38 @@ def _locked_scope(args, project, config, mpath, tid, out):
     prior_tests = prior_tests if isinstance(prior_tests, dict) else {}
     was_gate = list(prior_tests.get("gate") or [])
     was_add = list(prior_tests.get("add") or [])
+    # F294, computed here rather than in each branch below because BOTH of them
+    # union `tests.add` into `files` and the note they owe is one note.
+    #
+    # OVER THE ENTRIES THIS CALL ACTUALLY CONSULTS, which is not the same as "the
+    # task's `tests.add`". `--files` REPLACES the list and unions the task's
+    # CURRENT entries back in, so those are what it read; `--tests-add` replaces
+    # the entries themselves, so the NEW ones are what it read. A call passing
+    # both reads both lists, and a call passing only `--tests-add` must not
+    # report entries it has just replaced - naming a string no longer in the
+    # manifest is a basis pointing at something the reader cannot find.
+    #
+    # DEDUPED, ORDER KEPT. A re-scope that passes an entry the task already
+    # carries consults it twice - once through `was_add`, once through
+    # `--tests-add` - and `_unnamed_add_note` lists the STRINGS so the reader
+    # knows which line to go and fix. Naming one line twice makes them count
+    # instead of read.
+    consulted = []
+    for entry in (list(was_add) if files else []) + list(args.tests_add or []):
+        if entry not in consulted:
+            consulted.append(entry)
+    unnamed_add = _tests_add_paths(consulted)[1]
     changes = []
     if files:
-        # `files` ⊇ `tests.add` IS AN INVARIANT, not a courtesy at creation (F258).
-        # `--files` REPLACES the list, so without this a later re-scope silently
-        # released the very case file the task is still declared to create, and the
-        # next commit tripped commit-scope for a scope the operator had just fixed.
-        # The task's CURRENT `add` is used, because `--tests-add` in the same call
-        # is applied below and unions again there.
-        files = _union_paths(files, was_add)
+        # `files` ⊇ the paths `tests.add` NAMES is an invariant, not a courtesy at
+        # creation (F258, narrowed by F294). `--files` REPLACES the list, so without
+        # this a later re-scope silently released the very case file the task is
+        # still declared to create, and the next commit tripped commit-scope for a
+        # scope the operator had just fixed. The task's CURRENT `add` is used,
+        # because `--tests-add` in the same call is applied below and unions again
+        # there -- and only the PATH each entry names is carried, since the field is
+        # free prose and copying a sentence in grants no permission at all.
+        files = _union_paths(files, _tests_add_paths(was_add)[0])
         # F202. F197's class one field over, and not named by that entry: the row
         # went in under a bare `if files:`, so re-scoping to the list the task
         # already held printed and journaled `files: [...] -> [...]`. The chain
@@ -1986,12 +2297,14 @@ def _locked_scope(args, project, config, mpath, tid, out):
                             "from": was_add, "to": now_add})
         tests["add"] = now_add
         # ...and into `files` here too (F258), for `_build_task`'s reason: a case
-        # named by `tests.add` is a file this task creates, and a scope that omits
-        # it fails the task's own commit. `scope` is the verb an operator reaches
-        # for when reality differed from the plan, so it is the LAST place that
-        # should hand back a scope it knows to be short.
+        # whose PATH `tests.add` names is a file this task creates, and a scope that
+        # omits it fails the task's own commit. `scope` is the verb an operator
+        # reaches for when reality differed from the plan, so it is the LAST place
+        # that should hand back a scope it knows to be short -- which is exactly
+        # what F294 made it do, since a sentence unioned in is not the path
+        # `commit_scope` will be looking for.
         was_files = list(node.get("files") or [])
-        now_files = _union_paths(was_files, now_add)
+        now_files = _union_paths(was_files, _tests_add_paths(now_add)[0])
         if was_files != now_files:
             changes.append({"id": tid, "field": "files",
                             "from": was_files, "to": now_files})
@@ -2112,8 +2425,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   # of `recorded_attempt` collapse into two.
                   "widened": started,
                   "attempt": _mio.recorded_attempt(node),
+                  # F294's basis, on this surface too: `changes` shows the
+                  # `files` list that resulted, and nothing in it says a case
+                  # file the task declares is outside it.
+                  "testsAddNamingNoFile": list(unnamed_add),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
+        result.update(stdin_notes_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s scoped in %s" % (tid, phase_id))
@@ -2159,6 +2477,12 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # this task runs none of its own and the phase's is what still grades it.
         # Silence would leave a designed state to read as breakage.
         out(_empty_task_gate_note(True))
+    unnamed_note = _unnamed_add_note(unnamed_add)
+    if unnamed_note:
+        # BEFORE the index lines, because it is about what did NOT reach the
+        # index: a reader who has just been told the index was re-derived and
+        # what it now claims has already formed the belief this line corrects.
+        out(unnamed_note)
     if released:
         out("  fileIndex re-derived -- released by this task: %s"
             % ", ".join(released))
@@ -2353,6 +2677,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         result = {"ok": True, "id": pid, "changes": changes,
                   "written": written, "warnings": warnings}
         result.update(jres)
+        result.update(stdin_notes_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s retargeted" % (pid,))
@@ -2435,7 +2760,67 @@ def cmd_add(args, out):
                            args, project, config, mpath, title, out))
 
 
-def main(argv, out=print):
+# --- which verb reads which flag (F295) ------------------------------------------
+# ONE PARSER SERVES FIVE VERBS, so argparse accepts every flag on every one of them
+# and each verb's writer reads only the subset it knows. Driven across the whole
+# grid, half the (verb, flag) pairs were accepted, wrote nothing and reported
+# success with exit 0: `scope --outcome`, `retarget --files`, `add --id`,
+# `add-phase --risk`, `add-phase --files` among them. That is the same defect F196,
+# F201 and F207 each fixed for ONE flag on ONE verb -- and `--rename` was born
+# ignored by four verbs, which is what makes it a class: a new flag inherits it by
+# existing.
+#
+# NOT SUBPARSERS. That is the obvious repair and the expensive one: it moves every
+# flag's help text, changes `--help`, and breaks the `argument-hint` shape
+# `tests/test__refs.py` parses out of both command docs. The table is the thing that
+# has to exist either way -- subparsers would BE this table, spelled in argparse.
+#
+# THE FLAGS EVERY VERB READS, spelled once. `_resolve_project` reads
+# `project_dir`, `_under_lock` reads `takeover`, and every verb's report branches
+# on `as_json`, so these are not per-verb facts: listing them five times would let
+# one verb quietly stop reading one while the table went on saying it did. The
+# suite's `vf8` asserts this is EXACTLY the intersection of the five derived sets,
+# so a flag that becomes universal cannot stay listed per verb and one that stops
+# being universal cannot stay here either.
+#
+# `command`, `title` and `manifest` are POSITIONALS and are deliberately absent:
+# there is no way to pass one to the wrong verb, so there is nothing here to
+# refuse. `option_dests()` is what draws that line, off the parser rather than by
+# this tuple remembering to leave them out.
+UNIVERSAL_FLAGS = ("project_dir", "takeover", "as_json")
+
+# ...and the rest, per verb, as DESTS rather than option strings: a dest is what the
+# code reads and what the AST derivation below sees, and the option string is
+# recovered from the parser for the message. Graded against the real dispatch by
+# `plugins/audit/tests/test_audit_task.py`'s `vf` group, which walks this file's own
+# call graph from `main`'s `doors` map -- a hand-written table nothing compares to
+# the code is the same defect one level up.
+VERB_FLAGS = {
+    "add": ("phase", "skills", "model", "files", "risk", "blocked_by",
+            "depends_on", "description", "tests_mode", "tests_add", "gate",
+            "gate_clear"),
+    "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
+                  "blocked_by", "gate", "gate_clear"),
+    "cancel": ("reason",),
+    "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
+              "description", "risk", "blocked_by", "depends_on"),
+    "retarget": ("gate", "gate_clear", "area", "outcome", "description",
+                 "rename"),
+}
+
+
+
+def build_parser():
+    """The parser, reachable without starting a process.
+
+    EXTRACTED FOR THREE READERS, and P26.1 did the same to `audit-doctor.py` for
+    the first of them. `_help.command_choice_drift` constructs a command's parser
+    and asks argparse itself which values a flag takes, and a parser built inside
+    `main()` cannot be asked; `supplied_flags` below needs a SECOND instance of
+    the same parser, and a second copy of the construction is how the two would
+    come to disagree about which flags exist; and a case can read the option
+    surface without driving a command.
+    """
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
@@ -2481,16 +2866,161 @@ def main(argv, out=print):
     p.add_argument("--review-skill", dest="review_skill", default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
+    return p
+
+
+def option_dests(parser=None):
+    """{dest: "--flag"} for every OPTION the parser declares.
+
+    Off `_actions`, which is `_help.parser_choices`' reason too: argparse is the
+    thing the command runs on, so it is the only answer that cannot be a second
+    opinion. Positionals are absent by construction -- `command`, `title` and
+    `manifest` are read by every verb's door and are not flags anybody can
+    misplace -- and so is `--help`, which argparse answers itself.
+    """
+    out = {}
+    for action in getattr(parser or build_parser(), "_actions", ()):
+        if not action.option_strings or action.dest in ("help", "==SUPPRESS=="):
+            continue
+        longest = [f for f in action.option_strings if f.startswith("--")]
+        out[action.dest] = longest[0] if longest else action.option_strings[0]
+    return out
+
+
+def supplied_flags(argv):
+    """The dests actually PRESENT in `argv`, or None if argparse could not say.
+
+    ASKED OF ARGPARSE AND NOT OF THE NAMESPACE, because a namespace cannot tell
+    `--description ""` from a `--description` nobody passed: both hold the
+    default. A second parser whose every option default is a sentinel can, and
+    it costs one parse of an argv argparse has already accepted. Abbreviations
+    (`--desc`) and the `--flag=value` spelling come out right for free, which a
+    hand scan of `argv` would each get wrong separately.
+
+    None RATHER THAN AN EMPTY SET on a parse the probe rejects: empty would mean
+    "no flags were passed", which is the answer that lets every misplaced flag
+    through. The caller refuses instead.
+
+    THAT BRANCH IS DEFENSIVE AND `main` CANNOT REACH IT, said here because a
+    reader owes no time to working out why there is no case for it there.
+    Measured: the probe is the same parser over an argv the real parse has
+    already accepted, so the only argv it rejects (`--gate --json`, where a
+    flag's value looks like a flag) is one the real `parse_args` rejects first,
+    and `main` has returned E_USAGE before this is called. It is still not
+    dropped -- a `None` the caller silently read as "no flags" is the whole
+    defect this returns None to avoid -- and `vf9` drives it by calling this
+    function directly, which is the only door it has.
+
+    THE SENTINEL IS A FRESH LIST PER FLAG, AND ITS IDENTITY IS THE ANSWER. Two
+    of argparse's own mechanics decide that. An `append` action APPENDS to its
+    default, so a sentinel it cannot append to raises inside argparse; and a
+    STRING default is passed through `type` on its way into the namespace, so a
+    sentinel spelled as text would be graded against `choices` on the flags
+    that declare them. A list is safe on both counts, argparse copies it before
+    appending, and it sets an untouched default by reference -- so "the
+    namespace still holds THIS object" is exactly "the flag was not passed".
+    """
+    probe = build_parser()
+    marks = {}
+    for action in getattr(probe, "_actions", ()):
+        if action.option_strings:
+            marks[action.dest] = []
+            action.default = marks[action.dest]
+    try:
+        parsed = probe.parse_args(argv)
+    except SystemExit:
+        return None
+    return set(dest for dest in option_dests(probe)
+               if getattr(parsed, dest, None) is not marks.get(dest))
+
+
+def readers_of(dest):
+    """The verbs that read `dest`, in the order `VERB_FLAGS` declares them."""
+    if dest in UNIVERSAL_FLAGS:
+        return sorted(VERB_FLAGS)
+    return [verb for verb in sorted(VERB_FLAGS) if dest in VERB_FLAGS[verb]]
+
+
+def misplaced_flag_refusal(verb, supplied, flags=None):
+    """The refusal for flags `verb` does not read, or None when there are none.
+
+    EVERY MISPLACED FLAG, not the first one. `shell_eaten_gap` reports one hole
+    and stops because a list there invites the reader to grade a severity that
+    does not exist; here each flag names a DIFFERENT verb as the one that reads
+    it, so a list is one round trip instead of one per flag.
+
+    A FLAG NO VERB READS IS SAID DIFFERENTLY, and loudly. It is not a mistake in
+    the call -- the caller cannot have got it right -- so the sentence points at
+    the table rather than at them. What stops that line being reachable is the
+    `vf` group in `plugins/audit/tests/test_audit_task.py`, which derives each
+    verb's reads off this file's own call graph and demands equality with
+    `VERB_FLAGS` -- and the line exists anyway, because a check with no output
+    for its own broken state is how a table stops meaning anything.
+
+    NAMED AS WHAT IT IS. This paragraph and the message below both used to cite
+    a `verb_flag_drift()` that was never written, which is F298's exact class:
+    a comment naming a function, read as a promise that something checks this,
+    with nothing behind it.
+    """
+    flags = flags if flags is not None else option_dests()
+    known = set(VERB_FLAGS.get(verb) or ()) | set(UNIVERSAL_FLAGS)
+    stray = sorted(d for d in (supplied or ()) if d not in known)
+    if not stray:
+        return None
+    lines = ["[audit-task] `%s` does not read %s -- one parser serves every "
+             "verb, so argparse accepted %s and the verb's writer would never "
+             "have looked at %s. Nothing was written."
+             % (verb, ", ".join(flags.get(d, d) for d in stray),
+                "them" if len(stray) > 1 else "it",
+                "them" if len(stray) > 1 else "it")]
+    for dest in stray:
+        who = [v for v in readers_of(dest) if v != verb]
+        if who:
+            lines.append("  %s is read by: %s"
+                         % (flags.get(dest, dest),
+                            ", ".join("`%s`" % v for v in who)))
+        else:
+            lines.append("  %s is read by NO verb on this parser, which is a "
+                         "hole in `VERB_FLAGS` rather than a mistake in your "
+                         "call -- please report it" % (flags.get(dest, dest),))
+    return "\n".join(lines)
+
+
+def main(argv, out=print):
+    p = build_parser()
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
-    # F285, and it runs for EVERY verb because the parser is global: `cancel` does
-    # not read a description, but a caller who passes one to it should not be told
-    # a different story about the same flag by a different verb.
-    stop = resolve_description(args, out)
+    # F295, and it comes FIRST because it is the cheapest true thing that can be
+    # said about this call: a flag the verb does not read is a usage error whatever
+    # its value, and asking about the VALUE of a flag nothing will read would be
+    # grading input that has no reader.
+    supplied = supplied_flags(argv)
+    if supplied is None:
+        # A parse argparse has already accepted must parse again. Saying so beats
+        # continuing with an empty census, which reads as "no flags were passed"
+        # and lets every misplaced flag through.
+        out("[audit-task] the flag census could not re-read this invocation, so "
+            "which verb reads which flag cannot be checked -- refusing rather "
+            "than writing on an unchecked call")
+        return E_USAGE
+    misplaced = misplaced_flag_refusal(args.command, supplied)
+    if misplaced:
+        out(misplaced)
+        return E_USAGE
+    # F285 widened to its class by F293: every flag carrying the operator's own
+    # prose, for the verbs that read it. It used to run for every verb on the
+    # argument that a caller passing `--description` to `cancel` should not be told
+    # a different story about the same flag by a different verb -- and the story
+    # they are told now is the true one, from the check above, which is that the
+    # verb never reads it.
+    stop = resolve_briefs(args, out)
     if stop is not None:
         return stop
+    # THE DISPATCH `VERB_FLAGS` IS GRADED AGAINST. `vf` in the suite reads this
+    # map out of the AST and walks the call graph from each door, so the table and
+    # the doors cannot describe different verbs.
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget}

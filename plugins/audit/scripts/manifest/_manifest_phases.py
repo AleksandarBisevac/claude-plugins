@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-The one walk over every phase and every task, and the three checks it makes on
-the way.
+The one walk over every phase and every task, and the checks it makes on the way.
 
 Split out of `_manifest_rules.py`. This is the half of that file's
 `# --- validate: one walk ---` seam that PRODUCES the index rather than reading
@@ -20,6 +19,17 @@ is their only caller and a phase is their only subject. `_check_areas` is the
 odd one - it is called by `validate()` directly rather than from inside the
 loop, because two of its three questions are about the REGISTRY (`meta.areas`)
 rather than about any one phase.
+
+`tests_add_path` lives here for a DIFFERENT reason, and it is the only name in
+this module a caller outside validation reads: `audit-task.py` asks it which
+path a `tests.add` entry puts into a task's `files`, and the walk asks it to
+require one of a `tdd` task that can still be committed against (F294, beside
+F254's rule about the same field). It is here because those two rules are what
+a reader has to compare - the first draft put the second one in
+`_manifest_rules` with a walk of its own, which was a third pass over the tasks
+and a second copy of `mode == "tdd" and status not in TERMINAL` that had
+already drifted from F254's on `expectRedFirst`. `_manifest_rules` re-exports
+the name, so no call site knows it moved.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_phases.py` - see
@@ -204,6 +214,74 @@ def _add_tracked(obj, where, findings, warnings):
     warnings.extend(tw)
 
 
+# --- what a `tests.add` entry NAMES ----------------------------------------------
+# F294. The schema documents `tests.add` as free prose, and `audit-task.py`'s `files`
+# union treated every entry as a path on F258's premise that a tdd task "creates the
+# file it names in `tests.add` by definition". True of the tasks that name one, false
+# of the field: the scope filled up with assertions and `fileIndex` grew keys no path
+# can ever match. The SHARP half was never the pollution -- the union exists so
+# `_invariants.commit_scope` will allow the file the task says it will create, and
+# when the entry is a sentence the thing added to `files` is not that path, so the
+# permission was never granted.
+#
+# IT LIVES BESIDE THE WALK, and beside F254's rule about the same field, because
+# those two are what a reader has to compare. The first draft put it in
+# `_manifest_rules` (L3) with a walk of its own, which was a THIRD pass over the
+# tasks and a second expression of `mode == "tdd" and status not in TERMINAL` -- and
+# the two had already drifted apart on `expectRedFirst` before anybody read them
+# together. `_manifest_rules` re-exports both names, so every caller and the L7 ->
+# L3 edge from `audit-task.py` are unchanged.
+_TESTS_ADD_LEAD = re.compile(r"\A\s*([^\s:]+)\s*(?::|\Z)")
+# A FILENAME, not merely something with a separator in it. `_PATHISH_EXT` wants a
+# dot followed by a letter-initial extension, and `_DOTFILE` covers the other real
+# shape - `.gitignore` and `.gitattributes` are both live `files` entries in this
+# repository's own plan and neither carries an extension.
+_PATHISH_EXT = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,7}\Z")
+_DOTFILE = re.compile(r"\A\.[A-Za-z][A-Za-z0-9_.-]+\Z")
+
+
+def tests_add_path(entry):
+    """The path a `tests.add` entry NAMES, or None when it names none.
+
+    THREE QUESTIONS, ASKED IN ORDER, and all three have to hold.
+
+    POSITION. The documented shape is `"<path>: <what it asserts>"`, so the
+    candidate is the whole entry or everything before a colon -- never a token
+    pulled out of the middle of a sentence, because a path nobody typed is the
+    same defect one word narrower. `require-plan selftests a4-a6: custom-path
+    manifest...` fails here: its leading token is followed by a word, not a
+    colon.
+
+    SEGMENTS. Every separator-delimited piece must be non-empty, which is what
+    refuses a bare `/` and a trailing-slash directory. An entry naming a
+    directory names no file, which is precisely what this is asked.
+
+    FILENAME. The LAST segment has to look like one - an extension, or a
+    dotfile. This is the bound the first draft did not have, and F294's own
+    defect one shape narrower is what its absence produced: `--tests-add "n/a"`
+    put `n/a` into `files` and into `fileIndex`, a key no path can ever match.
+    Measured over every `files` entry in the plans this repository ships, the
+    only extensionless paths are the two dotfiles, which is why that arm exists
+    and why a bare `docs/audit` does not qualify.
+
+    NONE IS AN ANSWER AND NOT A FAILURE. A caller is expected to say the entry
+    named no file rather than fall back to a default.
+    """
+    if not isinstance(entry, str) or not entry.strip():
+        return None
+    found = _TESTS_ADD_LEAD.match(entry)
+    if not found:
+        return None
+    token = found.group(1)
+    segments = re.split(r"[\\/]", token)
+    if not all(segments):
+        return None
+    leaf = segments[-1]
+    if _PATHISH_EXT.search(leaf) or _DOTFILE.match(leaf):
+        return token
+    return None
+
+
 # --- the walk --------------------------------------------------------------------
 def _walk_phases(phases):
     """One pass over every phase and every task: (index, findings, warnings).
@@ -344,6 +422,51 @@ def _walk_phases(phases):
                          "shown to have gone red. Name it with `/audit:task scope "
                          "%s --tests-add \"<case>\"`, or use mode 'regression' or "
                          "'gate-only' if no new test is owed" % (twhere, tid))
+            # F294, THE RULE ABOUT THE SAME FIELD ONE QUESTION OVER, and the two
+            # sit together so a reader can see where they differ and why.
+            #
+            # F254 above asks whether a red-first task named a case AT ALL; this
+            # asks whether the case it named can be found on disk. So this one
+            # does NOT require `expectRedFirst`, and the difference is deliberate
+            # rather than drift: `expectRedFirst` is a DERIVED field
+            # (`audit-task._build_task` writes `mode == "tdd"`), it is what
+            # declares the red-first intent F254 is about, and the `files` union
+            # this rule exists for does not read it at all. Requiring it here
+            # would let a hand-edited `expectRedFirst: false` opt a task out of a
+            # rule about a field it has no bearing on.
+            #
+            # TERMINAL IS EXEMPT, on F254's reasoning read one step further: a
+            # settled task's `tests.add` is a RECORD of work already judged, and
+            # F283 leaves its scope append-only through the verb, so a line about
+            # one names nothing anybody can act on.
+            #
+            # A WARNING THROUGH THE 2.x LINE. `COMPATIBILITY.md` promises that a
+            # manifest which validates keeps validating, and this shape was legal
+            # for a field the schema documents as prose - so the rule warns, its
+            # text names the release the refusal arrives in, and 3.0.0 is where it
+            # becomes a finding. The order is announce, then enforce.
+            if isinstance(tests, dict) and tests.get("mode") == "tdd" \
+                    and task.get("status") not in TERMINAL:
+                add_val = tests.get("add")
+                if add_val is not None and not isinstance(add_val, list):
+                    # A FINDING, and a TYPE one, which is its neighbours' shape
+                    # (`tasks must be an array`, `tests must be an object`) and
+                    # not a deprecation: the schema has always declared this an
+                    # array, so a string here never validated against it. Said
+                    # ONCE - iterating a string yields one warning per character,
+                    # which is the warning class people learn to skip.
+                    f.append("%s: tests.add must be an array, got %s"
+                             % (twhere, type(add_val).__name__))
+                for entry in _safe_list(add_val):
+                    if tests_add_path(entry) is not None:
+                        continue
+                    w.append("%s: this tests.add entry names no file, so the "
+                             "`files` union has no path to carry and "
+                             "commit-scope will refuse the case this task says "
+                             "it will create. Write it as \"<path>: <what it "
+                             "asserts>\" - THIS BECOMES A FINDING AT 3.0.0 "
+                             "(COMPATIBILITY.md -> Validation stays additive): "
+                             "%r" % (twhere, entry))
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             _check_ado(task, twhere, f)

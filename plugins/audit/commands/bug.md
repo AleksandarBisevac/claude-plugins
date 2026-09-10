@@ -52,7 +52,13 @@ Default filter: everything NOT `fixed`/`wontfix`. `list all` shows everything;
    - id `<phaseId>.<next>`; title `Fix <bugId>: <bug title>`.
    - `description` embedding the bug's repro / expected / actual verbatim.
    - `files` = bug's `files`; `bugId: "<bugId>"`.
-   - `tests: {mode: "tdd", add: ["repro test that FAILS on current code: <expected> vs <actual>"], expectRedFirst: true, gate: [<phase testGate>]}`.
+   - `tests: {mode: "tdd", add: ["<testFile>: repro that FAILS on current code — <expected> vs <actual>"], expectRedFirst: true, gate: [<phase testGate>]}`.
+     **`<testFile>` is a real repo-relative path you substitute, and it has to come
+     first.** The leading path is what joins the task's `files` and the `fileIndex`,
+     so an entry that opens with prose puts nothing there — the case file stays
+     outside the scope commit-scope grades the fix against, and the validator warns
+     (a finding from 3.0.0). Name the file the repro will live in, even when it does
+     not exist yet.
    - `risk`: bug severity high → `high`, med → `med`, else `low`.
    - `model`: `sonnet` (or stronger for `risk: "high"`).
 4. **Update the bug**: `status: "in_progress"`, `taskId: <new task id>`.

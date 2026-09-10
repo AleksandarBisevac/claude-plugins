@@ -16,6 +16,8 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import ast
 import json
 import os
+import shutil
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -35,6 +37,11 @@ import _report_html as _rhtml                      # noqa: E402
 # that moved would leave every case green while the gate read `None` off a dict
 # that no longer carried it.
 import _evidence_io as _ebio                       # noqa: E402
+# The `ur` block's locks are TAKEN, not typed. `_locks.acquire` is the writer the
+# product uses, so the block those cases grade has the shape a real run leaves on
+# disk rather than this file's memory of it - the same argument the `eb` cases
+# make about the evidence boundary one import above.
+import _locks as _lockmod                          # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -81,7 +88,11 @@ def _cases(check):
                # here: the command does not alias them, deliberately, and a
                # shared-name case that named them would be asserting an alias
                # nothing calls rather than that there is one implementation.
-               "unevidenced", "GAP_BEFORE", "GAP_SINCE", "GAP_UNDATED")
+               "unevidenced", "GAP_BEFORE", "GAP_SINCE", "GAP_UNDATED",
+               # F301's reader. The command aliases it because its gate-line
+               # renderer spells it unqualified, so it belongs on this list for
+               # the same reason every name above does.
+               "unfinished_runs")
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
     check("b1 audit-status.py re-exports all %d shared names as THIS module's "
@@ -128,6 +139,12 @@ def _cases(check):
           hasattr(_CMD, "usage_summary") and not hasattr(M, "usage_summary")
           and hasattr(_CMD, "discovery_block")
           and not hasattr(M, "discovery_block"))
+    check("b7 ...and so did every BLOCK BUILDER, F301's included. Each of the "
+          "four shells out or walks a directory, which is why the reader that "
+          "grades one lives here and the read that produces it does not - and "
+          "b3 above is what would go red if `locks_block` came down",
+          all(hasattr(_CMD, n) and not hasattr(M, n)
+              for n in ("invariants_block", "portability_block", "locks_block")))
 
     # --- the facts ------------------------------------------------------------
     m = _fixture()
@@ -251,6 +268,215 @@ def _cases(check):
           "stranded-skills" in M.CONDITIONS
           and "stranded-skills" not in M.DEFAULT_GATE)
 
+    # --- (ur) a run that stopped mid-phase: F301 -------------------------------
+    # `/audit:phase P5` means "run every ready task, then sign off". A phase
+    # planned as waves of parallel subagents committed wave one, named wave two
+    # and ENDED THE TURN. Nothing had blocked it and no gate had been asked
+    # anything - the state sat on disk, knowable, for a day.
+    #
+    # THE THIRD ROW IS THE WHOLE RISK, and it is the one these cases spend the
+    # most fixtures on: a plan with ready work and NO lock is every planned phase
+    # there has ever been. A reading that tripped there would fire on every plan
+    # in the world and be muted the same day, so ur2 and ur6 exist to fail if
+    # this ever becomes "there is ready work".
+    #
+    # THE LOCKS ARE REAL, in a scratch repository, taken through `_locks.acquire`
+    # and given back through `_locks.release`. A hand-written lock file would
+    # encode this file's idea of the shape, and the reader would then be graded
+    # against the writer it was written from rather than against the writer that
+    # runs.
+    _ur_absent = M.unfinished_runs({})
+    check("ur1 a summary with NO locks block FAILS the condition: a lock nobody "
+          "read is not evidence that a run finished, and this module is layer "
+          "two so the block can only ever arrive injected: %r" % (_ur_absent,),
+          M.evaluate_gate({}, ["unfinished-run"]) == ["unfinished-run"]
+          and "not a pass" in " ".join(_ur_absent or []))
+    check("ur9 a `held` entry that is not a lock is REFUSED rather than skipped "
+          "- dropping it would shrink a gate whose reader believes it covers "
+          "every lock held",
+          M.evaluate_gate({"locks": {"held": ["phase-P5"]}, "ready": ["P5.4"]},
+                          ["unfinished-run"]) == ["unfinished-run"]
+          and "could not be graded" in " ".join(
+              M.unfinished_runs({"locks": {"held": ["phase-P5"]},
+                                 "ready": ["P5.4"]}) or []))
+    check("ur10 ...and so is a block that came back as an error, for g8's "
+          "reason: a clean bill of health produced by a crash is the one answer "
+          "this must never give",
+          M.evaluate_gate({"locks": {"error": "boom"}, "ready": ["P5.4"]},
+                          ["unfinished-run"]) == ["unfinished-run"])
+    check("ur11 it is NOT in the default gate: a lock lives in the shared git "
+          "dir rather than in the tree, so it is never cloned and a fresh CI "
+          "checkout holds none - a default carrying this would grade a question "
+          "that checkout cannot answer",
+          "unfinished-run" in M.CONDITIONS
+          and "unfinished-run" not in M.DEFAULT_GATE)
+
+    def _ur_block(check):
+        if not shutil.which("git"):
+            for _lbl in ("ur2", "ur3", "ur4", "ur5", "ur6", "ur7", "ur8"):
+                _harness.skip(check, _lbl, "git is not on PATH, and a lock "
+                              "lives in the git dir - there is nowhere to take "
+                              "one", True)
+            return
+        _ur_root = _harness.fixture_root("status-facts-unfinished-")
+        _ur_repo = os.path.join(_ur_root, "proj")
+        os.makedirs(_ur_repo)
+        subprocess.run(["git", "init", "-q", _ur_repo], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _ur_quiet = lambda *_a, **_k: None          # noqa: E731  (acquire's `out`)
+        # THE IDENTITY IS PASSED, NEVER INHERITED. `_locks._identity` falls back
+        # to `CLAUDE_PID` and `CLAUDE_CODE_SESSION_ID`, which are set inside a
+        # live Claude session and unset in CI - so a lock taken without saying
+        # who is taking it records a different pid on the two, and ur3 would be
+        # asserting against whichever machine happened to run it. `acquire` and
+        # `release` both take both, which is what makes this hermetic.
+        _ur_sid = "f301-fixture-session"
+
+        def _ur_plan(done):
+            """One phase, two tasks - pending (ready work left) or done (none)."""
+            st = "done" if done else "pending"
+            return {"meta": {"version": 2},
+                    "phases": [{"id": "P5", "title": "waves",
+                                "status": "done" if done else "in_progress",
+                                "tasks": [
+                                    {"id": "P5.4", "title": "t", "status": st},
+                                    {"id": "P5.10", "title": "t", "status": st},
+                                ]}]}
+
+        def _ur_sum(done=False):
+            """The rollup PLUS the injected block, read off the real lock dir."""
+            plan = _ur_plan(done)
+            out = M.rollup(plan, [], [])
+            out["locks"] = _CMD.locks_block(plan, _ur_repo)
+            return out
+
+        # ROW 3, AND THE ONLY ROW THAT MATTERS MORE THAN THE OTHERS TWO. Real
+        # repository, real lock directory, nothing held, two ready tasks: the
+        # ordinary state of every planned phase.
+        _ur_s3 = _ur_sum()
+        check("ur2 NO LOCK with ready work left is NOT RUNNING - the ordinary "
+              "state of every planned phase, and the state this condition must "
+              "be silent in. Get it wrong and the signal fires on every plan in "
+              "the world and is muted the same day: ready=%r held=%r"
+              % (_ur_s3["ready"], _ur_s3["locks"]),
+              _ur_s3["ready"] == ["P5.4", "P5.10"]
+              and _ur_s3["locks"]["scheme"] is True
+              and _ur_s3["locks"]["held"] == []
+              and M.unfinished_runs(_ur_s3) is None
+              and M.evaluate_gate(_ur_s3, ["unfinished-run"]) == [])
+        # ROW 2: nothing held, nothing ready. Worded apart from ur2 because it is
+        # a different state reaching the same verdict, and a reading that folded
+        # them would answer one of the two by accident.
+        _ur_s2 = _ur_sum(done=True)
+        check("ur5 no lock and NO ready work is a finished plan, which is also "
+              "silent - the same verdict as ur2 from the opposite half of the "
+              "table, so neither row can be the one carrying it: ready=%r"
+              % (_ur_s2["ready"],),
+              _ur_s2["ready"] == []
+              and M.unfinished_runs(_ur_s2) is None)
+
+        # ROW 1, and the lock is TAKEN by this process, so it is live by
+        # construction rather than by assertion.
+        _ur_took = _lockmod.held(_lockmod.acquire(
+            _ur_repo, "phase-P5", note="/audit:phase P5", session=_ur_sid,
+            pid=os.getpid(), out=_ur_quiet))
+        _ur_s1 = _ur_sum()
+        _ur_rows = M.unfinished_runs(_ur_s1)
+        check("ur3 A LOCK HELD WITH READY WORK LEFT IS AN UNFINISHED RUN - F301, "
+              "and the sentence carries the phase, how much was left, the "
+              "liveness basis that makes the claim checkable and the command "
+              "that picks it up: %r" % (_ur_rows,),
+              _ur_took and _ur_rows is not None and len(_ur_rows) == 1
+              and "phase P5" in _ur_rows[0]
+              and "2 task(s) still ready" in _ur_rows[0]
+              and str(os.getpid()) in _ur_rows[0]
+              and "/audit:phase P5" in _ur_rows[0]
+              and M.evaluate_gate(_ur_s1, ["unfinished-run"])
+              == ["unfinished-run"])
+        # THE OTHER HALF OF ROW 1's PAIR: the lock is still held, and the run had
+        # nowhere left to go. That is a sign-off in flight or a lock to give
+        # back, and `/audit:doctor` is the surface for it.
+        _ur_s4 = _ur_sum(done=True)
+        check("ur4 ...but a lock held with NO ready work left is silent: the run "
+              "had nowhere to go, so a held lock is a sign-off in flight rather "
+              "than a stopped run. This is the case that fails if the reading "
+              "becomes 'a lock is held': held=%r"
+              % ([r["name"] for r in _ur_s4["locks"]["held"]],),
+              [r["name"] for r in _ur_s4["locks"]["held"]] == ["phase-P5"]
+              and M.unfinished_runs(_ur_s4) is None)
+        # THE INDEX LOCK IS NOT A RUN. Taken and given back inside one mutating
+        # command, so a reading that counted it would fire on `/audit:task add`.
+        # COUNTED rather than found: with both locks on disk exactly one run is
+        # reported, which is what fails if the prefix stops being read.
+        _lockmod.acquire(_ur_repo, "index", note="a structural write",
+                         session=_ur_sid, pid=os.getpid(), out=_ur_quiet)
+        _ur_s5 = _ur_sum()
+        check("ur8 an `index` lock is not a phase run - it is taken and given "
+              "back inside one mutating command. With both on disk exactly ONE "
+              "run is reported, and it is the phase one: held=%r rows=%r"
+              % ([r["name"] for r in _ur_s5["locks"]["held"]],
+                 M.unfinished_runs(_ur_s5)),
+              sorted(r["name"] for r in _ur_s5["locks"]["held"])
+              == ["index", "phase-P5"]
+              and len(M.unfinished_runs(_ur_s5) or []) == 1
+              and "phase P5" in (M.unfinished_runs(_ur_s5) or [""])[0])
+        _lockmod.release(_ur_repo, "index", session=_ur_sid, out=_ur_quiet)
+
+        # THE TRANSITION. Same fixture, same ready list, and the lock given back
+        # through the writer's own `release`: UNFINISHED has to become NOT
+        # RUNNING. A reading anchored on the ready list would answer identically
+        # on both sides of this line, which is exactly what it must not do.
+        _ur_before = M.unfinished_runs(_ur_sum())
+        _lockmod.release(_ur_repo, "phase-P5", session=_ur_sid, out=_ur_quiet)
+        _ur_after_sum = _ur_sum()
+        check("ur6 THE TRANSITION: releasing the lock with the SAME tasks still "
+              "ready takes the verdict from UNFINISHED to NOT RUNNING. Nothing "
+              "about the plan changed between the two reads, so a condition that "
+              "graded the ready list rather than the lock cannot tell these "
+              "apart: before=%r after=%r ready=%r"
+              % (_ur_before, M.unfinished_runs(_ur_after_sum),
+                 _ur_after_sum["ready"]),
+              _ur_before is not None
+              and _ur_after_sum["ready"] == ["P5.4", "P5.10"]
+              and M.unfinished_runs(_ur_after_sum) is None
+              and M.evaluate_gate(_ur_after_sum, ["unfinished-run"]) == [])
+
+        # A STALE LOCK COUNTS, and the pid used is one that has certainly gone:
+        # a child this suite started and waited for. Written back through
+        # `_locks._write_lock`, so only the pid differs from what `acquire` left.
+        _ur_took2 = _lockmod.held(_lockmod.acquire(
+            _ur_repo, "phase-P5", note="/audit:phase P5", session=_ur_sid,
+            pid=os.getpid(), out=_ur_quiet))
+        _ur_path = os.path.join(_lockmod.lock_dir(_ur_repo), "phase-P5.lock")
+        _ur_info = _lockmod.read_lock(_ur_path)
+        _ur_dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        _ur_dead.wait()
+        _ur_info["pid"] = _ur_dead.pid
+        _lockmod._write_lock(_ur_path, _ur_info)
+        _ur_s6 = _ur_sum()
+        _ur_stale = M.unfinished_runs(_ur_s6)
+        check("ur7 A STALE LOCK COUNTS TOO, and its sentence is the other one. "
+              "The liveness verdict resolves every uncertainty to LIVE, so "
+              "`gone` is the positive finding that the holder was probed and is "
+              "not there - and F301 was noticed a day later, when the session "
+              "that stopped had long exited and its lock was stale. A rule that "
+              "graded only live locks would have had nothing to say about the "
+              "instance it was written for: %r" % (_ur_stale,),
+              _ur_took2 and _ur_s6["locks"]["held"][0]["live"] is False
+              and _ur_stale is not None and len(_ur_stale) == 1
+              and "is gone" in _ur_stale[0]
+              and "/audit:resume" in _ur_stale[0]
+              and "release phase-P5" in _ur_stale[0]
+              # ...and the two repairs really are different text. Both sentences
+              # tripping the same condition is the point; both READING the same
+              # would send half the readers to the wrong command.
+              and "/audit:resume" not in (_ur_rows or [""])[0]
+              and M.evaluate_gate(_ur_s6, ["unfinished-run"])
+              == ["unfinished-run"])
+        _lockmod.release(_ur_repo, "phase-P5", session=_ur_sid, out=_ur_quiet)
+
+    _harness.stage(check, "ur", _ur_block)
+
     # --- test evidence: two conditions, and what absence is allowed to mean ----
     # EVERY CASE HERE IS ANCHORED ON A SUBJECT NAME, never on "the list is not
     # empty" and never on "the gate returned []". A condition that matched nothing
@@ -291,10 +517,34 @@ def _cases(check):
           "edit rather than a side effect - and a loop derived from the set, "
           "like te1's, cannot notice a member being dropped",
           sorted(M.NO_SIGN_OFF_EVIDENCE)
-          == ["cancelled", "could-not-run", "failed", "no-checks", "timed-out"]
+          == ["cancelled", "could-not-run", "failed", "gate-mutated",
+              "no-checks", "timed-out"]
           and M.PASSED_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE
           and M.NO_GATE_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE,
           repr(sorted(M.NO_SIGN_OFF_EVIDENCE)))
+    # F280, NAMED RATHER THAN DERIVED. te1 drives every word in the set, so it
+    # would have covered this one the moment it was added - and te2's own
+    # argument is that a loop over a set cannot notice the set changing. This is
+    # the word whose ABSENCE was the fault, so it gets a case that names it and
+    # names the run: a gate that passed its commands and rewrote the files it was
+    # grading recorded `passed`, `--fail-on failing-tests` read that word off the
+    # pointer, and the work was signed off over a run whose own verdict line said
+    # GATE MUTATED THE TREE.
+    _gm = M.rollup(_ev_plan([("PE.1", "done", "passed"),
+                             ("PE.2", "done", "gate-mutated")]), [], [])
+    check("te2b `--fail-on failing-tests` REFUSES a run whose record says the "
+          "tree was mutated, and names PE.2 - while PE.1, which really did "
+          "pass, is not in the list. Exit 0 is not a verdict when the bytes "
+          "under it are the gate's own: %r" % (_gm["testEvidence"]["byStatus"],),
+          M.evaluate_gate(_gm, ("failing-tests",)) == ["failing-tests"]
+          and [r["id"] for r in _gm["testEvidence"]["failing"]] == ["PE.2"]
+          # ...and it is a KNOWN word, so it is judged rather than carried
+          # through as an unrecognised one. Folding it into the honest-unknown
+          # bucket would pass the gate for the opposite reason.
+          and _gm["testEvidence"]["unrecognised"] == []
+          and _gm["testEvidence"]["byStatus"] == {"passed": 1,
+                                                  "gate-mutated": 1},
+          repr(_gm["testEvidence"]))
     with open(os.path.join(_output.PLUGIN_ROOT, "schema",
                            "audit-plan.schema.json"), "r",
               encoding="utf-8") as fh:

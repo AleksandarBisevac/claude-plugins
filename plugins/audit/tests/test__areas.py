@@ -402,6 +402,231 @@ def _cases(check):
     finally:
         shutil.rmtree(_fake, ignore_errors=True)
 
+    # --- F282: deleting a section of orchestrator.md turns a named case red ------
+    # The measurement this block answers: each of the document's `##` sections was
+    # deleted in turn and the whole gate set run, and NOT ONE deletion was
+    # noticed. `rule_drift` above survived every one of them because its sentence
+    # appears twice in the file, which is why these anchors are SECTION-scoped and
+    # `rule_drift` is not.
+    #
+    # `a1` is the live claim; `a2`-`a5` are the four repairs it can report, each
+    # driven on a FIXTURE tree so they keep working when the real document
+    # changes. `a6`/`a7` are the coverage declaration, checked in both
+    # directions - a list of exemptions that only grows is the shape this whole
+    # block replaces.
+    live = M.claim_drift()
+    check("oa1 THE LIVE CLAIM: every anchored claim in reference/orchestrator.md "
+          "is stated by the section that owns it, with the value the CODE says - "
+          "%r" % (live,), live == [])
+    cov = M.anchor_coverage()
+    check("oa2 ...and the document really was read: %d '## ' section(s) found "
+          "and %d anchored. A splitter that stopped matching would make oa1 an "
+          "empty set agreeing with itself, which is exactly what a "
+          "whole-document check was already doing here"
+          % (len(cov["sections"]), len(cov["anchored"])),
+          len(cov["sections"]) > 1 and len(cov["anchored"]) > 1
+          and len(cov["anchored"]) <= len(cov["sections"]), repr(cov["sections"]))
+    # The document side is a FIXTURE STRING and the code side stays the real
+    # tree, which is the whole point of `claim_drift(text=...)`: a fixture tree
+    # holding both would report every row as "the code moved" and the document
+    # cases would pass for the wrong reason. Measured - the first version of
+    # these cases did exactly that.
+    real = os.path.join(_harness.SCRIPTS_DIR, os.pardir, M._ORCHESTRATOR)
+    with open(real, "r", encoding="utf-8") as fh:
+        body = fh.read()
+    cut = M.doc_sections(body)
+    names = [n for n, _b in cut]
+    killed = "Concurrency lock"
+    kept = "\n".join(["## %s\n%s" % (n, b) for n, b in cut if n != killed])
+    after = M.claim_drift(text=kept)
+    check("oa3 DELETING A SECTION IS A FINDING, and it names the section: "
+          "cutting '## %s' out reports every claim anchored to it rather than "
+          "passing because the rest of the document is intact. This is the "
+          "measurement F282 records - each section was deleted in turn and not "
+          "one deletion was noticed by anything" % killed,
+          killed in names
+          and [c for c, p in after if c.startswith("lock-exit")]
+          and all("nowhere to live" in p for c, p in after
+                  if c.startswith("lock-exit")), repr(after))
+    # ...and the SECOND direction: the CODE moves, the document does not. This is
+    # the half a presence assertion cannot reach, and the reason every row reads
+    # a literal out of the module rather than trusting one written here.
+    renum = M.claim_drift(text=body.replace("| **3** | held by a **live** run |",
+                                            "| **7** | held by a **live** run |"))
+    check("oa4 ...and so is the document stating a value the CODE does not: "
+          "renumbering the lock's live-holder exit in the table alone is caught, "
+          "because the row reads `_locks.py` and compares. Delete the comparison "
+          "and this is the case that goes red",
+          any(c == "lock-exit-live" and "does not state" in p
+              for c, p in renum), repr(renum))
+    # THE FLOOR UNDER EVERY MUTATION CASE ABOVE AND BELOW: the fixture door is
+    # the same door. oa3, oa4, oa6, oa7 and oa12 all hand the document in as
+    # `text`, and if that parameter took a different path through the function
+    # than the file does, every one of them would be testing something the live
+    # claim never runs. Handing in the real bytes must produce the real verdict.
+    # (The over-fire direction - a row that reports regardless of what it read -
+    # is oa1: an unconditional row makes the LIVE claim red, so it needs no case
+    # of its own, and one asserting it here would be oa1 spelled twice.)
+    check("oa5 the fixture door is the same door: handing the real document in "
+          "as `text` gives the same verdict as reading it off disk, which is "
+          "what makes every mutation case above a test of the live check",
+          M.claim_drift(text=body) == M.claim_drift() == [],
+          repr((M.claim_drift(text=body), M.claim_drift())))
+    extra = body + "\n## Frobnication\n\nSomething new nobody anchored.\n"
+    check("oa6 a NEW section with no anchor and no declared reason is a finding "
+          "- a section in neither set is the silent mass F282 measured, and "
+          "arriving quietly is how it got that big",
+          any(c == "Frobnication" and "neither set" in p
+              for c, p in M.claim_drift(text=extra)),
+          repr(M.claim_drift(text=extra)))
+    trimmed = "\n".join(["## %s\n%s" % (n, b) for n, b in cut
+                         if n not in M.UNANCHORED_SECTIONS])
+    check("oa7 ...and a DECLARED unanchored section that is gone (or has since "
+          "been anchored) is a stale row, so the exemption list shrinks by being "
+          "deleted rather than by going quiet",
+          any("declared unanchored" in p
+              for _c, p in M.claim_drift(text=trimmed)),
+          repr(M.claim_drift(text=trimmed)))
+    check("oa8 ...and every declared exemption carries a REASON long enough to "
+          "be one: a label would let a section be exempted without anyone "
+          "saying what would have to be built to anchor it",
+          bool(M.UNANCHORED_SECTIONS)
+          and all(len(why) >= 120 for why in M.UNANCHORED_SECTIONS.values()),
+          repr(sorted((n, len(w)) for n, w in M.UNANCHORED_SECTIONS.items())))
+    empty = M.claim_drift(text="no sections at all, just prose\n")
+    check("oa9 a document with no '## ' at all is ONE finding about the SCAN, "
+          "not a clean run and not a wall of findings about the document - an "
+          "empty section list must never read as 'nothing wrong'",
+          len(empty) == 1 and "no '## ' sections found" in empty[0][1],
+          repr(empty))
+    check("oa10 an unreadable document is a finding rather than a clean answer - "
+          "the same rule `rule_drift` follows, and the reason `_read` returns "
+          "None instead of the empty string that satisfies every `not in`",
+          [r for r in M.claim_drift(_harness.SCRIPTS_DIR)
+           if "unreadable" in str(r[1])],
+          repr(M.claim_drift(_harness.SCRIPTS_DIR)[:2]))
+    # A row whose CODE side has moved must be a finding too, not a pass: the
+    # basis is gone, and a row with no basis making no claim is the shape
+    # `CONTRIBUTING.md`'s cost example forbids.
+    _saved = M.CLAIM_ANCHORS
+    try:
+        M.CLAIM_ANCHORS = (("gone-fact", "Concurrency lock", "value",
+                            os.path.join("scripts", "governance", "_locks.py"),
+                            r"NO_SUCH_CONSTANT\s*=\s*(\d+)", "", "| %s |"),)
+        moved = M.claim_drift(text=body)
+        check("oa11 a row whose CODE no longer carries the fact it is anchored "
+              "to is a FINDING, not a pass. Without this the way to silence any "
+              "row is to delete the constant it reads, which is the direction "
+              "F271 and F276 already rotted in",
+              any(c == "gone-fact" and "no longer carries the fact" in p
+                  for c, p in moved), repr(moved))
+    finally:
+        M.CLAIM_ANCHORS = _saved
+    # --- F282, second pass: the two things a review found this block claiming --
+    # 1. A LIST CLAIM. `## Keeping a failed run's record` names the evidence
+    #    statuses a run can strand, and that list went stale inside the very
+    #    change that added these anchors: the section was anchored, but only by a
+    #    row reading a check NAME, so `claim_drift` was blind to the list. F282's
+    #    own class in F282's own commit.
+    check("oa13 the evidence vocabulary is DERIVED from the enum that owns it, "
+          "not restated: every member of `_status_facts.NO_SIGN_OFF_EVIDENCE` is "
+          "named by the section, and every word the section names is a member",
+          not [p for c, p in M.claim_drift()
+               if c == "audit-state-statuses"],
+          repr([p for c, p in M.claim_drift() if c == "audit-state-statuses"]))
+    # DROPS THE NEWEST MEMBER, and one member rather than three: the previous
+    # spelling anchored on the whole head of the list, so adding `gate-mutated` to
+    # the section - the very edit this anchor exists to force - stopped the
+    # mutation landing and the case reported an empty finding list instead of
+    # going red for a reason. A one-member drop is also the real shape: a word
+    # joins the enum and the document is updated everywhere except here.
+    _gained = body.replace("`gate-mutated`, ", "")
+    check("oa14 ...and a member the section STOPS naming is a finding, which is "
+          "the direction that was blind - a status the code produces and the "
+          "orchestrator has never heard of",
+          any(c == "audit-state-statuses" and "does not name it" in p
+              for c, p in M.claim_drift(text=_gained)),
+          repr(M.claim_drift(text=_gained)))
+    # THE INVENTED WORD IS INVENTED ON PURPOSE, and it did not start that way:
+    # this case was written against `gate-mutated`, which was in no enum on the
+    # branch that wrote it and IS one here, so the case broke on the merge that
+    # added the member. A fixture naming a real-but-absent word tests the rule
+    # only until somebody implements that word. `never-a-status` cannot become a
+    # member, so the case survives every future addition to the enum.
+    _invented = body.replace("`could-not-run`\nevidence can sit",
+                             "`could-not-run` and `never-a-status`\n"
+                             "evidence can sit")
+    check("oa15 ...and a word the section names that the enum does NOT have is "
+          "also a finding. This is the half that stops a status being written "
+          "into the prose before the code produces it, which is what F271 and "
+          "F276 already were",
+          any(c == "audit-state-statuses" and "no such member" in p
+              for c, p in M.claim_drift(text=_invented)),
+          repr(M.claim_drift(text=_invented)))
+    # 2. THE STRENGTH DECLARATION. The block comment said every row derives a
+    #    value from the code; a review measured that seven did not. Declaring the
+    #    strength is worth nothing unless the declaration is checked, so it is.
+    check("oa16 every row's DECLARED strength is one it can deliver: a 'value' "
+          "row captures a group that can match something else and substitutes "
+          "it, a 'presence' row asserts a fixed shape, a 'pinned' row names no "
+          "module. This is what stops the block comment over-claiming again",
+          M._strength_mismatches() == [], repr(M._strength_mismatches()))
+    _saved_rows = M.CLAIM_ANCHORS
+    try:
+        M.CLAIM_ANCHORS = tuple(
+            (row[0], row[1], "value", row[3], row[4], row[5], row[6])
+            if row[2] == "presence" else row for row in _saved_rows)
+        check("oa17 ...and a presence row RELABELLED 'value' is a finding, "
+              "because its capture is a literal spelled inside its own pattern "
+              "and a group that can only match itself derives nothing. That is "
+              "the exact over-claim, caught by name",
+              [c for c, p in M._strength_mismatches()
+               if "derives nothing" in p],
+              repr(M._strength_mismatches()[:2]))
+        M.CLAIM_ANCHORS = tuple(
+            (row[0], row[1], "presence", row[3], row[4], row[5], row[6])
+            if row[2] == "value" else row for row in _saved_rows)
+        check("oa18 ...and the other direction: a value row relabelled "
+              "'presence' is a finding too, so the strengths cannot be made to "
+              "agree by weakening every claim",
+              [c for c, p in M._strength_mismatches()
+               if "should claim it" in p],
+              repr(M._strength_mismatches()[:2]))
+    finally:
+        M.CLAIM_ANCHORS = _saved_rows
+    check("oa19 the capture reader tells a varying group from a literal one - "
+          "that distinction is the whole basis of oa16, and reading it wrong in "
+          "either direction relabels every row",
+          M._capture_source(r'X\s*=\s*"([^"]+)"') == '[^"]+'
+          and M._capture_source(r'"(GATE MUTATED THE TREE)') ==
+          "GATE MUTATED THE TREE"
+          and M._capture_source(r"(?:not a capture)") is None
+          and M._capture_source(r"A(B(C))") == "B(C)",
+          repr((M._capture_source(r'X\s*=\s*"([^"]+)"'),
+                M._capture_source(r"(?:not a capture)"),
+                M._capture_source(r"A(B(C))"))))
+    # THE CONTEXT WINDOW IS LOAD-BEARING and this is the case that says so.
+    # `## Preflight` states two defaults in the same shape - `(default main)` for
+    # the development branch and `(default audit)` for the branch prefix - so a
+    # row searching the WHOLE section could be satisfied by the neighbour's
+    # value. Here the prefix's own default is wrong and the right string is
+    # planted elsewhere in the same section: a laundered claim must still be a
+    # finding.
+    laundered = body.replace(
+        "prefix for per-phase branches (default `audit`)",
+        "prefix for per-phase branches (default `qa`)").replace(
+        "- `meta.developmentBranch` —",
+        "- Somewhere else entirely, mentioning (default `audit`) in passing.\n"
+        "- `meta.developmentBranch` —")
+    check("oa12 a claim satisfied by a NEIGHBOUR's value in the same section is "
+          "still a finding - two defaults written in one shape is exactly why "
+          "the row carries a context substring and a window rather than "
+          "searching the section",
+          "(default `qa`)" in laundered
+          and any(c == "branch-prefix-default" and "does not state" in p
+                  for c, p in M.claim_drift(text=laundered)),
+          repr(M.claim_drift(text=laundered)))
+
 
 def _selftest():
     return _harness.run(_cases)

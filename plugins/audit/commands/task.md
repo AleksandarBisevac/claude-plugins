@@ -24,6 +24,14 @@ files, gate, risk, tests-mode and description was taken through a round of
 chance to **paraphrase** a value the caller had already decided — the defect `--reason`
 had (see *The operator's words go in VERBATIM* below).
 
+**A flag belongs to the verb whose hint carries it, and passing it to another one is a
+usage error.** One `argparse` parser serves all five verbs, so argparse accepts every
+flag on every one of them — and each verb's writer only ever read its own subset, so
+half the pairs used to be accepted, write nothing and report success with exit 0
+(`scope --outcome`, `add --id`, `add-phase --risk`, `retarget --files`). Those now exit
+2 with a message naming the verb that does read the flag. **Relay that message rather
+than retrying**: it is telling you which command you meant.
+
 **`priority` is deliberately absent from the `argument-hint` above** while remaining a
 working subcommand. The hint is what a reader is offered when they type the command, and
 offering the old spelling there is how the old spelling keeps being learned — the
@@ -78,7 +86,14 @@ per add is the class of error the script exists to delete.
    - `--tests-mode` (`tdd` for incorrect current behavior / `regression` for
      behavior-preserving / `gate-only` for mechanical — the script sets
      `expectRedFirst` true iff tdd), `--tests-add "<desc>"` (repeatable, one test
-     description each), `--gate "<entry>"` (repeatable; default: the phase's
+     description each — **write it as `"<path>: <what it asserts>"`**, because
+     the leading path is what joins `files` and the `fileIndex`, and an entry
+     that names no file adds nothing to either and is reported as adding
+     nothing; the field is free prose and the script will not guess a filename
+     out of a sentence. On a `tdd` task that is neither `done` nor `cancelled`
+     the validator **warns** when an entry names no file, and that becomes a
+     **finding at 3.0.0** — `COMPATIBILITY.md` → *Validation stays additive* is
+     where the window is recorded), `--gate "<entry>"` (repeatable; default: the phase's
      `testGate`), `--gate-clear` for the **empty** gate — the state a phase can
      be created in and `scope --gate-clear` can move a task to, which `add`
      accepted and silently ignored until it read the flag, so a new task whose
@@ -234,7 +249,8 @@ before it runs.
 Give a task the files it touches, and optionally its tests, its
 description and the three fields that decide how and when it runs:
 `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
-(repeatable), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`
+(repeatable — `"<path>: <what it asserts>"`, since the leading path is what
+reaches `files`), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`
 (or `--description -` to read the brief from stdin — see *A brief the shell has
 eaten is refused* above, and prefer it whenever the text holds backticks),
 `--risk low|med|high`, `--blocked-by ids`, `--depends-on ids`. Runs `scripts/manifest/audit-task.py scope` — the same

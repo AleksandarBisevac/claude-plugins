@@ -1539,6 +1539,315 @@ def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
     return out
 
 
+# --- explorer_contract_drift: agent contract vs its fallback restatement (F291) ---
+# `/audit:init` spawns `audit:audit-explorer` and parses a JSON array back, and the
+# SHAPE of one element is written by hand in two places: the agent's own contract
+# (`agents/audit-explorer.md`) and a restatement in `commands/init.md`, carried
+# because that file's fallback path tells the orchestrator to inline the rules when
+# the agent type is unavailable on an older Claude Code. A repo-wide search for the
+# field names across every `.py` this repo keeps returns the two prose files and no
+# code at all - nothing reads either one, so a field added to one copy and not the
+# other ships silently, and the fallback half of a fan-out gets a different contract
+# from the half that took the real agent.
+#
+# ANCHORED ON THE PROSE, NOT ON A LINE NUMBER. The two files state the identical
+# field list in two different shapes - a raw multi-line JSON-ish object in the
+# agent's own voice, one backtick-wrapped line in the command's - so the parse
+# finds the "Return format" wording common to both and then the first BALANCED
+# `{...}` block that follows it, brace-depth tracked rather than "first `}`",
+# because the block nests one object inside `coupledPaths` and a naive scan would
+# stop there.
+#
+# A FIELD NAME AND A VALUE ARE TOLD APART STRUCTURALLY, not by a hand-kept list of
+# which quoted string is which. Every field name in this contract is a bare
+# identifier (`title`, `coupledPaths`, `shared`); every value carries a character
+# no identifier can (`"low|med|high"`, `"<dimension>"`, `"path[:lines]"`, a whole
+# sentence with spaces and commas) - so "an identifier-shaped quoted string that is
+# not the value half of a `key: value` pair" is the whole rule, and it survives a
+# reflow that a line-based diff would not.
+_EXPLORER_CONTRACT_ANCHOR = "Return format"
+# The value half first, so `finditer` consumes `: "value"` whole and the bare-field
+# alternative below never gets an independent shot at the same characters - which
+# matters only when a value happens to be identifier-shaped; today none of them are,
+# and the guard is here so that stays true rather than assumed.
+_EXPLORER_FIELD_TOKEN_RE = re.compile(
+    r':\s*"[A-Za-z_][A-Za-z0-9_]*"|"([A-Za-z_][A-Za-z0-9_]*)"')
+
+
+def _balanced_brace_block(text, anchor):
+    """The first brace-balanced `{...}` block after `anchor`, or (None, problem).
+
+    Balance-tracked rather than "up to the first `}`": the explorer contract nests
+    one object inside `coupledPaths`, so the first `}` in the text closes THAT
+    object, one level short of the outer one this needs.
+    """
+    idx = text.find(anchor)
+    if idx == -1:
+        return None, ("does not contain the anchor phrase %r, so its return "
+                      "contract cannot be located" % (anchor,))
+    start = text.find("{", idx)
+    if start == -1:
+        return None, ("the anchor phrase %r is present but no `{` follows it, so "
+                      "no JSON-ish block could be located" % (anchor,))
+    depth = 0
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1], None
+    return None, ("the block starting at the `{` after %r never closes, so its "
+                  "fields cannot be extracted" % (anchor,))
+
+
+def _contract_field_names(block):
+    """The set of field names in one brace-balanced contract block.
+
+    Flat, not nested by parent: both files nest `coupledPaths` the same way, so a
+    flat set already tells the two apart the moment either side adds, drops or
+    misspells a field anywhere in the object.
+    """
+    return set(m.group(1) for m in _EXPLORER_FIELD_TOKEN_RE.finditer(block)
+              if m.group(1))
+
+
+def explorer_contract_drift(agent_path=None, init_path=None):
+    """[(file, problem), ...] - the explorer's return-contract field list, the
+    agent's own doc against `commands/init.md`'s fallback restatement of it (F291).
+
+    FAILS LOUDLY RATHER THAN COMPARING TWO EMPTY SETS. A file whose contract block
+    could not be located, or whose block parsed to no field names at all, is
+    reported by name and the comparison stops there - two empty sets agreeing is
+    exactly the silent pass this lint exists to prevent, not a clean answer about a
+    tree with no drift in it.
+    """
+    agent = agent_path if agent_path is not None else os.path.join(
+        _output.PLUGIN_ROOT, "agents", "audit-explorer.md")
+    agent_rel = ("plugins/audit/agents/audit-explorer.md" if agent_path is None
+                else agent_path)
+    init = init_path if init_path is not None else os.path.join(
+        _output.PLUGIN_ROOT, "commands", "init.md")
+    init_rel = "plugins/audit/commands/init.md" if init_path is None else init_path
+
+    sides = []
+    for label, path in ((agent_rel, agent), (init_rel, init)):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            return [(label, "unreadable: %s" % exc)]
+        block, problem = _balanced_brace_block(text, _EXPLORER_CONTRACT_ANCHOR)
+        if problem is not None:
+            return [(label, problem)]
+        fields = _contract_field_names(block)
+        if not fields:
+            return [(label, "its return-contract block parsed to no field names "
+                     "at all, so nothing here can be compared against the other "
+                     "copy")]
+        sides.append((label, fields))
+
+    (agent_label, agent_fields), (init_label, init_fields) = sides
+    out = []
+    only_agent = sorted(agent_fields - init_fields)
+    only_init = sorted(init_fields - agent_fields)
+    if only_agent:
+        out.append((init_label, "missing field(s) %s that %s's return contract "
+                    "carries" % (", ".join(only_agent), agent_label)))
+    if only_init:
+        out.append((agent_label, "missing field(s) %s that %s's return contract "
+                    "carries" % (", ".join(only_init), init_label)))
+    return out
+
+
+# --- commit_spelling_drift: every governance writer's guide paragraph vs its code (F292)
+# F268 moved the fixed, uncollidable commit literal from `commit-audit-state.py`'s
+# TYPE into its SCOPE - `chore(audit-state):` rather than `audit-state(P1):` -
+# because commitlint's default type-enum has to accept the type or a repository
+# with husky rejects the commit AFTER the file is already staged. The guide's
+# paragraph kept saying "the type is the fixed literal `audit-state`": both
+# properties it names survived the reversal (a distinct spelling, one a task
+# commit's own scope - its phase id - can never collide with), so the REASONING
+# held while the NOUN did not, and that is the durable kind of stale claim -
+# everything around the wrong word still reads correctly, so nobody re-checks it.
+#
+# ONE INSTANCE OF A TWO-INSTANCE CLASS, AND THE CLASS IS WHAT THIS CHECKS.
+# `commit-manifest-index.py` fixes its own commit's scope for the identical
+# reason (F268 names both) and its guide paragraph has always been correct - the
+# asymmetry (one stale, one not) is exactly why a check aimed at a single file
+# would have been the wrong shape: it would have proven nothing about the second
+# writer, and a THIRD one added later would ship undocumented with nothing here
+# to notice. So the set of writers is DERIVED from `scripts/governance/` itself -
+# every `.py` there defining BOTH `COMMIT_TYPE` and `COMMIT_SCOPE` - rather than
+# named by hand, the same reason `_governance_commit_writers` reads the directory
+# instead of a table of the two names above.
+#
+# ANCHORED ON THE SECTION HEADING AND THE DOC'S OWN BACKTICK LITERAL, never a line
+# number, so a reflow of a paragraph is not itself drift. Each writer's section is
+# bounded by heading LEVEL rather than by a hard-coded "## " the way `_section_text`
+# is, because these headings are level-3 "### `path`" ones nested under one level-2
+# section holding every governance script - bounding on "## " alone would swallow
+# every sibling's own paragraph and read a claim about a DIFFERENT script as if it
+# were about this one (which is exactly what the ALLOW-direction mutation proof
+# below demonstrates).
+_GOVERNANCE_HEADING_TMPL = "### `plugins/audit/scripts/governance/%s`"
+_COMMIT_PREFIX_RE = re.compile(r"`([A-Za-z][\w-]*)\(([A-Za-z][\w-]*)\):`")
+
+
+def _md_subsection(text, heading):
+    """The text between `heading` and the next Markdown heading at the same or a
+    shallower level, or end of file. None when `heading` is not found.
+
+    LEVEL-AWARE ON PURPOSE: a level-3 "### " subsection sits inside a level-2
+    section holding many siblings, and bounding on "## " alone (the way
+    `_section_text` does for the guide's two top-level sections) would read past
+    the very next sibling instead of stopping at it.
+    """
+    idx = text.find(heading)
+    if idx == -1:
+        return None
+    level = len(heading) - len(heading.lstrip("#"))
+    rest = text[idx + len(heading):]
+    pattern = re.compile(r"\n#{1,%d} " % (level,))
+    hit = pattern.search(rest)
+    return rest if hit is None else rest[:hit.start()]
+
+
+def _commit_constants_in(tree):
+    """{NAME: value} for every module-level `COMMIT_TYPE`/`COMMIT_SCOPE` string
+    literal `tree` assigns - zero, one or both keys, never guessed at."""
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if (isinstance(target, ast.Name)
+                and target.id in ("COMMIT_TYPE", "COMMIT_SCOPE")):
+            try:
+                found[target.id] = ast.literal_eval(node.value)
+            except (ValueError, SyntaxError, TypeError):
+                continue
+    return found
+
+
+def _governance_dir(path=None):
+    return path if path is not None else os.path.join(
+        _output.SCRIPTS_DIR, "governance")
+
+
+def _governance_commit_writers(governance_dir=None):
+    """(writers, findings) - every `scripts/governance/*.py` defining BOTH
+    `COMMIT_TYPE` and `COMMIT_SCOPE`, read by AST rather than import (importing a
+    script to read two constants would also run its top-level code -
+    `_output.install_path()` among it - as a side effect of being linted, the
+    same reason `gate-parity.py`'s `_module_constants` reads a module this way
+    one layer over).
+
+    `writers` is `[(basename, COMMIT_TYPE, COMMIT_SCOPE), ...]`. A script
+    defining zero or one of the two constants is simply not a writer and is left
+    out IN SILENCE - `run-test-gate.py` sits beside the two that are, and "does
+    not emit a conventional-commit prefix" is a real, common answer for a
+    governance script. A script this could not even OPEN or PARSE is a
+    DIFFERENT claim, though, and is never folded into that silence: it lands in
+    `findings` instead, labelled by its own relative path, because "not a
+    writer" and "could not tell" must never read the same way.
+    """
+    directory = _governance_dir(governance_dir)
+    dir_rel = ("plugins/audit/scripts/governance" if governance_dir is None
+              else governance_dir)
+    try:
+        names = sorted(f for f in os.listdir(directory) if f.endswith(".py"))
+    except OSError as exc:
+        return [], [(dir_rel, "could not be listed: %s" % exc)]
+    writers, findings = [], []
+    for name in names:
+        path = os.path.join(directory, name)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            findings.append(("%s/%s" % (dir_rel, name),
+                            "could not be read or parsed: %s" % exc))
+            continue
+        found = _commit_constants_in(tree)
+        if "COMMIT_TYPE" in found and "COMMIT_SCOPE" in found:
+            writers.append((name, found["COMMIT_TYPE"], found["COMMIT_SCOPE"]))
+    return writers, findings
+
+
+def commit_spelling_drift(guide_path=None, governance_dir=None):
+    """[(file, problem), ...] - EVERY governance writer's commit-spelling claim
+    in the guide against the `COMMIT_TYPE`/`COMMIT_SCOPE` it actually emits
+    (F292), over the whole class rather than the one instance that happened to
+    be stale.
+
+    TWO FAILURE MODES ARE NAMED SEPARATELY FROM AN ORDINARY MISMATCH, because
+    folding either into "no drift found" is exactly the silent pass this rule
+    exists to end:
+      - a writer with no `### <script>.py` subsection in the guide at all is a
+        finding BY NAME, not a silently skipped iteration - that is the shape
+        that would let a NEW writer ship with its commit spelling undocumented;
+      - deriving ZERO writers - a rename, a moved directory - is reported
+        rather than treated as an empty set that trivially agrees, the same
+        rule `explorer_contract_drift` already applies to its own two sides.
+    """
+    guide = _guide_path(guide_path)
+    guide_rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else guide
+    dir_rel = ("plugins/audit/scripts/governance" if governance_dir is None
+              else governance_dir)
+
+    writers, out = _governance_commit_writers(governance_dir)
+    if not writers:
+        # ONLY when nothing else already explains the empty set: a directory
+        # that could not be LISTED, or a writer that could not be PARSED,
+        # already says why there is nothing to check - appending this too
+        # would be a second, redundant claim about the same absence rather
+        # than the one this rule exists to make (an empty class that would
+        # otherwise pass as "no drift").
+        if not out:
+            out.append((dir_rel, "no script here defines both COMMIT_TYPE and "
+                        "COMMIT_SCOPE, so there is no writer for the guide to "
+                        "be checked against - a rename or a moved directory "
+                        "would look exactly like an empty, agreeing class"))
+        return out
+
+    try:
+        with open(guide, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        return out + [(guide_rel, "unreadable: %s" % exc)]
+
+    for basename, actual_type, actual_scope in writers:
+        script_rel = "%s/%s" % (dir_rel, basename)
+        heading = _GOVERNANCE_HEADING_TMPL % (basename,)
+        section = _md_subsection(text, heading)
+        if section is None:
+            out.append((guide_rel, "carries no %r subsection, so %s's commit "
+                        "spelling is undocumented" % (heading, script_rel)))
+            continue
+        hits = []
+        seen = set()
+        for pair in _COMMIT_PREFIX_RE.findall(section):
+            if pair not in seen:
+                seen.add(pair)
+                hits.append(pair)
+        if not hits:
+            out.append((guide_rel, "names no backtick-quoted `TYPE(SCOPE):` "
+                        "commit prefix under %r, so there is nothing here to "
+                        "compare against %s's COMMIT_TYPE/COMMIT_SCOPE"
+                        % (heading, script_rel)))
+            continue
+        for claimed_type, claimed_scope in hits:
+            if claimed_type != actual_type or claimed_scope != actual_scope:
+                out.append((guide_rel,
+                            "claims %s's commit reads `%s(%s):` but its "
+                            "COMMIT_TYPE/COMMIT_SCOPE actually produce `%s(%s):`"
+                            % (script_rel, claimed_type, claimed_scope,
+                               actual_type, actual_scope)))
+    return out
+
+
 _TREE_HEADING = "## 1. Directory tree"
 _SECTION2_HEADING = "## 2. File-by-file logic"
 

@@ -57,6 +57,44 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **Validation stays additive.** A manifest that validates against a release keeps
   validating against every later one in the major line. The repository rule behind
   this is in `CONTRIBUTING.md` under *Hard rules*, and it predates this document.
+
+  **F294 is the first thing announced under this promise rather than excused from
+  it, and the promise HOLDS through the whole 2.x line.** A task in
+  `tests.mode: "tdd"` that is **not** `done` or `cancelled` should write each
+  `tests.add` entry as `"<path>: <what it asserts>"`. From **2.3.0** an entry naming
+  no file is a **warning**, and its text names both the shape to write and the
+  release the refusal arrives in; at **3.0.0** it becomes a **finding**. Nothing
+  that validated before 2.3.0 stops validating inside 2.x — that is the promise, and
+  the warning is what buys the time to act on it.
+
+  **Why the interim is a warning and not a permanent softness.** The rule exists
+  because of what the field is *for* at that mode: `/audit:task add` and `scope` put
+  the path an entry names into the task's `files` precisely so `commit_scope` will
+  allow the case file the task says it will create — and when the entry is prose
+  there is no path to carry, so the permission was never granted and the task's own
+  commit trips a scope the operator had just set. That is worth refusing, and it
+  will be refused. What a major release buys is the ORDER: announce, then enforce.
+  A rule that only ever warns would be the softer answer this is not.
+
+  **What the rule's shape bounds, and what it does not.** The schema stays
+  permissive, so nothing about the field's *type* changed; `regression` and
+  `gate-only` entries stay free prose, which is the shape most of them have; and a
+  `done` or `cancelled` task is exempt, because its `tests.add` is a record of work
+  already judged and F283 leaves its scope append-only — a line there would be
+  permanent with no remedy. The repair for a live one is to name the file:
+  `/audit:task scope <id> --tests-add "<path>: …"`.
+
+  **It reached this plugin's own workflow, and that was found by review rather than
+  by the corpus.** Three prescriptions produced entries the rule warns about:
+  `commands/bug.md`'s materialized fix task, `commands/init.md`'s finding-to-task
+  step, and the `suggestedTests` the explorer agent returns as prose. All three now
+  prescribe the `"<path>: <what it asserts>"` shape, so the workflow complies with
+  the rule the plugin ships — and the honest reading of the earlier claim that "the
+  only entries the rule reaches are already-settled tasks it exempts" is that it
+  described the committed manifests **after** the shipped example had been edited to
+  satisfy the new rule in the same change, and said nothing at all about the entries
+  the commands generate. A rule measured only against a corpus is measured against
+  half of its input.
 - **A manifest key a released version READS keeps being read** — the promise the
   config section below makes about a config key, made here for the same reason: the
   manifest is a file you wrote. `phases[].adoTracked` is the newest one. A phase
@@ -215,6 +253,33 @@ depending on an implementation:
   passes). Neither is a config key or a schema version, and a plan that depended on either
   behaviour was depending on an implementation. `SECURITY.md` is where the current posture is
   described and it is the document to read after an upgrade,
+- **which FLAGS a verb accepts, when the verb never read them — and it changed.** One
+  `argparse` parser serves all five verbs of `scripts/manifest/audit-task.py`
+  (`/audit:task add|scope|cancel`, `/audit:phase add|retarget`), so every flag parsed on
+  every verb while each verb's writer read only its own subset. Half the (verb, flag) pairs
+  were therefore **accepted, wrote nothing for the flag, and exited 0** — `scope --outcome`,
+  `retarget --files`, `add --id`, `add-phase --risk` among them. Those pairs now **exit 2**,
+  naming the verb that does read the flag. **Nothing that ever took effect stops taking
+  effect**: every refused pair is one whose value was already being discarded, so a caller
+  whose exit code changed was already not getting what it asked for. It is recorded here
+  rather than passed over because an exit code moved from 0 to 2 on a shipped command, and a
+  pipeline that read a discarded flag as success is a pipeline that now stops,
+- **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
+  `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
+  every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted
+  a number a finished phase had already used, and `meta.branch` derives a branch name from the
+  phase id, so the id handed back could collide with branches and merges that already existed.
+  A caller that predicted the next id from the plan will now predict a different one,
+- **what a mutating command derives for you inside the manifest.** `--tests-add` carries a
+  task's `tests.add` entries into its `files` (so the task's own commit passes
+  `commit_scope`), and it now carries **the path an entry names** rather than the whole
+  string — the field is documented as free prose, so what used to land in `files` was usually
+  a sentence, and the permission the union exists to grant was never granted. An entry naming
+  no file adds nothing and the command says which entries those were. Nothing already written
+  is rewritten or stops being read; what changes is what the next `add` or `scope` derives.
+  The half of F294 that **is** under the contract is the validator rule beside it, and it is
+  recorded as a deprecation under *Validation stays additive* above rather than here — it
+  warns from 2.3.0 and refuses at 3.0.0,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,
 - every path under `plugins/audit/scripts/` — the plugin's own modules move, and
   `CHANGELOG.md` is where a move is recorded.

@@ -322,6 +322,14 @@ run "docs/index.html is still a byte copy" docs_index_is_copy
 # the writer proves the writer was fixed; only reading the committed file proves
 # nothing else writes there and no older artifact is still shipping.
 run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
+# F297: the same question about the same committed files, asked of their CONTENT
+# rather than their bytes. One row in the example's evidence ledger recorded
+# `passed` while its own observations named a file the gate had rewritten - a
+# faithful record of the pre-F280 runner, and therefore a verdict no current run
+# can produce. The ledger is hand-written narrative, so nothing re-derives it and
+# nothing was reading it; this measures every committed row against the schema's
+# published vocabulary and against itself.
+run "committed ledgers record a verdict the runner can make" python3 tools/check-example-ledgers.py
 # F232: THIS RAN ONLY IN CI, AND IT COST A RED RUN ON A RELEASE CANDIDATE. The
 # example's usage ledger is COMMITTED and DERIVED — `gen-demo-usage.py` builds it
 # from the manifest — so a phase added to the example silently desynchronises the

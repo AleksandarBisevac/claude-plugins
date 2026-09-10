@@ -188,6 +188,9 @@ ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND vs HEAD
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
+python3 tools/check-example-ledgers.py     # ...and that no committed evidence row
+                                           # records a verdict the runner cannot
+                                           # produce (F297)
 python3 plugins/audit/scripts/demo/gen-demo-usage.py \
     examples/acme-store/audit-plan.json --out-dir <tmp>   # the committed ledger is
                                            # DERIVED, so it is diffed against a fresh

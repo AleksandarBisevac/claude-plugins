@@ -56,3 +56,11 @@ orchestrator's model choice and human-confirmation gates).
 wrong somewhere else. Keep them disjoint: a path already in `files` is not a
 coupled path, and the orchestrator — not you — decides which coupled paths the
 task must own.
+
+**Each `suggestedTests` entry opens with the repo-relative path of the file the
+case will live in** — `"<testFile>: <what it asserts>"` — even when that file
+does not exist yet. The orchestrator copies these into a task's `tests.add`, and
+the leading path is what joins the task's `files` and the plan's `fileIndex`: an
+entry that opens with prose leaves the case file outside the scope the fix is
+graded against. Name your best guess at the path rather than omitting it; a wrong
+guess is corrected by a rescope, and prose cannot be corrected by anything.

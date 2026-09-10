@@ -423,6 +423,46 @@ def _cases(check):
           "being sorted in among words this build understands",
           M._ordered({"passed", "zz-new", "failed"},
                      _report_html.TEV_ORDER) == ["passed", "failed", "zz-new"])
+    # F280, THE REPORT'S HALF, AND IT IS THE ONE THING THAT HOLDS TODAY. The
+    # verdict a mutating gate now records reaches this surface through
+    # `_report_html.tev_view`'s default arm, which NAMES the word instead of
+    # folding it into `failed` - the reading the schema demands by hand and the
+    # difference between an honest unknown and a wrong verdict.
+    _gm_row = {"runId": "RGM", "status": "gate-mutated", "ts": "2026-09-01",
+               "observations": {"ranTotal": 3, "treeMutated": ["src/a.py"],
+                                "coverage": ["src/a.py"]}}
+    _gm_view = _report_html.tev_view({"runId": "RGM"}, _gm_row, True)
+    check("ev9d a `gate-mutated` run is NAMED on this surface and never folded "
+          "into `failed`: the chip key is the word the ledger recorded, the "
+          "words a person reads are a readable form of it, and the observation "
+          "mark still rides BESIDE the badge rather than inside it - two claims, "
+          "two marks, which is the rule that let this fault hide in the first "
+          "place: %r" % ((_gm_view["key"], _gm_view["label"]),),
+          _gm_view["key"] == "gate-mutated"
+          and _gm_view["key"] != "failed"
+          and _gm_view["label"] and _gm_view["label"] != "Unrecognised status"
+          and "tree-mutated" in set(k for k, _w in _gm_view["flags"]))
+    check("ev9e ...and it is ORDERED as a verdict this build knows, not "
+          "appended to the tail where a word from a newer plugin goes. THIS IS "
+          "THE HAND-OFF: `_report_html`'s `TEV_RUN_STATUSES`, `TEV_LABELS` and "
+          "`TEV_ORDER` are literal tables in a file P32.7 was not scoped to "
+          "edit, so until they carry `gate-mutated` the report shows a refusing "
+          "verdict as an unrecognised one, in the pending grey, sorted after "
+          "`no-gate` - which reads as the least urgent thing on the page. The "
+          "repair is a row in each of those three tables plus a `data-tev` hue "
+          "in `report-css/badges.css`: %r"
+          % (M._ordered({"passed", "gate-mutated", "no-gate"},
+                        _report_html.TEV_ORDER),),
+          # The fixture carries a word that sorts BEFORE `gate-mutated` and is
+          # ordered AFTER it, so the two versions cannot answer alike: the
+          # unknown tail is sorted and appended, which puts the verdict last.
+          # The position is asserted as a PROPERTY - ranked among the verdicts
+          # rather than in the no-run tail - and not as an index, so the repair
+          # is free to choose where among them it belongs.
+          "gate-mutated" in _report_html.TEV_ORDER
+          and (_report_html.TEV_ORDER.index("gate-mutated")
+               < _report_html.TEV_ORDER.index("no-gate"))
+          and _gm_view["known"] is True)
 
     # --- a ledger that is not there --------------------------------------------
     empty = _harness.fixture_root("evidence-view-empty")

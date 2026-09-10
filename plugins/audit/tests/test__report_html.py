@@ -15,9 +15,12 @@ or builds a path, so nothing in it changed meaning by sitting one directory over
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import json
+import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT: the schema these words must agree with)
 from _output import safe_stdio                     # noqa: E402
 import _report_html as M                           # noqa: E402
 import _ui_theme as _theme                         # noqa: E402  (as _report_html imports it)
@@ -671,6 +674,70 @@ def _cases(check):
           M.tev_view(_ptr, {"status": "sandbagged"}, True)["label"] == "Sandbagged"
           and M.tev_view(_ptr, {"status": ""}, True)["label"]
           == "Unrecognised status")
+    # F280, AND THE CLASS THIS CLOSES. `TEV_RUN_STATUSES`, `TEV_LABELS` and
+    # `TEV_ORDER` are three LITERAL tables spelled here rather than read - the
+    # layer graph refuses the edge to the module that owns the enum, and this
+    # file walks no schema. Nothing held them against the schema, so the enum
+    # gained `gate-mutated` and every case here stayed green while the report
+    # rendered a refusing verdict through the UNRECOGNISED arm: "this build does
+    # not recognise the status", said by the build that ships the schema
+    # declaring it, in the pending grey, sorted after `no-gate`. tv8b passed on
+    # that, because a humanised word IS readable words. The panel's own suite
+    # already derived this comparison (`test__panel_page.py:ev2`); the report's
+    # did not, and that asymmetry is the defect rather than the missing row.
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), encoding="utf-8") as _fh:
+        _tv_enum = (((((json.load(_fh).get("$defs") or {})
+                       .get("testEvidence") or {}).get("properties") or {})
+                     .get("status") or {}).get("enum") or [])
+    check("tv8c the words a run may answer with are the SCHEMA's, compared "
+          "rather than commented - so the enum gaining a member goes red HERE "
+          "and somebody decides what this surface calls it, instead of the "
+          "report quietly reporting a word it ships the declaration for as one "
+          "it has never heard of: %r vs %r" % (sorted(M.TEV_RUN_STATUSES),
+                                               sorted(_tv_enum)),
+          bool(_tv_enum) and sorted(M.TEV_RUN_STATUSES) == sorted(_tv_enum))
+    _tv_unlabelled = [w for w in M.TEV_RUN_STATUSES if w not in M.TEV_LABELS]
+    _tv_unordered = [w for w in M.TEV_RUN_STATUSES if w not in M.TEV_ORDER]
+    check("tv8d ...and all three tables are TOTAL over it. A status with no "
+          "label renders an empty badge and one with no place in the order "
+          "sorts into the unknown tail, and either is the same silence tv8c "
+          "exists to break: unlabelled %r, unordered %r"
+          % (_tv_unlabelled, _tv_unordered),
+          _tv_unlabelled == [] and _tv_unordered == [])
+    # `status` at the TOP level, the way tv9 spells it: `_row(**over)` folds its
+    # keyword arguments into `observations`, so `_row(status=...)` would leave
+    # the row saying `passed` and this case would be about the fixture.
+    _tv_gm = M.tev_view(_ptr, dict(_row(treeMutated=["src/a.py"]),
+                                   status="gate-mutated"), True)
+    # RANKED THROUGH A DICT AND NOT `.index()`, so a word missing from the table
+    # ranks PAST the end and fails the comparison instead of raising. `.index()`
+    # here took the rest of the body down with it when the mutation that drops
+    # the word from `TEV_ORDER` was run, which loses every case below this one -
+    # tv8d had already named that mutation, so the verdict was still honest, but
+    # a case that raises is a case that stops the suite.
+    _tv_last = len(M.TEV_ORDER)
+    _tv_rank = dict((k, i) for i, k in enumerate(M.TEV_ORDER))
+    _tv_tail = min(_tv_rank.get(k, _tv_last) for k in
+                   ("dangling", "undated", "no-evidence", "before-recording",
+                    "no-gate"))
+    check("tv8e a `gate-mutated` run is a verdict this build KNOWS - labelled, "
+          "not humanised - and it is ordered among the verdicts rather than in "
+          "the no-run tail, because a run reached it having executed every "
+          "command. The mark still rides beside the badge, which is the rule "
+          "that let the fault hide: the tree was always said and the VERDICT "
+          "was not: %r" % ((_tv_gm["key"], _tv_gm["label"], _tv_gm["known"]),),
+          _tv_gm["key"] == "gate-mutated"
+          and _tv_gm["label"] == "Gate mutated the tree"
+          and _tv_gm["known"] is True
+          # ...and NOT the two readings either side of it. `failed` is the word
+          # the schema forbids folding it into; `Gate mutated` is what the
+          # humaniser produces, so a table row that was never added would answer
+          # the label clause by accident.
+          and _tv_gm["key"] != "failed"
+          and _tv_gm["label"] != _theme.label("gate-mutated")
+          and _tv_rank.get("gate-mutated", _tv_last) < _tv_tail
+          and "tree-mutated" in set(k for k, _w in _tv_gm["flags"]))
     check("tv9 the badge carries the STATUS and the markers are rendered "
           "beside it, so a run that failed AND rewrote the tree says both",
           M._tev_cell(M.tev_view(_ptr, _row(status="failed", treeMutated=["a"]),

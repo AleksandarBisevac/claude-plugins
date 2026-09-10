@@ -283,10 +283,22 @@ def row_for(project, result, scope, ids, identity, published=None):
     }
     # THE BASIS FOR THE ONE STATUS WORD THAT HAS NO OTHER. `failed` is read back
     # off the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
-    # `no-checks` off `ranTotal` -- but a run stopped by a signal keeps only the
-    # steps that FINISHED, so nothing else on the row would say what happened to
-    # the rest. Written only when there is something to write: a key present on
-    # every row could not be told from one a build does not produce.
+    # `no-checks` off `ranTotal`, `gate-mutated` off `observations.treeMutated`
+    # plus the declared-count sentence `treeBasis` carries whenever anything moved
+    # -- but a run stopped by a signal keeps only the steps that FINISHED, so
+    # nothing else on the row would say what happened to the rest. Written only
+    # when there is something to write: a key present on every row could not be
+    # told from one a build does not produce.
+    #
+    # SO `gate-mutated` NEEDED NO FOURTH FIELD, and that is a finding rather than
+    # an omission (F280). The word says the gate rewrote files the work under test
+    # declares; `treeMutated` already holds every path that moved and `treeBasis`
+    # already ends with either "N of M changed path(s) are declared by the work
+    # under test" or the sentence saying no ownership could be sorted, which are
+    # exactly the two ways `run_status` reaches the word. A `treeMutatedOwned` key
+    # here would be a second copy of a claim the row can already be read for, and
+    # this file's rule about a cached count applies to a cached classification
+    # just as well.
     if result.get("cancelledBy") is not None:
         row["cancelledBy"] = str(result["cancelledBy"])
     for key in ("taskId", "phaseId"):

@@ -132,6 +132,14 @@ _check_claim = _phases._check_claim
 _check_area_tag = _phases._check_area_tag
 _check_areas = _phases._check_areas
 _walk_phases = _phases._walk_phases
+# F294. `audit-task.py` reads this through `_rules` to decide which path a
+# `tests.add` entry puts into a task's `files`, and `_walk_phases` reads it to
+# require one of a `tdd` task that can still be committed against. It sits beside
+# that walk rather than here because those two are what a reader has to compare:
+# the first draft gave this file a rule and a THIRD pass over the tasks of its own,
+# re-expressing `mode == "tdd" and status not in TERMINAL` next to F254's copy of
+# the same filter -- and the two had already drifted on `expectRedFirst`.
+tests_add_path = _phases.tests_add_path
 
 _check_identity_map = _ado._check_identity_map
 check_ado_meta = _ado.check_ado_meta
@@ -283,7 +291,7 @@ def validate(manifest):
     ORCHESTRATION ONLY. Every question lives in a piece above that answers it
     and returns its own pair; this decides the ORDER, which is the one thing
     that cannot live in a piece. The order is not arbitrary: `_walk_phases`
-    builds the index the four checks after it read, so it runs once and first.
+    builds the index the five checks after it read, so it runs once and first.
 
     Findings and warnings each keep the order they were produced in — the CLI
     prints them in that order and a reader walks the file top-down against it.
@@ -300,6 +308,9 @@ def validate(manifest):
     add(_check_meta(manifest))
     add(_check_branch(manifest))
     add(_check_areas(manifest))
+    # F294's rule about `tests.add` is NOT registered here, and its absence is the
+    # fact rather than an omission: it rides `_walk_phases` below, beside F254's
+    # rule about the same field. A line here would be a third pass over the tasks.
 
     phases = manifest.get("phases")
     if not isinstance(phases, list):

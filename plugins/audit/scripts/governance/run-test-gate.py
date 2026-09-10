@@ -24,7 +24,10 @@ nobody was asking either:
     gate's own exit code. The flag is load-bearing and its limit is stated at
     `_porcelain`: it expands a wholly untracked directory into its files, so a
     file CREATED in one is seen; it does not make the bracket content-aware, so a
-    REWRITE of a file that was already untracked is invisible to it.
+    REWRITE of a file that was already untracked is invisible to it. And the
+    answer is a STATUS WORD and not only an exit code (F280, `GATE_MUTATED`): the
+    refusal used to survive in the code this process returned and in a paragraph
+    addressed to the model, while the row it wrote said `passed`.
   * DID ANYTHING ACTUALLY RUN? Runners that say so are read and the count is
     reported. `pre-commit` prints one line per hook and says `Skipped`; nothing
     read it. A count of zero is reported as `NO CHECK RAN`, which is not the same
@@ -244,6 +247,25 @@ def _porcelain(project):
 
 
 # --- whose writes did the bracket catch ---------------------------------------
+# F280. THE REFUSAL LIVED ONLY IN THE EXIT CODE AND IN PROSE. `render` has printed
+# `GATE MUTATED THE TREE` and returned E_FAIL for as long as the bracket has
+# existed, and `reference/orchestrator.md` tells the model not to commit on such a
+# run -- but `run_status` took no tree argument and had no tree arm, so the ROW
+# said `passed` and `pointer_for` cached that word onto `task.testEvidence`. The
+# live signal was right and the record was wrong, which is the worse half: the
+# exit code is read once, by whoever was watching, and the record is what a reader
+# consults a week later. `--fail-on failing-tests` read the record and passed the
+# run.
+#
+# THE WORD NAMES THE ACTOR, not the event, and that is the whole content of the
+# split below: `treeMutated` says WHAT moved, `owned` is the half attributable to
+# the gate, and this is the word for that half. The event already had a spelling -
+# the `tree-mutated` observation mark both surfaces render off the FULL set - and
+# reusing it here would have put one string in two vocabularies, one of which
+# cannot attribute anything.
+GATE_MUTATED = "gate-mutated"
+
+
 def _norm(path):
     """One spelling for a path, so two readings of one file compare equal."""
     text = str(path or "").replace("\\", "/").strip()
@@ -320,6 +342,28 @@ def classify_mutations(mutated, owns):
         (owned if _declared_by(line, declared) else foreign).append(line)
     return owned, foreign, ("%d of %d changed path(s) are declared by the work "
                             "under test" % (len(owned), len(mutated)))
+
+
+def attributed_mutations(mutated, owned, foreign):
+    """`(refused, reported)` - which changed paths refuse a verdict, and which
+    may only be named beside one.
+
+    ONE EXPRESSION, THREE READERS. `run_status`, `render` and `main`'s `--json`
+    arm each had to decide what "the gate rewrote its own subject" meant, and two
+    of them wrote the fallback out by hand while the third had no arm at all -
+    which is F280 in one sentence. A rule spelled once cannot let the record and
+    the exit code disagree about the same run.
+
+    THE FALLBACK IS THE DIRECTION A GUARD MAY BE WRONG IN. `owned is None` means
+    `classify_mutations` had no declared files to sort by, so nothing can be
+    attributed either way; the whole set is then charged to the gate, which is
+    what this verdict did before the split existed. `mutated is None` - no
+    comparison was made at all - comes back as an empty refusal, because a
+    comparison nobody made cannot refuse anything; `treeBasis` is what says so.
+    """
+    if owned is None:
+        return list(mutated or []), []
+    return list(owned), list(foreign or [])
 
 
 # --- what state was actually tested -------------------------------------------
@@ -915,8 +959,9 @@ def failed_steps(steps):
             if st["exit"] != 0 and not st.get("outcome")]
 
 
-def run_status(steps, failed, ran_total, cancelled_by):
-    """The run's one word, from what its steps did and what stopped it.
+def run_status(steps, failed, ran_total, cancelled_by, refused):
+    """The run's one word, from what its steps did, what stopped it, and what it
+    rewrote.
 
     PRECEDENCE, AND WHY IT IS THIS ORDER. `failed` sits ABOVE the no-verdict
     words deliberately: a step that ran and exited non-zero is a CERTAIN red, and
@@ -948,10 +993,33 @@ def run_status(steps, failed, ran_total, cancelled_by):
     does not report a count; it is not evidence that nothing ran, so it leaves the
     status alone. Spelling that `not ran_total` would merge the two.
 
-    `cancelled_by` HAS NO DEFAULT. There is one production caller, and a fourth
-    argument nobody has to pass is a fourth argument a later caller forgets - which
-    would spell an interrupted run `passed` and lose it silently. Missing is a
-    TypeError; None is the caller SAYING nothing stopped this run.
+    AND `gate-mutated` SITS AT THE VERY BOTTOM, DIRECTLY ABOVE `passed`, BECAUSE
+    IT REPLACES THAT WORD AND NO OTHER (F280). Its claim is "every command ran and
+    came back green, and the gate rewrote files the work under test declares" - so
+    the first half of it is exactly `passed`'s claim, and every word above denies
+    that half: `failed` came back red, `no-checks` counted nothing, and the three
+    no-verdict words never finished. Ranking the rewrite above any of them would
+    swap a fact about whether the suite ANSWERED for a fact about the tree, and
+    tell a reader checks ran when none did. Two of those cannot co-occur with it
+    at all: an interrupted or timed-out run sets `mutated` to None one function
+    over, because a torn-down process group makes the comparison a race.
+
+    Nothing is lost at the bottom either, which is the same reason the ordering
+    above is safe: `treeMutated`, `treeMutatedOwned` and `treeBasis` all travel on
+    the result whatever this word comes out as, `render` prints the rewrite as its
+    own sentence even when the gate also failed, and both rendering surfaces carry
+    it as an observation mark beside the badge. What may never happen again is
+    `passed`.
+
+    `cancelled_by` AND `refused` HAVE NO DEFAULT. There is one production caller,
+    and an argument nobody has to pass is an argument a later caller forgets -
+    which would spell an interrupted run `passed` and lose it silently, and is
+    literally how F280 got here: a `run_status` that could not see the tree
+    recorded `passed` over its own `GATE MUTATED THE TREE`. Missing is a
+    TypeError; an empty `refused` is the caller SAYING the gate rewrote nothing it
+    owns. `refused` is `attributed_mutations`' first half, never `treeMutated`
+    itself - the foreign half is the one nothing can attribute (F273) and refusing
+    on it is what halted correct runs.
     """
     outcomes = [st.get("outcome") for st in steps]
     if failed:
@@ -964,6 +1032,8 @@ def run_status(steps, failed, ran_total, cancelled_by):
         return CANCELLED
     if ran_total == 0:
         return "no-checks"
+    if refused:
+        return GATE_MUTATED
     return "passed"
 
 
@@ -1061,6 +1131,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     overlap, cbasis = coverage(owns, named)
     ran_total = sum(counts) if counts else None
     failed = failed_steps(steps)
+    # THE VERDICT READS THE SAME LIST THE VERDICT LINE REFUSES ON. `render` and
+    # `--json` take the other half of this pair; before F280 the status word took
+    # neither and could only ever say `passed` over a gate that had rewritten its
+    # own subject.
+    refused, _reported = attributed_mutations(mutated, owned_changes,
+                                              foreign_changes)
     return {"steps": steps, "testedState": state,
             "treeMutated": mutated, "treeBasis": basis,
             # THE FULL SET STAYS `treeMutated`, and the split is additive: the
@@ -1071,7 +1147,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             "treeMutatedForeign": foreign_changes,
             "ranTotal": ran_total, "countsBasis": counts_basis(steps),
             "durationMs": _elapsed_ms(started),
-            "status": run_status(steps, failed, ran_total, cancelled_by),
+            "status": run_status(steps, failed, ran_total, cancelled_by,
+                                 refused),
             # ALWAYS PRESENT, None WHEN NOTHING STOPPED THE RUN - the shape
             # `treeMutated` and `overlap` already use. A key that appeared only on
             # an interrupted run could not be told from a build that does not
@@ -1135,15 +1212,13 @@ def render(res, out=print):
             "/audit:resume is what makes this durable.")
         code = E_FAIL
     # F273. TWO SETS, TWO MEANINGS, TWO RESPONSES - see `classify_mutations` for
-    # what each one can and cannot claim.
-    owned_changes = res.get("treeMutatedOwned")
-    foreign_changes = res.get("treeMutatedForeign") or []
-    if owned_changes is None:
-        # No ownership to sort by, so the whole set is attributed to the gate:
-        # what this line did before the split existed, and the direction a guard
-        # may be wrong in. The basis printed under it is what stops that reading
-        # as a classification somebody actually made.
-        owned_changes, foreign_changes = res["treeMutated"] or [], []
+    # what each one can and cannot claim, and `attributed_mutations` for the
+    # fallback when there is no ownership to sort by. That fallback was written
+    # out by hand here and again in `--json` while the status word had no arm at
+    # all, which is what let one run carry two answers (F280).
+    owned_changes, foreign_changes = attributed_mutations(
+        res["treeMutated"], res.get("treeMutatedOwned"),
+        res.get("treeMutatedForeign"))
     if owned_changes:
         # Said even when the gate also failed: two different facts, and a reader
         # who fixed the failure would otherwise meet the rewrite afterwards.
@@ -1436,17 +1511,20 @@ def main(argv, out=print):
                                       manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
+        # ONE TERM, BECAUSE THE STATUS NOW CARRIES BOTH FACTS (F280). This read
+        # the owned writes as a SECOND term beside the word, which is precisely
+        # the shape of the fault: the exit code refused a run the record called
+        # `passed`, and only the exit code was ever right. `run_status` answers
+        # `gate-mutated` for exactly the set this expression used to add on, so
+        # a `passed` here is now a run that rewrote nothing it owns - by
+        # construction rather than by a second opinion that can drift.
+        #
         # The overlap is absent from this expression ON PURPOSE: it is reported,
         # not enforced, and a machine reader that wants to act on it has the
         # field. Folding it in here would make the decision this entry declined.
         # `treeMutatedForeign` is absent for the same reason and a second one -
-        # it is the half nothing can attribute (F273) - which leaves the OWNED
-        # writes, or, where ownership is unknown, the whole set exactly as
-        # before.
-        blocking = res["treeMutatedOwned"]
-        if blocking is None:
-            blocking = res["treeMutated"]
-        return E_OK if res["status"] == "passed" and not blocking else E_FAIL
+        # it is the half nothing can attribute (F273).
+        return E_OK if res["status"] == "passed" else E_FAIL
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
     # reader who assumed otherwise would credit the wrong declaration.

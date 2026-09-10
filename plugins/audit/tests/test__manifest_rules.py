@@ -61,6 +61,9 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _manifest_rules as M                        # noqa: E402
+import _manifest_phases as _phases_mod             # noqa: E402  (the alias's other
+#                                                    end: `ta1` pins that the
+#                                                    re-export is the same object)
 
 
 # --- the fixture every mutating case starts from ------------------------------
@@ -154,8 +157,15 @@ def _cases(record):
     # warning that IS there: the second direction needs the absence, and a case
     # that cannot express it would pass over a rule warning on every tdd task.
     _v3d = copy.deepcopy(_valid_manifest())
+    # NAMING A CASE MEANS NAMING ITS FILE (F294), which narrowed what this
+    # fixture has to carry: the entry used to be a bare sentence, and the `ta`
+    # group below now requires the documented `<path>: <what it asserts>` shape
+    # of a tdd task that can still be committed against. Both halves of this
+    # case still mean what they meant - it is silent, and it is silent because
+    # the task named something rather than because nothing is checked.
     _v3d["phases"][0]["tasks"][0]["tests"].update(
-        mode="tdd", expectRedFirst=True, add=["the case the fix owes"])
+        mode="tdd", expectRedFirst=True,
+        add=["tests/fix.test.ts: the case the fix owes"])
     _v3d_f, _v3d_w = M.validate(_v3d)
     record("v3d ...while tdd that DOES name a case is silent - the second "
            "direction, without which the rule could warn on every tdd task and "
@@ -1031,6 +1041,26 @@ def _cases(record):
            "finding the second time round, which is the case that goes red if "
            "any piece ever parks its answer in module state",
            _ds_one == _ds_two and len(_ds_one[0]) == 1, _ds_one)
+
+    # --- ta: MOVED, with the rule -------------------------------------------
+    # F294's parse and the rule that requires it live in `_manifest_phases`
+    # now, beside F254's rule about the same field and inside the one walk, so
+    # their cases live in `test__manifest_phases.py`. What stayed here is `v3d`
+    # above, which is `_valid_manifest()`'s own tdd entry and had to learn the
+    # shape like every other fixture.
+    _ta_named_entry = "src/cart/total.ts: two stacked percentage discounts"
+    # THE RE-EXPORT IS THE ONE THING THAT STAYS THIS FILE'S SUBJECT. `tests_add_path`
+    # moved to `_manifest_phases` and is aliased here, and `audit-task.py` reads it
+    # through THIS module - so the alias being the same object is what keeps that
+    # call site honest. The identity block near the top pins the rest of the
+    # re-exported surface the same way.
+    record("ta1 `tests_add_path` is re-exported here as the SAME object the walk "
+           "uses, not a second definition - `audit-task.py` reaches it through "
+           "this module, so an alias that forked would give the verb writing "
+           "`files` and the rule grading it two answers about one field",
+           M.tests_add_path is _phases_mod.tests_add_path
+           and M.tests_add_path(_ta_named_entry) == "src/cart/total.ts",
+           M.tests_add_path(_ta_named_entry))
 
 
 def _selftest():

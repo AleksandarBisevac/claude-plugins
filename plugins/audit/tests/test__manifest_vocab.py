@@ -666,9 +666,18 @@ def _cases(check):
           "status is reported by ajv over audit-plan.schema.json and by nothing "
           "else; COMPATIBILITY.md leaves the list open, so a consumer switching on "
           "it still owes a default arm" % (_te_enum, _te_near),
-          sorted(_te_enum) == sorted(("passed", "failed", "no-checks", "timed-out",
-                                      "cancelled", "could-not-run", "empty-gate"))
-          and _te_near == [])
+          sorted(_te_enum) == sorted(("passed", "failed", "gate-mutated",
+                                      "no-checks", "timed-out", "cancelled",
+                                      "could-not-run", "empty-gate"))
+          and _te_near == []
+          # ...and the description SAYS what each word means, which is the only
+          # thing standing between this enum and a consumer who guesses. F280
+          # arrived through the gap between a word the runner could produce and a
+          # word the schema declared, so a member with no sentence about it is
+          # half an addition.
+          and all(("'%s'" % w) in str((_te_props.get("status") or {})
+                                      .get("description") or "")
+                  for w in _te_enum))
     check("mv41 the block is PERMISSIVE inside and whole-or-absent outside - "
           "additionalProperties %r is this document's stated policy at every object "
           "level, so an unrecognised key INSIDE a block is accepted rather than "

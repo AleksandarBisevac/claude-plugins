@@ -70,7 +70,8 @@ import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at la
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80", "invariant-breach",
-              "failing-tests", "no-test-evidence", "stranded-skills")
+              "failing-tests", "no-test-evidence", "stranded-skills",
+              "unfinished-run")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
@@ -89,6 +90,14 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
 # plan naming a skill only its author has is a correct observation about a
 # repository nobody may ever clone, and the doctor already says so at exit zero.
 # A team that wants it enforced is a team that will type it.
+#
+# AND `unfinished-run` IS OUT FOR A REASON THAT IS ALMOST THE OPPOSITE: a lock
+# lives in the shared git dir rather than in the working tree, so it is never
+# cloned and never committed. A fresh checkout in CI therefore holds no lock at
+# all and a default carrying this would grade a question that checkout cannot
+# answer, while on the machine that IS running a phase it would trip on every
+# invocation made during the run. It is for the surface that can see the lock -
+# the operator's terminal, and a runner that keeps its clone between jobs.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
@@ -346,14 +355,26 @@ TERMINAL = _mio.TERMINAL
 # runner never started -- no interpreter, an unreadable command -- so there is no
 # verdict at all, which is emphatically not the same claim as a failing test.
 #
+#   * `gate-mutated` IS EXIT 0 TOO, AND IT IS THE SAME MISTAKE ONE STEP FURTHER ON
+#     (F280). Every command came back green and the gate rewrote files the work
+#     under test declares, so its exit code is a claim about bytes the gate itself
+#     produced -- `run-test-gate.render` has refused the commit step on exactly that
+#     for as long as the bracket has existed, and until the enum had a word for it
+#     the ROW said `passed` and this condition read the row. So a gate whose own
+#     verdict line said GATE MUTATED THE TREE signed the work off -- the exit code
+#     was right and the record it wrote was wrong, which is the worse half,
+#     because the record is what a reader consults a week later. The repair is the
+#     gate's and not a retry: revert those files and use the read-only spelling of
+#     the check.
+#
 # SPELLED AS A POSITIVE SET, NEVER AS "everything except passed". The enum MAY GAIN
 # MEMBERS -- COMPATIBILITY.md declines to promise the list is closed -- and a
 # complement would fold a word this build has never heard of into `failed`, which is
 # the one reading the schema forbids by name. An unrecognised word is carried
 # through as itself (`unrecognised` in the summary below, the raw word in the CLI's
 # `tests` column) and is judged by nothing.
-NO_SIGN_OFF_EVIDENCE = frozenset({"failed", "no-checks", "timed-out", "cancelled",
-                                  "could-not-run"})
+NO_SIGN_OFF_EVIDENCE = frozenset({"failed", "gate-mutated", "no-checks",
+                                  "timed-out", "cancelled", "could-not-run"})
 PASSED_EVIDENCE = "passed"
 NO_GATE_EVIDENCE = "empty-gate"
 KNOWN_EVIDENCE = frozenset(NO_SIGN_OFF_EVIDENCE
@@ -935,6 +956,14 @@ def evaluate_gate(summary, conditions):
         # under which a block nobody computed fails instead of passing.
         elif c == "stranded-skills" and stranded_skills(summary) is not None:
             failed.append(c)
+        # ...and `is not None` again, for the same reason one more time. What is
+        # different here is which SILENCE the condition owes: a plan with ready
+        # work and NO lock is every planned phase there has ever been, so this
+        # arm has to stay quiet there while still tripping on a block nobody
+        # computed. `unfinished_runs` keeps those two apart; a truthiness test
+        # over its result would not.
+        elif c == "unfinished-run" and unfinished_runs(summary) is not None:
+            failed.append(c)
     return failed
 
 
@@ -983,6 +1012,107 @@ def stranded_skills(summary):
         return ["no name in this plan could be graded, so nothing was checked - "
                 "an empty result here is not a clean one"]
     return block["stranded"] or None
+
+
+# --- a run that stopped mid-phase ------------------------------------------------
+# F301. `/audit:phase P5` means "execute every ready task in the phase, then run
+# sign-off". A phase planned as waves of parallel subagents committed wave one,
+# said which tasks wave two would be, and ENDED THE TURN. Nothing had blocked it:
+# the lock was held, the manifest was valid, every remaining task was ready with
+# its dependencies satisfied, no budget was declared and no guard had fired. The
+# run sat idle until a human asked about it a day later.
+#
+# EVERY OTHER FAULT IN THIS PROJECT'S REGISTER IS A RULE THE CODE REFUSES OR A
+# PROHIBITION NOTHING ENFORCES. This is a PRESCRIPTION nothing enforces - the
+# document says run the phase to completion, a turn boundary between waves is
+# exactly where that instruction has to survive, and nothing anywhere read it.
+#
+# THE STATE WAS ALREADY KNOWABLE, WHICH IS THE WHOLE IDEA. A phase whose lock is
+# HELD while the plan still has READY work is a run that has not finished, and
+# both halves are facts the plan and the lock file already carry. Nothing here
+# caches either one.
+#
+# `phase-<id>` IS A RUN; `index` IS NOT. The index lock is what a structural write
+# takes and gives back inside one command, so a run is never what is holding it,
+# and a reading that counted it would fire on `/audit:task add`.
+PHASE_LOCK_PREFIX = "phase-"
+# What the sentence says after the verdict, per liveness, because the REPAIR is
+# what differs and a reader under a red build has to be able to tell which one
+# they have without opening anything.
+UNFINISHED_LIVE = ("its holder is still there, so the run is either working or "
+                   "sitting idle mid-procedure - `/audit:phase %s` picks the "
+                   "remaining waves up")
+UNFINISHED_STALE = ("its holder is gone, so nothing is going to finish it - "
+                    "`/audit:resume` continues it, and `audit-lock.py release "
+                    "phase-%s` gives the lock back")
+
+
+def unfinished_runs(summary):
+    """The phase runs that stopped mid-phase, or None. Never [].
+
+    THREE STATES, AND THE THIRD IS WHY THIS IS WORTH HAVING:
+
+        lock held   + ready work left    a run that has not finished
+        no lock     + no ready work      a finished plan
+        NO LOCK     + ready work left    every planned phase there has ever
+                                         been, and the state this must be
+                                         silent in
+
+    Get that last row wrong and the signal fires on every plan in the world,
+    which turns it into noise and gets it switched off inside a day. So the lock
+    is the half that decides, and the ready list is what says the run had
+    somewhere left to go.
+
+    THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, plus
+    the reading of a lock this one adds. The `locks` block is INJECTED by
+    `audit-status.py` - a lock lives in the git dir and this module (layer two)
+    may open nothing - so an ABSENT block means nobody asked, and a gate that
+    read that as clean would pass every run where the injection silently failed.
+    `evaluate_gate` therefore trips on `is not None`, which reads oddly until you
+    see that it is the only spelling under which the missing block fails.
+
+    A STALE LOCK COUNTS, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
+    `_locks.judge` resolves every uncertainty to LIVE, so `live: False` is not an
+    absence of information - it is the positive finding that the holder was
+    probed on this host and is gone. Excusing it would make this signal fall
+    silent exactly as the abandonment became certain: F301 was noticed a day
+    later, by which time the session that stopped mid-phase had long exited and
+    its lock was stale. A rule that graded only live locks would have had nothing
+    to say about the very instance it was written for. What liveness changes is
+    the sentence, not the verdict.
+
+    A lock whose name is not a phase's is skipped rather than graded, and the
+    prefix says why. A row that is not a dict at all is a block this reader
+    cannot grade, and it is refused rather than skipped - dropping it would
+    shrink a gate its reader believes covers every lock held.
+    """
+    block = (summary or {}).get("locks")
+    if not isinstance(block, dict) or not isinstance(block.get("held"), list):
+        return ["the phase locks were never read, so whether a run stopped "
+                "mid-phase was never asked - this is not a pass"]
+    if not all(isinstance(row, dict) for row in block["held"]):
+        return ["the lock list carries an entry that is not a lock, so what is "
+                "held could not be graded - this is not a pass"]
+    ready = (summary or {}).get("ready")
+    ready = ready if isinstance(ready, list) else []
+    # THE SILENT ROW. No ready work means the run had nowhere left to go, so a
+    # lock still on disk is a sign-off in flight or a lock to give back - and
+    # `/audit:doctor` is the surface for that. Nothing to say here.
+    if not ready:
+        return None
+    out = []
+    for row in block["held"]:
+        name = row.get("name")
+        if not isinstance(name, str) or not name.startswith(PHASE_LOCK_PREFIX):
+            continue
+        phase = name[len(PHASE_LOCK_PREFIX):]
+        repair = (UNFINISHED_LIVE if row.get("live") else UNFINISHED_STALE) % (
+            phase,)
+        out.append("phase %s holds a lock with %d task(s) still ready: %s. %s"
+                   % (phase, len(ready), row.get("basis")
+                      or "no basis was recorded for the lock, which is itself a "
+                         "reason to look at it", repair))
+    return out or None
 
 
 # `_budget_detail` sat here between these two and went back to `audit-status.py`

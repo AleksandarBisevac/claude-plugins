@@ -231,7 +231,13 @@ def _cases(check):
         code, _txt = run(["add", "Risky", "--phase", "P2",
                           "--project-dir", proj,
                           "--risk", "high", "--tests-mode", "tdd",
-                          "--tests-add", "repro must fail first",
+                          # The DOCUMENTED shape, `<path>: <what it asserts>`
+                          # (F294). It used to be a bare sentence here, and the
+                          # suite agreed with the writer that a sentence is a
+                          # path -- both were the same assumption, which is what
+                          # a fixture written by the author of the parser costs.
+                          "--tests-add",
+                          "tests/repro.test.ts: it must fail first",
                           "--blocked-by", "P2.1", "--depends-on", "P2.3",
                           "--description", "why and how"])
         t = task_in(mpath, "P2.7") or {}
@@ -242,7 +248,7 @@ def _cases(check):
               (t.get("tests") or {}).get("mode") == "tdd"
               and (t.get("tests") or {}).get("expectRedFirst") is True
               and (t.get("tests") or {}).get("add")
-              == ["repro must fail first"])
+              == ["tests/repro.test.ts: it must fail first"])
         # F258. The case named in `tests.add` is a file this task CREATES, so a
         # scope that excludes it fails the task's own commit through commit-scope.
         # One operator hand-fixed 13 tasks over exactly this, and reported that
@@ -262,9 +268,11 @@ def _cases(check):
         check("t5c ...and a tdd task that DID name one is not noted, so the line "
               "means something when it appears",
               "tests.add is empty" not in _txt, repr(_txt[-160:]))
-        check("t6b ...and the case it names is in `files`, unioned rather than "
-              "left for the operator to type twice: %r" % (t.get("files"),),
-              "repro must fail first" in (t.get("files") or []))
+        check("t6b ...and the PATH the entry names is in `files`, unioned rather "
+              "than left for the operator to type twice - the path and not the "
+              "sentence around it, which is F294: %r" % (t.get("files"),),
+              "tests/repro.test.ts" in (t.get("files") or [])
+              and not any(" " in f for f in (t.get("files") or [])))
         # The ordering rule asked of the helper that owns it, rather than by
         # creating a task here: the ids in this fixture are positional and a task
         # added mid-suite renumbers every case after it.
@@ -282,6 +290,172 @@ def _cases(check):
               M._union_paths(["src/a.ts"], ["", "   ", None, "src/b.ts"])
               == ["src/a.ts", "src/b.ts"],
               repr(M._union_paths(["src/a.ts"], ["", "   ", None, "src/b.ts"])))
+
+        # ---- (tp) F294: the files union takes the PATH, or nothing -----------
+        # THE FIXTURES ARE THIS REPOSITORY'S OWN `tests.add` STRINGS, both
+        # shapes, because the premise F258 wrote down ("a tdd task creates the
+        # file it names in `tests.add` BY DEFINITION") is true of the tasks that
+        # name one and false of the FIELD, which the schema documents as
+        # "Assertions/tests to author". Every regression task in this plan
+        # carries the second shape.
+        # THE NUMERAL IS BUILT AND NOT WRITTEN, which is `no-silent-pass`'
+        # rule about a lint that reads text: `_output.prose_number_claims()`
+        # scans every `.py` this repo keeps, this file included, and the plan
+        # string below really does open with a case count. Rewording it would
+        # make the fixture something somebody invented; building the literal
+        # keeps the corpus string exactly as the plan carries it.
+        _TP_NAMED = ("test_audit_task.py: the files union takes the leading "
+                     "path of a tests.add entry")
+        _TP_PROSE = ("%d selftest cases incl. exit-code matrix and readiness "
+                     "rule" % (14,))
+        _tp_proj, _tp_mp = mk("a-tests-add-path", base_manifest())
+        # `regression` MODE, and the mode is load-bearing in this fixture rather
+        # than incidental. `_manifest_rules._check_tests_add_shape` REQUIRES the
+        # path shape of a `tdd` task that can still be committed against, so the
+        # mixed pair below is only writable at a mode where the field is
+        # best-effort - which is most of this plan's own entries. The tdd half of
+        # the pair is `tp8`, where the same call is refused by the validator.
+        code, _tp_txt = run(["add", "Named and unnamed", "--phase", "P2",
+                             "--project-dir", _tp_proj,
+                             "--tests-mode", "regression",
+                             "--tests-add", _TP_NAMED,
+                             "--tests-add", _TP_PROSE])
+        _tp_task = task_in(_tp_mp, "P2.4") or {}
+        check("tp1 the files union takes the leading path of a tests.add entry, "
+              "and nothing at all from one that names no file - the SHARP half "
+              "is the permission and not the pollution: the union exists so "
+              "`commit_scope` will allow the file the task says it will create, "
+              "and a sentence copied in is not that path, so the permission was "
+              "never granted: %r" % (_tp_task.get("files"),),
+              code == 0
+              and _tp_task.get("files") == ["test_audit_task.py"])
+        check("tp2 ...and the entry that named none is SAID, where it happened - "
+              "a claim carries the basis that makes it true, and when the basis "
+              "is missing that is the thing to say. Silence here tells the "
+              "operator their case file is in scope when it is not: %r"
+              % (_tp_txt[-320:],),
+              "name no file" in _tp_txt and _TP_PROSE in _tp_txt
+              and "<path>: <what it asserts>" in _tp_txt)
+        check("tp3 ...and `fileIndex` gains the path and NOT the sentence, which "
+              "is what the plan gate matches an edit against - a key no path can "
+              "ever match is a row that will never fire: %r"
+              % (sorted(_mio.load_manifest(_tp_mp).get("fileIndex") or {}),),
+              sorted((_mio.load_manifest(_tp_mp).get("fileIndex") or {}).keys())
+              == ["src/a.ts", "test_audit_task.py"])
+        # SECOND-DIRECTION CASE, and it is the one that decides whether this can
+        # ship: the note must not fire on a task whose every entry names a file,
+        # or the operator learns to skip it.
+        code, _tp_clean = run(["add", "All named", "--phase", "P2",
+                               "--project-dir", _tp_proj,
+                               "--tests-mode", "tdd",
+                               "--tests-add", "tests/a.test.ts: one",
+                               "--tests-add", "tests/b.test.ts: two"])
+        check("tp4 SECOND-DIRECTION CASE: a task whose entries ALL name a file "
+              "draws no note at all, and both paths reach `files` - a note on a "
+              "correct call is a note somebody learns to skip: %r"
+              % ((task_in(_tp_mp, "P2.5") or {}).get("files"),),
+              code == 0 and "name no file" not in _tp_clean
+              and (task_in(_tp_mp, "P2.5") or {}).get("files")
+              == ["tests/a.test.ts", "tests/b.test.ts"])
+        # THE PARSE ITSELF is graded in `test__manifest_rules.py`'s `ta` group,
+        # where the parser lives: `tests_add_path` moved down beside the rule
+        # that REQUIRES the shape, because the verb writing `files` and the rule
+        # grading it have to ask one question. What stays here is what this verb
+        # DOES with the answer.
+        #
+        # THE VALIDATOR IS THE OTHER HALF OF THE SAME REPAIR, and this is where
+        # the two meet: a `tdd` task that can still be committed against owes
+        # the path shape, and `_manifest_rules._check_tests_add_shape` says so.
+        #
+        # IT IS A WARNING THROUGH THE 2.x LINE AND THIS CASE ASSERTS THE WRITE
+        # SUCCEEDS. That is the direction it was written in an hour ago and it
+        # asserted the opposite - refused, rolled back, exit 1 - so it is
+        # DRIVEN rather than edited: `COMPATIBILITY.md` promises a manifest
+        # that validates keeps validating through the major line, and refusing
+        # here would break that promise for a field the schema documents as
+        # free prose. The refusal arrives at 3.0.0 and the warning is what
+        # announces it, which is why the text has to carry the release.
+        with open(_tp_mp, "rb") as _fh:
+            _tp_before = _fh.read()
+        code, _tp_tdd = run(["add", "Tdd with prose", "--phase", "P2",
+                             "--project-dir", _tp_proj,
+                             "--tests-mode", "tdd",
+                             "--tests-add", _TP_PROSE])
+        with open(_tp_mp, "rb") as _fh:
+            _tp_after = _fh.read()
+        _tp_written = task_in(_tp_mp, "P2.6") or {}
+        check("tp8 the SAME entry at `tdd` mode is WRITTEN and warned about, "
+              "not refused: the manifest changed, the entry is in the task "
+              "verbatim, and the report carries the deprecation with the "
+              "release it bites in. Byte inequality is half the assertion, "
+              "because a rolled-back write also prints warnings: %r"
+              % (_tp_tdd[-300:],),
+              code == 0 and _tp_after != _tp_before
+              and (_tp_written.get("tests") or {}).get("add") == [_TP_PROSE]
+              and "names no file" in _tp_tdd
+              and "FINDING AT 3.0.0" in _tp_tdd
+              and _TP_PROSE in _tp_tdd)
+        check("tp8b ...and `files` still gained nothing from it, which is the "
+              "half the warning is ABOUT: the write being allowed does not "
+              "make the scope complete, so the note this verb prints and the "
+              "validator's deprecation are two different sentences about one "
+              "entry: %r" % (_tp_written.get("files"),),
+              _tp_written.get("files") == []
+              and "name no file" in _tp_tdd)
+        # `scope` is the OTHER two write sites, and F294 was in all three. The
+        # verb an operator reaches for when reality differed from the plan is
+        # the last place that should hand back a scope it knows to be short.
+        #
+        # `regression` AGAIN, and for `tp1`'s reason one step on: a PENDING tdd
+        # task carrying this entry is a manifest the validator refuses, so
+        # `scope` would refuse the call before reading it ("already invalid") and
+        # the case would be about the wrong thing.
+        _tp_scope = base_manifest()
+        _tp_scope["phases"][1]["tasks"].append(
+            {"id": "P2.9", "title": "imported", "status": "pending",
+             "files": [], "tests": {"mode": "regression", "add": [_TP_PROSE],
+                                    "expectRedFirst": False, "gate": []}})
+        _tps_proj, _tps_mp = mk("sc-tests-add-path", _tp_scope)
+        code, _tps_txt = run(["scope", "P2.9", "--project-dir", _tps_proj,
+                              "--files", "src/q.ts"])
+        check("tp6 `scope --files` unions the paths the task's EXISTING "
+              "tests.add names, so an entry that names none leaves `files` with "
+              "exactly what the operator typed - and the call says so rather "
+              "than reporting a scope it knows to be short: %r"
+              % ((task_in(_tps_mp, "P2.9") or {}).get("files"),),
+              code == 0
+              and (task_in(_tps_mp, "P2.9") or {}).get("files") == ["src/q.ts"]
+              and "name no file" in _tps_txt)
+        code, _tps_txt2 = run(["scope", "P2.9", "--project-dir", _tps_proj,
+                               "--tests-add",
+                               "tests/q.test.ts: it caps the length"])
+        check("tp7 ...and `scope --tests-add` unions the path the NEW entry "
+              "names, appending it to the files already there: %r"
+              % ((task_in(_tps_mp, "P2.9") or {}).get("files"),),
+              code == 0
+              and (task_in(_tps_mp, "P2.9") or {}).get("files")
+              == ["src/q.ts", "tests/q.test.ts"]
+              and "name no file" not in _tps_txt2)
+        # A RE-SCOPE CONSULTS THE SAME ENTRY TWICE - once as the task's current
+        # `tests.add` (because `--files` unions it back in) and once as the new
+        # `--tests-add` - and the note lists the STRINGS so the reader knows
+        # which line to go and fix. Naming one line twice makes them count
+        # instead of read. COUNTED, not merely found: presence passes either way.
+        _tpd_scope = base_manifest()
+        _tpd_scope["phases"][1]["tasks"].append(
+            {"id": "P2.9", "title": "imported", "status": "pending",
+             "files": [], "tests": {"mode": "regression", "add": [_TP_PROSE],
+                                    "expectRedFirst": False, "gate": []}})
+        _tpd_proj, _tpd_mp = mk("sc-tests-add-dupe", _tpd_scope)
+        code, _tpd_txt = run(["scope", "P2.9", "--project-dir", _tpd_proj,
+                              "--files", "src/q.ts",
+                              "--tests-add", _TP_PROSE])
+        check("tp9 an entry the task ALREADY carries and the call passes again "
+              "is named ONCE in the note, not twice - both lists are consulted "
+              "and the entries they share are one line in the file: %r"
+              % (_tpd_txt.count(_TP_PROSE),),
+              code == 0 and _tpd_txt.count(_TP_PROSE) == 1
+              and "name no file" in _tpd_txt)
         check("t7 blockedBy/dependsOn/description land as given",
               t.get("blockedBy") == ["P2.1"] and t.get("dependsOn") == ["P2.3"]
               and t.get("description") == "why and how")
@@ -848,6 +1022,76 @@ def _cases(check):
         check("p3 ...and it is APPENDED - the written order is the plan's order",
               [ph.get("id") for ph in _mio.load_manifest(mpp)["phases"]]
               == ["P0", "P1", "P3"])
+        # F296, END TO END, and the fixture above cannot reach it: `P0`, `P1`
+        # live and `P2` parked is a plan with NO GAP, so the lowest-free rule
+        # and the highest-plus-one rule both answer `P3` there and every case
+        # from p1 down passes under either. This fixture has the gap the live
+        # plan had. Driven through the VERB rather than the allocator, because
+        # `_allocate_phase_id` was already sharing the taken set correctly and
+        # what went wrong was the rule it applied to it.
+        gap = phase_fixture()
+        gap["proposals"] = []
+        gap["phases"] = [
+            {"id": "P0", "title": "Shipped", "status": "done",
+             "testGate": ["unit"], "tasks": []},
+            {"id": "P1", "title": "Also shipped", "status": "done",
+             "testGate": ["unit"], "tasks": []},
+            {"id": "P3", "title": "Live", "status": "in_progress",
+             "testGate": ["unit"], "tasks": []},
+        ]
+        projgap, mpgap = mk("p-gap", gap)
+        code, txt = run(["add-phase", "After the gap", "--project-dir", projgap,
+                         "--outcome", "the next body of work is tracked"])
+        _gap_ids = [ph.get("id")
+                    for ph in _mio.load_manifest(mpgap)["phases"]]
+        check("p3b F296: the id is the HIGHEST plus one, so a gap in the plan "
+              "is never re-minted - `P2` here is a phase that HAPPENED and "
+              "`meta.branch` derives the branch name from the id, so handing "
+              "it back names branches and merges that already exist. Measured "
+              "live on this repository's plan: P0, then P30, then P32: %r"
+              % (_gap_ids,),
+              code == 0 and _gap_ids == ["P0", "P1", "P3", "P4"])
+        emptyish = phase_fixture()
+        emptyish["proposals"] = []
+        emptyish["phases"] = []
+        projzero, mpzero = mk("p-zero", emptyish)
+        code, txt = run(["add-phase", "First", "--project-dir", projzero,
+                         "--outcome", "there is a plan"])
+        # ...and the OTHER half of that rule, which had no case at all: the
+        # claim that an explicit `--id P0` stays ACCEPTED lived in three
+        # docstrings and `ap3b`'s prose, and the only `--id P0` case asserted a
+        # duplicate refusal. `examples/acme-store` ships a real P0 phase and
+        # `templates/audit-plan.starter.json` opens with one, so a future
+        # refusal-of-zero would break both - and nothing would have caught it.
+        zero = phase_fixture()
+        zero["proposals"] = []
+        zero["phases"] = [{"id": "P4", "title": "Later", "status": "pending",
+                           "testGate": ["unit"], "tasks": []}]
+        projp0, mpp0 = mk("p-id-zero", zero)
+        code, txt = run(["add-phase", "Groundwork", "--id", "P0",
+                         "--outcome", "the base is in place",
+                         "--project-dir", projp0])
+        check("p3d an explicit `--id P0` is ACCEPTED - only ALLOCATION refuses "
+              "zero, and it refuses it by SHAPE (highest-plus-one from a floor "
+              "of zero) rather than by a rule about the id. The starter "
+              "template opens with a P0 and the shipped example carries one, so "
+              "a caller naming it is naming a legal id: %r"
+              % ([ph.get("id")
+                  for ph in _mio.load_manifest(mpp0)["phases"]],),
+              code == 0
+              and [ph.get("id")
+                   for ph in _mio.load_manifest(mpp0)["phases"]]
+              == ["P4", "P0"])
+        check("p3c ...and it never allocates `P0`, even with nothing taken at "
+              "all: an append happens in a plan that already exists, so a zero "
+              "there would be an id minted from the absence of evidence. An "
+              "`--id P0` the CALLER names stays legal - the starter template "
+              "opens with one: %r"
+              % ([ph.get("id")
+                  for ph in _mio.load_manifest(mpzero)["phases"]],),
+              code == 0
+              and [ph.get("id")
+                   for ph in _mio.load_manifest(mpzero)["phases"]] == ["P1"])
         newp = phase_in(mpp, "P3") or {}
         check("p4 every new-phase template field initialized, each exactly once",
               set(newp.keys()) == set(M._PHASE_TEMPLATE_KEYS))
@@ -1414,11 +1658,12 @@ def _cases(check):
               "branches merge without a manifest conflict: %r" % (_rns_written,),
               code == 0 and _rns_written
               and not [p for p in _rns_written if p.endswith("audit-plan.json")])
-        # DRIVEN, not introspected: `audit-task.py` builds its parser inside
-        # `main()`, so there is no `build_parser()` to ask - the same shape P26.1
-        # extracted for `audit-doctor.py`, and the reason `_help.command_choice_
-        # drift` cannot read this script's flag values either. Worth knowing; not
-        # this task's to fix.
+        # DRIVEN, not introspected, and it stays driven now that there IS a
+        # `build_parser()` to ask (F295 extracted it, the same shape P26.1
+        # extracted for `audit-doctor.py`). The parser is what would answer
+        # "is `--title` declared"; only a run answers "and what happens when
+        # somebody passes it", which is argparse refusing an unknown option on
+        # STDERR and is the thing this case is about.
         _rn_code, _rn_txt = run(["retarget", "P3", "--title", "shadowed",
                                  "--project-dir", rnb_proj])
         check("rn4 ...and the flag is `--rename` rather than `--title`: this "
@@ -1561,12 +1806,18 @@ def _cases(check):
         # answer. Same class as F191 and F184: integrity guaranteed, content not
         # true.
         jfm = base_manifest()
+        # Both entries carry the documented `<path>: <what it asserts>` shape
+        # (F294): the union carries the PATH and not the sentence, so a fixture
+        # whose entries name no file would leave `files` unmoved and take the
+        # row this group is about out of the journal.
         jfm["phases"][1]["tasks"][1]["tests"] = {
             "mode": "gate-only", "expectRedFirst": False,
-            "add": ["the case the import came with"], "gate": ["lint"]}
+            "add": ["tests/import.test.ts: the case the import came with"],
+            "gate": ["lint"]}
         jf_proj, jf_mp = mk("jf-from", jfm)
         code, txt = run(["scope", "P2.3", "--gate", "pytest -q",
-                         "--tests-add", "the case the fix owes",
+                         "--tests-add",
+                         "tests/fix.test.ts: the case the fix owes",
                          "--project-dir", jf_proj])
         jfmod = _panel_write._journalmod()
         jf_rows = [r for r in (jfmod.read_all(jf_proj) if jfmod else [])
@@ -1597,7 +1848,8 @@ def _cases(check):
         check("jf2 ...and tests.add likewise, read off the row ON DISK rather "
               "than the --json echo, because the trail is what the fault was "
               "about: %r" % (jf_changes,),
-              jf_val(jf_from.get("tests.add")) == ["the case the import came with"])
+              jf_val(jf_from.get("tests.add"))
+              == ["tests/import.test.ts: the case the import came with"])
         check("jf3 no row in the trail has `from` equal to `to` - the OTHER wrong "
               "fix is to read the field inside the branch, which reads back the "
               "value just written; asserted over every row, so a third field "
@@ -1625,15 +1877,22 @@ def _cases(check):
         # whichever writer touched the task last.
         _jf_node = [t for p in _mio.load_manifest(jf_mp).get("phases") or []
                     for t in (p.get("tasks") or []) if t.get("id") == "P2.3"]
-        check("jf4b files contains every case tests.add names, after a scope that "
-              "moved tests.add - a tdd task CREATES that file, so a scope that "
-              "excludes it fails the task's own commit",
-              _jf_node and all(
-                  a in (_jf_node[0].get("files") or [])
-                  for a in ((_jf_node[0].get("tests") or {}).get("add") or [])),
-              repr((_jf_node[0].get("files"),
-                    (_jf_node[0].get("tests") or {}).get("add"))
-                   if _jf_node else None))
+        # F294 narrowed the claim this makes: `files` carries the PATH each
+        # entry names, not the entry. Asked through the same parser the writer
+        # uses, because a second reading of "which path did that entry name"
+        # here would be the second opinion the parse exists to prevent - and an
+        # entry naming none contributes none, which is `tp1`.
+        _jf_named = [M._rules.tests_add_path(a)
+                     for a in ((_jf_node[0].get("tests") or {}).get("add") or [])
+                     ] if _jf_node else []
+        check("jf4b files contains the path every tests.add entry NAMES, after a "
+              "scope that moved tests.add - a task that names a file there "
+              "creates it, so a scope that excludes it fails the task's own "
+              "commit",
+              _jf_node and _jf_named != [] and all(_jf_named)
+              and all(p in (_jf_node[0].get("files") or [])
+                      for p in _jf_named),
+              repr((_jf_node[0].get("files"), _jf_named) if _jf_node else None))
         check("jf5 a scope that only ADDS files says so instead of claiming a "
               "release - the line names the direction the derivation actually "
               "went: %r" % (txt[:140],),
@@ -2192,6 +2451,90 @@ def _cases(check):
               "it was before this entry: %r" % (txt[:160],),
               code == 0 and "WIDENED" not in txt and "append-only" not in txt)
 
+        # F300. THE DOCUMENT JOIN, and the half this group left open. F271
+        # repaired the verb and the cases above pin the behaviour, but nothing
+        # tied either of them to the document that PRESCRIBES this recovery --
+        # so the `in_progress` arm was repaired without being named, and a gate
+        # tightened back would meet no case that reads the flow it breaks.
+        # `reference/orchestrator.md` writes the state in its Execute step
+        # (`task.status = "in_progress"` and `task.attempts += 1`, in one step,
+        # BEFORE the executor is spawned) and then names the remedy for the
+        # moment the plan gate refuses a file that task genuinely needs: widen
+        # `task.files` through this verb and tell the RUNNING executor to carry
+        # on, rather than spawning a fresh one. Released 2.2.0 wrote that state
+        # and refused that remedy, so the route the document sells as the cheap
+        # one was the route an operator could not take -- reported from a live
+        # phase run.
+        #
+        # READ OUT OF THE DOCUMENT, st5's rule: a reworded prescription, or a
+        # state whose write moves, has to come past this case instead of
+        # drifting away from the verb it names. READ, NOT CAUGHT -- a suite that
+        # cannot open the document it is comparing must fail rather than assert
+        # on an empty string.
+        with open(os.path.join(_output.PLUGIN_ROOT, "reference",
+                               "orchestrator.md"), "r",
+                  encoding="utf-8") as _fh:
+            _orc_src = _fh.read()
+        _orc_starts = ('task.status = "in_progress"' in _orc_src
+                       and "task.attempts += 1" in _orc_src)
+        _orc_widens = ("A widened scope CONTINUES the executor" in _orc_src
+                       and "widen `task.files` (`/audit:task scope`)"
+                       in _orc_src)
+        wdd = base_manifest()
+        # The state that Execute step leaves behind, and nothing more. `tests.add`
+        # is EMPTY on purpose: `--files` unions the task's own cases back in
+        # (F258), so a case file sitting there would re-add itself in the
+        # narrowing below and hide the drop that call exists to show.
+        wdd["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 1, "maxAttempts": 3,
+            "description": "the executor is running", "risk": "low",
+            "model": "sonnet", "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": ["src/documented.ts"],
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]}})
+        wdd["fileIndex"]["src/documented.ts"] = ["P2.3"]
+        wdd_proj, wdd_mp = mk("wd-documented", wdd)
+        os.makedirs(os.path.join(wdd_proj, "src"), exist_ok=True)
+        for _wddf in ("documented.ts", "refused.ts", "another.ts"):
+            with open(os.path.join(wdd_proj, "src", _wddf), "w") as _fh:
+                _fh.write("x\n")
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/documented.ts,src/refused.ts",
+                         "--project-dir", wdd_proj])
+        _wddt = task_in(wdd_mp, "P2.3") or {}
+        _wddi = (_mio.load_manifest(wdd_mp).get("fileIndex") or {})
+        check("wd12 THE DOCUMENTED RECOVERY, DRIVEN: `orchestrator.md` sets "
+              "`in_progress` and increments `attempts` before it spawns, and "
+              "prescribes a widening through this verb plus a message to the "
+              "RUNNING executor for the moment the plan gate refuses a file the "
+              "task needs. So the state that document writes has to be a state "
+              "this verb takes a widening on, and the index the gate reads has "
+              "to gain the path. Released 2.2.0 wrote the state and refused the "
+              "remedy, which left the route the document sells as the cheap one "
+              "the one nobody could take: prescribes=%r accepts=%r"
+              % ((_orc_starts, _orc_widens), (code, _wddt.get("files"))),
+              _orc_starts and _orc_widens and code == 0
+              and _wddt.get("files") == ["src/documented.ts", "src/refused.ts"]
+              and _wddi.get("src/refused.ts") == ["P2.3"])
+        with open(wdd_mp, "rb") as _fh:
+            _wdd_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/refused.ts,src/another.ts",
+                         "--project-dir", wdd_proj])
+        with open(wdd_mp, "rb") as _fh:
+            _wdd_after = _fh.read()
+        check("wd13 SECOND-DIRECTION CASE, on the task the document just "
+              "widened: a call that GAINS a path and LOSES one is still "
+              "refused, names the path it would drop, and writes no byte. That "
+              "is the silent move F190 protects against -- an operator retyping "
+              "the list from memory -- and it is the shape that separates a "
+              "guard grading the DIRECTION of the change from one that merely "
+              "notices something was added: %r" % (txt[:200],),
+              code == 2 and _wdd_after == _wdd_before
+              and "`files` would drop src/documented.ts" in txt
+              and (task_in(wdd_mp, "P2.3") or {}).get("files")
+              == ["src/documented.ts", "src/refused.ts"])
+
         # ---- (st) F283: `done` settles the RECORD, not the INDEX -------------
         # The product prescribed a remedy and refused it in the same breath. At
         # sign-off `_invariants.manifest_revalidated` prints, as its own repair,
@@ -2521,6 +2864,574 @@ def _cases(check):
               not M.shell_eaten_gap("It ends here.  And starts again.")
               and not M.shell_eaten_gap("a line\n   indented on")
               and not M.shell_eaten_gap("run git fetch . b:p here"))
+
+        # ---- (pf) F293: the CLASS `--description` was one member of -----------
+        # F285 fixed one flag. Two more carry the operator's own prose into the
+        # manifest AND into the hash-chained journal through the same shell:
+        # `--reason`, which F191 made a VERBATIM field precisely so nobody would
+        # paraphrase it - so a clause deleted out of one is silent by design -
+        # and `--outcome`, which is the phase's `desiredOutcome` and the thing
+        # sign-off has to address. `--rename` is here for the same reason one
+        # step further: a phase title is what `_branch.slugify` composes a
+        # branch name from.
+        pf_proj, pf_mp = mk("pf-prose", base_manifest())
+        with open(pf_mp, "rb") as _fh:
+            _pf_before = _fh.read()
+        _pf_refused = {}
+        for _pfargv, _pfwhat in (
+                (["cancel", "P2.3", "--reason", _EATEN], "cancel/--reason"),
+                (["add-phase", "Later", "--outcome", _EATEN],
+                 "add-phase/--outcome"),
+                (["retarget", "P3", "--outcome", _EATEN],
+                 "retarget/--outcome"),
+                (["retarget", "P3", "--rename", _EATEN],
+                 "retarget/--rename")):
+            _pf_refused[_pfwhat] = run(_pfargv + ["--project-dir", pf_proj])
+        with open(pf_mp, "rb") as _fh:
+            _pf_after = _fh.read()
+        check("pf1 --reason and --outcome refuse a shell-eaten value, and so "
+              "does --rename: the manifest is byte identical, which is the "
+              "assertion, because the fault was that each of these was accepted "
+              "and written. `--reason` is the sharpest - F191 made it VERBATIM "
+              "so nobody would paraphrase it, so a hole in one is silent by "
+              "design: %r"
+              % (dict((k, v[0]) for k, v in _pf_refused.items()),),
+              sorted(v[0] for v in _pf_refused.values()) == [2, 2, 2, 2]
+              and _pf_after == _pf_before)
+        check("pf2 ...and every refusal names the FLAG the caller typed, not "
+              "`--description`: one route serves them all now, and a message "
+              "naming the wrong argument sends the reader to the wrong part of "
+              "their own command line: %r"
+              % (dict((k, v[1][:60]) for k, v in _pf_refused.items()),),
+              all(_pf_refused[k][1].startswith("[audit-task] " + f)
+                  for k, f in (("cancel/--reason", "--reason"),
+                               ("add-phase/--outcome", "--outcome"),
+                               ("retarget/--outcome", "--outcome"),
+                               ("retarget/--rename", "--rename"))))
+        _pf_stdin = {}
+        _pf_stdin["reason"] = run_on_stdin(
+            ["cancel", "P2.3", "--reason", "-", "--project-dir", pf_proj],
+            _WHOLE + "\n")
+        _pf_task = task_in(pf_mp, "P2.3") or {}
+        check("pf3 ...and each has the STDIN route out, which is the repair "
+              "rather than the check: `--reason -` writes the operator's words "
+              "verbatim, backticks and the condition included, into the field "
+              "the report reads: %r"
+              % ((_pf_stdin["reason"][0],
+                  (_pf_task.get("outcome") or {}).get("descriptive")),),
+              _pf_stdin["reason"][0] == 0
+              and (_pf_task.get("outcome") or {}).get("descriptive")
+              == "Cancelled: " + _WHOLE)
+        _pf_out = run_on_stdin(["add-phase", "From stdin", "--outcome", "-",
+                                "--project-dir", pf_proj], _WHOLE + "\n")
+        _pf_phase = [ph for ph in _mio.load_manifest(pf_mp)["phases"]
+                     if ph.get("title") == "From stdin"]
+        check("pf4 ...and `--outcome -` likewise, on the verb that REQUIRES it: "
+              "a phase whose success cannot be stated is a phase sign-off "
+              "cannot address, so the one field the verb insists on was the one "
+              "with no shell-proof way in: %r"
+              % ([p.get("desiredOutcome") for p in _pf_phase],),
+              _pf_out[0] == 0 and len(_pf_phase) == 1
+              and _pf_phase[0].get("desiredOutcome") == _WHOLE)
+        # THE DESIGN QUESTION, ANSWERED IN THE CODE. stdin is ONE stream and
+        # `add-phase` takes two prose flags (`retarget` takes three), so `-` is
+        # a request at most one of them per call can be granted. Resolving it by
+        # reading would put one operator's brief into the other's field.
+        _pf_two = run_on_stdin(["add-phase", "Two claims", "--outcome", "-",
+                                "--description", "-",
+                                "--project-dir", pf_proj], _WHOLE + "\n")
+        _pf_three = run_on_stdin(["retarget", "P3", "--outcome", "-",
+                                  "--rename", "-", "--description", "-",
+                                  "--project-dir", pf_proj], _WHOLE + "\n")
+        check("pf5 ...and two flags claiming stdin in one call is REFUSED, "
+              "naming which two are competing - stdin is one stream, so "
+              "whichever was read first would take all of it and the other "
+              "would get nothing, written verbatim into the wrong field with a "
+              "journal row attesting it: %r"
+              % ((_pf_two[0], _pf_two[1][:150]),),
+              _pf_two[0] == 2 and "each claim stdin" in _pf_two[1]
+              and "--description" in _pf_two[1] and "--outcome" in _pf_two[1]
+              # THREE claimants on `retarget`, so the message is built from the
+              # flags in the call rather than from a hard-coded pair.
+              and _pf_three[0] == 2 and "--rename" in _pf_three[1])
+        # SECOND-DIRECTION CASE. A refusal that fires on ONE claimant would make
+        # the route unusable, and it is the only case that catches that.
+        _pf_one = run_on_stdin(["add-phase", "One claim only", "--outcome", "-",
+                                "--description", "written on the line",
+                                "--project-dir", pf_proj], "shipped\n")
+        _pf_one_phase = [ph for ph in _mio.load_manifest(pf_mp)["phases"]
+                         if ph.get("title") == "One claim only"]
+        check("pf6 SECOND-DIRECTION CASE: ONE flag claiming stdin alongside "
+              "another prose flag given on the command line is accepted, and "
+              "each field gets its own text - an arbitration that fired on a "
+              "single claimant would close the route it exists to protect: %r"
+              % ([(p.get("desiredOutcome"), p.get("description"))
+                  for p in _pf_one_phase],),
+              _pf_one[0] == 0 and len(_pf_one_phase) == 1
+              and _pf_one_phase[0].get("desiredOutcome") == "shipped"
+              and _pf_one_phase[0].get("description") == "written on the line")
+        # THE MEASURED RESIDUAL, and the decision about it. An UNQUOTED heredoc
+        # word expands its body exactly as double quotes do, so the shell eats
+        # the clause BEFORE stdin is read and the route advertised as the repair
+        # delivers damaged text with exit 0. Refusing stdin would close the door
+        # a false positive escapes through - the guard-with-no-door shape this
+        # repository has three fault entries about - so the run continues and
+        # the reader is TOLD, with both readings side by side.
+        _pf_note = run_on_stdin(["add-phase", "Eaten on stdin", "--outcome", "-",
+                                 "--project-dir", pf_proj], _EATEN + "\n")
+        _pf_note_phase = [ph for ph in _mio.load_manifest(pf_mp)["phases"]
+                          if ph.get("title") == "Eaten on stdin"]
+        check("pf7 a gap that arrives on STDIN is written verbatim AND said out "
+              "loud: an unquoted `<<BRIEF` expands its body exactly as double "
+              "quotes do, so the one route advertised as shell-proof is not - "
+              "and silence there left that case indistinguishable from prose "
+              "somebody meant: %r" % (_pf_note[1][:200],),
+              _pf_note[0] == 0 and len(_pf_note_phase) == 1
+              and _pf_note_phase[0].get("desiredOutcome") == _EATEN
+              and "note:" in _pf_note[1]
+              and "<<'BRIEF'" in _pf_note[1]
+              and "VERBATIM" in _pf_note[1])
+        # SECOND-DIRECTION CASE for pf7: the note must not fire on stdin text
+        # that reads whole, or it becomes a line every heredoc prints.
+        check("pf8 SECOND-DIRECTION CASE: stdin text with no gap in it draws no "
+              "note at all - a note on every heredoc is a note nobody reads, "
+              "and pf4's own run is the corpus that says so: %r"
+              % (_pf_out[1][:120],),
+              "note: the text on stdin" not in _pf_out[1]
+              and "note: the text on stdin" not in _pf_stdin["reason"][1])
+        # F293's OWN REGRESSION, reported from a live run and the reason an
+        # advisory printed before dispatch is a defect rather than a style
+        # choice: this note went to `out` from `resolve_briefs`, which runs
+        # BEFORE the verb, so `--json` came back as three human lines followed
+        # by the object and `json.load` raised on line 1 column 2 - at exit 0,
+        # so a machine consumer saw success and an unparseable payload.
+        _pf_json = run_on_stdin(["add-phase", "Titled", "--outcome", "-",
+                                 "--json", "--project-dir", pf_proj],
+                                _EATEN + "\n")
+        _pf_parsed = None
+        try:
+            _pf_parsed = json.loads(_pf_json[1])
+        except Exception as _exc:
+            _pf_parsed = "UNPARSEABLE: %s" % (_exc,)
+        check("pf11 `--json` stays ONE parseable object when a stdin value "
+              "draws the note, and the note is a KEY - every other advisory in "
+              "these verbs is data in JSON mode (`filesNotOnDisk`, "
+              "`testsAddNamingNoFile`) and this was the one that printed prose "
+              "into the same stream at exit 0: %r"
+              % (_pf_parsed if isinstance(_pf_parsed, str)
+                 else sorted(_pf_parsed),),
+              _pf_json[0] == 0 and isinstance(_pf_parsed, dict)
+              and _pf_parsed.get("ok") is True
+              and len(_pf_parsed.get("stdinNotes") or []) == 1
+              and "<<'BRIEF'" in (_pf_parsed.get("stdinNotes") or [""])[0])
+        check("pf12 SECOND-DIRECTION CASE: the key is ABSENT when there is no "
+              "note, so a reader can tell 'nothing to say' from a release that "
+              "does not carry them - and the HUMAN branch still prints it, "
+              "which is the half a suppression would have quietly dropped: %r"
+              % ((_pf_out[1][-70:],),),
+              "stdinNotes" not in json.loads(
+                  run_on_stdin(["add-phase", "Clean json", "--outcome", "-",
+                                "--json", "--project-dir", pf_proj],
+                               "shipped\n")[1])
+              and "note: the text on stdin" in run_on_stdin(
+                  ["add-phase", "Human note", "--outcome", "-",
+                   "--project-dir", pf_proj], _EATEN + "\n")[1])
+        # F293 closed the class for FLAGS and left the TITLE, which put the
+        # guard on the CORRECTION path and not on the path where a title first
+        # reaches the manifest: `retarget --rename "$T"` refused a run of spaces
+        # while `add-phase "$T"` and `add "$T"` wrote the same string verbatim.
+        # `_branch.slugify` derives the branch name from a phase title, which is
+        # the argument for checking `--rename` read one door earlier.
+        with open(pf_mp, "rb") as _fh:
+            _pf_t_before = _fh.read()
+        _pf_titles = {}
+        for _pfargv, _pfwhat in (
+                (["add-phase", _EATEN, "--outcome", "ok"], "add-phase"),
+                (["add", _EATEN, "--phase", "P2"], "add")):
+            _pf_titles[_pfwhat] = run(_pfargv + ["--project-dir", pf_proj])
+        with open(pf_mp, "rb") as _fh:
+            _pf_t_after = _fh.read()
+        check("pf13 the TITLE positional is in the class too: `add` and "
+              "`add-phase` refuse a shell-eaten title and write nothing, where "
+              "before they took the same string `retarget --rename` was already "
+              "refusing. The message names `the <title> argument` and not a "
+              "`--title` flag, which argparse refuses and `rn4` pins: %r"
+              % (dict((k, (v[0], v[1][:40])) for k, v in _pf_titles.items()),),
+              sorted(v[0] for v in _pf_titles.values()) == [2, 2]
+              and _pf_t_after == _pf_t_before
+              and all("the <title> argument carries" in v[1]
+                      for v in _pf_titles.values()))
+        _pf_t_stdin = run_on_stdin(["add-phase", "-", "--outcome", "shipped",
+                                    "--project-dir", pf_proj],
+                                   "A title with `backticks` in it\n")
+        _pf_t_named = [ph.get("title")
+                       for ph in _mio.load_manifest(pf_mp)["phases"]
+                       if "backticks" in (ph.get("title") or "")]
+        check("pf14 ...and it has the same STDIN route, so the guard has a "
+              "door: a title whose backticks matter comes through verbatim: %r"
+              % (_pf_t_named,),
+              _pf_t_stdin[0] == 0
+              and _pf_t_named == ["A title with `backticks` in it"])
+        # SECOND-DIRECTION CASE, and the one that decides whether this can
+        # ship: the same positional is the ID on three verbs, and an id is not
+        # prose. Checking it there would put a prose guard on `P2.3`.
+        # ITS OWN PROJECT. `pf_proj` has been cancelled, scoped and retargeted
+        # by the cases above, so an exit 2 there could be the accumulated state
+        # rather than the positional - which is exactly what it was on the first
+        # run of this case, and a green reading of it would have been luck.
+        _pfid_proj, _pfid_mp = mk("pf-ids", base_manifest())
+        _pf_ids = {}
+        for _pfargv, _pfwhat in (
+                (["scope", "P2.3", "--files", "src/a.ts"], "scope"),
+                (["retarget", "P3", "--outcome", "restated"], "retarget"),
+                (["cancel", "P2.3", "--reason", "dropped"], "cancel")):
+            _pf_ids[_pfwhat] = run(_pfargv + ["--project-dir", _pfid_proj])[0]
+        check("pf15 SECOND-DIRECTION CASE: the same positional is the ID for "
+              "`scope`, `retarget` and `cancel`, and those are untouched - the "
+              "door and the check follow the VERB, because an id is not prose "
+              "and `-` in an id slot would mean reading an id off stdin: %r"
+              % (_pf_ids,),
+              sorted(_pf_ids.values()) == [0, 0, 0]
+              and "title" not in M.PROSE_POSITIONAL.get("scope", "")
+              and sorted(M.PROSE_POSITIONAL) == ["add", "add-phase"])
+        check("pf9 the class is a TABLE and not four call sites, and what is "
+              "OUTSIDE it was measured rather than assumed: `--gate` carries a "
+              "COMMAND (`make check ; true` trips the gap shapes and is exactly "
+              "right), and the id lists leave an empty element `_split_csv` "
+              "already drops: %r" % (sorted(M.PROSE_FLAGS),),
+              sorted(M.PROSE_FLAGS)
+              == ["description", "outcome", "reason", "rename"]
+              and "gate" not in M.PROSE_FLAGS
+              and M.shell_eaten_gap("make check ; true"))
+        _pf_gate = run(["retarget", "P3", "--gate", "make check ; true",
+                        "--project-dir", pf_proj])
+        check("pf10 ...and that is not theoretical: the same `--gate` value the "
+              "gap shapes convict is accepted and written, because a command is "
+              "not prose - a table that swept every string flag in would have "
+              "refused it: %r"
+              % ((_pf_gate[0],
+                  [ph.get("testGate")
+                   for ph in _mio.load_manifest(pf_mp)["phases"]
+                   if ph.get("id") == "P3"]),),
+              _pf_gate[0] == 0
+              and [ph.get("testGate")
+                   for ph in _mio.load_manifest(pf_mp)["phases"]
+                   if ph.get("id") == "P3"] == [["make check ; true"]])
+
+        # ---- (vf) F295: a flag a verb does not read is a usage error ----------
+        # ONE PARSER SERVES FIVE VERBS. Driven across the grid before the fix,
+        # half the (verb, flag) pairs were ACCEPTED, wrote nothing and reported
+        # success with exit 0 - `scope --outcome`, `retarget --files`,
+        # `add --id`, `add-phase --risk`, `add-phase --files` among them. F196,
+        # F201 and F207 each fixed one cell of that grid; `--rename` was born
+        # ignored by four verbs, which is what makes it a class rather than
+        # three incidents.
+        import ast
+        import re
+        vf_proj, vf_mp = mk("vf-flags", base_manifest())
+        with open(vf_mp, "rb") as _fh:
+            _vf_before = _fh.read()
+        code, txt = run(["add-phase", "Later work", "--outcome", "shipped",
+                         "--risk", "high", "--project-dir", vf_proj])
+        with open(vf_mp, "rb") as _fh:
+            _vf_after = _fh.read()
+        check("vf1 a flag passed to a verb that does not read it exits 2 naming "
+              "the verb that does - and the manifest is byte identical, which "
+              "is the assertion, because the fault was that the call SUCCEEDED "
+              "and wrote a phase with no risk on it: %r" % (txt[:200],),
+              code == 2 and _vf_after == _vf_before
+              and "does not read --risk" in txt
+              and "read by: `add`, `scope`" in txt)
+        _vf_cells = {}
+        for _vfargv, _vfwhat in (
+                (["scope", "P2.3", "--outcome", "o"], "scope/--outcome"),
+                (["retarget", "P2", "--files", "src/a.ts"],
+                 "retarget/--files"),
+                (["add", "T", "--phase", "P2", "--id", "P7"], "add/--id"),
+                (["add", "T", "--phase", "P2", "--rename", "X"],
+                 "add/--rename"),
+                (["add-phase", "T", "--outcome", "o", "--files", "src/a.ts"],
+                 "add-phase/--files"),
+                (["cancel", "P2.3", "--reason", "r", "--gate", "true"],
+                 "cancel/--gate")):
+            _vf_cells[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
+        with open(vf_mp, "rb") as _fh:
+            _vf_after2 = _fh.read()
+        check("vf2 ...and every cell the live sweep found is refused, not only "
+              "the one that got reported: each of these exited 0 having written "
+              "nothing for the flag, which is indistinguishable from success: %r"
+              % (_vf_cells,),
+              sorted(_vf_cells.values()) == [2] * 6
+              and _vf_after2 == _vf_before)
+        # THE WHOLE GRID, counted rather than sampled: a fix driven off six
+        # reported cells is a fix for six cells.
+        _vf_parser = M.build_parser()
+        _vf_opts = M.option_dests(_vf_parser)
+        _vf_switch = set(a.dest for a in _vf_parser._actions
+                         if a.option_strings and a.nargs == 0)
+        _vf_pos = {"add": ["add", "T", "--phase", "P2"],
+                   "add-phase": ["add-phase", "T", "--outcome", "o"],
+                   "cancel": ["cancel", "P2.3", "--reason", "r"],
+                   "scope": ["scope", "P2.3", "--files", "src/a.ts"],
+                   "retarget": ["retarget", "P2", "--gate", "true"]}
+        _vf_leaks = []
+        for _vfv in sorted(M.VERB_FLAGS):
+            _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
+            for _vfd in sorted(_vf_opts):
+                if _vfd in _vfknown:
+                    continue
+                _vfargv = list(_vf_pos[_vfv]) + [_vf_opts[_vfd]]
+                if _vfd not in _vf_switch:
+                    _vfargv.append("x")
+                if run(_vfargv + ["--project-dir", vf_proj])[0] != 2:
+                    _vf_leaks.append((_vfv, _vf_opts[_vfd]))
+        with open(vf_mp, "rb") as _fh:
+            _vf_after3 = _fh.read()
+        check("vf3 ...and the WHOLE grid: every flag no verb of the five reads "
+              "exits 2 on that verb, and not one of those calls wrote a byte. "
+              "Counted over the parser's own option list, so a flag added "
+              "tomorrow is inside this case by existing - which is the half "
+              "that makes `--rename`'s birth defect impossible to repeat: %r"
+              % (_vf_leaks,),
+              _vf_leaks == [] and _vf_after3 == _vf_before)
+        # SECOND-DIRECTION CASES. A refusal that fires on a flag the verb DOES
+        # read is a refusal somebody routes around inside a day, and the
+        # universal flags are the ones every verb has to keep taking.
+        _vf_ok = {}
+        for _vfargv, _vfwhat in (
+                (["add", "Files ok", "--phase", "P2", "--files", "src/a.ts"],
+                 "add/--files"),
+                (["add-phase", "Gate ok", "--outcome", "o", "--gate", "true"],
+                 "add-phase/--gate"),
+                (["retarget", "P3", "--outcome", "restated"],
+                 "retarget/--outcome"),
+                (["scope", "P2.3", "--files", "src/a.ts", "--json"],
+                 "scope/--json"),
+                (["cancel", "P3", "--reason", "dropped", "--json"],
+                 "cancel/--json")):
+            _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
+        check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
+              "works, and `--json` / `--project-dir` reach all five - a guard "
+              "that fires on a correct call is a guard somebody routes around "
+              "inside the day: %r" % (_vf_ok,),
+              sorted(_vf_ok.values()) == [0] * 5)
+        _vf_empty = run(["cancel", "P2.3", "--reason", "r", "--description",
+                         "", "--project-dir", vf_proj])[0]
+        check("vf5 ...and the census reads ARGV rather than the namespace: "
+              "`--description \"\"` holds the parser's own default, so a check "
+              "comparing values could not tell it from a flag nobody passed - "
+              "which is the half of a flag that is ignored MOST quietly: %r"
+              % (_vf_empty,), _vf_empty == 2)
+        # THE TABLE, GRADED AGAINST THE REAL DISPATCH. A hand-written table
+        # nothing compares to the code is the same defect one level up: F207's
+        # entry says a row added to `test__refs.py`'s writer table stayed green
+        # with the flag's read DELETED, which is a check asserting nothing.
+        with open(os.path.join(_output.SCRIPTS_DIR, "manifest",
+                               "audit-task.py"), "r", encoding="utf-8") as _fh:
+            _vf_src = _fh.read()
+        _vf_tree = ast.parse(_vf_src)
+        _vf_defs = dict((n.name, n) for n in _vf_tree.body
+                        if isinstance(n, ast.FunctionDef))
+
+        def vf_doors(tree):
+            """{verb: door function} off `main`'s own `doors` map.
+
+            DERIVED AND NOT LISTED. The roots of the walk below are the five
+            functions the dispatch actually reaches, and a list of them kept
+            here would be a sixth description of the verb set - which is the
+            failure `test__refs.py`'s `_AT_WRITERS` records paying for.
+            """
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign) \
+                        or not isinstance(node.value, ast.Dict):
+                    continue
+                if "doors" not in [t.id for t in node.targets
+                                   if isinstance(t, ast.Name)]:
+                    continue
+                return dict(
+                    (k.value, v.id)
+                    for k, v in zip(node.value.keys, node.value.values)
+                    if isinstance(k, ast.Constant) and isinstance(v, ast.Name))
+            return {}
+
+        def vf_reads(node):
+            """The `args.<attr>` a function reads, dotted or through `getattr`.
+
+            Off the AST and never a text search: `test__refs.py`'s `pf1` was a
+            grep once, and the comment explaining that very repair contained
+            the dest it looked for - so with the read deleted the check stayed
+            green on the comment alone.
+            """
+            found = set()
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Attribute)
+                        and isinstance(sub.value, ast.Name)
+                        and sub.value.id == "args"):
+                    found.add(sub.attr)
+                elif (isinstance(sub, ast.Call)
+                        and isinstance(sub.func, ast.Name)
+                        and sub.func.id == "getattr"
+                        and len(sub.args) >= 2
+                        and isinstance(sub.args[0], ast.Name)
+                        and sub.args[0].id == "args"
+                        and isinstance(sub.args[1], ast.Constant)
+                        and isinstance(sub.args[1].value, str)):
+                    found.add(sub.args[1].value)
+            return found
+
+        def vf_closure(root):
+            """(dests, functions) reachable from `root` through this module.
+
+            THE CLOSURE IS THE POINT. A verb's flags are read across its door,
+            the body under the lock, and the payload builders - and the lambda
+            `_under_lock` is handed sits INSIDE the door, so walking the door's
+            whole subtree finds the `_locked_*` call without the walk having to
+            know that `_under_lock` calls its argument.
+            """
+            seen, todo, dests = set(), [root], set()
+            while todo:
+                name = todo.pop()
+                if name in seen or name not in _vf_defs:
+                    continue
+                seen.add(name)
+                dests |= vf_reads(_vf_defs[name])
+                todo.extend(sub.func.id for sub in ast.walk(_vf_defs[name])
+                            if isinstance(sub, ast.Call)
+                            and isinstance(sub.func, ast.Name)
+                            and sub.func.id in _vf_defs)
+            return dests, seen
+
+        _vf_map = vf_doors(_vf_tree)
+        _vf_derived = dict((v, vf_closure(d)[0] & set(_vf_opts))
+                           for v, d in _vf_map.items())
+        _vf_declared = dict((v, set(M.VERB_FLAGS.get(v) or ())
+                             | set(M.UNIVERSAL_FLAGS)) for v in _vf_map)
+        _vf_off = dict((v, (sorted(_vf_declared[v] - _vf_derived[v]),
+                            sorted(_vf_derived[v] - _vf_declared[v])))
+                       for v in _vf_map
+                       if _vf_declared[v] != _vf_derived[v])
+        check("vf6 `VERB_FLAGS` is the set each verb's dispatch REALLY reads, "
+              "derived by walking this file's own call graph from `main`'s "
+              "`doors` map - equality and not a subset, because a table that "
+              "over-claims refuses a working call and one that under-claims is "
+              "the F295 defect back: %r" % (_vf_off,), _vf_off == {})
+        # THE VACUITY GUARD, and it is the half that matters: an empty door map,
+        # a renamed function or an option list that failed to resolve all leave
+        # vf6 green over nothing at all.
+        _vf_choices = sorted(a.choices or [] for a in _vf_parser._actions
+                             if a.dest == "command")
+        _vf_unresolved = sorted(d for d in _vf_map.values()
+                                if d not in _vf_defs)
+        check("vf7 ...over a door map, a call graph and an option list that all "
+              "actually resolved: five verbs, every door found in the AST, and "
+              "each derived set non-empty. `add` reaching `_build_task` and "
+              "`retarget` reaching `--rename` are named because those are the "
+              "two edges the closure exists for: %r"
+              % ((sorted(_vf_map), _vf_unresolved,
+                  sorted(_vf_derived.get("retarget") or [])),),
+              sorted(_vf_map) == sorted(M.VERB_FLAGS)
+              and _vf_choices and sorted(_vf_choices[0]) == sorted(M.VERB_FLAGS)
+              and _vf_unresolved == []
+              and all(_vf_derived[v] for v in _vf_derived)
+              and "_build_task" in vf_closure(_vf_map["add"])[1]
+              and "rename" in _vf_derived["retarget"])
+        check("vf7b ...and `readers_of` answers for a UNIVERSAL flag as well as "
+              "a per-verb one - the branch a misplaced flag can never reach, "
+              "because a universal one is never stray, and therefore the branch "
+              "nothing else here would run: %r"
+              % ((M.readers_of("as_json"), M.readers_of("outcome"),
+                  M.readers_of("nonesuch")),),
+              M.readers_of("as_json") == sorted(M.VERB_FLAGS)
+              and M.readers_of("outcome") == ["add-phase", "retarget"]
+              and M.readers_of("nonesuch") == [])
+        # THE DEFENSIVE BRANCH, driven through its only door. `main` cannot
+        # reach it: the probe re-parses an argv the real parser has already
+        # accepted, so the one shape it rejects is one `parse_args` rejects
+        # first and `main` returns before calling this. Called directly it is
+        # reachable, and what it must NOT do is return an empty set - which
+        # reads as "no flags were passed" and lets every misplaced flag through.
+        with open(os.devnull, "w") as _vf_null, \
+                contextlib.redirect_stderr(_vf_null):
+            _vf_none = M.supplied_flags(["add", "T", "--gate", "--json"])
+            _vf_some = M.supplied_flags(["add", "T", "--json"])
+        check("vf9 `supplied_flags` answers None - never an empty set - on an "
+              "argv it cannot parse, and the distinction is the whole point: "
+              "empty would read as 'nothing was passed', which is exactly the "
+              "answer that lets a misplaced flag through. `main` refuses on it "
+              "rather than writing on an unchecked call: %r"
+              % ((_vf_none, sorted(_vf_some or [])),),
+              _vf_none is None and _vf_some == set(["as_json"]))
+        # THE DOCS' OWN EXAMPLES, GRADED AGAINST THE TABLE. `commands/phase.md`
+        # said "a pair like `add --risk` ... exits 2 now", and driven,
+        # `/audit:task add --risk high` exits 0 and writes `risk: high` - the
+        # refused pair is `/audit:phase add --risk`. Correcting the sentence buys
+        # one green day; what stops the next one is reading the pairs out of the
+        # prose and asking the table.
+        #
+        # SENTENCE-SCOPED, because the trigger word is what marks a pair as
+        # claimed-refused: the same two docs also cite pairs that are CORRECT
+        # (`/audit:task add --risk high`), and a check that graded every pair it
+        # found would demand they be refused.
+        _vf_trigger = re.compile(r"refus|exit 2|does not read")
+        _vf_pair = re.compile(r"`(/audit:(?:task|phase) )?([a-z][a-z-]*) "
+                              r"(--[a-z][a-z-]*)")
+        # `add` NAMES TWO DIFFERENT VERBS, and that ambiguity IS the bug: the
+        # script's `add-phase` is spelled `add` under `/audit:phase` and its
+        # `add` is spelled `add` under `/audit:task`. So a bare `add --flag` in
+        # a refusing sentence is REPORTED as needing qualification rather than
+        # resolved by a per-document guess - a guess is what read the wrong
+        # verb in the first place, and a default nothing exercises is a branch
+        # this suite cannot prove either way.
+        _vf_docs = ("commands/phase.md", "commands/task.md")
+        _vf_claimed, _vf_wrong, _vf_vague = [], [], []
+        for _vfrel in _vf_docs:
+            with open(os.path.join(_output.PLUGIN_ROOT, *_vfrel.split("/")),
+                      "r", encoding="utf-8") as _fh:
+                _vfbody = _fh.read()
+            for _vfsent in re.split(r"(?<=[.;])\s", _vfbody):
+                if not _vf_trigger.search(_vfsent):
+                    continue
+                for _vfq, _vfverb, _vfflag in _vf_pair.findall(_vfsent):
+                    _vfd = [d for d, f in _vf_opts.items() if f == _vfflag]
+                    if not _vfd:
+                        continue
+                    if _vfverb == "add" and not _vfq:
+                        _vf_vague.append((_vfrel, _vfverb, _vfflag))
+                        continue
+                    if _vfq and "phase" in _vfq and _vfverb == "add":
+                        _vfverb = "add-phase"
+                    if _vfverb not in M.VERB_FLAGS:
+                        continue
+                    _vf_claimed.append((_vfrel, _vfverb, _vfflag))
+                    if _vfd[0] in (set(M.VERB_FLAGS[_vfverb])
+                                   | set(M.UNIVERSAL_FLAGS)):
+                        _vf_wrong.append((_vfrel, _vfverb, _vfflag))
+        check("vf10 every (verb, flag) pair the two command docs cite in a "
+              "sentence about REFUSING is one the verb really does not read - "
+              "`phase.md` claimed `add --risk` exits 2 while `/audit:task add "
+              "--risk high` exits 0 and writes it, which is a false and "
+              "testable claim in a user-facing doc: %r" % (_vf_wrong,),
+              _vf_wrong == [])
+        check("vf10b ...over pairs it actually FOUND, which is the half that "
+              "matters: an empty set of citations satisfies vf10 while checking "
+              "nothing, and `/audit:phase add --risk` is named because that is "
+              "the pair the false sentence got backwards: %r"
+              % (sorted(_vf_claimed),),
+              len(_vf_claimed) >= 2
+              and ("commands/phase.md", "add-phase", "--risk") in _vf_claimed)
+        check("vf10c ...and a BARE `add --flag` in such a sentence is reported "
+              "rather than resolved: `add` names `/audit:phase add` in one doc "
+              "and `/audit:task add` in the other, so guessing which is what "
+              "read the wrong verb to begin with. Both docs qualify it today, "
+              "which is why this is empty: %r" % (_vf_vague,),
+              _vf_vague == [])
+        _vf_common = set.intersection(*[_vf_derived[v] for v in _vf_derived])
+        check("vf8 ...and `UNIVERSAL_FLAGS` is EXACTLY the intersection of the "
+              "five derived sets, so a flag that becomes universal cannot stay "
+              "listed per verb and one that stops being universal cannot stay "
+              "here - the table's own vocabulary is derived too: %r"
+              % (sorted(_vf_common),),
+              _vf_common == set(M.UNIVERSAL_FLAGS))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

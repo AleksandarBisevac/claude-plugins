@@ -7,8 +7,12 @@ commits on success and only on success: a red gate leaves `status =
 "in_progress"` and explicitly does NOT commit (`reference/orchestrator.md`
 step 4), an infrastructure failure takes a STOP path that commits nothing either,
 and the sign-off commit happens once every gate is green. So the rows that say
-`failed`, `timed-out`, `cancelled` and `could-not-run` -- exactly the history the
-evidence file exists to preserve -- can sit in a working tree for ever.
+`failed`, `gate-mutated`, `timed-out`, `cancelled` and `could-not-run` -- exactly
+the history the evidence file exists to preserve -- can sit in a working tree for
+ever. `gate-mutated` belongs on that list for a reason of its own: the run passed
+every command, so nothing about the WORK stopped the commit, and what did is the
+gate having rewritten the files it was grading -- which the orchestrator answers by
+reverting and re-running, leaving the row that recorded it behind.
 
 THE GAP IS NARROWER THAN "EVERY FAILURE", AND SAYING SO IS THE POINT. A task
 commit stages the evidence directory, so it carries every row written since the

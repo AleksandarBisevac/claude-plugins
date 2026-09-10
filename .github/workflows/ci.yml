@@ -935,6 +935,14 @@ jobs:
           # leak here would be the same bug one layer out.
           # Its own cases run inside the selftest job's sweep, which covers tools/.
           python tools/check-committed-pii.py
+          # F297: the same committed files, read for CONTENT rather than bytes. One
+          # row in the example's evidence ledger recorded `passed` beside a tree the
+          # gate had rewritten - honest before F280, unproducible after it - and no
+          # gate read that ledger at all, because it is hand-written narrative
+          # rather than something a generator derives. This measures every committed
+          # row against the schema's published vocabulary and against itself, and
+          # refuses rather than passing when it compared nothing.
+          python tools/check-example-ledgers.py
       - name: hook import budget
         run: |
           # Ubuntu only, and deliberately NOT a timing check: the wall clock of a

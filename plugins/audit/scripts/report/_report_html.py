@@ -387,8 +387,8 @@ POINTER_KEY = "testEvidence"
 # well as in the label table because the table also holds the three NO-RUN states
 # below, and "is this a status a run reached" is a different question from "is
 # this a word we can render".
-TEV_RUN_STATUSES = ("passed", "failed", "no-checks", "timed-out", "cancelled",
-                    "could-not-run", "empty-gate")
+TEV_RUN_STATUSES = ("passed", "failed", "gate-mutated", "no-checks",
+                    "timed-out", "cancelled", "could-not-run", "empty-gate")
 
 # ...and the FIVE ways a subject has no run to show. FIVE SENTENCES, NEVER ONE
 # GREY BLOB: "nothing here can be measured" (no gate is declared at either
@@ -406,6 +406,13 @@ TEV_RUN_STATUSES = ("passed", "failed", "no-checks", "timed-out", "cancelled",
 TEV_LABELS = {
     "passed": "Passed",
     "failed": "Failed",
+    # F280. THE WORDS SAY WHAT HAPPENED AND NOT WHAT IT COST. A reader shown
+    # `Failed` here would go looking for a red test and find none; a reader shown
+    # `Passed` - which is what this surface said before the enum had the word -
+    # would sign off a run whose exit code refused it. Spelled the same in the
+    # panel's `EVWORD`, and `test__panel_page.py` holds the two tables' words
+    # equal so one language cannot rename a badge the other keeps.
+    "gate-mutated": "Gate mutated the tree",
     "no-checks": "No checks ran",
     "timed-out": "Timed out",
     "cancelled": "Cancelled",
@@ -448,10 +455,16 @@ TEV_FLAG_LABELS = {
     "checks-unknown": "checks unknown",
 }
 
-# The order a phase's task rollup counts in: the two verdicts, then the ways a
-# run answered nothing, then the ways there is no run. A dict cannot order
-# itself and sorting alphabetically would put "cancelled" above "passed", which
-# reads as a ranking nobody chose.
+# The order a phase's task rollup counts in: the two verdicts and the
+# qualification of one of them, then the ways a run answered nothing, then the
+# ways there is no run. A dict cannot order itself and sorting alphabetically
+# would put "cancelled" above "passed", which reads as a ranking nobody chose.
+#
+# `gate-mutated` SITS WITH THE VERDICTS AND NOT IN THE TAIL, which is a claim
+# about what it is rather than about how urgent it is: a run reached it, having
+# executed every command. Left where an unrecognised word goes - appended,
+# sorted, after `no-gate` - it read as the least urgent thing on the page, and it
+# is a verdict that refuses the commit step (F280).
 #
 # THE NO-RUN TAIL READS AS A GRADIENT, and the two boundary states take their
 # places in it rather than being appended: the record itself is wrong
@@ -459,8 +472,8 @@ TEV_FLAG_LABELS = {
 # (`no-evidence`), then nothing COULD have been recorded yet (`before-recording`),
 # then nothing can ever be (`no-gate`). Each step down is one less thing a reader
 # has to do about it.
-TEV_ORDER = ("passed", "failed", "no-checks", "timed-out", "cancelled",
-             "could-not-run", "empty-gate", "dangling", "undated",
+TEV_ORDER = ("passed", "failed", "gate-mutated", "no-checks", "timed-out",
+             "cancelled", "could-not-run", "empty-gate", "dangling", "undated",
              "no-evidence", "before-recording", "no-gate")
 
 _TEV_WHY = {

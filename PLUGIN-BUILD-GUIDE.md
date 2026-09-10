@@ -344,8 +344,8 @@ L7:
   audit-journal -> _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _manifest_io, _output, _panel_write, _proposals, _status_facts, _warning_groups
+  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-task -> _areas, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _status_facts, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
@@ -2597,10 +2597,13 @@ staging too, so work somebody else had already staged is refused while the index
 exactly as it was found rather than unpicked afterwards. A directory outside `<gitRoot>` is
 degraded past and named, the sentence step 4c already writes for the journal.
 
-**Never an empty commit**, and a distinct conventional type. Nothing staged means no commit and
-a line saying so — a stream of empty commits is how a record stops being read. The type is the
-fixed literal `audit-state`, which is the only spelling a task commit cannot collide with
-(`meta.commit.type` may be anything), so `git log --grep` separates the two for ever.
+**Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no
+commit and a line saying so — a stream of empty commits is how a record stops being read. The
+commit itself reads `chore(audit-state):` — `chore` because commitlint's default type-enum has to
+accept it or a repository with husky rejects the commit *after* the file is staged (F268), and
+`audit-state` sits in the scope because a task commit's scope is its phase id while its type comes
+from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`
+therefore separates the two commit classes for ever.
 
 **It anchors itself in the trail.** After committing it appends an `audit.state.committed`
 journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such

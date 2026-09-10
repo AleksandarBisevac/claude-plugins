@@ -4,6 +4,37 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [2.3.0] - Unreleased
+
+### Fixed — the recovery `orchestrator.md` prescribes for a plan-gate refusal was unreachable
+
+- **`/audit:task scope` takes a widening on the running task the orchestrator sends you to, and in
+  2.2.0 it refused one.** `reference/orchestrator.md` prescribes exactly one recovery for the
+  moment the plan gate refuses a file a task genuinely needs: widen `task.files` through this verb
+  and then tell the **running** executor to carry on, because a re-spawn throws away everything it
+  has read. The same document's *Execute the task* step sets `task.status = "in_progress"` and
+  increments `task.attempts` before it spawns anything — and 2.2.0's `scope` refused on each of
+  those signals independently (`status != "pending"`, then `attempts > 0`). So the task the remedy
+  names failed the gate by construction: the route the document sells as the cheap one was the one
+  route an operator could not take. Reported from a live phase run, where the only escape was hand
+  editing the shard and the index under the lock — the operation this verb exists to replace.
+
+- **What the guard grades is the SHAPE of the change, no longer the call.** `files` and `tests.add`
+  may GAIN entries on a task that has started; nothing may lose one, and no other field may move at
+  all. That is the one change which cannot re-judge what already happened — `_invariants.commit_scope`
+  reads `task.files` live, so growing the list can only turn a breach into a pass, and the plan gate
+  reads the same list forward, so growing it only ever allows an edit it was refusing. Every other
+  shape meets F190's refusal exactly as before, with its own sentence and its own basis.
+
+- **The behaviour reached the tree without an entry, and this release is the remedy rather than a
+  new capability.** It also reached the tree without a case naming the flow it repairs, which is the
+  half being closed here: `plugins/audit/tests/test_audit_task.py` now drives the documented
+  recovery end to end, with the prescription and the state read out of `orchestrator.md` rather than
+  restated beside it — so a reworded prescription, or a gate tightened back, has to come past the
+  case instead of drifting away from the verb it names. The paired negative sits with it: a call
+  that gains a path while losing one is still refused, names the path it would drop, and writes no
+  byte.
+
 ## [2.2.0] - 2026-09-09
 
 **A minor, because the default output of a command you already run is different.** `--view all`

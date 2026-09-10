@@ -999,6 +999,36 @@ def _cases(check):
               and _ev_r1["coverage"] == 1
               and _ev_r1["steps"] == [["unit", 0, 12, 900, None]],
               repr(_ev_r1))
+        # F280, THE PAYLOAD'S HALF. The verdict this surface paints is the one
+        # the ledger recorded, and the panel's `EVWORD` table is held against the
+        # plan schema's enum by `test__panel_page.py` - so what is left for THIS
+        # file to prove is that nothing in between translates the word. A payload
+        # that mapped an unfamiliar verdict onto a familiar one would make that
+        # cross-language pin vacuous, because the browser would never see the
+        # word the pin is about.
+        _gm_facts = M._evidence_facts(_evrow(
+            "r-gm", "2026-08-21T10:00:00Z", status="gate-mutated",
+            observations={"ranTotal": 12, "countsBasis": "counted",
+                          "treeMutated": ["src/a.py"],
+                          "treeBasis": "both ends; 1 of 1 declared",
+                          "coverage": ["src/a.py"],
+                          "coverageBasis": "declared"}))
+        _gm_row = dict(zip(M.EVIDENCE_FIELDS, _gm_facts))
+        check("ev9b a verdict the ledger recorded crosses VERBATIM - no "
+              "mapping, no nearest-known word - and the rewrite travels as the "
+              "observation it always was, beside the verdict rather than inside "
+              "it. `gate-mutated` is the word that made this worth asserting: "
+              "the tree count is what the page marks and the verdict is what "
+              "says whose writes they were: %r"
+              % ((_gm_row["status"], _gm_row["treeMutated"]),),
+              _gm_row["status"] == "gate-mutated"
+              and _gm_row["status"] != "failed"
+              and _gm_row["treeMutated"] == 1
+              and "declared" in _gm_row["treeBasis"]
+              # ...and `status` is a column the browser reads by NAME, so a
+              # payload that dropped or renamed it would be an `undefined`
+              # verdict rather than a missing one.
+              and "status" in M.EVIDENCE_FIELDS)
         check("ev10 NEITHER SPELLING OF A COMMAND CROSSES. A step's command is "
               "either the manifest's published string or a digest of an ad-hoc "
               "one, and a badge in a table renders neither - shipping it would "

@@ -579,6 +579,454 @@ def _cases(check):
     finally:
         shutil.rmtree(ld_tmp, ignore_errors=True)
 
+    # ------------------------------------------ explorer_contract_drift (F291)
+    # `/audit:init` spawns the explorer agent and parses a JSON array back; the
+    # SHAPE of one element is hand-restated in `commands/init.md` for the
+    # fallback path. Nothing in the tree reads either copy, so the two real
+    # files agreeing today is not evidence the lint works - the fixtures below
+    # drive the comparison directly.
+    check("ec1 the shipped agent contract and its command-fallback restatement "
+          "name the same explorer return-contract fields today: %r"
+          % (M.explorer_contract_drift(),), M.explorer_contract_drift() == [])
+
+    agent_real = os.path.join(M._output.PLUGIN_ROOT, "agents",
+                              "audit-explorer.md")
+    init_real = os.path.join(M._output.PLUGIN_ROOT, "commands", "init.md")
+
+    ec_tmp = tempfile.mkdtemp(prefix="audit-deps-explorer-")
+    try:
+        def _explorer_doc(text):
+            path = os.path.join(ec_tmp, "doc-%d.md" % (len(os.listdir(ec_tmp)),))
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            return path
+
+        a_extra = _explorer_doc(
+            "intro\n\nReturn format, each element:\n\n"
+            '{"title": "...", "coupledPaths": [{"path": "...", "shared": "..."}],'
+            ' "confidence": "0-1"}\n')
+        b_plain = _explorer_doc(
+            "intro\n\nReturn format:\n\n"
+            '`{"title", "coupledPaths": [{"path", "shared"}]}`\n')
+        ec2_hits = M.explorer_contract_drift(agent_path=a_extra, init_path=b_plain)
+        check("ec2 a field present in one contract and absent from the other is "
+              "named on the SIDE MISSING it, not the side carrying it: %r"
+              % (ec2_hits,),
+              len(ec2_hits) == 1 and ec2_hits[0][0] == b_plain
+              and "confidence" in ec2_hits[0][1] and a_extra in ec2_hits[0][1])
+
+        a_shared = _explorer_doc(
+            "intro\n\nReturn format:\n\n"
+            '{"title": "...", "coupledPaths": [{"path": "...", "shared": "..."}]}\n')
+        b_context = _explorer_doc(
+            "intro\n\nReturn format:\n\n"
+            '`{"title", "coupledPaths": [{"path", "context"}]}`\n')
+        ec3_hits = M.explorer_contract_drift(agent_path=a_shared,
+                                             init_path=b_context)
+        check("ec3 a field NESTED inside coupledPaths is part of the flat "
+              "comparison too, and BOTH directions are reported (each side is "
+              "missing the other's nested field): %r" % (ec3_hits,),
+              len(ec3_hits) == 2
+              and any("shared" in p and c == b_context
+                      for c, p in ec3_hits)
+              and any("context" in p and c == a_shared
+                      for c, p in ec3_hits))
+
+        missing_agent = os.path.join(ec_tmp, "does-not-exist.md")
+        ec4_hits = M.explorer_contract_drift(agent_path=missing_agent,
+                                             init_path=b_plain)
+        check("ec4 an unreadable contract file is named as unreadable, not "
+              "read as an empty (and therefore agreeing) one: %r" % (ec4_hits,),
+              len(ec4_hits) == 1 and ec4_hits[0][0] == missing_agent
+              and "unreadable" in ec4_hits[0][1])
+
+        no_anchor = _explorer_doc("intro\n\nnothing here says what comes back.\n")
+        ec5_hits = M.explorer_contract_drift(agent_path=no_anchor,
+                                             init_path=b_plain)
+        check("ec5 a file that never states 'Return format' is named rather "
+              "than read as an empty contract: %r" % (ec5_hits,),
+              len(ec5_hits) == 1 and ec5_hits[0][0] == no_anchor
+              and "anchor phrase" in ec5_hits[0][1])
+
+        no_brace = _explorer_doc("intro\n\nReturn format: prose only, no object "
+                                 "follows this at all.\n")
+        ec6_hits = M.explorer_contract_drift(agent_path=no_brace,
+                                             init_path=b_plain)
+        check("ec6 the anchor with no `{` after it is distinct from a missing "
+              "anchor: %r" % (ec6_hits,),
+              len(ec6_hits) == 1 and "no `{` follows" in ec6_hits[0][1])
+
+        unbalanced = _explorer_doc(
+            'intro\n\nReturn format:\n\n{"title": "...", "coupledPaths": '
+            '[{"path": "..."\n')
+        ec7_hits = M.explorer_contract_drift(agent_path=unbalanced,
+                                             init_path=b_plain)
+        check("ec7 a block that never closes is named rather than silently "
+              "read up to end of file: %r" % (ec7_hits,),
+              len(ec7_hits) == 1 and "never closes" in ec7_hits[0][1])
+
+        empty_block = _explorer_doc("intro\n\nReturn format:\n\n{}\n")
+        ec8_hits = M.explorer_contract_drift(agent_path=empty_block,
+                                             init_path=b_plain)
+        check("ec8 a block that parses to no field names at all is a finding, "
+              "not two empty sets quietly agreeing: %r" % (ec8_hits,),
+              len(ec8_hits) == 1 and empty_block in ec8_hits[0][0]
+              and "no field names" in ec8_hits[0][1])
+
+        value_guard = _explorer_doc(
+            'intro\n\nReturn format:\n\n{"category": "security", "title": "..."}'
+            "\n")
+        ec9_block, ec9_problem = M._balanced_brace_block(
+            open(value_guard, encoding="utf-8").read(),
+            M._EXPLORER_CONTRACT_ANCHOR)
+        ec9_fields = M._contract_field_names(ec9_block) if ec9_problem is None \
+            else None
+        check("ec9 a value that happens to be identifier-shaped (`\"security\"` "
+              "after `\"category\":`) is not mistaken for a field name of its "
+              "own: %r" % (ec9_fields,),
+              ec9_fields == set(["category", "title"]))
+
+        # ---- mutation proof: drop bare-field support and the REAL files disagree ----
+        def _weakened_contract_fields(path):
+            text = open(path, encoding="utf-8").read()
+            block, problem = M._balanced_brace_block(
+                text, M._EXPLORER_CONTRACT_ANCHOR)
+            if problem is not None:
+                return None
+            weak_re = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:')
+            return set(m.group(1) for m in weak_re.finditer(block))
+
+        weak_agent = _weakened_contract_fields(agent_real)
+        weak_init = _weakened_contract_fields(init_real)
+        check("ec10 mutation proof: drop the bare-field alternative from the "
+              "token regex (require every field to be followed by `:`) and "
+              "the SAME two real, agreeing files disagree - init.md's compact "
+              "shorthand (`\"title\", \"category\"`, no colon) stops being "
+              "read at all (red proves ec1 is testing something real): "
+              "%r != %r" % (sorted(weak_agent), sorted(weak_init)),
+              weak_agent != weak_init)
+        check("ec11 mutation proof: the real, unweakened "
+              "explorer_contract_drift() still agrees over the identical real "
+              "files - nothing was left mutated behind",
+              M.explorer_contract_drift() == [])
+    finally:
+        shutil.rmtree(ec_tmp, ignore_errors=True)
+
+    # -------------------------------------------- commit_spelling_drift (F292)
+    # F268 moved the fixed literal from commit-audit-state.py's TYPE into its
+    # SCOPE; the guide kept saying "the type is the fixed literal `audit-state`"
+    # for as long as nothing compared the two. GENERALIZED OVER THE CLASS: the
+    # real tree carries TWO governance writers that do this
+    # (`commit-audit-state.py`, `commit-manifest-index.py`), the second one's
+    # guide paragraph has always been correct, and that asymmetry is why a
+    # per-file check would have proven nothing about it and nothing about a
+    # third writer added later. `cs1`/`cs1b` prove the current, fixed pairing
+    # over BOTH real writers; the rest exercise the comparison directly against
+    # fixtures so the proof does not rest on the real tree staying correct by
+    # luck.
+    check("cs1 the shipped guide's paragraphs match COMMIT_TYPE/COMMIT_SCOPE "
+          "for every governance writer today: %r" % (M.commit_spelling_drift(),),
+          M.commit_spelling_drift() == [])
+
+    real_writers, real_writer_findings = M._governance_commit_writers()
+    check("cs1b the real tree derives EXACTLY the two known governance "
+          "writers, by basename and by the constants each one actually emits "
+          "- a third writer, or a renamed one, would change this rather than "
+          "hide behind cs1's already-passing verdict: %r / %r"
+          % (real_writers, real_writer_findings),
+          real_writers == [("commit-audit-state.py", "chore", "audit-state"),
+                           ("commit-manifest-index.py", "chore", "audit-index")]
+          and real_writer_findings == [])
+
+    cs_tmp = tempfile.mkdtemp(prefix="audit-deps-commitspell-")
+    try:
+        def _cs_write(directory, name, text):
+            path = os.path.join(directory, name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            return path
+
+        heading_a = M._GOVERNANCE_HEADING_TMPL % ("writer-a.py",)
+        heading_b = M._GOVERNANCE_HEADING_TMPL % ("writer-b.py",)
+
+        def _two_writer_fixture(gov_dirname, guide_name, section_a, section_b,
+                                type_a="chore", scope_a="scope-a",
+                                type_b="chore", scope_b="scope-b"):
+            """A governance dir with two correct writers and a guide whose two
+            subsections are whatever `section_a`/`section_b` say - the shape
+            every case below starts from, so each one changes exactly ONE
+            thing relative to a fixture already known to agree."""
+            gov_dir = os.path.join(cs_tmp, gov_dirname)
+            os.mkdir(gov_dir)
+            _cs_write(gov_dir, "writer-a.py",
+                     'COMMIT_TYPE = "%s"\nCOMMIT_SCOPE = "%s"\n'
+                     % (type_a, scope_a))
+            _cs_write(gov_dir, "writer-b.py",
+                     'COMMIT_TYPE = "%s"\nCOMMIT_SCOPE = "%s"\n'
+                     % (type_b, scope_b))
+            guide = _cs_write(
+                cs_tmp, guide_name,
+                "intro\n\n" + heading_a + "\n\n" + section_a + "\n\n"
+                + heading_b + "\n\n" + section_b + "\n\n## next\n\nmore\n")
+            return guide, gov_dir
+
+        correct_guide, correct_gov = _two_writer_fixture(
+            "gov-ok", "guide-ok.md",
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.",
+            "The commit reads `chore(scope-b):`, fixed and uncollidable.")
+        check("cs2setup a correct two-writer fixture (mirroring the real "
+              "class) agrees, so every mismatch case below is known to "
+              "differ from a passing baseline by exactly one thing",
+              M.commit_spelling_drift(correct_guide, correct_gov) == [])
+
+        wrong_a_guide, wrong_a_gov = _two_writer_fixture(
+            "gov-wrong-a", "guide-wrong-a.md",
+            "The type is the fixed literal `scope-a`, which a task commit "
+            "cannot collide with.",
+            "The commit reads `chore(scope-b):`, fixed and uncollidable.")
+        cs2_hits = M.commit_spelling_drift(wrong_a_guide, wrong_a_gov)
+        check("cs2 the FIRST writer's guide paragraph carrying no checkable "
+              "`TYPE(SCOPE):` prefix is a named finding for writer-a.py alone "
+              "- writer-b.py's correct paragraph draws nothing: %r"
+              % (cs2_hits,),
+              len(cs2_hits) == 1 and "writer-a.py" in cs2_hits[0][1]
+              and "no backtick-quoted" in cs2_hits[0][1])
+
+        wrong_b_guide, wrong_b_gov = _two_writer_fixture(
+            "gov-wrong-b", "guide-wrong-b.md",
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.",
+            "The commit reads `chore(WRONG-SCOPE):`, fixed and uncollidable.")
+        cs2b_hits = M.commit_spelling_drift(wrong_b_guide, wrong_b_gov)
+        check("cs2b ...and the SAME finding shape reaches the SECOND writer "
+              "too - a guide claiming `chore(WRONG-SCOPE):` for writer-b.py "
+              "while its own COMMIT_SCOPE says `scope-b` is named for "
+              "writer-b.py, and writer-a.py's correct paragraph draws "
+              "nothing: %r" % (cs2b_hits,),
+              len(cs2b_hits) == 1 and "writer-b.py" in cs2b_hits[0][1]
+              and "chore(WRONG-SCOPE)" in cs2b_hits[0][1]
+              and "chore(scope-b)" in cs2b_hits[0][1])
+
+        code_wrong_b_guide, code_wrong_b_gov = _two_writer_fixture(
+            "gov-code-wrong-b", "guide-code-wrong-b.md",
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.",
+            # The GUIDE still says the ORIGINAL, once-correct thing; what
+            # moves is the CODE, which is the direction F268 actually was -
+            # a script's own constants reversing while the guide sat still.
+            "The commit reads `chore(scope-b):`, fixed and uncollidable.",
+            scope_b="scope-b-mutated")
+        cs2c_hits = M.commit_spelling_drift(code_wrong_b_guide,
+                                            code_wrong_b_gov)
+        check("cs2c ...and the mismatch is caught from the CODE side moving "
+              "too, not only the guide side: writer-b.py's own COMMIT_SCOPE "
+              "changed to `scope-b-mutated` while its guide paragraph still "
+              "claims the old `chore(scope-b):`, and writer-a.py is "
+              "unaffected: %r" % (cs2c_hits,),
+              len(cs2c_hits) == 1 and "writer-b.py" in cs2c_hits[0][1]
+              and "chore(scope-b)" in cs2c_hits[0][1]
+              and "chore(scope-b-mutated)" in cs2c_hits[0][1])
+
+        # ---- failure mode 1: a writer with no subsection is a NAMED finding ----
+        no_heading_b_guide = _cs_write(
+            cs_tmp, "guide-no-heading-b.md",
+            "intro\n\n" + heading_a + "\n\n"
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.\n\n"
+            "## next\n\nnothing here names writer-b.py at all.\n")
+        cs3_hits = M.commit_spelling_drift(no_heading_b_guide, correct_gov)
+        check("cs3 a writer with NO subsection in the guide at all is a "
+              "named finding - not a silently skipped iteration, which is "
+              "the shape that would let a new writer ship undocumented: %r"
+              % (cs3_hits,),
+              len(cs3_hits) == 1 and "writer-b.py" in cs3_hits[0][1]
+              and "undocumented" in cs3_hits[0][1])
+
+        no_heading_guide = _cs_write(
+            cs_tmp, "guide-no-heading.md",
+            "intro\n\nneither writer is named anywhere in this document.\n")
+        cs3b_hits = M.commit_spelling_drift(no_heading_guide, correct_gov)
+        check("cs3b ...and BOTH writers missing draws TWO findings, one per "
+              "writer, not one finding for the pair or a scan that stopped "
+              "after the first miss: %r" % (cs3b_hits,),
+              len(cs3b_hits) == 2
+              and set(w for _f, msg in cs3b_hits for w in ("writer-a.py",
+                                                           "writer-b.py")
+                      if w in msg) == set(["writer-a.py", "writer-b.py"]))
+
+        missing_guide = os.path.join(cs_tmp, "does-not-exist.md")
+        cs5_hits = M.commit_spelling_drift(missing_guide, correct_gov)
+        check("cs5 an unreadable guide is named as unreadable: %r"
+              % (cs5_hits,),
+              len(cs5_hits) == 1 and cs5_hits[0][0] == missing_guide
+              and "unreadable" in cs5_hits[0][1])
+
+        # ---- a writer that cannot even be PARSED is named, and its SIBLING is
+        # still compared - "could not tell" is a different claim from "not a
+        # writer", and it must not swallow the rest of the class with it ----
+        torn_gov = os.path.join(cs_tmp, "gov-torn")
+        os.mkdir(torn_gov)
+        _cs_write(torn_gov, "writer-a.py",
+                 'COMMIT_TYPE = "chore"\nCOMMIT_SCOPE = "scope-a"\n')
+        _cs_write(torn_gov, "writer-torn.py", "def (:\n")
+        torn_guide = _cs_write(
+            cs_tmp, "guide-torn.md",
+            "intro\n\n" + heading_a + "\n\n"
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.\n")
+        cs6_hits = M.commit_spelling_drift(torn_guide, torn_gov)
+        check("cs6 a script that will not even PARSE is named by its own "
+              "path, distinctly from 'not a writer' - and its clean sibling "
+              "is STILL compared rather than the whole scan giving up: %r"
+              % (cs6_hits,),
+              len(cs6_hits) == 1 and "writer-torn.py" in cs6_hits[0][0]
+              and "could not be read or parsed" in cs6_hits[0][1])
+
+        # ---- a script defining only ONE of the two constants is simply NOT A
+        # WRITER, and draws no finding at all - the redesigned semantics: "not
+        # a writer" and "could not tell" (cs6, above) are different claims ----
+        half_gov = os.path.join(cs_tmp, "gov-half")
+        os.mkdir(half_gov)
+        _cs_write(half_gov, "writer-a.py",
+                 'COMMIT_TYPE = "chore"\nCOMMIT_SCOPE = "scope-a"\n')
+        _cs_write(half_gov, "writer-half.py", 'COMMIT_TYPE = "chore"\n')
+        half_guide = _cs_write(
+            cs_tmp, "guide-half.md",
+            "intro\n\n" + heading_a + "\n\n"
+            "The commit reads `chore(scope-a):`, fixed and uncollidable.\n")
+        cs7_hits = M.commit_spelling_drift(half_guide, half_gov)
+        check("cs7 a script defining only ONE of COMMIT_TYPE/COMMIT_SCOPE is "
+              "simply not a writer and draws NOTHING - the guide owes it no "
+              "subsection, because it emits no conventional-commit prefix at "
+              "all: %r" % (cs7_hits,), cs7_hits == [])
+
+        # ---- failure mode 2: deriving ZERO writers must fail loudly ----
+        empty_gov = os.path.join(cs_tmp, "gov-empty")
+        os.mkdir(empty_gov)
+        cs8_hits = M.commit_spelling_drift(correct_guide, empty_gov)
+        check("cs8 an EMPTY governance directory (no .py at all) derives no "
+              "writers, and that is a named finding - not an empty class "
+              "reported as trivially agreeing: %r" % (cs8_hits,),
+              len(cs8_hits) == 1 and empty_gov in cs8_hits[0][0]
+              and "no script here defines both" in cs8_hits[0][1])
+
+        no_writer_gov = os.path.join(cs_tmp, "gov-no-writers")
+        os.mkdir(no_writer_gov)
+        _cs_write(no_writer_gov, "run-test-gate.py",
+                 'GATE_NAME = "run-test-gate"\n')
+        cs8b_hits = M.commit_spelling_drift(correct_guide, no_writer_gov)
+        check("cs8b ...and a directory that DOES have `.py` files, just none "
+              "defining both constants, is the SAME finding - a rename that "
+              "left the directory non-empty must not read as a clean class "
+              "either: %r" % (cs8b_hits,),
+              len(cs8b_hits) == 1
+              and "no script here defines both" in cs8b_hits[0][1])
+
+        missing_gov = os.path.join(cs_tmp, "does-not-exist-dir")
+        cs8c_hits = M.commit_spelling_drift(correct_guide, missing_gov)
+        check("cs8c ...and a governance directory that cannot even be "
+              "LISTED (moved, renamed) is named as such, distinctly from an "
+              "empty one that was actually read: %r" % (cs8c_hits,),
+              len(cs8c_hits) == 1 and cs8c_hits[0][0] == missing_gov
+              and "could not be listed" in cs8c_hits[0][1])
+
+        # The sibling heading below is deliberately generic prose, not a path
+        # under this tree's own product directories: `_refs.missing_references()`
+        # reads `tests/` as an ANCHORED surface and would treat a plausible-looking
+        # sibling file path as a reference this repository owes on disk, and this
+        # fixture only needs a heading at the same LEVEL - never a real script name.
+        isolation_guide = _cs_write(
+            cs_tmp, "guide-isolation.md",
+            "intro\n\n" + heading_a + "\n\nThe commit reads `chore(scope-a):"
+            "`.\n\n### some other governance script entirely\n\n"
+            "The commit reads `chore(other-scope):`.\n\n" + heading_b
+            + "\n\nThe commit reads `chore(scope-b):`.\n")
+        cs9_hits = M.commit_spelling_drift(isolation_guide, correct_gov)
+        check("cs9 a SIBLING level-3 section's differently-scoped claim, "
+              "sitting BETWEEN two real writers' subsections, is not swept "
+              "into either comparison - the boundary is the next heading, "
+              "not the next writer: %r" % (cs9_hits,), cs9_hits == [])
+
+        # ---- real-content proofs: the sibling this task is actually about ----
+        # Never a write to `commit-manifest-index.py` itself (read-only for
+        # this task) - both proofs work from a COPY of its real, on-disk
+        # content, mutated in memory or on a scratch path.
+        real_gov_dir = M._governance_dir()
+        real_guide_text = open(M._guide_path(), encoding="utf-8").read()
+
+        sibling_noun_guide_text = real_guide_text.replace(
+            "`chore(audit-index):`", "`chore(audit-index-WRONG):`", 1)
+        check("cs10setup the sibling-noun replacement actually changed the "
+              "real guide text (so the case below tests a real mutation, "
+              "not a no-op on a stale anchor)",
+              sibling_noun_guide_text != real_guide_text)
+        sibling_noun_guide = _cs_write(
+            cs_tmp, "guide-sibling-noun.md", sibling_noun_guide_text)
+        cs10_hits = M.commit_spelling_drift(sibling_noun_guide, real_gov_dir)
+        check("cs10 THE SIBLING'S SPELLING MUTATED IN THE GUIDE (a copy, "
+              "never the tracked file): commit-manifest-index.py's own real "
+              "COMMIT_TYPE/COMMIT_SCOPE catch a reworded paragraph the same "
+              "way commit-audit-state.py's did, naming the sibling and only "
+              "the sibling, and both the wrong and the right spelling by "
+              "name: %r" % (cs10_hits,),
+              len(cs10_hits) == 1
+              and "commit-manifest-index.py" in cs10_hits[0][1]
+              and "commit-audit-state.py" not in cs10_hits[0][1]
+              and "chore(audit-index-WRONG)" in cs10_hits[0][1]
+              and "chore(audit-index)" in cs10_hits[0][1])
+
+        real_sibling_path = os.path.join(real_gov_dir,
+                                         "commit-manifest-index.py")
+        real_sibling_text = open(real_sibling_path, encoding="utf-8").read()
+        mutated_sibling_text = real_sibling_text.replace(
+            'COMMIT_SCOPE = "audit-index"', 'COMMIT_SCOPE = "audit-index-x"',
+            1)
+        check("cs11setup the COMMIT_SCOPE replacement actually changed the "
+              "real script text",
+              mutated_sibling_text != real_sibling_text)
+        mutated_sibling_gov = os.path.join(cs_tmp, "gov-sibling-code-wrong")
+        os.mkdir(mutated_sibling_gov)
+        _cs_write(mutated_sibling_gov, "commit-manifest-index.py",
+                 mutated_sibling_text)
+        cs11_hits = M.commit_spelling_drift(governance_dir=mutated_sibling_gov)
+        check("cs11 THE SIBLING'S COMMIT_SCOPE MUTATED IN THE CODE (a copy in "
+              "a scratch directory, never the tracked file), checked against "
+              "the REAL guide: the real paragraph still claims "
+              "`chore(audit-index):` while the mutated copy would emit "
+              "`chore(audit-index-x):`, and that is the one finding: %r"
+              % (cs11_hits,),
+              len(cs11_hits) == 1
+              and "commit-manifest-index.py" in cs11_hits[0][1]
+              and "chore(audit-index)" in cs11_hits[0][1]
+              and "chore(audit-index-x)" in cs11_hits[0][1])
+
+        # ---- mutation proof: bound on "## " alone and the real guide over-fires ----
+        def _weakened_md_subsection(text, head):
+            idx = text.find(head)
+            if idx == -1:
+                return None
+            rest = text[idx + len(head):]
+            hit = re.search(r"\n## ", rest)
+            return rest if hit is None else rest[:hit.start()]
+
+        weak_heading = M._GOVERNANCE_HEADING_TMPL % ("commit-audit-state.py",)
+        weak_section = _weakened_md_subsection(real_guide_text, weak_heading)
+        weak_hits = []
+        weak_seen = set()
+        for pair in M._COMMIT_PREFIX_RE.findall(weak_section or ""):
+            if pair not in weak_seen:
+                weak_seen.add(pair)
+                weak_hits.append(pair)
+        check("cs12 mutation proof: bound the section on a bare `\\n## ` (the "
+              "way `_section_text` does for a level-2 heading) instead of the "
+              "next heading at this LEVEL, and the real guide sweeps in "
+              "commit-manifest-index.py's own `chore(audit-index):` claim - "
+              "more than the one pair this level-3 section actually carries "
+              "(red proves cs1's boundary is load-bearing): %r" % (weak_hits,),
+              len(weak_hits) > 1)
+        check("cs13 mutation proof: the real, unweakened commit_spelling_drift() "
+              "still agrees over the identical real guide - nothing was left "
+              "mutated behind",
+              M.commit_spelling_drift() == [])
+    finally:
+        shutil.rmtree(cs_tmp, ignore_errors=True)
+
     guide_tmp = tempfile.mkdtemp(prefix="audit-deps-guide-")
     try:
         real_render = M.render()

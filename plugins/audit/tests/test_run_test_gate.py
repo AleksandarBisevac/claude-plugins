@@ -30,6 +30,7 @@ import sys
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT, for the schema read)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
@@ -510,7 +511,104 @@ def _cases(check):
           "row is read: %r" % (res["treeBasis"],),
           "git described the tree" in res["treeBasis"]
           and "declared by the work under test" in res["treeBasis"])
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), encoding="utf-8") as fh:
+        _gm_enum = ((((json.load(fh).get("$defs") or {}).get("testEvidence")
+                      or {}).get("properties") or {})
+                    .get("status") or {}).get("enum") or []
+    check("ow8 F280, THE FAULT: a gate that passed every command AND rewrote "
+          "the file it was grading records `gate-mutated` and NEVER `passed`. "
+          "`run_status` took no tree argument and had no tree arm, so this "
+          "exact run - the one ow2 shows refusing at the terminal - cached "
+          "`passed` onto `task.testEvidence`, where `--fail-on failing-tests` "
+          "read it and signed the work off. The record outlives the exit code, "
+          "which makes it the worse half: %r"
+          % ((res["status"], res["treeMutatedOwned"]),),
+          res["status"] == M.GATE_MUTATED
+          and res["status"] != "passed"
+          # ...and the word is one the PLAN SCHEMA declares, asked of the schema
+          # rather than retyped: a status the enum does not carry is a pointer
+          # `ajv` refuses, so a verdict spelled only here would be written and
+          # then rejected by the validator that guards every manifest write.
+          and M.GATE_MUTATED in _gm_enum
+          and res["failed"] == [])
     os.remove(os.path.join(own, "src", "mine.ts"))
+    res_sib = M.run_gate(own, [("test", "npx vitest run")],
+                         runner=_sibling_writes, owns=["src/mine.ts"])
+    check("ow9 SECOND DIRECTION, and it is the one an always-firing repair "
+          "fails: the SIBLING's write leaves the verdict `passed`. The foreign "
+          "half is the half nothing can attribute (F273) and refusing on it is "
+          "what halted correct runs, so the word reads the same list `render` "
+          "refuses on and not `treeMutated`: %r"
+          % ((res_sib["status"], res_sib["treeMutatedForeign"]),),
+          res_sib["status"] == "passed"
+          and res_sib["treeMutatedOwned"] == []
+          and res_sib["treeMutatedForeign"] != [])
+    os.remove(os.path.join(own, "other", "sibling.ts"))
+
+    def _fails_and_rewrites(project, _command, _timeout=None):
+        with open(os.path.join(project, "src", "mine.ts"), "w") as fh:
+            fh.write("rewritten by a gate that also went red\n")
+        return 1, "Tests:       1 failed, 2 total\n", {}
+
+    res_fm = M.run_gate(own, [("test", "npx jest")], runner=_fails_and_rewrites,
+                        owns=["src/mine.ts"])
+    lines = []
+    M.render(res_fm, out=lines.append)
+    check("ow10 THE PRECEDENCE, UPWARDS: a gate that came back RED and also "
+          "rewrote its subject stays `failed`. `gate-mutated` claims the "
+          "commands answered green, so every word denying that outranks it - "
+          "and nothing is lost, because `render` still prints the rewrite as "
+          "its own sentence beside the red one: %r"
+          % ((res_fm["status"], res_fm["treeMutatedOwned"]),),
+          res_fm["status"] == "failed"
+          and res_fm["treeMutatedOwned"] != []
+          and "GATE RED" in "\n".join(lines)
+          and "GATE MUTATED THE TREE" in "\n".join(lines))
+    os.remove(os.path.join(own, "src", "mine.ts"))
+
+    def _skips_and_rewrites(project, _command, _timeout=None):
+        with open(os.path.join(project, "src", "mine.ts"), "w") as fh:
+            fh.write("rewritten by a hook that skipped every check\n")
+        return 0, ("check yaml.....................Skipped\n"
+                   "black.........................Skipped\n"), {}
+
+    res_zm = M.run_gate(own, [("lint", "pre-commit run --files src/mine.ts")],
+                        runner=_skips_and_rewrites, owns=["src/mine.ts"])
+    check("ow11 ...and `no-checks` outranks it at the other end, for the same "
+          "one reason: a reader told the gate rewrote the tree would believe "
+          "checks had run, and positively zero ran. Both facts still reach "
+          "them - the count is on the row and the paths are in `treeMutated`: "
+          "%r" % ((res_zm["status"], res_zm["ranTotal"],
+                   res_zm["treeMutatedOwned"]),),
+          res_zm["status"] == "no-checks" and res_zm["ranTotal"] == 0
+          and res_zm["treeMutatedOwned"] != [])
+    os.remove(os.path.join(own, "src", "mine.ts"))
+    _ok4, _why4 = _harness.attempt(M.run_status, [], [], None, None)
+    check("ow12 `run_status` takes the refused list WITH NO DEFAULT, so a "
+          "caller that forgets it is a TypeError rather than a run silently "
+          "spelled `passed`. That is not defensiveness: an argument nobody has "
+          "to pass is how F280 arrived, and this is the arm that stops it "
+          "coming back. %r" % (_why4,),
+          _ok4 is False and _why4.startswith("TypeError:")
+          # ...and the five-argument call still answers, so the case above is a
+          # missing ARGUMENT and not a function that raises whatever it is given.
+          and M.run_status([], [], None, None, []) == "passed")
+    _am_ref, _am_rep = M.attributed_mutations(None, None, None)
+    _am_ref2, _am_rep2 = M.attributed_mutations([" M a.py"], None, None)
+    _am_ref3, _am_rep3 = M.attributed_mutations(
+        [" M src/mine.ts", " M other/x.ts"], [" M src/mine.ts"],
+        [" M other/x.ts"])
+    check("ow13 `attributed_mutations` is the ONE expression the verdict, the "
+          "terminal and `--json` now share. No comparison refuses nothing (a "
+          "comparison nobody made cannot refuse); no ownership charges the "
+          "WHOLE set to the gate, which is what this verdict did before the "
+          "split existed and the direction a guard may be wrong in; and a "
+          "sorted window hands each half to the reader that may act on it: "
+          "%r" % ((_am_ref, _am_ref2, _am_ref3, _am_rep3),),
+          (_am_ref, _am_rep) == ([], [])
+          and (_am_ref2, _am_rep2) == ([" M a.py"], [])
+          and _am_ref3 == [" M src/mine.ts"] and _am_rep3 == [" M other/x.ts"])
 
     # --- the other failure mode: nothing ran -------------------------------
     def _all_skipped(_project, _command, _timeout=None):

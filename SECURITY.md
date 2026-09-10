@@ -108,6 +108,45 @@ commit and the command above does not.
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
 
+**One row on that table has two arms with different activation, and the column
+above cannot show it.** `guard-history-rewrite` refuses history rewrites only
+while the manifest RECORDS a commit SHA — nothing recorded is nothing to orphan,
+so it is inert on a fresh plan. Its `git stash` arm cannot use that signal,
+because a stash removes work that was never committed: it turns on as soon as an
+audit plan exists on disk, and stays off entirely where none does. Both arms fail
+the same way, which is why the row is still one row — an unreadable plan path, an
+unreadable manifest and a git that will not answer all resolve to *allow*. The two
+READ spellings, `git stash list` and `git stash show`, are never refused; a guard
+that fires on a read is one people route around, and the plain `git push` this
+plugin's own reference document forbids is deliberately not refused for the same
+reason. `tools/check-prohibitions.py` drives **both** halves of that pair on an
+ordinary run — the refusal and the reads-stay-allowed — so neither claim can
+quietly stop being true. (Until F284 only the refusal half was a gate and the
+reads half was a selftest case, which means a hook that started refusing
+`git stash list` would have shipped green.)
+
+**And both of its arms bind to the operation rather than to the command text.**
+The command is tokenized and the verb read from an adjacent word, so a forbidden
+command spelled inside a **quoted argument** — a commit message, an `echo` into a
+notes file — is not an operation and is allowed. That reverses an earlier accepted
+cost: these prohibitions are documented in three files here, so writing about them
+is a daily operation, and a guard that fires on writing about the rule is the same
+defect as one that fires on a read. `--help` and `-h` are reads for the same
+reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
+parsed as such, so an interpreter is not a way around it.
+
+Two residuals, both stated rather than left to be discovered. A **heredoc body is
+not a quoted argument**: the lexer splits `<<'EOF'` at the `<` and reads the body
+as bare words, so `cat <<'EOF' > NOTES.md` naming one of these commands is
+refused. That is deliberate — whether a heredoc body is data or a script depends
+on what consumes it, and `sh <<EOF` is a script — and the cost is that writing one
+of these rules into a file through a heredoc needs an editor or an `echo` instead.
+And a command that cannot be tokenized at all (an unbalanced quote) falls back to
+the older raw-text patterns, which over-refuse quoted text. Both are the
+conservative direction, which is the only direction a guard may fail in when it
+cannot read its input. The general residual is the one this document opens with:
+text inspection is bypassable in principle.
+
 ### When the plan gate actually blocks (0.20.0)
 
 The plan gate is **conditional**, and anyone reasoning about this plugin's guarantees needs

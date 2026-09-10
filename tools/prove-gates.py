@@ -82,6 +82,7 @@ MVO = "plugins/audit/tests/test__manifest_vocab.py"
 THM = "plugins/audit/tests/test__ui_theme.py"
 BRN = "plugins/audit/tests/test__branch.py"
 ARE = "plugins/audit/tests/test__areas.py"
+PRP = "plugins/audit/tests/test__proposals.py"
 TRL = "plugins/audit/tests/test__doctor_trail.py"
 DMO = "plugins/audit/tests/test_gen_demo_manifest.py"
 BEN = "tools/bench-hooks.py"          # its cases are inline, like every tools/ file
@@ -835,6 +836,60 @@ TABLE = (
   "def budget_violations(hooks_dir=None, python=None):",
   "def budget_violations(hooks_dir=None, python=None):\n    return []",
   BEN, "h6"),
+ # F291. The explorer's return contract is written twice - the agent's own doc and
+ # `commands/init.md`'s fallback restatement - and nothing read either copy. A field
+ # added to ONE of them is the whole fault, so that is the mutation: the agent-side
+ # copy gains a field the command-side copy has never heard of.
+ ("explorer_contract_drift", "plugins/audit/agents/audit-explorer.md", "after",
+  '"suggestedTests": ["...", ...], ', '"confidence": "0-1", ', DEP, "ec1"),
+ # F292, THREE WAYS, because the lint has three ways to stop being true. First the
+ # document: the paragraph reverts to its pre-F268 wording, which is the historical
+ # bug and encodes no checkable claim at all.
+ ("commit_spelling_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
+  "**Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no\n"
+  "commit and a line saying so \u2014 a stream of empty commits is how a record stops being read. The\n"
+  "commit itself reads `chore(audit-state):` \u2014 `chore` because commitlint's default type-enum has to\n"
+  "accept it or a repository with husky rejects the commit *after* the file is staged (F268), and\n"
+  "`audit-state` sits in the scope because a task commit's scope is its phase id while its type comes\n"
+  "from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`\n"
+  "therefore separates the two commit classes for ever.",
+  "**Never an empty commit**, and a distinct conventional type. Nothing staged means no commit and\n"
+  "a line saying so \u2014 a stream of empty commits is how a record stops being read. The type is the\n"
+  "fixed literal `audit-state`, which is the only spelling a task commit cannot collide with\n"
+  "(`meta.commit.type` may be anything), so `git log --grep` separates the two for ever.",
+  DEP, "cs1"),
+ # Then the SIBLING writer, which is the half the first version of this lint could
+ # not see: `commit-manifest-index.py` has the same two constants and its own
+ # paragraph, and a lint naming one file by hand covered one instance of a class.
+ ("commit_spelling_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
+  "`chore(audit-index):`", "`chore(audit-index-WRONG):`", DEP, "cs1"),
+ # Then the DERIVATION, which is what makes it a class rather than two rows: drop a
+ # writer out of the discovery and the lint goes quiet about it. This is the shape
+ # that would let a third writer ship undocumented.
+ ("commit_spelling_drift", S + "_deps.py", "after",
+  "        found = _commit_constants_in(tree)",
+  '\n        if name == "commit-manifest-index.py":\n            found = {}',
+  DEP, "cs1b"),
+ # F296. The document side, and the mutation is a SWAP rather than a deletion: the
+ # worked example in `commands/phase.md` names the id an append takes and the id the
+ # gap makes look free, so exchanging the two leaves a well-formed paragraph that is
+ # simply wrong - which is the shape a reader cannot spot and the lint must.
+ ("phase_id_doc_drift", "plugins/audit/commands/phase.md", "replace",
+  "id is `P4`, and never the `P2` the gap makes look free",
+  "id is `P2`, and never the `P4` the gap makes look free",
+  PRP, "ap5"),
+ # F282. `orchestrator.md` governed every run with ONE anchored sentence, and each
+ # of its fourteen sections was deleted in turn without a single gate noticing. So
+ # both sides get a row, because a claim rots in both directions: the DOCUMENT half
+ # renames a section heading, which is how a rule silently stops being stated.
+ ("claim_drift", "plugins/audit/reference/orchestrator.md", "replace",
+  "## Concurrency lock", "## Concurrency luck", ARE, "oa1"),
+ # ...and the CODE half moves a literal the document quotes. This is the direction
+ # a string-presence check cannot see at all, and it is the one that actually
+ # happened three times this week (F271, F276, F269).
+ ("claim_drift", S + "governance/_locks.py", "replace",
+  "E_LIVE, E_STALE, E_USAGE, E_ERR = 3, 4, 2, 1",
+  "E_LIVE, E_STALE, E_USAGE, E_ERR = 7, 4, 2, 1", ARE, "oa4"),
 )
 
 
@@ -1404,6 +1459,36 @@ ALLOW = (
   "def schema_inline_drift(root=None):",
   "def schema_inline_drift(root=None):\n    return [('ghost', 'probe')]",
   MVO, "mv29"),
+ # F291's over-fire. The field/value split is structural: the value half of a
+ # `key: value` pair is consumed first so a value that happens to be
+ # identifier-shaped cannot be read as a field name. Reverse the regex to
+ # key-colon only and every bare identifier in either block becomes a field, so
+ # the two agreeing copies start disagreeing about the tree as it stands.
+ ("explorer_contract_drift", S + "_deps.py", "replace",
+  '    r\':\\s*"[A-Za-z_][A-Za-z0-9_]*"|"([A-Za-z_][A-Za-z0-9_]*)"\')',
+  '    r\'"([A-Za-z_][A-Za-z0-9_]*)"\\s*:\')', DEP, "ec1"),
+ # F292's over-fire, and it is the reason the subsection bound reads the heading
+ # LEVEL rather than a literal `## `. Bound it on `## ` and one script's
+ # subsection swallows the next sibling script's paragraph, so every writer is
+ # convicted of claiming its neighbour's commit spelling.
+ ("commit_spelling_drift", S + "_deps.py", "replace",
+  '    pattern = re.compile(r"\\n#{1,%d} " % (level,))',
+  '    pattern = re.compile(r"\\n## ")', DEP, "cs1"),
+ # F296's over-fire, and it is why the check compares the WHOLE allocated id. The
+ # example is worth having only because the two allocators answer it differently;
+ # compare just the `P` prefix and every correct example reads as one the two rules
+ # cannot be told apart on, so a right document is convicted of vacuity.
+ ("phase_id_doc_drift", S + "manifest/_proposals.py", "replace",
+  "    if real_next == real_other:",
+  "    if real_next[:1] == real_other[:1]:",
+  PRP, "ap5"),
+ # F282's over-fire, and it is the difference from `rule_drift`, which a DUPLICATE
+ # sentence let survive every section deletion. Anchors are section-SCOPED: drop the
+ # scoping and every anchor matches text anywhere in the document, so a neighbour's
+ # sentence launders a section that no longer states its own rule.
+ ("claim_drift", S + "manifest/_areas.py", "replace",
+  "    hits = [(name, body) for name, body in sections if name.startswith(prefix)]",
+  "    hits = [(name, body) for name, body in sections]", ARE, "oa5"),
 )
 
 
