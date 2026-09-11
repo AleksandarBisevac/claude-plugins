@@ -128,6 +128,42 @@ COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-state"
 DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
 
+# F305: THE SUBJECT OPENS WITH A FIXED LOWERCASE WORD, AND THE STANDARD IT MEETS
+# IS THE WHOLE OF commitlint's DEFAULT `subject-case` RULE. F268 above moved the
+# literal into the scope so the default `type-enum` would take the commit, and the
+# very next default rule refused it anyway: `subject-case` forbids a subject that
+# IS sentence-case, start-case, pascal-case or upper-case, and `P6 - the record of
+# a run` is sentence-case exactly -- commitlint asks whether
+# `upperFirst(subject.toLowerCase())` equals the subject, and with the phase id
+# leading and nothing else capitalised, it does. Reported from the field a second
+# time with the same consequence as the first: the record stayed staged and
+# somebody committed it by hand.
+#
+# SO THE PROPERTY IS AIMED AT EVERY ONE OF THOSE CASES AND NOT AT THE ONE THAT BIT,
+# because meeting the defaults a rule at a time is what made this a second visit.
+# Each of them is COMPUTED by a transform that capitalises the subject's first
+# character -- `toUpperCase()`, `upperFirst()` of the lowercased string,
+# `upperFirst()` of the camel-cased one, and lodash `startCase`, which capitalises
+# every word including the first -- so a subject whose first character is a
+# lowercase letter cannot equal any of them, whatever else it contains.
+#
+# THE WORD IS THIS COMMAND'S AND NOT THE CALLER'S, which is what makes that
+# unconditional: it sits ahead of `--subject`, so no subject anybody passes can put
+# a capital, or a phase id, back into first position. It is also NOT read from
+# `meta.commit` -- see `commit_message()` for why the manifest is the wrong place
+# to ask.
+#
+# `phase` RATHER THAN A NEW WORD, because the orchestrator's own subjects already
+# open with a lowercase one: `phase sign-off ...` at sign-off and `audit - ...` on
+# a task commit (`reference/orchestrator.md`, *Phase sign-off* and *Execute the
+# task*). That is why neither of those was ever bitten by this rule, and it makes
+# the record read like the commits either side of it.
+#
+# AND THE PHASE ID STAYS UPPERCASE, one word further in. Lowercasing it would
+# spell a phase id differently here from every other surface in the product; the id
+# was never what the rule objected to, its POSITION was.
+SUBJECT_LEAD = "phase"
+
 # What every line this command prints is stamped with. A constant because the
 # renderer is `_scoped_commit`'s and takes it as an argument -- the lines are
 # shared with the index commit and the NAME is the only thing that may differ.
@@ -226,9 +262,25 @@ def commit_message(phase_id, subject, coauthor):
     A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
     per paragraph, so the trailer is a trailer and not a second sentence of the
     subject line.
+
+    `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
+    is the whole of F305's repair, and the constant says why.
+
+    AND THE SHAPE IS UNCONDITIONAL, deliberately NOT read from `meta.commit`. The
+    manifest cannot answer the question: that block holds `{type, coauthor}` - a
+    default conventional TYPE and a trailer - and records nothing about which
+    commitlint rules a repository configures, so a writer consulting it would be
+    guessing from a field about something else. It could not answer it even in
+    principle: husky is installed after `/audit:init` as often as before it, and a
+    manifest may be written by hand. And there is nothing to gate - a subject that
+    satisfies commitlint's defaults is a perfectly good subject where nothing
+    enforces them, so the alternative is a second shape that runs only on the
+    machines nobody tests on. Reading a field to decide whether to be correct is
+    also what F268 spent its reversal removing: the separating literal is fixed
+    precisely so a manifest cannot move this commit's spelling.
     """
-    lines = ["%s(%s): %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, phase_id,
-                                  subject or DEFAULT_SUBJECT)]
+    lines = ["%s(%s): %s %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD,
+                                     phase_id, subject or DEFAULT_SUBJECT)]
     if coauthor:
         lines.append(str(coauthor))
     return lines

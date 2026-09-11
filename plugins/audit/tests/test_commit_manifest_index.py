@@ -38,6 +38,13 @@ import _journal_io                                 # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
+# commitlint's default `subject-case`, transcribed ONCE and imported (F305). The
+# rule is commitlint's and belongs to neither writer, so a second transcription
+# here is how these two commands would come to be graded against two readings of
+# it - the same argument that keeps the staging discipline in `_scoped_commit`.
+# `header_offences`' own ability to fire on each of the four is proven beside it,
+# in `test_commit_audit_state`, for the same reason: one home, one proof.
+from test_commit_audit_state import HEADER_MAX_LENGTH, header_offences  # noqa: E402
 
 M = _loader.load_script("commit-manifest-index.py", "cmi")
 
@@ -219,11 +226,57 @@ def _cases(check):
               "%s` tells this class from the other two for ever, and a repo with "
               "husky+commitlint still takes the commit: %r"
               % (M.COMMIT_SCOPE, subject),
-              subject.startswith("%s(%s): " % (M.COMMIT_TYPE, M.COMMIT_SCOPE))
+              subject.startswith("%s(%s): %s %s"
+                                 % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                    M.SUBJECT_LEAD, PHASE))
               and M.COMMIT_SCOPE not in ("", None, "audit-state")
               and PHASE in subject
               and M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
                                     "perf", "refactor", "revert", "style", "test"))
+
+        # --- the subject a commitlint repository will take (F305) -------------
+        # THE SAME FAULT THIS FILE'S SIBLING HAD, and the reason it is asserted
+        # separately rather than trusted from there: the two writers compose the
+        # subject in two copies of one format string, so one of them can be
+        # repaired while the other keeps shipping the shape husky refuses. The
+        # old shape is built from THIS module's own constants, so the case cannot
+        # go on comparing against a spelling this file has stopped emitting.
+        was = "%s(%s): %s - %s" % (M.COMMIT_TYPE, M.COMMIT_SCOPE, PHASE,
+                                   M.DEFAULT_SUBJECT)
+        check("cmi7b ...and the SUBJECT git recorded is out of reach of every "
+              "case commitlint's default `subject-case` forbids, rather than of "
+              "the one that bit: the phase id leading a lowercase sentence IS "
+              "sentence-case, so the subject opens with a fixed lowercase word "
+              "this command owns and all of the forbidden cases capitalise a "
+              "subject's first character: %r -> %r / the shape it replaced -> %r"
+              % (subject, header_offences(subject), header_offences(was)),
+              header_offences(subject) == []
+              and header_offences(was) == ["sentence-case"])
+
+        # THE CALLER CANNOT UNDO IT. The LOWERCASE `--subject` is the fixture that
+        # separates the two implementations - without the fixed word ahead of it
+        # that header is sentence-case again - and the phase id and scope are
+        # asserted alongside, because deleting the id is the other way to stop
+        # offending the case rules.
+        composed = [M.commit_message(PHASE, text, None)[0] for text in
+                    ("landed the index after a task add",
+                     "Landed the index after a task add")]
+        check("cmi7c ...and no `--subject` can put a capital, or the id, back in "
+              "first position - the lowercase word is this command's and sits "
+              "ahead of the caller's text, while the id stays uppercase where "
+              "`git log` finds it: %r" % (composed,),
+              all(header_offences(header) == [] and PHASE in header
+                  and header.startswith("%s(%s): %s %s - "
+                                        % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                           M.SUBJECT_LEAD, PHASE))
+                  for header in composed))
+
+        check("cmi7d ...and the header still fits commitlint's default "
+              "`header-max-length` - the longest default subject of the two "
+              "writers is this one's, so it is the half of that budget worth "
+              "watching, and the fixed word spent some of it: %d against a limit "
+              "of %d" % (len(subject), HEADER_MAX_LENGTH),
+              len(subject) <= HEADER_MAX_LENGTH)
 
         # --- called again ------------------------------------------------------
         code, text = _run(fx)

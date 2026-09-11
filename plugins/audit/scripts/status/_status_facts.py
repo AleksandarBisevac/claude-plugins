@@ -373,8 +373,53 @@ TERMINAL = _mio.TERMINAL
 # the one reading the schema forbids by name. An unrecognised word is carried
 # through as itself (`unrecognised` in the summary below, the raw word in the CLI's
 # `tests` column) and is judged by nothing.
+#
+# AND THE SET IS SPLIT IN TWO, WHICH IS F302 ONE LEVEL OUT. `failing-tests`
+# counted a run the OS killed as a FAILING TEST, because the runner recorded
+# `failed` for it and this set holds that word. The runner records
+# `could-not-run` now -- so the word on the record is right -- and the condition
+# still read one undifferentiated list called `failing`, which means the gate's
+# own vocabulary went on folding an infrastructure failure into the same news as
+# a red suite. Two facts, two lists:
+#
+#   `NO_VERDICT_EVIDENCE`   the run never ANSWERED. Stopped at a bound, stopped
+#                           by the operator, or never got to a verdict at all --
+#                           and NOTHING about the work under test may be read
+#                           into any of them. The repair is never the task's.
+#   the remainder           the run answered, and the answer cannot sign work
+#                           off: `failed` came back red, `no-checks` counted
+#                           nothing, `gate-mutated` graded bytes the gate wrote.
+#
+# THE CONDITION STILL TRIPS ON THE UNION, and that is deliberate rather than
+# unfinished. `failing-tests`'s documented claim is "a recorded test run that
+# CANNOT SIGN WORK OFF", which is true of every word here; narrowing it to the
+# remainder would make a `could-not-run` pointer that fails somebody's pipeline
+# today start passing it on upgrade -- a refusal silently becoming a pass, which
+# is the worse direction and exactly the change COMPATIBILITY.md refuses to make
+# quietly. So the split is ADDITIVE: the union decides the exit code, and
+# `noVerdict` is what lets a surface say WHICH it has.
+#
+# THE UNION STAYS SPELLED OUT AND THE REMAINDER IS DERIVED, which is the one
+# ordering available rather than a preference. `_areas.py` anchors a claim in
+# `reference/orchestrator.md` to this module's SOURCE TEXT: it recovers the
+# vocabulary by matching the assignment on the next line with a regex and
+# reading what is inside the braces. Building that name from its two halves
+# instead would leave the anchor matching nothing and take the orchestrator's
+# own vocabulary check down with it - and this comment may not demonstrate the
+# shape either, because that same regex would match the demonstration and
+# recover an empty set, which agrees with any document. (It did, once, and this
+# sentence is the repair: reword, never widen the pattern.)
+#
+# Deriving the REMAINDER keeps the anchor readable AND keeps the halves from
+# drifting: a word can be in the whole set without being a no-verdict one, and
+# it lands in `ANSWERED_NO_SIGN_OFF` by subtraction rather than by somebody
+# remembering to add it. The other direction - a no-verdict word that is NOT in
+# the whole set - is the one subtraction cannot catch, so a case checks that
+# containment rather than trusting it.
 NO_SIGN_OFF_EVIDENCE = frozenset({"failed", "gate-mutated", "no-checks",
                                   "timed-out", "cancelled", "could-not-run"})
+NO_VERDICT_EVIDENCE = frozenset({"timed-out", "cancelled", "could-not-run"})
+ANSWERED_NO_SIGN_OFF = frozenset(NO_SIGN_OFF_EVIDENCE - NO_VERDICT_EVIDENCE)
 PASSED_EVIDENCE = "passed"
 NO_GATE_EVIDENCE = "empty-gate"
 KNOWN_EVIDENCE = frozenset(NO_SIGN_OFF_EVIDENCE
@@ -641,6 +686,16 @@ def test_evidence_summary(manifest, boundary=None):
         "byStatus": _by_status_values([r["status"] for r in recorded]),
         "failing": [r for r in recorded
                     if r["status"] in NO_SIGN_OFF_EVIDENCE],
+        # F302. THE HALF OF `failing` THAT REACHED NO VERDICT AT ALL. It is a
+        # SUBSET and not a fourth bucket: `failing` stays whole beside it for
+        # `missingOnDone`'s reason - "which recorded run cannot sign work off"
+        # is one question a surface may want on its own, and it should not have
+        # to add lists back together to get it. What this key buys is the
+        # sentence the gate could not write: a killed runner and a red suite are
+        # different news with different repairs, and until the runner recorded
+        # `could-not-run` at all the first was spelled as the second.
+        "noVerdict": [r for r in recorded
+                      if r["status"] in NO_VERDICT_EVIDENCE],
         "unrecognised": [r for r in recorded
                          if r["status"] not in KNOWN_EVIDENCE],
         "missingOnDone": missing,

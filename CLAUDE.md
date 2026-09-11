@@ -54,16 +54,27 @@ two copies of a procedure is one copy and one lie.
   `_deps.doc_prose_numbers()` over every `.md` — both sets **derived** off `.gitignore`, so a
   file added here is scanned by default and excluding one means a row in
   `_output.PROSE_SCAN_EXEMPT` with a reason. They fail the build on a
-  present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``) or
-  completeness (`all N of them`, `all N … have`) claim — and the number may be spelled as a
-  word, which is F59: `_numeral_span()` reads both spellings, for every shape, from one fixed
-  table. Three things stay legal on purpose: **history** (`it stood at N that day`), a number
-  **carrying the command that re-derives it** — the basis may sit on the next line, because
-  prose wraps — and the repair itself, which is to delete the number and keep the pointer.
-  `CONTRIBUTING.md`'s *Writing a count that is allowed* states those three affirmatively, with
-  one example each; read it before writing a number rather than after a build refuses one.
-  When a number really is informative, carry the basis; a basis makes a claim checkable, but
-  only deleting the number stops it rotting.
+  present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``),
+  completeness (`all N of them`, `all N … have`) or ratio (`N of M <noun>` — the tally a
+  command prints, quoted with no command beside it) claim — and the number may be spelled as a
+  word, which is F59: `_numeral_span()` reads both spellings, for every shape it knows, from
+  one fixed table. Three things stay legal on purpose: **history** (`it stood at N that day`),
+  a number **carrying the command that re-derives it** — the basis may sit on the next line,
+  because prose wraps — and the repair itself, which is to delete the number and keep the
+  pointer. `CONTRIBUTING.md`'s *Writing a count that is allowed* states those three
+  affirmatively, with one example each; read it before writing a number rather than after a
+  build refuses one. When a number really is informative, carry the basis; a basis makes a
+  claim checkable, but only deleting the number stops it rotting.
+- **The lint does not cover the whole class, and the part it leaves is yours.** A plain
+  `the N <noun>` with an ordinary noun — `five claims deep` — is **author-enforced in both
+  spellings**, and so is a ratio you wrote yourself rather than quoted (`N of the M <noun>`
+  carries an article no formatter emits). This is a refusal, not a gap waiting to be closed:
+  the noun is unbounded, so reading it means reading every count in every sentence, and both
+  widenings were measured over this tree and found to report honest prose almost exclusively —
+  which is how a lint gets routed around. `prose_number_claims()`'s *WHAT IT CANNOT SEE* is the
+  full list with the measurement behind each refusal, and `pn31` is the case that goes red if
+  somebody widens one. So a green build is not evidence that a number you wrote is safe; it is
+  evidence that none of the shapes the lint knows matched.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 - **`COMPATIBILITY.md` is a contract, not a description.** It promises that a `meta.version`
   the plugin accepts keeps being accepted and that a config key it reads keeps being read. So

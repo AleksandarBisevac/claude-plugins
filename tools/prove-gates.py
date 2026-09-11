@@ -456,6 +456,15 @@ TABLE = (
   "## Reporting",
   "## Reporting\n\n**NEVER `git cherry-pick` onto a phase branch.**",
   "tools/check-prohibitions.py", "pr0"),
+ # F319. The launcher's `ask` fail mode is what tells an operator the guards are
+ # NOT running when no interpreter can be found, so a deciding guard registered
+ # `open` is the one failure a blocking guard may not have: silent absence. The
+ # mutation is the shape the rule exists for - somebody edits the wiring and the
+ # loud fallback is quietly gone - and it is the WIRING that moves here, because
+ # the guard watching it lives in the file the ALLOW row mutates instead.
+ ("fail_mode_drift", "plugins/audit/hooks/hooks.json", "replace",
+  "guard-secrets-read.py ask", "guard-secrets-read.py open",
+  "tools/check-prohibitions.py", "pr6c"),
  # F191. The pointer that says a human's own words go in unchanged. Removed from
  # ONE doc, because that is the shape the fault had: three commands said nothing
  # and the fourth's silence was the one that got a paraphrase into the chain.
@@ -711,6 +720,26 @@ TABLE = (
  ("affected_dispatch", "tools/verify.sh", "sub", r"^    grep -v -e ",
   (r" -e '\^claude '", ""), "tools/gate-parity.py", "ad0"),
 
+ # --- F319: the fail-mode table, against the wiring that decides it -----------
+ # THE MUTATED FILE IS THE DOCUMENT, because a document is what this rule watches.
+ # SECURITY.md tells a reader which hooks PROMPT when no interpreter can be found
+ # and which pass in silence, and what actually decides that is the second argument
+ # of each registration in `hooks.json`. This is that sentence going wrong in the
+ # direction that matters: a BLOCKING guard documented as failing quietly, which is
+ # the claim someone reads while deciding whether to trust this plugin with their
+ # repository. `fm0` is the case that reads the real table against the real wiring.
+ ("failmode_table_drift", "SECURITY.md", "replace",
+  "| `guard-edits` | PreToolUse edits | **ask** | allow |",
+  "| `guard-edits` | PreToolUse edits | silent | no-op |",
+  "tools/gate-parity.py", "fm0"),
+ # ...AND THE DIRECTION A ONE-SIDED RULE CANNOT SEE: the row is DELETED rather than
+ # changed. Every cell that remains then agrees with its registration, so a check
+ # that compared only the rows it found would report a table it had just watched
+ # shrink as being in perfect agreement. `remind-tdd` is the row whose whole line is
+ # unique in the document and whose hook stays wired after it goes.
+ ("failmode_table_drift", "SECURITY.md", "drop", r"^\| `remind-tdd` \|",
+  None, "tools/gate-parity.py", "fm0"),
+
  # --- F231: the remainder the hand-written source list was hiding --------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
  # below is the debt that list was deferring, and each is written the way the rows
@@ -890,6 +919,34 @@ TABLE = (
  ("claim_drift", S + "governance/_locks.py", "replace",
   "E_LIVE, E_STALE, E_USAGE, E_ERR = 3, 4, 2, 1",
   "E_LIVE, E_STALE, E_USAGE, E_ERR = 7, 4, 2, 1", ARE, "oa4"),
+ # ...and the LIST arm, which the two rows above cannot reach: they both mutate
+ # `CLAIM_ANCHORS`, while `LIST_ANCHORS` derives a whole VOCABULARY from the enum
+ # that owns it and compares it set-against-set. That arm was added with cases and
+ # no mutation row, so it was the one part of this lint nothing here proved -
+ # reported by the lane that added the second list row rather than found by the
+ # coverage rule, because `coverage()` derives lints by NAME and both arms answer
+ # to one name. Blinding the members-minus-stated half is the smallest mutation
+ # that leaves the other arm intact, so a red here credits the list arm alone.
+ ("claim_drift", S + "manifest/_areas.py", "replace",
+  "        for name in sorted(members - stated):",
+  "        for name in sorted(set()):", ARE, "oa14"),
+ # F334. The list anchor's window, and the mutation is the spelling it SHIPPED
+ # with: `.*?` under `re.S` runs past the function body, so deleting the guard
+ # the row is anchored to made the pattern latch onto a repeat of the same code
+ # shape hundreds of lines further down and report a status the verb no longer
+ # refuses. A false finding naming the wrong guard, from a row whose comment said
+ # it could not slide. The bound is "no line may begin in column 0", which is a
+ # property of a top-level body rather than a guess at what follows it.
+ ("claim_drift", S + "manifest/_areas.py", "replace",
+  r'def _locked_scope\((?:(?!\n\S).)*?node',
+  r'def _locked_scope\(.*?node', ARE, "oa26"),
+ # F330a. The refusal that keeps an EMPTY vocabulary from agreeing with any
+ # document. Blinding it does not go quiet - it turns every word the section
+ # names into "a status the code does not produce", so the run stays non-zero
+ # while pointing at the wrong side, which is why the case asserts the
+ # empty-vocabulary finding AND the absence of the member findings.
+ ("claim_drift", S + "manifest/_areas.py", "replace",
+  "        if not members:", "        if False:", ARE, "oa28"),
 )
 
 
@@ -1338,6 +1395,34 @@ ALLOW = (
   '        if not line.startswith("  ") or line.startswith("  ("):',
   "tools/gate-parity.py", "ad4"),
 
+ # --- F319: the two shapes a careless reader of that table loses in silence ----
+ # THE PARENTHETICAL STRIPPER THAT STOPS STRIPPING. One script appears in the table
+ # twice because its events fail differently, and the second row is disambiguated by
+ # a parenthetical name - so the hook is read with the parenthesis dropped. Stop
+ # dropping it and the rule convicts a correct document twice over: a row describing
+ # a hook nothing wires, and the pair that row was FOR, wired and undescribed.
+ # `fm3` is the case that asserts an agreeing table and wiring report nothing, and
+ # its fixture carries a parenthetical for exactly this.
+ ("failmode_table_drift", "tools/gate-parity.py", "replace",
+  r'        hook = re.sub(r"\([^)]*\)", "", _plain(cells[columns["hook"]])).strip()',
+  '        hook = _plain(cells[columns["hook"]])',
+  "tools/gate-parity.py", "fm3"),
+ # ...AND THE OTHER TRAP, IN THE SHAPE SOMEBODY WOULD ACTUALLY WRITE IT. One cell
+ # words several events, and a reader that took the first of them would leave the
+ # rest of that row's pairs described by nothing - and then report them as wired and
+ # undocumented. Narrowed to the first event, the rule convicts a table that covers
+ # every pair it should. `fm3`'s fixture words two events in one cell for this
+ # reason, and the narrowing is a slice rather than damage: the rule still parses,
+ # still reads every row, and answers wrongly about exactly this shape.
+ ("failmode_table_drift", "tools/gate-parity.py", "replace",
+  '        named = tuple(event for event in events\n'
+  '                      if re.search(r"\\b%s\\b" % (re.escape(event),),\n'
+  '                                   cells[columns["event"]]))',
+  '        named = tuple(event for event in events\n'
+  '                      if re.search(r"\\b%s\\b" % (re.escape(event),),\n'
+  '                                   cells[columns["event"]]))[:1]',
+  "tools/gate-parity.py", "fm3"),
+
  # --- F231: the same fifteen, weakened until they over-fire --------------------
  # Every row here widens a rule until it convicts something correct, and names the
  # case that must go red for it. Most of them name their RED twin, for the reason
@@ -1390,6 +1475,15 @@ ALLOW = (
   r'_BOLD_NEVER = re.compile(r"\*\*[^*]*\bNEVER\b[^*]*\*\*")',
   r'_BOLD_NEVER = re.compile(r"[^.\n]*\bnever\b[^.\n]*", re.I)',
   "tools/check-prohibitions.py", "pr0"),
+ # F319. Drop the half that asks whether the hook DECIDES and the rule becomes
+ # "every registration must be `ask`", which convicts `journal-writes.py` for
+ # being wired the only way it correctly can be. That is the over-fire this
+ # guard would be switched off for, and the reason the pairing is checked in two
+ # directions rather than as one rule about tokens.
+ ("fail_mode_drift", "tools/check-prohibitions.py", "replace",
+  '        if decides and mode != "ask":',
+  '        if mode != "ask":',
+  "tools/check-prohibitions.py", "pr6c"),
  # The hint read TOO LOOSELY. Only the pipe-separated form makes a claim about a
  # set; widen the needle to swallow a metavar and `--phase <id>` becomes a
  # one-value list no parser declares, so every correctly written command is
@@ -1489,6 +1583,13 @@ ALLOW = (
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "    hits = [(name, body) for name, body in sections if name.startswith(prefix)]",
   "    hits = [(name, body) for name, body in sections]", ARE, "oa5"),
+ # F330a's other direction. Make the empty-vocabulary refusal UNCONDITIONAL and
+ # every list row reports an empty vocabulary on every run - the shape a guard
+ # gets switched off for. It reddens several neighbours as well, which does not
+ # affect the verdict: it keys on the named case, and `oa29` is the one that
+ # asserts a vocabulary WITH members stays quiet.
+ ("claim_drift", S + "manifest/_areas.py", "replace",
+  "        if not members:", "        if members is not None:", ARE, "oa29"),
 )
 
 

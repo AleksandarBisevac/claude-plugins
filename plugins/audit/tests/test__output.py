@@ -1277,6 +1277,31 @@ def _cases(check):
           "before the migration starts and after it ends",
           M.write_lf_lines([], io.StringIO()).getvalue() == "")
 
+    # --- tk: the tokenizer is memoised, and the memo is honest -----------------
+    # Profiled with cProfile, `_tokenize` was the hottest function in this suite,
+    # entered several times per line: as the line itself, again inside
+    # `_historical_sentences`, and again as its neighbours' `preceding` and
+    # `following`. A bounded LRU catches the repeats. Two cases, because a cache
+    # on an impure function is a wrong answer that arrives fast - and tk1 is
+    # guarded so that REMOVING the memo fails one case by name instead of raising
+    # on `cache_info` and taking the rest of this suite down with it.
+    _tk_line = "Its 3 cases stayed at 17; see tools/x.py. Then 2 more."
+    _tk_memo = hasattr(M._tokenize, "cache_info")
+    if _tk_memo:
+        M._tokenize.cache_clear()
+    _tk_a = M._tokenize(_tk_line)
+    _tk_h0 = M._tokenize.cache_info().hits if _tk_memo else None
+    _tk_b = M._tokenize(_tk_line)
+    _tk_h1 = M._tokenize.cache_info().hits if _tk_memo else None
+    check("tk0 the memo does not LIE: a cleared cache and a served one give the "
+          "same tokens and the same sentence ordinals (%r)"
+          % (_tk_a["words"][:4],),
+          _tk_a == _tk_b and bool(_tk_a["words"])
+          and len(_tk_a["words"]) == len(_tk_a["sentence"]))
+    check("tk1 ...and it is IN USE: the second call on the same line is a hit and "
+          "not a second walk (hits %r -> %r)" % (_tk_h0, _tk_h1),
+          _tk_memo and _tk_h1 == _tk_h0 + 1)
+
     # --- pn: numbers written into prose (the rot this repo keeps meeting) -----
     _pn_live = M.prose_number_claims()
     check("pn0 no `.py` this repo keeps writes a present-tense number into its "
@@ -1751,6 +1776,140 @@ def _cases(check):
               is None
           and M._prose_number_claim("It was one file and is six, because the "
                                     "checks shared it for one reason") is None)
+
+    # F311. THE RATIO FAMILY, and every case below is about ONE distinction: a
+    # count quoted from what a command prints is legal when the command is named
+    # and is a copy with no basis when it is not. That is the question
+    # `_carries_basis()` already decides for a bare cardinality, which is why
+    # this is a third answer to it rather than a fourth shape.
+    #
+    # The reported spelling is `13 of 14 sections`, quoting `_areas.py
+    # --coverage`. Both numbers rot, and the `of M` is what made it read as a
+    # quotation: a ratio shows its own whole, so it looks self-verifying, and a
+    # denominator is not a basis because nothing re-derives it either.
+    check("pn30 a RATIO with no command beside it is a finding, in BOTH "
+          "spellings and mixed - F59's rule is that no shape reads a digit and "
+          "a word by different rules, and a family added after it must read "
+          "them through `_numeral_span()` rather than growing its own reader",
+          M._prose_number_claim("anchored 13 of 14 sections")
+              == "13 of 14 sections"
+          and M._prose_number_claim("anchored thirteen of fourteen sections")
+              == "thirteen of fourteen sections"
+          and M._prose_number_claim("anchored 13 of fourteen sections")
+              == "13 of fourteen sections"
+          and M._prose_number_claim("anchored five of nine sections")
+              == "five of nine sections")
+    # THE THREE LEGAL SPELLINGS, QUOTED FROM `CONTRIBUTING.md`'s "Writing a
+    # count that is allowed" RATHER THAN INVENTED. They are the three shapes a
+    # ratio is most easily confused with, because all three read as quotation -
+    # and a lint that convicted the number carrying its own command would be
+    # routed around inside a day, with the repair being to delete the basis.
+    _pn_wrapped = ("it anchored 13 of 14 sections - print it with",
+                   "`python3 plugins/audit/scripts/manifest/_areas.py "
+                   "--coverage`")
+    check("pn30b ...and the three spellings this repo keeps LEGAL stay silent, "
+          "including the one whose basis lands on the NEXT line because prose "
+          "wraps. The last pair is the second direction: the same claim with "
+          "the command taken away, so this case fails if the basis gate stops "
+          "being consulted at all rather than passing two silent lines",
+          M._prose_number_claim("The largest file is `_deps.py`; `python3 "
+                                "tools/count-ui-pins.py` reports the split by "
+                                "directory.") is None
+          and M._prose_number_claim("Roughly a third of the suites reach the "
+                                    "browser gates:",
+                                    "`grep -rln capture-screenshots "
+                                    "plugins/audit/tests | wc -l`") is None
+          and M._prose_number_claim("Two consecutive captures agreed on every "
+                                    "image the day this shipped.") is None
+          and M._prose_number_claim("it anchored the sections `_areas.py "
+                                    "--coverage` names") is None
+          and M._prose_number_claim(_pn_wrapped[0], _pn_wrapped[1]) is None
+          and M._prose_number_claim(_pn_wrapped[0], "and read the split off it.")
+              == "13 of 14 sections")
+    # ...and the REFUSAL, which is the other half of F311 and is refused rather
+    # than missing. `five claims deep` is `the N <noun>` with an ordinary noun,
+    # the shape F59's own instance wore; the noun is unbounded, so reading it
+    # means reading every count in every sentence. The small-word reading exists
+    # for a shape that supplies its own bound and is OFF everywhere else - both
+    # halves are pinned here, because a widening in either would turn this tree
+    # red on prose that is doing its job.
+    check("pn31 an ordinary `the N <noun>` is NOT read, in either spelling, and "
+          "a small number-word is not a numeral to the families that read a "
+          "bare noun - the second direction of `_numeral_span`'s `small` flag, "
+          "which the ratio case above is the first direction of",
+          M._prose_number_claim("the argument runs five claims deep") is None
+          and M._prose_number_claim("the argument runs 5 claims deep") is None
+          and M._prose_number_claim("the argument runs fourteen claims deep")
+              is None
+          and M._prose_number_claim("all three are honest about what they are:")
+              is None
+          and M._prose_number_claim("an id naming two cases defeats that") is None
+          and M._numeral_span(["five", "cases"], 0) is None
+          and M._numeral_span(["five", "cases"], 0, True) == ("five", 1)
+          and M._numeral_span(["twenty", "five"], 0) == ("twenty-five", 2)
+          and M._numeral_span(["twenty", "five"], 0, True) == ("twenty-five", 2))
+    # EACH NARROWING WITH THE CLASS OF LINE THAT BOUGHT IT, all four measured
+    # over this tree rather than guessed. The fixtures are real lines from it,
+    # shortened only where the whole line would not fit.
+    #
+    # THE ARTICLE LINE IS REFUSED TWICE, so it is the one fixture here that no
+    # single mutation turns red: the loop wants the whole to follow `of`
+    # directly, and the verbatim rule refuses the spelling again because the run
+    # built from the tokens has no article in it. Both were removed separately
+    # and together to establish that, and the pair is the reason this comment
+    # exists - green after one mutation is not evidence of a dead rule.
+    check("pn32 the four narrowings, each on the class of line it was bought "
+          "by: an ARTICLE no formatter emits, a QUOTED span where the tally is "
+          "a byte, a token after the whole that cannot be a noun, and a run "
+          "the text never actually spelled that way",
+          M._prose_number_claim("17 of the 18 detail-carrying files print it")
+              is None
+          and M._prose_number_claim('and "5 of 6 manifest item(s) carry an ado '
+                                    'link" in out') is None
+          and M._prose_number_claim("for example *\"Audit of acme-store: 3 of "
+                                    "5 phases signed off, 2") is None
+          and M._prose_number_claim("`wave 2 of 8 - 16 of 20 tasks still "
+                                    "ready` reads as progress") is None
+          and M._prose_number_claim("only 8 of 40 can be coloured") is None
+          and M._prose_number_claim("it fails at 17 of 353 with the feature off")
+              is None
+          and M._prose_number_claim('index["phases"][1]["claim"] = {}') is None
+          and M._prose_number_claim("a phase that was 1-of-1 done reading 2/2")
+              is None
+          and M._prose_number_claim("45% of this tree (22,363 of 49,393 lines) "
+                                    "moved") is None
+          and M._prose_number_claim("this is one of four classes, and the "
+                                    "sentence dies if the word goes") is None)
+    # An UNPARTNERED delimiter opens a span to the end of the line, because both
+    # prose and source wrap here and the closing one is on neither line. Counted
+    # rather than asserted present: the first fixture has one span and the second
+    # two, so a rule that stopped pairing at all still separates them.
+    _pn_odd = M._quoted_spans('    "0 of 5` is the honest line, and printed')
+    _pn_even = M._quoted_spans('reading `x` is worse than `y` here')
+    check("pn33 a quoted span is read by COLUMNS, an unpartnered delimiter runs "
+          "to the end of the line, and overlap is enough - a run leaning out "
+          "past a closing delimiter is still that tally: %r / %r"
+          % (_pn_odd, _pn_even),
+          len(_pn_even) == 2
+          and len(_pn_odd) == 2
+          and M._in_quoted_span("a `b 3 of 4 x` c", 3, 13)
+          and M._in_quoted_span("a `b 3 of 4 x` c", 3, 16)
+          and not M._in_quoted_span("a `b` 3 of 4 x", 6, 14))
+    # The REPAIR reads clean, or the lint forbids its own remedy and the next
+    # author deletes the pointer with the number. And the history escape's new
+    # markers must not excuse a sentence that does not carry one - without the
+    # second half this passes on a `_looks_historical` that returns True always.
+    check("pn34 the repair of a ratio reads clean, and the past-tense markers "
+          "F311 added to `_PAST` excuse only the sentences that carry them",
+          M._prose_number_claim("anchored every section but one - print the "
+                                "split with `python3 x.py --coverage`") is None
+          and M._prose_number_claim("measured that day: 13 of 14 sections were "
+                                    "anchored") is None
+          and M._prose_number_claim("one saw 9 of 12 tasks reported that way")
+              is None
+          and M._prose_number_claim("today it anchors 13 of 14 sections")
+              == "13 of 14 sections"
+          and "measured" in M._PAST and "saw" in M._PAST)
 
     # --- us: which files a surface's pictures are OF (F85) --------------------
     # `_refs.screenshot_capture_drift()` and `tools/capture-screenshots.mjs` both

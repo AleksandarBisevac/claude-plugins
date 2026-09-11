@@ -1,0 +1,81 @@
+{
+  "id": "P35",
+  "title": "The prose-number rule is enforced in the two spellings an author wrote by accident",
+  "status": "pending",
+  "description": "While writing P34.5 an author produced two numbers, noticed them, removed them, and reported\nthat NEITHER lint had fired: `anchored 13 of 14 sections`, written as a quotation of what a\ncommand prints, and `five claims deep`, an ordinary `the N <noun>` with the numeral spelled as\na word. Both were caught by an author reading their own prose, which is the mechanism the\nlints exist to replace.\n\nThe finding is not that two sentences were wrong. It is that the class is still\nauthor-enforced in two spellings while CLAUDE.md presents it as lint-enforced - a document\nclaiming an instrument it does not have, which is this register's most repeated shape.",
+  "desiredOutcome": "The class CLAUDE.md presents as lint-enforced is lint-enforced in the spellings that actually get written, or the document says which ones it is not.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P35.1",
+      "title": "F311: the prose-number lints read a quotation and a spelled-out count",
+      "status": "done",
+      "description": "Two spellings get past `_output.prose_number_claims()` and `_deps.doc_prose_numbers()`:\n\n  \"anchored 13 of 14 sections\"   read as quotation rather than as a claim\n  \"five claims deep\"            an ordinary `the N <noun>`, numeral spelled as a word\n\nWHAT MAKES THIS HARD IS THE PART TO GET RIGHT, so do not start with a fourth shape. The legal\nspellings this repo deliberately keeps - history, a number carrying its command, and the\nrepair itself - all LOOK like quotation. So the fix is not \"also catch quotation\"; it is\ntelling a quotation that carries its basis from one that does not, which is the same\ndistinction the existing rule already draws for a bare cardinality. Start there.\n\nF59 taught `_numeral_span()` to read both spellings for every shape it knows; the second\nfinding is a shape it does not know. Extending it is the smaller half.\n\nRed-first in BOTH directions matters unusually much here: prove the new arm catches the two\nreported spellings, AND prove it stays silent on all three legal ones. A lint that convicts a\nnumber carrying its command would be routed around within a day, and CLAUDE.md's own\n`CONTRIBUTING.md` cross-reference states those three affirmatively with an example each - use\nthem as the fixtures rather than inventing any.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "CLAUDE.md",
+        ".claude/skills/writing-css/SKILL.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: a quoted count with no basis is a finding while a quoted count carrying its command is not, and a spelled-out numeral is read for every shape"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "The ratio shape `N of M <noun>` goes through the SAME _carries_basis()/_historical_sentences() gates a bare cardinality does, because a ratio only READS as self-verifying: a denominator is not a basis, since nothing re-derives it either. Bounded to the form a formatter emits, so `N of the M <noun>` - an article no formatter writes - stays the author's own sentence. _numeral_span() gained the bare small-word reading from the same fixed table. The spelled-out `the N <noun>` was NOT taken on, and the measurement is why: switched on it reported over a hundred sites, essentially all honest prose. So CLAUDE.md was narrowed to say the class is only partly lint-enforced and that a green build is not evidence a number you wrote is safe - an honest narrower claim rather than a broad one that is wrong.",
+        "descriptive": "The prose-number rule now catches the quoted-ratio spelling, and the document admits which spellings remain the author's."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "pn0",
+        "pn30",
+        "pn30b",
+        "pn31",
+        "pn32",
+        "pn33",
+        "pn34",
+        "dpn0",
+        "dpn3",
+        "dpn7"
+      ]
+    }
+  ]
+}

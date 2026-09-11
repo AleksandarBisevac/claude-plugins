@@ -94,6 +94,21 @@ With Bash/Glob/Grep — never reading secrets:
    `run-test-gate.py` catches it at run time regardless — but a gate the operator was never
    told about is a surprise the first time a phase signs off, and this is the cheaper place to
    say it.
+
+   **And record HOW the test command can be pointed at paths.** It is the only input a task's
+   own gate can be derived from (step 5.3), and nothing later in the run can recover it. Beside
+   each `test`-family command, note which one the runner offers: a **source→test** mode
+   (`jest --findRelatedTests <paths>`, `vitest related <paths>`), **test paths only**
+   (`pytest <paths>`, `mocha <paths>`), a **project or package selector**
+   (`jest --selectProjects <p>`, `go test ./<pkg>/...`, `cargo test --package <c>`,
+   `dotnet test <project>`), or **nothing path-scoped at all** — a composite script such as
+   `make check` or `npm run ci`, whose inside you cannot see from out here.
+
+   Read the spelling off what the repo actually pins — the manifest that declares the runner,
+   its lockfile, the config file it loads — and not off a memory of that tool's CLI: a flag
+   that does not exist in the pinned version turns every task gate into exit 2. And
+   **"nothing path-scoped" is a finding to carry forward, never a gap to fill with a
+   plausible-looking flag**; step 5.3 writes the wide gate and the reason when it reads that.
 4. Split the included scope into 2–6 coherent **subsystems** (by directory/domain).
 
 ### 3.5 Workspace detection (monorepo areas)
@@ -150,13 +165,19 @@ Every prompt must include:
 - **Hard rules** (restated even though the agent knows them): read-only; NEVER read secret
   files (`.env`, credentials, keys) — names only; skip vendored/generated code.
 - **Return format**: ONLY a JSON array of findings, each
-  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "coupledPaths": [{"path", "shared"}], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
+  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "coupledPaths": [{"path", "shared"}], "coveringTests": [{"path", "covers"}], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
 - **Coupling**: `coupledPaths` is what else is on the same data path as the files a finding
   names — another module reading or writing the same store, the other side of the same
   request/response or event shape, another file built from the same schema or generated type.
   Each entry names the path AND the store, shape or type both sides touch; an entry that
   cannot name what is shared is not a coupled path but a hunch, and `[]` is the answer when
   there is none, so silence never doubles as absence.
+- **Existing coverage**: `coveringTests` is which test files ALREADY exercise the files a
+  finding names, each entry naming the path AND the function, endpoint or behaviour under
+  test that the case drives — opened and read, never inferred from a filename that resembles
+  a source file. This is what step 5.3 narrows a task's gate from, so `[]` is load-bearing
+  rather than a shrug: looked and found none means the gate stays wide and the task records
+  why, which is a different outcome from having not looked.
 
 Parse each result; findings that don't parse as JSON get one retry prompt, then are dropped (report the drop).
 
@@ -172,6 +193,12 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    must be able to prove THAT PHASE done: a phase tagged with two areas carries one entry per
    area, or states why a single command covers both. A gate that can be green while half the
    phase is unverified is decoration.
+
+   **And narrowing a task's gate never narrows the phase's.** Step 5.3 derives each task's
+   `tests.gate` from the files that task touches, which is a smaller claim about a smaller
+   diff. This requirement is unaffected: the phase's `testGate` still has to prove every file
+   every task under it touched, together. Two levels, two questions — a phase's coverage is
+   not discharged by the tasks below it carrying gates of their own, however many are green.
 
    **The gate never forces a merge.** It is a LOWER bound on splitting - it tells you when you
    must split, never that you must join. Several distinct concerns can share one gate and stay
@@ -203,7 +230,60 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      this is a step YOU perform rather than a value you copy.
    - Behavior-preserving change (refactor/hardening) → `"regression"`.
    - Config/docs/mechanical → `"gate-only"`.
-   - `tests.gate`: entries resolving via the detected `meta.buildCommands` keys.
+   - **`tests.gate` — and a task gate is not a small phase gate.** A **phase** gate asks
+     *is the repository still whole*: it runs once, at sign-off, over everything the phase's
+     tasks touched together, and it is the only thing that can catch the interaction no single
+     task could see. A **task** gate asks *did this one change do what it was asked to*: it
+     runs on every attempt, inside the executor's loop, and the only failure it has to be able
+     to produce is one this task's own diff caused. So the phase gate is wide because its
+     question is wide, and a task gate is narrowed to the task's own files — a wider one does
+     not answer its question any better, it answers the PHASE's question again, once per
+     attempt, per task, per phase running in parallel.
+
+     **The wide default is the one that has been measured going wrong.** Handing every task
+     the full suite meant a repo running two phases at once spawned a whole worker fan-out per
+     task; on a suite that boots a database per worker the machine ran out of cores, and
+     suites began failing for reasons no diff explained — red gates against tasks whose code
+     was fine, and a retry burned on each. Nothing had guessed wrong. The plan had asked for
+     it, on every task, because this line used to say only that gate entries resolve via
+     `meta.buildCommands`.
+
+     **Derive it from the task, or say you could not.** The inputs are the task's `files`, the
+     `coveringTests` the finding reported, and the paths in `tests.add` — never a feel for what
+     the change touches. Which one you use is decided by the path-scoped spelling recon
+     recorded in step 3.3:
+     - a **source→test** mode → that mode over the task's `files`. Prefer it wherever it
+       exists: the runner maps sources to suites off the real import graph, which beats
+       anything you or the explorer could infer from a tree.
+     - **test paths only** → the `coveringTests` paths, plus every `tests.add` path.
+     - a **project/package selector** → the one project the task's files sit in, resolved
+       against a REGISTERED boundary (`meta.areas[tag].root`, a workspace member, a package
+       directory) and never against a directory name that merely looks like one.
+     - **nothing path-scoped** → the wide entry, and a reason.
+
+     Entries still resolve via `meta.buildCommands` wherever the scope is shared, which is what
+     gives a step a short name in the report instead of a long command printed twice. A scope
+     that differs per task cannot be a shared key, so those entries are literal commands; that
+     is the one place in a plan where a literal is the right shape, because what the row then
+     says is the scope.
+
+     **Nothing persists the spelling except the gates themselves, and that is enough.** A plan
+     whose task gates are path-scoped carries the runner's own path-scoped form in every one of
+     them, so a task added later (`/audit:task add`) reads the shape off its siblings instead of
+     re-detecting it. A plan whose task gates are all the wide key carries no such record —
+     which is the other thing the old default cost, and the reason it survived so long.
+
+     **Two invariants, and the quiet one is second.** The derived gate must contain every
+     `tests.add` path this task promises to author — a task whose own gate never runs the case
+     it just wrote has bought a green with nothing behind it. And it must not narrow the
+     phase's `testGate`, which step 5.2 states from the other side.
+
+     **When it cannot be derived, the wide entry IS the answer** — a runner with no path-scoped
+     spelling, files under no registered project, a finding whose `coveringTests` came back
+     `[]` with no `tests.add` to stand in for them. Write the wide entry and put the reason in
+     the task's `description`, naming what was missing. Do not narrow on a resemblance: a false
+     red is noticed the same day and a false green is never noticed at all, so a guess here is
+     the strictly worse trade even when it would usually be right.
    - `model`: `sonnet` is the floor for ALL fix work (low/med risk, mechanical included);
      escalate to your strongest tier (`opus`) for `risk: "high"`. Do NOT route audit-fix tasks to
      `haiku` — a botched cheap attempt burns retries (`maxAttempts`) plus a reviewer round, costing
@@ -425,7 +505,10 @@ which layout was written and why the question was not worth asking yet.
 **Materialized (fully or partly):** per-phase table (`id — title — task count —
 dimensions covered`), total task count by `tests.mode` and `risk`, what was
 deferred and why, any open questions for the human, and the handoff: **next run
-`/audit:status`, then `/audit:phase P0`**. Name the layout that was written, and
+`/audit:status`, then `/audit:phase P0`**. Name every task whose `tests.gate` could NOT be
+narrowed, with the reason its `description` records — a wide gate nobody was told about is
+how a default teaches the wrong lesson, and this is the last place to say it before the plan
+starts running. Name the layout that was written, and
 when it is sharded, that the index and every `phases/*.json` are new files to
 `git add` — plus that the `.bak-<UTC>` the split left behind is a copy of the file
 written moments earlier, so on a fresh init it is noise and safe to delete.

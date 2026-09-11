@@ -248,7 +248,8 @@ def _step(project, step, published):
 
 
 def row_for(project, result, scope, ids, identity, published=None):
-    """One evidence row: what ran, what it answered, and whose run it was.
+    """One evidence row: what ran, what it answered, whose run it was, and which
+    declaration the run was measured against.
 
     `result` is `run-test-gate.run_gate`'s dict. Only the fields named here cross
     into the row; an inventive caller cannot widen it, which is the same rule
@@ -301,6 +302,26 @@ def row_for(project, result, scope, ids, identity, published=None):
     # just as well.
     if result.get("cancelledBy") is not None:
         row["cancelledBy"] = str(result["cancelledBy"])
+    # WHERE THE `steps` LIST CAME FROM (F312). `steps` names the entries that
+    # executed and carries no declaration beside them, and the manifest that
+    # declared them is not on the row -- so two rows with different `steps` differ
+    # either because the tasks differ or because one was measured by its own
+    # `tests.gate` and the other fell back to the phase's `testGate`, and nothing
+    # else here separates those.
+    #
+    # `scope` IS NOT THAT ANSWER, WHICH IS THE WHOLE REASON THIS IS A FIELD.
+    # `scope`'s published meaning is the POINTER SUBJECT: `latest_by_subject` keys
+    # by it, `_set_pointer`, `_current_pointer` and `reconcile` all branch on it to
+    # choose a task or a phase, and `_status_facts.evidence_row` reads it as a
+    # subject scope. `run-test-gate._record_run` happens to pass ONE value into
+    # both questions, so the two strings are equal at that call site and nowhere by
+    # contract -- and the second writer of this function already computes its
+    # entries as `task.tests.gate or phase.testGate` while labelling every such row
+    # `scope: "task"`. A reader recovering provenance from `scope` would be reading
+    # a field whose contract is something else, and on a fallback run it reads
+    # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
+    if result.get("gateSource") is not None:
+        row["gateSource"] = str(result["gateSource"])
     for key in ("taskId", "phaseId"):
         if ids.get(key) is not None:
             row[key] = str(ids[key])

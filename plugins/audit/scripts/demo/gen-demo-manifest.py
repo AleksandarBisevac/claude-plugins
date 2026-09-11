@@ -192,15 +192,29 @@ def _tests_add(mode, rel):
 COUNTED_KEY = "precommit"
 TASK_GATE_KEY = "test"
 # A gate entry is either a key `meta.buildCommands` resolves or a literal command,
-# and this fixture uses KEYS throughout. That is not decoration: `run_gate` names a
-# step after the ENTRY, so a plan whose entries are whole shell commands renders
-# the same long string twice on every step row of the report - once as the step's
-# name and once as the command it ran. A key gives the row a short name and leaves
-# the command to say what it was.
+# and the split here follows the SCOPE rather than a formatting preference. A key
+# gives a step row a short name and leaves the command to say what it was, which
+# matters because `run_gate` names a step after the ENTRY: an entry that is a whole
+# shell command renders the same string twice on that row, once as the name and once
+# as the command. So every gate whose scope is SHARED is a key.
+#
+# A TASK GATE IS THE ONE SCOPE THAT CANNOT BE SHARED, which is why the two below are
+# literals. `commands/init.md` step 5.3 states the rule this encodes: a phase gate
+# asks whether the repository is still whole and covers everything the phase touched
+# together, while a task gate asks whether ONE diff did what it was asked to and is
+# narrowed to that task's own files. No shared key can spell a scope that is
+# different for every task, and on a task row the duplicated string IS the scope,
+# which is the whole subject.
 BUILD_COMMANDS = {"test": "yarn test", "lint": "yarn lint", "build": "yarn build",
                   COUNTED_KEY: "pre-commit run --all-files"}
 PHASE_GATE_KEY = "test:%s"
 PHASE_GATE_COMMAND = "yarn test --selectProjects %s"
+# The path-scoped spellings, one per runner this fixture declares. Both take the
+# task's OWN files and nothing else, which is what makes the entry DERIVED rather
+# than chosen: `_task_gate` is handed `files` and the registered roots, and has no
+# other material to narrow by.
+TASK_GATE_COMMAND = "yarn test --findRelatedTests %s"
+TASK_COUNTED_COMMAND = "pre-commit run --files %s"
 
 
 def _build_commands():
@@ -236,15 +250,36 @@ def _ungated_phase(statuses):
     return len(statuses) if statuses and statuses[-1] == "pending" else None
 
 
-def _task_gate(tstatus):
-    """The gate entries this task declares -- and whether any of them can be COUNTED.
+def _task_gate(tstatus, files, roots):
+    """The gate entries this task declares -- DERIVED from the files it touches.
 
-    TWO SHAPES ON PURPOSE. `ran_count` recognises exactly one runner, so a fixture
-    whose every gate is `yarn test` reports "check count not knowable" on every row
-    it will ever render, and can never reach `no-checks` -- a gate that exited 0
-    having checked NOTHING, which is the distinction this whole feature exists to
-    draw. A fixture where every gate is counted loses the other half, which is what
-    a real project's gate reports most of the time. So the fixture carries both.
+    A TASK GATE IS NOT A SMALL PHASE GATE, and giving every task the phase's gate
+    is the fault this signature exists to remove (F304). The full suite on every
+    task meant a plan running two phases at once asked for a whole worker fan-out
+    per task; on a suite that boots a database per worker the machine runs out of
+    cores and gates start going red for reasons no diff explains. Nothing guessed
+    wrong there - the plan asked for it, which is why the repair is in what a plan
+    is GENERATED to say.
+
+    DERIVED, NEVER GUESSED. The narrowing reads `files` against the registered area
+    roots and nothing else. A file under a root is narrowed with the runner's own
+    source-to-test mode; a file under NONE of them has nothing to narrow by, so the
+    wide key is the honest answer and the caller is expected to record why. A guess
+    in that position trades a false red for a false green, and only one of those
+    gets noticed. That branch is reached by no task this generator writes - every
+    file it invents sits under an area root - so `tests/test_gen_demo_manifest.py`
+    calls this function directly for it. A derivation whose "cannot" arm is
+    exercised only by the fixture that never needs it would be a rule with one arm.
+
+    TWO SHAPES ON PURPOSE, unchanged in reason and now narrowed in scope too.
+    `ran_count` recognises exactly one runner, so a fixture whose every gate is
+    `yarn test` reports "check count not knowable" on every row it will ever render,
+    and can never reach `no-checks` -- a gate that exited 0 having checked NOTHING,
+    which is the distinction this whole feature exists to draw. A fixture where
+    every gate is counted loses the other half, which is what a real project's gate
+    reports most of the time. So the fixture carries both, and the counted one is
+    path-scoped the same way: a counted gate left repo-wide would have kept the
+    fault above one runner along.
 
     WHICH TASK GETS WHICH IS DECIDED BY ROLE, NOT BY AN INDEX. The tasks a reader
     opens first are the ones still moving - the running task and the stuck one -
@@ -254,10 +289,14 @@ def _task_gate(tstatus):
     and the `no-checks` row appeared or vanished with the flags. A fixture state
     that comes and goes with a command-line argument is a state no gate can pin.
     """
-    entries = [TASK_GATE_KEY]
-    if tstatus in ("in_progress", "blocked"):
-        entries.append(COUNTED_KEY)
-    return entries
+    counted = tstatus in ("in_progress", "blocked")
+    scoped = [f for f in files
+              if any(f.startswith(r.rstrip("/") + "/") for r in roots)]
+    if not scoped:
+        return [TASK_GATE_KEY] + ([COUNTED_KEY] if counted else [])
+    paths = " ".join(scoped)
+    return ([TASK_GATE_COMMAND % paths]
+            + ([TASK_COUNTED_COMMAND % paths] if counted else []))
 
 
 def _review_findings(area, pi, tasks):
@@ -445,6 +484,13 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     rng = random.Random(seed)
     statuses = _phase_plan(n_phases)
     ungated = _ungated_phase(statuses)
+    # Built ONCE and read twice - by `_task_gate`, which narrows a task's gate
+    # against these roots, and by `meta.areas` below. Two calls would be two
+    # registries that could disagree about the boundary a gate was derived from,
+    # and the derivation is only honest while the roots it read are the roots the
+    # plan publishes. Nothing here draws on `rng`, so hoisting it moves no byte.
+    areas = _demo_areas()
+    area_roots = sorted(entry["root"] for entry in areas.values())
     phases, file_index, cursor = [], {}, BASE
 
     for pi, pstatus in enumerate(statuses, start=1):
@@ -485,7 +531,8 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                     # because an always-populated list never shows it.
                     "add": _tests_add(mode, rel),
                     "expectRedFirst": mode == "tdd",
-                    "gate": [] if ungraded else _task_gate(tstatus),
+                    "gate": ([] if ungraded
+                             else _task_gate(tstatus, [rel], area_roots)),
                 },
                 "attempts": 0,
                 "maxAttempts": 3,
@@ -705,7 +752,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             # defect there, not the renderer.
             "usage": {"ledgerDir": ".claude/usage", "showCost": True,
                       "pricingAsOf": "2026-08-06"},
-            "areas": _demo_areas(),
+            "areas": areas,
             # Connector v2: configured so the ADO card has a form to show; the
             # links above make its banner read 'linked' rather than 'unverified'.
             "ado": {"organization": "demo-org", "project": repo,

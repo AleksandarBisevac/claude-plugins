@@ -48,12 +48,14 @@ gate that starts subprocesses is a gate somebody disables. It belongs beside
 
 Exit codes: 0 every prohibition accounted for - 1 findings - 2 usage error.
 """
+import ast
 import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -197,19 +199,35 @@ def prohibitions(text=None):
 
 
 # --- asking the hooks ---------------------------------------------------------
-def deciding_bash_hooks(hooks_json=None):
-    """Every hook `hooks.json` registers on PreToolUse for Bash that can DECIDE.
+def emits_decision(hook, hooks_dir=None):
+    """Can this hook return a PreToolUse permission decision?
 
-    Read rather than listed, because a table of hook names here would be a second
-    copy of a fact `hooks.json` already owns - and an ADVISORY row claiming "no
-    hook refuses this" is only as good as the set of hooks it asked.
+    ASKED OF THE SOURCE, and through the AST rather than a grep, because a
+    `permissionDecision` named in a comment is a hook that emits nothing. Driving
+    it would be the direct question and is not available here: `journal-writes.py`
+    is registered on this very event and WRITES the audit trail when it runs, so a
+    read-only check cannot ask it anything.
 
-    Filtered to the `ask` registrations, and that filter is load-bearing in two
-    directions. A hook launched in `open` mode cannot return a permission
-    decision, so asking it could only ever produce a false finding; and
-    `journal-writes.py` is registered on this very event in `open` mode and
-    WRITES the audit trail when it runs, so driving it would make a read-only
-    check mutate the repository it is checking.
+    The proxy that remains is declared rather than assumed: a hook that never
+    names the key cannot emit it, and one that names it is taken to be able to.
+    """
+    path = os.path.join(hooks_dir or HOOKS, hook)
+    with io.open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if "permissionDecision" in node.value:
+                return True
+    return False
+
+
+def registered_bash_hooks(hooks_json=None):
+    """Every (hook, launcher fail mode) `hooks.json` puts on PreToolUse for Bash.
+
+    The second element is `py-launch.sh`'s 2nd argument, which is its fail mode
+    when NO interpreter can be found - `ask` emits a permission decision saying
+    the guards are not running, `open` exits 0 silently. It is not a per-guard
+    enforcement strength and `deciding_bash_hooks` says why that matters.
     """
     path = hooks_json or os.path.join(HOOKS, "hooks.json")
     with io.open(path, encoding="utf-8") as fh:
@@ -220,10 +238,79 @@ def deciding_bash_hooks(hooks_json=None):
             continue
         for hook in block.get("hooks") or []:
             parts = (hook.get("command") or "").split()
-            if len(parts) >= 2 and parts[-1] == "ask":
-                name = parts[-2].split("/")[-1]
-                if name not in out:
-                    out.append(name)
+            if len(parts) < 2:
+                continue
+            if parts[-1] in ("ask", "open"):
+                name, mode = parts[-2].split("/")[-1], parts[-1]
+            else:
+                name, mode = parts[-1].split("/")[-1], "open"
+            if (name, mode) not in out:
+                out.append((name, mode))
+    return out
+
+
+def deciding_bash_hooks(hooks_json=None):
+    """Every hook `hooks.json` registers on PreToolUse for Bash that can DECIDE.
+
+    Read rather than listed, because a table of hook names here would be a second
+    copy of a fact `hooks.json` already owns - and an ADVISORY row claiming "no
+    hook refuses this" is only as good as the set of hooks it asked.
+
+    Filtered by whether the hook CAN EMIT a permission decision, which is the
+    property this file wants: a hook that returns no decision could only ever
+    produce a false finding when asked, and `journal-writes.py` - registered on
+    this very event - WRITES the audit trail when it runs, so driving it would
+    make a read-only check mutate the repository it is checking.
+
+    IT USED TO FILTER ON THE LAUNCHER'S FAIL MODE INSTEAD, saying that a hook
+    launched `open` *cannot* return a permission decision (F319). Driven through
+    `py-launch.sh` with an interpreter present, that is false - `ask`, `open` and
+    no argument at all each yield `deny` from `guard-secrets-read`, because the
+    mode is read only when no interpreter exists. The set it selected was right
+    and its reason for selecting it was not, which is worth more than the
+    correction: the wiring assigns `ask` to precisely the hooks that decide, so
+    the proxy agreed with the property and nothing would have noticed it drifting
+    apart. `fail_mode_drift` is what notices now.
+    """
+    return [name for name, _mode in registered_bash_hooks(hooks_json)
+            if emits_decision(name)]
+
+
+def fail_mode_drift(hooks_json=None):
+    """The launcher's fail mode and the ability to decide, kept bound together.
+
+    Not a cosmetic pairing. `ask` is the LOUD fallback - it tells an operator the
+    guards are not running and asks them to approve by hand - so a hook that
+    decides and is registered `open` fails SILENTLY on a machine with no
+    interpreter, which is the one failure a blocking guard may not have. The
+    reverse, `ask` on a hook that decides nothing, prompts a human about a hook
+    whose absence changes nothing.
+
+    Both directions, because a check that only asked one would go on passing
+    while the wiring drifted the other way.
+
+    THE TOKEN VOCABULARY IS WRITTEN HERE AND NOT READ OFF THE LAUNCHER, which
+    would be a second reader of a fact `py-launch.sh` owns - and
+    `gate-parity.py`'s `launcher_contract()` is already that reader, checking
+    the wiring against the launcher's own spelling. What this file needs is
+    narrower: whether a mode is THE LOUD ONE. So if the launcher renamed its
+    loud token, every deciding guard here would read as registered silent and
+    this would report all of them - an over-fire, which is the direction a
+    guard may fail in, and the direction that gets noticed the same hour.
+    """
+    out = []
+    for name, mode in registered_bash_hooks(hooks_json):
+        decides = emits_decision(name)
+        if decides and mode != "ask":
+            out.append((name, "returns a permission decision but is registered "
+                              "%r, so on a machine with no interpreter it fails "
+                              "SILENTLY instead of telling the operator the "
+                              "guards are not running" % (mode,)))
+        elif not decides and mode == "ask":
+            out.append((name, "is registered %r, which prompts a human when no "
+                              "interpreter is found, but it returns no "
+                              "permission decision - so the prompt is about a "
+                              "hook whose absence changes nothing" % (mode,)))
     return out
 
 
@@ -332,10 +419,16 @@ def main(argv):
         sys.stderr.write("usage: check-prohibitions.py [--json]\n")
         return E_USAGE
     found = prohibition_drift()
+    # ...and the wiring that decides WHICH hooks were asked. A drifted fail mode
+    # is not a prohibition finding, so it is reported apart rather than folded in
+    # and counted against the document.
+    wiring = fail_mode_drift()
     if "--json" in argv:
-        print(json.dumps({"findings": found}, indent=2))
+        print(json.dumps({"findings": found, "failModes": wiring}, indent=2))
     else:
         for subject, problem in found:
+            print("  %s\n      %s" % (subject, problem))
+        for subject, problem in wiring:
             print("  %s\n      %s" % (subject, problem))
         counted = len(prohibitions())
         if found:
@@ -345,7 +438,39 @@ def main(argv):
             print("OK: every prohibition the orchestrator states is enforced by a "
                   "hook that was asked, or declared advisory with a reason "
                   "(%d examined)" % (counted,))
-    return E_FAIL if found else E_OK
+        if wiring:
+            print("FINDINGS: the launcher fail mode and the ability to decide "
+                  "disagree for %d hook(s)" % (len(wiring),))
+        else:
+            print("OK: every PreToolUse/Bash hook that can decide is registered "
+                  "to fail LOUD when no interpreter exists, and no hook that "
+                  "decides nothing prompts for one")
+    return E_FAIL if (found or wiring) else E_OK
+
+
+def _fixture_wiring(hook, mode):
+    """A copy of `hooks.json` with one PreToolUse/Bash hook's fail mode changed.
+
+    A fixture and not a mutation of the tree: the real wiring agrees with the
+    property, so both directions of `fail_mode_drift` need a wiring that does
+    not - and a suite that edited the repository to find out would be the
+    F281 shape. The caller unlinks it; nothing is left behind.
+    """
+    with io.open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8") as fh:
+        wiring = json.load(fh)
+    for block in ((wiring.get("hooks") or {}).get("PreToolUse") or []):
+        if "Bash" not in (block.get("matcher") or ""):
+            continue
+        for entry in block.get("hooks") or []:
+            parts = (entry.get("command") or "").split()
+            if len(parts) >= 2 and parts[-2].split("/")[-1] == hook:
+                parts[-1] = mode
+                entry["command"] = " ".join(parts)
+    handle, path = tempfile.mkstemp(suffix=".json", prefix="wiring-")
+    os.close(handle)
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(wiring))
+    return path
 
 
 def _cases(check):
@@ -409,12 +534,47 @@ def _cases(check):
     # written here. An empty set would make pr5's siblings vacuous.
     asked = deciding_bash_hooks()
     check("pr6 the ADVISORY probes are driven against the hooks `hooks.json` "
-          "actually registers on PreToolUse/Bash in a deciding mode - %r. An "
-          "empty set would make every advisory row agree with itself, and an "
-          "`open`-mode hook in it would make this file write the audit trail "
-          "it is checking" % (asked,),
+          "actually registers on PreToolUse/Bash that can DECIDE - %r. An "
+          "empty set would make every advisory row agree with itself, and a "
+          "hook that returns no decision in it would make this file write the "
+          "audit trail it is checking" % (asked,),
           bool(asked) and "guard-history-rewrite.py" in asked
           and "journal-writes.py" not in asked)
+    # F319. The discriminator, asked directly. `journal-writes.py` is the one
+    # registered here that decides nothing, so it is the case that keeps pr6
+    # from being a check about an empty distinction.
+    check("pr6b the filter reads the hook's SOURCE for a permission decision "
+          "rather than the launcher's fail mode. Driven through py-launch.sh, "
+          "`ask`, `open` and no argument all yield `deny` from a deciding "
+          "guard, so the mode was a proxy that happened to agree - and the "
+          "reason written beside it said it could not",
+          emits_decision("guard-history-rewrite.py") is True
+          and emits_decision("journal-writes.py") is False)
+    # ...and both directions of the pairing that used to be assumed. Driven on a
+    # fixture, because the real wiring agrees and a check that only ever saw
+    # agreement is the shape this whole entry is about.
+    check("pr6c the real wiring holds the pairing: nothing that decides is "
+          "registered to fail silent, and nothing that decides is prompted for",
+          fail_mode_drift() == [], repr(fail_mode_drift()))
+    wired = _fixture_wiring("guard-history-rewrite.py", "open")
+    try:
+        drift = fail_mode_drift(wired)
+        check("pr6d a deciding guard registered `open` is a finding - on a "
+              "machine with no interpreter it would fail SILENTLY, which is "
+              "the one failure a blocking guard may not have",
+              any("fails SILENTLY" in p for _s, p in drift), repr(drift))
+    finally:
+        os.unlink(wired)
+    wired = _fixture_wiring("journal-writes.py", "ask")
+    try:
+        drift = fail_mode_drift(wired)
+        check("pr6e ...and the opposite direction, which a one-sided check "
+              "would have passed forever: a hook that decides nothing "
+              "registered `ask` prompts a human about an absence that changes "
+              "nothing",
+              any("changes nothing" in p for _s, p in drift), repr(drift))
+    finally:
+        os.unlink(wired)
     # Both directions of the advisory probe, on a fixture: a row whose command a
     # hook DOES refuse is a finding, and the row that is genuinely unenforced is
     # not. The first is the direction nothing asked before F281.

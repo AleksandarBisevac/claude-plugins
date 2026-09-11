@@ -155,8 +155,12 @@ def _cases(check):
               and "SENTINEL" not in _journal_io.canonical(row))
 
         check("ev11 the row carries the identity a reader joins on, and the "
-              "scope it was measured at - a run recorded without saying whose "
-              "it was could never be pointed back at the plan",
+              "scope whose pointer this run is eligible to move - a run "
+              "recorded without saying whose it was could never be pointed "
+              "back at the plan. WHICH GATE ran is a different question and "
+              "ev35 is where it is asked; this clause used to say `the scope it "
+              "was measured at`, which is the misreading that made F312 "
+              "invisible for as long as one value answered both",
               row["runId"] == "R1" and row["scope"] == "task"
               and row["taskId"] == "P1.2" and row["phaseId"] == "P1"
               and row["attempt"] == 2 and row["via"] == "orchestrator")
@@ -284,6 +288,34 @@ def _cases(check):
               "everywhere cannot be told from one a build does not write: %r"
               % (sorted(k for k in row if k.startswith("cancel")),),
               "cancelledBy" not in row and "cancelledBy" not in ru)
+
+        # F312. WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
+        # ran and nothing beside them says which declaration held those entries,
+        # so once a task can be measured by a gate of its own OR by the phase's,
+        # two rows with different `steps` differ for two reasons a reader cannot
+        # separate. The fixture is the one that separates them: `scope` is `task`
+        # (the pointer went on the task) while the entries came from the PHASE, so
+        # a writer that reused `scope` for provenance answers `task` here and is
+        # wrong, and a writer that dropped the field answers nothing.
+        fell_back = dict(RESULT)
+        fell_back["gateSource"] = "phase"
+        rp = M.row_for(plain, fell_back, "task",
+                       {"taskId": "P1.2", "phaseId": "P1"}, IDENT,
+                       published=["pytest -q"])
+        check("ev35 the row says WHICH declaration its steps came from, and it "
+              "is not `scope` re-spelled: `scope` is the pointer subject - "
+              "`latest_by_subject` keys by it and `_set_pointer` branches on it "
+              "- so a row can carry one word for the subject and another for "
+              "the gate, and this is that row: %r"
+              % ((rp.get("scope"), rp.get("gateSource")),),
+              rp.get("gateSource") == "phase" and rp.get("scope") == "task")
+
+        check("ev36 SECOND DIRECTION: a result that says nothing about its gate "
+              "leaves the key OFF. A writer that stamped a default would put "
+              "`task` on every row recorded before the field existed, which is "
+              "a provenance claim nobody made: %r"
+              % (sorted(k for k in row if k.startswith("gate")),),
+              "gateSource" not in row and "gateSource" not in ru)
 
         # F280. THE WORD THE RUNNER COULD NOT SAY, AND THE CACHE THAT REPEATED
         # IT. `run_status` took no tree argument, so a gate that passed every

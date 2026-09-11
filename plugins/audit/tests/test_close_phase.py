@@ -248,6 +248,32 @@ def _cases(check):
           "--no-ff" in _nf_ok["merge"]["argv"]
           and "--ff-only" not in _nf_ok["merge"]["argv"],
           repr(_nf_ok["merge"]["argv"]))
+    # --- F308: the remedy was reachable and then blocked one step later --------
+    # The parent is checked out nowhere BECAUSE every worktree holds an audit
+    # branch, so a reader does what n2's remedy says and adds one - and a worktree
+    # git has just added holds no installed dependencies, so the commit hook that
+    # bootstraps from one cannot find its own bootstrap file and aborts the merge
+    # commit. `--no-verify` was what finished it. The refusal is where a reader
+    # meets this, so the whole path belongs there: START AND FINISH, and the
+    # finish needs the BRANCH as well as the parent, because it merges
+    # `feature/p2` into `dev` and a remedy naming only one of the two cannot be
+    # typed. That is the half the old wording was missing, which is why the
+    # fixture's two names differ.
+    _rem = str(_nf["merge"]["refusal"].get("remedy"))
+    check("n4 ...and the remedy names the path that WORKS rather than only its "
+          "first step: the worktree to add, the hooks that will stop the merge "
+          "commit inside it, and the --no-ff --no-verify finish naming the "
+          "branch. Advice that is reachable and then blocked by something it "
+          "does not mention is advice a reader abandons",
+          "git worktree add" in _rem and "hook" in _rem
+          and "--no-ff --no-verify" in _rem and "feature/p2" in _rem,
+          repr(_rem))
+    check("n5 ...and the second direction, which looks vacuous and is the only "
+          "case that fails if the advice becomes unconditional: a --no-ff this "
+          "command HONOURS says nothing about --no-verify anywhere in its plan. "
+          "A hook skip has to stay a thing somebody chose once",
+          "--no-verify" not in repr(_nf_ok),
+          repr(_nf_ok["merge"]))
 
     check("b4 ...and `stampable` is the field main() gates the write on, set from "
           "the verified containment rather than from whether this run merged. The "
@@ -399,28 +425,70 @@ def _cases(check):
           "exit=%d done=%r" % (code, ans["cleanupDone"]))
 
     # --- the invariant that keeps the design honest ---------------------------
+    # `--no-ff` IS ONE OF THE DIMENSIONS, and it was not until F308. Every
+    # combination here ran with the flag absent, so the merge these assertions
+    # swept was always the `--ff-only` one and the branch that composes the
+    # `--no-ff` argv was outside all three of them. Measured: putting
+    # `--no-verify` into that branch turned n5 red and left h3 green, which is a
+    # sweep that cannot see the argv it is a sweep about.
     every = []
     for policy in (ALL_ON, NO_AUTO):
         for state in (W.CONTAINED, W.NOT_CONTAINED, W.UNKNOWN):
             for trees in (TREES, NOWT):
-                run, calls = _fake({"merge --ff-only": (0, "", ""),
-                                    "fetch .": (0, "", ""),
-                                    "merge-base --is-ancestor": (0, "", "")})
-                pl = M.plan(_obs(state, trees=trees), "feature/p2", "dev", policy)
-                M.close("/repo", pl, "feature/p2", "dev", run=run)
-                every.extend(calls)
-    check("h1 NO run, in any policy x containment x worktree combination, ever "
-          "issues `git switch` - it is unavailable from inside the worktree a "
+                for no_ff in (False, True):
+                    run, calls = _fake({"merge --ff-only": (0, "", ""),
+                                        "merge --no-ff": (0, "", ""),
+                                        "fetch .": (0, "", ""),
+                                        "merge-base --is-ancestor": (0, "", "")})
+                    pl = M.plan(_obs(state, trees=trees), "feature/p2", "dev",
+                                policy, no_ff=no_ff)
+                    M.close("/repo", pl, "feature/p2", "dev", run=run)
+                    every.extend(calls)
+    # F330b. EVERY ASSERTION BELOW IS A NEGATIVE OVER `every`, so all three are
+    # true of an empty corpus - a `close()` that stopped issuing calls, a `plan`
+    # that started refusing every combination, or a rename inside `_fake` would
+    # make them the calmest lines in the file while sweeping nothing. Each one
+    # therefore requires the corpus rather than inheriting it from the case above:
+    # a case whose precondition is another case's assertion goes vacuous the day
+    # that case is reordered or deleted, and this one has already been the case
+    # that could not see the argv it was a sweep about.
+    check("h0 THE CORPUS THE THREE NEGATIVES BELOW SWEEP: `close()` really "
+          "issued calls over every combination, and both merge spellings are "
+          "among them. `--no-ff` composes its own argv, and until F308 no "
+          "combination here ever took that branch - so a sweep that cannot say "
+          "which merges it saw is a sweep that proves nothing about the one it "
+          "missed",
+          every and any("--ff-only" in c for c in every)
+          and any("--no-ff" in c for c in every),
+          "%d call(s) recorded; ff-only=%r no-ff=%r"
+          % (len(every), any("--ff-only" in c for c in every),
+             any("--no-ff" in c for c in every)))
+    check("h1 NO run, in any policy x containment x worktree x --no-ff "
+          "combination, ever issues "
+          "`git switch` - it is unavailable from inside the worktree a "
           "phase ran in, and moving an operator's HEAD is a side effect no script "
           "takes on its own. COUNTED over every combination rather than checked on "
           "the happy path",
-          not any("switch" in c for c in every),
+          every and not any("switch" in c for c in every),
           "%d call(s) recorded, none a switch" % (len(every),))
     check("h2 ...and no run ever forces: no `+` refspec, no `branch -D`, no "
           "`--force` anywhere",
-          not any(a.startswith("+") or a in ("-D", "--force")
-                  for c in every for a in c),
-          "no forcing argument in any recorded call")
+          every and not any(a.startswith("+") or a in ("-D", "--force")
+                            for c in every for a in c),
+          "%d call(s) recorded, no forcing argument in any of them"
+          % (len(every),))
+    # F308's guard, and it guards the FIX rather than the bug. The tempting
+    # repair once a linked worktree's missing hook bootstrap has aborted a merge
+    # commit is to put `--no-verify` in this command's own argv, which would skip
+    # hooks on every merge it ever makes and skip them silently. The flag is
+    # named in one refusal's remedy and belongs in the operator's shell, on one
+    # commit they typed - so it must appear in no call this command issues.
+    check("h3 ...and no run ever skips a hook: `--no-verify` is advice in one "
+          "refusal (F308) and appears in no argv, over the same combinations. "
+          "Putting it here instead would trade one blocked merge for a hook "
+          "that stops running and says nothing",
+          every and not any("--no-verify" in a for c in every for a in c),
+          "%d call(s) recorded, none skipping a hook" % (len(every),))
 
     # --- whose worktree, and are we finished ----------------------------------
     run, calls = _fake({"merge --ff-only": (0, "", ""),

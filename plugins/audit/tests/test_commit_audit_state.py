@@ -28,6 +28,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -154,6 +155,93 @@ def _state_rows(fx):
             if r.get("action") == _invariants.ACTION_STATE_COMMITTED]
 
 
+# --- commitlint's default `subject-case`, transcribed (F305) ------------------
+# THE RULE, NOT A READING OF IT, and `test_commit_manifest_index.py` imports these
+# rather than transcribing them a second time - the rule is commitlint's and
+# belongs to neither writer, and two transcriptions is how the two commands come to
+# be graded against two readings of one rule. (The structurally right home is the
+# shared `_harness`/`test__invariants` layer both suites already import; it is out
+# of this change's reach, and a copy in each suite was the alternative.)
+#
+# `@commitlint/config-conventional` sets `subject-case` to `never` these four:
+# sentence-case, start-case, pascal-case, upper-case - which is exactly the list
+# the field's own error message named when it refused this commit. `ensureCase` in
+# `@commitlint/ensure` decides each one by TRANSFORMING the subject and asking
+# whether the result IS the subject, so the transforms are what is written below
+# and the assertion is the question commitlint asks. A case aimed at the single arm
+# that bit (F305 was sentence-case) would be satisfied by a subject the next
+# default rule still rejects, which is precisely how F268 came to need F305.
+#
+# THE WORD SPLIT IS lodash's ONLY NEAR ENOUGH, AND IT CANNOT PRODUCE A FALSE PASS.
+# `startCase` and `camelCase` reach lodash `words()`, whose full unicode behaviour
+# is not reproduced here. That does not weaken the direction this is relied on for:
+# each of the four transforms capitalises the subject's FIRST character, so a
+# lowercase-initial subject differs from all four under any word split whatsoever.
+# The only error a rougher splitter can make is to report an offence real
+# commitlint would not - a false RED, which somebody reads and fixes.
+_LODASH_WORDS_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|[0-9]+")
+
+
+def _upper_first(text):
+    return text[:1].upper() + text[1:]
+
+
+def _sentence_case(text):
+    return _upper_first(text.lower())
+
+
+def _start_case(text):
+    return " ".join(_upper_first(word)
+                    for word in _LODASH_WORDS_RE.findall(text))
+
+
+def _camel_case(text):
+    words = [word.lower() for word in _LODASH_WORDS_RE.findall(text)]
+    if not words:
+        return ""
+    return "".join([words[0]] + [_upper_first(w) for w in words[1:]])
+
+
+def _pascal_case(text):
+    return _upper_first(_camel_case(text))
+
+
+def _upper_case(text):
+    return text.upper()
+
+
+FORBIDDEN_CASES = (("sentence-case", _sentence_case),
+                   ("start-case", _start_case),
+                   ("pascal-case", _pascal_case),
+                   ("upper-case", _upper_case))
+
+# `header-max-length`, another of the same default set, and it is pinned here
+# because F305's repair SPENT some of it: the fixed lowercase word lengthened
+# every header these two commands write. "it fits today" is not the claim worth
+# making - what this stops is the next edit of a `DEFAULT_SUBJECT` crossing a line
+# nothing was watching, which is the shape of the whole fault.
+HEADER_MAX_LENGTH = 100
+
+
+def header_offences(header):
+    """The names of the cases commitlint's default `subject-case` refuses
+    `header`'s subject for. `[]` is the pass.
+
+    THE NAMES AND NOT A BOOLEAN, so a red case says which of the four fired and
+    the next reader does not have to re-derive it.
+
+    `["no-subject"]` FOR A HEADER WITH NO `: ` AND FOR AN EMPTY SUBJECT, which is a
+    distinct answer on purpose: the empty string equals every transform above, so
+    folding the two would report a header no parser accepts as four case
+    violations and send the reader to the wrong half of the line.
+    """
+    subject = header.split(": ", 1)[1] if ": " in header else None
+    if not subject:
+        return ["no-subject"]
+    return [name for name, transform in FORBIDDEN_CASES
+            if transform(subject) == subject]
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     repos = Repos()
@@ -244,7 +332,9 @@ def _cases(check):
               "%s` still tells the two apart for ever. The phase id stays in the "
               "subject, where it is still greppable: %r"
               % (M.COMMIT_SCOPE, subject),
-              subject.startswith("%s(%s): " % (M.COMMIT_TYPE, M.COMMIT_SCOPE))
+              subject.startswith("%s(%s): %s %s"
+                                 % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                    M.SUBJECT_LEAD, PHASE))
               and M.COMMIT_SCOPE not in ("", None)
               and PHASE in subject)
         check("cas8b ...and the type is one conventional-commit tooling accepts, "
@@ -254,6 +344,75 @@ def _cases(check):
               % (M.COMMIT_TYPE,),
               M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
                                 "perf", "refactor", "revert", "style", "test"))
+
+        # --- the subject a commitlint repository will take (F305) -------------
+        # ASKED OF THE SUBJECT git ACTUALLY RECORDED, not of the string the module
+        # composed: this is the line commitlint's hook would be handed, and the
+        # composed-string half is cas8e.
+        was = "%s(%s): %s - %s" % (M.COMMIT_TYPE, M.COMMIT_SCOPE, PHASE,
+                                   M.DEFAULT_SUBJECT)
+        check("cas8c ...and the SUBJECT is out of reach of every case "
+              "commitlint's default `subject-case` forbids, rather than of the "
+              "one that bit. F268 satisfied `type-enum` and the very next default "
+              "rule refused the commit anyway - the phase id leading a lowercase "
+              "sentence IS sentence-case - so the subject now opens with a fixed "
+              "lowercase word this command owns, and all of the forbidden cases "
+              "capitalise a subject's first character: %r -> %r / the shape it "
+              "replaced -> %r"
+              % (subject, header_offences(subject), header_offences(was)),
+              header_offences(subject) == []
+              and header_offences(was) == ["sentence-case"])
+
+        # THE JUDGEMENT, SHOWN ABLE TO FIRE, on each of the four and not only on
+        # the one this fault was. cas8c asserts an EMPTY list, which a transcription
+        # weakened to return nothing would satisfy for ever, and one that had
+        # quietly lost its `start-case` arm would satisfy too while a subject the
+        # field's commitlint refuses sailed through. `upper-case` names two because
+        # a fully upper-case string is genuinely also start-case - lodash
+        # `startCase` leaves an already-capitalised word alone - and asserting one
+        # name there would be asserting a coincidence.
+        fired = dict((label, header_offences("chore(x): " + text))
+                     for label, text in (
+                         ("sentence-case", "P1 - the record of a run"),
+                         ("start-case", "The Record Of A Run"),
+                         ("pascal-case", "TheRecordOfARun"),
+                         ("upper-case", "THE RECORD OF A RUN")))
+        check("cas8d ...and that judgement can fire on each of them: a subject "
+              "that IS one of the four is reported as that one, sentence-case "
+              "included, which is the arm F305 was. Without this cas8c is a green "
+              "light from a check that may be asserting nothing: %r" % (fired,),
+              all(label in names for label, names in fired.items())
+              and fired["sentence-case"] == ["sentence-case"]
+              and len(fired) == len(FORBIDDEN_CASES))
+
+        # THE CALLER CANNOT UNDO IT, which is the half a case reading only git's
+        # last subject cannot see: `--subject` is free text, and the LOWERCASE one
+        # below is the fixture that separates the two implementations - without the
+        # fixed word ahead of it, `P1 - preserved by hand ...` is sentence-case
+        # again. The capitalised one is the other direction, where the caller's own
+        # text could not have offended and the word must still not have been lost.
+        composed = [M.commit_message(PHASE, text, None)[0] for text in
+                    ("preserved by hand after a red gate",
+                     "Preserved by hand after a red gate")]
+        check("cas8e ...and no `--subject` can put a capital, or the id, back in "
+              "first position: the lowercase word is this command's and sits ahead "
+              "of the caller's text. The phase id and the separating scope are "
+              "asserted here too, because a case testing only the case rules is "
+              "satisfied by deleting the id - which is the other way to stop "
+              "offending them: %r" % (composed,),
+              all(header_offences(header) == [] and PHASE in header
+                  and header.startswith("%s(%s): %s %s - "
+                                        % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                           M.SUBJECT_LEAD, PHASE))
+                  for header in composed))
+
+        check("cas8f ...and the header still fits commitlint's default "
+              "`header-max-length`, which this repair spent some of - the fixed "
+              "word lengthened every subject this command writes, so the budget "
+              "is pinned here rather than left for the next edit of "
+              "`DEFAULT_SUBJECT` to cross unnoticed: %d against a limit of %d"
+              % (len(subject), HEADER_MAX_LENGTH),
+              len(subject) <= HEADER_MAX_LENGTH)
 
         # --- called again ------------------------------------------------------
         code, text = _run(fx)

@@ -446,6 +446,106 @@ def _journal_never_committed(jr, directory):
         return None
 
 
+# The `verify` warning classes that need DIFFERENT repair text, each keyed on a
+# distinctive fragment of the sentence `_journal_io` writes for it.
+#
+# MATCHING ON TEXT IS THE DELIBERATE CHOICE. The alternative is to ask
+# `anchor_verdict` again from here, which is a second opinion about whether a
+# chain is intact — the one thing this module refuses to have. The cost is a
+# coupling to another module's wording, and what pays for it is that the cases
+# build a REAL re-linked file, a REAL re-spelled one, a REAL torn tail and a
+# REAL out-of-band edit and read the class back out: a reworded warning goes red
+# in `test__doctor_trail.py` rather than silently losing its advice and falling
+# back to the wrong cause.
+#
+# EVERY FRAGMENT IS UNIQUE TO ONE BRANCH OF THE SENTENCE IT CLASSIFIES, and that
+# is F344a rather than tidiness. `_anchor_warning` does not write one sentence:
+# rows arrived after a committed one, or the bytes were re-spelled with no row
+# moving at all — and both open with "no longer byte-identical to its committed
+# copy", which is what `relink` used to key on. A re-spelled file therefore drew
+# advice telling its operator to go and read the extra rows, about a file that
+# has none: F329's defect exactly, one level up. So no class may key on the
+# shared opening; each keys on the half that says what happened. A rewording
+# that removes every fragment of a class drops the warning to the unrecognised
+# pointer below, which is the safe direction to fail in — a pointer says nothing
+# false, and the cases go red either way.
+#
+# WHAT WOULD REPLACE ALL OF THIS is a `kind` on the warning itself, set where
+# the sentence is written and read here instead of its prose (F337). Until
+# `_journal_io` carries one, this table is the strongest thing available from
+# outside it, and the cases are what hold it.
+_JOURNAL_WARNING_CLASSES = (
+    ("relink", ("are still here, in order, alongside",
+                "Read the rows that arrived"),
+     "a RE-LINKED chain is a file whose committed rows all survived while the "
+     "bytes after one of them are new. `audit-journal.py merge` does exactly "
+     "that to resolve a divergence - and so does splicing a fabricated row in "
+     "among rows that are already committed: NOTHING HERE CAN TELL THOSE "
+     "APART, and neither a merge commit nor a `journal.merge` row is required "
+     "for this warning to be the harmless one. Read the extra rows yourself "
+     "(`audit-journal.py show`) and confirm a merge you know about is what put "
+     "them there (`git log --merges -- <the journal file>`)"),
+    ("respelled", ("and no row diverged", "nothing arrived alongside them"),
+     "a RE-SPELLED file is one whose bytes moved while every row stayed where "
+     "it was: nothing diverged and nothing arrived, so there are no extra rows "
+     "to go and read and `audit-journal.py show` has none to show you. Compare "
+     "the bytes instead (`git diff -- <the journal file>`) and find the writer "
+     "that does not spell canonical JSON - this plugin writes one canonical "
+     "row per line on every path it appends or merges through, so the "
+     "re-spelling came from something else"),
+    ("drift", ("an edit the journal never saw", "records it as it was"),
+     "out-of-band drift is a document that changed with no row to explain it - "
+     "a git checkout, a script, or a shell write"),
+    ("torn", ("ends with a partial line",),
+     "a torn tail is an interrupted writer, not a cover-up - the rows before "
+     "it are intact and nothing was hidden by it"),
+)
+
+_NO_CLASS_FIX = ("this check has no repair text for that warning; run "
+                 "`audit-journal.py verify` for the full list")
+
+
+def journal_warning_advice(warnings):
+    """{"kinds", "fix"} — what to say about a `verify` warning list.
+
+    ONE FIX LINE PER CLASS THAT IS PRESENT, and never a line about a class that
+    is not. This was a single unconditional sentence about out-of-band drift,
+    and F306 made that sentence confidently wrong for the class it introduced: a
+    row inserted between committed rows is not a git checkout and not a shell
+    write, so an operator sent looking for one finds nothing and learns that the
+    row is noise (F329).
+
+    A warning whose class is in NONE of the rows above gets a POINTER and no
+    cause. The rule this file works under is that a claim carries the basis that
+    makes it true — a cause guessed to fill the gap is the same defect as the
+    sentence this replaces, only quieter.
+
+    THE POINTER IS PER WARNING, NOT PER LIST (F344b). It used to be emitted only
+    when NOTHING in the list matched, so an unrecognised warning standing beside
+    a recognised one was dropped without a word — and `verify` emits classes
+    that have no row here, the same basename living and archived at once among
+    them, so that is the ordinary company an unrecognised warning keeps rather
+    than a corner. It costs the whole warning: the detail line beside this fix
+    spends a fixed budget on the list and elides the tail (`_output.some_of`),
+    so a class that says nothing here says nothing in the row at all.
+
+    An EMPTY list also draws the pointer. Nothing asks that of it today —
+    `check_journal` calls this only over a non-empty list — and a caller that
+    does is better handed a place to look than an empty string."""
+    kinds, lines, classed = [], [], set()
+    for kind, fragments, advice in _JOURNAL_WARNING_CLASSES:
+        hits = [i for i, text in enumerate(warnings)
+                if any(frag in text for frag in fragments)]
+        if not hits:
+            continue
+        kinds.append(kind)
+        lines.append(advice)
+        classed.update(hits)
+    if len(classed) < len(warnings) or not lines:
+        lines.append(_NO_CLASS_FIX)
+    return {"kinds": kinds, "fix": "; also: ".join(lines)}
+
+
 def check_journal(rep, project, cfg, cfg_mod, git_root):
     """Does the audit trail still hold together? (v0.29)
 
@@ -456,10 +556,19 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
 
     The grading is the honest one. A BROKEN chain is a FINDING: a row was edited,
     deleted or reordered, and that is not something that happens by accident.
-    Everything else is a WARNING at most — a torn tail is a crash, and out-of-band
-    drift means a document moved without an edit tool touching it, which is normal
-    for a git checkout and only suspicious in context. An empty journal is neither:
-    it is what every repo looks like before its first recorded write."""
+    Everything else is a WARNING at most, and those are not one thing: a torn
+    tail is a crash; out-of-band drift is a recorded document moving without an
+    edit tool touching it, which is normal for a git checkout; and a RE-LINKED
+    chain is a file whose committed rows all survived while the bytes after one
+    of them are new (F306) — which is what `audit-journal.py merge` does, and
+    also what splicing a fabricated row in among committed rows does. This check
+    cannot tell them apart. A RE-SPELLED file is the quieter neighbour of that
+    last one and not the same class: the bytes moved and no row did, so there is
+    nothing that arrived to read (F344a). `journal_warning_advice` is where each
+    class gets repair text that is true OF IT rather than one sentence that was
+    true of only one of them (F329), and a warning it does not recognise gets a
+    pointer instead of a guessed cause. An empty journal is neither: it is what
+    every repo looks like before its first recorded write."""
     if not cfg_mod.journal_enabled(cfg):
         # Disabled is the user's own switch and never a finding. But rows on
         # disk mean the trail WAS running: saying plain OK graded "someone
@@ -523,8 +632,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
                  "%d row(s) in %s chain cleanly, with %d warning(s): %s"
                  % (res.get("rows", 0), where, len(res["warnings"]),
                     _output.some_of(res["warnings"], sep="; ")),
-                 "out-of-band drift is a document that changed with no row to "
-                 "explain it - a git checkout, a script, or a shell write")
+                 journal_warning_advice(res["warnings"])["fix"])
         return
     rep.ok("journal", "%d row(s) in %d file(s) under %s, chain intact"
            % (res.get("rows", 0), len(res.get("files") or []), where))

@@ -86,8 +86,15 @@ way on each, while `require-plan` on `PreToolUse` (decide) and on `PostToolUse`
 authority is `hooks/hooks.json`, and it prints the full wiring:
 
 ```bash
-python3 -c "import json;d=json.load(open('plugins/audit/hooks/hooks.json'));[print(e,b.get('matcher','-'),h['command'].split()[-2].split('/')[-1]) for e,bs in d['hooks'].items() for b in bs for h in b['hooks']]"
+python3 -c "import json;d=json.load(open('plugins/audit/hooks/hooks.json'));[print(e,b.get('matcher','-'),[t for t in h['command'].split() if t.endswith('.py')][-1].split('/')[-1],h['command'].split()[-1] if h['command'].split()[-1] in ('ask','open') else 'open') for e,bs in d['hooks'].items() for b in bs for h in b['hooks']]"
 ```
+
+It prints the fail mode as a fourth column, and it reads the hook name off the
+`.py` argument rather than by counting back from the end. That is not tidying:
+this section's whole subject is a token that is **optional** — `py-launch.sh`
+defaults it — so a registration written without one is legal, and the version of
+this command that counted back two positions printed `py-launch.sh` as the hook
+name for exactly the case the reader came here to look up.
 
 This paragraph used to carry three counts — of scripts, of rows, and of "guard
 hooks" — and two of them were wrong by the time anyone read this sentence. They
@@ -324,14 +331,31 @@ point:
   **reordered** (the chain breaks at that point), a file **renamed** into another
   writer's slot (the first row's anchor is derived from the file's own name), a
   **torn tail** from an interrupted write, and **out-of-band drift** — a manifest
-  or config that changed with no row to explain it.
+  or config that changed with no row to explain it. Against git it holds one rule:
+  every row the **committed** copy carries must still be in the working copy, with
+  its content unchanged and in the same order. A **committed row that is gone, or
+  whose content moved**, is a finding. A file whose *links* were recomputed while
+  every committed row's content survived is a **warning**, not a finding — that is
+  what resolving a divergence does, and `audit-journal.py merge` is the only thing
+  that legitimately does it. (A byte-for-byte prefix is still the fast path, since
+  it implies presence, content and order in one comparison.)
 - **What it cannot detect.** A forger who rewrites the *whole* file, recomputing
   every hash forward, produces a chain that verifies. There is no way around this:
   a tamper-**proof** log needs a secret the tamperer cannot read, and there is
   nowhere on a user's own machine to keep one from that same user. Deleting the
   journal, or a file of it, is the same class of act — and deliberately loud
   rather than silent: `verify` sees the rows go missing and the file's history is
-  in git.
+  in git. A row **inserted between** committed rows is no longer forbidden
+  outright either, which is the price of the merge above — and this bullet used to
+  present the mitigation as *"the chain itself plus the merge commit's two
+  parents"*, which reads like a check and is not one. **Nothing requires a merge
+  commit, or a `journal.merge` row, for that warning to be the harmless
+  reading.** So an insertion and a legitimate re-link produce the identical
+  warning, and the code cannot tell them apart: `verify` says the committed rows
+  are all still present and in order alongside extra ones, `/audit:doctor` names
+  the class and prints where to look, and the judgement is the reader's. That is
+  what "tamper-evident, not tamper-proof" costs here, stated where it is paid
+  rather than left to be inferred from a warning's wording.
 - **What it never sees.** The CONTENT of a shell write. `sed -i` and `>` do not
   reach an edit-tool matcher, so no row says what they changed — they surface
   instead as out-of-band drift, and `guard-bash-writes` reports a shell write

@@ -2210,6 +2210,31 @@ def _cases(check):
               "does not. One finding, and which line it names is the whole "
               "assertion: %r" % (_dpn_wrap_hits,),
               _dpn_wrap_hits == [("WRAP.md", 3, "131 cases")])
+        # F311: the RATIO family arrives through the same delegation, and the
+        # document half is where it matters most - a `.md` is where a count gets
+        # quoted from a command's output and the command then gets edited out.
+        # All four lines are one distinction: line 1 quotes a tally and names no
+        # command, line 2 names one on the NEXT line (the wrap, whose false
+        # positive's repair would be to delete the basis), line 4 carries an
+        # article no formatter emits, and line 5 is the English idiom. Naming
+        # `_areas.py` in backticks on line 1 is the trap: it names the thing
+        # that HOLDS the answer, which is not the command that prints it, and a
+        # basis reader loosened to accept any backticked name turns this green.
+        _dpn_ratio = os.path.join(_dpn_tmp, "RATIO.md")
+        with open(_dpn_ratio, "w", encoding="utf-8") as fh:
+            fh.write("`_areas.py --coverage` anchors 13 of 14 sections here.\n"
+                     "the run anchors 9 of 12 sections - print the split with\n"
+                     "`python3 plugins/audit/scripts/manifest/_areas.py"
+                     " --coverage`.\n"
+                     "17 of the 18 detail-carrying files print on failure.\n"
+                     "this is one of four classes, and the word cannot go.\n")
+        _dpn_ratio_hits = M.doc_prose_numbers([_dpn_ratio])
+        check("dpn7 a RATIO quoted with no command beside it is reported by the "
+              "document scan, with its line number, while the wrapped basis, "
+              "the author's own `N of the M <noun>` and `one of N <noun>` are "
+              "left alone. One finding, and which line it names is the whole "
+              "assertion: %r" % (_dpn_ratio_hits,),
+              _dpn_ratio_hits == [("RATIO.md", 1, "13 of 14 sections")])
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 
@@ -2606,6 +2631,77 @@ def _cases(check):
         M._scan_edges_once = _real_once
         M._EDGES.clear()
         shutil.rmtree(_mem_tmp, ignore_errors=True)
+
+    # --- cm: the config-read memo, the mm rules applied a second time -------------
+    # Profiled with cProfile, this suite entered `config_key_reads` dozens of times
+    # per run and parsed the same tree to the same answer each time, because
+    # `config_read_violations` and `config_divergences` each ask for the whole
+    # picture. The five cases mirror mm0-mm4 on purpose: a memo added without them
+    # is a speedup nobody can attribute and a staleness nobody can see - and the
+    # FIRST version of this memo bypassed whenever a vocabulary was handed over,
+    # which is every call `config_read_violations` makes, so it served two calls in
+    # fifty-two. cm2 is the case that would have said so.
+    _cm_fresh = M._config_key_reads_once(None, None, None)
+    _cm_cached = M.config_key_reads()
+    check("cm0 the memo does not LIE: the cached answer equals an uncached scan of "
+          "the same tree, key for key (%d key(s) read)" % (len(_cm_cached[0]),),
+          _cm_cached[0] == _cm_fresh[0] and _cm_cached[1] == _cm_fresh[1]
+          and len(_cm_cached[0]) > 0)
+
+    _cm_a, _cm_b = M.config_key_reads(), M.config_key_reads()
+    _cm_key = sorted(_cm_a[0])[0]
+    _cm_a[0][_cm_key].append(("poison.py", 0, ()))
+    _cm_a[1].append(("poison.py", "poison"))
+    _cm_after = M.config_key_reads()
+    check("cm1 ...and each caller gets its OWN containers, proven by poisoning one "
+          "answer and reading the next: a shared list would make one lint's "
+          "`.append()` the next lint's input",
+          _cm_a[0] is not _cm_b[0]
+          and _cm_after[0][_cm_key] == _cm_b[0][_cm_key]
+          and _cm_after[1] == _cm_b[1])
+
+    _cm_calls = []
+    _cm_real = M._config_key_reads_once
+
+    def _cm_counting(script_dir, hooks_dir, vocabulary):
+        _cm_calls.append(script_dir)
+        return _cm_real(script_dir, hooks_dir, vocabulary)
+
+    _cm_tmp = tempfile.mkdtemp(prefix="audit-deps-cm-")
+    try:
+        M._config_key_reads_once = _cm_counting
+        M._CONFIG_READS.clear()
+        M.config_key_reads()
+        M.config_key_reads(None, None, M.config_vocabulary())
+        M.config_read_violations()
+        check("cm2 the memo is IN USE for every shape the suite and the lints call "
+              "over the default tree - no vocabulary, an explicit default "
+              "vocabulary, and through `config_read_violations` - and reaches the "
+              "real scan exactly ONCE (%d call(s))" % (len(_cm_calls),),
+              len(_cm_calls) == 1)
+
+        os.makedirs(os.path.join(_cm_tmp, "tree"))
+        with open(os.path.join(_cm_tmp, "tree", "r.py"), "w",
+                  encoding="utf-8") as _fh:
+            _fh.write("pass\n")
+        _cm_own = M.config_key_reads(os.path.join(_cm_tmp, "tree"),
+                                     os.path.join(_cm_tmp, "tree"))
+        check("cm3 a caller naming its OWN tree is NOT served the cache: it costs a "
+              "real scan (%d so far) and answers about that tree, not this one. "
+              "This is the case that fails if the memo ignores the directories, "
+              "and every fixture-tree case above quietly becomes a claim about "
+              "scripts/" % (len(_cm_calls),),
+              len(_cm_calls) == 2 and _cm_own[0] != _cm_fresh[0])
+
+        _cm_still = M.config_key_reads()
+        check("cm4 ...and the fixture call did not POISON the cache: the default "
+              "tree still answers with its own reads afterwards, and without a "
+              "new scan (%d)" % (len(_cm_calls),),
+              _cm_still[0] == _cm_fresh[0] and len(_cm_calls) == 2)
+    finally:
+        M._config_key_reads_once = _cm_real
+        M._CONFIG_READS.clear()
+        shutil.rmtree(_cm_tmp, ignore_errors=True)
 
     # --- one config key, one interpretation ---------------------------------------
     # THE DEFECT THIS RULE IS NAMED FOR IS RECONSTRUCTED, NOT DESCRIBED. Two

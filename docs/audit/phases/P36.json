@@ -1,0 +1,789 @@
+{
+  "id": "P36",
+  "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "check-prohibitions asks the property it wants -- does this hook emit a permission decision -- instead of reading py-launch.sh's no-interpreter fail mode as a proxy for it, with the token/property agreement itself asserted; and SECURITY.md's per-hook fail-mode table is compared to hooks.json's wiring in both directions by a gate, so a table that tells a security reader a blocking guard fails silently cannot ship. The reported .env evasion is NOT in scope: it does not reproduce in this tree or in v2.2.0, and the liveness half is F320.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P36.1",
+      "title": "A check may not read a fail mode as a proxy for the property it wants",
+      "status": "done",
+      "description": "F319. deciding_bash_hooks() filters to the 'ask' registrations and states as its reason that a hook launched 'open' CANNOT return a permission decision. Driven through py-launch.sh with an interpreter present, that is false: token=ask, token=open and no token all yield permissionDecision=deny. The token is py-launch.sh's no-interpreter fail mode (mode=${2:-open}) and gates nothing once an interpreter exists. The filter still selects the right set, because the wiring assigns 'ask' to precisely the PreToolUse hooks that decide -- so this is a correct answer resting on a proxy while stating the proxy is the property. Ask it directly instead: does this hook's source emit a permissionDecision, read via AST so a mention in a comment does not count, since driving journal-writes.py to find out would make a read-only check write the audit trail it is checking. Then assert the derived set and the wiring's ask set AGREE, so a deciding guard registered 'open' becomes a finding here rather than a silent weakening.",
+      "files": [
+        "tools/check-prohibitions.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "deciding_bash_hooks() filtered on py-launch.sh's no-interpreter fail-mode token and wrote as its reason that a hook launched `open` cannot return a permission decision; driven through the launcher with an interpreter present, ask/open/none all yield deny. It now asks the property via AST (emits_decision) and fail_mode_drift() binds token to property in both directions, gated in main(). prove-gates rows added and proven both ways.",
+        "descriptive": "A check no longer rests on a proxy while stating the proxy is the property."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "pr6",
+        "pr6b",
+        "pr6c",
+        "pr6d",
+        "pr6e",
+        "prove-gates fail_mode_drift red+allow"
+      ]
+    },
+    {
+      "id": "P36.2",
+      "title": "SECURITY.md's fail-mode table is compared to the wiring it describes",
+      "status": "done",
+      "description": "F319. SECURITY.md's 'Fail modes (by design)' table describes, per hook and per event, what happens when py-launch.sh finds no interpreter -- a fact hooks.json owns and SECURITY.md itself names as the authority. Nothing in the tree reads that table: no file under tools/, scripts/ or tests/ mentions the column or parses it. It is accurate today, so this adds the thing that would catch drift rather than repairing drift. Consequence of drift is not a stale doc: it is SECURITY.md telling a reader that a blocking guard fails silently, or that a silent hook prompts, at the moment they decide whether to trust the plugin with a threat model. Three directions: a row disagreeing with its registration's token; a wired (hook, event) pair no row describes, without which deleting a row makes the table agree with itself; and 'ask' on any event but PreToolUse, where no permission-decision channel exists. The parse must survive a cell wording two events (journal-writes) and a parenthetical disambiguator (require-plan (state commit)), or it under-reports silently.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "gate-parity.failmode_table_drift() compares SECURITY.md's per-hook fail-mode table to hooks.json, reading the loud token, the default mode and the decision event OFF py-launch.sh rather than restating them; multi-event cells and parenthetical disambiguators parsed; a wired pair no row describes, a row nothing wires, a loud mode on a non-decision event and an unlaunched registration are all findings. Wired into parity()/render() so the gate exits 1.",
+        "descriptive": "The security document's fail-mode table is checked against the wiring it describes."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "fm0",
+        "fm1",
+        "fm2",
+        "fm3",
+        "fm4",
+        "fm5",
+        "fm6",
+        "fm7",
+        "fm8",
+        "r2",
+        "prove-gates failmode_table_drift red+allow"
+      ]
+    },
+    {
+      "id": "P36.3",
+      "title": "The host tier records the gate's own pid, and the lock's claims get cases",
+      "status": "cancelled",
+      "description": "F321 F322 F324 F325 in run-test-gate: the lock must record the MEASUREMENT's pid rather than CLAUDE_PID; gl1 must observe the lock from inside the step or stop claiming to; gateLock needs cases; the discarded release warning must be surfaced; waitedSeconds must honour the contract written beside it.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: The host gate lock (F304a) is deferred to 2.4.0 by the operator's decision after two review rounds each found two blockers in it; this task's repairs (F321 F322 F324b F325b) were correct and proven but left the tree with the tier they repair. Nothing here is lost: the work is in the register and the snapshot, and F352 (TAP plan line) was kept because it is not a lock repair."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T18:30:19Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.4",
+      "title": "A stale lock is taken over by exactly one waiter, and a basis never asserts an event that did not happen",
+      "status": "cancelled",
+      "description": "F324 F325 in _locks: wait_for's E_STALE arm takes over with no compare-and-swap so two waiters both win, and returns the takeover basis unconditionally while the code may be E_ERR.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: The host gate lock (F304a) is deferred to 2.4.0; _locks.py is restored to HEAD, which is proven all-lock. The F324/F325 repairs here (conditional takeover, O_EXCL claim, honest basis) were correct and are recorded for the tier's return."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T18:30:19Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.5",
+      "title": "F302's narrowing stops excusing real failures and starts firing for pre-commit",
+      "status": "done",
+      "description": "F323: the 128+N arm rests on summary_count knowing four output shapes, so mocha --reporter json records 139 real failures as could-not-run; and ran_count counts lines for _STEP_WORDS so the arm never fires for pre-commit, which is the shape F302 was reported against.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "reached_a_verdict(text, command) + _END_OF_RUN asks whether the runner reached its own last line - a weaker question than the counting readers, so reporters they cannot parse (mocha json/xunit, nunit, checkstyle) grade as failed rather than could-not-run, and _STEP_WORDS runners (pre-commit) are reachable. TAP's plan line is anchored to end-of-output so the classic plan-first form no longer counts as ended; composite runners answer False. Residual direction named in the docstring: an unknown shape falls toward could-not-run, never toward green.",
+        "descriptive": "A killed runner is could-not-run for every reporter shape, and real failures are never excused as crashes."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "sk3",
+        "sk5",
+        "sk5b",
+        "sk5c",
+        "sk5d",
+        "sk5e",
+        "sk5f",
+        "sk5g",
+        "sk6",
+        "sk8",
+        "sk9"
+      ]
+    },
+    {
+      "id": "P36.6",
+      "title": "Every document describing the new lock tier is updated, and one recorded reason is corrected",
+      "status": "done",
+      "description": "F326: two-vs-three tiers, the exit-code list missing the OS-ended arm and exit 2's second meaning, orchestrator.md silent on the host lock and unable to tell 'you asked wrong' from 'busy, re-run later', and P34.7's false recoverability argument for gateSource.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "Two halves, one kept. F332: PLUGIN-BUILD-GUIDE.md's journal CLI now lists merge and sessions, the verify grading paragraph states the post-F306 rules including the re-link warning class, and _journal_io's write surface documents the two writes with opposite failure contracts (append returns False, write_merged raises). The doctor's three warning classes and the corrected KNOWN_LAYER_DEBT sentences stay. F326 (the lock tier's documentation) was written and then REMOVED with the tier when the operator deferred the host gate lock to 2.4.0; exit 2 means only 'could not be asked' again and orchestrator.md carries the still-true rule 'route on the banner, not the exit code' at the exit-1 arms.",
+        "descriptive": "The architecture document describes the journal the code has; the lock tier's prose left with the lock."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "test__deps enumeration lint",
+        "test__refs doc links",
+        "test__areas claim anchors",
+        "check-prohibitions"
+      ]
+    },
+    {
+      "id": "P36.7",
+      "title": "A merge may re-link a chain but never lose a row",
+      "status": "done",
+      "description": "F328 F331 F330(sx2): cmd_merge overwrites --file with the two sides alone, destroying any row present only in the target -- driven, three of four rows gone at exit 0 with verify clean. mh3 exercises it and passes. Also: merge --json returns before write_merged and prints success for a write that did not happen, with no case at all; and sx2 parses JSON unguarded so a prose reply takes sx2-sx6 down unnamed.",
+      "files": [
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "F328: cmd_merge grades the result against the file it would replace (anchor_verdict) and refuses a loss, naming the first unaccounted row and both counts; mh3, which had documented the loss as correct, rewritten to its real subject. F340: the read moved under the same lock write_merged takes (read -> grade -> replace in one hold), proven with a real second process behind the lock. F341: a torn or unparseable row in the target is refused, the way a torn side already was. F342: a prior journal.merge marker is recognised as a prior resolution, not a typed row, and the timing-flaky pair now crosses a second boundary on purpose. F343: --file is constrained to the journal directory via in_journal(). F331: --json writes and reports written/dryRun/error. sx2 and three siblings parse --json through parsed(), so a prose reply fails one case by name.",
+        "descriptive": "The append-only trail can no longer lose a row through merge, by any of four doors."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "mh4",
+        "mh4b",
+        "mh5",
+        "mh6",
+        "mh6b",
+        "mh7",
+        "mh8",
+        "mh9",
+        "mh9b",
+        "mh10",
+        "mh11",
+        "mh11b",
+        "mh12",
+        "mh12b",
+        "mj1",
+        "mj2",
+        "mj3",
+        "mj4",
+        "mg3c",
+        "mg3d",
+        "mg3e",
+        "mg3e2",
+        "mg3f",
+        "mv1",
+        "mv2",
+        "mv3",
+        "mv4",
+        "mv5",
+        "mv6",
+        "mr1",
+        "mr2",
+        "mr3",
+        "sx2"
+      ]
+    },
+    {
+      "id": "P36.8",
+      "title": "Two dead conjuncts and an overstated assertion in the journal-io suite",
+      "status": "done",
+      "description": "F330: mu16's _acquire raises before the try/except/raise block the case is named for, so replacing that raise with a silent success leaves the suite green; and its second conjunct lists the wrong directory so it can never fail. mu3 claims byte-for-byte survival and asserts set inclusion, which cannot see a dropped duplicate.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "mu16 rebuilt to reach the branch it is named for (parent exists, path is a directory) and split into three that fail apart; mu3 counts rather than finds; dead tie locals removed; av7 pins the re-spelled committed copy with divergesAt absent; _anchor_warning extracted and its text no longer points at a merge commit that may not exist, with aw0-aw3 over the real verdicts. F339: rows_unaccounted() asks presence without order (a set question, stated as the opposite of mu3's rule because a conflicted file legitimately carries a row twice), consumed by _conflict_loss.",
+        "descriptive": "Three cases that asserted nothing now assert, and the warning an operator reads first tells the truth."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "mu3",
+        "mu16",
+        "mu16b",
+        "mu16c",
+        "av7",
+        "aw0",
+        "aw1",
+        "aw2",
+        "aw3",
+        "ru1",
+        "ru2",
+        "ru3",
+        "ru4",
+        "ru5"
+      ]
+    },
+    {
+      "id": "P36.9",
+      "title": "The doctor names the cause it actually found, and two documents stop promising a finding",
+      "status": "done",
+      "description": "F329: a spliced row re-chained is now a WARNING whose only stated repair text is out-of-band drift -- confidently wrong on the highest-stakes new class. The docstring still enumerates two warning classes when there are three, and README still promises a rewritten journal is a doctor FINDING.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "_JOURNAL_WARNING_CLASSES + journal_warning_advice(): one fix line per class present; relink keys on fragments unique to the rows-arrived branch and a new respelled class gets its own advice (F344a); an unrecognised warning gets the pointer even beside a recognised one (F344b); torn is cased (F344c). README no longer promises a doctor FINDING for a spliced row nor that the doctor names which rows arrived (F329, F345). Classification is by prose fragment, recorded as F337 for the structural kind-key fix.",
+        "descriptive": "The doctor names the cause it found for each journal warning, and admits what it cannot tell apart."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "dt43",
+        "dt44",
+        "dt45",
+        "dt46",
+        "dt47",
+        "dt48",
+        "dt49"
+      ]
+    },
+    {
+      "id": "P36.10",
+      "title": "Three checks that assert less than their labels claim",
+      "status": "done",
+      "description": "F334 F330a F330b: the LIST_ANCHORS pattern's .*? is unbounded past the function body, so deleting _locked_scope's guard makes the anchor latch onto retarget's guard hundreds of lines later and report a status scope no longer refuses -- while the comment claims it cannot slide. The 'empty set agrees with any document' refusal has no case and this change doubled the rows depending on it. h3 asserts no --no-verify over a list nothing asserts is non-empty.",
+      "files": [
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/tests/test__areas.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "F334: the LIST_ANCHORS window is bounded to the function body ('no line may begin in column 0'), so deleting _locked_scope's guard reports the vocabulary finding instead of latching onto retarget's guard; the comment that claimed it could not slide is replaced by the property that holds. F330a: the empty-vocabulary refusal has both-direction cases. F330b: h1/h2/h3 each require the corpus in their own assertion and h0 states it positively. Three prove-gates rows added and proven.",
+        "descriptive": "Three checks assert exactly what their labels claim."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "oa26",
+        "oa27",
+        "oa28",
+        "oa29",
+        "h0",
+        "h1",
+        "h2",
+        "h3",
+        "prove-gates claim_drift oa26/oa28/oa29"
+      ]
+    },
+    {
+      "id": "P36.11",
+      "title": "journal_dir returns one spelling of a path, normalized at the API",
+      "status": "cancelled",
+      "description": "BUG-2: journal_dir() joins the project root with config-derived forward-slash components, returning C:\\\\tmp\\\\x\\\\docs/audit\\\\journal on Windows and proj/./journal on POSIX when the manifest sits at the project root. j12 compares str(Path(answer)) == answer and fails on the spelling alone. The bug's own note names the fix: normalize at the API, not at the comparison.",
+      "files": [
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/hooks/_config.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Duplicate: this bug was already materialized into a fix task that is done (BF1.1/BF1.2/BF2.1/P16.1), and all four fixes are verified present in the tree. effective_bug_status already reads all four as fixed; the stored open field is by design, since the orchestrator never writes bugs[] mid-run."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T21:50:55Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.12",
+      "title": "The capture viewport is the one the check's own comment prescribes",
+      "status": "cancelled",
+      "description": "BUG-3: the policy view renders taller than the capture viewport on ubuntu because Linux font metrics run taller than macOS, so the sticky save bar would cover table rows. The check's own comment prescribes the lever and the bug names the value with margin. The Linux symptom is not reproducible on this machine; the fix is.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Duplicate: this bug was already materialized into a fix task that is done (BF1.1/BF1.2/BF2.1/P16.1), and all four fixes are verified present in the tree. effective_bug_status already reads all four as fixed; the stored open field is by design, since the orchestrator never writes bugs[] mid-run."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T21:50:56Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.13",
+      "title": "A byte-precise build input carries an end-of-line contract",
+      "status": "cancelled",
+      "description": "BUG-4: scripts/ui/* are byte-precise build inputs read with newline='' on purpose, because the assembled UI_HTML/_CSS/_SCRIPT byte-identity depends on exact bytes. With no .gitattributes a windows checkout under autocrlf rewrites them to CRLF, so every pin spanning a line boundary fails. The note names the fix as a class: an eol contract plus a NAMED LF guard beside each reader, so the failure says what it is instead of a pin mismatch.",
+      "files": [
+        ".gitattributes",
+        "plugins/audit/scripts/panel/_panel_ui.py",
+        "plugins/audit/scripts/report/_report_ui.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Duplicate: this bug was already materialized into a fix task that is done (BF1.1/BF1.2/BF2.1/P16.1), and all four fixes are verified present in the tree. effective_bug_status already reads all four as fixed; the stored open field is by design, since the orchestrator never writes bugs[] mid-run."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T21:50:56Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.14",
+      "title": "The sub-cent cost rule is proven where it renders",
+      "status": "cancelled",
+      "description": "BUG-5: corrupting _report_usage's fmt_cost delegation and rerunning its own selftest stays green, because no fixture in that suite spends under a cent -- so the sub-cent rule is exercised only in _fmt's goldens. The consumer could stop delegating, or mangle the arguments, and its cases would not notice. The parallel fmt_tokens mutation goes red in three cases by name, which is what the cost side should look like.",
+      "files": [
+        "plugins/audit/scripts/report/_report_usage.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Duplicate: this bug was already materialized into a fix task that is done (BF1.1/BF1.2/BF2.1/P16.1), and all four fixes are verified present in the tree. effective_bug_status already reads all four as fixed; the stored open field is by design, since the orchestrator never writes bugs[] mid-run."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T21:50:56Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P36.15",
+      "title": "The tree-wide lints memoise the default tree, the way _scan_edges already does",
+      "status": "done",
+      "description": "Operator asked for the plugin to be faster and cheaper, not only more correct. Profiled with cProfile: test__deps.py is ~70% of the sweep's wall clock at 12 workers, and its time is config_key_reads and dict_key_contracts re-parsing every module per call (dozens of calls per run over a tree that cannot change), while test__output's hottest function is _tokenize, entered several times per line because neighbours are re-tokenized. Repair follows the _scan_edges precedent exactly: default-tree-only memo, fixture callers bypass it, answers copied on the way out, with the mm2/mm3 case pair (memo in use; fixture not served) for each new memo, and a bounded LRU on the pure tokenizer.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "Profiled with cProfile: test__deps.py bounded the sweep's wall clock and spent it in config_key_reads re-parsing every module per call (dozens of calls, two of them hitting a first memo that bypassed on any explicit vocabulary); test__output's hottest function was _tokenize, entered several times per line. config_key_reads is memoised for the default tree keyed by vocabulary (frozensets, hashable as-is), copied on the way out, fixtures bypass; _tokenize sits behind functools.lru_cache(maxsize=4096), pure and never mutated by a caller. Five-case pair per memo mirroring mm0-mm4; a dict_key_contracts memo was tried and removed because it hit once in fourteen calls. Measured in a scratch copy: test__deps 18.3s -> 12.7s, test__output 9.7s -> 8.9s, _tokenize 643k -> 139k calls; re-derive rather than trust these.",
+        "descriptive": "The two suites that bound every sweep and every CI run got measurably faster, with the memo proven honest."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "cm0",
+        "cm1",
+        "cm2",
+        "cm3",
+        "cm4",
+        "tk0",
+        "tk1"
+      ]
+    },
+    {
+      "id": "P36.16",
+      "title": "The plan gate says an uncovered file is uncovered once per session, not on every edit",
+      "status": "done",
+      "description": "F355, field report 8. The warn tier emits the same verbatim paragraph on EVERY Edit/Write of an uncovered file and asks the model to relay it, so an operator doing non-phase work reads it dozens of times an afternoon (this session: ~15 relays). The decision is unchanged; only the advisory's frequency is: the first edit of a file speaks the paragraph, later edits of the SAME file in the same session emit one short line naming the count, a different file speaks again. Per-session file state already exists in the gate's state file. Red-first both ways: a repeat edit must not carry the paragraph; a new file must.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "require-plan's warn tier consults plan-gate-warned-<sid>.json (the _owner_note throttle shape, under the plan-gate- prefix GC sweeps): first edit of an uncovered file speaks the paragraph with the relay instruction, a later edit of the same file returns one line, a different file speaks again; Pre reads, Post writes. The gate EVENT is still appended on every edit - only the relay text is throttled - and the decision is untouched. Driven on the live path as Claude Code drives it. Observed: the hook firing on this checkout's own edits is the installed 2.0.1 cache copy, not this file (F320).",
+        "descriptive": "An operator doing non-phase work reads the uncovered-file advisory once per file, not on every edit."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-11T12:30:00Z",
+      "verifiedBy": [
+        "i5",
+        "i6",
+        "i6a",
+        "i6b",
+        "i6c",
+        "i6d",
+        "i6e"
+      ]
+    }
+  ]
+}

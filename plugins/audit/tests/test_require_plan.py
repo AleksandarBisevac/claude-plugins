@@ -762,6 +762,47 @@ def _cases(check):
         "of visibility, the feed is the durable half",
         m.startswith("Tell the human this verbatim before continuing"),
         repr(m[:80]))
+    # F355: SAID IN FULL ONCE PER FILE PER SESSION. A field report counted the
+    # paragraph above on ~60 files and several hundred edits in one afternoon;
+    # the gate was advisory throughout and the relay was correct exactly once.
+    # The throttle is on the RELAY TEXT, never on the event - i6b keeps the
+    # feed complete - and i6d is the second-direction case that goes red if the
+    # throttle forgets to key on the file.
+    v2, m2 = M.decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
+                      logs_dir=ild, event="PostToolUse")
+    rows = feed(ild)
+    hok("i6a a SECOND edit of the same uncovered file in the same session is "
+        "still a warn, but no longer carries the relay instruction or the "
+        "paragraph - it names the file and says it was said in full already",
+        v2 == "warn"
+        and not m2.startswith("Tell the human this verbatim")
+        and "src/graded/mod.ts" in m2 and "said in full once" in m2,
+        repr(m2[:100]))
+    hok("i6b ...and the EVENT is still appended for that second edit: the "
+        "throttle thins what the model relays, never what the log records",
+        [r.get("event") for r in rows] == ["warn", "warn"], repr(rows))
+    warned_file = sd / "plan-gate-warned-selftest-i5.json"
+    hok("i6c the throttle slot is named `plan-gate-warned-<sid>.json`, so the "
+        "`plan-gate-` prefix detect-plan-skip's GC already sweeps covers it",
+        warned_file.exists()
+        and json.loads(warned_file.read_text(encoding="utf-8"))["files"]
+        == ["src/graded/mod.ts"], repr(warned_file))
+    v3, m3 = M.decide(payload("Edit", "src/graded/other.ts", new_string=big,
+                              sid="selftest-i5"),
+                      cfg=cfg_graded, state_dir=sd, logs_dir=ild,
+                      event="PostToolUse")
+    hok("i6d a DIFFERENT uncovered file in the same session gets the full "
+        "paragraph again - the throttle is per file, not per session",
+        v3 == "warn"
+        and m3.startswith("Tell the human this verbatim before continuing")
+        and "src/graded/other.ts" in m3, repr(m3[:80]))
+    v4, m4 = M.decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
+                      logs_dir=ild, event="PreToolUse")
+    hok("i6e Pre READS the throttle and does not write it: the first file is "
+        "already a repeat on Pre, and Pre added nothing to the slot",
+        v4 == "warn" and "said in full once" in m4
+        and json.loads(warned_file.read_text(encoding="utf-8"))["files"]
+        == ["src/graded/mod.ts", "src/graded/other.ts"], repr(m4[:60]))
     clear_manifest()
     ild = tmp / "ev-bypass"
     sess_i = "selftest-i7"

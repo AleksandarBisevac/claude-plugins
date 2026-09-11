@@ -34,6 +34,7 @@ import _output                                     # noqa: E402  (PLUGIN_ROOT, f
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
+import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 
@@ -116,6 +117,130 @@ else:
 # Long enough for two interpreters to start on the slowest leg, short enough that
 # the case is not the reason the suite takes as long as it does.
 TREE_TIMEOUT = 5
+
+# --- what a runner leaves behind, per reporter --------------------------------
+# F323's fixtures, and they are TAKEN FROM THE REPORTERS rather than written to
+# suit the reader. The whole fault was a discriminator keyed on shapes this file
+# happens to recognise, so a fixture invented alongside the repair would encode
+# one assumption twice and go green against a reader that cannot fire in the
+# field. Every one below is what the named tool actually prints, trimmed; the
+# tallies are all the SAME RUN - one pass and a hundred and thirty-nine failures
+# - because that failure count is the exit status the fault turns on.
+#
+# THE SHARED SHAPE IS DELIBERATE: each of these runners exits with a number that
+# is a COUNT and not a verdict, so exit 139 is ambiguous for all of them in
+# exactly the way `128 + SIGSEGV` is.
+MOCHA_JSON = """\
+{
+  "stats": {
+    "suites": 12,
+    "tests": 140,
+    "passes": 1,
+    "pending": 0,
+    "failures": 139,
+    "start": "2026-09-10T09:00:00.000Z",
+    "end": "2026-09-10T09:00:12.000Z",
+    "duration": 12000
+  },
+  "tests": [],
+  "pending": [],
+  "failures": [],
+  "passes": []
+}
+"""
+MOCHA_XUNIT = """\
+<testsuite name="Mocha Tests" tests="140" failures="139" errors="139" \
+skipped="0" timestamp="Thu, 10 Sep 2026 09:00:00 GMT" time="12.0000">
+<testcase classname="order" name="totals a basket" time="0.001"/>
+</testsuite>
+"""
+MOCHA_MIN = """\
+
+  1 passing (12s)
+  139 failing
+
+  1) order
+       rejects an empty basket:
+     AssertionError: expected 0 to equal 1
+"""
+NUNIT_REPORT = """\
+NUnit Console Runner 3.15.0
+Test Count: 140, Passed: 1, Failed: 139, Warnings: 0, Inconclusive: 0, Skipped: 0
+"""
+CHECKSTYLE_REPORT = """\
+Starting audit...
+[ERROR] src/Main.java:12:1: Missing a Javadoc comment. [JavadocMethod]
+Audit done.
+Checkstyle ends with 139 errors.
+"""
+# THREE TAP FIXTURES WHERE THERE WAS ONE, AND THE SPLIT IS THE POINT (F352).
+# The single fixture carried BOTH the opening plan line and the closing tallies,
+# so it matched whichever alternative was left and deleting either one kept
+# `sk5e` green - a case that could not see the difference between "the runner
+# closed" and "the runner started". A TAP plan is legal at either end of the
+# stream and the classic form prints it FIRST, so each shape now has a fixture
+# that exercises it alone.
+#
+# `tape`'s shape: the plan opens and the tallies close. Read for the TALLIES.
+TAP_REPORT = """\
+TAP version 13
+1..140
+ok 1 order totals a basket
+not ok 2 order rejects an empty basket
+# tests 140
+# pass 1
+# fail 139
+"""
+# `Test::More` under `done_testing()`: the plan is the LAST line and there are no
+# tallies at all, which is the shape that would be lost by deleting the plan
+# alternative rather than positioning it.
+TAP_PLAN_LAST = """\
+ok 1 - order totals a basket
+not ok 2 - order rejects an empty basket
+#   Failed test 'order rejects an empty basket'
+#   at t/order.t line 12.
+1..140
+"""
+# ...and the SAME classic stream killed after its second test: the plan is
+# there, at the top, where it was written before any test ran.
+TAP_KILLED = """\
+TAP version 13
+1..140
+ok 1 order totals a basket
+not ok 2 order rejects an empty basket
+"""
+VSTEST_REPORT = """\
+Starting test execution, please wait...
+Total tests: 140
+     Passed: 1
+     Failed: 139
+Test Run Failed.
+"""
+
+# ...and the one shape that is NOT a report: `pre-commit` mid-run, with a hook
+# already logged and the next one's line unfinished, which is what an
+# out-of-memory reaper leaves. F302 was reported against exactly this
+# configuration and the arm meant to catch it could not fire here, because
+# `ran_count` tallies LINES for `_STEP_WORDS` and so never answers None.
+PRECOMMIT_KILLED = """\
+check yaml...............................................................Passed
+black...................................................................."""
+
+# ...and the same wrapper with a hook that DOES publish a summary. `pre-commit`
+# runs other runners, so pytest's own closing line is an end-of-run report for
+# THAT HOOK and mid-flight for the step - `mypy` had not finished when the
+# reaper arrived. F352's second half: `summary_count` answers a number here, so
+# the summary arm of `reached_a_verdict` said the step had spoken for its exit
+# code and an OOM-killed composite was graded `failed`.
+PRECOMMIT_HOOK_SUMMARY = """\
+check yaml...............................................................Passed
+pytest...................................................................Failed
+- hook id: pytest
+- exit code: 1
+
+==================== 1 failed, 3 passed, 2 skipped in 0.42s ====================
+
+mypy....................................................................."""
 
 
 def _step(python, script, *args):
@@ -962,8 +1087,89 @@ def _cases(check):
           "match only widens onto test-shaped paths and only onto the exact stem "
           "they carry - a false overlap tells the reader their work was "
           "exercised when it was not, which is the comfort NO OVERLAP exists to "
-          "refuse: %r" % (_cross,),
-          _cross == [])
+          "refuse. THE MATCH IS ASSERTED SEPARATELY from the verdict, because "
+          "F307 turned this shape into NOT KNOWABLE: the suite really is about "
+          "`lexer` and not about `parser`, so nothing matched - and a `None` "
+          "here that came from a match quietly widening would look identical to "
+          "one that came from the population test: %r / %r"
+          % (_cross, M._subject_of("tests/lexer.spec.ts")),
+          _cross is None
+          and M._subject_of("tests/lexer.spec.ts") == "lexer"
+          and M.coverage(["src/lexer.ts"],
+                         set(["tests/lexer.spec.ts"]))[0] == ["src/lexer.ts"])
+
+    # --- F307: an empty overlap is only evidence from comparable paths -------
+    # `NO OVERLAP WITH THIS WORK` fired on roughly 20 of 30 runs in one jest
+    # repository, INCLUDING runs whose coverage was obvious, because jest prints
+    # the SUITE it ran while `task.files` lists the sources under it. The stem
+    # bridge F255 built is the only relation there is, so a suite named for a
+    # FEATURE rather than for a file leaves a real empty set over a real path
+    # set - literally true, and useless. At two firings in three a reader learns
+    # to skim the block a real finding appears in.
+    #
+    # THE REPAIR IS ON WHAT COUNTS AS EVIDENCE AND NOT ON THE MATCH, which is
+    # why cv14 and cv15 are a PAIR: widening the stem match would satisfy cv14
+    # and destroy the two firings cv15 and cv5c/cv11 pin.
+    _f307 = ["src/services/order.ts", "src/cart.ts"]
+    _f307_named = set(["src/services/__tests__/checkout-flow.test.ts",
+                       "src/misc.test.ts"])
+    _nk, _nkb = M.coverage(_f307, _f307_named)
+    check("cv14 THE FAULT: a jest gate printed two suites named after FEATURES, "
+          "the task declares the sources under them, and the answer is NOT "
+          "KNOWABLE rather than `no overlap`. A runner that prints what it RAN "
+          "has not said which sources it exercised, so the empty set measured "
+          "the naming convention: %r" % (_nkb[-190:],),
+          _nk is None and "NOT KNOWABLE from its output" in _nkb
+          and "not evidence that it did not" in _nkb
+          and M.evidence_paths(_f307, _f307_named) == [])
+    _j_hit, _ = M.coverage(["docs/audit/audit-plan.json"],
+                           set(["tools/ui-tests/panel.test.js",
+                                "tools/ui-tests/report.test.js"]))
+    _e_hit, _ = M.coverage(["src/mine.ts"], set(["src/a.ts", "src/b.ts"]))
+    check("cv15 SECOND DIRECTION, AND IT IS TWO RUNS BECAUSE THE REPAIR HAS TWO "
+          "HALVES. F204's founding run - a vitest UI suite, two `.test.js` "
+          "files, nine tests green, against a one-value edit to a `.json` "
+          "manifest - printed nothing spelled like that manifest, so those "
+          "suites demonstrably are not about it and NO OVERLAP is the finding. "
+          "And eslint naming real `.ts` sources against a `.ts`-owning task it "
+          "never linted is the half a rule reading EXTENSIONS ALONE would have "
+          "silenced - the suite/processed split is what keeps it: %r / %r"
+          % (_j_hit, _e_hit),
+          _j_hit == [] and _e_hit == [])
+    _vend = set(["src/flow.test.ts", "src/checkout.test.ts",
+                 "node_modules/jest-runner/build/index.js"])
+    _v_hit, _v_b = M.coverage(["src/order.ts"], _vend)
+    _cfg = set(["jest.config.js", "package.json"])
+    check("cv16 ...and a VENDORED path is not evidence either, which is what "
+          "keeps cv14 true on a FAILING jest run: the stack frames under "
+          "`node_modules` are the bulk of what `_PATHISH` harvests there, and a "
+          "dependency is not a file any task declares. A CONFIG file is the "
+          "paired half and stays NO OVERLAP - `jest.config.js` is a repo file "
+          "the runner really did read, and cv11's whole set is built from those: "
+          "%r / %r" % (_v_hit, M.coverage(["src/mine.ts"], _cfg)[0]),
+          _v_hit is None and M.evidence_paths(["src/order.ts"], _vend) == []
+          and M.coverage(["src/mine.ts"], _cfg)[0] == []
+          and M.evidence_paths(["src/mine.ts"], _cfg) == ["jest.config.js",
+                                                          "package.json"])
+    check("cv17 `_is_suite_path` reads the DIRECTORY too - `__tests__/order.ts` "
+          "is jest's own layout and carries no `.test` mark at all - while "
+          "`_subject_of` still does NOT, because that one re-spells a path onto "
+          "another file's stem and a directory is far too weak to justify it. "
+          "One signal for classifying, a stricter one for matching: %r"
+          % ([M._is_suite_path(p) for p in
+              ("src/__tests__/order.ts", "src/order.ts", "test/order.ts")],),
+          M._is_suite_path("src/__tests__/order.ts") is True
+          and M._is_suite_path("src/order.ts") is False
+          and M._subject_of("src/__tests__/order.ts") is None)
+    check("cv18 `_extension` reads the BASENAME, so a dotted DIRECTORY lends no "
+          "suffix to a file that has none and a leading dot is a NAME rather "
+          "than a suffix - `.gitignore` has no extension, and getting that "
+          "wrong would put every dotfile in its own population: %r"
+          % ([M._extension(p) for p in
+              ("src/a.TS", "my.dir/Makefile", ".gitignore", "a")],),
+          [M._extension(p) for p in
+           ("src/a.TS", "my.dir/Makefile", ".gitignore", "a")]
+          == ["ts", "", "", ""])
     check("cv5e `_subject_of` answers only for test-shaped paths, so an "
           "ordinary source file is never re-spelled into somebody else's stem",
           M._subject_of("src/foo.ts") is None
@@ -1382,6 +1588,383 @@ def _cases(check):
           res_127["status"] == "failed"
           and res_127["steps"][0].get("outcome") is None)
 
+    # --- F302: a signal-killed runner is not a failing test ----------------
+    # DRIVEN, and the two commands are the whole fault: `sh -c 'kill -9 $$'`
+    # came back exit -9 and `sh -c 'exit 1'` came back exit 1, and the verdict
+    # read them as ONE answer - GATE RED, recorded `failed`, a retry spent. The
+    # signal was already on the record as `steps[].exit`, so this runner had
+    # observed it and the verdict threw the observation away.
+    #
+    # `hasattr(signal, "SIGKILL")` IS THE MECHANISM READ, not a platform name:
+    # windows has no SIGKILL and `cmd.exe` has no `kill`, so a case that guessed
+    # by platform could be right about the name and wrong about the thing it
+    # needed. It is read fresh here rather than off a constant a branch above
+    # already consulted, for `console_events()`'s reason.
+    if not hasattr(signal, "SIGKILL"):
+        print("SKIP sk1/sk3 (no SIGKILL on this platform)")
+    else:
+        res_kill = M.run_gate(tmp, [("test", "kill -9 $$")])
+        res_one = M.run_gate(tmp, [("test", "exit 1")])
+        # THE SHELL'S OWN SPELLING OF A SEGFAULT, driven rather than stubbed:
+        # this is the code `sh` returns when the command it ran died of signal
+        # 11, and it is the only channel a grandchild's kill can reach us
+        # through under `shell=True`.
+        res_139 = M.run_gate(tmp, [("test", "exit 139")])
+        kill_lines, one_lines = [], []
+        kill_code = M.render(res_kill, out=kill_lines.append)
+        one_code = M.render(res_one, out=one_lines.append)
+        kill_text, one_text = "\n".join(kill_lines), "\n".join(one_lines)
+        check("sk1 THE FAULT, BOTH HALVES IN ONE CASE: a child the OS killed is "
+              "`could-not-run` carrying the signal, while an HONEST non-zero "
+              "exit beside it is still a failing test. Asserted as DIFFERENT and "
+              "not each against a literal, which is the half that fails both "
+              "when the kill is graded red AND when nothing is ever graded red "
+              "again: %r vs %r"
+              % ((res_kill["steps"][0]["exit"], res_kill["status"],
+                  res_kill["steps"][0].get("signal"), res_kill["failed"]),
+                 (res_one["steps"][0]["exit"], res_one["status"],
+                  res_one["failed"])),
+              res_kill["steps"][0]["exit"] < 0
+              and res_kill["steps"][0].get("outcome") == M.CANNOT_RUN
+              and res_kill["steps"][0].get("signal") == "SIGKILL"
+              and res_kill["status"] == M.CANNOT_RUN
+              and res_kill["failed"] == []
+              and res_one["steps"][0]["exit"] == 1
+              and res_one["steps"][0].get("outcome") is None
+              and res_one["status"] == "failed"
+              and res_one["failed"] == ["test"]
+              and res_kill["status"] != res_one["status"])
+        check("sk2 ...and THE RULE THE DOCUMENT ALREADY STATES BECOMES "
+              "REACHABLE, which is the difference between correcting a word and "
+              "repairing the defect. `reference/orchestrator.md` keys its "
+              "infrastructure arm on the literal `GATE COULD NOT RUN` - 'not the "
+              "task's failure ... do NOT spend a retry' - so a kill printed "
+              "under a banner of its own would fall through to 'gates RAN and "
+              "are red' and burn all three maxAttempts. The banner is the CLASS; "
+              "the OS sentence under it is the member, and neither run prints "
+              "the other's: %r / %r"
+              % (kill_text[:78], one_text[-40:]),
+              kill_code == M.E_FAIL and one_code == M.E_FAIL
+              and "GATE COULD NOT RUN" in kill_text
+              and "THE OS ENDED test (SIGKILL)" in kill_text
+              and "do not spend a retry on the task" in kill_text
+              and "GATE RED" not in kill_text
+              and "GATE RED: test" in one_text
+              and "GATE COULD NOT RUN" not in one_text
+              and "THE OS ENDED" not in one_text
+              # ...and it does NOT claim the step never got as far as a check,
+              # which is the sentence `could-not-run`'s OTHER member owns and is
+              # false of a suite killed mid-run. That half of the old single
+              # sentence was wrong for this member before the split.
+              and "never got as far as a check" not in kill_text)
+        check("sk3 THE CHANNEL THE FIELD ACTUALLY MEASURED: under `shell=True` "
+              "the negative code stops at the shell, so a runner two levels down "
+              "that segfaults arrives as exit 139 - and 2 of 10 recorded failures "
+              "on one project were exactly that. A reader taking only the OS's "
+              "own report would have left every one of them unchanged: %r"
+              % ((res_139["steps"][0]["exit"], res_139["status"],
+                  res_139["steps"][0].get("signal")),),
+              res_139["steps"][0]["exit"] == 139
+              and res_139["steps"][0].get("signal") == "SIGSEGV"
+              and res_139["status"] == M.CANNOT_RUN
+              and res_139["failed"] == [])
+
+    # ...and the rest is a PURE table, so it runs on both platforms. SIGSEGV is
+    # 11 everywhere `signal.Signals` exists, which is why every portable case
+    # below is written on it rather than on SIGKILL.
+    _honest = [(code, M.ended_by_signal(code, "")[0])
+               for code in (1, 2, 5, 48, 101, 127, 128, 255)]
+    check("sk4 SECOND DIRECTION, SPELLED AS A TABLE: every honest non-zero exit "
+          "is still no signal at all. A version answering `could-not-run` for "
+          "any non-zero code passes sk1's first half and fails here, and 127 is "
+          "on the list on purpose - `lc16` pins that a missing binary under a "
+          "shell is a FAILURE, because 127 is a code a real command may return "
+          "and reading a category out of a number lets a child claim it: %r"
+          % (_honest,),
+          [name for _code, name in _honest] == [None] * len(_honest))
+    check("sk5 the convention arm YIELDS to a runner that reached the end of its "
+          "run, and mocha is why: it exits with the NUMBER OF FAILING TESTS, so "
+          "139 failures really is exit 139. A reader that trusted the number "
+          "alone would record a suite with 139 real failures as infrastructure, "
+          "and one that trusted an EMPTY output would refuse every real kill: "
+          "ran=%r" % (M.summary_count(MOCHA_MIN),),
+          M.summary_count(MOCHA_MIN) == 140
+          and M.ended_by_signal(139, MOCHA_MIN)[0] is None
+          and M.ended_by_signal(139, "")[0] == "SIGSEGV")
+    # F323, AND THE FIXTURES ARE REAL REPORTER OUTPUT rather than a shape written
+    # to match the reader: a hand-made fixture and the parser under it would
+    # encode one assumption twice. These are what `mocha` emits under each
+    # `--reporter`, trimmed.
+    _reporters = [(name, M.ran_count("npx mocha", text),
+                   M.reached_a_verdict(text),
+                   M.ended_by_signal(139, text)[0])
+                  for name, text in (("json", MOCHA_JSON),
+                                     ("xunit", MOCHA_XUNIT),
+                                     ("min", MOCHA_MIN))]
+    check("sk5b THE FAULT: the narrowing rested on whether THIS READER had "
+          "recognised the output, and every counting reader here answers None to "
+          "`mocha --reporter json`. So exit 139 - mocha's spelling of 139 FAILING "
+          "TESTS - was recorded `could-not-run`, landed in "
+          "`_status_facts.NO_VERDICT_EVIDENCE` and told the orchestrator not to "
+          "spend a retry: real failures as an infrastructure excuse, permanently, "
+          "in a hash-chained row. Driven across the reporters, with the count "
+          "STILL None on two of them - which is what fails a repair that merely "
+          "taught the counter another shape: %r" % (_reporters,),
+          [(n, verdict) for n, _ran, _end, verdict in _reporters]
+          == [("json", None), ("xunit", None), ("min", None)]
+          and [(n, ran) for n, ran, _end, _v in _reporters]
+          == [("json", None), ("xunit", None), ("min", 140)]
+          and all(end for _n, _ran, end, _v in _reporters))
+    check("sk5c SECOND DIRECTION, and it is the one that makes this a NARROWING "
+          "rather than a mute: a step whose output carries no end-of-run report "
+          "at all is still read as a kill. A version that answered "
+          "`reached_a_verdict` True unconditionally passes sk5b and fails here, "
+          "and the fixtures are the shapes a killed runner really leaves - "
+          "nothing, a partial line, and a `pre-commit` log with hooks already "
+          "logged: %r"
+          % ([M.ended_by_signal(139, t)[0]
+              for t in ("", "collecting ...", PRECOMMIT_KILLED)],),
+          all(M.ended_by_signal(139, t)[0] == "SIGSEGV"
+              for t in ("", "collecting ...", PRECOMMIT_KILLED))
+          and not M.reached_a_verdict(PRECOMMIT_KILLED))
+
+    if hasattr(signal, "SIGKILL"):
+        def _precommit_killed(_project, _command, _timeout=None):
+            return 137, PRECOMMIT_KILLED, {}
+
+        res_pc = M.run_gate(tmp, [("hooks", "pre-commit run --all-files")],
+                            runner=_precommit_killed)
+        pc_lines = []
+        pc_code = M.render(res_pc, out=pc_lines.append)
+        pc_text = "\n".join(pc_lines)
+        check("sk5d ...AND F302's OWN CONFIGURATION, WHICH THE ARM COULD NEVER REACH. "
+              "`pre-commit` is the only entry in `_STEP_WORDS`, so `ran_count` tallies "
+              "LINES for it and never answers None - an OOM-killed "
+              "`pre-commit run --all-files` that had logged one hook came back "
+              "`GATE RED: hooks`, recorded `failed` against the task, and spent a "
+              "retry on something no code change fixes. The line tally is still "
+              "there and is no longer a verdict: ran=%r %r"
+              % (res_pc["steps"][0]["ran"],
+                 (res_pc["status"], res_pc["steps"][0].get("signal"))),
+              res_pc["steps"][0]["ran"] == 1
+              and res_pc["steps"][0].get("outcome") == M.CANNOT_RUN
+              and res_pc["steps"][0].get("signal") == "SIGKILL"
+              and res_pc["status"] == M.CANNOT_RUN
+              and res_pc["failed"] == []
+              and pc_code == M.E_FAIL
+              and "GATE COULD NOT RUN" in pc_text
+              and "GATE RED" not in pc_text)
+    else:
+        _harness.skip(check, "sk5d",
+                      "the case drives an OOM kill as exit 137 and asserts it names SIGKILL; `ended_by_signal` resolves that through `signal.Signals` on THIS machine, which defines no SIGKILL, so the arm cannot fire here by construction",
+                      not hasattr(signal, "SIGKILL"))
+    _machine = [(name, M.reached_a_verdict(text))
+                for name, text in (("nunit3-console", NUNIT_REPORT),
+                                   ("checkstyle", CHECKSTYLE_REPORT),
+                                   ("tap tallies", TAP_REPORT),
+                                   ("tap plan last", TAP_PLAN_LAST),
+                                   ("dotnet test", VSTEST_REPORT))]
+    check("sk5e ...and the other runners whose EXIT STATUS IS A COUNT are reached "
+          "by the same table. `nunit3-console` and `checkstyle` both encode a "
+          "tally in their status, so a status in the terminating band is as "
+          "ambiguous for them as it is for mocha - and none of them prints a "
+          "summary any counting reader in that file knows. Their reports are "
+          "recognised without teaching the counter to parse them, which is the "
+          "whole point of asking the weaker question. THE TWO TAP SHAPES ARE "
+          "SEPARATE FIXTURES (F352): one carried the opening plan AND the "
+          "closing tallies, so it matched whichever alternative survived and "
+          "deleting either kept this green: %r" % (_machine,),
+          all(seen for _n, seen in _machine)
+          # ...and none of them is COUNTED, which is what separates "the runner
+          # finished" from "this reader has a number": a repair that widened
+          # `summary_count` instead would make these non-None and change what
+          # `ranTotal` claims about runs nobody asked it to size.
+          and all(M.summary_count(t) is None
+                  for t in (NUNIT_REPORT, CHECKSTYLE_REPORT, VSTEST_REPORT,
+                            TAP_REPORT, TAP_PLAN_LAST, TAP_KILLED)))
+
+    if hasattr(signal, "SIGKILL"):
+        def _tap_killed(_project, _command, _timeout=None):
+            return -9, TAP_KILLED, {}
+
+        res_tap = M.run_gate(tmp, [("tap", "npx tape test/*.js")],
+                             runner=_tap_killed)
+        check("sk5f THE MARKER A RUNNER WRITES BEFORE ITS FIRST TEST (F352). A TAP "
+              "plan is legal at either end of the stream and the CLASSIC form "
+              "prints `1..N` first, so the row that read it anywhere was matching "
+              "a marker emitted at the START of a run - which is the one thing the "
+              "table's own header says none of these may be. Driven: the same "
+              "classic stream killed after its second test was read as having "
+              "spoken for its exit code, so a SIGKILLed suite came back `failed`, "
+              "recorded a red row against the task and spent a retry on work never "
+              "measured. The tallies are what close a TAP stream and the plan does "
+              "so only where it is LAST: %r"
+              % ((M.reached_a_verdict(TAP_KILLED),
+                  M.ended_by_signal(137, TAP_KILLED)[0], res_tap["status"]),),
+              M.reached_a_verdict(TAP_KILLED) is False
+              and M.ended_by_signal(137, TAP_KILLED)[0] == "SIGKILL"
+              and res_tap["status"] == M.CANNOT_RUN
+              and res_tap["failed"] == []
+              # ...and the two complete shapes are still verdicts, so this is a
+              # NARROWING and not a mute - the same pairing sk5c makes for the
+              # convention arm.
+              and M.reached_a_verdict(TAP_REPORT) is True
+              and M.reached_a_verdict(TAP_PLAN_LAST) is True)
+    else:
+        _harness.skip(check, "sk5f",
+                      "the case asserts -9 and 137 both name SIGKILL, which this platform does not define - the narrowing it proves (a TAP plan printed FIRST is not an end-of-run marker) is asserted platform-free by sk5e's fixtures",
+                      not hasattr(signal, "SIGKILL"))
+
+    if hasattr(signal, "SIGKILL"):
+        def _precommit_hook_summary(_project, _command, _timeout=None):
+            return 137, PRECOMMIT_HOOK_SUMMARY, {}
+
+        res_ph = M.run_gate(tmp, [("hooks", "pre-commit run --all-files")],
+                            runner=_precommit_hook_summary)
+        check("sk5g ...AND THE SAME CLASS THROUGH THE SUMMARY ARM, which is the "
+              "half a fix to the TAP row alone would leave open. `pre-commit` runs "
+              "OTHER runners, so a pytest hook's closing line is that HOOK's "
+              "end-of-run report and the step's mid-flight - `mypy` had not "
+              "finished. `summary_count` reads it, so the arm answered True and an "
+              "OOM-killed composite was graded `failed`: F302's founding "
+              "configuration again, one arm along from the line tally sk5d "
+              "covers. The count is still taken and is still not a verdict: "
+              "count=%r ran=%r %r"
+              % (M.summary_count(PRECOMMIT_HOOK_SUMMARY),
+                 res_ph["steps"][0]["ran"],
+                 (res_ph["status"], res_ph["steps"][0].get("signal"))),
+              M.summary_count(PRECOMMIT_HOOK_SUMMARY) == 4
+              and M.reached_a_verdict(PRECOMMIT_HOOK_SUMMARY,
+                                      "pre-commit run --all-files") is False
+              # ...off `_STEP_WORDS` and not off a second table, which is the
+              # DRY half of the repair: a runner is in there precisely because
+              # its output is a list of other runs, so the table that tells
+              # `ran_count` to tally lines is the one that answers this.
+              and M.wrapper_words("pre-commit run --all-files")
+              == M._STEP_WORDS["pre-commit"]
+              and M.wrapper_words("npx mocha") is None
+              and M.wrapper_words(None) is None
+              and res_ph["status"] == M.CANNOT_RUN
+              and res_ph["steps"][0].get("signal") == "SIGKILL"
+              and res_ph["failed"] == []
+              # SECOND DIRECTION, and it is the one that fails a repair that simply
+              # deleted the summary arm: a runner that is NOT a wrapper still
+              # speaks for its exit code through its own summary line, which is
+              # what keeps mocha's 139 failures a red suite rather than a kill.
+              and M.reached_a_verdict(MOCHA_MIN, "npx mocha") is True
+              and M.ended_by_signal(139, MOCHA_MIN, "npx mocha")[0] is None)
+    else:
+        _harness.skip(check, "sk5g",
+                      "the case drives a composite runner killed at 137 and asserts SIGKILL, which this platform does not define; the summary-arm narrowing it proves is the same `reached_a_verdict(text, command)` rule sk5e drives without a signal",
+                      not hasattr(signal, "SIGKILL"))
+    # THE ACCEPTED CODES ARE PRINTED, not described. The field report names a
+    # band of `128` to `165`; what this reader asks instead is whether
+    # `code - 128` names a signal ON THIS MACHINE that terminates by default -
+    # narrower at the top, where nothing is a signal, and narrower inside, where
+    # SIGCHLD/SIGCONT/SIGURG/SIGWINCH all live. So the band is DERIVED and the
+    # case shows what it came to rather than restating a number.
+    _band = [(c, M.ended_by_signal(c, "")[0]) for c in range(128, 166)]
+    _taken = [c for c, name in _band if name]
+    _left = [c for c, name in _band if not name]
+    check("sk6 ...and a signal that does not TERMINATE by default is not a kill "
+          "either: `128 + SIGWINCH` is an exit code, because nothing was ever "
+          "killed by SIGWINCH. The table is spelled as NAMES and resolved on "
+          "THIS machine, since `SIGBUS` is 7 on linux and 10 on darwin - a "
+          "numeric table would name the wrong signal on one of the two "
+          "platforms and there would be no way to see it from the other. "
+          "Accepted inside the reported band: %r; declined: %r"
+          % (_taken, _left),
+          M.ended_by_signal(128 + getattr(signal, "SIGWINCH", 28),
+                            "")[0] is None
+          and "SIGWINCH" not in M.TERMINATING_SIGNALS
+          and "SIGSEGV" in M.TERMINATING_SIGNALS
+          and M._signal_name(11) == "SIGSEGV"
+          and M._signal_name(9999) is None
+          # BOTH ENDS OF THE BAND ARE NON-EMPTY, which is what stops this
+          # reading as "the table accepts everything" or "accepts nothing" -
+          # either would satisfy a one-sided assertion.
+          and 139 in _taken and 128 in _left and _taken and _left)
+
+    def _our_teardown(_project, _command, timeout=None):
+        return -9, "", {"outcome": M.TIMED_OUT, "timeoutSeconds": timeout}
+
+    res_td = M.run_gate(tmp, [("test", "pytest -q")], runner=_our_teardown,
+                        timeout=3)
+    check("sk7 OUR OWN TEARDOWN IS NOT THE OS ENDING THE RUN: a timed-out step "
+          "arrives at `-9` because `_tear_down` killed the group, and reading "
+          "that here would relabel EVERY timeout as infrastructure. The "
+          "wrapper's own observation outranks this inference, so the step keeps "
+          "`timed-out` and carries no signal at all: %r"
+          % ((res_td["status"], res_td["steps"][0].get("outcome"),
+              res_td["steps"][0].get("signal")),),
+          res_td["status"] == M.TIMED_OUT
+          and res_td["steps"][0].get("outcome") == M.TIMED_OUT
+          and res_td["steps"][0].get("signal") is None)
+    _obs = M.ended_by_signal(-11, "")[1]
+    _conv = M.ended_by_signal(139, "")[1]
+    check("sk8 THE TWO CHANNELS CARRY DIFFERENT BASES, because they are not "
+          "equally strong: a negative code is what the OS REPORTED and no child "
+          "can return one, while `128 + N` is the shell's CONVENTION and a real "
+          "program may choose that number. A reader deciding whether to believe "
+          "the word needs to know which they have, so the sentences are "
+          "asserted as MUTUALLY EXCLUSIVE and not merely as different, which is "
+          "the clause a single collapsed sentence carrying both words would "
+          # SLICED THROUGH `or ""` SO THE LABEL CANNOT RAISE. Both of these are
+          # None on a version where the arm does not fire, and a subscript in the
+          # label then escapes before `check()` is ever entered - which took 83
+          # later cases out of a mutation run and named none of them. The
+          # assertion below is what decides; the label only has to survive being
+          # written.
+          "satisfy: %r / %r" % ((_obs or "")[:60], (_conv or "")[:60]),
+          # ...and the `or ""` is the assertion's, not only the label's: both are
+          # None on a version where the arm never fires, and `in None` RAISES
+          # rather than answering False - a case that cannot go red because it
+          # takes the suite down instead is the same silence as one that cannot
+          # go red at all.
+          "observed and not inferred" in (_obs or "")
+          and "convention" not in (_obs or "")
+          and "shell's convention" in (_conv or "")
+          and "observed" not in (_conv or "")
+          and _obs and _conv and _obs != _conv)
+    check("sk9 a garbage exit code is `(None, None)` rather than a raise - "
+          "`run_gate` hands this whatever the runner seam returned, and a "
+          "fixture that answered None must not take the whole run down. The TEXT "
+          "side takes the same treatment: `_shell` returns None for a step it "
+          "could not decode, and `reached_a_verdict` has to read that as 'no "
+          "report' rather than raising inside a verdict: %r"
+          % ([M.ended_by_signal(v, None) for v in (None, "x", "")],),
+          all(M.ended_by_signal(v, None) == (None, None)
+              for v in (None, "x", "", 3.5j))
+          and M.reached_a_verdict(None) is False
+          and M.ended_by_signal(139, None)[0] == "SIGSEGV")
+
+    def _zero_then_killed(_project, _command, _timeout=None):
+        return -11, "Tests  no tests\n", {}
+
+    res_zk = M.run_gate(tmp, [("test", "npx jest")], runner=_zero_then_killed)
+    lines_zk = []
+    M.render(res_zk, out=lines_zk.append)
+    check("sk10 ...and `NO CHECK RAN` does NOT also fire over a killed run that "
+          "reached a positive zero. That sentence's claim is 'that is exit 0', "
+          "which `-11` makes false - the same zero, a different fact, and the "
+          "kill line already said which. The count still travels on the run, so "
+          "nothing is lost by the silence: ranTotal=%r"
+          % (res_zk["ranTotal"],),
+          res_zk["ranTotal"] == 0
+          and res_zk["status"] == M.CANNOT_RUN
+          and "THE OS ENDED" in "\n".join(lines_zk)
+          and "NO CHECK RAN" not in "\n".join(lines_zk))
+    check("sk11 THE RECORD KEEPS ENOUGH TO RE-DERIVE THE SIGNAL AND NO COPY OF "
+          "IT. `exit` and `outcome` are both already in `_evidence_io.STEP_KEYS`, "
+          "so a committed row carries `-9` beside `could-not-run` and a reader a "
+          "week later can name the signal - while `signal` and `signalBasis` "
+          "stay off the row, because a claim a row can be read for is not cached "
+          "twice (`row_for` makes that argument for `treeMutatedOwned`): %r"
+          % (sorted(_ev_io.STEP_KEYS),),
+          "exit" in _ev_io.STEP_KEYS and "outcome" in _ev_io.STEP_KEYS
+          and "signal" not in _ev_io.STEP_KEYS
+          and "signalBasis" not in _ev_io.STEP_KEYS)
+
 
     # --- what state was actually tested ------------------------------------
     # `head` alone cannot answer this and never could: a TASK gate runs BEFORE the
@@ -1585,6 +2168,103 @@ def _cases(check):
           "it must not move: %r %r" % (cmdsp, sourcep),
           sourcep == "phase" and cmdsp == [("lint", "ruff check .")])
 
+    # --- every declared entry runs, and in declaration order (F313) --------
+    # THE MEASUREMENT CAME FIRST AND IS WHAT MADE THIS A PIN RATHER THAN A
+    # CHANGE. Field data on a large phase: the suite dominated every recorded
+    # gate, the typecheck entry was a small fraction of it, and the one genuine
+    # cross-task breakage of that phase surfaced as a TYPE error rather than as a
+    # failing test - a required parameter added to a service method, breaking call
+    # sites in a test file the task never opened. The obvious conclusion, put the
+    # cheap entry first and stop at the first red, rests on a premise nobody had
+    # checked: that `run_gate` stops at all. IT DOES NOT. Every entry runs, in
+    # declaration order, whatever an earlier one exited - so there was no ordering
+    # to change, and the saving that report wanted could only come from ADDING a
+    # short circuit.
+    #
+    # WHICH IS THE CHANGE THESE CASES REFUSE, and `steps` is the reason. Today
+    # `steps` is both what ran and the whole declared list, so `failed` can be
+    # read against it and `ranTotal` is a total rather than a floor. Stop at the
+    # first red and a one-step `failed` row can no longer be told from a
+    # one-entry gate, while `ranTotal`, `countsBasis` and the coverage answer -
+    # each summed or scraped over EVERY step - quietly begin describing a prefix.
+    # That is a record that can no longer be audited, which is the same defect
+    # F312 repairs one field over, and it would be paid on every red run to save
+    # time on the runs that are already going to be re-run.
+    #
+    # AND THE TRAP, WHICH NO ORDERING MAY EVER BE READ AS PERMISSION TO SPRING. A
+    # task gate of the cheap entry alone is not a narrowed suite; it is a
+    # different question. The suite asks whether behaviour still holds and the
+    # typecheck asks whether the program still type-checks, and the same phase
+    # carried a task that changed a validation decorator so every schema default
+    # began taking effect on every route - types impeccable throughout. So the
+    # measurement says the cheap entry caught THAT breakage, never that it catches
+    # breakages, and the entry that asks the behaviour question has to run on
+    # every run that could pass.
+    ordroot = _harness.fixture_root("run-test-gate-order-")
+    subprocess.run(["git", "init", "-q", ordroot], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(os.path.join(ordroot, "src.py"), "w") as fh:
+        fh.write("x = 1\n")
+    for arg in (["add", "--", "src.py"],
+                ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", ordroot] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # A DIFFERENT CHECK COUNT PER ENTRY, so a prefix sum and a total sum are
+    # different numbers. With equal counts both readings produce the same
+    # `ranTotal` and the case survives the mutation it exists for.
+    order_checks = {"cheap": 1, "middle": 2, "expensive": 4}
+    seen = []
+
+    def _counting(_project, command, _timeout=None):
+        seen.append(command)
+        return ((1 if command == "cheap" else 0),
+                "=== %d passed in 0.01s ===\n" % (order_checks[command],), {})
+
+    ordered = M.run_gate(ordroot, [("typecheck", "cheap"), ("lint", "middle"),
+                                   ("suite", "expensive")], runner=_counting)
+    check("eo1 a FAILING first entry does not stop the run: the runner is called "
+          "for every declared entry, in declaration order. This is the answer the "
+          "F313 field report needed and nothing had established - the gate has no "
+          "short circuit to reorder, so a cheap entry placed first buys a reader "
+          "the earlier line and buys the clock nothing: %r" % (seen,),
+          seen == ["cheap", "middle", "expensive"])
+
+    check("eo2 ...and every one of them is on the record, in the same order, "
+          "with its own exit. `steps` is what ran AND the whole declared list, "
+          "which is what lets `failed` be read against it: %r"
+          % ([(s["name"], s["exit"]) for s in ordered["steps"]],),
+          [(s["name"], s["exit"]) for s in ordered["steps"]]
+          == [("typecheck", 1), ("lint", 0), ("suite", 0)]
+          and ordered["failed"] == ["typecheck"]
+          and ordered["status"] == "failed")
+
+    check("eo3 ...so `ranTotal` is a TOTAL and not a floor, and its basis says so "
+          "over every step. A run that stopped at the first red would answer 1 "
+          "here and carry a sentence about a complete count, which is the reading "
+          "that turns a prefix into a measurement: %r"
+          % ((ordered["ranTotal"], ordered["countsBasis"]),),
+          ordered["ranTotal"] == sum(order_checks.values())
+          and "floor" not in ordered["countsBasis"])
+
+    green = []
+
+    def _all_green(_project, command, _timeout=None):
+        green.append(command)
+        return 0, "=== 3 passed in 0.01s ===\n", {}
+
+    passing = M.run_gate(ordroot, [("typecheck", "cheap"),
+                                   ("suite", "expensive")], runner=_all_green)
+    check("eo4 SECOND DIRECTION, and it is the one that looks vacuous: a run "
+          "whose CHEAP entry passes still runs the expensive one. It is green by "
+          "construction on a build that stops only at a red, which is exactly why "
+          "it is here - it is the only case that fails when a stop becomes "
+          "unconditional, and the expensive entry is the one that asks whether "
+          "behaviour still holds. A typecheck cannot answer that question for it: "
+          "%r" % (green,),
+          green == ["cheap", "expensive"] and passing["status"] == "passed")
+
     # --- which attempt, read off the plan ----------------------------------
     # EVERY TASK HERE RECORDS SOMETHING DIFFERENT, and the values are picked so a
     # wrong reading cannot land on the right answer: the phase's first task
@@ -1667,7 +2347,18 @@ def _cases(check):
                        {"id": "P1.2", "title": "retried", "status": "in_progress",
                         "attempts": 2, "files": []},
                        {"id": "P1.3", "title": "reset", "status": "pending",
-                        "attempts": 0, "files": []}]}, fh)
+                        "attempts": 0, "files": []},
+                       # THE ONLY TASK HERE THAT DECLARES A GATE, and it exists
+                       # so the provenance cases below have both answers to
+                       # compare inside ONE fixture. Its entry is the phase's
+                       # own `ok`, deliberately: two rows whose `steps` are
+                       # identical and whose provenance differs is the pair a
+                       # reader cannot separate without the field, and a task
+                       # gate spelled differently would let a case pass by
+                       # reading the step name instead.
+                       {"id": "P1.4", "title": "own gate", "status": "pending",
+                        "files": [], "tests": {"mode": "gate-only",
+                                               "gate": ["ok"]}}]}, fh)
     subprocess.run(["git", "init", "-q", recroot], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # AND THE FIXTURE IS COMMITTED, which is load-bearing here rather than tidy
@@ -1765,6 +2456,61 @@ def _cases(check):
           % (sorted(_recorded_rows(evdir)[0]),),
           _recorded_rows(evdir)[0].get("scope") == "phase"
           and "attempt" not in _recorded_rows(evdir)[0])
+
+    # --- which gate ran, end to end (F312) ---------------------------------
+    # DRIVEN THROUGH `main` FOR `attempt`'s REASON. `gateSource` is set on the
+    # result by `main` and read by `_evidence_io.row_for`, so a case against
+    # either half alone passes on a build where the two are not wired together -
+    # which is exactly the state `attempt` shipped in for as long as it did.
+    #
+    # AND THE PAIR IS WHAT MAKES IT A MEASUREMENT. P1.4 declares `gate: ["ok"]`
+    # and P1.2 declares nothing, so both runs execute the same entry and record
+    # the same `steps`; the rows differ in this field and in nothing else a
+    # reader could use. A row that answered "task" for both, or "phase" for
+    # both, passes half of this and fails the other.
+    own = []
+    code_own = M.main([rmpath, "P1", "--task", "P1.4", "--project-dir", recroot,
+                       "--record"], out=own.append)
+    row_own = _recorded_rows(evdir)[-1]
+    row_fell_back = [r for r in _recorded_rows(evdir)
+                     if r.get("taskId") == "P1.2"][-1]
+    check("gp1 a task measured by its OWN `tests.gate` records that, and a task "
+          "measured by the PHASE's records that instead - two rows whose `steps` "
+          "are byte-identical, told apart by the one field that says where the "
+          "list came from: exit=%r %r"
+          % (code_own, ((row_own.get("taskId"), row_own.get("gateSource")),
+                        (row_fell_back.get("taskId"),
+                         row_fell_back.get("gateSource")))),
+          code_own == M.E_OK
+          and row_own.get("gateSource") == "task"
+          and row_fell_back.get("gateSource") == "phase"
+          and ([s.get("name") for s in row_own.get("steps") or []]
+               == [s.get("name") for s in row_fell_back.get("steps") or []]))
+
+    check("gp2 ...and `scope` is NOT that answer, which is why the field exists: "
+          "the fallback row says `phase` for the pointer subject while carrying "
+          "`taskId`, and the task row says `task` - so one field is answering "
+          "two questions and a reader taking it for provenance is reading a "
+          "contract about where the POINTER went: %r"
+          % ((row_fell_back.get("scope"), row_fell_back.get("taskId")),),
+          row_fell_back.get("scope") == "phase"
+          and row_fell_back.get("taskId") == "P1.2"
+          and row_own.get("scope") == "task")
+
+    check("gp3 THE OTHER DIRECTION, and it is the one that looks vacuous: a "
+          "PHASE-scope run with no --task at all still records `phase` rather "
+          "than leaving the field off. A writer that only stamped the fallback "
+          "would pass gp1 and leave every sign-off run with no provenance at "
+          "all: %r" % (_recorded_rows(evdir)[0].get("gateSource"),),
+          _recorded_rows(evdir)[0].get("gateSource") == "phase"
+          and "taskId" not in _recorded_rows(evdir)[0])
+
+    check("gp4 the SUBJECT is not recorded beside it, because the row can be "
+          "read for it: it is the `taskId` when the gate was the task's and the "
+          "`phaseId` otherwise. A second field carrying that would be a cached "
+          "claim of the kind this ledger refuses everywhere else: %r"
+          % (sorted(k for k in row_own if k.startswith(("gate", "subj"))),),
+          "subject" not in row_own and "subject" not in row_fell_back)
 
     # --- the evidence boundary, end to end ---------------------------------
     # THE MID-FLIGHT ADOPTER'S SHAPE, built rather than described: a plan with no
@@ -2113,6 +2859,7 @@ def _cases(check):
                 "events, so there would be no interrupted run to look at"
                 % (_asserts,),
                 console_events() and signal.SIGINT not in console_events())
+
 
 def _interrupt_cases(check):
     """The cases that need a real signal delivered to a real child.

@@ -661,8 +661,8 @@ Generate it (recommended):
 
 ```bash
 mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.2.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.2.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.3.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.3.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
 ```
 
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
@@ -1196,11 +1196,13 @@ point), a file **renamed** into another writer's slot (the first row's `prev` is
 the file's own name), a **torn tail** from an interrupted write, **out-of-band drift** —
 a manifest that moved with no row to explain it, which is what a shell write or a `git
 checkout` looks like from here — and, once a journal file has been committed, a **rewritten
-committed past**: `git show HEAD:<file>` must be a byte-prefix of the working copy, so the
-"rewrite the whole file and recompute every hash" forgery stops verifying the moment the
-journal is in git. `/audit:doctor` runs the same check; a broken chain and a changed
-committed past are its only journal FINDINGs, because they are the only ones that cannot
-happen by accident.
+committed past**: every row the committed copy carries must still be in the working copy,
+with its content unchanged and in the same order, so the "rewrite the whole file and
+recompute every hash" forgery stops verifying the moment the journal is in git. (A
+byte-for-byte prefix is still the fast path, since it implies presence, content and order at
+once; it stopped being the *rule* when `merge` began re-linking rows.) `/audit:doctor` runs
+the same check; a broken chain and a changed committed past are its only journal FINDINGs,
+because they are the only ones that cannot happen by accident.
 
 **Tamper-evident, not tamper-proof**, and the difference is the whole honest claim: absolute
 immutability of local files does not exist — you own the disk, and with no secret key (there
@@ -1214,11 +1216,19 @@ cross-anchors** that have to be forged *consistently*:
 3. the **usage ledger**, re-derivable at any time from Claude Code's own read-only
    transcripts (`/audit:usage --backfill`) and joined to tasks by `taskId`.
 
-A forger must rewrite all three and keep them agreeing; any single-surface forgery — a
+A forger must rewrite all three and keep them agreeing; a single-surface forgery — a
 hand-flipped `done` with no `task.complete` row, a fabricated `task.commit` SHA git has
 never seen, a rewritten journal whose committed past changed — is a `/audit:doctor` FINDING
-(`check_completions` and the journal check). Deleting the file is the same class of act, and
-is loud rather than silent. It is a smoke detector wired to three alarms, not a vault. See
+(`check_completions` and the journal check). **Insertion is the exception, and it is a
+WARNING rather than a FINDING**: a row spliced in *between* committed rows, with the file
+re-chained around it, leaves every committed row present, unchanged and in order — which is
+also precisely what `audit-journal.py merge` does to resolve a divergence. **Nothing
+distinguishes them**, and that is a property of the check rather than a gap waiting for a
+fix: neither a merge commit nor a `journal.merge` row is required for the warning to be
+the harmless one, so `/audit:doctor` reports how many rows arrived rather than which ones,
+says it cannot tell a merge from a splice, and sends you to `audit-journal.py show` to read
+them and judge for yourself. Deleting the file is the same class of act, and is loud rather
+than silent. It is a smoke detector wired to three alarms, not a vault. See
 [SECURITY.md](../../SECURITY.md#the-audit-trail-tamper-evident-not-tamper-proof).
 
 The **completion records** are journal rows the `journal-writes` hook derives from the
@@ -1237,7 +1247,11 @@ completion time would be wrong; the ledger is the anchor for spend.
 
 The journal lives beside the manifest so the same commit carries the change and the record of
 it (the orchestrator stages it with each task commit), and one file per writer means two
-sessions in two worktrees never conflict on it. Do NOT add the journal directory to
+sessions in two worktrees never conflict on it. **One writer on two branches still can** — that
+is the case the naming scheme does not cover, ordinary while a phase is paused, and
+`audit-journal.py merge` is what resolves it: it re-chains the union in timestamp order,
+changing no row's content and refusing rather than guessing when two rows claim the same
+moment. Do NOT add the journal directory to
 `.gitignore` — git history is one of the trail's three anchors, and it can only pin what is
 committed; an ignored journal quietly downgrades the trail from three anchors to two.
 (`/audit:doctor` warns when journal files sit uncommitted for more than a week.) Edits to it
@@ -1712,7 +1726,7 @@ python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-pla
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.2.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2.3.0/plugins/audit/schema/audit-plan.schema.json -o /tmp/audit-plan.schema.json
 npx ajv-cli validate --spec=draft2020 -s /tmp/audit-plan.schema.json -d docs/audit/audit-plan.json
 ```
 

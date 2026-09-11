@@ -193,13 +193,44 @@ def _cases(check):
                "MAX_CHANGES", "MAX_VALUE_CHARS", "MAX_DETAILS_BYTES",
                "MAX_SUMMARY_CHARS", "SUMMARY_TRUNCATED", "VALUE_TRUNCATED",
                "OUTSIDE_TOKEN", "UNNAMED_PROGRAM",
+               "ENV_SESSION_VAR", "MAX_SESSION_ID_CHARS",
+               "MERGE_ACTION", "MERGE_VIA",
                "DEFAULT_DIRNAME", "ARCHIVE_DIRNAME", "DEFAULT_MANIFEST",
                "GENESIS", "LOCK_STALE_SECONDS", "LOCK_WAIT_SECONDS",
                "load_config", "enabled", "journal_dir", "in_journal", "canonical",
-               "row_hash", "genesis_prev", "file_hash", "writer_id", "month_of",
-               "file_for", "read_file", "journal_files", "read_all",
-               "normalise_details", "append", "verify", "_normalise", "_append",
+               "row_hash", "genesis_prev", "file_hash", "writer_id",
+               "env_session_id", "month_of",
+               "file_for", "rows_from_text", "read_file", "journal_files",
+               "read_all", "writer_of", "session_index",
+               "normalise_details", "append", "row_content", "rows_digest",
+               "merge_rows", "merge_text", "write_merged", "anchor_verdict",
+               "rows_unaccounted",
+               "verify", "_normalise", "_append",
                "_git_status_sets", "_git_anchor_finding")
+
+    def with_env(value, fn):
+        """Run `fn()` with `$CLAUDE_CODE_SESSION_ID` pinned, then put it back.
+
+        EVERY CASE THAT WRITES A ROW DEPENDS ON THIS VARIABLE SINCE F309, and
+        the suite runs both where it is set (inside a Claude Code session) and
+        where it is not (CI). A case reading whatever the machine happened to
+        export would assert a different shape on each, which is exactly the
+        platform-shaped silent pass this repository is arranged against - and it
+        is not hypothetical: `r10` went red the moment the field landed, on this
+        machine only. `None` pins the variable ABSENT, which is the state every
+        case written before the field assumed."""
+        held = os.environ.get(M.ENV_SESSION_VAR)
+        try:
+            if value is None:
+                os.environ.pop(M.ENV_SESSION_VAR, None)
+            else:
+                os.environ[M.ENV_SESSION_VAR] = value
+            return fn()
+        finally:
+            if held is None:
+                os.environ.pop(M.ENV_SESSION_VAR, None)
+            else:
+                os.environ[M.ENV_SESSION_VAR] = held
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
     check("b1 audit-journal.py re-exports all %d shared names as THIS module's "
@@ -454,10 +485,13 @@ def _cases(check):
               _d9b["cwd"] == M.OUTSIDE_TOKEN
               and M.canonical(_d9b).count(_user) == 0)
 
-        _r10 = M._normalise({"action": "config.write", "target": "x",
-                             "actor": {"host": "MacBook-Pro.local",
-                                       "via": "panel", "sessionId": "s1"}},
-                            project=proj)
+        # The environment is pinned ABSENT so this asserts the actor's key set
+        # exactly, on a machine inside a session and on one that is not. `sa2`
+        # next door is the other direction, with it set.
+        _r10 = with_env(None, lambda: M._normalise(
+            {"action": "config.write", "target": "x",
+             "actor": {"host": "MacBook-Pro.local", "via": "panel",
+                       "sessionId": "s1"}}, project=proj))
         check("r10 the actor carries NO `host`. It was written on every row and "
               "read by nothing - not `verify`, not the report, not the panel - "
               "while naming the machine of whoever ran the plugin. The rest of "
@@ -1338,6 +1372,744 @@ def _cases(check):
               repr(_vver2["findings"]))
     finally:
         shutil.rmtree(_vtmp, ignore_errors=True)
+
+    # --- mu/av/sa: a divergence, its merge, and the session a file belongs to --
+    def _merge_cases(check):
+        """One journal file on two branches, both written by the REAL writer.
+
+        A hand-composed chain proves nothing about what `append` produces, so
+        both sides here start from the same copied bytes -- which is what a
+        branch actually is -- and every row on either side goes through
+        `append`."""
+        mcfg = {"journal": {"dir": "j"}}
+        mtmp = tempfile.mkdtemp(prefix="journal-merge-")
+        try:
+            def put(root, action, summary, ts):
+                return M.append(root, {"action": action, "target": "",
+                                       "summary": summary, "ts": ts,
+                                       "actor": {"sessionId": "s-div",
+                                                 "via": "hook"}}, config=mcfg)
+
+            def only(root):
+                return M.journal_files(M.journal_dir(root, mcfg))[0]
+
+            base = os.path.join(mtmp, "base")
+            os.makedirs(base)
+            put(base, "manifest.edit", "base-1", "2026-05-01T00:00:00Z")
+            put(base, "manifest.edit", "base-2", "2026-05-01T00:00:01Z")
+            name = os.path.basename(only(base))
+            ours_root = os.path.join(mtmp, "ours")
+            theirs_root = os.path.join(mtmp, "theirs")
+            for root in (ours_root, theirs_root):
+                shutil.copytree(base, root)
+            # `theirs-1` sits BETWEEN ours' two rows, which is the shape the old
+            # byte-prefix anchor could not survive: ours' second row keeps its
+            # content and gets a new `prev`, so HEAD's bytes stop being a prefix
+            # of a sound resolution. av4 is that half.
+            put(ours_root, "task.complete", "ours-1", "2026-05-02T00:00:00Z")
+            put(ours_root, "task.commit", "ours-2", "2026-05-05T00:00:00Z")
+            put(theirs_root, "task.complete", "theirs-1", "2026-05-03T00:00:00Z")
+            ours = M.read_file(only(ours_root))[0]
+            theirs = M.read_file(only(theirs_root))[0]
+            check("mu0 the fixture is a real divergence written by the real "
+                  "writer: two shared rows, then two on one side and one on the "
+                  "other, and neither file is a prefix of the other",
+                  len(ours) == 4 and len(theirs) == 3
+                  and M._common_prefix(ours, theirs) == 2
+                  and ours[2]["hash"] != theirs[2]["hash"],
+                  repr((len(ours), len(theirs))))
+
+            res = M.merge_rows(ours, theirs, name)
+            _sums = [r.get("summary") for r in res["rows"]]
+            check("mu1 the union comes out in TIMESTAMP order with the other "
+                  "side's row interleaved, and a `%s` row last: %r"
+                  % (M.MERGE_ACTION, _sums),
+                  res["ok"] and not res["refusals"]
+                  and _sums[:5] == ["base-1", "base-2", "ours-1", "theirs-1",
+                                    "ours-2"]
+                  and res["rows"][-1]["action"] == M.MERGE_ACTION,
+                  repr(res["refusals"] or _sums))
+            check("mu2 nothing is dropped and nothing is added but the marker: "
+                  "%d in, %d out" % (len(ours) + len(theirs) - res["shared"],
+                                     len(res["rows"])),
+                  res["shared"] == 2 and res["oursOnly"] == 2
+                  and res["theirsOnly"] == 1
+                  and len(res["rows"]) == len(ours) + len(theirs)
+                  - res["shared"] + 1, repr(res))
+            # SECOND DIRECTION, and the one that says re-chaining is not forgery:
+            # a merge that rewrote a row's content would still produce a file
+            # that verifies, so the assertion has to be about CONTENT and not
+            # about the chain holding.
+            #
+            # COUNTED, NOT MERELY FOUND. This asserted `set(_in) <= set(_out)`
+            # while its label claimed every row survives byte for byte, and set
+            # inclusion cannot see a row that arrived twice or a duplicate that
+            # was dropped -- the shape the label was promising to catch. The
+            # expectation is spelled out instead: ours' rows plus the rows
+            # theirs holds BEYOND the shared prefix, each exactly once, which is
+            # what a union of two divergent copies is. The shared rows come
+            # through `ours[:shared]` and equal-hash rows have equal content, so
+            # which side they are read off does not matter. The marker is the
+            # one row the merge adds, and mu1 is what pins it last.
+            #
+            # WHAT THIS FIXTURE CANNOT SHOW, said rather than implied: every row
+            # in it says something different, so no duplicate exists here to be
+            # dropped. mu14 is the fixture that carries one -- the same content
+            # recorded by both copies -- and counts it out loud. What the count
+            # buys HERE is the other half inclusion could not see: a row the
+            # merge emitted more times than it was handed.
+            _in = ([M.row_content(r) for r in ours]
+                   + [M.row_content(r) for r in theirs[res["shared"]:]])
+            _out = [M.row_content(r) for r in res["rows"][:-1]]
+            _drift = sorted([(_in.count(c), _out.count(c), c[:48])
+                             for c in set(_in) | set(_out)
+                             if _in.count(c) != _out.count(c)])
+            check("mu3 every input row's CONTENT survives byte for byte and "
+                  "arrives exactly as often as it went in - only `prev`/`hash` "
+                  "were recomputed, which is the whole claim re-chaining rests "
+                  "on. Rows whose count moved: %r" % (_drift,),
+                  sorted(_in) == sorted(_out))
+            check("mu4 ...and `relinked` counts only the rows whose link "
+                  "actually moved, so it is smaller than the tail: %d re-linked "
+                  "of %d rows" % (res["relinked"], len(res["rows"])),
+                  res["relinked"] == 2, repr(res["relinked"]))
+            # `.get` and a guarded index THROUGHOUT this group, because a case
+            # that raises is a case that took every case after it down with it
+            # and named none of them: proving these red means deleting the
+            # marker and deleting the field, and both make a key absent.
+            _marker = res["rows"][-1] if res["rows"] else {}
+            check("mu5 the marker row says what was done to the file and names "
+                  "both inputs by a digest, so the trail itself records the "
+                  "re-chaining rather than leaving it to git alone",
+                  (_marker.get("actor") or {}).get("via") == M.MERGE_VIA
+                  and name in (_marker.get("summary") or "")
+                  and M.rows_digest(ours) in (_marker.get("summary") or "")
+                  and M.rows_digest(theirs) in (_marker.get("summary") or "")
+                  and _marker.get("target") == ""
+                  and _marker.get("stateHash", "unset") is None,
+                  repr(_marker))
+            # The half that makes the verb usable rather than merely present:
+            # the file it writes has to be one `verify` calls clean.
+            M.write_merged(only(ours_root), M.merge_text(res["rows"]))
+            _mver = M.verify(ours_root, mcfg)
+            check("mu6 the merged file WRITES BACK and verifies clean - every "
+                  "row hashes to its own contents and follows the row before "
+                  "it, from the genesis the file name seeds",
+                  _mver["ok"] and not _mver["findings"]
+                  and _mver["rows"] == len(res["rows"]),
+                  repr(_mver["findings"]))
+
+            # --- the three refusals, each on its own fixture ------------------
+            # An abandoned first attempt at the tie fixture stood here: two
+            # locals and a whole `merge_rows` whose result nothing read, which
+            # is a case that looks like coverage and is none. `ruff`'s F841
+            # cannot see it either, because the underscore prefix every local in
+            # this suite wears matches its dummy-variable pattern. The tie
+            # fixture that works is the one below, built one row DEEPER.
+            _same_ts = os.path.join(mtmp, "same-ts")
+            shutil.copytree(base, _same_ts)
+            put(_same_ts, "task.cancel", "collides", "2026-05-02T00:00:00Z")
+            _collide = M.read_file(only(_same_ts))[0]
+            _res_tie = M.merge_rows(ours, _collide, name)
+            check("mu7 REFUSAL 1: two rows at ONE timestamp saying different "
+                  "things is refused, and the refusal names both and says why "
+                  "nothing can order them: %s"
+                  % (_output.some_of(_res_tie["refusals"]),),
+                  not _res_tie["ok"] and not _res_tie["rows"]
+                  and len(_res_tie["refusals"]) == 1
+                  and "2026-05-02T00:00:00Z" in _res_tie["refusals"][0]
+                  and "task.complete(" in _res_tie["refusals"][0]
+                  and "task.cancel(" in _res_tie["refusals"][0],
+                  repr(_res_tie["refusals"]))
+            _broken = [dict(r) for r in theirs]
+            _broken[2] = dict(_broken[2])
+            _broken[2]["summary"] = "edited after it was written"
+            _res_broken = M.merge_rows(ours, _broken, name)
+            check("mu8 REFUSAL 2: a row that does not hash to its own contents "
+                  "is refused and SAID to have been already broken - a merge "
+                  "would have recomputed that hash and laundered it: %s"
+                  % (_output.some_of(_res_broken["refusals"]),),
+                  not _res_broken["ok"] and not _res_broken["rows"]
+                  and any("does not hash to its own contents" in f
+                          and "already broken" in f
+                          for f in _res_broken["refusals"]),
+                  repr(_res_broken["refusals"]))
+            _other = os.path.join(mtmp, "stranger")
+            os.makedirs(_other)
+            put(_other, "manifest.edit", "not-related-1",
+                "2026-05-01T00:00:00Z")
+            put(_other, "manifest.edit", "not-related-2",
+                "2026-05-01T00:00:01Z")
+            _stranger_file = only(_other)
+            _stranger = M.read_file(_stranger_file)[0]
+            _res_far = M.merge_rows(ours, _stranger, name)
+            check("mu9 REFUSAL 3: two files that share no leading row are two "
+                  "unrelated chains rather than one divergence, and unioning "
+                  "them would invent a common past: %s"
+                  % (_output.some_of(_res_far["refusals"]),),
+                  not _res_far["ok"] and not _res_far["rows"]
+                  and any("share no leading row" in f
+                          for f in _res_far["refusals"]),
+                  repr(_res_far["refusals"]))
+            # THE FIXTURE HAD TO BE CHECKED, not assumed: the stranger is a
+            # different PROJECT but the same writer and month, so it carries the
+            # same file name and begins at the SAME genesis. That is what makes
+            # mu9 the no-common-prefix refusal rather than the genesis one -
+            # two whole files, both valid under this name, sharing no history.
+            check("mu9b ...and mu9 is that refusal and not the genesis one: the "
+                  "stranger is a whole file under this very name, so only its "
+                  "history is unrelated: %r"
+                  % ([f[:32] for f in _res_far["refusals"]],),
+                  os.path.basename(_stranger_file) == name
+                  and _stranger[0]["prev"] == M.genesis_prev(name)
+                  and len(_res_far["refusals"]) == 1,
+                  repr(os.path.basename(_stranger_file)))
+
+            _res_torn = M.merge_rows(ours, theirs, name, torn=("theirs",))
+            check("mu10 a TORN input is refused: a partial line is not a row, "
+                  "so a merge that read past it would drop those bytes with "
+                  "nothing in the output to say they were ever there",
+                  not _res_torn["ok"]
+                  and any("partial line" in f for f in _res_torn["refusals"]),
+                  repr(_res_torn["refusals"]))
+            _undated = [dict(r) for r in theirs]
+            _undated[2] = dict(_undated[2])
+            del _undated[2]["ts"]
+            _undated[2]["hash"] = M.row_hash(_undated[2])
+            _res_undated = M.merge_rows(ours, _undated, name)
+            check("mu11 a divergent row with NO timestamp is refused - "
+                  "timestamp order is the only order a merge has between two "
+                  "copies, so there is nowhere to put it",
+                  not _res_undated["ok"]
+                  and any("carry no timestamp" in f
+                          for f in _res_undated["refusals"]),
+                  repr(_res_undated["refusals"]))
+            _res_name = M.merge_rows(ours, theirs, "2026-05.someone-else.jsonl")
+            check("mu12 a name that does not seed these chains is refused: the "
+                  "genesis is derived from the BASENAME, so writing the result "
+                  "under the wrong name would produce a file that cannot verify",
+                  not _res_name["ok"]
+                  and any("does not begin at the genesis" in f
+                          for f in _res_name["refusals"]),
+                  repr(_res_name["refusals"]))
+
+            # --- and the answers that are NOT refusals ------------------------
+            _res_ff = M.merge_rows(ours, ours[:2], name)
+            check("mu13 one side being a PREFIX of the other is no divergence "
+                  "and no error: the longer copy already holds every row, "
+                  "nothing is re-chained and no marker row is added",
+                  _res_ff["ok"] and _res_ff["relinked"] == 0
+                  and not _res_ff["divergent"]
+                  and len(_res_ff["rows"]) == len(ours)
+                  and _res_ff["rows"][-1]["action"] != M.MERGE_ACTION
+                  and any("no divergence" in n for n in _res_ff["notes"]),
+                  repr((_res_ff["notes"], _res_ff["relinked"])))
+            # A row both sides recorded IDENTICALLY right after the split folds
+            # into the common prefix instead (same content, same `prev`, so the
+            # same hash) - which is why the tie has to be built one row DEEPER,
+            # where the two copies place the same content on different pasts.
+            _twin = os.path.join(mtmp, "twin")
+            shutil.copytree(base, _twin)
+            put(_twin, "task.cancel", "twin-only", "2026-05-03T00:00:00Z")
+            put(_twin, "task.commit", "ours-2", "2026-05-05T00:00:00Z")
+            _res_twin = M.merge_rows(ours, M.read_file(only(_twin))[0], name)
+            check("mu14 a row BOTH copies recorded at one timestamp, saying the "
+                  "same thing, is kept TWICE and counted out loud - dropping "
+                  "one is a guess that two identical rows were one event, and a "
+                  "union guesses nothing: %r" % (_res_twin["notes"],),
+                  _res_twin["ok"] and _res_twin["identical"] == 2
+                  and [r.get("summary")
+                       for r in _res_twin["rows"]].count("ours-2") == 2
+                  and any("BOTH copies are kept" in n
+                          for n in _res_twin["notes"]),
+                  repr((_res_twin["identical"], _res_twin["notes"])))
+            # `a` is deliberately NOT in timestamp order: a stable sort on `ts`
+            # would emit a2, b1, a1 and thereby reorder `a` against itself,
+            # which is the one thing a merge of two recorded chains may not do.
+            _a = [{"ts": "2026-05-09T00:00:00Z", "side": "a1"},
+                  {"ts": "2026-05-04T00:00:00Z", "side": "a2"}]
+            _b = [{"ts": "2026-05-06T00:00:00Z", "side": "b1"}]
+            _order = [r["side"] for r in M._merge_tails(_a, _b)]
+            check("mu15 the interleave is a MERGE and never a sort: each side "
+                  "comes out in the order it went in even when its own rows are "
+                  "not in timestamp order, where a sort would have reordered "
+                  "one against itself: %r" % (_order,),
+                  [s for s in _order if s.startswith("a")] == ["a1", "a2"]
+                  and _order == ["b1", "a1", "a2"])
+
+            # `write_merged` RAISES where `append` returns False, and the two
+            # contracts are opposite on purpose: `append` records a write that
+            # already succeeded, so a failure there must not be reported as the
+            # write failing - while this IS the write, and a caller told it went
+            # fine would go on to commit a conflicted file.
+            #
+            # THE FIXTURE HAS TO REACH `os.replace`, AND THE FIRST ONE DID NOT.
+            # It named a path under a directory that does not exist, so
+            # `_acquire` died opening the lock beside it and the try/except this
+            # case is named for was never entered - proved by mutation: turning
+            # that block's `raise` into a `return` of the path, which reports a
+            # write that failed as one that succeeded, left the whole suite
+            # green. The leftover half could not fail either, because it
+            # searched the temp ROOT while the temporary would have been written
+            # one directory down, in a directory that was not there.
+            #
+            # A destination that EXISTS AS A DIRECTORY reaches it: the lock is
+            # taken beside it, the temporary is written, and no platform will
+            # rename a file onto a directory. The three properties of that
+            # branch then fail apart, which is why they are three cases.
+            _blocked = os.path.join(mtmp, "blocked")
+            os.makedirs(_blocked)
+            _dest = os.path.join(_blocked, "x.jsonl")
+            os.makedirs(_dest)
+            _bad = _harness.attempt(M.write_merged, _dest, "{}")
+            check("mu16 a merge that could not be written says so by RAISING, "
+                  "where `append` in the same position returns False - and the "
+                  "destination it could not replace is untouched: %r" % (_bad,),
+                  _bad[0] is False and os.path.isdir(_dest))
+            check("mu16b ...and it leaves no half-written temporary behind IN "
+                  "THE DIRECTORY IT WOULD HAVE WRITTEN ONE INTO - `.jsonl` is "
+                  "what `journal_files` matches, so such a file would never be "
+                  "read, but it would sit in `git status` as an untracked file "
+                  "in the trail's own directory, which is exactly the shape "
+                  "`guard-bash-writes` reports: %r"
+                  % (sorted(os.listdir(_blocked)),),
+                  not [n for n in os.listdir(_blocked)
+                       if n.endswith(".merged")])
+            # SECOND DIRECTION on the same branch, and the only thing that can
+            # reach the `finally`: an append and a merge take ONE lock per file,
+            # so a write that raised while holding it would refuse every writer
+            # after it for the lock's whole stale window - a journal that has
+            # gone read-only with nothing saying so.
+            os.rmdir(_dest)
+            _after = _harness.attempt(M.write_merged, _dest, "{}")
+            # `isfile` as well as the outcome, because proving the mv cases red
+            # means mutating `write_merged` into one that RETURNS without
+            # writing - and an unguarded `open` here would then raise, take
+            # every case after it out of the run and name none of them (F330).
+            # The assertion below still fails when nothing was written.
+            _wrote = None
+            if _after[0] is True and os.path.isfile(_dest):
+                with open(_dest, "r", encoding="utf-8") as fh:
+                    _wrote = fh.read()
+            check("mu16c ...and the lock it took is RELEASED even though the "
+                  "write raised, so the next writer of that file is not turned "
+                  "away by a lock nobody holds: %r" % (_after,),
+                  _after[0] is True and _wrote == "{}")
+
+            # --- mv: the grade and the replace are ONE lock hold (F340) -------
+            # The command used to read the target, grade the result against it
+            # and only then call this - so the read happened before any lock
+            # existed and a row appended in between was graded by nobody and
+            # deleted by `os.replace`, at exit 0, with `verify` calling the
+            # survivors clean. The repair is that `write_merged` reads, grades
+            # and replaces inside one `_acquire`, and the grader is what the
+            # caller hands in.
+            #
+            # ASSERTED FROM INSIDE THE GRADER, which is the only place the
+            # question can be asked without a race: while it runs, does the
+            # lock file exist? Moving the grade call back outside the
+            # `_acquire`/`_release` pair turns mv1 red with nothing else
+            # touched. The neighbour case next door drives a REAL concurrent
+            # append through two processes; this one is the deterministic pin
+            # under it.
+            def _val(obj, key):
+                """`obj[key]`, or None when `obj` cannot be asked.
+
+                A CASE THAT RAISES TAKES EVERY CASE AFTER IT OUT OF THE RUN AND
+                NAMES NONE (F330), and proving the mv cases red means changing
+                what `write_merged` RETURNS - the bare path it used to, or a
+                dict missing the key - so an unguarded index is precisely the
+                shape that would go down instead of going red."""
+                try:
+                    return obj[key]
+                except Exception:
+                    return None
+
+            _lockstate = {"held": None, "saw": None, "unreadable": "unset"}
+            _mvdir = os.path.join(mtmp, "onehold")
+            os.makedirs(_mvdir)
+            _mvfile = os.path.join(_mvdir, "held.jsonl")
+            with open(_mvfile, "w", encoding="utf-8") as fh:
+                fh.write("first\n")
+
+            def _watching_grade(text, unreadable):
+                _lockstate["held"] = os.path.exists(_mvfile + ".lock")
+                _lockstate["saw"] = text
+                _lockstate["unreadable"] = unreadable
+                return []
+
+            _mv = M.write_merged(_mvfile, "second\n", _watching_grade)
+            with open(_mvfile, "r", encoding="utf-8") as fh:
+                _mvafter = fh.read()
+            check("mv1 the grader runs with the lock ALREADY HELD, so no append "
+                  "can land between the bytes it graded and the bytes "
+                  "`os.replace` overwrites -- which is the whole of F340, and "
+                  "the lock file's existence is the only evidence of it that "
+                  "cannot itself race: %r" % (_lockstate["held"],),
+                  _lockstate["held"] is True)
+            check("mv2 ...and it is handed what the file held AT THAT MOMENT, "
+                  "read inside the same hold rather than by the caller before "
+                  "it: %r" % (_lockstate["saw"],),
+                  _lockstate["saw"] == "first\n"
+                  and _lockstate["unreadable"] is None)
+            check("mv3 ...and with nothing refused the write went through and "
+                  "the lock was released, so the next writer is not turned "
+                  "away by a lock nobody holds",
+                  _val(_mv, "written") is True and _val(_mv, "refusals") == []
+                  and _mvafter == "second\n"
+                  and not os.path.exists(_mvfile + ".lock"))
+            # SECOND DIRECTION, and the mutation this repair could have made
+            # instead: a grader whose answer is ignored. A refusal is not an
+            # exception - nothing was attempted - so it comes back as data, and
+            # the bytes on disk are what says it was honoured.
+            _refuse = M.write_merged(_mvfile, "third\n",
+                                     lambda text, unreadable: ["no"])
+            with open(_mvfile, "r", encoding="utf-8") as fh:
+                _mvrefused = fh.read()
+            check("mv4 a grader that refuses stops the write and says so as "
+                  "DATA rather than by raising - nothing was attempted, so "
+                  "there is no failure to report - and the file is byte for "
+                  "byte the one it was handed: %r" % (_refuse,),
+                  _val(_refuse, "written") is False
+                  and _val(_refuse, "refusals") == ["no"]
+                  and _mvrefused == "second\n"
+                  and not os.path.exists(_mvfile + ".merged"))
+            _dry = {"held": None}
+
+            def _dry_grade(text, unreadable):
+                _dry["held"] = os.path.exists(_mvfile + ".lock")
+                return []
+
+            _mvdry = M.write_merged(_mvfile, "fourth\n", _dry_grade,
+                                    dry_run=True)
+            with open(_mvfile, "r", encoding="utf-8") as fh:
+                _mvstill = fh.read()
+            check("mv5 `dry_run` grades under the same hold and writes nothing, "
+                  "so a preview is graded against a file nothing was appending "
+                  "to either -- the flag that withholds the write must not also "
+                  "withhold the question",
+                  _dry["held"] is True and _val(_mvdry, "written") is False
+                  and _val(_mvdry, "refusals") == []
+                  and _mvstill == "second\n")
+            # An UNREADABLE target reaches the grader as one, rather than as an
+            # empty read that would clear a merge of everything nobody could
+            # see. A directory is how "there and unreadable" is spelled
+            # portably: `open` raises on it everywhere, while a mode of 000 is
+            # no obstacle to root, which is who CI containers usually are.
+            _mvdirtarget = os.path.join(_mvdir, "adir.jsonl")
+            os.makedirs(_mvdirtarget)
+            _seen = {}
+
+            def _dir_grade(text, unreadable):
+                _seen["text"], _seen["why"] = text, unreadable
+                return ["unreadable"] if unreadable is not None else []
+
+            _mvbad = M.write_merged(_mvdirtarget, "x\n", _dir_grade)
+            check("mv6 a target that is THERE and cannot be read reaches the "
+                  "grader as unreadable and not as an empty file, so the "
+                  "refusal is the grader's to make rather than a reassuring "
+                  "blank the guard clears: %r" % (_seen.get("why"),),
+                  _seen.get("text") == "" and _seen.get("why")
+                  and _val(_mvbad, "written") is False
+                  and _val(_mvbad, "refusals") == ["unreadable"]
+                  and os.path.isdir(_mvdirtarget))
+
+            # --- av: what the git anchor asks now ----------------------------
+            _committed = M.merge_text(ours[:3])
+            _appended = M.merge_text(ours)
+            _av1 = M.anchor_verdict(_committed, _appended)
+            check("av1 an APPEND leaves every committed row where it was, so "
+                  "the verdict holds and says how many rows arrived alongside",
+                  _av1["held"] and _av1["extra"] == 1
+                  and _av1["committedRows"] == 3, repr(_av1))
+            _edited = [dict(r) for r in ours]
+            _edited[0] = dict(_edited[0])
+            _edited[0]["summary"] = "nothing happened"
+            _rechained, _ = M._rechain(_edited, name)
+            _av2 = M.anchor_verdict(_committed, M.merge_text(_rechained))
+            check("av2 a committed row whose CONTENT was edited fails the "
+                  "verdict and is named by row and action, even though the "
+                  "whole file was re-chained and every hash is correct - which "
+                  "is the forgery the byte prefix caught and this must keep "
+                  "catching",
+                  not _av2["held"] and _av2["row"] == 1
+                  and _av2["action"] == "manifest.edit", repr(_av2))
+            _av3 = M.anchor_verdict(_committed, M.merge_text(ours[:2]))
+            check("av3 a committed row REMOVED fails the verdict too - the "
+                  "cheapest forgery that leaves the remaining chain intact",
+                  not _av3["held"] and _av3["row"] == 3, repr(_av3))
+            # HEAD is OURS' WHOLE FILE here, which is what a branch commits, and
+            # the reason this is the case the byte prefix could not survive:
+            # `ours-2` keeps its content and gets a new `prev`, so the committed
+            # bytes stop being a prefix of a resolution that dropped nothing.
+            _committed4 = M.merge_text(ours)
+            _merged4 = M.merge_text(res["rows"])
+            _av4 = M.anchor_verdict(_committed4, _merged4)
+            check("av4 THE CASE THE OLD PROXY COULD NOT SURVIVE: after a merge "
+                  "the other side's row sits BETWEEN two committed ones, so "
+                  "HEAD's bytes are no longer a prefix (%r) - and every "
+                  "committed row is still present, in order, with its content "
+                  "unchanged, which is the property that replaced it"
+                  % (_merged4.startswith(_committed4),),
+                  _av4["held"] and _av4["divergesAt"] == 4
+                  and _av4["committedRows"] == 4
+                  and not _merged4.startswith(_committed4), repr(_av4))
+            _av5 = M.anchor_verdict(_committed,
+                                    M.merge_text([ours[1], ours[0], ours[2]]))
+            check("av5 committed rows REORDERED fail the verdict - the property "
+                  "is presence AND order, and a check that only asked whether "
+                  "each row was somewhere in the file would pass this",
+                  not _av5["held"], repr(_av5))
+            _av6 = M.anchor_verdict("", _appended)
+            check("av6 nothing committed yet holds trivially and says so with a "
+                  "zero rather than an empty-set silence",
+                  _av6["held"] and _av6["committedRows"] == 0, repr(_av6))
+            # THE CASE THE DOCSTRING ANTICIPATES AND NOTHING PINNED: a committed
+            # copy re-spelled by something that does not write canonical JSON.
+            # The bytes differ, so the fast prefix path in `_git_anchor_finding`
+            # fails and this runs - and then nothing diverged at all, which is
+            # the ONE way `divergesAt` comes back None while `held` is true. The
+            # key is asserted absent rather than defaulted, because the reader
+            # of that key is prose that says which row the two copies part at,
+            # and there is no such row here. `_git_anchor_finding` currently
+            # substitutes the first row for the missing one and tells the reader
+            # the file parted from its committed copy at the beginning; that is
+            # a defect in the WARNING, not in this verdict, and it is reachable
+            # only from a real repository, which `check-git-pipeline.py` owns.
+            _respelt = "".join(
+                json.dumps(r, sort_keys=False, indent=None,
+                           separators=(", ", ": ")) + "\n" for r in ours[:3])
+            _av7 = M.anchor_verdict(_respelt, _committed)
+            check("av7 a committed copy re-spelled non-canonically holds: every "
+                  "row's content is the same content, so nothing diverged and "
+                  "`divergesAt` is ABSENT rather than a row number no reader "
+                  "could act on - and nothing arrived alongside",
+                  _av7["held"] and _av7["divergesAt"] is None
+                  and _av7["extra"] == 0
+                  and _av7["committedRows"] == _av7["workingRows"]
+                  and _respelt != _committed, repr(_av7))
+
+            # --- ru: presence WITHOUT order, for the conflicted-file path -----
+            # `rows_unaccounted` is the from_index half of F328. Its whole
+            # reason to exist apart from `anchor_verdict` is that it must NOT
+            # ask about order: the text it grades is a conflicted working copy,
+            # two index stages with markers between them, an order no chain
+            # ever had. So the pair below is the specification - reordering is
+            # fine, absence is not - and ru3 is the one that separates this
+            # from the rule one function up.
+            _ru_rows = M.rows_from_text(_committed)[0]
+            _ru_shuffled = M.merge_text(list(reversed(_ru_rows)))
+            _ru1 = M.rows_unaccounted(_committed, _ru_shuffled)
+            check("ru1 every row present but REORDERED is accounted for - the "
+                  "property `anchor_verdict` deliberately refuses and this one "
+                  "must allow, or a genuine conflict resolution is refused for "
+                  "the order git left in the file",
+                  _ru1["missing"] == 0 and _ru1["row"] is None
+                  and _ru1["haveRows"] == len(_ru_rows), repr(_ru1))
+            _ru2 = M.rows_unaccounted(_committed,
+                                      M.merge_text(_ru_rows[:1]))
+            check("ru2 ...and a row the result does not carry AT ALL is the "
+                  "finding, named by position and action so the sentence reads "
+                  "like the other refusal's",
+                  _ru2["missing"] == len(_ru_rows) - 1 and _ru2["row"] == 2
+                  and _ru2["action"], repr(_ru2))
+            # A conflicted file legitimately holds the same row TWICE - both
+            # sides appended identical content to their own tails - while the
+            # union holds it once. A COUNTING test calls that a loss.
+            _ru_dup = _committed + M.merge_text(_ru_rows[-1:])
+            _ru3 = M.rows_unaccounted(_ru_dup, _committed)
+            check("ru3 a row the file carries TWICE and the result once is NOT "
+                  "a loss - this is a set question, and the opposite of the "
+                  "count-do-not-find rule that applies to `mu3`, because here "
+                  "the duplication is what resolving a conflict produces",
+                  _ru3["missing"] == 0, repr(_ru3))
+            # ALL OF THEM, NOT THE FIRST OF THEM (F342). `row`/`action` name
+            # whichever unaccounted row sits earliest in the file, and the
+            # caller has to tell a row somebody TYPED while resolving from a
+            # `journal.merge` row a previous run of the verb left - two
+            # findings with two repairs. Which one `row` happened to name
+            # depended on the wall-clock second the two runs landed in, because
+            # the marker's timestamp moves; the whole list is what lets the
+            # caller sort them by what they ARE.
+            _ru4 = M.rows_unaccounted(_committed, M.merge_text(_ru_rows[1:2]))
+            # `.get` with a list default, for the same reason every read in the
+            # mu group is guarded: proving this red means DELETING the key, and
+            # an unguarded index would take every case after it down while
+            # naming none of them (F330).
+            _ru4gone = _ru4.get("unaccounted")
+            _ru4gone = _ru4gone if isinstance(_ru4gone, list) else []
+            check("ru4 every unaccounted row comes back, in file order, with "
+                  "the position and the action of each - and `missing` is the "
+                  "length of that list rather than a second opinion about it: "
+                  "%r" % (_ru4.get("unaccounted"),),
+                  [pair[0] for pair in _ru4gone] == [1, 3]
+                  and _ru4["missing"] == len(_ru4gone)
+                  and _ru4["row"] == _ru4gone[0][0]
+                  and _ru4["action"] == _ru4gone[0][1]
+                  and all(isinstance(pair[1], str) for pair in _ru4gone),
+                  repr(_ru4))
+            # SECOND DIRECTION, and the one that reads as vacuous and is not:
+            # an empty list is what a caller partitions to nothing, and a key
+            # that came back None or absent instead would make every caller's
+            # filter raise or silently skip. ru1 already asserts `missing` is
+            # zero here; this asserts the SHAPE the callers iterate.
+            check("ru5 ...and a result that accounts for everything hands back "
+                  "an empty list rather than None, so a caller that partitions "
+                  "it finds nothing instead of failing to look",
+                  _ru1.get("unaccounted", "absent") == []
+                  and _ru3.get("unaccounted", "absent") == [])
+
+            # --- aw: the prose the anchor's WARNING actually says -------------
+            # THE HIGHEST-STAKES TEXT IN THE MODULE AND NOTHING COULD REACH IT.
+            # It was built at `_git_anchor_finding`'s return, which needs a real
+            # repository, and the one gate that has one asserts the FINDING's
+            # words. Both defects below sat in it green: a pointer at a merge
+            # commit that exists under only one of the two readings this check
+            # cannot distinguish, and a substituted row number for the reading
+            # where no row diverged at all (av7's input).
+            with open(M.__file__, "r", encoding="utf-8") as fh:
+                _jio_tree = ast.parse(fh.read(), filename=M.__file__)
+            _, _jio_funcs = _module_consts_and_funcs(_jio_tree)
+            _anchor_reads = set(
+                n.id for n in ast.walk(_jio_funcs["_git_anchor_finding"])
+                if isinstance(n, ast.Name))
+            check("aw0 the text the cases below judge is the text the ANCHOR "
+                  "emits: `_git_anchor_finding` names `_anchor_warning` rather "
+                  "than formatting its own, so re-inlining the string would "
+                  "fail here instead of leaving these cases grading a helper "
+                  "nothing calls: %r"
+                  % (sorted(n for n in _anchor_reads
+                            if n.startswith("_anchor")),),
+                  "_anchor_warning" in _anchor_reads)
+            # `.find` and never `.index` for the ORDER conjunct below: a missing
+            # substring has to be this case going red, not a ValueError taking
+            # every case after it down with it and naming none of them.
+            #
+            # AND THE VERDICTS ARE THE REAL ONES, not two dicts written here to
+            # the shape this text expects: `_av4` is the post-merge file av4
+            # already graded and `_av7` the re-spelling, so the row numbers in
+            # the sentence below are numbers a real divergence produced.
+            _indistinct = "NOTHING IN THIS CHECK CAN TELL THOSE APART"
+            _aw_div = M._anchor_warning(name, _av4, name)
+            check("aw1 the divergent reading names the row the copies part at "
+                  "and the rows that arrived, and says outright that NOTHING "
+                  "HERE separates a resolution from a row spliced between "
+                  "committed ones - the evidence that would is named instead "
+                  "of assumed: %r" % (_aw_div,),
+                  "from row 4 on" in _aw_div and _indistinct in _aw_div
+                  and M.MERGE_ACTION in _aw_div and name in _aw_div)
+            # The sentence used to end "the merge commit is where you check
+            # which side the extra rows came from", which is a place that exists
+            # under the merge reading and under no other. A merge commit may
+            # still be NAMED - it is where the answer is when there was one -
+            # but never as the place to look without the disclaimer beside it,
+            # which is what this counts rather than merely finds.
+            check("aw2 ...and it does not send the reader to a merge commit as "
+                  "if one must exist: the words are there only in the sentence "
+                  "that also says the two readings are indistinguishable, and "
+                  "the old unconditional pointer is gone",
+                  "where you check which side" not in _aw_div
+                  and _aw_div.count("merge commit") == 1
+                  and _aw_div.find("merge commit")
+                  > _aw_div.find(_indistinct) > -1)
+            _aw_same = M._anchor_warning(name, _av7, name)
+            # Every number is stripped by removing the FILE NAME, which is the
+            # only thing in this sentence entitled to carry digits: what the old
+            # text put here was a row number, and asserting the absence of one
+            # literal spelling of it would pass the next substitution just as
+            # quietly.
+            _aw_same_nums = [c for c in _aw_same.replace(name, "")
+                             if c.isdigit()]
+            check("aw3 SECOND DIRECTION, on av7's input: where NO row diverged "
+                  "the reading gets its own sentence, and it carries NO NUMBER "
+                  "AT ALL beyond the file's own name and no pointer at a merge "
+                  "- there was no merge and no row to name. This said `from row "
+                  "1 on` about a divergence that did not happen: %r"
+                  % (_aw_same,),
+                  "no row diverged" in _aw_same
+                  and "from row" not in _aw_same
+                  and "merge commit" not in _aw_same
+                  and _aw_same_nums == [] and name in _aw_same)
+
+            # --- sa: the session a writer id cannot name ---------------------
+            _sa_actor = {"sessionId": "payload-id-aaaa", "via": "hook"}
+            _sa1 = with_env("env-id-bbbb", lambda: M._normalise(
+                {"action": "manifest.edit", "target": "",
+                 "actor": dict(_sa_actor)}))
+            check("sa1 a row records the OTHER id its session answers to, which "
+                  "is what makes a file named for the payload id resolvable "
+                  "(F309): %r" % (sorted(_sa1["actor"]),),
+                  _sa1["actor"].get("envSessionId") == "env-id-bbbb"
+                  and _sa1["actor"].get("sessionId") == "payload-id-aaaa")
+            check("sa2 SECOND DIRECTION for r10: with the environment naming a "
+                  "session the actor gains exactly ONE key and no other, so a "
+                  "field that started carrying anything else fails here rather "
+                  "than being noticed by a reader",
+                  set(_sa1["actor"]) == set(["author", "sessionId", "via",
+                                             "envSessionId"]),
+                  repr(sorted(_sa1["actor"])))
+            _sa3 = with_env("payload-id-aaaa", lambda: M._normalise(
+                {"action": "manifest.edit", "target": "",
+                 "actor": dict(_sa_actor)}))
+            check("sa3 ...and it is recorded ONLY when it differs: an "
+                  "environment naming the same session adds nothing, because a "
+                  "field repeating the one beside it is noise rather than a "
+                  "mapping",
+                  "envSessionId" not in _sa3["actor"],
+                  repr(sorted(_sa3["actor"])))
+            check("sa4 junk in the environment is sanitised and bounded rather "
+                  "than written into a committed row as it arrived - no path "
+                  "separator and no traversal survives - and an empty one is "
+                  "None rather than an empty string: %r"
+                  % (with_env("../../etc/passwd", M.env_session_id),),
+                  with_env("../../etc/passwd", M.env_session_id)
+                  == "etc-passwd"
+                  and with_env("x" * 200, lambda: len(M.env_session_id()))
+                  == M.MAX_SESSION_ID_CHARS
+                  and with_env("   ", M.env_session_id) is None
+                  and with_env(None, M.env_session_id) is None)
+            _sa_root = os.path.join(mtmp, "mapped")
+            os.makedirs(_sa_root)
+            with_env("env-id-bbbb", lambda: M.append(
+                _sa_root, {"action": "manifest.edit", "target": "",
+                           "summary": "mapped", "ts": "2026-05-07T00:00:00Z",
+                           "actor": dict(_sa_actor)}, config=mcfg))
+            _idx = with_env("env-id-bbbb",
+                            lambda: M.session_index(_sa_root, mcfg))
+            _ent = (_idx["files"] or [{}])[0]
+            check("sa5 `session_index` reads the file's opaque name back to "
+                  "both ids and marks it as this session's - which no reader "
+                  "could do from the name alone: %r" % (_ent.get("file"),),
+                  _ent.get("writer") == "payload-id-aaaa"
+                  and _ent.get("sessionIds") == [("payload-id-aaaa", 1)]
+                  and _ent.get("envSessionIds") == [("env-id-bbbb", 1)]
+                  and _ent.get("mine") and _idx["mine"] == [_ent.get("file")]
+                  and not _idx["unmapped"], repr(_ent))
+            _idx2 = with_env("someone-else-entirely",
+                             lambda: M.session_index(_sa_root, mcfg))
+            check("sa6 SECOND DIRECTION: an environment naming a session that "
+                  "wrote nothing here matches NO file, and the empty match is "
+                  "reported as empty rather than as agreement",
+                  not _idx2["mine"] and _idx2["env"] == "someone-else-entirely"
+                  and (_idx2["files"] or [{}])[0].get("mine") is False,
+                  repr(_idx2["mine"]))
+            _idx3 = with_env(None, lambda: M.session_index(base, mcfg))
+            check("sa7 a file whose rows carry no alias is listed under "
+                  "`unmapped`, because absence means EITHER the ids agreed OR "
+                  "the rows predate the field and nothing here can tell those "
+                  "apart",
+                  _idx3["unmapped"] == [os.path.basename(only(base))]
+                  and _idx3["env"] is None, repr(_idx3["unmapped"]))
+            check("sa8 the writer id comes off the NAME by partitioning once "
+                  "from the left, so a session id carrying dots is not cut at "
+                  "the first of them",
+                  M.writer_of("2026-05.a.b.c.jsonl") == "a.b.c"
+                  and M.writer_of("nonsense") == "",
+                  repr(M.writer_of("2026-05.a.b.c.jsonl")))
+        finally:
+            shutil.rmtree(mtmp, ignore_errors=True)
+
+    with_env(None, lambda: _merge_cases(check))
 
 
 def _selftest():

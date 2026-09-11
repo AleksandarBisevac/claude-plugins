@@ -655,9 +655,70 @@ def _cases(check):
           "edit here rather than a shape that changes under a consumer",
           sorted(_te_empty["testEvidence"])
           == ["beforeBoundary", "byStatus", "failing", "missingOnDone",
-              "recorded", "sinceBoundary", "undated", "unrecognised"]
+              "noVerdict", "recorded", "sinceBoundary", "undated",
+              "unrecognised"]
           and _te_empty["testEvidence"]["recorded"] == 0,
           repr(_te_empty.get("testEvidence")))
+
+    # --- F302, one level out: an infrastructure failure is not a failing test -
+    # The runner recorded `failed` for a run the OS killed, so `failing-tests`
+    # counted it as a red suite. The word on the record is `could-not-run` now
+    # (see `run-test-gate.ended_by_signal`) and this is the other half: the
+    # gate's OWN vocabulary went on folding "the run never answered" into the
+    # same list as "the suite came back red", so no surface could say which it
+    # had. The condition still trips on the union - narrowing it would turn a
+    # refusal somebody's pipeline gets today into a pass on upgrade - and the
+    # split is what makes the distinction reportable.
+    _nv = M.rollup(_ev_plan([("PE.1", "done", "failed"),
+                             ("PE.2", "done", "could-not-run"),
+                             ("PE.3", "done", "timed-out"),
+                             ("PE.4", "done", "passed")]), [], [])
+    check("te23 THE SPLIT: a run the OS ended and a run that came back RED are "
+          "both in `failing` - the exit code is unchanged, deliberately - while "
+          "`noVerdict` names the two that never answered and NOT the red one. "
+          "Counted rather than merely found, because a version putting every "
+          "no-sign-off row in both lists passes an `in` assertion: %r"
+          % ([(r["id"], r["status"]) for r in
+              _nv["testEvidence"]["noVerdict"]],),
+          M.evaluate_gate(_nv, ("failing-tests",)) == ["failing-tests"]
+          and [r["id"] for r in _nv["testEvidence"]["failing"]] == ["PE.1",
+                                                                    "PE.2",
+                                                                    "PE.3"]
+          and [r["id"] for r in _nv["testEvidence"]["noVerdict"]] == ["PE.2",
+                                                                      "PE.3"],
+          repr(_nv["testEvidence"]["byStatus"]))
+    _nv_red = M.rollup(_ev_plan([("PE.1", "done", "failed"),
+                                 ("PE.2", "done", "passed")]), [], [])
+    check("te24 SECOND DIRECTION, and it is the case that looks vacuous: a plan "
+          "whose only bad pointer is a REAL red suite reports an EMPTY "
+          "`noVerdict` while `failing` names it. It passes on the build that has "
+          "no split at all, and it is the only case that fails when `noVerdict` "
+          "becomes a copy of `failing` - which is how the fold this exists to "
+          "end would come back: %r"
+          % (_nv_red["testEvidence"]["noVerdict"],),
+          _nv_red["testEvidence"]["noVerdict"] == []
+          and [r["id"] for r in _nv_red["testEvidence"]["failing"]] == ["PE.1"]
+          and M.evaluate_gate(_nv_red, ("failing-tests",)) == ["failing-tests"])
+    check("te25 the halves PARTITION the union, and the direction that has to "
+          "be checked is CONTAINMENT. `ANSWERED_NO_SIGN_OFF` is the union MINUS "
+          "the no-verdict words, so disjointness and the union come free by "
+          "subtraction - what subtraction cannot catch is a word in "
+          "`NO_VERDICT_EVIDENCE` that is NOT in the union, which would put rows "
+          "in `noVerdict` that the gate never trips on. The union is the "
+          "literal because `_areas.py` reads its members out of this file's "
+          "SOURCE to grade orchestrator.md, and a computed union leaves that "
+          "anchor matching nothing: %r + %r"
+          % (sorted(M.NO_VERDICT_EVIDENCE), sorted(M.ANSWERED_NO_SIGN_OFF)),
+          M.NO_VERDICT_EVIDENCE <= M.NO_SIGN_OFF_EVIDENCE
+          and M.NO_SIGN_OFF_EVIDENCE == (M.NO_VERDICT_EVIDENCE
+                                         | M.ANSWERED_NO_SIGN_OFF)
+          and not (M.NO_VERDICT_EVIDENCE & M.ANSWERED_NO_SIGN_OFF)
+          and sorted(M.NO_VERDICT_EVIDENCE) == ["cancelled", "could-not-run",
+                                                "timed-out"]
+          and sorted(M.ANSWERED_NO_SIGN_OFF) == ["failed", "gate-mutated",
+                                                 "no-checks"]
+          and M.PASSED_EVIDENCE not in M.NO_VERDICT_EVIDENCE
+          and M.NO_GATE_EVIDENCE not in M.NO_VERDICT_EVIDENCE)
     # THROUGH `attempt` FROM HERE DOWN: both cases are about a call NOT raising, and
     # a raise inside a `check()` argument escapes the whole body - so the very
     # failure they exist to catch would arrive as an unattributed traceback with
@@ -705,8 +766,8 @@ def _cases(check):
           "later is accepted without an edit here, and `recorded` cannot be "
           "written into it by hand",
           sorted(M.EVIDENCE_SUBJECT_KEYS)
-          == ["beforeBoundary", "failing", "missingOnDone", "sinceBoundary",
-              "undated", "unrecognised"]
+          == ["beforeBoundary", "failing", "missingOnDone", "noVerdict",
+              "sinceBoundary", "undated", "unrecognised"]
           and all(M.evidence_subjects(_te_new, k) is _te_new["testEvidence"][k]
                   for k in M.EVIDENCE_SUBJECT_KEYS)
           and [(r["id"], r["status"])

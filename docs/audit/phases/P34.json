@@ -1,0 +1,438 @@
+{
+  "id": "P34",
+  "title": "Fifth field report: the ledger is 27% false failures, and most of it is the machine",
+  "status": "pending",
+  "description": "A night's use on another project with two concurrent sessions recorded 30 gate runs, 10 of\nthem failed, and 8 of those reflected no defect in the code under test. The ledger exists to\nbe the trustworthy record of what was measured; at that rate it is not, and nothing in a row\ntells a false failure from a real one.\n\nFour of the report's eight items were already fixed in this tree and unreleased (F294, F300,\nthe journal-write-as-gate-mutation banner, and F273's owned/foreign split), which is its own\nfinding about release cadence rather than about code. What is left is this phase: the largest\ncause is CPU contention nobody arbitrates between parallel phases, the sharpest is a\nsignal-killed runner recorded as a failing test, and the rest are a commit the plugin cannot\nland under commitlint, a journal with no merge path that lost 37 rows, a warning that fires on\ntwo runs in three, and two documents that describe mechanisms the code no longer has.",
+  "desiredOutcome": "A gate verdict a reader cannot trust is either corrected or told apart from a real one: an infrastructure kill is not a failing test, two measurements do not starve each other, the plugin's own commit lands where conventional commits are enforced, and the journal survives one writer on two branches.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P34.1",
+      "title": "F302, F307: a gate verdict says what the runner did, and a warning with no evidence stays quiet",
+      "status": "done",
+      "description": "F302: a child the OS killed - OOM, SIGKILL, SIGSEGV - returns a negative code or 128+N, which\nis != 0, so it is graded as a failing step. Driven here: sh -c 'kill -9 $$' gives step exit -9,\nbanner GATE RED and a recorded 'failed', byte-identical in meaning to exit 1. The signal is\nALREADY IN THE RECORD as steps[].exit, so the runner observed it and the verdict threw the\nobservation away. Field data: 2 of 10 recorded failures were exit 139. It writes a false red\ninto a hash-chained ledger and burns maxAttempts on something no code change fixes, which\ncontradicts orchestrator.md's own infrastructure-failure rule. Decide between widening\ncould-not-run to \"did not produce a verdict\" (additive, smaller, its schema description must\nthen follow) and a new enum member for a run the OS ended (more precise, more surfaces) - and\nsay which and why. Note could-not-run's description currently says \"the runner never started\",\nwhich a killed child contradicts.\n\nF307: NO OVERLAP WITH THIS WORK fired on roughly 20 of 30 runs in a jest repo, including runs\nwhere coverage was obvious, because the runner prints test paths and tasks declare source\npaths. A warning that fires on two runs in three trains a reader to skim the block a real\nfinding appears in - which this repo says of a different check in its own words. The honest\nnarrowing is that no reported paths is NO EVIDENCE rather than negative evidence, so say that\ninstead of claiming no overlap. Do not widen the stem match; that makes the check mean less.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a step killed by a signal is not recorded as a failing test, and an honest non-zero exit still is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "F302: `could-not-run` was WIDENED rather than a fourth member added, because `never_started()` already assigned it off a positive zero and render's banner already named 'a runner that died before its first test' - so the schema description was already false of shipped code and a killed child is a new member of an existing class. Both signal channels: a negative returncode is an OBSERVATION (no child can return -9), 128+N is a shell convention narrowed twice - only signals that terminate by default, resolved through signal.Signals ON THIS MACHINE because SIGBUS is 7 on Linux and 10 on Darwin, and only where the runner printed no check count, which is what keeps mocha (whose exit status IS its failing-test count) graded as failed. The banner stays the literal `GATE COULD NOT RUN` that orchestrator.md keys on, so the do-not-spend-a-retry rule is reachable; the first draft's own banner would have left it unreachable. F307: an empty overlap is evidence only from paths that could have named the work, so a vendored path and a suite path of the work's own kind report 'not knowable' instead of 'no overlap' - and F204's and F255's founding firings both survive.",
+        "descriptive": "A runner the OS killed is no longer recorded as a failing test, and a warning with no evidence says so instead of claiming there was none."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "sk2",
+        "sk6",
+        "sk11",
+        "cv5b",
+        "cv5d",
+        "cv5e",
+        "cv15",
+        "cv17",
+        "te1",
+        "te9"
+      ]
+    },
+    {
+      "id": "P34.2",
+      "title": "F304a: a measurement does not run while another measurement is running",
+      "status": "done",
+      "description": "The largest single cause of the 27% false-failure rate. The plugin ENCOURAGES parallel phases\n(/audit:worktree exists for it) and each phase independently runs a full suite with nothing\narbitrating. Measured in the field: jest defaults to cores-1 workers, so two phases meant 18\nworker processes and as many mongodb-memory-server replica sets on 10 cores. Memory was never\nthe constraint - 94% free - so this is CPU starvation, and a starved replica set misses its\nelection timing; the suite then fails an unrelated test or the runner is killed, which is how\nthis fault manufactures F302's instances.\n\nAdd a THIRD lock tier: a host-wide gate lock held for the duration of a measurement. It reuses\na mechanism that already has liveness detection, and it serialises only the measuring - phases\nand tasks stay as parallel as they are now. It follows the gate's own premise, which this\nproduct states as \"a gate is a measurement\" and already enforces against a quiet tree; a\nmeasurement taken while another is running is that same error one level out.\n\nHost-wide means NOT per-project, which is the whole point and the part to get right: the two\nsessions were in different worktrees of different checkouts. So the lock cannot live under a\nproject's .claude/ - decide where it does live, say why, and make a stale one recoverable the\nway the existing tiers are. State the wall-clock cost honestly rather than hiding it.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_lock.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a host-wide gate lock serialises measurements while leaving phase and index locks independent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P34.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "A third lock tier at <CLAUDE_CONFIG_DIR or ~/.claude>/audit-locks/gate.lock, held for the duration of a measurement. It is HOST-wide and not project-wide because lock_dir() resolves --git-common-dir and so spans worktrees of one clone, while the colliding sessions were in different CHECKOUTS - a project-scoped lock would have been two locks. Stale recovery deliberately differs from the other tiers: a stale holder is taken over automatically with judge's basis printed, because a stale lock only a human can clear turns one crashed gate run into a machine-wide outage for every project on the box. Queues rather than refuses, since a refusal relabels the failure instead of serialising. Fail-open where the lock has nowhere to live, never silently. Cost stated: two phases whose suites take T finish in 2T, zero when nothing contends.",
+        "descriptive": "Two measurements no longer starve each other, which is what manufactured most of the false failures in the field."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "g2",
+        "g10",
+        "g11",
+        "gl1b",
+        "gl4",
+        "gl5"
+      ]
+    },
+    {
+      "id": "P34.3",
+      "title": "F306, F309: the journal survives one writer on two branches, and a row can be traced to its session",
+      "status": "done",
+      "description": "F306: journal files are named per writer per month so parallel phases never conflict, which\nholds for two writers and not for one writer on two branches - ordinary while a phase is\npaused. A hash chain cannot carry two divergent tails, and audit-journal.py offers append,\nverify, show and archive with no merge and no repair. verify compounds it by grading a\nresolution against `git show HEAD:<file>` being a byte-prefix of the working copy, which\nNEITHER side can satisfy after a divergence - so the tool that would tell you whether your\nresolution is sound reports every sound resolution as broken. Cost in the field: 37 rows lost.\n\nAdd a merge verb that re-chains the UNION in timestamp order. Re-chaining is not forgery and\nthe entry must say why: the rows are unchanged, only their links are recomputed, and both\ninputs are in git so the operation is auditable. Then fix verify so a legitimately merged file\nis not reported broken - that half is what makes the verb usable. Refuse rather than guess when\ntwo rows carry the same timestamp and differ, and when a row's own hash does not match its\ncontent: a merge that silently drops or reorders is worse than the conflict it replaces.\n\nF309: rows for one session landed under a writer id that is not the session's own id. The\nreference acknowledges the hooks see a different id, so the gap is that the acknowledgement\ndoes not help - a reader cannot group a session's rows by the id the session knows. Do NOT\nrename anything: the file name is part of an append-only trail. Add the MAPPING, so an opaque\nname stays opaque and becomes resolvable.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: a union of two divergent tails re-chains in timestamp order, keeps every row, and verifies"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "`audit-journal.py merge` re-chains the UNION in timestamp order, taking both sides from git index stages 2 and 3, changing no row's content and recomputing only prev/hash - and it REFUSES rather than guessing on same-timestamp-different-content, a row whose own hash does not match, no shared prefix, a torn input, a divergent row with no timestamp, and a name that seeds no chain. `verify` had to change with it: the byte-prefix proxy cannot survive a legitimate re-link, so the rule is now that every committed row is still present, unchanged and in order, with the prefix kept as the fast path - and a re-linked chain is a WARNING rather than silence. F309 adds actor.envSessionId only when it differs, plus a `sessions` verb that reports the mapping; no file is renamed, because the name is part of an append-only trail.",
+        "descriptive": "One writer on two branches no longer loses rows, and a row can be traced back to the session that wrote it."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "mu7",
+        "mu8",
+        "mu9",
+        "mu9b",
+        "mu10",
+        "mu11",
+        "mu12",
+        "mu13",
+        "mu14",
+        "mg3b",
+        "mg4",
+        "mg5",
+        "mg8",
+        "mh2",
+        "mh3",
+        "av2",
+        "av3",
+        "av5",
+        "sa1",
+        "sa3",
+        "sa7",
+        "sx1",
+        "sx3",
+        "sx4"
+      ]
+    },
+    {
+      "id": "P34.4",
+      "title": "F305: the plugin's own commits land where conventional commits are enforced",
+      "status": "done",
+      "description": "Both writers compose \"%s(%s): %s - %s\" % (COMMIT_TYPE, COMMIT_SCOPE, phase_id, subject), which\nrenders as `chore(audit-state): P6 - the record of a run, without the work it ran on`. The\nsubject after the colon starts with `P6`, so commitlint's default subject-case rule refuses it:\n\"subject must not be sentence-case, start-case, pascal-case, upper-case\". The record stayed\nstaged and was committed by hand in the field.\n\nTHIS IS F268's CLASS ONE RULE OVER, and the fix must not be a third guess at commitlint's\ndefaults. F268 moved the fixed literal out of the TYPE into the SCOPE so type-enum would accept\nit; the very next default rule rejects it for another reason. Aim for a subject that cannot\noffend any of them, and keep both properties F268 bought: `git log --grep audit-state` still\nseparates the commit classes, and the phase id is still in the subject. Lower-casing the id to\n`p6` is the wrong answer - this product renders ids uppercase everywhere else.\n\nBoth writers, not one: commit-manifest-index.py composes the same shape with its own scope.\nThe plugin also already KNOWS the project enforces this, because /audit:init records\nmeta.commit - so consider whether the writer should read that rather than hope.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_audit_state.py: the generated subject satisfies commitlint's default subject-case, and still carries the phase id and the audit-state scope"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "gate"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "Both writers now lead the subject with a fixed lowercase word (`chore(audit-state): phase P6 - ...`), and the reasoning is one property rather than a third guess at commitlint's defaults: ensureCase decides each forbidden case by TRANSFORMING the subject and comparing, and all four transforms capitalise the first character - so a subject whose first character is lowercase cannot equal any of them. The word sits ahead of --subject so no caller can put a capital back in first position. header-max-length pinned too, being the adjacent default this change spends budget on. meta.commit deliberately NOT read: it is {type, coauthor} and records nothing about which commitlint rules a repo configures, so a writer consulting it would infer from a field about something else.",
+        "descriptive": "The plugin's own audit-state commits land in a repository that enforces conventional commits."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "cas8",
+        "cas8c",
+        "cas8d",
+        "cas8e",
+        "cas8f",
+        "cmi7",
+        "cmi7b",
+        "cmi7c",
+        "cmi7d"
+      ]
+    },
+    {
+      "id": "P34.5",
+      "title": "F303, F308: two documents stop describing mechanisms the code does not have",
+      "status": "done",
+      "description": "F303: orchestrator.md:521 says \"Do not reach for /audit:task scope here - it refuses a `done`\ntask on purpose\". F283 reversed that: driven, scope on a done task exits 0 and widens here,\nand exits 2 in released 2.2.0. The ADVICE survives and only the MECHANISM is wrong, which is\nthe durable kind of stale - a reader checks the reasoning, finds it sound, and never re-checks\nthe clause it rests on. Note the section IS anchored with five claims and none of them reads\nthis sentence, so the anchor set built to stop this section rotting does not cover the clause\nthat rotted. Fix the clause, and anchor it the way LIST_ANCHORS reads the evidence vocabulary\nout of the enum - four sections away in the same file.\n\nF308: close-phase.py refuses --no-ff when the parent branch is checked out nowhere, which is\nnormal when every worktree holds an audit branch. The refusal is correct and the field report\ncalls its explanation good. But the recovery it names then FAILS: a linked worktree has no\nnode_modules, so .husky/_/husky.sh does not exist and the merge commit is rejected. --no-verify\nwas needed. So the advice is reachable and then blocked one step later by something it does not\nmention. Either name the expected path, or stop routing through a fresh worktree.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/tests/test__areas.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__areas.py: the sign-off step's claim about scope on a done task is read out of the verb rather than restated"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "F303: the sign-off clause no longer claims `scope` refuses a done task - F283 narrowed that refusal to `cancelled` alone - and the claim is now ANCHORED in LIST_ANCHORS' shape, reading the statuses the verb refuses out of the guard inside _locked_scope and requiring the section to name them, both directions. F308: close-phase's --no-ff remedy now carries start AND finish, because the worktree it tells you to create holds none of the repository's installed dependencies, so a hook that bootstraps from one aborts the merge commit. --no-verify is named as honest THERE and nowhere else, with h3 pinning that no run ever issues it itself - and h3 was a check that could not fail until the sweep gained --no-ff as a fourth dimension.",
+        "descriptive": "Two documents stopped describing mechanisms the code does not have, and one of them is now checked rather than restated."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "oa20",
+        "oa21",
+        "oa22",
+        "oa23",
+        "oa24",
+        "oa25",
+        "n4",
+        "n5",
+        "h3"
+      ]
+    },
+    {
+      "id": "P34.6",
+      "title": "F304b: /audit:init stops giving every task the whole suite",
+      "status": "done",
+      "description": "The cheaper half of F304 and the one closer to the cause. /audit:init gives every task the\nfull-suite gate by default, which is why 18 full suites were running at all. The field\nmitigation was per-task tests.gate entries running TARGETED suites with the full suite reserved\nfor the phase gate - a task touching four exchange-rate files had been running all 913 tests -\nand it worked, but nothing in the generated manifest or the documentation points at it.\n\nTwo things must stay true, and the second is why this is not simply \"narrow the gate\": gate\nCOVERAGE is a hard requirement in init's own words, so the PHASE gate must still cover every\ntask's files; and a task's own gate has to be derivable from what the task touches rather than\nguessed, or the narrowing trades false failures for false confidence. Say plainly what a task\ngate is FOR versus a phase gate, because the report shows that distinction was never made and\nthe default is what taught everyone the wrong thing.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/agents/audit-explorer.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_gen_demo_manifest.py: a generated task's gate is narrower than its phase's, and the phase gate still covers every task's files"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint",
+          "report"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "init.md now says what a task gate is FOR versus a phase gate - the phase gate asks whether the repository is still whole and runs once at sign-off; a task gate asks whether this one change did what it was asked and runs on every attempt - and derives a task's gate from what it touches (files, coveringTests, tests.add paths) against the registered area roots, with the WIDE entry as the answer when derivation fails and the reason written into the task's description. Two invariants stated and cased: the derived gate contains every tests.add path, and it never narrows the phase's testGate. The explorer contract gained coveringTests in both copies, with [] load-bearing.",
+        "descriptive": "A generated plan no longer gives every task the whole suite, which is why eighteen full suites were running at once."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "dm31",
+        "dm32",
+        "dm33",
+        "dm34",
+        "dm35",
+        "dm36",
+        "dm37"
+      ]
+    },
+    {
+      "id": "P34.7",
+      "title": "F312: a gate row says WHICH gate it ran, not just which entries",
+      "status": "done",
+      "description": "A recorded run carries `steps` - the entry names that executed - and NO provenance. Measured\non this repo's own ledger, a row's keys are durationMs, failed, observations, phaseId, runId,\nscope, sessionId, status, steps, testedState, treeMutated, ts, v, via - and none says whether\nthose entries came from the task's own tests.gate or fell back to the phase's testGate.\n\nTHIS WAS LATENT AND P34.6 MADE IT URGENT, which is the whole reason it is a task now. Until\ntoday every task ran the phase's gate, so provenance was derivable by knowing that one fact.\nP34.6 makes a derived, narrower task gate the DEFAULT - so from now on two rows with different\nsteps may differ because the tasks differ, or because a derivation succeeded for one and fell\nback for the other, and the row cannot say which. The field report asked for exactly this\nbefore we shipped the thing that needed it: the report should say which gate a task ran under,\nso a narrowed gate is visible rather than silent.\n\nThis is not a request for more data. `steps` already lists what ran. What is missing is one\nfield saying where that list came from - the difference between a record and a record you can\naudit, and this repo's own rule that every claim carries the basis that makes it true.\nAdditive, so COMPATIBILITY.md needs nothing - but check that rather than taking it from me.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a row records whether its steps came from the task's own gate or fell back to the phase's, and a reader can tell a narrowed run from a full one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate",
+          "report",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P34.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "`gateSource` (task|phase) is recorded because it is NOT recoverable from the row: `steps` names entries with no declaration attached, and the candidate substitute `scope` is a different contract - the pointer subject, which latest_by_subject keys by. Measured: --task on a task with an empty gate yields scope='phase' beside taskId='P1.2', a shape two opposite readings both fit, and the equality holds only because one call site passes one value into both questions. `subject` deliberately not recorded, being the taskId or phaseId the row already holds. `gateLock` (held/basis/waitedSeconds) records the conditions a measurement was taken under - three states indistinguishable once the run is over. That field could not ship with the lane that wrote its reader: _deps.dict_key_violations refused a key read off a dict nothing writes, correctly, because the producer was uncommitted work elsewhere; the orchestrator added it once the producer landed.",
+        "descriptive": "A gate row says which gate it ran and under what conditions, so a narrowed measurement is visible rather than silent."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "ev35",
+        "ev36",
+        "gp1",
+        "gp3",
+        "gp4",
+        "tv9c",
+        "tv9d",
+        "tv9e",
+        "tv9f"
+      ]
+    },
+    {
+      "id": "P34.8",
+      "title": "F313: measure whether a cheap gate entry can spare an expensive one",
+      "status": "done",
+      "description": "Field measurement on an 18-task phase: the full jest suite ran about 250s per recorded gate,\n`npx tsc --noEmit` about 10s, and the one genuine cross-task breakage surfaced as TS2554\nrather than as a test failure - a required parameter added to a service method, breaking three\ncall sites in a test file the task never opened.\n\nMEASURE BEFORE DESIGNING. The first question is what run_gate already does when an entry\nfails: does it stop, or run the rest? Nobody has established that, and the answer decides\nwhether there is anything to build. Report the measurement even if it means this task ships\nonly a case pinning the existing order.\n\nAnd the second reading is what stops this becoming a false economy, so it belongs in whatever\nyou write: a task gate of typecheck alone is not a narrowed suite, it is a different question.\nThe suite asks whether behaviour still holds; typecheck asks whether the program still\ntype-checks. The same phase contained a task that changed a validation decorator so every Joi\ndefault began taking effect on every route, and typecheck would have PASSED it. So the\nmeasurement says typecheck caught THIS breakage, not that it catches breakages - and any\nordering change must not read as permission to drop the expensive entry.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: the order entries run in, and what happens to the remaining entries when a cheap one fails, is asserted rather than incidental"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P34.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "MEASURED, AND THE MEASUREMENT IS THE DELIVERABLE: run_gate does NOT stop at a failing entry - every declared entry runs in declaration order, established three ways including a counting runner, with no `break` at the loop. So there was nothing to reorder: putting the cheap entry first cannot save wall clock because nothing is skipped, and the field's saving would require ADDING a short circuit. That was declined with reasons: `steps` is currently both what ran and the whole declared list, which is what lets `failed` be read against it, and ranTotal/countsBasis are summed over every step - so a truncated run emits a complete-count sentence over a prefix, which is F312's defect one field over paid on every red run. Shipped the pin, not the change, plus the trap written down: a typecheck entry is a different question from the suite, not a cheap approximation of it.",
+        "descriptive": "The order gate entries run in, and the fact that none is skipped, is now asserted rather than incidental."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-10T11:40:00Z",
+      "verifiedBy": [
+        "eo1",
+        "eo2",
+        "eo3",
+        "eo4"
+      ]
+    }
+  ]
+}

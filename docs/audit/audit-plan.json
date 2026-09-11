@@ -201,6 +201,21 @@
       "id": "P33",
       "title": "Fourth field report, the run side: a remedy that shipped broken and a run that stops itself",
       "shard": "phases/P33.json"
+    },
+    {
+      "id": "P34",
+      "title": "Fifth field report: the ledger is 27% false failures, and most of it is the machine",
+      "shard": "phases/P34.json"
+    },
+    {
+      "id": "P35",
+      "title": "The prose-number rule is enforced in the two spellings an author wrote by accident",
+      "shard": "phases/P35.json"
+    },
+    {
+      "id": "P36",
+      "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
+      "shard": "phases/P36.json"
     }
   ],
   "fileIndex": {
@@ -210,7 +225,8 @@
       "P18.10"
     ],
     ".gitattributes": [
-      "BF2.1"
+      "BF2.1",
+      "P36.13"
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
@@ -263,7 +279,9 @@
       "P25.1",
       "P29.5",
       "P29.4",
-      "P32.6"
+      "P32.6",
+      "P34.4",
+      "P36.6"
     ],
     "README.md": [
       "P2.3",
@@ -344,7 +362,8 @@
       "P26.2",
       "P27.1",
       "P31.7",
-      "P32.7"
+      "P32.7",
+      "P36.9"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -355,7 +374,8 @@
       "P4.1",
       "P31.8",
       "P32.5",
-      "P32.2"
+      "P32.2",
+      "P34.6"
     ],
     "plugins/audit/agents/audit-reviewer.md": [
       "P4.1",
@@ -386,7 +406,8 @@
       "P29.2",
       "P31.8",
       "P32.5",
-      "P32.2"
+      "P32.2",
+      "P34.6"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -446,7 +467,8 @@
       "P4.2",
       "P5.1",
       "P14.4",
-      "BF1.1"
+      "BF1.1",
+      "P36.11"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -503,7 +525,8 @@
       "P3.4",
       "P22.2",
       "P22.13",
-      "P31.3"
+      "P31.3",
+      "P36.16"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -525,7 +548,11 @@
       "P29.5",
       "P29.4",
       "P31.1",
-      "P32.9"
+      "P32.9",
+      "P34.5",
+      "P34.8",
+      "P34.7",
+      "P36.6"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -534,11 +561,14 @@
       "P5.2",
       "P7.2",
       "P18.2",
-      "P32.7"
+      "P32.7",
+      "P34.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
-      "P32.9"
+      "P32.9",
+      "P34.5",
+      "P36.10"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -551,7 +581,9 @@
       "P18.7",
       "P29.5",
       "P32.5",
-      "P32.6"
+      "P32.6",
+      "P35.1",
+      "P36.15"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -576,7 +608,9 @@
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
-      "P15.4"
+      "P15.4",
+      "P35.1",
+      "P36.15"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -594,7 +628,8 @@
       "P11.1",
       "P11.3",
       "BF2.1",
-      "P15.4"
+      "P15.4",
+      "P36.13"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
@@ -610,17 +645,20 @@
       "P13.1",
       "P15.4",
       "P25.1",
-      "P32.7"
+      "P32.7",
+      "P34.7"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
       "BF2.1",
-      "P15.4"
+      "P15.4",
+      "P36.13"
     ],
     "plugins/audit/scripts/report/_report_usage.py": [
       "P13.2",
       "P15.4",
-      "P16.1"
+      "P16.1",
+      "P36.14"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -630,7 +668,10 @@
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
-      "P31.6"
+      "P31.6",
+      "P34.3",
+      "P36.7",
+      "P36.11"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -658,7 +699,8 @@
       "P19.1",
       "P20.2",
       "P32.7",
-      "P32.2"
+      "P32.2",
+      "P34.6"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -735,7 +777,8 @@
     ],
     "tools/capture-screenshots.mjs": [
       "BF1.2",
-      "P20.4"
+      "P20.4",
+      "P36.12"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -756,12 +799,15 @@
       "P18.9",
       "P21.3",
       "P22.8",
-      "P31.6"
+      "P31.6",
+      "P34.5"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
       "P18.9",
-      "P21.3"
+      "P21.3",
+      "P34.5",
+      "P36.10"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -897,7 +943,8 @@
       "P20.2",
       "P20.6",
       "P32.7",
-      "P32.2"
+      "P32.2",
+      "P34.6"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -909,7 +956,8 @@
       "P23.2",
       "P24.1",
       "P32.10",
-      "P32.9"
+      "P32.9",
+      "P36.2"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
@@ -944,7 +992,9 @@
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
-      "P32.9"
+      "P32.9",
+      "P34.5",
+      "P36.10"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6"
@@ -956,18 +1006,29 @@
       "P22.1",
       "P22.3",
       "P29.4",
-      "P32.7"
+      "P32.7",
+      "P34.1",
+      "P34.8",
+      "P34.7",
+      "P36.3",
+      "P36.5"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
       "P22.3",
       "P29.4",
-      "P32.7"
+      "P32.7",
+      "P34.1",
+      "P34.8",
+      "P34.7",
+      "P36.3",
+      "P36.5"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
       "P22.13",
-      "P31.3"
+      "P31.3",
+      "P36.16"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5"
@@ -1023,10 +1084,14 @@
       "P32.2"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
-      "P22.11"
+      "P22.11",
+      "P34.2",
+      "P36.4"
     ],
     "plugins/audit/tests/test__locks.py": [
-      "P22.11"
+      "P22.11",
+      "P34.2",
+      "P36.4"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -1069,7 +1134,8 @@
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
-      "P32.7"
+      "P32.7",
+      "P34.7"
     ],
     "plugins/audit/tests/test_render_report.py": [
       "P25.1"
@@ -1091,12 +1157,14 @@
       "P29.5",
       "P31.5",
       "P31.6",
-      "P32.7"
+      "P32.7",
+      "P34.4"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
       "P29.5",
-      "P31.5"
+      "P31.5",
+      "P34.4"
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
@@ -1112,33 +1180,42 @@
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
-      "P31.6"
+      "P31.6",
+      "P34.3",
+      "P36.8"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
-      "P31.6"
+      "P31.6",
+      "P34.3",
+      "P36.8"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
       "P31.6",
-      "P32.7"
+      "P32.7",
+      "P34.7"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
-      "P31.6"
+      "P31.6",
+      "P34.4"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
       "P31.5"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
-      "P29.5"
+      "P29.5",
+      "P34.4"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5"
     ],
     "plugins/audit/tests/test__output.py": [
-      "P29.5"
+      "P29.5",
+      "P35.1",
+      "P36.15"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2"
@@ -1154,7 +1231,9 @@
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
-      "P32.6"
+      "P32.6",
+      "P35.1",
+      "P36.15"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
@@ -1172,15 +1251,18 @@
       "P32.4"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
-      "P32.7"
+      "P32.7",
+      "P34.7"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
-      "P33.2"
+      "P33.2",
+      "P34.1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
-      "P33.2"
+      "P33.2",
+      "P34.1"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -1210,7 +1292,8 @@
       "P32.10"
     ],
     "CLAUDE.md": [
-      "P32.10"
+      "P32.10",
+      "P35.1"
     ],
     "examples/acme-store/evidence/2026-06.e7c1a94b2f08d635.jsonl": [
       "P32.10"
@@ -1229,13 +1312,30 @@
       "P32.6"
     ],
     "tools/check-prohibitions.py": [
-      "P32.8"
+      "P32.8",
+      "P36.1"
     ],
     "plugins/audit/tests/test_validate_manifest.py": [
       "P32.2"
     ],
     "examples/acme-store/phases/BF1.json": [
       "P32.2"
+    ],
+    "plugins/audit/scripts/governance/audit-lock.py": [
+      "P34.2"
+    ],
+    "plugins/audit/tests/test_audit_lock.py": [
+      "P34.2"
+    ],
+    "plugins/audit/tests/test_audit_journal.py": [
+      "P34.3",
+      "P36.7"
+    ],
+    ".claude/skills/writing-css/SKILL.md": [
+      "P35.1"
+    ],
+    "plugins/audit/scripts/status/_doctor_trail.py": [
+      "P36.9"
     ]
   },
   "bugs": [

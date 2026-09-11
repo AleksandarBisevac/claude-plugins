@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [2.3.0] - Unreleased
+## [2.3.0] - 2026-09-11
 
 ### Fixed — the recovery `orchestrator.md` prescribes for a plan-gate refusal was unreachable
 
@@ -34,6 +34,178 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   case instead of drifting away from the verb it names. The paired negative sits with it: a call
   that gains a path while losing one is still refused, names the path it would drop, and writes no
   byte.
+
+### Fixed — the audit trail could lose rows, and every gate stayed green while it did
+
+The headline of this release, and the reason it is a release rather than a patch. `audit-journal.py
+merge` — a verb this version adds, see *Added* below — built its result from the two sides it was
+handed and overwrote `--file` with it. The target was never read. So a stale extract destroyed rows
+at exit 0 while `verify` reported the survivors "chain cleanly", which they did. Four doors into that
+loss were found by review, one round after the other, and each is closed with a case that failed
+before the fix and a second case proving the guard stays quiet on a legitimate merge:
+
+- **a stale `--ours`/`--theirs` pair** — the result is graded against the file it would replace
+  with the same presence-and-order test `verify` trusts, and a merge that would lose a row is
+  refused, naming the first row it cannot account for and both counts;
+- **a row typed into a conflicted file while resolving it** — in neither index stage, so no union
+  could hold it; a presence-only comparator asks that one question, because the conflicted file's
+  order is two stages with markers between them and the order-aware test would refuse every genuine
+  resolution;
+- **a concurrent `append` between the grading and the write** — the read now happens under the same
+  lock the write takes, so a hook appending mid-merge queues behind it instead of being deleted;
+- **a torn or corrupt row in the target** — refused with the line named, the way a torn *side*
+  already was.
+
+Also from that surface: `merge --json` used to print `"ok": true` over a file it had not touched
+(now it writes, and says whether it did); `--file` is constrained to the journal directory, so the
+basename copied out of git's conflict message can no longer create a stray file at the project root;
+and a re-run over an already-resolved conflict says what it found instead of blaming a row nobody
+typed.
+
+### Added — `audit-journal.py merge` and `sessions`
+
+Two branches that both append to the journal used to leave a conflict you resolved by hand or lost.
+`merge` re-chains the union of the two sides in timestamp order, changing no row's content and
+recomputing only `prev`/`hash`, and refuses rather than guesses in every case it cannot settle: a
+row whose own hash does not match, no shared prefix, a torn input, two rows at one timestamp that
+disagree, a name that seeds no chain. `verify` learned the other half — a legitimately re-linked
+file is a warning rather than a finding, and the warning says the check cannot tell a merge from a
+splice. `sessions` maps each journal file to the session that wrote it, and a row records the
+session id when it differs from the file's.
+
+### Fixed — a test runner the operating system killed is no longer a failing test
+
+An OOM kill, a segfault in the runner or an external `SIGKILL` came back non-zero and was graded as
+the work failing — a task could land `blocked` after three attempts because a machine ran out of
+memory, each attempt a full executor spawn. Both signal channels are read now (a negative exit is an
+observation; the shell's `128+N` is a convention, narrowed to signals that terminate by default and
+resolved on the machine that ran), the outcome is `could-not-run` with the `GATE COULD NOT RUN`
+banner `orchestrator.md` keys on, and the rule there is: fix the runner, do not spend a retry.
+Review found and closed two holes in the first version — a runner whose report shape the counter did
+not know (`mocha --reporter json`) was excused as a crash, and `pre-commit` could never reach the
+arm at all — and one more: TAP's plan line, which the classic form prints *first*, no longer counts
+as the run having ended.
+
+**And a step that timed out no longer prints `GATE GREEN` and exits 0.** In every release through
+2.2.0 the human verdict line and the ledger disagreed: a step killed by the timeout was recorded
+`timed-out` in the evidence row while the line an operator reads said the gate was green and the
+process exited 0 — so a run that never finished could be committed as a pass unless someone read the
+ledger. Two field sessions did read it, which is how this was reported. The verdict now says `GATE
+TIMED OUT` and exits 1, on both the plain timeout and the `trap … TERM` spelling of it.
+
+### Changed — `/audit:init` derives a task's gate from what the task touches
+
+The largest source of false red gates on record was contention the plugin itself created: every task
+got the phase's full suite as its gate, so a task touching four files ran the whole test suite, and
+two phases in parallel put eighteen `jest` workers and as many `mongodb-memory-server` replica sets
+on ten cores. Memory was never the constraint; CPU starvation made replica sets miss their election
+timing and manufactured failures no diff explained. `init.md` now says what a task gate is *for* —
+whether this one change did what it was asked, on every attempt — as opposed to the phase gate,
+which asks whether the repository is still whole and runs once at sign-off; and it derives each
+task's `tests.gate` from the files it touches, `coveringTests` and `tests.add`, against the
+registered area roots, with the wide entry as the honest answer when derivation fails and the reason
+written into the task. Narrowing a task's gate never narrows the phase's. Measured on the demo
+generator with one seed, before and after:
+
+    python3 plugins/audit/scripts/demo/gen-demo-manifest.py --seed 7 <out>   # then read tests.gate per task
+
+nearly every generated task moves from the phase's `test` key to `yarn test --findRelatedTests
+<its own files>`.
+
+### Fixed — the doctor names the cause it actually found
+
+A fabricated row spliced between committed rows and re-chained is a WARNING (see `merge` above), and
+`/audit:doctor`'s only repair text for it named the wrong cause — "out-of-band drift: a git checkout,
+a script, or a shell write". Each warning class now gets its own advice, a class with no advice gets
+a pointer and no guessed cause, an unrecognised warning arriving beside a recognised one is no
+longer dropped, and where the code cannot tell a merge from a splice it says so instead of sending
+an operator to look for a merge commit that may not exist. `README.md` no longer promises a
+`/audit:doctor` FINDING for that class, and no longer promises the doctor names which rows arrived
+when it reports how many.
+
+### Fixed — the plan gate says an uncovered file is uncovered once, not on every edit
+
+From a field report that counted the same verbatim paragraph on roughly sixty files across several
+hundred edits in one afternoon — with the hook asking the model to relay each one. The tier was
+advisory throughout and the sentence was right exactly once. The first edit of an uncovered file
+speaks the paragraph; later edits of the same file in the same session return one line; a different
+file speaks again. The gate **event** is still recorded on every edit — the throttle thins what the
+model relays, never what the log holds — and the decision is untouched.
+
+### Fixed — the plugin's own commits land in repositories that enforce conventional commits
+
+`commit-audit-state.py` and `commit-manifest-index.py` lead their subjects with a fixed lowercase
+word, which is the one shape none of commitlint's `subject-case` transforms can equal, and
+`header-max-length` is pinned beside it.
+
+### Fixed — a configuration token, two checks and five sentences described mechanisms the code did not have
+
+`hooks.json` registers each guard with `ask` or `open`; that token is `py-launch.sh`'s **fail mode
+when no interpreter exists** — loud for the blocking guards, silent for the advisory ones — and not
+an enforcement strength, which is how a field report and this project's own maintainer both misread
+it. Nothing about the mechanism was wrong. What was: `tools/check-prohibitions.py` filtered on that
+token and *wrote as its reason* that a hook launched `open` cannot return a decision (driven: it
+can), and `SECURITY.md`'s per-hook fail-mode table was a description nothing compared to the wiring.
+The check now asks the property it wants — does the hook's source emit a permission decision — and
+binds the token to it in both directions; `gate-parity.py` compares the table to `hooks.json`,
+reading the loud token, the default and the decision event off the launcher rather than restating
+them. Also corrected: the guide's `KNOWN_LAYER_DEBT` denominator, rotted in five sentences the
+lint deliberately cannot see (`N of the M <noun>` is author-enforced by design), and a list anchor
+whose regex ran past its own function and reported a status the verb no longer refuses.
+
+### Performance — measured, with the command that re-derives each figure
+
+The two suites that bound the selftest sweep's wall clock re-parsed the tree per case. Following
+the `_scan_edges` precedent, `config_key_reads` is memoised for the default tree (keyed by
+vocabulary, since `config_read_violations` always passes one), and `_tokenize` — the hottest
+function in the prose scan, entered several times per line as itself and as its neighbours — sits
+behind a bounded LRU. Each memo carries the five-case pair the precedent set: same answer as
+uncached, callers get their own containers, memo in use, a fixture tree not served, a fixture not
+poisoning the default. Hook import latency is unchanged, which is the number that matters most
+because hooks run on every tool call. Re-derive rather than trusting a figure written here:
+
+    python3 tools/bench-hooks.py --gate
+    /usr/bin/time -p python3 plugins/audit/tests/test__deps.py --selftest
+    /usr/bin/time -p python3 tools/sweep-selftests.py
+
+The journal suite got slower on purpose: it now proves the concurrent-append fix with a real second
+process behind the lock, and crosses a wall-clock second deliberately so a timestamp-dependent case
+runs its hard branch every time instead of when CI happens to be slow.
+
+### Deferred — the host-wide gate lock waits for 2.4.0, as a budget rather than a mutex
+
+A host-wide lock serialising test-gate measurements was built for this release and then removed from
+it: two review rounds each found two blockers in it — a killed gate stranding a lock every other
+gate on the machine then waited an hour on, a zero-byte claim no advertised escape could clear — and
+its failure mode was a machine-wide stall. Every one of those was repaired and proven before the
+decision; the decision is that a concurrency feature which fails review twice does not ship in a
+release whose headline is that the trail can no longer lose a row. The plan-shape change above
+removes most of the contention the lock existed for. What returns in 2.4.0 is a **budget** — N
+concurrent measurements sized to the machine — not N=1.
+
+### Known open
+
+**One of these is a security gap, stated first.** `guard-secrets-read` refuses a dotenv file that a
+command or tool call *names* — `cat .env.production`, `grep … .env.production`, a `Read` of it —
+and does so identically in every version. It does **not** see a read that reaches the file without
+naming it: a recursive `grep -r <word> ./`, the `Grep` tool over a directory with no glob, `diff` of
+two env files, a `for f in .env.*` loop, `xargs cat`. Those pass silently, and an allow writes no
+event. That is the mechanism consistent with both field reports of a `.env.production` read under
+auto mode — not the guard's `ask` registration, which is its no-interpreter fail mode and never its
+decision. It predates this release and is not made worse by it; it is the first item of the next
+one, because a guard widened in an evening to cover `grep -r` is a guard that over-fires and gets
+routed around. Until then the load-bearing control is the one `SECURITY.md` already names: the
+sandbox and a `Read(.env*)` deny rule in `.claude/settings.json`, which `/audit:doctor` warns about
+when absent.
+
+Recorded, not fixed here: nothing yet tells an operator which copy of a guard is running when they
+rely on a rule it enforces — this project's own hooks ran from a stale installed copy for most of a
+day; the gates never open a browser or start a server, so a blank page survived nineteen green
+phases in the field; a red gate does not yet name the failing test; `bash-write-guard` can name a
+long-finished background job as a suspect for a write it could attribute by time; interpreter
+heredocs whose writes stay under `docs/` are refused inconsistently; directly requested work and
+documentation output have no home in the plan. The private register carries each with its
+measurement, and they are the shape of the next release.
 
 ## [2.2.0] - 2026-09-09
 

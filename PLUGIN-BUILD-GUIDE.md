@@ -132,7 +132,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, and what a row may say
-          audit-journal.py                # the CLI over it: append/verify/show/archive
+          audit-journal.py                # the CLI over it: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
@@ -1422,26 +1422,104 @@ module object has to keep serving all of them, and the `rx` cases assert it does
 
 ### `plugins/audit/scripts/governance/_journal_io.py` (v0.29.0)
 The trail itself (layer 1): `journal_dir`, `read_file`/`read_all`/`journal_files`,
-`append(project, entry) -> path|False`, `verify`, and the row/hash vocabulary underneath
-them. It sits at the bottom because two modules that are not commands need it — `_help`
-(layer 3) normalises one row to show a reader what a row looks like, `audit-doctor` reads
+`append(project, entry) -> path|False`, `verify`, the divergence half behind
+`audit-journal.py merge` (`merge_rows`/`merge_text`/`write_merged`, and `anchor_verdict`
+behind `verify`'s git anchor), `session_index` behind `sessions`, and the row/hash
+vocabulary underneath them. It sits at the bottom because two modules that are not commands
+need it — `_help` (layer 3) normalises one row to show a reader what a row looks like,
+`audit-doctor` reads
 and verifies — and because `hooks/_config.py` asks it for `journal_dir` on every tool call,
 where executing an argument parser and four subcommand bodies to resolve one path is cost
 with no caller. Three of those reaches were `_loader` loads of `audit-journal.py`; the
 fourth, `_panel_state`'s, was the edge `_deps` deliberately could not see (it spelled
 `script_path()` on one line and `load()` on the next) and is now an ordinary import.
 
+**Two writes, with deliberately opposite failure contracts, and a reader who assumes one
+rule for both will get it wrong.** `append(project, entry)` returns the path the row landed
+in, or `False`, and NEVER raises: it records a write that has already succeeded, and such a
+write must not be reported as failed because the record of it could not be written. (The
+path rather than `True` is F-F3 — the `journal-writes` hook puts it in a per-session sidecar
+so `guard-bash-writes` can tell the plugin's own append from a shell write into the trail;
+every caller that boolean-tests the result is unchanged, because a non-empty path is
+truthy.) `write_merged(path, text)` **raises** on anything that stopped it, because it is not
+a record of a write — it IS the write, and a caller told it was fine would go on to commit a
+conflicted file. It also takes the same lock an append takes, and that is not optional here:
+an append reads the file's tail to learn its `prev` while a merge REPLACES that tail, so
+without the lock an append that had already read the old tail would land a row chained to a
+row the merge had just replaced — a break that reads exactly like a deleted row, which is the
+false tamper verdict the lock exists to prevent. It goes through a temporary file in the same
+directory, so an interrupted merge leaves either the old file or the new one and never half
+of each, and a half-written temporary is removed without swallowing the exception that
+stopped it.
+
 ### `plugins/audit/scripts/governance/audit-journal.py`
-The CLI over `_journal_io`: `append | verify | show | archive`, turning the library's dicts
-into printed lines and an exit code (0 healthy, 1 the chain does not hold, 2 usage).
+The CLI over `_journal_io`: `append | verify | show | archive | merge | sessions`, turning
+the library's dicts into printed lines and an exit code (0 healthy, warnings allowed;
+1 findings — the chain does not hold, or a merge refused; 2 usage).
 One file per writer per month (`<journal dir>/<YYYY-MM>.<writerId>.jsonl`, default beside the
 manifest) so parallel worktrees never conflict; each row carries `{v, ts, actor, action,
 target, summary, stateHash, prev, hash}`, sha256 over canonical JSON, with the first row's
 `prev` derived from the file's own base name so a file cannot be renamed into another
-writer's slot. `verify` reports an edited / deleted / reordered row as a FINDING (exit 1) and
-a torn tail or out-of-band drift as a WARNING (exit 0). **Tamper-evident, not tamper-proof** —
+writer's slot. **Tamper-evident, not tamper-proof** —
 stated in the module, the README, the panel's own Settings card and SECURITY.md, because a
-forger who rewrites the whole file still verifies. `append()` never raises. `--selftest`.
+forger who rewrites the whole file still verifies. `--selftest`.
+
+**What `verify` grades as what.** FINDINGS are breaks: a row that does not hash to its own
+contents (edited after it was written), a row that does not follow the one before it
+(deleted, reordered, or the file renamed), a corrupted line that is not the last line, and a
+committed row that is no longer in the working copy with its content intact. WARNINGS are
+the honest maybes: a torn tail (a crash, not a cover-up), out-of-band drift — the document
+moved with no row to say why, which is normal for anything the plugin did not write — the
+same basename existing both live and archived (both chains verify off the same genesis seed,
+so its rows double-count), and a file whose LINKS were recomputed while every committed
+row's content survived.
+
+**That last warning class is new with `merge`, and it is why the git anchor asks about ROWS
+and not about bytes** (F306). "The committed copy is a byte prefix of the working copy" stood
+in for append-only-across-commits, which is a good proxy for as long as appending is the only
+thing that ever happens to the file. Resolving a divergence re-links every row after the
+divergence point, so the bytes after it are new while no row's CONTENT moved at all — and
+neither side of a divergence satisfies the prefix either, so `verify` reported every sound
+resolution as broken and could tell nobody whether their resolution was sound. Presence,
+content and order are what the proxy was reaching for and they are checkable directly:
+`_journal_io.anchor_verdict` holds that property, states what it stopped being able to forbid
+(a row may now be INSERTED between committed rows, which is exactly what a merge does with
+the other side's tail — reported as a warning rather than passing in silence), and the byte
+prefix is still tried first and still settles almost every file. **What that warning cannot
+do is name its own cause**: a legitimate re-link and a fabricated row spliced in among
+committed rows and re-chained produce the identical verdict, and neither the merge commit nor
+the `journal.merge` marker row is required for the benign reading — so no check consults
+either, and the warning's job is to send a human to read the extra rows. `_doctor_trail`'s
+`journal_warning_advice` is where that is worded for an operator.
+
+**`merge` is the verb a journal conflict needs and did not have** (F306). One writer on two
+BRANCHES is ordinary while a phase is paused, and the per-writer file split does not separate
+them — so a landing phase produces one file with a shared prefix and two tails, which cannot
+be resolved by editing, because each divergent row's hash covers a `prev` only its own side
+has. With no verb the resolution keeps one tail and loses the other in a second parent nobody
+reads again. It re-chains the UNION of the two sides, recomputing `prev` and `hash` and
+touching no row's content, and it defaults to the two sides git already has (index stages 2
+and 3 of `--file`), so during a conflict it needs nothing but the path. That default is also
+half of what leaves a re-chained file AUDITABLE rather than merely rewritten — both inputs stay
+in git and the merge commit holds both parents, so a reviewer can read either side — and the
+command says so only of the sides that really came from the index, because it is a claim it
+cannot support about two files a caller extracted itself. What it does not buy is a check:
+nothing in this tree requires that commit to exist before it will read a re-linked chain as
+benign, which is why `verify`'s warning for one is a pointer at a human rather than a
+verdict. It is deliberately not blocked by `journal.enabled: false`: that switch
+governs whether new news is RECORDED, while this repairs a file that already exists and is
+already in conflict, and refusing would leave the operator holding a conflicted file with no
+verb that admits to it. What it refuses rather than guesses is `_journal_io.merge_rows`'
+answer and is documented there — the refusal set is the library's contract and this is a
+front end over it.
+
+**`sessions` answers the question a file NAME cannot** (F309). The name carries the writer id
+the ROW supplied, clipped to fit a name, and the hook that writes most rows is handed a
+different id from the one a session reads from Bash — so the mapping lives in the rows, and
+this prints it per file with the `actor.sessionId` and `actor.envSessionId` values behind it,
+marking the file this session wrote. A file with no `envSessionId` on any row is reported as
+meaning either that the writer read the same id from its environment or that the rows predate
+the field, never as the reassuring one of those.
 
 ### `plugins/audit/scripts/demo/gen-demo-manifest.py`
 Generates the synthetic LARGE manifest fixture behind `docs/demo-large.html` and the panel
@@ -1486,8 +1564,8 @@ demo generators must attribute to the SAME people: `gen-demo-usage.py` stamps th
 synthetic ledger row and `gen-demo-manifest.py` hands them out as `meta.areas[*].owner`,
 precisely so the shipped demo shows `/audit:doctor`'s owner-versus-ledger join succeeding.
 `gen-demo-manifest.py` used to read the tuple off `gen-demo-usage.py` through `_loader` —
-one entry point loading another for one name, the last of the seventeen
-`KNOWN_LAYER_DEBT` edges. The alternative to a small module was not a bigger one; it was a
+one entry point loading another for one name, and the last edge
+`KNOWN_LAYER_DEBT` then carried. The alternative to a small module was not a bigger one; it was a
 second copy of three addresses that nothing would ever compare.
 
 ### `plugins/audit/reference/manifest-conventions.md`
@@ -1505,8 +1583,8 @@ task-blocked-by-own-phase deadlocks), **bidirectional** `fileIndex ↔ task.file
 status combinations. `validate(manifest)` is pure: parsed JSON in, `(findings, warnings)`
 out, never raises, no I/O, no module state. It sits below every consumer because FOUR
 modules need it and only one is a command — `_panel_state`, `audit-doctor`, `audit-status`
-and `migrate-manifest` all used to load `validate-manifest.py` through `_loader`, four of
-the seventeen `KNOWN_LAYER_DEBT` edges.
+and `migrate-manifest` all used to load `validate-manifest.py` through `_loader`, four of the
+edges `KNOWN_LAYER_DEBT` then carried.
 
 The file itself is now a fraction of the 1,406 it was cut from, and holds **two** things:
 `_check_meta` (the document's header — the root key vocabulary and `meta`, which need
@@ -2176,8 +2254,8 @@ member the enum gains later is reported rather than folded into `failed`), and
 the gate (`CONDITIONS`, `DEFAULT_GATE`, `evaluate_gate`, `budget_breaches`). Pure dict→dict
 throughout: nothing here opens a file or runs a process, which is what lets three modules
 share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-report`
-(the gate verdict) each used to load `audit-status.py` for it, three of the seventeen
-`KNOWN_LAYER_DEBT` edges. `usage_summary` and `discovery_block` do read the world, so they
+(the gate verdict) each used to load `audit-status.py` for it, three of the edges
+`KNOWN_LAYER_DEBT` then carried. `usage_summary` and `discovery_block` do read the world, so they
 stayed with the command.
 
 ### `plugins/audit/scripts/status/audit-status.py` (v0.5.0)
@@ -2293,8 +2371,27 @@ evidence a guard ever fired, ledger files the only local evidence metering ever 
 the journal chain the only local evidence a completion was recorded. Each says WHICH of
 "never started" and "stopped" it is looking at — a disabled journal with rows on disk is a
 warning, a disabled journal with none is an ok line. `check_journal` delegates to the
-journal's own `verify` rather than re-deriving the verdict, and grades a broken chain a
-FINDING while a torn tail or out-of-band drift stays a warning.
+journal's own `verify` rather than re-deriving the verdict — a diagnostic with its own
+opinion about whether a chain is intact is a second implementation that can disagree with the
+one that matters — and grades a BROKEN chain a FINDING, because a row that was edited, deleted
+or reordered is not something that happens by accident. Everything else is a WARNING at most,
+and the warnings are not one thing: a torn tail is an interrupted writer, out-of-band drift is
+a recorded document moving with no row to explain it, and a **RE-LINKED** chain is a file whose
+committed rows all survived while the bytes after one of them are new (F306).
+
+**That third class is the one to read carefully, because this check cannot tell what caused
+it.** `audit-journal.py merge` re-links a chain to resolve a divergence — and splicing a
+fabricated row in among rows that are already committed re-links it identically. Same warning,
+and nothing here separates them. Neither a merge commit nor a `journal.merge` marker row is
+REQUIRED for the harmless reading, so nothing mechanically confirms it: what the warning buys
+is that the operator is sent to look, at the extra rows (`audit-journal.py show`) and at the
+merge they already know about (`git log --merges`) — a pointer, never a verdict.
+`journal_warning_advice` is why that is said per class: one repair line for each class actually
+present and none about a class that is not (F329 — one unconditional sentence about out-of-band
+drift sent an operator hunting a git checkout that was never there, and an operator who finds
+nothing learns to read the row as noise), and a warning it does not recognise gets a pointer
+instead of a guessed cause.
+
 `_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
 uncommitted-file warning, keyed by journal-relative path so a live and an archived month
 cannot read as one another. Layer 4, set by the `usage_ledger` load.
@@ -2396,7 +2493,7 @@ The lock library (layer 1): where a lock lives (`lock_dir`), what it may be call
 not age, decides a stale lock, and every verdict carries the BASIS sentence that makes it
 checkable. It is at the bottom of the graph because four callers ask about a lock and only
 one of them is a command: `_panel_state`, `audit-doctor` and `audit-usage` each loaded
-`audit-lock.py` through `_loader` (three of the seventeen `KNOWN_LAYER_DEBT` edges), and
+`audit-lock.py` through `_loader` (three of the edges `KNOWN_LAYER_DEBT` then carried), and
 `hooks/_config.py` resolves it by path on every tool call — so the module it reaches for
 should be small. `audit-task.py`'s dependency was the one nothing could see: it took the
 index lock by building an argv and calling `main()` through `_panel_write._lockmod()`, so
@@ -2605,6 +2702,21 @@ accept it or a repository with husky rejects the commit *after* the file is stag
 from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`
 therefore separates the two commit classes for ever.
 
+**And the subject after the colon opens with a fixed lowercase word** (F305) — the line reads
+`chore(audit-state): phase P6 — …`. This is the second half of the same repair: `chore` satisfied
+commitlint's default `type-enum`, and the very next default rule refused the commit anyway.
+`subject-case` forbids a subject that *is* sentence-case, start-case, pascal-case or upper-case,
+and a phase id leading an otherwise lowercase sentence is sentence-case exactly. Aiming at every
+one of those cases rather than at the one that bit is the point, because meeting the defaults a
+rule at a time is what made this a second visit: each of them is computed by a transform that
+capitalises the subject's first character, so a lowercase-initial subject is out of reach of all
+of them. The word is this command's and not the caller's — it sits ahead of `--subject`, so
+nothing a caller passes can put a capital back in first position — and the phase id stays
+**uppercase** one word further in, since the id was never what the rule objected to, its position
+was. The shape is unconditional and deliberately **not** read from `meta.commit`: that block holds
+a default type and a trailer, records nothing about which commitlint rules a repository
+configures, and a fixed spelling no manifest can move is exactly what F268 bought.
+
 **It anchors itself in the trail.** After committing it appends an `audit.state.committed`
 journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such
 a commit, since it is not a `task.commit` and the manifest does not name it. That is what
@@ -2662,6 +2774,13 @@ sign-off read as failed and get the step deleted within a day.
 the commit *after* the file is staged (F268), and `audit-index` in the scope because a task commit's
 scope is its phase id and its type comes from `meta.commit.type`, which a manifest may set to
 anything. `git log --grep audit-index` therefore separates the three commit classes for ever.
+
+**And its subject opens with the same fixed lowercase word** (F305), against the identical defect:
+with the phase id first the subject *is* sentence-case, which commitlint's default `subject-case`
+refuses along with start-case, pascal-case and upper-case. The reasoning is spelled out under
+`commit-audit-state.py` above and is not restated here; what is specific to this writer is that
+the word names the phase **without** claiming to be scoped to it — the conventional scope says
+`audit-index`, and that is what the commit is scoped to, while the subject's phase is attribution.
 
 **It anchors itself in the trail.** After committing it appends an `audit.index.committed` journal
 row whose `details` carry `commit` and `phaseId` — both on `_journal_io.DETAILS_KEYS`, checked by a
@@ -2743,7 +2862,10 @@ existed, while nothing ever set it — a three-valued count shipping without the
 explains its unknown arm. It says which steps were counted, which printed no summary this reader
 can parse, and, on a mixed gate, that the total is a floor and not a size.
 
-Exit 0 passed / 1 a command failed, or the tree moved, or nothing ran / 2 could not be asked.
+Exit 0 passed / 1 a command failed, or the gate rewrote a file the work under test declares,
+or nothing ran, or a step reached no verdict — a runner that never started, one the OS ended,
+one stopped at its bound — or a stop signal cut the run short before every step had reported /
+2 the gate could not be asked.
 An **empty** gate exits 0 and is reported as itself, never as green: `audit-task.py:_phase_gate`
 documents it as a designed state, and printing green would claim a measurement nobody made.
 Git that cannot describe the tree is `UNKNOWN` and says so rather than reading as clean.
@@ -3261,8 +3383,8 @@ from fixtures rather than by mutating the shipped vocabulary — the same split
 `AUTHOR_MODES`, `IN_PROGRESS_POLICY`, `STRICT_MANIFEST_STATE`) the panel's Settings form
 reads, so the form can never offer a value the validator rejects. Three modules needed it
 and all three used to load `validate-config.py` through `_loader` — including
-`_panel_settings` from LAYER 2, the deepest of the seventeen `KNOWN_LAYER_DEBT`
-inversions, which is why `_panel_settings` moved up to layer 3 in the same change.
+`_panel_settings` from LAYER 2, the deepest inversion `KNOWN_LAYER_DEBT`
+then carried, which is why `_panel_settings` moved up to layer 3 in the same change.
 
 ### `plugins/audit/scripts/config/validate-config.py`
 The command over those rules: read the file, print `WARNING:`/`FINDING:` lines, exit 0

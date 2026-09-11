@@ -749,6 +749,43 @@ def _cases(check):
     check("tv9b ...and a clean run carries the badge alone, so tv9 is counting "
           "a marker and not counting spans",
           M._tev_cell(M.tev_view(_ptr, _row(), True)).count("<span") == 1)
+    # F312. The drawer already prints `scope`, which is the POINTER SUBJECT, so a
+    # reader looking for "which gate ran" met a field answering a different
+    # question. These cases hold the new line to what the row SAYS and to nothing
+    # else - the row is where the claim has to come from, and a renderer that
+    # inferred provenance from `scope` would publish the exact misreading the
+    # field exists to end.
+    check("tv9c the drawer names WHICH declaration the steps came from, and the "
+          "fallback says the task declares none - `the phase's testGate` beside "
+          "a task is a different claim from that task's own gate having passed",
+          M._tev_gate_text({"gateSource": "task"}) == "this task's own tests.gate"
+          and "declares none" in M._tev_gate_text({"gateSource": "phase",
+                                                   "taskId": "P1.2"})
+          and "declares none" not in M._tev_gate_text({"gateSource": "phase"}))
+    check("tv9d ...and a row that does not SAY renders no line at all rather "
+          "than borrowing `scope`. Every row recorded before the field existed "
+          "carries a scope and no provenance, so a renderer falling back to it "
+          "would put a provenance claim on the whole committed ledger",
+          M._tev_gate_text({"scope": "task"}) == ""
+          and M._tev_gate_text({}) == ""
+          and M._tev_gate_text({"gateSource": "", "scope": "phase"}) == "")
+    check("tv9e ...and a word this build does not know is NAMED, the reading "
+          "tv8 already takes of a status from a newer plugin: the vocabulary is "
+          "declared open, so folding an unknown into one of the two known "
+          "answers would publish a provenance nobody recorded",
+          M._tev_gate_text({"gateSource": "derived"}) == "derived")
+    _prov_row = dict(_row(), gateSource="phase", taskId="P1.2",
+                     runId="R", ts="t", durationMs=5)
+    _prov_html = M._tev_detail_col(M.tev_view(_ptr, _prov_row, True))
+    _bare_html = M._tev_detail_col(M.tev_view(_ptr, dict(_row(), runId="R",
+                                                         ts="t", durationMs=5),
+                                              True))
+    check("tv9f ...and the drawer actually carries the line when the row has it "
+          "and NONE when it does not, counted rather than found: the cell is "
+          "dropped by the same empty-value rule every other pair obeys, which "
+          "is what keeps a row recorded before the field rendering as it did: "
+          "%r" % ((_prov_html.count(">gate<"), _bare_html.count(">gate<")),),
+          _prov_html.count(">gate<") == 1 and _bare_html.count(">gate<") == 0)
     check("tv10 the rollup counts in vocabulary order with an unknown word "
           "last, rather than alphabetically - `cancelled` above `passed` reads "
           "as a ranking nobody chose",

@@ -56,7 +56,7 @@ between two blocks 290 lines apart.
 ## One component, one name
 
 31 class names exist in both sheets. **35 pairs are the same component under different names** —
-`.utip` and `.rtip` are 11 of 11 declarations identical, `.uhmperiod` and `.hmperiod` 5 of 5,
+`.utip` and `.rtip` are identical declaration for declaration, `.uhmperiod` and `.hmperiod` too,
 `.mut` and `.muted` the same idea. Worse, **ten names collide with incompatible meanings**:
 `.bar` is an 8px track in the panel and a bordered 13rem block in the report; `.chip` is a
 neutral tag versus a status pill; `.advice` is the styled block versus the list containing it.

@@ -40,9 +40,39 @@ def _detail(rep, name):
     return " ".join(r["detail"] for r in rep.rows if r["check"] == name)
 
 
+def _fix(rep, name):
+    return " ".join(r["fix"] or "" for r in rep.rows if r["check"] == name)
+
+
 def _age(path, days):
     when = time.time() - days * 86400
     os.utime(path, (when, when))
+
+
+def _committed_journal(root):
+    """A git repo at `root` holding two COMMITTED journal rows; returns the
+    file they landed in.
+
+    Shared by the two anchor cases below, which are the same setup up to their
+    last write: a splice re-chains the rows, a re-spelling rewrites the bytes
+    and moves no row. The commit is not scaffolding - `_git_anchor_finding`
+    fails open on an untracked file, so a journal git has never seen produces
+    no warning to classify at all."""
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
+        subprocess.run(["git", "-C", root, "config", k, v], check=True)
+    for tid in ("P1.1", "P1.2"):
+        _journal_io.append(root, {"action": "task.complete", "actor": "probe",
+                                  "ts": "2026-01-01T00:00:00Z",
+                                  "details": {"taskId": tid}})
+    subprocess.run(["git", "-C", root, "add", "-A"], check=True,
+                   stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", root, "-c", "commit.gpgsign=false",
+                    "commit", "-q", "-m", "j"], check=True,
+                   stdout=subprocess.DEVNULL)
+    return sorted(_journal_io.journal_files(_journal_io.journal_dir(root)))[0]
 
 
 # --- cases --------------------------------------------------------------------
@@ -254,6 +284,208 @@ def _cases(check):
               M._journal_never_committed(_journal_io, None) is None
               and M._journal_never_committed(_journal_io,
                                              os.path.join(tmp, "nope")) is None)
+
+        # ------------------------------- which WARNING class, and its fix (F329)
+        # THE PAIR IS THE POINT. F306 made a re-linked file a warning instead of
+        # a finding, and the fix text stayed the single sentence about
+        # out-of-band drift - so the highest-stakes new class told an operator
+        # to look for a git checkout that does not exist. dt43 fails when the
+        # classifier never fires (the original defect); dt44 fails when it fires
+        # unconditionally, which is the other wrong implementation and the one
+        # that looks vacuous. Both fixtures are REAL: a spliced-and-re-chained
+        # committed file, and a recorded document edited behind the journal's
+        # back.
+        #
+        # AND THE SAME PAIR AGAIN ONE LEVEL DOWN (F344a). `_anchor_warning` says
+        # two different things and both open with the same clause, so `relink`
+        # keyed on that clause answered for a file where NO row moved and none
+        # arrived - F329's own defect, reintroduced by the repair. dt46 is the
+        # never-fires direction for the re-spelling; dt43's closing clause is
+        # the over-fire direction, and either goes red if the prose that carries
+        # a class moves, which is the price of classifying on text at all.
+        if not have_git:
+            print("SKIP dt43 (git is not on PATH)")
+            print("SKIP dt46 (git is not on PATH)")
+        else:
+            splice = os.path.join(tmp, "relinked")
+            sfile = _committed_journal(splice)
+            srows, _storn = _journal_io.read_file(sfile)
+            forged = dict(srows[0])
+            forged["details"] = {"taskId": "P9.9"}
+            forged["summary"] = "a row nobody wrote"
+            srows.insert(1, forged)
+            chained, _moved = _journal_io._rechain(
+                srows, os.path.basename(sfile))
+            with open(sfile, "w", encoding="utf-8") as fh:
+                fh.write(_journal_io.merge_text(chained))
+            sres = _journal_io.verify(splice)
+            rep = base.Report()
+            M.check_journal(rep, splice, {}, cfgmod, splice)
+            check("dt43 a fabricated row spliced BETWEEN committed rows and the "
+                  "file re-chained is the `relink` class, and its fix says the "
+                  "check cannot tell a merge from a splice - never the "
+                  "out-of-band-drift sentence, which would send the operator "
+                  "looking for a checkout that never happened, and never the "
+                  "re-spelling one, which would deny rows arrived: %r / %r"
+                  % (_detail(rep, "journal"), _fix(rep, "journal")),
+                  _levels(rep, "journal") == ["WARNING"]
+                  and M.journal_warning_advice(
+                      sres["warnings"])["kinds"] == ["relink"]
+                  and "RE-LINKED chain" in _fix(rep, "journal")
+                  and "NOTHING HERE CAN TELL THOSE APART" in _fix(rep,
+                                                                  "journal")
+                  and "out-of-band drift is a document" not in _fix(rep,
+                                                                    "journal")
+                  and "RE-SPELLED" not in _fix(rep, "journal"))
+
+            # THE FIXTURE IS THE WHOLE CASE. Every row is re-emitted with the
+            # SAME content in the SAME order and a legal but non-canonical
+            # spelling - spaces after the JSON separators, which `canonical()`
+            # never writes. That is the shape a writer outside this plugin
+            # leaves: the bytes differ from the committed copy while
+            # `anchor_verdict` finds nothing diverged and nothing extra. A
+            # fixture that changed a row would have produced the splice
+            # warning instead and could not tell the two classes apart.
+            respelled = os.path.join(tmp, "respelled")
+            rfile = _committed_journal(respelled)
+            rrows, _rtorn = _journal_io.read_file(rfile)
+            with open(rfile, "w", encoding="utf-8") as fh:
+                for row in rrows:
+                    fh.write(json.dumps(row, ensure_ascii=False,
+                                        separators=(", ", ": ")) + "\n")
+            rres = _journal_io.verify(respelled)
+            rep = base.Report()
+            M.check_journal(rep, respelled, {}, cfgmod, respelled)
+            check("dt46 ...while a committed copy merely RE-SPELLED - same "
+                  "rows, same order, other bytes - is its own class and must "
+                  "NOT draw the re-link advice, which tells the operator to go "
+                  "and read rows that do not exist. This is F329's defect one "
+                  "level up, and it survived because both warnings open with "
+                  "the same clause: %r / %r"
+                  % (_detail(rep, "journal"), _fix(rep, "journal")),
+                  _levels(rep, "journal") == ["WARNING"]
+                  and len(rres["warnings"]) == 1
+                  and M.journal_warning_advice(
+                      rres["warnings"])["kinds"] == ["respelled"]
+                  and "RE-SPELLED file" in _fix(rep, "journal")
+                  and "RE-LINKED chain" not in _fix(rep, "journal")
+                  and "Read the extra rows yourself" not in _fix(rep, "journal")
+                  and "out-of-band drift is a document" not in _fix(rep,
+                                                                    "journal"))
+
+        drift = os.path.join(tmp, "drifted")
+        os.makedirs(os.path.join(drift, "docs", "audit"))
+        dman = os.path.join(drift, mrel)
+        with open(dman, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"v": 1}}\n')
+        _journal_io.append(drift, {"action": "composition.write",
+                                   "actor": "probe", "target": mrel,
+                                   "ts": "2026-01-01T00:00:00Z"})
+        with open(dman, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"v": 2}}\n')
+        dres = _journal_io.verify(drift)
+        rep = base.Report()
+        M.check_journal(rep, drift, {}, cfgmod, None)
+        check("dt44 ...and a recorded document edited with no row to explain it "
+              "STILL gets the out-of-band-drift sentence and none of the "
+              "re-link text. THE OVER-FIRE CASE: a classifier that answered "
+              "`relink` for every warning would pass dt43 and fail here: %r"
+              % (_fix(rep, "journal"),),
+              _levels(rep, "journal") == ["WARNING"]
+              and M.journal_warning_advice(dres["warnings"])["kinds"] == ["drift"]
+              and "out-of-band drift is a document" in _fix(rep, "journal")
+              and "RE-LINKED" not in _fix(rep, "journal"))
+
+        unknown = M.journal_warning_advice(["a class this table never heard of"])
+        check("dt45 ...and a warning in NO class gets a pointer and no cause. "
+              "Falling back to the drift sentence is how the wrong cause got "
+              "printed in the first place, so an unrecognised warning must not "
+              "borrow one: %r" % (unknown,),
+              unknown["kinds"] == []
+              and "no repair text" in unknown["fix"]
+              and "out-of-band drift is a document" not in unknown["fix"]
+              and "RE-LINKED" not in unknown["fix"])
+
+        # A REAL TORN TAIL, because the table claimed every class it holds goes
+        # red when its sentence is reworded and this one had no case at all
+        # (F344c): rewording `verify`'s partial-line warning left the whole
+        # suite green while the class silently lost its advice. dt47 also
+        # carries the second direction of dt48's pointer - a list where every
+        # warning IS recognised must not draw one, which is the wrong
+        # implementation that emits the pointer unconditionally.
+        torn = os.path.join(tmp, "torntail")
+        os.makedirs(os.path.join(torn, "docs", "audit"))
+        _journal_io.append(torn, {"action": "task.complete", "actor": "probe",
+                                  "ts": "2026-01-01T00:00:00Z",
+                                  "details": {"taskId": "P1.1"}})
+        tfile = sorted(_journal_io.journal_files(
+            _journal_io.journal_dir(torn)))[0]
+        with open(tfile, "a", encoding="utf-8") as fh:
+            fh.write('{"action":"task.complete","act')
+        tres = _journal_io.verify(torn)
+        rep = base.Report()
+        M.check_journal(rep, torn, {}, cfgmod, None)
+        check("dt47 a file whose last line is half-written is the `torn` class "
+              "and gets the interrupted-writer sentence - and NOT the pointer, "
+              "which is what an advice list that always appends one would add: "
+              "%r / %r" % (_detail(rep, "journal"), _fix(rep, "journal")),
+              _levels(rep, "journal") == ["WARNING"]
+              and not tres["findings"]
+              and M.journal_warning_advice(tres["warnings"])["kinds"] == ["torn"]
+              and "a torn tail is an interrupted writer" in _fix(rep, "journal")
+              and "no repair text" not in _fix(rep, "journal"))
+
+        # F344b, and the fixture is real rather than two hand-written strings:
+        # the same basename living AND archived is a class `verify` emits with
+        # no row in the table, standing beside a drift warning that has one.
+        # The bug dropped the unrecognised half entirely whenever anything else
+        # matched, so `/audit:doctor` printed a cause for one warning and
+        # nothing at all for the other.
+        both = os.path.join(tmp, "dup-and-drift")
+        os.makedirs(os.path.join(both, "docs", "audit"))
+        bman = os.path.join(both, mrel)
+        with open(bman, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"v": 1}}\n')
+        _journal_io.append(both, {"action": "composition.write",
+                                  "actor": "probe", "target": mrel,
+                                  "ts": "2026-01-01T00:00:00Z"})
+        with open(bman, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"v": 2}}\n')
+        bdir = _journal_io.journal_dir(both)
+        blive = sorted(_journal_io.journal_files(bdir))[0]
+        barch = os.path.join(bdir, _journal_io.ARCHIVE_DIRNAME)
+        os.makedirs(barch)
+        shutil.copy2(blive, os.path.join(barch, os.path.basename(blive)))
+        bres = _journal_io.verify(both)
+        badv = M.journal_warning_advice(bres["warnings"])
+        rep = base.Report()
+        M.check_journal(rep, both, {}, cfgmod, None)
+        check("dt48 an unrecognised warning standing BESIDE a recognised one "
+              "still gets the pointer, and the recognised one keeps its cause. "
+              "Emitting the pointer only when nothing matched passes dt45 and "
+              "fails here, which is why dt45 alone left the defect in: %r"
+              % (_fix(rep, "journal"),),
+              _levels(rep, "journal") == ["WARNING"]
+              and len(bres["warnings"]) == 2
+              and badv["kinds"] == ["drift"]
+              and "out-of-band drift is a document" in _fix(rep, "journal")
+              and "no repair text" in _fix(rep, "journal"))
+
+        # WHY THE POINTER HAS TO BE PER WARNING and not per list, on the same
+        # fixture: the detail line spends a fixed budget on the warning text
+        # (`_output.some_of`) and elides the rest, so the fix is the only place
+        # an elided warning is represented at all. The budget is deliberately
+        # NOT widened for this - `some_of` is shared, it says how many it left
+        # out, and the repair that closes the gap is the one above.
+        shown = _detail(rep, "journal")
+        elided = [w for w in bres["warnings"] if w not in shown]
+        check("dt49 ...and on this fixture the detail line really does elide a "
+              "warning, so a class dropped from the fix would leave that "
+              "warning with no representation anywhere in the row: %r elided, "
+              "detail %r" % (len(elided), shown),
+              len(elided) == 1
+              and "more" in shown
+              and len(badv["fix"].split("; also: ")) == 2)
 
         # ------------------------------------------- check_running_plugin (F228)
         # THREE OUTCOMES, and the third is the one this file exists to keep

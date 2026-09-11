@@ -37,6 +37,15 @@ Hard rules:
   report — "related", "similar" and "nearby in the tree" are not data paths.
   Return `[]` when you looked and found none, so that silence is never the same
   answer as absence.
+- Say what already grades it. `coveringTests` names the test files that ALREADY
+  exercise the files in `files` — the suites a gate has to run to be ABLE to
+  fail for this finding, before any new case exists. Cite one the way a finding
+  is cited: the path, plus the NAME of the function, endpoint, query or behaviour
+  in `files` that the case drives. A filename that merely resembles a source file
+  is not evidence — open it and name what it calls. Return `[]` when you looked
+  and found none: that is the answer "nothing grades these files today", which
+  the orchestrator turns into a WIDER gate and a written reason, and it must
+  never read the same as not having looked.
 
 Return format — your ENTIRE final message is ONLY a JSON array (no prose, no
 markdown fences), each element:
@@ -46,6 +55,9 @@ markdown fences), each element:
  "coupledPaths": [{"path": "path[:lines]",
                    "shared": "the store, wire shape or generated type both sides touch"},
                   ...],
+ "coveringTests": [{"path": "path[:lines]",
+                    "covers": "the function, endpoint or behaviour under test that this case drives"},
+                   ...],
  "evidence": "...", "suggestedFix": "...",
  "suggestedTests": ["...", ...], "risk": "low|med|high"}
 
@@ -56,6 +68,12 @@ orchestrator's model choice and human-confirmation gates).
 wrong somewhere else. Keep them disjoint: a path already in `files` is not a
 coupled path, and the orchestrator — not you — decides which coupled paths the
 task must own.
+
+`coveringTests` is neither of those, and it OVERLAPS `files` by design: a test
+file is not work the fix has to do, it is what can already say the fix went
+wrong. It is the one input a task's own gate can be narrowed from, so an empty
+list is a real answer with a real consequence — the gate stays wide and the task
+records why — while a guessed one buys a green that checked nothing.
 
 **Each `suggestedTests` entry opens with the repo-relative path of the file the
 case will live in** — `"<testFile>: <what it asserts>"` — even when that file

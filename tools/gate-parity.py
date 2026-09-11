@@ -47,10 +47,11 @@ either table below that names a gate neither side invokes any more is reported t
 otherwise the tables become a place where dead exemptions accumulate and the check
 quietly stops covering what it claims.
 
-IT ALSO HOLDS THE RULES ABOUT THE RUNNERS THEMSELVES, because it is already the
-thing that reads `verify.sh` for a living. Neither is a parity question; both are
-properties of how the gates get run, and the alternative to keeping them here was a
-second reader of the same files:
+IT ALSO HOLDS THE RULES THAT ARE NOT PARITY QUESTIONS, because it is already the
+thing that reads a runner - and a hand-maintained description of a machine-readable
+fact - for a living. None of them is a parity question; each is a property of how
+the gates get run or of what a document claims, and the alternative to keeping them
+here was a second reader of the same files:
 
   * no runnable file under `tools/` may name a temp path a second concurrent run
     would share. `scratch_isolation()` has what went wrong when the paths were
@@ -60,12 +61,22 @@ second reader of the same files:
     disagreement `parity()` cannot see: both files named the same gates while
     disagreeing about which of them run, so a step the runner had no arm for was
     dropped in silence and the summary went on calling the change covered.
+  * every family of environment variables the sweep points away from the machine
+    must be named by every document describing that isolation, and the sweep must
+    agree with itself about what it watches. `isolation_drift()` reads the runner's
+    own constants rather than restating them.
+  * every fail mode `SECURITY.md` documents must be the one `hooks.json` registers,
+    and every wired hook-and-event pair must have a row. `failmode_table_drift()`
+    says why that document's drift is a security claim rather than a stale
+    paragraph, and why the second direction is what makes the first worth having.
 """
 import ast
 import glob
 import io
+import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -940,6 +951,366 @@ def isolation_drift(repo=None):
             "sides": sides, "problem": None}
 
 
+# --- SECURITY.md's fail-mode table against the wiring it describes ------------
+# ANOTHER RULE HERE THAT IS NOT A PARITY QUESTION, and it is in this file for the
+# reason its neighbours above are: this is already the thing that compares a
+# hand-maintained description with the machine-readable fact behind it, and what it
+# reads is a document against a launcher rather than one document against another.
+#
+# WHAT THE TABLE PROMISES A READER. `SECURITY.md`'s "Fail modes (by design)" section
+# says, per hook and per event, what happens when `hooks/py-launch.sh` can find no
+# Python interpreter: a manual approval prompt saying the guards are NOT running, or
+# nothing at all. That is decided nowhere near the document - it is the second
+# argument of each registration in `hooks/hooks.json`, which the launcher reads as
+# `mode`, and SECURITY.md names that file as the authority. Nothing compared them.
+#
+# WHY THAT MATTERS MORE THAN A STALE DOCUMENT USUALLY DOES. Drift here does not make
+# a paragraph out of date; it makes SECURITY.md tell a reader that a BLOCKING guard
+# fails silently, or that a silent hook will prompt, at the moment they are deciding
+# whether to trust this plugin with their repository. The table was accurate when
+# this was written, so the rule catches nothing today - which is the only cheap
+# moment there is to start holding one.
+#
+# BOTH DIRECTIONS, AND THE SECOND IS WHAT MAKES THE FIRST WORTH ANYTHING. A row
+# whose cell disagrees with its registration is the obvious half. The other half is
+# a wired pair NO row describes: without it, DELETING a row makes the table agree
+# with itself, and a description that shrinks quietly is the failure this repo keeps
+# finding. A row describing a pair nothing wires any more is reported too, for the
+# reason `compare()` reports a dead exemption - an account of a state that has
+# passed stays green for ever.
+#
+# AND THE EVENT DECIDES WHETHER A LOUD FALLBACK IS EVEN POSSIBLE. The launcher's
+# prompt is a `permissionDecision`, and the JSON it prints names the one event that
+# carries such a channel. A loud mode registered on any other event would print
+# JSON the host ignores - a hook the table calls blocking that blocks nothing - so
+# the event is checked against the launcher's own payload rather than against a name
+# written here.
+#
+# NOT `check-prohibitions.fail_mode_drift()`, WHICH READS THE SAME FILE AND ASKS
+# SOMETHING ELSE. That one asks whether the wiring assigns the loud mode to
+# precisely the hooks that can emit a permission decision, over `PreToolUse` and
+# `Bash` alone, because that is the set it drives. This one asks whether SECURITY.md
+# still describes the wiring, over every event and every hook. Neither subsumes the
+# other: a table could be perfectly accurate about a wiring whose loud modes sit on
+# the wrong hooks, and a wiring could be exactly right while the document has gone
+# stale about it.
+HOOKS_JSON_REL = os.path.join("plugins", "audit", "hooks", "hooks.json")
+LAUNCHER_REL = os.path.join("plugins", "audit", "hooks", "py-launch.sh")
+SECURITY_REL = "SECURITY.md"
+
+# The columns this rule reads, BY HEADING rather than by position: a column inserted
+# to the left of one of them would otherwise move every cell it reads one over,
+# silently, and the rule would go on comparing something.
+HOOK_COLUMN = "Hook"
+EVENT_COLUMN = "Event"
+FAILMODE_COLUMN = "No interpreter"
+
+# The table's word for the launcher's quiet path. The LOUD word is deliberately NOT
+# written here - it is read off `py-launch.sh`, which is the only thing that decides
+# which token produces a prompt, and a copy of it here would be one more description
+# of the very fact this rule exists to compare.
+QUIET_CELL = "silent"
+
+# What the launcher says about itself. `mode="${2:-open}"` is the default a
+# registration gets by writing no token at all; the `[ "$mode" = ... ]` test is the
+# token that produces a prompt; and the `hookEventName` in the payload it prints is
+# the only event with a permission-decision channel to print into.
+#
+# A MODE IS A SHELL WORD, so the two mode patterns take one rather than letters
+# alone - the token today is a bare word, and a reader that could not see a renamed
+# one would report a launcher it cannot read instead of the wiring it describes. An
+# event name is an identifier the host defines and needs no such room.
+_LAUNCH_DEFAULT = re.compile(r'mode="\$\{2:-([A-Za-z0-9_-]+)\}"')
+_LAUNCH_LOUD = re.compile(r'\[\s*"\$mode"\s*=\s*"([A-Za-z0-9_-]+)"\s*\]')
+_LAUNCH_EVENT = re.compile(r'"hookEventName"\s*:\s*"([A-Za-z]+)"')
+
+_LAUNCHER_BASENAME = os.path.basename(LAUNCHER_REL)
+
+
+def launcher_contract(text):
+    """({"loud", "default", "decision_event"}, problem) read off the launcher.
+
+    A dict or a NAMED problem, never a usable-looking default: every comparison
+    below is against one of these values, so a launcher this cannot read produces
+    no verdict rather than a verdict taken against a guess.
+    """
+    default = _LAUNCH_DEFAULT.search(text)
+    loud = _LAUNCH_LOUD.search(text)
+    event = _LAUNCH_EVENT.search(text)
+    if default is None:
+        return None, ("names no default mode, so what a registration with no token "
+                      "at all gets cannot be read")
+    if loud is None:
+        return None, ("tests `$mode` against nothing, so which token produces a "
+                      "prompt cannot be read")
+    if event is None:
+        return None, ("prints no `hookEventName`, so the event whose permission "
+                      "channel the prompt uses cannot be read")
+    return ({"loud": loud.group(1), "default": default.group(1),
+             "decision_event": event.group(1)}, None)
+
+
+def _launched(command, default_mode):
+    """`(hook, mode)` for a command that goes through the launcher, else None.
+
+    The mode is positional because that is how the launcher reads it, and an absent
+    one is the launcher's DEFAULT rather than nothing - a registration that writes
+    no token still has a fail mode, and reading it as absent would let the quietest
+    possible wiring go undescribed.
+    """
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return None
+    for index, token in enumerate(parts):
+        if os.path.basename(token) != _LAUNCHER_BASENAME:
+            continue
+        rest = parts[index + 1:]
+        if not rest:
+            return None
+        hook = os.path.splitext(os.path.basename(rest[0]))[0]
+        return (hook, rest[1] if len(rest) > 1 else default_mode)
+    return None
+
+
+def hook_registrations(text, default_mode):
+    """{"wired", "unlaunched", "events", "problem"} from `hooks.json`'s own text.
+
+    `events` is the event vocabulary the table's Event column is then read against,
+    taken from the registration file rather than listed here: a document may only
+    be credited with naming an event the wiring actually uses.
+
+    `unlaunched` is a registration that does not go through the launcher at all.
+    Its no-interpreter behaviour is whatever its own command does, which is not
+    what this table describes - so it is reported rather than skipped.
+    """
+    blank = {"wired": [], "unlaunched": [], "events": ()}
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        blank["problem"] = "does not parse as JSON: %s" % (exc,)
+        return blank
+    if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict) \
+            or not data["hooks"]:
+        blank["problem"] = "carries no `hooks` object, so it registers nothing"
+        return blank
+    blocks = data["hooks"]
+    wired = []
+    unlaunched = []
+    try:
+        for event in blocks:
+            for block in blocks[event]:
+                for entry in block["hooks"]:
+                    got = _launched(entry.get("command", ""), default_mode)
+                    if got is None:
+                        unlaunched.append((event, entry.get("command", "")))
+                        continue
+                    wired.append((got[0], event, got[1]))
+    except (AttributeError, KeyError, TypeError) as exc:
+        blank["problem"] = ("is not shaped like a registration file, so the wiring "
+                            "cannot be read: %s" % (exc,))
+        return blank
+    return {"wired": sorted(set(wired)), "unlaunched": sorted(unlaunched),
+            "events": tuple(sorted(blocks)), "problem": None}
+
+
+def _plain(cell):
+    """One table cell with markdown emphasis and code ticks taken off."""
+    return cell.replace("**", "").replace("`", "").strip()
+
+
+def _row_cells(line):
+    """The cells of one markdown table row, or None when the line is not one."""
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    return [cell.strip() for cell in stripped[1:-1].split("|")]
+
+
+_RULE_CELL = re.compile(r"^:?-{2,}:?$")
+
+
+def failmode_rows(text, events):
+    """([(lineno, hook, events, cell)], problem) for the fail-mode table.
+
+    THE PARSING TRAPS ARE THE POINT OF THIS FUNCTION, and both are shapes the real
+    document already wears:
+
+      * one cell words SEVERAL events (`PreToolUse ..., PostToolUse ...`), so a
+        reader that took the first event of a cell would leave the rest of that
+        row's pairs described by nothing - and would then agree with a wiring it
+        had never looked at;
+      * one script appears twice, disambiguated by a parenthetical name, because
+        its events fail differently and SECURITY.md says that is what the split is
+        for. A reader keying by script name alone would collapse them and score
+        one of the pair against the other's cell.
+
+    So a row is a hook plus EVERY event its cell names, and the parenthetical is
+    dropped from the hook rather than read as part of its name.
+    """
+    lines = text.splitlines()
+    wanted = ((HOOK_COLUMN, "hook"), (EVENT_COLUMN, "event"),
+              (FAILMODE_COLUMN, "mode"))
+    start = None
+    columns = None
+    for lineno, line in enumerate(lines, 1):
+        cells = _row_cells(line)
+        if cells is None:
+            continue
+        heads = [_plain(cell).lower() for cell in cells]
+        if all(head.lower() in heads for head, _key in wanted):
+            columns = dict((key, heads.index(head.lower()))
+                           for head, key in wanted)
+            start = lineno
+            break
+    if start is None:
+        return [], ("holds no table headed %s, so the fail modes it documents "
+                    "cannot be read"
+                    % (", ".join("`%s`" % (head,) for head, _key in wanted),))
+    rows = []
+    for lineno, line in enumerate(lines[start:], start + 1):
+        cells = _row_cells(line)
+        if cells is None:
+            break
+        if all(_RULE_CELL.match(cell) for cell in cells if cell):
+            continue
+        if len(cells) <= max(columns.values()):
+            return [], ("has a fail-mode row at line %d with fewer cells than the "
+                        "headings above it, so no column can be read off it"
+                        % (lineno,))
+        hook = re.sub(r"\([^)]*\)", "", _plain(cells[columns["hook"]])).strip()
+        named = tuple(event for event in events
+                      if re.search(r"\b%s\b" % (re.escape(event),),
+                                   cells[columns["event"]]))
+        cell = _plain(cells[columns["mode"]]).split("(")[0].strip()
+        rows.append((lineno, hook, named, cell))
+    if not rows:
+        return [], "holds the fail-mode headings with no rows under them"
+    return rows, None
+
+
+def failmode_findings(rows, wired, contract):
+    """[(subject, note)] for every disagreement between a table and a wiring.
+
+    Pure over the PARSED pair, so a case can hand it a table and a wiring that
+    differ in exactly one place - the reason `compare()` above takes gate sets
+    rather than a repo path. Building two real trees to move one cell would be a
+    case about the readers wearing a case about the rule.
+    """
+    loud = contract["loud"]
+    decision = contract["decision_event"]
+    by_pair = {}
+    for hook, event, mode in wired:
+        by_pair.setdefault((hook, event), set()).add(mode)
+    described = {}
+    out = []
+    for lineno, hook, named, cell in rows:
+        if not named:
+            out.append(("SECURITY.md line %d" % (lineno,),
+                        "names no event any registration uses, so whatever it "
+                        "says about `%s` is scored against nothing" % (hook,)))
+            continue
+        if cell != loud and cell != QUIET_CELL:
+            out.append(("SECURITY.md line %d" % (lineno,),
+                        "states the fail mode as %r, which is neither `%s` (the "
+                        "token the launcher answers with a prompt) nor `%s`"
+                        % (cell, loud, QUIET_CELL)))
+            continue
+        for event in named:
+            described.setdefault((hook, event), set()).add(cell)
+    conflicted = set()
+    for pair in sorted(described):
+        hook, event = pair
+        cells = described[pair]
+        if len(cells) > 1:
+            conflicted.add(pair)
+            out.append(("%s / %s" % (hook, event),
+                        "is described by rows that disagree (%s), and the table's "
+                        "grain is one answer per hook and event"
+                        % (", ".join(sorted(cells)),)))
+            continue
+        if pair not in by_pair:
+            out.append(("%s / %s" % (hook, event),
+                        "has a row stating `%s`, and nothing registers that hook "
+                        "on that event any more - the row describes a state that "
+                        "has passed" % (sorted(cells)[0],)))
+    for pair in sorted(by_pair):
+        hook, event = pair
+        modes = by_pair[pair]
+        if len(set(mode == loud for mode in modes)) > 1:
+            out.append(("%s / %s" % (hook, event),
+                        "is registered both loudly and silently on one event (%s), "
+                        "which the table's grain cannot express at all"
+                        % (", ".join(sorted(modes)),)))
+        if loud in modes and event != decision:
+            out.append(("%s / %s" % (hook, event),
+                        "asks the launcher for a `%s` prompt on an event with no "
+                        "permission-decision channel - the payload names `%s`, so "
+                        "that JSON is printed and ignored and a guard the table "
+                        "calls loud blocks nothing" % (loud, decision)))
+        if pair in conflicted:
+            continue
+        if pair not in described:
+            out.append(("%s / %s" % (hook, event),
+                        "is wired (%s) and no row of the table describes it, so "
+                        "deleting a row would leave the table agreeing with itself"
+                        % (", ".join(sorted(modes)),)))
+            continue
+        documented = sorted(described[pair])[0]
+        if (documented == loud) != (loud in modes):
+            out.append(("%s / %s" % (hook, event),
+                        "is documented as `%s` and registered as %s, so the "
+                        "document promises %s where the wiring does the opposite"
+                        % (documented, ", ".join(sorted(modes)),
+                           "a prompt" if documented == loud else "silence")))
+    return sorted(out)
+
+
+def _failmode_answer(problem, findings=(), rows=(), wired=(), contract=None):
+    """One shape for every way this rule can answer, so no arm can omit a key.
+
+    A caller reads `problem` FIRST: an empty finding list is what perfect agreement
+    looks like and also what a file nobody could read produces, and spelling those
+    two the same way is the defect this rule exists to catch one document up.
+    """
+    return {"problem": problem, "findings": sorted(findings), "rows": list(rows),
+            "wired": list(wired), "contract": contract,
+            "described": sorted((hook, event, cell)
+                                for _lineno, hook, named, cell in rows
+                                for event in named)}
+
+
+def failmode_table_drift(repo=None):
+    """{"problem", "findings", "rows", "described", "wired", "contract"}."""
+    root = repo or REPO
+    texts = {}
+    for rel in (LAUNCHER_REL, HOOKS_JSON_REL, SECURITY_REL):
+        try:
+            with io.open(os.path.join(root, rel), encoding="utf-8") as fh:
+                texts[rel] = fh.read()
+        except (IOError, OSError, UnicodeDecodeError) as exc:
+            return _failmode_answer("%s could not be read: %s" % (rel, exc))
+    contract, problem = launcher_contract(texts[LAUNCHER_REL])
+    if problem is not None:
+        return _failmode_answer("%s %s" % (LAUNCHER_REL, problem))
+    reg = hook_registrations(texts[HOOKS_JSON_REL], contract["default"])
+    if reg["problem"] is not None:
+        return _failmode_answer("%s %s" % (HOOKS_JSON_REL, reg["problem"]),
+                                contract=contract)
+    rows, problem = failmode_rows(texts[SECURITY_REL], reg["events"])
+    if problem is not None:
+        return _failmode_answer("%s %s" % (SECURITY_REL, problem),
+                                wired=reg["wired"], contract=contract)
+    findings = failmode_findings(rows, reg["wired"], contract)
+    findings += [("%s / %s" % (HOOKS_JSON_REL, event),
+                  "does not go through `%s`, so its no-interpreter behaviour is "
+                  "not the one the fail-mode table describes: %s"
+                  % (_LAUNCHER_BASENAME, command))
+                 for event, command in reg["unlaunched"]]
+    return _failmode_answer(None, findings=findings, rows=rows,
+                            wired=reg["wired"], contract=contract)
+
+
 def gates_in(path):
     """The set of gate labels a file invokes, or None if it cannot be read.
 
@@ -1178,6 +1549,12 @@ NOT_AN_EXEMPTION = {
                     "when one is tracked - subjects of a check, not excuses from it",
     "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "
                             "each with the comment that explains it in the file",
+    "_JOURNAL_WARNING_CLASSES": "the repair text the doctor prints for each class "
+                                "of journal warning, and the opposite of an "
+                                "exemption: a class with no row gets a POINTER and "
+                                "no cause rather than borrowing another class's "
+                                "sentence, which is the defect F329 repaired - so a "
+                                "row makes the check say more, never less",
 }
 
 # The reason has to be a SENTENCE. A one-word value is a label - `{"P1": "done"}` -
@@ -1467,8 +1844,30 @@ def read_sides(repo=None):
                 for label, rel in SIDES)
 
 
+def failmode_table_verdict(repo=None):
+    """`failmode_table_drift()` as a finding list, with an unreadable tree AS a finding.
+
+    `parity()` renders one verdict, and a rule whose "could not ask" arm arrived
+    there as an empty list would be the exact shape the rest of this file exists to
+    refuse. So the problem is raised to a finding HERE rather than inside the rule,
+    where a case still needs the two told apart.
+    """
+    got = failmode_table_drift(repo)
+    if got["problem"] is not None:
+        return [("fail-mode wiring", got["problem"])]
+    return got["findings"]
+
+
 def parity(repo=None):
-    """{"missing": [...], "stale_exemptions": [...], "counts": {}} for the tree."""
+    """{"missing", "stale_exemptions", "failmodes", "counts"} for the tree.
+
+    `failmodes` rides here for the reason the two exemption-reason rules above do:
+    this command is already the one every hand-maintained description is compared
+    by, so the rule needs no second place to be run from - and a description of
+    which hooks fail LOUDLY is the one where a stale sentence is a security claim
+    rather than an inconvenience.
+    """
+    failmodes = failmode_table_verdict(repo)
     raw = read_sides(repo)
     read = {}
     unreadable = []
@@ -1480,7 +1879,8 @@ def parity(repo=None):
     counts = dict((k, len(v)) for k, v in read.items())
     if unreadable:
         # NOT an empty verdict. A side nothing could read is not a side that agrees.
-        return {"missing": [], "stale_exemptions": unreadable, "counts": counts}
+        return {"missing": [], "stale_exemptions": unreadable,
+                "failmodes": failmodes, "counts": counts}
     result = compare(read)
     result["counts"] = counts
     # ...and the question `compare()` cannot ask: is each row's REASON still true of
@@ -1498,6 +1898,7 @@ def parity(repo=None):
         # needs no fifth place to be run from.
         + [(name, "exemption tables", why)
            for name, why in exemption_audit_drift(repo)])
+    result["failmodes"] = failmodes
     return result
 
 
@@ -1557,7 +1958,8 @@ def underread_sides(counts):
 def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
-    bad = result["missing"] + result["stale_exemptions"]
+    bad = (result["missing"] + result["stale_exemptions"]
+           + result["failmodes"])
     out.write("gate parity: %s\n"
               % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
                            for label, _rel in SIDES),))
@@ -1565,9 +1967,12 @@ def render(result, stream=None):
         out.write("  MISSING from %s: %s\n      %s\n" % (side, gate, note))
     for gate, side, note in result["stale_exemptions"]:
         out.write("  stale exemption (%s / %s): %s\n" % (gate, side, note))
+    for subject, note in result["failmodes"]:
+        out.write("  fail-mode drift (%s): %s\n" % (subject, note))
     if not bad:
-        out.write("  every side names the same gates, and every declared "
-                  "exemption is still real\n")
+        out.write("  every side names the same gates, every declared exemption "
+                  "is still real, and SECURITY.md's fail modes are the ones "
+                  "hooks.json registers\n")
     return 1 if bad else 0
 
 
@@ -1920,7 +2325,8 @@ def _cases(check):
 
     buf = io.StringIO()
     code = render({"missing": [("tools/x.mjs", "ci.yml", "why")],
-                   "stale_exemptions": [], "counts": {"verify.sh": 3}}, stream=buf)
+                   "stale_exemptions": [], "failmodes": [],
+                   "counts": {"verify.sh": 3}}, stream=buf)
     check("r0 a gap exits 1 and names the gate, the SIDE it is missing from, and "
           "what to do about it - two sides made 'missing' unambiguous and "
           "three do not",
@@ -1928,11 +2334,22 @@ def _cases(check):
           and "ci.yml" in buf.getvalue() and "why" in buf.getvalue())
 
     buf = io.StringIO()
-    code = render({"missing": [], "stale_exemptions": [],
+    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
                    "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
     check("r1 and parity exits 0 saying so - 'nothing to report' must not read "
           "like 'nothing was compared'",
           code == 0 and "every side names" in buf.getvalue())
+
+    buf = io.StringIO()
+    code = render({"missing": [], "stale_exemptions": [],
+                   "failmodes": [("guard-edits / PreToolUse", "why")],
+                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
+    check("r2 ...and a fail-mode disagreement exits 1 on its OWN. The gate sets "
+          "can agree perfectly while SECURITY.md tells a reader that a blocking "
+          "guard fails quietly, and a verdict that only counted gates would "
+          "print that as a pass",
+          code == 1 and "guard-edits / PreToolUse" in buf.getvalue()
+          and "why" in buf.getvalue())
 
     # --- the fourth side ------------------------------------------------------
     # F61: CLAUDE.md's list said of itself that it was one of the sides being
@@ -2275,6 +2692,185 @@ def _cases(check):
           "ran: %r" % (_no_repo["problem"],),
           _no_repo["problem"] is not None and _no_repo["prose"] == []
           and _no_repo["sides"] == 0)
+
+    # --- SECURITY.md's fail modes against the wiring that decides them --------
+    # F319: the table says, per hook and per event, whether a missing interpreter
+    # PROMPTS or passes in silence, and nothing in this tree compared it with the
+    # second argument of each registration - the thing that actually decides. It
+    # was accurate when this arrived, so these cases start no repair; what they
+    # start is the only cheap moment there is to begin holding one.
+    _fm = failmode_table_drift()
+    check("fm0 THE LIVE CLAIM: every fail mode SECURITY.md documents is the one "
+          "`hooks.json` registers, every wired hook+event pair has a row, no row "
+          "describes a pair nothing wires any more, and a run that could not ask "
+          "the question says so instead of coming back empty - read over %d "
+          "row(s), %d documented pair(s) and %d registration(s) against the "
+          "launcher's own %r: %r / %r"
+          % (len(_fm["rows"]), len(_fm["described"]), len(_fm["wired"]),
+             _fm["contract"], _fm["problem"], _fm["findings"]),
+          _fm["problem"] is None and _fm["findings"] == []
+          and _fm["rows"] != [] and _fm["described"] != [] and _fm["wired"] != [])
+
+    # ...and the property that makes fm0 worth anything about the REAL document.
+    # Both shapes below are ones a careless reader loses IN SILENCE, and losing
+    # either leaves fm0 green over pairs it never compared.
+    _fm_wide = sorted(hook for _l, hook, named, _c in _fm["rows"] if len(named) > 1)
+    _fm_cells = {}
+    for _hook, _event, _cell in _fm["described"]:
+        _fm_cells.setdefault(_hook, set()).add(_cell)
+    _fm_split = sorted(h for h in _fm_cells if len(_fm_cells[h]) > 1)
+    check("fm1 the document really wears both shapes the parser is built for: a "
+          "row whose ONE cell words several events %r, and a script appearing "
+          "twice under a parenthetical name with DIFFERENT fail modes %r. A "
+          "reader taking the first event of a cell would leave the rest of that "
+          "row's pairs described by nothing; one keying by script name alone "
+          "would score one of the pair against the other's cell"
+          % (_fm_wide, _fm_split),
+          _fm_wide != [] and _fm_split != [])
+
+    # A MINIATURE TABLE AND A MINIATURE WIRING, and every name in both is
+    # invented: what is under test is that the launcher's tokens are READ, so a
+    # fixture spelling the real ones would pass against a rule that had them
+    # written in. The hook files borrow the JavaScript extension because the rule
+    # strips whatever extension it is handed and cannot tell them apart - a
+    # `.py` basename invented under `tools/` is a finding of its own
+    # (`_refs.tool_basename_drift()`), and this is the spelling that rule names
+    # for a fixture the scanner under test does not open.
+    _fmc = {"loud": "PROBE_LOUD", "default": "PROBE_QUIET",
+            "decision_event": "ProbeDecide"}
+    _fm_events = ("ProbeDecide", "ProbeAfter")
+    _fm_table = (
+        "| Hook | Event | No interpreter | On internal error |\n"
+        "|---|---|---|---|\n"
+        "| `probe-one` | ProbeDecide reads | **PROBE_LOUD** (loud) | allow |\n"
+        "| `probe-one` (state commit) | ProbeAfter reads | silent | no-op |\n"
+        "| `probe-two` | ProbeDecide reads **+ writes**, ProbeAfter writes "
+        "| silent | no-op |\n")
+    _fm_wiring = (("probe-one", "ProbeDecide", "PROBE_LOUD"),
+                  ("probe-one", "ProbeAfter", "PROBE_QUIET"),
+                  ("probe-two", "ProbeDecide", "PROBE_QUIET"),
+                  ("probe-two", "ProbeAfter", "PROBE_QUIET"))
+    _fm_parsed, _fm_parse_why = failmode_rows(_fm_table, _fm_events)
+    check("fm2 the parser drops the parenthetical from a hook name and reads "
+          "EVERY event a cell words - so one script may carry two fail modes and "
+          "one row may cover two pairs: %r / %r"
+          % (_fm_parse_why, _fm_parsed),
+          _fm_parse_why is None
+          and [(hook, named, cell) for _l, hook, named, cell in _fm_parsed]
+          == [("probe-one", ("ProbeDecide",), "PROBE_LOUD"),
+              ("probe-one", ("ProbeAfter",), "silent"),
+              ("probe-two", ("ProbeDecide", "ProbeAfter"), "silent")])
+
+    # THE PAIR. A table and a wiring differing in nothing but one cell's mode.
+    # Asserting the flipped one alone would pass against a rule that reported
+    # every pair always; asserting the agreeing one alone would pass against a
+    # rule that found nothing either way.
+    _fm_agree = failmode_findings(_fm_parsed, _fm_wiring, _fmc)
+    _fm_flip = failmode_findings(
+        failmode_rows(_fm_table.replace("**PROBE_LOUD** (loud)", "silent"),
+                      _fm_events)[0], _fm_wiring, _fmc)
+    check("fm3 a cell that disagrees with its registration is reported by pair, "
+          "with both sides of the disagreement in the note - and the agreeing "
+          "table reports nothing, which is the direction that fails if this "
+          "starts firing unconditionally: %r vs %r"
+          % (_fm_agree, _fm_flip),
+          _fm_agree == [] and len(_fm_flip) == 1
+          and _fm_flip[0][0] == "probe-one / ProbeDecide"
+          and "silent" in _fm_flip[0][1] and "PROBE_LOUD" in _fm_flip[0][1])
+
+    _fm_shrunk = failmode_findings(
+        failmode_rows(_fm_table.replace(", ProbeAfter writes", ""),
+                      _fm_events)[0], _fm_wiring, _fmc)
+    _fm_dead = failmode_findings(_fm_parsed, _fm_wiring[:3], _fmc)
+    check("fm4 THE SECOND DIRECTION, which is what makes the first worth "
+          "anything: a wired pair NO row describes is reported %r, so deleting a "
+          "row cannot make the table agree with itself - and a row describing a "
+          "pair nothing wires any more is reported too %r, because an account of "
+          "a state that has passed stays green for ever"
+          % (_fm_shrunk, _fm_dead),
+          [s for s, _n in _fm_shrunk] == ["probe-two / ProbeAfter"]
+          and "no row of the table describes it" in _fm_shrunk[0][1]
+          and [s for s, _n in _fm_dead] == ["probe-two / ProbeAfter"]
+          and "has passed" in _fm_dead[0][1])
+
+    _fm_loud_late = failmode_findings(
+        _fm_parsed, (("probe-one", "ProbeDecide", "PROBE_LOUD"),
+                     ("probe-one", "ProbeAfter", "PROBE_LOUD"),
+                     ("probe-two", "ProbeDecide", "PROBE_QUIET"),
+                     ("probe-two", "ProbeAfter", "PROBE_QUIET")), _fmc)
+    check("fm5 a loud mode asked for on an event with no permission-decision "
+          "channel is a finding on its own terms - the launcher's payload names "
+          "the one event that has one, so the JSON is printed and ignored and a "
+          "guard the table calls blocking blocks nothing. The agreeing wiring "
+          "says none of it, which is the same pair the other way: %r / %r"
+          % ([n for _s, n in _fm_loud_late if "permission-decision" in n],
+             _fm_agree),
+          any("permission-decision channel" in n for _s, n in _fm_loud_late)
+          and not any("permission-decision" in n for _s, n in _fm_agree))
+
+    _fm_launcher = ('mode="${2:-PROBE_QUIET}"\n'
+                    'if [ "$mode" = "PROBE_LOUD" ]; then\n'
+                    '  printf \'{"hookSpecificOutput":{"hookEventName":'
+                    '"ProbeDecide"}}\'\n'
+                    'fi\n'
+                    'exit 0\n')
+    _fm_read, _fm_read_why = launcher_contract(_fm_launcher)
+    _fm_no_default = launcher_contract(
+        _fm_launcher.replace('mode="${2:-PROBE_QUIET}"', 'mode="$2"'))[1]
+    _fm_no_loud = launcher_contract(
+        _fm_launcher.replace('"$mode" = "PROBE_LOUD"', '"$mode" = "$3"'))[1]
+    _fm_no_event = launcher_contract(
+        _fm_launcher.replace("hookEventName", "hookEventNamed"))[1]
+    check("fm6 the tokens every comparison above turns on are READ off the "
+          "launcher - the default a registration gets by writing none, the one "
+          "that produces a prompt, and the event whose channel that prompt uses "
+          "- and a launcher missing any of them is a NAMED problem rather than a "
+          "usable-looking default: %r / %r / %r / %r"
+          % (_fm_read, _fm_no_default, _fm_no_loud, _fm_no_event),
+          _fm_read_why is None
+          and _fm_read == {"loud": "PROBE_LOUD", "default": "PROBE_QUIET",
+                           "decision_event": "ProbeDecide"}
+          and "default mode" in (_fm_no_default or "")
+          and "produces a prompt" in (_fm_no_loud or "")
+          and "hookEventName" in (_fm_no_event or ""))
+
+    _fm_json = ('{"hooks": {"ProbeDecide": [{"matcher": "X", "hooks": ['
+                '{"type": "command", "command":'
+                ' "sh \\"${R}/hooks/py-launch.sh\\" probe-one.mjs PROBE_LOUD"},'
+                '{"type": "command", "command":'
+                ' "sh \\"${R}/hooks/py-launch.sh\\" probe-two.mjs"},'
+                '{"type": "command", "command": "node probe-three.mjs"}]}]}}')
+    _fm_reg = hook_registrations(_fm_json, "PROBE_QUIET")
+    _fm_bad_json = hook_registrations("{not json", "PROBE_QUIET")["problem"]
+    _fm_no_hooks = hook_registrations('{"other": {}}', "PROBE_QUIET")["problem"]
+    check("fm7 a registration that writes NO mode token gets the launcher's "
+          "DEFAULT rather than none - a hook with no token still has a fail mode "
+          "- the event vocabulary comes off the registration file rather than a "
+          "list written here, and a command that never reaches the launcher is "
+          "reported rather than skipped, as is a file that cannot be read as a "
+          "registration at all: %r / %r / %r"
+          % (_fm_reg, _fm_bad_json, _fm_no_hooks),
+          _fm_reg["problem"] is None
+          and _fm_reg["wired"] == [("probe-one", "ProbeDecide", "PROBE_LOUD"),
+                                   ("probe-two", "ProbeDecide", "PROBE_QUIET")]
+          and [e for e, _c in _fm_reg["unlaunched"]] == ["ProbeDecide"]
+          and _fm_reg["events"] == ("ProbeDecide",)
+          and "does not parse as JSON" in (_fm_bad_json or "")
+          and "registers nothing" in (_fm_no_hooks or ""))
+
+    _fm_absent = failmode_table_drift(os.path.join(REPO, "no-such-repo-dir"))
+    _fm_absent_verdict = failmode_table_verdict(os.path.join(REPO, "no-such-repo-dir"))
+    _fm_tableless = failmode_rows("nothing here is a table\n", _fm_events)[1]
+    check("fm8 a tree with none of those files in it, and a document with no "
+          "such table in it, are NAMED problems rather than a comparison that "
+          "agrees with nothing - and `parity()` raises the problem TO a finding, "
+          "so the verdict cannot come back clean over a question nobody could "
+          "ask: %r / %r / %r"
+          % (_fm_absent["problem"], _fm_tableless, _fm_absent_verdict),
+          _fm_absent["problem"] is not None and _fm_absent["findings"] == []
+          and _fm_tableless is not None
+          and len(_fm_absent_verdict) == 1
+          and _fm_absent_verdict[0][1] == _fm_absent["problem"])
 
 
 def _selftest():

@@ -134,6 +134,22 @@ COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-index"
 DEFAULT_SUBJECT = "the shared index, carried alone so no phase's work rides with it"
 
+# `SUBJECT_LEAD` for `commit-audit-state.py`'s reason (F305), and this file carried
+# the identical defect: with the phase id first, the subject after the colon IS
+# sentence-case, which commitlint's default `subject-case` refuses along with
+# start-case, pascal-case and upper-case. Every one of those is computed by a
+# transform that capitalises the first character, so a fixed lowercase word this
+# command owns -- ahead of `--subject`, where no caller can displace it -- is out
+# of reach of all of them rather than of the one that bit. The phase id stays
+# uppercase and stays in the subject, where `git log` still finds it, and the word
+# is `phase` because the orchestrator's own sign-off subject already opens with it.
+#
+# IT NAMES THE PHASE WITHOUT CLAIMING TO BE SCOPED TO IT, which is the reading this
+# file's `<phaseId>` needs: the conventional SCOPE says `audit-index` and that is
+# what the commit is scoped to, while the subject's phase is attribution - which
+# run made the structural change - exactly as the usage block above says.
+SUBJECT_LEAD = "phase"
+
 # What every line this command prints is stamped with. A constant because the
 # renderer is `_scoped_commit`'s and takes it as an argument -- the lines are
 # shared with the audit-state commit and the NAME is the only thing that differs.
@@ -190,9 +206,16 @@ def commit_message(phase_id, subject, coauthor):
     A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
     per paragraph, so the trailer is a trailer and not a second sentence of the
     subject line.
+
+    `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
+    is the whole of F305's repair, and the constant says why. The shape is
+    unconditional and is deliberately not read from `meta.commit`, for the reason
+    `commit-audit-state.commit_message` states at length: that block holds a
+    default type and a trailer and records nothing about which commitlint rules a
+    repository configures.
     """
-    paragraphs = ["%s(%s): %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, phase_id,
-                                       subject or DEFAULT_SUBJECT)]
+    paragraphs = ["%s(%s): %s %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD,
+                                          phase_id, subject or DEFAULT_SUBJECT)]
     if coauthor:
         paragraphs.append(str(coauthor))
     return paragraphs

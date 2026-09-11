@@ -99,6 +99,27 @@ would conflict on every merge -- the one thing the sharded manifest layout exist
 to avoid. Sitting next to the manifest, the journal is committable by the same
 commit that carries the change it records.
 
+THAT SPLIT ANSWERS "TWO WRITERS" AND NOT "TWO BRANCHES" (F306). The claim it was
+sold on -- parallel work never conflicts on the journal -- holds for two writers
+because they are two file names. It does not hold for ONE writer on two branches,
+which is the ordinary state of a paused phase: the same name, the same month, a
+shared prefix and a different tail on each side. That conflict cannot be resolved
+by editing, because the divergent rows carry hashes computed over a `prev` that
+only one side has, so `merge_rows` RE-CHAINS the union instead -- see the
+`merging` section for why recomputing a link is not the forgery the chain exists
+to catch, and for the three inputs it refuses rather than guesses at.
+
+AND A WRITER ID IS NOT THE ID ITS SESSION KNOWS (F309). `writer_id` names the
+file after the session id the WRITER supplied, and the hook that writes most rows
+is handed a different id in its payload from the `$CLAUDE_CODE_SESSION_ID` the
+same session reads from Bash (`hooks/_config._own_identities` measured the pair).
+It is also truncated to fit a file name. So the name is opaque to the one reader
+a per-session file exists for. Renaming is not the repair -- the name is the
+chain's genesis seed and this trail is append-only -- so the row carries
+`actor.envSessionId` when the environment names a different session, and
+`session_index` reports the mapping. An opaque name stays opaque and becomes
+resolvable.
+
 Past months can be moved whole into `<journal dir>/archive/` by the `archive`
 subcommand -- `git mv`, never a rewrite, because the chain seed is the file's
 BASENAME and the hash chain survives only untouched bytes. Every reader
@@ -106,7 +127,7 @@ BASENAME and the hash chain survives only untouched bytes. Every reader
 exactly one level deep, never a recursive walk.
 
 ROW
-    {"v", "ts", "actor": {"author", "sessionId", "via"},
+    {"v", "ts", "actor": {"author", "sessionId", "via" [, "envSessionId"]},
      "action", "target", "summary", "stateHash", "prev", "hash"}
 
 `hash` is sha256 over the canonical JSON of the row WITHOUT `hash`. `prev` is the
@@ -470,6 +491,37 @@ def writer_id(actor, fallback=None):
     return safe[:24].strip("-.") or "writer"
 
 
+ENV_SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
+MAX_SESSION_ID_CHARS = 64       # a uuid is 36; longer than this is not an id
+
+
+def env_session_id():
+    """The session id in THIS PROCESS'S ENVIRONMENT, or None.
+
+    A SESSION HAS MORE THAN ONE NAME, and that is the whole reason this exists
+    (F309). Bash reads `$CLAUDE_CODE_SESSION_ID`; a hook is handed a DIFFERENT
+    `session_id` in its payload, and `hooks/_config._own_identities` measured the
+    pair in a live session rather than assuming they agree. The journal names its
+    file after the id the writer supplied, so the hook that writes most rows
+    names files after the payload id -- and a reader looking for the id their
+    session knows finds no file by that name.
+
+    WHY THIS IS A ROW AND NOT A RENAME. The file name is the chain's genesis seed
+    (`genesis_prev`) and the trail is append-only, so a name cannot be corrected
+    afterwards without breaking `verify` on every clone that already holds the
+    file. Recording the other id is the repair that adds rather than rewrites,
+    and a writing process is the only place both ids are visible at once: a hook
+    subprocess inherits the environment its parent read.
+
+    Sanitised and bounded because it lands in a committed row. It exposes nothing
+    `actor.sessionId` does not already expose -- both are opaque per-session ids,
+    neither names a machine -- and anything that is not that shape is dropped
+    rather than substituted for."""
+    raw = os.environ.get(ENV_SESSION_VAR) or ""
+    safe = _SAFE.sub("-", str(raw).strip()).strip("-.")
+    return safe[:MAX_SESSION_ID_CHARS].strip("-.") or None
+
+
 def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
@@ -577,18 +629,17 @@ def record_plugin_write(project, config, writer, path):
 
 
 # --- reading ------------------------------------------------------------------
-def read_file(path):
-    """(rows, torn). `torn` is True when the LAST line is not parseable JSON.
+def rows_from_text(text):
+    """(rows, torn) for the CONTENTS of a journal file -- `read_file` over a path.
 
-    A torn tail is what a crash mid-append leaves behind, and it is a different
-    thing from a corrupted row: the chain up to it is intact and nothing has been
-    hidden. Reported as a warning, and the rows before it still verify."""
+    SPLIT OUT BECAUSE TWO CALLERS DO NOT HAVE A PATH. The git anchor compares the
+    working copy against `git show HEAD:<file>`, which arrives as bytes and never
+    as a file, and `merge_rows` is handed rows a caller already read. Both need
+    the SAME torn-tail rule and the same unparseable-row marker as a live read,
+    and a second parser is how the anchor would come to disagree with `verify`
+    about what a row even is."""
     rows, torn = [], False
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except Exception:
-        return rows, torn
+    lines = str(text).splitlines()
     for i, line in enumerate(lines):
         if not line.strip():
             continue
@@ -603,6 +654,24 @@ def read_file(path):
         rows.append(obj if isinstance(obj, dict) else
                     {"_unparseable": True, "_line": i + 1})
     return rows, torn
+
+
+def read_file(path):
+    """(rows, torn). `torn` is True when the LAST line is not parseable JSON.
+
+    A torn tail is what a crash mid-append leaves behind, and it is a different
+    thing from a corrupted row: the chain up to it is intact and nothing has been
+    hidden. Reported as a warning, and the rows before it still verify.
+
+    An unreadable file is `([], False)` and not an exception: this is the read
+    every consumer makes of every file it finds, and a directory listing that
+    raced a `git mv` must not take `verify` down."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except Exception:
+        return [], False
+    return rows_from_text(text)
 
 
 def journal_files(directory):
@@ -644,6 +713,84 @@ def read_all(project, config=None):
             r["_file"] = os.path.basename(path)
             out.append(r)
     out.sort(key=lambda r: (str(r.get("ts") or ""), r.get("_file") or ""))
+    return out
+
+
+def writer_of(basename):
+    """The writer id a journal file's NAME carries, or "" when it carries none.
+
+    `<YYYY-MM>.<writerId>.jsonl`, so the writer is everything between the first
+    dot and the extension -- a session id may itself contain dots, which is why
+    this partitions from the LEFT once and strips the suffix, rather than
+    splitting on every dot and taking a field by number."""
+    stem = basename[:-len(".jsonl")] if basename.endswith(".jsonl") else basename
+    _month, _dot, wid = stem.partition(".")
+    return wid
+
+
+def _counted(values):
+    """[(value, times)] for a list, most-seen first then alphabetically.
+
+    A TOTAL ORDER BEFORE ANYTHING SERIALISES IT: a dict's key order varies per
+    process, and this list is printed and JSON-dumped, so two runs over one
+    journal would otherwise differ in the noise instead of in the news."""
+    seen = {}
+    for value in values:
+        seen[value] = seen.get(value, 0) + 1
+    return sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def session_index(project, config=None):
+    """Which session wrote which journal file -- the mapping a file NAME cannot
+    carry (F309).
+
+    Returns {"dir", "exists", "env", "files": [...], "mine": [names],
+    "unmapped": [names]}, each file entry {"file", "writer", "rows", "first",
+    "last", "sessionIds", "envSessionIds", "mine"}.
+
+    WHAT MAKES A FILE "MINE" is asked through `writer_id`, the same function that
+    NAMED the file, rather than by comparing prefixes here: the name is a
+    sanitised 24-character slice of a session id, and a second opinion about how
+    that slice is taken is how a report comes to disagree with the writer about
+    which file is whose.
+
+    `unmapped` is the honest gap and is reported rather than left as silence. A
+    file whose rows carry no `envSessionId` is EITHER a file whose writer read
+    the same id from its environment OR a file written before the field existed,
+    and nothing here can tell those apart -- so it says both instead of implying
+    the first."""
+    config = load_config(project) if config is None else config
+    directory = journal_dir(project, config)
+    env = env_session_id()
+    env_writer = writer_id({"sessionId": env}) if env else None
+    out = {"dir": directory, "exists": os.path.isdir(directory), "env": env,
+           "files": [], "mine": [], "unmapped": []}
+    for path in journal_files(directory):
+        where = _output.posix_rel(path, directory)
+        rows, _torn = read_file(path)
+        rows = [r for r in rows if not r.get("_unparseable")]
+        sids, esids, stamps = [], [], []
+        for row in rows:
+            actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+            if actor.get("sessionId"):
+                sids.append(str(actor["sessionId"]))
+            if actor.get("envSessionId"):
+                esids.append(str(actor["envSessionId"]))
+            if row.get("ts"):
+                stamps.append(str(row["ts"]))
+        writer = writer_of(os.path.basename(path))
+        known = set(sids) | set(esids)
+        mine = bool(env) and (env in known or writer == env_writer)
+        entry = {"file": where, "writer": writer, "rows": len(rows),
+                 "first": min(stamps) if stamps else None,
+                 "last": max(stamps) if stamps else None,
+                 "sessionIds": _counted(sids), "envSessionIds": _counted(esids),
+                 "mine": mine}
+        out["files"].append(entry)
+        if mine:
+            out["mine"].append(where)
+        if not esids:
+            out["unmapped"].append(where)
     return out
 
 
@@ -972,6 +1119,16 @@ def _normalise(entry, project=None):
         "target": _normalised_target(entry.get("target"), project),
         "summary": _clip_summary(str(entry.get("summary") or "")),
     }
+    # F309: the OTHER name this session answers to, recorded ONLY when it is not
+    # the one already above. A hook's payload `session_id` is what names the
+    # file; `$CLAUDE_CODE_SESSION_ID` is what the session calls itself, and
+    # without one row tying the two together no reader can group a session's
+    # rows by the id they have. Absent means "the environment named no other
+    # session" -- which is also what every row written before this field means,
+    # and `session_index` says so rather than letting silence read as agreement.
+    env_sid = env_session_id()
+    if env_sid and env_sid != row["actor"]["sessionId"]:
+        row["actor"]["envSessionId"] = env_sid
     details = normalise_details(entry.get("details"), project=project)
     if details is not None:
         row["v"] = DETAILS_VERSION
@@ -1067,6 +1224,462 @@ def append_from_cli(project, entry, config=None):
     return path
 
 
+# --- merging ------------------------------------------------------------------
+# WHY RE-CHAINING IS NOT THE FORGERY THE CHAIN EXISTS TO CATCH, said here because
+# it is the one question this section has to answer before any of it is allowed to
+# run. Three things are true of it and none is true of a forgery:
+#
+#   1. NO ROW'S CONTENT CHANGES. `_rechain` carries every field of every row
+#      through byte for byte and recomputes exactly two: `prev` and `hash`. Those
+#      are LINKS -- they say where a row sits in a chain, not what happened -- and
+#      `row_content()` is the unit that must survive, which is also the unit
+#      `anchor_verdict()` checks across a commit. A forgery changes what a row
+#      SAYS and recomputes the links to cover it; this changes only the links, and
+#      the committed content of every row is still checkable afterwards.
+#   2. NOTHING IS DROPPED AND NOTHING IS REORDERED. The output is the UNION of the
+#      two inputs, each side's own recorded order preserved (`_merge_tails` is a
+#      merge, never a sort), and where timestamp order cannot decide between two
+#      rows the operation REFUSES instead of picking one.
+#   3. BOTH INPUTS ARE IN GIT. A journal divergence is a merge conflict, so the
+#      two sides are two commits that a reviewer can read, and the merge commit
+#      holds both parents. The operation is auditable in the one place a rewrite
+#      of history would have to be audited anyway.
+#
+# WHAT MADE IT NECESSARY (F306). One writer on two branches is ordinary while a
+# phase is paused, and the per-writer file split does not separate them: same
+# name, same month, a shared prefix and a different tail on each side. Nothing can
+# resolve that by editing, because each divergent row's hash covers a `prev` only
+# its own side has -- so the alternative to a merge verb is what actually happened,
+# which is a resolution that keeps one tail and loses the other in a second parent
+# nobody reads again.
+MERGE_ACTION = "journal.merge"
+MERGE_VIA = "merge"
+
+
+def row_content(row):
+    """The row's CONTENT: every field except the two link fields.
+
+    THE UNIT NOTHING MAY CHANGE. `prev` and `hash` place a row in a chain;
+    everything else is what the row says happened. A merge recomputes the first
+    two and never the rest, and `anchor_verdict()` asks its question in exactly
+    this unit -- one definition, so the writer and the verifier cannot disagree
+    about what "the same row" means."""
+    return canonical({k: v for k, v in row.items()
+                      if k not in ("prev", "hash")})
+
+
+def _merge_input_faults(rows, torn, side, name):
+    """Every reason `side` cannot be an input to a merge, as refusal text.
+
+    REFUSING AN ALREADY-BROKEN INPUT IS THE POINT, not defensiveness. Re-chaining
+    recomputes `hash` over whatever content it is handed, so a row that does not
+    hash to its own contents on the way IN comes out hashing perfectly -- the
+    merge would have laundered an edited row into a chain that verifies, which is
+    the one thing this trail must never do on purpose. Say the input was already
+    broken and stop.
+
+    A TORN TAIL IS REFUSED HERE AND ONLY WARNED ABOUT BY `verify`, and the two are
+    not in conflict: a partial line is not a row, so `verify` can honestly say the
+    rows before it are intact, while a merge that read past it would drop those
+    bytes with nothing in the output to say they were ever there."""
+    out = []
+    if torn:
+        out.append("%s ends with a partial line -- a writer was interrupted "
+                   "there. Those bytes are not a row, so a merge would drop "
+                   "them and say nothing; truncate the partial line on purpose "
+                   "first if that is what you mean." % (side,))
+    if not rows:
+        out.append("%s holds no rows at all, so there is nothing to merge with "
+                   "-- a side with no rows is not a divergence" % (side,))
+        return out
+    for i, row in enumerate(rows):
+        if row.get("_unparseable"):
+            out.append("%s line %d is not valid JSON -- the input was already "
+                       "broken and a merge will not launder it"
+                       % (side, row.get("_line") or (i + 1)))
+            continue
+        stored = row.get("hash")
+        if not isinstance(stored, str) or stored != row_hash(row):
+            out.append("%s row %d (%s) does not hash to its own contents -- it "
+                       "was edited after it was written, so the input was "
+                       "already broken. Re-chaining would recompute that hash "
+                       "and hide it; nothing here will do that."
+                       % (side, i + 1, row.get("action") or "?"))
+    if out:
+        return out
+    first = str(rows[0].get("prev") or "")
+    if first != genesis_prev(name):
+        out.append("%s does not begin at the genesis of %r -- its first row's "
+                   "`prev` is %r, and a chain seeded from that name would start "
+                   "%r. Either this is a fragment rather than a whole file, or "
+                   "it belongs under another name."
+                   % (side, name, first, genesis_prev(name)))
+    return out
+
+
+def _common_prefix(ours, theirs):
+    """How many leading rows the two sides SHARE, compared by hash.
+
+    The hash is the right identity for this: it covers the row's content AND its
+    `prev`, so two rows with equal hashes have equal content and equal history
+    behind them. Comparing content alone would call two rows shared that sit on
+    different pasts."""
+    shared = 0
+    for mine, yours in zip(ours, theirs):
+        if mine.get("hash") != yours.get("hash"):
+            break
+        shared += 1
+    return shared
+
+
+def _tie_faults(ours_tail, theirs_tail):
+    """(refusals, identical) for rows the two tails place at the SAME timestamp.
+
+    WHY A TIE IS A REFUSAL AND NOT A COIN TOSS. Timestamp order is the only order
+    a merge has -- the chain order of each tail is real but the two tails have no
+    order BETWEEN them -- so two rows the timestamps cannot separate have no
+    recorded order at all, anywhere. Picking one is inventing a history, and the
+    invention is invisible afterwards because the output verifies either way.
+
+    A TIE WITH IDENTICAL CONTENT IS NOT REFUSED and is not deduplicated either.
+    Both copies are kept, because dropping one is a guess that two rows saying the
+    same thing at the same second were one event, and the union of two files is
+    the one answer that guesses nothing. The count is returned so the caller can
+    say it out loud rather than leave it to be discovered.
+
+    CROSS-SIDE ONLY. Two rows within one tail sharing a timestamp are already in a
+    recorded order that the chain fixes, and this must not disturb it."""
+    ours_at, theirs_at = {}, {}
+    for row in ours_tail:
+        ours_at.setdefault(str(row.get("ts") or ""), []).append(row_content(row))
+    for row in theirs_tail:
+        theirs_at.setdefault(str(row.get("ts") or ""), []).append(row_content(row))
+    refusals, identical = [], 0
+    for stamp in sorted(set(ours_at) & set(theirs_at)):
+        mine, yours = sorted(ours_at[stamp]), sorted(theirs_at[stamp])
+        if mine == yours:
+            # Both sides' rows, because both are KEPT: a count of one side would
+            # under-report what the note is about by half.
+            identical += len(mine) + len(yours)
+            continue
+        refusals.append(
+            "both copies carry a row at %s and they do not say the same thing, "
+            "so nothing records which came first: one side has %s, the other "
+            "has %s. Timestamp order is the only order a merge has, and it "
+            "cannot separate these -- resolve it by hand rather than letting "
+            "this pick one."
+            % (stamp or "(no timestamp)",
+               _output.some_of([_summarise_row(c) for c in mine]),
+               _output.some_of([_summarise_row(c) for c in yours])))
+    return refusals, identical
+
+
+def _summarise_row(content):
+    """`action(target)` for one canonical row content -- what a refusal names it by.
+
+    Deliberately NOT the whole row: a refusal is read in a terminal, and the two
+    fields that tell a reader which write they are looking at are the action and
+    what it touched."""
+    try:
+        obj = json.loads(content)
+    except Exception:
+        return "(unreadable row)"
+    return "%s(%s)" % (obj.get("action") or "?", obj.get("target") or "")
+
+
+def _merge_tails(ours, theirs):
+    """The two tails interleaved by timestamp, each side's OWN order preserved.
+
+    A MERGE AND NEVER A SORT, and the difference is the whole guarantee. A sort
+    keyed on `ts` would reorder a side against itself the moment its own rows are
+    not in timestamp order -- which a caller-supplied `ts` allows and the archive
+    cases in this suite's neighbour actually do -- and reordering a recorded chain
+    is the failure this verb exists to avoid. Two pointers can only ever advance,
+    so each side comes out in exactly the order it went in.
+
+    A tie takes from `ours` first. That is safe rather than arbitrary because a
+    tie whose contents differ was already refused by `_tie_faults`: the only ties
+    reaching here say the same thing, so the two orders are the same reading."""
+    out, i, j = [], 0, 0
+    while i < len(ours) and j < len(theirs):
+        if str(theirs[j].get("ts") or "") < str(ours[i].get("ts") or ""):
+            out.append(theirs[j])
+            j += 1
+        else:
+            out.append(ours[i])
+            i += 1
+    out.extend(ours[i:])
+    out.extend(theirs[j:])
+    return out
+
+
+def _rechain(rows, name):
+    """(rows, relinked): `rows` with `prev` and `hash` recomputed from `name`'s
+    genesis forward, and how many rows that actually moved.
+
+    `relinked` is MEASURED rather than assumed to be "everything after the
+    divergence": the first row of a tail sits on the same `prev` it always had, so
+    its hash is unchanged, and a caller that reported the whole tail as re-linked
+    would be overstating what it did."""
+    out, prev, relinked = [], genesis_prev(name), 0
+    for row in rows:
+        fresh = {k: v for k, v in row.items() if k not in ("prev", "hash")}
+        fresh["prev"] = prev
+        fresh["hash"] = row_hash(fresh)
+        if fresh["hash"] != row.get("hash"):
+            relinked += 1
+        prev = fresh["hash"]
+        out.append(fresh)
+    return out, relinked
+
+
+def _merge_marker(rows, name, actor, counts):
+    """The row a merge leaves IN the file it merged, or None when there is nothing
+    to record.
+
+    THE FILE SAYS WHAT WAS DONE TO IT. Re-chaining is defensible only because it
+    is auditable, and "read the merge commit" is a weaker answer than a row in the
+    trail itself. Built through `_normalise` rather than by hand so the row shape
+    has one home -- this is a journal row like any other, and a merge writing its
+    own private shape would be the second opinion this module is arranged against.
+
+    Its timestamp is the LATEST of now and the last row's, so the marker can never
+    land before the rows it describes on a machine whose clock disagrees with the
+    one that wrote them."""
+    if not rows:
+        return None
+    latest = max([str(r.get("ts") or "") for r in rows] or [""])
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    marker = _normalise({
+        "action": MERGE_ACTION, "target": "",
+        "ts": latest if latest > now else now,
+        "summary": ("re-chained %d row(s) of %s after a divergence: %d shared, "
+                    "%d from one copy, %d from the other. Row contents "
+                    "unchanged; only `prev`/`hash` recomputed. Inputs %s / %s."
+                    % (len(rows), name, counts["shared"], counts["oursOnly"],
+                       counts["theirsOnly"], counts["oursDigest"],
+                       counts["theirsDigest"])),
+        "actor": actor if isinstance(actor, dict) else {"via": MERGE_VIA}})
+    marker["stateHash"] = None
+    return marker
+
+
+def merge_rows(ours, theirs, name, actor=None, torn=()):
+    """The UNION of two divergent copies of ONE journal file, re-chained.
+
+    `ours` and `theirs` are row lists as `read_file`/`rows_from_text` return them;
+    `name` is the basename the chain is seeded from (`genesis_prev`), which is why
+    the output has to be written back under that name and nowhere else. `torn`
+    names the sides whose last line was partial. Returns
+
+        {"ok", "refusals", "notes", "rows", "shared", "oursOnly", "theirsOnly",
+         "relinked", "divergent", "identical", "name"}
+
+    and `rows` is EMPTY whenever `ok` is false -- a refusal never also hands back
+    a half-built answer for a caller to use by accident.
+
+    EVERY PRECONDITION IS CHECKED BEFORE THE FIRST ROW IS RE-CHAINED, which is not
+    a style choice here: the refusals are the whole value of the verb, and a
+    validation interleaved with the work is a validation that can be reached with
+    half the output already built.
+
+    THE THREE REFUSALS IT EXISTS FOR, each with its own case next door:
+      * a row that does not hash to its own contents (`_merge_input_faults`) --
+        the input was already broken and re-chaining would hide it;
+      * two rows at one timestamp saying different things (`_tie_faults`) --
+        nothing records which came first;
+      * no shared prefix at all -- two files that never had a common past are not
+        a divergence, and unioning them would invent a history for both.
+
+    NO DIVERGENCE IS A LEGITIMATE ANSWER, not an error: when one side's rows are a
+    prefix of the other's, the longer side already contains every row of the
+    shorter one, `relinked` is 0 and no marker row is added. There is nothing to
+    re-chain and nothing to record about having done so."""
+    refusals = list(_merge_input_faults(ours, "ours" in torn, "ours", name))
+    refusals.extend(_merge_input_faults(theirs, "theirs" in torn, "theirs", name))
+    out = {"ok": False, "refusals": refusals, "notes": [], "rows": [],
+           "shared": 0, "oursOnly": 0, "theirsOnly": 0, "relinked": 0,
+           "divergent": False, "identical": 0, "name": name}
+    if refusals:
+        return out
+    shared = _common_prefix(ours, theirs)
+    out["shared"] = shared
+    if not shared:
+        out["refusals"].append(
+            "the two copies share no leading row at all, so this is not one "
+            "file that diverged -- it is two unrelated chains. Their first rows "
+            "are %s and %s. A union of those would invent a common past for "
+            "both." % (_summarise_row(row_content(ours[0])),
+                       _summarise_row(row_content(theirs[0]))))
+        return out
+    ours_tail, theirs_tail = ours[shared:], theirs[shared:]
+    out["oursOnly"], out["theirsOnly"] = len(ours_tail), len(theirs_tail)
+    undated = [r for r in ours_tail + theirs_tail if not str(r.get("ts") or "")]
+    if undated:
+        out["refusals"].append(
+            "%d divergent row(s) carry no timestamp, and timestamp order is the "
+            "only order a merge has between the two copies -- there is nowhere "
+            "to put them: %s"
+            % (len(undated),
+               _output.some_of([_summarise_row(row_content(r))
+                                for r in undated])))
+        return out
+    ties, identical = _tie_faults(ours_tail, theirs_tail)
+    out["identical"] = identical
+    if ties:
+        out["refusals"].extend(ties)
+        return out
+    if not ours_tail or not theirs_tail:
+        # One side is a prefix of the other: the longer copy already holds every
+        # row of the shorter one, so the union IS that copy and no link moves.
+        out["ok"] = True
+        out["rows"] = list(ours if len(ours) >= len(theirs) else theirs)
+        out["notes"].append(
+            "no divergence: the %s copy already contains every row of the "
+            "other, so nothing was re-chained and no `%s` row was added"
+            % ("ours" if not theirs_tail else "theirs", MERGE_ACTION))
+        return out
+    out["divergent"] = True
+    union = list(ours[:shared]) + _merge_tails(ours_tail, theirs_tail)
+    chained, relinked = _rechain(union, name)
+    # The marker is chained ON rather than re-chained WITH, so `relinked` stays a
+    # count of rows whose link actually moved. A new row has no old hash to
+    # differ from, and including it would have reported one more re-linked row
+    # than the merge touched.
+    marker = _merge_marker(chained, name, actor, {
+        "shared": shared, "oursOnly": out["oursOnly"],
+        "theirsOnly": out["theirsOnly"],
+        "oursDigest": rows_digest(ours), "theirsDigest": rows_digest(theirs)})
+    if marker is not None:
+        marker["prev"] = chained[-1]["hash"]
+        marker["hash"] = row_hash(marker)
+        chained = chained + [marker]
+    out["ok"] = True
+    out["rows"] = chained
+    out["relinked"] = relinked
+    if identical:
+        out["notes"].append(
+            "%d row(s) sit at a timestamp both copies used and say the same "
+            "thing; BOTH copies are kept, because dropping one is a guess that "
+            "two identical rows were one event" % (identical,))
+    return out
+
+
+def rows_digest(rows):
+    """A short digest over the CONTENT of a row list -- what a merge names its
+    inputs by.
+
+    Over content and not over the file's bytes: the two inputs of a merge differ
+    in their links by definition, so a byte digest would only ever say they are
+    different, while this says which rows each side held."""
+    body = hashlib.sha256()
+    for row in rows:
+        body.update(row_content(row).encode("utf-8"))
+    return body.hexdigest()[:12]
+
+
+def merge_text(rows):
+    """The bytes a merged journal file is written from -- one canonical row per
+    line, exactly as `_append` writes one."""
+    return "".join(canonical(row) + "\n" for row in rows)
+
+
+def _read_target(path):
+    """(text, unreadable): what `path` holds RIGHT NOW, before it is replaced.
+
+    THE MISSING FILE AND THE UNREADABLE ONE ARE NOT THE SAME ANSWER, and
+    collapsing them is how a guard goes quiet. A target that is not there yet
+    holds no row, so there is nothing a merge could take from it and `""` is the
+    truth rather than a fallback. A target that IS there and cannot be read is a
+    question that could not be asked -- and the caller is about to overwrite
+    that file, so `unreadable` carries the reason and the grader can refuse
+    instead of being handed the reassuring empty answer.
+
+    Deliberately not `read_file()`: that returns rows and swallows both cases
+    into `([], False)`, which is right for a reader sweeping a directory and
+    wrong for the one place that is about to replace the file.
+
+    IT LIVES HERE RATHER THAN IN THE COMMAND BECAUSE OF WHERE IT IS CALLED FROM
+    (F340). This read is the one `write_merged` makes with the lock already
+    held; a copy of it in the command would be a read taken before the lock
+    exists, which is the whole defect."""
+    if not os.path.exists(path):
+        return "", None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read(), None
+    except Exception as exc:
+        return "", str(exc)
+
+
+def write_merged(path, text, grade=None, dry_run=False):
+    """Write a merged journal file, under the SAME lock an append takes -- and
+    GRADE it, against the bytes read inside that same hold.
+
+    THE LOCK IS NOT OPTIONAL HERE, and it is the reason this write lives beside
+    `_append` rather than in the command. An append reads the file's tail to
+    learn its `prev`; a merge REPLACES that tail. Without the lock an append
+    that had already read the old tail would land a row chained to a row this
+    write just replaced -- a break that reads exactly like a deleted row, which
+    is the false tamper verdict the lock exists to prevent.
+
+    THAT ARGUMENT ONLY EVER COVERED HALF OF WHAT THE LOCK IS FOR (F340). The
+    other half is the row itself. The command used to read the target, grade the
+    result against it and only then call this -- so the read happened before any
+    lock existed, and a row appended between the grading and `os.replace` was
+    graded by nobody and deleted, at exit 0, with `verify` reporting the
+    survivors chain cleanly. That is F328's signature moved from "the target was
+    never read" to "the target was read too early", and the repair is that the
+    read, the grading and the replace are ONE hold: `grade(text, unreadable)`
+    is called with what this function read under the lock and returns the
+    reasons the write must not happen. WHAT those reasons are belongs to the
+    caller (`audit-journal.py` asks whether a row would be lost, whether the
+    target is torn and whether it already holds a resolution); WHEN they are
+    asked belongs here, because only here is the answer still true when the
+    replace runs.
+
+    `grade=None` writes UNGRADED, and the only caller that may pass None is one
+    that is not replacing a live trail: `cmd_merge` always passes a grader.
+    `dry_run` takes the lock and grades and does not write, so a preview is
+    graded against a file nothing was appending to either.
+
+    Returns {"written", "refusals", "path"} -- `written` is the fact, and
+    `refusals` is why it may be false with no exception raised. It still RAISES
+    on anything that stopped an attempted write: unlike `append`, this is not a
+    record of a write that already succeeded -- it IS the write, and a caller
+    told it was fine would go on to commit a conflicted file. A refusal is not
+    that: nothing was attempted, and the reason is text a person has to read.
+
+    Through a temporary file in the same directory, so an interrupted merge
+    leaves either the old file or the new one and never half of each."""
+    lock = _acquire(path)
+    tmp = path + ".merged"
+    try:
+        refusals = []
+        if grade is not None:
+            current, unreadable = _read_target(path)
+            refusals = list(grade(current, unreadable))
+        if refusals or dry_run:
+            return {"written": False, "refusals": refusals, "path": path}
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            os.replace(tmp, path)
+        except Exception:
+            # The half-written temporary goes, and the exception does not:
+            # `journal_files` matches `.jsonl` so it would never be READ, but it
+            # would sit in `git status` as an untracked file in the trail's own
+            # directory, which is exactly the shape `guard-bash-writes` reports.
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    finally:
+        _release(lock)
+    return {"written": True, "refusals": [], "path": path}
+
+
 # --- verifying ----------------------------------------------------------------
 def _git_status_sets(directory):
     """One `git status --porcelain -z -uall` for a whole journal directory:
@@ -1147,17 +1760,211 @@ def _git_status_sets(directory):
         return None
 
 
-def _git_anchor_finding(path):
-    """The git anchor: once a journal file is committed, its committed copy must
-    be a byte-prefix of the working copy -- append-only ACROSS commits, which is
-    what makes "rewrite the whole file and recompute every hash" detectable
-    (the forger must now rewrite git history too, on every clone that has it).
+def rows_unaccounted(have_text, result_text):
+    """Which parseable rows of `have_text` appear NOWHERE in `result_text`.
 
-    Returns the FINDING text, or None. Fail-open silently on every inability to
-    check: no git binary, not a repository, an untracked file, `git show`
-    erroring (tracked but not yet in HEAD) -- with one deliberate retry: a file
-    in archive/ whose committed copy is not at its new path yet is anchored
-    against the PRE-archive path one level up (see the comment at the seam). Line endings are normalised before
+    -> {"missing", "row", "action", "unaccounted", "haveRows", "resultRows"}.
+    `row`/`action` name the first one; `missing` is the count, so a caller can
+    say "and N others" without a second pass.
+
+    `unaccounted` IS ALL OF THEM, `(position, action)` in file order, because
+    the count and the first one cannot be partitioned and the caller has to
+    partition them (F342). A row somebody typed into a conflicted file while
+    resolving it and a `journal.merge` row a previous run of the merge verb left
+    behind are both "in neither stage", and they are two different findings with
+    two different repairs -- and which of them `row` happens to name depended on
+    the wall-clock second the two runs landed in, because the marker row's
+    timestamp moves. Handing back the whole list is what lets the caller sort
+    them by what they are rather than by which came first.
+
+    PRESENCE ONLY, AND ORDER IS DELIBERATELY LEFT OUT OF THE QUESTION, which is
+    what makes this a different function rather than a flag on
+    `anchor_verdict`. Order is what lets that one catch a forgery, so it must
+    not learn to ignore it. The caller here is the `from_index` merge, whose
+    `have_text` is the CONFLICTED working copy -- two stages concatenated with
+    markers between them, an order no chain ever had. Asking about order there
+    refuses every genuine resolution; asking about presence catches the one
+    thing that path can still lose, which is a row somebody typed into the
+    conflicted file and that is therefore in neither stage.
+
+    AND IT IS A SET QUESTION, NOT A COUNT, which is the opposite of the rule
+    that applies one function up -- so the reason is here rather than left to
+    look like the mistake `mu3` was about. A conflicted file legitimately
+    carries the same row TWICE when both sides added identical content to their
+    own tails, while the union that resolves it holds that row once. Counting
+    would call that a loss and refuse a correct resolution. What is being
+    guarded against is a row present in the file and absent from the result
+    altogether, and set containment is exactly that question.
+    """
+    have_rows, _ht = rows_from_text(have_text)
+    result_rows, _rt = rows_from_text(result_text)
+    # An unparseable row cannot be compared with anything, and on this path the
+    # conflict MARKERS are unparseable lines - so dropping them is not leniency,
+    # it is the only reading available. `verify` reports an unparseable row in a
+    # file it is asked about; this is not that question.
+    wanted = [(row_content(r), r.get("action") or "?") for r in have_rows
+              if not r.get("_unparseable")]
+    held = set(row_content(r) for r in result_rows
+               if not r.get("_unparseable"))
+    # `row` is a POSITION and not the content, so a caller's sentence reads the
+    # same way `anchor_verdict`'s does - one vocabulary for "which row", or the
+    # two refusals this command can print would number things differently.
+    gone = [(i, pair[1]) for i, pair in enumerate(wanted, 1)
+            if pair[0] not in held]
+    return {"missing": len(gone),
+            "row": gone[0][0] if gone else None,
+            "action": gone[0][1] if gone else None,
+            "unaccounted": gone,
+            "haveRows": len(wanted), "resultRows": len(held)}
+
+
+def anchor_verdict(committed_text, working_text):
+    """Does the working copy still hold every row the committed copy held?
+
+    THE PROPERTY, and it is not the one this check used to assert:
+
+        every row the committed copy holds is still in the working copy, with
+        its CONTENT unchanged, in the same relative order.
+
+    Returns {"held", "row", "action", "committedRows", "workingRows",
+    "divergesAt", "extra"}. `row`/`action` name the first committed row that is
+    gone or altered when `held` is false.
+
+    WHY THE OLD PROXY HAD TO GO (F306). "`git show HEAD:<file>` is a byte-prefix
+    of the working copy" stood in for append-only across commits, and it is a
+    good proxy for as long as appending is the only thing that ever happens to
+    the file. A merge is the other thing: resolving a divergence re-links every
+    row after the divergence point, so the BYTES after that point are new while
+    no row's content moved at all. The prefix relation cannot survive that -- and
+    neither side of a divergence satisfies it either, which is why `verify`
+    reported every sound resolution as broken and could tell nobody whether
+    their resolution was sound.
+
+    Content, order and presence are what the proxy was reaching for, and they are
+    checkable directly. The BYTE prefix is still the fast path in
+    `_git_anchor_finding` (it implies all three, and costs one comparison), so
+    this runs only once the cheap answer has already failed.
+
+    WHAT IT NO LONGER CATCHES, said plainly because a widening nobody states is
+    a widening nobody checks: under the prefix rule a row could only be added at
+    the END of the committed bytes, and under this one a row may be inserted
+    BETWEEN committed rows -- which is exactly what a merge does with the other
+    side's tail, and is therefore what could not be forbidden. A forger gains
+    the ability to slip a fabricated row into the middle of a committed file.
+    They already had the ability to append one, the whole file must still chain
+    (`verify`'s per-row pass), and the merge that legitimately inserts rows
+    leaves both parents in git plus a `journal.merge` row saying so. Insertion
+    is reported as a WARNING rather than passing in silence, for that reason.
+
+    Two ways this can be reached without a merge, both harmless and both
+    covered: a file re-spelled by something that does not write canonical JSON,
+    and a file whose committed copy is the pre-archive path. Neither changes a
+    row's content, so both come back `held`.
+    """
+    committed_rows, _ct = rows_from_text(committed_text)
+    working_rows, _wt = rows_from_text(working_text)
+    # An unparseable committed row cannot be compared with anything, so it is
+    # dropped from the question rather than counted as missing. `verify`'s own
+    # per-row pass is what reports one in the WORKING copy.
+    wanted = [(row_content(r), r.get("action") or "?") for r in committed_rows
+              if not r.get("_unparseable")]
+    have = [row_content(r) for r in working_rows if not r.get("_unparseable")]
+    out = {"held": True, "row": None, "action": None,
+           "committedRows": len(wanted), "workingRows": len(have),
+           "divergesAt": None, "extra": len(have) - len(wanted)}
+    at = 0
+    for i, pair in enumerate(wanted):
+        content, action = pair
+        while at < len(have) and have[at] != content:
+            at += 1
+        if at >= len(have):
+            out["held"] = False
+            out["row"] = i + 1
+            out["action"] = action
+            return out
+        at += 1
+    same = 0
+    for pair, mine in zip(wanted, have):
+        if pair[0] != mine:
+            break
+        same += 1
+    out["divergesAt"] = same + 1 if same < len(have) else None
+    return out
+
+
+def _anchor_warning(name, verdict, committed_at):
+    """The warning text for a file whose committed rows all survived but whose
+    BYTES moved. `verdict` is `anchor_verdict`'s answer, with `held` true.
+
+    A FUNCTION RATHER THAN A FORMAT STRING AT THE RETURN, because this is the
+    highest-stakes prose the module emits and nothing could reach it: it is
+    built inside `_git_anchor_finding`, which needs a real repository, and the
+    one gate that has one asserts the FINDING's text and not this. Both defects
+    below were therefore invisible to every check in the tree.
+
+    IT SENT THE READER TO A PLACE THAT MAY NOT EXIST. Re-linking a chain is what
+    a merge resolution does, and a fabricated row spliced BETWEEN committed rows
+    and re-chained produces exactly this shape -- every committed row still
+    present, in order, with its content intact. `anchor_verdict`'s own docstring
+    says so, in the passage about what the rule no longer catches. The text
+    nonetheless read "the merge commit is where you check which side the extra
+    rows came from", and under the second reading there is no merge commit at
+    all. Nothing here can tell the two readings apart, so the warning says that
+    and names the evidence that would -- two parents and a `journal.merge` row
+    -- rather than assuming one of them.
+
+    AND `divergesAt` CAN BE ABSENT, which is the other reading again: a file
+    re-spelled by something that does not write canonical JSON diverges at no
+    row at all, and the bytes differ while every row is the same row in the same
+    order. The old text substituted the first row for the missing number and
+    told the reader the copies part at the beginning -- a row number no reader
+    could act on, about a divergence that did not happen. That case gets its own
+    sentence, because "extra rows" is advice about rows that are not there."""
+    if verdict["divergesAt"] is None:
+        return (
+            "%s is no longer byte-identical to its committed copy, and no row "
+            "diverged: every committed row is still here, in order, with its "
+            "content intact, and nothing arrived alongside them. Something "
+            "rewrote the bytes without changing a single row -- a writer that "
+            "does not spell canonical JSON is the ordinary cause (git show "
+            "HEAD:%s)" % (name, committed_at))
+    return (
+        "%s is no longer byte-identical to its committed copy from row %d on, "
+        "and no row's content changed: all %d committed row(s) are still here, "
+        "in order, alongside %d more. Re-linking a chain is what "
+        "`audit-journal.py merge` does to resolve a divergence -- and a row "
+        "spliced between committed rows and re-chained looks exactly like this "
+        "from here, so NOTHING IN THIS CHECK CAN TELL THOSE APART. Read the "
+        "rows that arrived and find what put them there: a resolution leaves "
+        "both sides in git as the parents of a merge commit and a `%s` row "
+        "saying what it did, and rows that arrived with neither are rows "
+        "nothing has accounted for (git show HEAD:%s)"
+        % (name, verdict["divergesAt"], verdict["committedRows"],
+           max(verdict["extra"], 0), MERGE_ACTION, committed_at))
+
+
+def _git_anchor_finding(path):
+    """The git anchor's VERDICT on one file: {"finding", "warning"}, or None.
+
+    Once a journal file is committed, every row its committed copy holds must
+    still be in the working copy, unchanged and in order -- append-only ACROSS
+    commits, which is what makes "rewrite the whole file and recompute every
+    hash" detectable (the forger must now rewrite git history too, on every
+    clone that has it). `anchor_verdict` holds that rule and says why it is no
+    longer the byte-prefix this function used to assert.
+
+    THE NAME SAYS `finding` AND THE RETURN CARRIES A WARNING TOO, deliberately:
+    two files this module may not edit name it in their own prose
+    (`tools/check-git-pipeline.py`, `run-test-gate.py`), and a rename that left
+    that prose pointing at nothing would cost more than the imprecision. Both
+    keys are always present when anything is returned; None means the question
+    could not be asked.
+
+    Fail-open silently on every inability to check: no git binary, not a
+    repository, an untracked file, `git show` erroring (tracked but not yet in
+    HEAD) -- with one deliberate retry: a file in archive/ whose committed copy
+    is not at its new path yet is anchored against the PRE-archive path one
+    level up (see the comment at the seam). Line endings are normalised before
     the compare -- on Windows the working file is CRLF while an autocrlf
     checkout commits LF, and a false accusation is the one failure mode this
     check must never have."""
@@ -1198,13 +2005,25 @@ def _git_anchor_finding(path):
         committed = shown.stdout.replace(b"\r\n", b"\n")
         with open(path, "rb") as fh:
             working = fh.read().replace(b"\r\n", b"\n")
-        if not working.startswith(committed):
-            return ("%s: the journal's committed past changed -- a committed "
-                    "row was edited or removed (git show HEAD:%s is not a "
-                    "prefix of the working copy)" % (name, committed_at))
+        if working.startswith(committed):
+            # The fast path, and still the one almost every file takes: a byte
+            # prefix implies presence, content and order all three, in one
+            # comparison and with nothing parsed.
+            return None
+        verdict = anchor_verdict(committed.decode("utf-8", "replace"),
+                                 working.decode("utf-8", "replace"))
+        if not verdict["held"]:
+            return {"finding": (
+                "%s: the journal's committed past changed -- committed row %d "
+                "(%s) is no longer in the working copy with its content "
+                "intact. A row's CONTENT is what nothing may change; resolving "
+                "a divergence recomputes only `prev` and `hash` (git show "
+                "HEAD:%s)" % (name, verdict["row"], verdict["action"],
+                              committed_at)), "warning": None}
+        return {"finding": None,
+                "warning": _anchor_warning(name, verdict, committed_at)}
     except Exception:
         return None
-    return None
 
 
 def verify(project, config=None):
@@ -1212,9 +2031,19 @@ def verify(project, config=None):
 
     Returns {"ok", "dir", "exists", "rows", "files": [...], "findings", "warnings"}.
     FINDINGS are breaks -- an edited row, a deleted or reordered one, a file that
-    is not the file its genesis names. WARNINGS are the honest maybes: a torn tail
-    (a crash, not a cover-up) and out-of-band drift (the document moved with no row
-    to say why -- which is normal for anything the plugin did not write).
+    is not the file its genesis names, and a committed row that is no longer in
+    the working copy with its content intact. WARNINGS are the honest maybes: a
+    torn tail (a crash, not a cover-up), out-of-band drift (the document moved
+    with no row to say why -- which is normal for anything the plugin did not
+    write), and a file whose LINKS were recomputed while every committed row's
+    content survived, which is what resolving a divergence does.
+
+    THE GIT ANCHOR ASKS ABOUT ROWS AND NOT ABOUT BYTES since F306, and the two
+    differ for exactly one operation: a merge re-links every row after the
+    divergence point, so the bytes change where nothing a row says changes.
+    `anchor_verdict` carries the property that replaced the byte prefix, what it
+    stopped being able to forbid, and why. The byte prefix is still tried first
+    and still settles almost every file.
     """
     config = load_config(project) if config is None else config
     directory = journal_dir(project, config)
@@ -1282,7 +2111,10 @@ def verify(project, config=None):
         else:
             anchor = None
         if anchor:
-            entry["findings"].append(anchor)
+            if anchor.get("finding"):
+                entry["findings"].append(anchor["finding"])
+            if anchor.get("warning"):
+                entry["warnings"].append(anchor["warning"])
         out["rows"] += entry["rows"]
         out["findings"].extend(entry["findings"])
         out["warnings"].extend(entry["warnings"])

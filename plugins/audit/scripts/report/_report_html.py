@@ -783,6 +783,30 @@ def _tev_paths_text(values, unknown_word, empty_word, basis, dropped):
     return e("%s%s" % (text, (" (+%d more)" % dropped) if dropped else ""))
 
 
+def _tev_gate_text(row):
+    """Which declaration the run's `steps` came from, in words.
+
+    EMPTY FOR A ROW THAT DOES NOT SAY, and then the cell is dropped rather than
+    filled from `scope` (F312). `scope` is the POINTER SUBJECT, so on a run that
+    fell back it reads `phase` beside a `taskId` and both opposite readings fit
+    that shape - rendering it here as provenance is the exact mistake `gateSource`
+    exists to stop, and a row recorded before the field existed has no answer.
+
+    AND THE LAST ARM NAMES THE WORD IT DID NOT RECOGNISE rather than folding it
+    into one of the two it knows, which is the rule the schema states for every
+    vocabulary it declines to close.
+    """
+    source = str(row.get("gateSource") or "")
+    if not source:
+        return ""
+    if source == "task":
+        return "this task's own tests.gate"
+    if source == "phase":
+        return ("the phase's testGate — this task declares none"
+                if row.get("taskId") else "the phase's testGate")
+    return source
+
+
 def _tev_step_rows(row):
     """One line per step: what ran, what it exited, and how much it checked.
 
@@ -875,6 +899,7 @@ def _tev_detail_col(view):
     pairs = [("run", "<code>%s</code>" % e(row.get("runId"))),
              ("at", e(row.get("ts"))),
              ("scope", e(row.get("scope"))),
+             ("gate", e(_tev_gate_text(row))),
              ("attempt", e(row.get("attempt")) if row.get("attempt") is not None else ""),
              ("took", ("%d ms" % row["durationMs"])
               if isinstance(row.get("durationMs"), int) else ""),

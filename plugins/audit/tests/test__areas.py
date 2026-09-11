@@ -5,8 +5,9 @@ The cases for `_areas.py`, moved out of it - an importable helper.
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
 
-THREE OF THESE CASES COMPUTE A PATH, AND A TEST FILE SITS ONE DIRECTORY OVER, so
-each was checked rather than carried:
+SEVERAL CASES HERE COMPUTE A PATH, AND A TEST FILE SITS ONE DIRECTORY OVER, so
+each was checked rather than carried. The three the migration out of `_areas.py`
+had to re-derive:
 
   * `d1` builds a manifest whose area root is `"scripts"` and asks `missing_roots`
     to resolve it against the PLUGIN directory. Inline that read
@@ -28,12 +29,23 @@ each was checked rather than carried:
 file and remove it in `finally`, exactly as the inline suite did beside
 `_areas.py`. It holds no `.py`, so it is invisible to every tree scanner here.
 
+THE `oa26`-`oa28` FIXTURES ARE A CODE SIDE, WHICH IS THE OTHER HALF OF THAT, and
+they are built from the REAL modules rather than written by hand: `claim_drift`
+substitutes only the DOCUMENT through `text=`, so a case about a row's CODE side
+has to hand it a tree. Each reads the module the row names off
+`_harness.SCRIPTS_DIR`, mutates it in memory, and writes the result at the row's
+own relative path under a `tempfile.mkdtemp()` removed in `finally` - never beside
+this file, because a code-side fixture DOES hold a `.py` and every tree scanner
+here would find it.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
+import re
 import shutil
 import sys
+import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -563,6 +575,237 @@ def _cases(check):
           any(c == "audit-state-statuses" and "no such member" in p
               for c, p in M.claim_drift(text=_invented)),
           repr(M.claim_drift(text=_invented)))
+    # --- F303: the clause a five-claim section was not holding -----------------
+    # `## Phase sign-off` told the reader `/audit:task scope` refuses a `done`
+    # task, and F283 had already reversed that: driven on one fixture with only
+    # the status changed, the released v2.2.0 exits 2 and this tree exits 0 having
+    # widened `files`. The ADVICE survived - a finding in an undeclared file still
+    # wants a new task, because the widening settles the index and records no new
+    # work - so a reader checks the reasoning, finds it sound, and never re-checks
+    # the clause under it. The section was already anchored several claims deep
+    # and not one of them read that sentence, which is what a per-SECTION coverage
+    # figure actually buys; `_areas.py --coverage` prints the per-claim answer.
+    check("oa20 the statuses `scope` REFUSES are read out of the verb, not "
+          "restated beside it: `## Phase sign-off` names every status the guard "
+          "in `_locked_scope` turns away, and every status it names is one",
+          not [p for c, p in M.claim_drift()
+               if c == "scope-refusal-statuses"],
+          repr([p for c, p in M.claim_drift()
+                if c == "scope-refusal-statuses"]))
+    # F303 ITSELF, in the direction the document rotted: it named a status the
+    # verb does not refuse. One word swapped inside the anchored sentence, which
+    # is the smallest edit that reproduces the fault.
+    _refused_wrong = body.replace("refusal to `cancelled` alone,",
+                                  "refusal to `done` alone,")
+    check("oa21 ...and naming a status the verb does NOT refuse is a finding in "
+          "both halves at once - the word the code has no member for, and the "
+          "member the section stopped naming. This is F303 exactly: the clause "
+          "read `done` for a release and a half while the code refused only "
+          "`cancelled`",
+          _refused_wrong != body
+          and any(c == "scope-refusal-statuses" and "no such member" in p
+                  for c, p in M.claim_drift(text=_refused_wrong))
+          and any(c == "scope-refusal-statuses" and "does not name it" in p
+                  for c, p in M.claim_drift(text=_refused_wrong)),
+          repr([p for c, p in M.claim_drift(text=_refused_wrong)
+                if c == "scope-refusal-statuses"]))
+    # ...and the WHOLE clause put back the way it read before this fix, which is
+    # the mutation a reverting edit would actually make. It takes the marker with
+    # it, so the finding is about the list no longer being locatable rather than
+    # about a member - a reworded mechanism is a mechanism somebody has to
+    # re-check.
+    _pre_f303 = body.replace(
+        "It no longer refuses a finished\n   task. F283 narrowed that refusal to "
+        "`cancelled` alone,\n   and a `done` task will take a widening",
+        "It refuses a `done` task on purpose, and every task is `done` by the "
+        "time you are reading this step")
+    check("oa22 ...and reverting the clause to the sentence F283 had already "
+          "falsified is a finding too, because it takes the anchored mechanism "
+          "with it: the list can no longer be located, which is the repair "
+          "rather than a member to add",
+          _pre_f303 != body
+          and any(c == "scope-refusal-statuses" and "cannot be located" in p
+                  for c, p in M.claim_drift(text=_pre_f303)),
+          repr([p for c, p in M.claim_drift(text=_pre_f303)
+                if c == "scope-refusal-statuses"]))
+    # THE OTHER DIRECTION, AND THE ONE A DOCUMENT CASE CANNOT REACH: the VERB
+    # changes under a correct document. The row is repointed at a guard in the
+    # same file that really does refuse two statuses - `cancel`'s - so the
+    # comparison is driven against real bytes rather than a hand-written pair.
+    # Widening `scope`'s refusal back over `done` is what this simulates, and it
+    # must be reported as the member the section never learned.
+    _saved_lists = M.LIST_ANCHORS
+    try:
+        M.LIST_ANCHORS = tuple(
+            row if row[0] != "scope-refusal-statuses"
+            else (row[0], row[1], row[2],
+                  r'node\.get\("status"\) in \(([^)]*)\):\s*\n'
+                  r'\s*# Terminal is terminal',
+                  row[4])
+            for row in _saved_lists)
+        _widened = M.claim_drift(text=body)
+        check("oa23 ...and a VERB that starts refusing a status the document "
+              "does not name is a finding under a document nobody touched. "
+              "Without this half the anchor only ever watches the prose, which "
+              "is how F283 reversed the code and left the clause standing",
+              any(c == "scope-refusal-statuses" and "'done'" in p
+                  and "does not name it" in p for c, p in _widened),
+              repr([p for c, p in _widened
+                    if c == "scope-refusal-statuses"]))
+    finally:
+        M.LIST_ANCHORS = _saved_lists
+    # --- F334: the window this row searches, and what bounds it ---------------
+    # THE PATTERN USED TO BE UNBOUNDED - `.*?` under `re.S` - and the shape it
+    # anchors on is not unique to the verb it names: a status test beside an
+    # `out(` prefix is ordinary code here, where the row above it anchors on a
+    # constant NAME that occurs once. So deleting `_locked_scope`'s refusal did
+    # not report a deleted refusal. The scan read past the end of the function,
+    # latched onto `retarget`'s guard further down the file, and told the reader
+    # `## Phase sign-off` fails to name `done` - a status `scope` no longer
+    # refuses at all, sending the repair to the document. `_list_anchor_drift`
+    # already carried the branch that is right for a deleted guard and the
+    # window made it unreachable.
+    #
+    # DRIVEN ON THE REAL BYTES with the status test neutralised, which is the
+    # smallest edit that takes the shape out of the function and leaves
+    # everything below it standing. A hand-written verb here would be a fixture
+    # that agrees with whichever pattern wrote it.
+    _verb_rel = os.path.join("scripts", "manifest", "audit-task.py")
+    with open(os.path.join(_harness.SCRIPTS_DIR, "manifest", "audit-task.py"),
+              "r", encoding="utf-8") as fh:
+        _verb_src = fh.read()
+    _guard_test = '    if node.get("status") == "cancelled":\n'
+    _blinded = _verb_src.replace(_guard_test, "    if False:\n")
+    _scratch = tempfile.mkdtemp(prefix="areas-code-side-")
+    try:
+        os.makedirs(os.path.join(_scratch, os.path.dirname(_verb_rel)))
+        with open(os.path.join(_scratch, _verb_rel), "w",
+                  encoding="utf-8") as fh:
+            fh.write(_blinded)
+        _gone = [p for c, p in M.claim_drift(plugin_root=_scratch, text=body)
+                 if c == "scope-refusal-statuses"]
+        check("oa26 a DELETED guard is reported as a deleted guard: with the "
+              "status test gone from `_locked_scope`, the row says the file no "
+              "longer carries the vocabulary it is anchored to and says nothing "
+              "about a member. F334 read the NEXT verb's guard instead and "
+              "blamed the document for not naming a status `scope` had stopped "
+              "refusing",
+              _verb_src.count(_guard_test) == 1 and _blinded != _verb_src
+              and any("no longer carries the vocabulary" in p for p in _gone)
+              and not any("does not name it" in p or "no such member" in p
+                          for p in _gone),
+              repr(_gone))
+        # ...and the case above is DISCRIMINATING rather than green by luck. The
+        # pre-F334 spelling is derived from the row's own pattern instead of
+        # copied, so it cannot drift from what it claims to compare, and it must
+        # still find a match in these same bytes: the deletion case only proves
+        # a bound while there is something below the function for an unbounded
+        # scan to slide onto, and the day `retarget`'s guard moves it would go
+        # green under either pattern.
+        _pat = [r[3] for r in M.LIST_ANCHORS
+                if r[0] == "scope-refusal-statuses"][0]
+        _loose = _pat.replace(r"(?:(?!\n\S).)*?", ".*?")
+        check("oa27 ...and the bound is what makes that true: the UNBOUNDED "
+              "spelling of this very row still matches those bytes, further "
+              "down the file, where the bounded one does not match at all. A "
+              "proof of a bound has to show the two patterns disagreeing on one "
+              "input",
+              _loose != _pat
+              and re.search(_loose, _blinded, re.S) is not None
+              and re.search(_pat, _blinded, re.S) is None,
+              repr((_loose != _pat,
+                    bool(re.search(_loose, _blinded, re.S)),
+                    bool(re.search(_pat, _blinded, re.S)))))
+    finally:
+        shutil.rmtree(_scratch, ignore_errors=True)
+    # --- F330a: an empty vocabulary is a finding about the SCAN ---------------
+    # A pattern can match and still parse to nothing - the enum is emptied, or a
+    # capture is narrowed to a group that no longer holds a member - and an empty
+    # set agrees with EVERY document, so the set difference both directions of
+    # this row rest on reports a clean answer over nothing at all. That refusal
+    # was written before either list row and had no case, which is the shape
+    # `no-silent-pass` calls a filter narrowing to nothing and reading as "all
+    # clear". It is load-bearing in more places now that a second row leans on
+    # it.
+    #
+    # THE FIXTURE IS THE ENUM EMPTIED, on the real module's bytes, by a
+    # substitution rather than a rewritten line - so it survives the declaration
+    # being reformatted, and it asserts that it landed. `audit-state-statuses` is
+    # the row it is driven through because its capture CAN come back empty;
+    # `scope-refusal-statuses` cannot be reached this way at all, since its group
+    # requires a quoted member to match in the first place.
+    _facts_rel = os.path.join("scripts", "status", "_status_facts.py")
+    with open(os.path.join(_harness.SCRIPTS_DIR, "status", "_status_facts.py"),
+              "r", encoding="utf-8") as fh:
+        _facts_src = fh.read()
+    _emptied = re.sub(r"(NO_SIGN_OFF_EVIDENCE = frozenset\(\{)[^}]*(\})",
+                      r"\1\2", _facts_src, count=1)
+    _scratch = tempfile.mkdtemp(prefix="areas-code-side-")
+    try:
+        os.makedirs(os.path.join(_scratch, os.path.dirname(_facts_rel)))
+        with open(os.path.join(_scratch, _facts_rel), "w",
+                  encoding="utf-8") as fh:
+            fh.write(_emptied)
+        _void = [p for c, p in M.claim_drift(plugin_root=_scratch, text=body)
+                 if c == "audit-state-statuses"]
+        check("oa28 an enum that parses to an EMPTY vocabulary is a finding "
+              "about the scan, not a clean answer: the row says so and reports "
+              "no member, where blinding that refusal turns every word the "
+              "section names into 'a status the code does not produce' - a wall "
+              "of findings against a document nobody touched, pointing at the "
+              "wrong side",
+              _emptied != _facts_src
+              and "NO_SIGN_OFF_EVIDENCE = frozenset({})" in _emptied
+              and any("EMPTY vocabulary" in p for p in _void)
+              and not any("no such member" in p for p in _void),
+              repr(_void))
+    finally:
+        shutil.rmtree(_scratch, ignore_errors=True)
+    # THE SECOND DIRECTION, and it is the case that looks vacuous: it asserts a
+    # vocabulary that HAS members produces no empty-set finding, which is true of
+    # the code before that refusal existed. It is the only case that fails when
+    # the refusal is made unconditional, and an unconditional one would report
+    # every list row on every run - so it stays, with this comment saying which
+    # mutation it is here for.
+    check("oa29 ...and it stays quiet on a vocabulary that has members: the "
+          "live rows report no empty-set finding at all. Make that refusal "
+          "unconditional and this is the case that goes red - the direction the "
+          "case above cannot see",
+          not [p for c, p in M.claim_drift() if "EMPTY vocabulary" in p],
+          repr([r for r in M.claim_drift() if "EMPTY vocabulary" in r[1]]))
+    # --- coverage is derived from EVERY anchor table, not just the first -------
+    _claims = M.anchor_coverage()["claims"]
+    _sign_off = [n for n in _claims if n.startswith("Phase sign-off")]
+    _failed_run = [n for n in _claims if n.startswith("Keeping a failed run")]
+    check("oa24 the coverage table counts a LIST row as the anchor it is: both "
+          "vocabularies show up under the section that carries them. Reading "
+          "only `CLAIM_ANCHORS` showed `## Keeping a failed run's record` with "
+          "one claim while it carried two",
+          len(_sign_off) == 1 and len(_failed_run) == 1
+          and "scope-refusal-statuses" in _claims[_sign_off[0]]
+          and "audit-state-statuses" in _claims[_failed_run[0]],
+          repr(_claims))
+    _saved_lists, _saved_claims = M.LIST_ANCHORS, M.CLAIM_ANCHORS
+    try:
+        M.LIST_ANCHORS = (("frob-vocab", "Frobnication",
+                           os.path.join("scripts", "status",
+                                        "_status_facts.py"),
+                           r"NO_SIGN_OFF_EVIDENCE\s*=\s*frozenset\(\{([^}]*)\}",
+                           "the statuses this section names"),)
+        _frob = body + ("\n## Frobnication\n\nAnchored by a list row alone. "
+                        "So `blocked`\nthe statuses this section names\n")
+        check("oa25 ...and a section anchored ONLY by a list row is anchored: it "
+              "shows in the coverage and is NOT reported as being in neither "
+              "set. The consequence of the narrower read had not happened yet, "
+              "which is the cheap moment to close it - a finding against a "
+              "section that IS anchored is the worst kind of false one",
+              "Frobnication" in M.anchor_coverage(text=_frob)["anchored"]
+              and not [p for c, p in M.claim_drift(text=_frob)
+                       if c == "Frobnication" and "neither set" in p],
+              repr([r for r in M.claim_drift(text=_frob)
+                    if r[0] in ("Frobnication", "frob-vocab")]))
+    finally:
+        M.LIST_ANCHORS, M.CLAIM_ANCHORS = _saved_lists, _saved_claims
     # 2. THE STRENGTH DECLARATION. The block comment said every row derives a
     #    value from the code; a review measured that seven did not. Declaring the
     #    strength is worth nothing unless the declaration is checked, so it is.

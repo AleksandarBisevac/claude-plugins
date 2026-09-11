@@ -54,6 +54,7 @@ and is what CI's sweep skips by, so it keeps working with no suite here at all.
 """
 
 import ast
+import functools
 import hashlib
 import json
 import os
@@ -1564,7 +1565,7 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 # tense is how a decision record explains itself, and forbidding it would push
 # the rot into vaguer wording rather than removing it.
 #
-# THREE FAMILIES, EACH ADOPTED ONLY AFTER MEASURING ITS SITES AND HOW MANY WERE
+# FOUR FAMILIES, EACH ADOPTED ONLY AFTER MEASURING ITS SITES AND HOW MANY WERE
 # ALREADY WRONG. An extension that fires on forty correct lines is worse than no
 # extension: it gets routed around, and then it is its own defect class.
 #
@@ -1577,11 +1578,19 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 #   completeness "all N of them", "all N ... have/are" - a claim that a
 #                collection's whole is N. 2 sites beyond the first shape, BOTH
 #                wrong (48 against a real 83).
+#   ratio        "N of M <noun>" - the tally a command prints, quoted with no
+#                command beside it (F311). Adopted after reading every hit the
+#                unbounded reading produced over this whole tree: the one real
+#                claim it left was `.claude/skills/writing-css/SKILL.md`'s
+#                declaration count, and every other hit was a rendered tally or
+#                a measurement anchored to a past run. `_ratio_claim()` carries
+#                each narrowing beside the class of line that bought it.
 #
-# TWO MORE WERE SURVEYED AND REFUSED - a measurement family and a before/after
-# family - and what the survey found is in `prose_number_claims()`'s list of what
-# this cannot see, beside the other gaps, because a refusal is only useful to the
-# next author if it is filed where they will look for the shape.
+# THREE MORE WERE SURVEYED AND REFUSED - a measurement family, a before/after
+# family, and the bare `the N <noun>` with an ordinary noun - and what each survey
+# found is in `prose_number_claims()`'s list of what this cannot see, beside the
+# other gaps, because a refusal is only useful to the next author if it is filed
+# where they will look for the shape.
 #
 # WHY EVERY ONE OF THEM TAKES "REMOVE THE NUMBER" AND NOT "REQUIRE THE BASIS".
 # Both remedies satisfy the house rule on paper. What separated them was a
@@ -1644,15 +1653,30 @@ _NUMERAL_WORDS = ("ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
 # widening the second-direction case exists to stop.
 
 
-def _numeral_span(w, i):
+def _numeral_span(w, i, small=False):
     """`(text, index past it)` if a numeral starts at `w[i]`, else None.
 
     ONE entry point for both spellings, so no shape can end up reading a digit and
     a word by different rules. Returns the text rather than the value: the finding
     quotes the claim back, and nothing here compares magnitudes.
+
+    `small` admits a BARE `_NUMERAL_TAILS` word - `five` standing on its own
+    rather than as the tail of `twenty-five`. It is the same table read one way
+    further, which is F311's half of F59's rule: a shape added later must read
+    both spellings THROUGH HERE and must not grow a numeral reader of its own.
+
+    IT IS OFF BY DEFAULT, AND THE DEFAULT IS THE MEASUREMENT. Switched on for
+    the families that read a bare noun, it reported over a hundred sites across
+    this tree the day it was written, and reading them is the argument: `all
+    three are honest about what they are`, `one case`, `two cases wearing one
+    name`. Under `ten` the word is ordinary English machinery, so a shape may
+    ask for it ONLY where the shape itself supplies the bound - `N of M <noun>`
+    is bounded by its `of`, and a bare noun is bounded by nothing.
     """
     tok = w[i]
     if tok.isdigit():
+        return (tok, i + 1)
+    if small and tok in _NUMERAL_TAILS:
         return (tok, i + 1)
     if tok not in _NUMERAL_WORDS:
         return None
@@ -1775,6 +1799,19 @@ def _in_dot_run(text, i):
     return text[i] == "." and "." in (before, text[i + 1:i + 2])
 
 
+# MEMOISED, AND THE SIZE IS THE POINT. The prose scan tokenizes every line of every
+# file it keeps, and it tokenizes each one more than once: as itself, again inside
+# `_historical_sentences`, and again as the `preceding` of the next line and the
+# `following` of the one before. Profiled with `cProfile`, that was the single
+# hottest function in `tests/test__output.py --selftest`, entered several hundred
+# thousand times for a few tens of thousands of distinct lines. The repeats are
+# ADJACENT calls on the same string, so a small LRU catches nearly all of them
+# while holding a few thousand short lists at most - an unbounded cache would keep
+# a token list for every line in the tree alive for the whole process, which is
+# memory spent on lines the scan will never look at again. Safe because the
+# function is PURE in its one argument and no caller mutates what comes back
+# (grep for it before changing either half of that sentence).
+@functools.lru_cache(maxsize=4096)
 def _tokenize(line):
     """`{"words", "sentence"}` - `line`'s tokens, and which sentence each sits in.
 
@@ -1819,6 +1856,53 @@ def _tokenize(line):
 def _backtick_chunks(line):
     """The backticked spans of `line`, in order."""
     return line.split("`")[1::2] if "`" in line else []
+
+
+# The delimiters that mean "these bytes are SHOWN, not asserted by the author".
+# The apostrophe is deliberately absent: `module's` would open a span nothing
+# closes, and a single-quoted tally in this tree is always nested inside a
+# double-quoted one, so it is covered without costing every possessive.
+_QUOTE_DELIMS = ("`", '"')
+
+
+def _quoted_spans(line):
+    """`[(start, end)]` - the column ranges of `line` holding quoted material.
+
+    THE SAME READING OF A DELIMITER `_carries_basis()` AND `_names_code()`
+    ALREADY RELY ON, one step further: those ask what a backticked span SAYS,
+    and this asks which columns one covers. A number inside such a span is a
+    byte this tree renders or asserts - `"fetched %s of %s linked item(s)"` in a
+    suite, a rollup quoted in a command's help - and its basis is the code or
+    the command around it, not a sentence.
+
+    AN ODD NUMBER OF DELIMITERS OPENS A SPAN THAT RUNS TO THE END OF THE LINE.
+    Both prose and source wrap here, so a quoted tally is routinely split across
+    two lines and the closing delimiter is on neither of them; reading an
+    unpartnered delimiter as a non-event put the first half of every such tally
+    back into the finding set.
+    """
+    out = []
+    for delim in _QUOTE_DELIMS:
+        cols = [i for i, ch in enumerate(line) if ch == delim]
+        while len(cols) >= 2:
+            out.append((cols[0], cols[1] + 1))
+            cols = cols[2:]
+        if cols:
+            out.append((cols[0], len(line)))
+    return out
+
+
+def _in_quoted_span(line, start, end):
+    """True if columns `start:end` of `line` overlap quoted material.
+
+    OVERLAP, not containment: a run that begins inside a quoted tally and ends
+    past its closing delimiter is still that tally, and requiring containment
+    reported the half of it that leaned out.
+    """
+    for a, b in _quoted_spans(line):
+        if start < b and a < end:
+            return True
+    return False
 
 
 def _carries_basis(line, following):
@@ -1867,8 +1951,22 @@ def _names_code(line):
 # Anything on this list means the SENTENCE is talking about THEN, so the number is
 # not a claim about now and must stay writable. The sentence and not the line -
 # `_historical_sentences()` below carries the two directions the line got wrong.
+#
+# `measured`, `saw` and `did` were added by F311, and adding them is F76's defect
+# met one word at a time rather than a loosening. The ratio family below reads the
+# spelling a measurement is USUALLY written in, so every sentence it reached that
+# was already legal was legal under CONTRIBUTING's third shape - "put it in the
+# past" - and this table could not read the past tense the tree actually writes
+# it in: "measured on two separate live runs, 39 breaches across N of M tasks",
+# "one saw `NO OVERLAP` on N of M tasks because jest prints suite paths", "N of M
+# commands behaved; the three that did not are one class", "proven red by making
+# exactly that change: N of M rendered fixtures moved". A table of past-tense
+# markers missing the tree's own past-tense verbs reports recollection as a claim,
+# which is the direction a reader meets by disagreeing with a finding - and the
+# way past a finding they disagree with is to route around the lint.
 _PAST = ("was", "were", "had", "used", "stood", "down", "up", "once",
-         "previously", "then", "before", "originally", "until", "old")
+         "previously", "then", "before", "originally", "until", "old",
+         "measured", "saw", "did", "proven")
 
 
 def _looks_historical(w):
@@ -2033,6 +2131,98 @@ def _completeness_claim(w):
     return None
 
 
+# --- a ratio quoted without its basis (F311) -----------------------------------
+# `N of M <noun>` is not a fourth question, it is the third answer to the one
+# already asked. A ratio READS as a quotation - it shows its own whole, so it looks
+# self-verifying - and the three spellings this repo keeps legal all read that way
+# too: history, a number carrying the command that re-derives it, and the repair
+# itself. What separates them is not whether a line quotes something. It is whether
+# the count CARRIES ITS BASIS, which is exactly what `_carries_basis()` decides for
+# a bare cardinality, and this family asks it through the same gate rather than a
+# new one: a denominator is not a basis, because nothing re-derives it either.
+#
+# THE SHAPE IS THE TALLY A COMMAND PRINTS, and that bound is the whole reason this
+# family could be adopted where the bare `the N <noun>` still cannot. A formatter
+# writes `%s of %s %s`, so the printed form carries NO ARTICLE; `N of the M <noun>`
+# is the author's own sentence about the tree, which is the ordinary-noun shape
+# `CONTRIBUTING.md` declares author-enforced. The bound was chosen by reading every
+# hit of the unbounded reading over this tree, and the count is deliberately not
+# written here: it fell by better than an order of magnitude, and what it shed was
+# almost entirely rendered output and measurements rather than claims.
+#
+# THE ARTICLE IS REFUSED TWICE OVER, and that is worth knowing before mutating
+# either half: the loop wants the whole to follow `of` DIRECTLY, and the verbatim
+# rule below refuses `N of the M <noun>` again, because the run built from the
+# tokens leaves the article out and the text does not. So neither mutation alone
+# turns `pn32` red - proven by running both, separately and together - and a
+# reader who removes one and sees green has not found a dead rule.
+#
+# The three narrowings under it were each bought by a class of real line:
+#   * the run must appear in the TEXT exactly as it tokenized, one space between
+#     each part - which is what tells `13 of 14 sections` from `phases"][1]["claim`,
+#     from `5-of-0`, from `22,363 of 49,393` and from a numeral the backticks
+#     around it were never beside;
+#   * the noun must be a noun. A closed table of function words is the only half of
+#     that a word scanner can make honestly, the same admission
+#     `_completeness_claim()` makes about auxiliaries: `8 of 40 can be coloured`
+#     and `it fails at 17 of 353 with this feature off` do not say what they count,
+#     and a tally that names nothing is one no reader could check anyway;
+#   * neither the run nor its noun may sit in a quoted span, because there the
+#     tally is a byte and its basis is the code beside it.
+_RATIO_NON_NOUN = (
+    "a", "an", "the", "and", "or", "but", "as", "than", "that", "which",
+    "of", "in", "on", "at", "to", "for", "with", "from", "by", "into",
+    "is", "are", "was", "were", "be", "been", "being",
+    "has", "have", "had", "do", "does", "did",
+    "can", "could", "will", "would", "may", "might", "must", "should",
+    "not", "no", "so", "if", "when", "then", "there", "here", "it",
+)
+
+# `one of N <noun>` is English, not a tally. "this is one of four classes" names a
+# MEMBERSHIP, the sentence dies if the word goes, and neither number is a claim
+# about how many of anything there are. It is the one word in `_NUMERAL_TAILS`
+# carrying that second job, which is why this is a word and not a band: measured
+# over this tree, every `one of N <noun>` the arm reached was that idiom - eight
+# sites in `scripts/`, `tests/` and `reference/` - and no other small word
+# produced one. A formatter prints `1 of N`, so the DIGIT spelling of the same
+# position stays read and only the word is given up.
+_RATIO_NOT_A_PART = ("one",)
+
+
+def _ratio_claim(line, tok, historical):
+    """"N of M <noun>" - a printed tally quoted with no command beside it.
+
+    `historical` arrives from `_historical_sentences()` for the reason the bare
+    cardinality family needs it: a measurement is a fact about a moment and stays
+    writable for ever, and a ratio is the spelling a measurement usually wears.
+    """
+    w, sent = tok["words"], tok["sentence"]
+    low = line.lower()
+    for i in range(len(w)):
+        span = _numeral_span(w, i, True)
+        if span is None or w[i] in _RATIO_NOT_A_PART:
+            continue
+        part, mid = span
+        if w[mid:mid + 1] != ["of"] or mid + 1 >= len(w):
+            continue
+        whole = _numeral_span(w, mid + 1, True)
+        if whole is None:
+            continue
+        total, end = whole
+        if end >= len(w) or _numeral_span(w, end, True) is not None:
+            continue
+        noun = w[end]
+        if noun in _RATIO_NON_NOUN or sent[i] in historical:
+            continue
+        run = "%s of %s %s" % (part, total, noun)
+        at = low.find(run)
+        while at >= 0:
+            if not _in_quoted_span(line, at, at + len(run)):
+                return run
+            at = low.find(run, at + 1)
+    return None
+
+
 def _prose_number_claim(line, following=None, preceding=None):
     """The claim's text if this line writes a present-tense number, else None.
 
@@ -2055,7 +2245,9 @@ def _prose_number_claim(line, following=None, preceding=None):
         return None
     tok = _tokenize(line)
     w = tok["words"]
-    return (_cardinality_claim(tok, _historical_sentences(line, preceding, following))
+    past = _historical_sentences(line, preceding, following)
+    return (_cardinality_claim(tok, past)
+            or _ratio_claim(line, tok, past)
             or _persistence_claim(line, w)
             or _completeness_claim(w))
 
@@ -2222,11 +2414,30 @@ def prose_number_claims(repo_root=None):
     more than the list:
 
       * a count spelled as one of the small number-words `_NUMERAL_WORDS`
-        leaves out -- under `ten` the word is ordinary English machinery and
-        the shapes cannot tell it from a count;
+        leaves out -- under `ten` the word is ordinary English machinery and a
+        family reading a bare noun cannot tell it from a count. `_numeral_span`
+        will read it for a family whose SHAPE supplies the bound instead, which
+        today is the ratio and nothing else; switched on for the rest it
+        reported over a hundred sites in this tree, essentially all honest;
+      * the bare `the N <noun>` with an ordinary noun, which is the shape F59's
+        own instance wore and F311's second half wore again -- "five claims
+        deep". This one is REFUSED rather than missing: the noun is unbounded,
+        so reading it means reading every count in every sentence this tree
+        writes. Measured before refusing, on the two nouns those instances used
+        and on nothing wider: with the small words admitted it reported dozens
+        of sites and not one was a claim -- "the one claim neither of them
+        covers", "two claims, and each one carries the basis", "one section
+        marker per 400 lines". `CONTRIBUTING.md` says the same affirmatively and
+        `CLAUDE.md` says whose job it therefore is. `pn31`;
       * a claim whose NUMBER and whose SHAPE-WORD land on different lines --
         the basis and the SENTENCE the number sits in are both read across the
         wrap, but never the claim itself;
+      * a ratio the AUTHOR wrote rather than a command printed: `N of the M
+        <noun>` carries an article no formatter emits, so it is the bare
+        ordinary-noun shape above and is left to the author for the same reason.
+        Nor is one read inside a quoted span, where the bytes are shown rather
+        than claimed, nor where the token after the whole is one of the function
+        words `_RATIO_NON_NOUN` names, nor `one of N <noun>`, which is English;
       * a MEASUREMENT -- a duration, a byte count, a line count. A units family
         was surveyed over this whole tree before being refused, and the refusal
         IS the measurement: on the widest vocabulary honest prose outran real

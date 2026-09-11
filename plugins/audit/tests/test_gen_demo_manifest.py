@@ -118,6 +118,60 @@ def _cli_claim_options(src):
     return sorted(out)
 
 
+# --- gate scope ---------------------------------------------------------------
+# The flag the fixture's phase gates narrow with. Spelled here rather than read off
+# `M.PHASE_GATE_COMMAND`, which is the point: taking it from the generator would
+# make the reader below agree with the generator by construction, and a comparison
+# whose two sides came from one place cannot go red.
+_PROJECT_FLAG = "--selectProjects"
+
+
+def _covered_prefixes(manifest, phase):
+    """`(prefixes, unreadable)` - what this phase's TEST entries prove, off the plan.
+
+    INDEPENDENT OF HOW THE GENERATOR BUILT IT, which is the only way this can go
+    red for the right reason. `generate()` writes `test:<area>` straight from the
+    phase's own `area` tag; this walks the other chain - the entry, through
+    `meta.buildCommands`, to the project flag, through the `meta.areas` registry,
+    to a root, to a path prefix - so a phase gate pointed at the wrong area's
+    project, or narrowed to one task's paths, arrives here as a scope that covers
+    nothing rather than as a match.
+
+    ONLY THE TEST-FAMILY ENTRIES ARE MEASURED, and skipping the others is what
+    keeps the answer from being vacuous: `yarn lint` carries neither a path nor a
+    selector, so a rule reading "no selector means the whole tree" over every entry
+    would let the lint step alone prove coverage for a phase whose test entry had
+    been deleted.
+
+    AN ENTRY THIS CANNOT READ IS RETURNED, NEVER DROPPED. A gate whose scope is
+    unknown is a finding of its own, and an empty `unreadable` is half the claim -
+    filtering it away would let a phase gate whose spelling nobody recognises read
+    as a phase with nothing to answer for.
+    """
+    meta = manifest.get("meta") or {}
+    build = meta.get("buildCommands") or {}
+    areas = meta.get("areas") or {}
+    wide = build.get("test") or ""
+    prefixes, unreadable = [], []
+    for entry in (phase.get("testGate") or []):
+        command = build.get(entry, entry)
+        if not wide or not command.startswith(wide):
+            continue                        # not a test-family entry
+        rest = command[len(wide):].split()
+        if not rest:
+            prefixes.append("")             # the whole tree
+            continue
+        if len(rest) != 2 or rest[0] != _PROJECT_FLAG:
+            unreadable.append(entry)
+            continue
+        root = (areas.get(rest[1]) or {}).get("root")
+        if not root:
+            unreadable.append(entry)
+            continue
+        prefixes.append(root.rstrip("/") + "/")
+    return prefixes, unreadable
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     m = M.generate(n_phases=12, n_tasks=6, seed=11)
@@ -247,6 +301,137 @@ def _cases(check):
     check("...and both values of expectRedFirst occur, so the pairing is "
           "observed rather than satisfied by one constant",
           {ts.get("expectRedFirst") for _tid, ts in _tests} == {True, False})
+    # --- F304b: a task gate and a phase gate are two questions --------------
+    # A PHASE gate asks whether the repository is still whole and runs once, over
+    # everything the phase's tasks touched together. A TASK gate asks whether ONE
+    # diff did what it was asked to and runs on every attempt. `/audit:init` gave
+    # every task the wide entry, so a plan running two phases at once asked for a
+    # whole worker fan-out per task; on a suite that boots a database per worker
+    # the machine ran out of cores and gates went red for reasons no diff
+    # explained. Nothing guessed wrong - the plan asked for it, which is why the
+    # repair is in what a generated plan SAYS and why it is checkable here.
+    #
+    # The derivation is called DIRECTLY first. Every file this generator invents
+    # sits under a registered area root, so the "cannot narrow" arm has no subject
+    # in the plan above - and a conditional whose other arm nothing reads is the
+    # half of this rule that would ship unproven.
+    _roots = ["src/web"]
+    _narrow = M._task_gate("done", ["src/web/rates.ts"], _roots)
+    check("a task file under a registered root is narrowed with the runner's own "
+          "source-to-test mode and names that file: %r" % (_narrow,),
+          _narrow == [M.TASK_GATE_COMMAND % "src/web/rates.ts"])
+    _live = M._task_gate("in_progress", ["src/web/rates.ts"], _roots)
+    check("...and a task still moving adds the counted runner, scoped to the same "
+          "paths: %r" % (_live,),
+          _live == [M.TASK_GATE_COMMAND % "src/web/rates.ts",
+                    M.TASK_COUNTED_COMMAND % "src/web/rates.ts"])
+    # THE SECOND DIRECTION, and the one a reader cuts as vacuous: a derivation
+    # that ALWAYS narrows is as wrong as one that never does, because a gate
+    # narrowed on a resemblance trades a false red for a false green and only one
+    # of those gets noticed.
+    _wide_arm = M._task_gate("done", ["ops/deploy.yaml"], _roots)
+    check("a file under NO registered root keeps the WIDE entry - there is "
+          "nothing to narrow by, and the honest default is the wide gate: %r"
+          % (_wide_arm,),
+          _wide_arm == [M.TASK_GATE_KEY])
+    _wide_live = M._task_gate("blocked", ["ops/deploy.yaml"], _roots)
+    check("...and the wide arm still declares the counted runner, so the honest "
+          "default is a gate and not an absence: %r" % (_wide_live,),
+          _wide_live == [M.TASK_GATE_KEY, M.COUNTED_KEY])
+    # A root is a PATH boundary, not a string prefix. `src/website/` is not inside
+    # `src/web/`, and this fixture value is chosen because it is the one that tells
+    # `startswith(root + "/")` apart from `startswith(root)`.
+    _sibling = M._task_gate("done", ["src/website/rates.ts"], _roots)
+    check("a directory that merely begins with a root's NAME is not inside it, so "
+          "it narrows to nothing and takes the wide entry: %r" % (_sibling,),
+          _sibling == [M.TASK_GATE_KEY])
+
+    # ...and now the plan the generator actually publishes.
+    _graded = [(p, t) for p in m["phases"] for t in p["tasks"]
+               if (t["tests"].get("gate") or [])]
+    _wide_cmd = m["meta"]["buildCommands"]["test"]
+    _unnarrowed = sorted(t["id"] for _p, t in _graded
+                         for e in t["tests"]["gate"]
+                         if e in (M.TASK_GATE_KEY, _wide_cmd))
+    check("no task in the generated plan is gated by the whole suite - the "
+          "default that put the full suite on every task is the fault this "
+          "fixture must not publish: %r" % (_unnarrowed[:5],),
+          bool(_graded) and _unnarrowed == [])
+    _unscoped = sorted((t["id"], e) for _p, t in _graded
+                       for e in t["tests"]["gate"]
+                       if not all(f in e for f in t["files"]))
+    check("...and every entry of a task's gate names every file that task "
+          "touches, so a gate cannot have been narrowed to nothing: %r"
+          % (_unscoped[:5],),
+          bool(_graded) and _unscoped == [])
+    _counted = sorted((t["id"], e) for _p, t in _graded
+                      for e in t["tests"]["gate"] if "pre-commit" in e)
+    _counted_wide = sorted(tid for tid, e in _counted if e == M.COUNTED_KEY)
+    check("the counted runner is still declared and is scoped too - `no-checks` "
+          "has to stay reachable, and a counted gate left repo-wide would have "
+          "kept the same fault one runner along: %r" % (_counted_wide,),
+          bool(_counted) and _counted_wide == [])
+
+    # THE INVARIANT THAT MATTERS MORE. Gate coverage is a hard requirement at the
+    # PHASE, and a case watching only the task side would be satisfied by a task
+    # gate narrowed to nothing. So this asks the other question: does the phase's
+    # own gate still prove every file every task under it touched?
+    _uncovered, _unreadable, _by_selector = [], [], []
+    for _p in m["phases"]:
+        if not _p.get("testGate"):
+            continue
+        _pref, _bad = _covered_prefixes(m, _p)
+        _unreadable.extend((_p["id"], e) for e in _bad)
+        if any(_pref):
+            _by_selector.append(_p["id"])
+        for _t in _p["tasks"]:
+            _uncovered.extend((_t["id"], f) for f in _t["files"]
+                              if not any(f.startswith(x) for x in _pref))
+    check("every phase gate still proves every file every task under it touches - "
+          "narrowing a TASK's gate does not narrow the PHASE's, which is the "
+          "requirement init.md calls hard: %r" % (_uncovered[:5],),
+          bool(m["phases"]) and _uncovered == [])
+    check("...and every test-family entry of every phase gate resolves to a scope "
+          "this reader can measure, so an unrecognised spelling is a finding "
+          "rather than a phase with nothing to answer for: %r" % (_unreadable[:5],),
+          _unreadable == [])
+    check("...and the coverage above is not vacuous: some phase earns it through a "
+          "project SELECTOR resolved via meta.areas, not through a wide entry that "
+          "covers everything by default: %r" % (_by_selector[:3],),
+          bool(_by_selector))
+    # `_covered_prefixes` FAILS LOUD, and this is the arm the plan above cannot
+    # show: with every phase gate readable, `_unreadable == []` is green whether
+    # the reader reports an unrecognised spelling or silently drops it. So ask the
+    # reader directly, with scopes it can and cannot resolve.
+    _probe = {"meta": {"buildCommands": {"test": "yarn test"},
+                       "areas": {"web": {"root": "src/web"}}}}
+    _read = _covered_prefixes(_probe,
+                              {"testGate": ["yarn test --selectProjects web"]})
+    check("the coverage reader resolves a project selector through meta.areas to "
+          "the registered root's path prefix: %r" % (_read,),
+          _read == (["src/web/"], []))
+    _unknown = _covered_prefixes(_probe, {"testGate": ["yarn test --shard 1/4"]})
+    check("...and a test entry whose scope it cannot read is REPORTED, never "
+          "dropped and never taken for the whole tree - a spelling nobody "
+          "recognised must not pass for a phase with nothing to answer for: %r"
+          % (_unknown,),
+          _unknown == ([], ["yarn test --shard 1/4"]))
+    _ghost = _covered_prefixes(
+        _probe, {"testGate": ["yarn test --selectProjects ghost"]})
+    check("...and so is a selector naming a project no meta.areas entry "
+          "registers, which is a scope with no root to measure rather than a "
+          "root of nothing: %r" % (_ghost,),
+          _ghost == ([], ["yarn test --selectProjects ghost"]))
+
+    _phase_narrowed = sorted((_p["id"], e) for _p in m["phases"]
+                             for e in (_p.get("testGate") or [])
+                             for _t in _p["tasks"] for f in _t["files"] if f in e)
+    check("no phase gate entry names an individual task's file - narrowing "
+          "EVERYTHING is the other way this rule breaks, and it destroys the one "
+          "gate that can see an interaction no single task could: %r"
+          % (_phase_narrowed[:5],),
+          _phase_narrowed == [])
+
     # Every reviewer the fixture names must be a name the screenshot fixture's
     # HOME declares, which is `SKILL_POOL` (tools/capture-screenshots.mjs
     # BIG_USER_SKILLS). A reviewer outside the pool draws "discovery knows no

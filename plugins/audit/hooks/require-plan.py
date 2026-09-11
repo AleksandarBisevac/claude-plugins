@@ -324,6 +324,40 @@ def _owner_note(root, cfg, state_dir, session_id, rel,
         return None
 
 
+def _warned_files(state_dir, session_id):
+    """The uncovered files this session has already been told about in full.
+
+    `plan-gate-warned-<sid>.json`, the `_owner_note` throttle's shape: a list
+    under one key, read defensively, and a name that starts with `plan-gate-`
+    so detect-plan-skip's GC sweeps it with the rest of the session state.
+    Never raises - a throttle that could break the gate would be a gate that
+    fails for saying something twice."""
+    try:
+        path = Path(state_dir) / ("plan-gate-warned-%s.json" % session_id)
+        if not path.exists():
+            return []
+        with open(path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh) or {}
+        if not isinstance(loaded, dict):
+            return []
+        return [f for f in loaded.get("files") or [] if isinstance(f, str)]
+    except Exception:
+        return []
+
+
+def _record_warned(state_dir, session_id, files):
+    """Write the list `_warned_files` reads. Best-effort, like every state write
+    here: a failed write means the paragraph is said again, which is the
+    harmless direction."""
+    try:
+        _ensure_dir(Path(state_dir))
+        path = Path(state_dir) / ("plan-gate-warned-%s.json" % session_id)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"files": list(files)}, fh)
+    except Exception:
+        pass
+
+
 # --- core decision ------------------------------------------------------------
 def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
            event=None):
@@ -593,10 +627,33 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         return ("observe", "would have blocked (%s): %s" % (reason, rel))
 
     if mode == "warn":
+        # THE PARAGRAPH IS SAID ONCE PER FILE PER SESSION (F355). The tier is
+        # advisory, the sentence is correct, and it was being relayed VERBATIM
+        # on every Edit of an uncovered file - a field report counted it on some
+        # sixty files across several hundred edits in one afternoon, and this
+        # repository's own maintainer read it a dozen times in a day. A nudge
+        # that repeats on every edit is a nudge nobody reads, which is the
+        # argument `_owner_note` already makes for its own throttle; this is the
+        # same rule with the same state shape. What is throttled is the RELAY
+        # TEXT alone: the gate event below is still appended on every edit, so
+        # the log a later reader consults is complete, and the decision is
+        # untouched. Pre reads the throttle and Post writes it, the same
+        # transactional split every other piece of state here follows.
+        warned = _warned_files(sd, session_id)
+        repeat = rel in warned
         if commit_state:
             _config.append_gate_event(ld, {
                 "event": "warn", "file": rel, "mode": "warn",
                 "reason": reason, "sessionId": session_id})
+            if not repeat:
+                _record_warned(sd, session_id, warned + [rel])
+        if repeat:
+            return (
+                "warn",
+                "%s is still not covered by an in_progress task (%s) - said in "
+                "full once already this session; the plan gate stays advisory."
+                % (rel, reason),
+            )
         return (
             "warn",
             "Tell the human this verbatim before continuing: "

@@ -3513,6 +3513,10 @@ def _module_config_reads(tree, roots, names):
                   for (lineno, _col), (path, normalisers) in found.items())
 
 
+_CONFIG_READS = {}
+_CONFIG_READS_KEY = "default tree"
+
+
 def config_key_reads(script_dir=None, hooks_dir=None, vocabulary=None):
     """`({key path: [(relname, lineno, normalisers)]}, unreadable)`.
 
@@ -3525,7 +3529,41 @@ def config_key_reads(script_dir=None, hooks_dir=None, vocabulary=None):
     `unreadable` is `[(relname, why)]` for a file that would not parse, returned
     beside the answer rather than dropped from it: a module the scan could not
     open is not a module with no configuration reads in it.
+
+    MEMOISED FOR THE DEFAULT TREE ONLY - the `_scan_edges` precedent, for the same
+    reason and under the same three rules. Profiled with `cProfile`, one run of
+    `tests/test__deps.py --selftest` entered this function dozens of times: a few
+    from the suite's own cases and the rest from `config_divergences` and
+    `config_read_violations`, which each ask for the whole picture - and every
+    call parsed the same tree to the same answer. So: ONLY the default tree is
+    cached (a caller handing over its own `script_dir` or `hooks_dir` is neither
+    served from the cache nor written into it, which is what keeps a fixture from
+    poisoning what the real tree sees); the cache is the ANSWER and every caller
+    gets a COPY (`reads` is a dict of lists and one caller's `.append()` must not
+    become another's input); and the cache lives for one process, which is one
+    run of a suite or one gate - the tree cannot change under it, and
+    `prove-gates.py` mutates the tree only between fresh processes.
+
+    THE VOCABULARY IS PART OF THE KEY, NOT A REASON TO BYPASS. `config_read_violations`
+    always hands one over explicitly, so a memo that treated "vocabulary given" as
+    "not the default question" served almost nothing - measured: two hits in
+    fifty-two calls. The answer is a pure function of (tree, vocabulary); the tree
+    is the default one, so a different vocabulary over it is a different, equally
+    cacheable question. `config_vocabulary()` returns two frozensets, which is what
+    makes the pair a key without a conversion step.
     """
+    if (script_dir not in (None, _output.SCRIPTS_DIR)
+            or hooks_dir not in (None, _output.HOOKS_DIR)):
+        return _config_key_reads_once(script_dir, hooks_dir, vocabulary)
+    key = config_vocabulary() if vocabulary is None else tuple(vocabulary)
+    if key not in _CONFIG_READS:
+        _CONFIG_READS[key] = _config_key_reads_once(None, None, key)
+    reads, unreadable = _CONFIG_READS[key]
+    return dict((k, list(v)) for k, v in reads.items()), list(unreadable)
+
+
+def _config_key_reads_once(script_dir, hooks_dir, vocabulary):
+    """`config_key_reads` with no memo - one real walk and parse of the tree."""
     roots, names = config_vocabulary() if vocabulary is None else vocabulary
     reads = {}
     unreadable = []

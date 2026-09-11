@@ -742,11 +742,65 @@ CLAIM_ANCHORS = (
 # prescription the code refuses, and this anchor would report it as one. It
 # belongs to whichever change adds the status, and this check is what will make
 # the document follow it.)
+#
+# F303. The second row is the same defect one section over, and it is the one that
+# measures what section-scoped coverage buys. `## Phase sign-off` told the reader
+# that `/audit:task scope` refuses a `done` task; F283 had already reversed that.
+# Driven on both trees against one fixture with only the status changed, the
+# released v2.2.0 exits 2 saying scope only rewrites a pending task and this tree
+# exits 0 having widened `files`. The section was ALREADY anchored, several claims
+# deep, and not one of them read that sentence -- so what the coverage line buys is
+# SOME claims in most sections, never every sentence in one. Which claims each
+# section carries is printed rather than written down here:
+#
+#     python3 plugins/audit/scripts/manifest/_areas.py --coverage
+#
+# THE ADVICE SURVIVED THE MECHANISM, which is what makes this the durable kind of
+# stale. A finding in a file no task declares still wants a new task, because a
+# widening settles the INDEX and deliberately records no new work; a reader checks
+# that reasoning, finds it sound, and never re-checks the clause it rests on.
+#
+# A VOCABULARY rather than a value, and for F303's own reason: the failure was the
+# document naming a status the verb does not refuse, which is exactly this shape's
+# second direction. The pattern reads the guard inside `_locked_scope` -- the verb
+# itself rather than a restatement of it -- and accepts either spelling of a status
+# test, so widening that refusal back to `done` and `cancelled` is reported as a
+# member the section never learned instead of as a row that lost its basis.
+#
+# F334. THE FUNCTION BODY IS THE BOUND, AND IT USED TO BE AN UNBOUNDED `.*?`. The
+# claim here read "tied to the refusal's own `out(` line so it cannot slide onto
+# the acceptance branch below it" - true INSIDE the function and false for the
+# file, which is the defect rather than the wording: a claim the code did not
+# support. The row above anchors on a unique constant NAME; this one anchors on a
+# repeated code SHAPE, a status test beside an `out(` prefix, and that shape occurs
+# in more than one verb here. Under `re.S` a lazy `.*?` reads straight past the end
+# of `_locked_scope` to find the next one. Measured: delete `_locked_scope`'s
+# refusal outright and the anchor latched onto `retarget`'s guard, far below it in
+# another function, and reported `## Phase sign-off` for not naming `done` - a
+# status `scope` no longer refuses at all. `_list_anchor_drift` already had the
+# right branch for a deleted guard ("no longer carries the vocabulary this claim is
+# anchored to"), and the unbounded window made it unreachable.
+#
+# WHAT ACTUALLY HOLDS is a property of the language, not of this file's habits:
+# inside a top-level function body every line is blank or indented, so a line
+# beginning in column 0 has ENDED that body. `(?:(?!\n\S).)*?` is exactly that
+# bound, and it is why the formulation is not the narrower "no `def ` may
+# intervene": the window closes at the first column-0 line whatever it is, so a
+# top-level constant, a decorator or an `if __name__` stop it too, and the pattern
+# does not have to anticipate which shape follows the function. It is conservative
+# in one place on purpose - a column-0 comment inside a body is legal Python and
+# would close the window early - and that direction fails LOUD, as the missing
+# vocabulary the row prints its pattern with, rather than sliding somewhere else.
 LIST_ANCHORS = (
     ("audit-state-statuses", "Keeping a failed run's record",
      os.path.join("scripts", "status", "_status_facts.py"),
      r"NO_SIGN_OFF_EVIDENCE\s*=\s*frozenset\(\{([^}]*)\}",
      "evidence can sit in a working tree forever"),
+    ("scope-refusal-statuses", "Phase sign-off",
+     os.path.join("scripts", "manifest", "audit-task.py"),
+     r'def _locked_scope\((?:(?!\n\S).)*?node\.get\("status"\)\s*(?:==|in)\s*'
+     r'\(?((?:"[^"]+"(?:\s*,\s*)?)+)\)?\s*:\s*out\("\[audit-task\] ',
+     "and a `done` task will take a widening"),
 )
 
 # section -> why nothing anchors it. Checked in BOTH directions by `claim_drift`:
@@ -1037,6 +1091,15 @@ def anchor_coverage(plugin_root=None, sections=None, text=None):
     defect this repository has recorded most often. `undeclared` and
     `stale_declarations` are what make `UNANCHORED_SECTIONS` a checked claim in
     both directions instead of a list that only grows.
+
+    BOTH TABLES, and reading only `CLAIM_ANCHORS` was a real gap rather than an
+    omission with no consequence: `audit-state-statuses` held a whole vocabulary
+    of `## Keeping a failed run's record` and this function could not see it, so
+    the section showed one claim while carrying two. Worse in the direction that
+    had not happened yet -- a section anchored ONLY by a list row would have been
+    reported by `claim_drift` as being in neither set, which is a finding against
+    a section that is anchored. The two tables differ in what a row derives, not
+    in whether a row is an anchor.
     """
     root = plugin_root or _output.PLUGIN_ROOT
     if sections is None and text is not None:
@@ -1046,7 +1109,7 @@ def anchor_coverage(plugin_root=None, sections=None, text=None):
         sections = [] if err is not None else doc_sections(doc)
     names = [name for name, _body in sections]
     anchored, claims = [], {}
-    for row in CLAIM_ANCHORS:
+    for row in CLAIM_ANCHORS + LIST_ANCHORS:
         claim, prefix = row[0], row[1]
         for name in names:
             if name.startswith(prefix):

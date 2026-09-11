@@ -366,6 +366,25 @@ report, because `git switch -c` is about to fail anyway.
      back to the phase's otherwise, saying which — so a task with no gate of its own is never
      credited with having passed one.
 
+     **And the RECORD says which, not just the terminal (F312).** The row carries `gateSource`,
+     `task` or `phase`, beside the `steps` that ran. Read that and never `scope`: `scope` is the
+     pointer subject — it is what decides whether the plan's `testEvidence` block lands on the
+     task or on the phase — so on a fallback run it reads `phase` beside a `taskId`, and a
+     reader taking it for provenance is reading a contract about where the pointer went. A row
+     recorded before the field existed carries no `gateSource` at all, and that means *unknown*
+     rather than either answer.
+
+     **Every entry of a gate runs, in the order it is declared (F313).** There is no short
+     circuit: an entry that exits non-zero does not stop the ones after it, so `steps` is both
+     what ran and the whole declared list — which is what lets `failed` be read against it and
+     `ranTotal` be a total rather than a floor. Two consequences for how you compose a gate.
+     Putting a cheap entry first buys a reader the earlier line and buys the wall clock nothing,
+     so do not order entries expecting a saving. And a cheap entry never stands in for an
+     expensive one: a typecheck asks whether the program still type-checks and a suite asks
+     whether behaviour still holds, and a task that changes a validation decorator so every
+     schema default begins taking effect can type-check impeccably. The entry that asks the
+     behaviour question belongs in every gate that could pass.
+
      **Read the two lines it prints ABOVE the verdict block.** `evidence: recorded <runId>` is the row;
      `pointer:` is whether the plan now names it. A pointer can be **refused** — another live
      session may hold the phase lock — and that is a designed state, not an error: the run is
@@ -414,8 +433,10 @@ report, because `git switch -c` is about to fail anyway.
         - **Stage the journal directory too** (`journal.dir`, default `<manifest dir>/journal`) if it
           exists inside `<gitRoot>`: the audit trail records the manifest writes this commit is
           carrying, and a record committed a week later cannot be checked against the change it
-          describes. One file per writer per month, so parallel phases never conflict on it. If
-          `journal.enabled` is false there is nothing there and nothing to stage.
+          describes. One file per writer per month, so parallel phases never conflict on it —
+          one writer on two BRANCHES still can, and `audit-journal.py merge` is what resolves
+          that without recomputing anything a row says. If `journal.enabled` is false there is
+          nothing there and nothing to stage.
         - **Stage the evidence directory too** (`evidence.dir`, default `<manifest dir>/evidence`) if it
           exists inside `<gitRoot>`, and for the journal's reason one record over: the rows this
           commit's `testEvidence` pointers name have to travel with the pointers, or a clone
@@ -518,9 +539,12 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    **A finding in a file NO task declares gets a NEW TASK, before you spawn anything.**
    `/audit:task add "<the finding>" --phase <phaseId> --files <the file>` works while the phase is
    in sign-off; it lands `pending` and prints `ready now -- /audit:run <id>`. Then run that task
-   the ordinary way. **Do not reach for `/audit:task scope` here** — it refuses a `done` task on
-   purpose, and every task is `done` by the time you are reading this step. Its refusal names this
-   route, but by then you have spent the spawn.
+   the ordinary way. **`/audit:task scope` is not that route.** It no longer refuses a finished
+   task. F283 narrowed that refusal to `cancelled` alone,
+   and a `done` task will take a widening — one that settles the `fileIndex` and deliberately
+   records no new work: the task's `outcome` still describes the run that happened, so the finding
+   would get no commit, no gate run and no evidence row of its own. The verb prints that reasoning
+   itself when it accepts one, which is the line to read if you reach for it anyway.
 
    That order matters and it was measured: a live run spawned three fix-run subagents for findings
    in undeclared files, `require-plan` refused all three before an edit landed — correctly, the
@@ -547,9 +571,14 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    appear in the tree comparison it is being judged by.
 
    **It brackets the gate, and that is why it is a script (F193).** A gate is a MEASUREMENT.
-   Exit 1 means one of three things and the output says which: a command failed, the gate
-   **changed the working tree**, or **nothing actually ran**. Both of the last two were exit 0
-   before this existed — a `pre-commit run --all-files` gate on a docs task rewrote five backend
+   Exit 1 is not one answer, and the output says which: a command failed, the gate
+   **changed the working tree**, **nothing actually ran**, a step **reached no verdict** (it
+   never started, the OS ended it, or it was stopped at its bound), or a **stop signal** cut the
+   run short before every step had reported. Each arm has its own banner and its own repair —
+   **route on the banner, not on the exit code**, since the code is the same for every arm — and
+   the ones that are not this work's failure are called out below. The tree-change and
+   nothing-ran arms were both exit 0 before this existed — a `pre-commit run --all-files`
+   gate on a docs task rewrote five backend
    files and reported `Passed` *because* `isort` and `black` are fix-in-place; narrowed to the
    task's own markdown files it then SKIPPED every hook on a Python-only config and the task
    went to `done` on a gate that verified nothing.
@@ -593,9 +622,12 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    drop the pathspec and a foreign rewrite is back in somebody's commit with only a printed line
    between it and the reader.
 
-   **`GATE COULD NOT RUN` is not the task's failure (F276).** A step exited non-zero having run
-   ZERO checks — a missing command, a runner that died before its first test, a port it could not
-   bind in a sandbox. This is the "infrastructure failure" arm of step 4c below, now measured
+   **`GATE COULD NOT RUN` is not the task's failure (F276).** A step reached no verdict — a
+   missing command, a runner that died before its first test, a port it could not bind in a
+   sandbox, or **the OS ending the runner** (an out-of-memory reaper, a crash inside it, a cgroup
+   limit, another measurement on the host starving it of CPU). The first three exit non-zero having
+   run ZERO checks; the last is reported by the kill itself, and the banner names which member it
+   was underneath. This is the "infrastructure failure" arm of step 4c below, now measured
    rather than judged: fix the runner and re-run, do **not** spend a retry on the task, and do
    **not** record it as a red suite. `GATE TIMED OUT` is the same shape one cause over — the step
    was stopped at its bound and reached no verdict, so read nothing about the work into it.
