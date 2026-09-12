@@ -130,8 +130,20 @@ ACTION_RECORDED = "test.evidence.recorded"
 MAX_STEPS = 24
 MAX_PATHS = 40
 
-STEP_KEYS = ("name", "exit", "ran", "durationMs", "outcome", "timeoutSeconds",
-             "teardown")
+# `measured` IS THE ONE DERIVED FIELD THIS ROW KEEPS, and the exception is
+# deliberate rather than an oversight of the rule beside it. `signal` stays off
+# the row because `exit` and `outcome` can be read for it and a cached claim can
+# contradict its own source; that risk is what the rule guards. It cannot arise
+# here: the word is computed from THIS row's `ran` by one function at write time
+# (`run-test-gate.measured_state`), so the two cannot drift. What the rule does
+# not guard is the failure that was actually reported - many readers, one
+# integer-or-null, and each of them spelling the "ran nothing" / "does not say"
+# distinction again. Recording the reading is what takes that spelling away from
+# them. A row that carries no `measured` at all is a run from before the field or
+# a caller that computed none; it is emphatically not a step that measured
+# nothing, which is why a `None` here is dropped rather than stored.
+STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
+             "timeoutSeconds", "teardown")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis", "dirtyDigest",
               "dirtyBasis")
 _PORCELAIN_RENAME = " -> "

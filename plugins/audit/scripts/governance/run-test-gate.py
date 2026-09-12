@@ -590,6 +590,55 @@ def ran_count(command, text):
     return ran
 
 
+# --- what that count SAYS, which is an observation and not a verdict ----------
+# The reading of `ran`, spelled once as a word so that no reader has to spell it
+# again. The answers are not points on a scale and a number cannot keep them
+# apart on its own: a positive zero is a measurement that came back EMPTY, and a
+# `None` is no measurement at all.
+MEASURED_CHECKS = "checks"
+MEASURED_NOTHING = "nothing"
+MEASURED_UNKNOWN = "not-knowable"
+
+
+def measured_state(ran):
+    """Whether a step measured checks, measured nothing, or reports no count.
+
+    `ran` ALREADY HOLDS THIS AND READERS STILL GET IT WRONG, which is the whole
+    argument for a word beside the number. Every consumer that wants "did
+    anything run" has to spell the distinction itself, and the shortest spelling
+    - `not ran` - reads a runner that publishes no count as a runner that ran
+    nothing. This file already refuses that merge one function at a time
+    (`run_status` leaves the status alone on a `None`; `never_started` fires off
+    a POSITIVE zero only); here it is refused once, for every reader of the row.
+    Measured in the field: an operator holding a red row whose step had collected
+    nothing reported it as a false red, and the rows he reported beside it had
+    collected checks in the thousands and were real failures. The column that
+    separated them was on the row the whole time, as a number nobody was reading
+    as a three-way answer.
+
+    DERIVED FROM `ran` AND FROM NOTHING ELSE, so it cannot disagree with the
+    number it sits beside. That is also why no basis key travels with it: `ran`
+    IS the basis and is already on the row, and a second copy of an observation
+    is a thing that can contradict the first - the argument `run_gate` makes
+    where it declines to write one beside `never_started`.
+
+    AND IT IS AN OBSERVATION, DELIBERATELY NOT A VERDICT. "This step measured
+    nothing" does not by itself say the gate is not red, because the verdict
+    needs a second fact this function does not have: whether the failure is
+    attributable to the work under test. A suite that collects nothing because
+    this work left a syntax error in a test file is the work's own failure and
+    reads identically here. So nothing in this file switches on this word, and
+    whatever decides a verdict from it decides it elsewhere, on this plus that
+    attribution. The schema draws the same line for the no-verdict class - which
+    member it was "is a per-step observation in the ledger row's `steps[]` ...
+    rather than a word of its own here, because a verdict word is what a gate
+    switches on".
+    """
+    if ran is None:
+        return MEASURED_UNKNOWN
+    return MEASURED_NOTHING if ran == 0 else MEASURED_CHECKS
+
+
 # --- did the runner get to the end of its run ---------------------------------
 # The END-OF-RUN reports a machine-readable reporter writes, for runners whose
 # exit status may itself be a count. Deliberately a WEAKER question than
@@ -1495,6 +1544,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
                     "ran": ran_count(command, text),
                     "durationMs": _elapsed_ms(step_started)}
             step.update(facts or {})
+            # READ OFF THE `ran` THE ROW WILL CARRY, never off a copy taken
+            # before the wrapper's facts landed: this word is a reading of that
+            # number, and a reading taken from a different value than the one
+            # recorded beside it is exactly the disagreement `measured_state`
+            # exists to make impossible. Above the outcome arms below, and not
+            # among them, because it takes part in none of them - it says what
+            # was measured, never what the run is worth.
+            step["measured"] = measured_state(step["ran"])
             # F302, AND IT SITS BETWEEN THE TWO FOR A REASON. The wrapper's own
             # facts outrank it: a timed-out step was killed by OUR teardown, so
             # its `-15` is this process's signal and not the OS ending the run,

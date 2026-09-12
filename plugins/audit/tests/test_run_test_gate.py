@@ -959,6 +959,87 @@ def _cases(check):
           and "not knowable" in (res_silent["countsBasis"] or "")
           and "test" in (res_silent["countsBasis"] or ""))
 
+    # --- did the step measure anything, said as a word --------------------
+    # THE READING, RECORDED WHERE IT WAS TAKEN. Reported from the field: three
+    # rows brought as "false reds", two of them withdrawn on the raw evidence
+    # because they were real failures. The step that had genuinely produced no
+    # verdict about the tests was the one whose count was zero, and the two that
+    # were red for cause had counts in the thousands - so the column that
+    # separated them was already on every row, as an integer-or-null each reader
+    # had to turn into a three-way answer for themselves. These cases are about
+    # the word that takes that derivation away from the reader, and about the
+    # verdict NOT moving while it is introduced.
+    check("ms1 the three answers stay apart, and the one that must never merge "
+          "is None against zero: a runner that publishes no count has not told "
+          "us that nothing ran, and `not ran` is the spelling that says it did: "
+          "%r" % ([M.measured_state(v) for v in (4, 1, 0, None)],),
+          M.measured_state(4) == M.MEASURED_CHECKS
+          and M.measured_state(1) == M.MEASURED_CHECKS
+          and M.measured_state(0) == M.MEASURED_NOTHING
+          and M.measured_state(None) == M.MEASURED_UNKNOWN
+          and M.MEASURED_NOTHING != M.MEASURED_UNKNOWN)
+    check("ms2 THE FIELD'S OWN ROW: a step that exited non-zero having "
+          "collected nothing carries `nothing` BESIDE its `ran`, where a reader "
+          "of the committed row meets it without doing the arithmetic again - "
+          "and the paired positive is the row that was withdrawn, a suite that "
+          "came back red having really measured: %r"
+          % ([(s["name"], s["exit"], s["ran"], s.get("measured"))
+              for s in (res_nr["steps"][0], res_red["steps"][0])],),
+          res_nr["steps"][0]["ran"] == 0
+          and res_nr["steps"][0].get("measured") == M.MEASURED_NOTHING
+          and res_red["steps"][0]["ran"] == 4
+          and res_red["steps"][0].get("measured") == M.MEASURED_CHECKS)
+    check("ms3 ...and the observation moves NO verdict, which is the boundary "
+          "of this change. `failed` is still `failed` and the red gate still "
+          "names its step: the word says what was measured, and what a gate is "
+          "worth needs a second fact - whether the failure is attributable to "
+          "this work - that nothing here has: %r"
+          % ((res_red["status"], res_red["failed"], res_nr["status"],
+              res_nr["failed"], res_skip["status"]),),
+          res_red["status"] == "failed" and res_red["failed"] == ["test"]
+          and res_nr["status"] == M.CANNOT_RUN and res_nr["failed"] == []
+          # ...and the gate that SKIPPED everything keeps the word that names
+          # its own repair. `no-checks` is exit 0 with a positive zero, which is
+          # the same observation as the row above and a different verdict, so a
+          # status arm reading this word would swallow one into the other.
+          and res_skip["status"] == "no-checks")
+
+    def _red_unreadable(_project, _command, _timeout=None):
+        # A real red from a runner no reader in the file can count: eslint's
+        # shape, which `summary_count` answers None to by design.
+        return 1, "/repo/src/a.ts\n1 problem (1 error, 0 warnings)\n", {}
+
+    res_unread = M.run_gate(tmp, [("lint", "eslint .")], runner=_red_unreadable)
+    check("ms4 THE OVER-FIRE DIRECTION: a runner that merely does not REPORT a "
+          "count is `not-knowable` and never `nothing`. Reading it as nothing "
+          "would print 'this step measured nothing' over a suite that may have "
+          "measured everything, and it would say it of every runner outside the "
+          "summary table rather than of a rare one. The gate is still red, "
+          "which is the half a reader acts on: %r"
+          % ((res_unread["steps"][0]["ran"],
+              res_unread["steps"][0].get("measured"), res_unread["status"],
+              res_unread["failed"]),),
+          res_unread["steps"][0]["ran"] is None
+          and res_unread["steps"][0].get("measured") == M.MEASURED_UNKNOWN
+          and res_unread["status"] == "failed"
+          and res_unread["failed"] == ["lint"])
+    _ident = {"runId": "run-measured", "ts": "2026-09-12T00:00:00Z"}
+    _rows = [_ev_io.row_for(tmp, r, "phase", {"phaseId": "P1"}, _ident)
+             for r in (res_red, res_nr, res_unread)]
+    check("ms5 ...and every one of the answers CROSSES INTO THE ROW, which is "
+          "the half `_evidence_io.STEP_KEYS` decides: a key the allow-list does "
+          "not name is dropped silently, so the word would exist in memory for "
+          "the length of the run and be absent from the only copy anybody reads "
+          "afterwards: %r"
+          % ([r["steps"][0].get("measured") for r in _rows],),
+          "measured" in _ev_io.STEP_KEYS
+          and [r["steps"][0].get("measured") for r in _rows]
+          == [M.MEASURED_CHECKS, M.MEASURED_NOTHING, M.MEASURED_UNKNOWN]
+          # ...beside the number it was read from, never instead of it: the
+          # basis for this word IS `ran`, and a row carrying the reading alone
+          # would be a claim whose evidence stayed behind.
+          and [r["steps"][0].get("ran") for r in _rows] == [4, 0, None])
+
     # --- a failing gate, and both facts at once ---------------------------
     def _fail_and_rewrite(project, _command, _timeout=None):
         with open(os.path.join(project, "also.py"), "w") as fh:
@@ -2456,6 +2537,16 @@ def _cases(check):
           % (sorted(_recorded_rows(evdir)[0]),),
           _recorded_rows(evdir)[0].get("scope") == "phase"
           and "attempt" not in _recorded_rows(evdir)[0])
+
+    check("ms6 ...and the word reaches a row ON DISK, through `main` and the "
+          "writer rather than through a helper called by hand. `true` prints no "
+          "summary, so the committed row says `not-knowable` beside a null "
+          "count - the state a reader must never meet as 'this gate measured "
+          "nothing', and the one a case against the helper alone could not "
+          "prove had survived the allow-list: %r"
+          % (row_none.get("steps"),),
+          [(s.get("ran"), s.get("measured")) for s in row_none.get("steps")]
+          == [(None, M.MEASURED_UNKNOWN)])
 
     # --- which gate ran, end to end (F312) ---------------------------------
     # DRIVEN THROUGH `main` FOR `attempt`'s REASON. `gateSource` is set on the
