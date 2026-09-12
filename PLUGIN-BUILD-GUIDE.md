@@ -131,8 +131,8 @@ claude-plugins/                           # this repo (personal, public)
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
-          _evidence_io.py                 # the test-evidence record: where it lives, and what a row may say
-          audit-journal.py                # the CLI over it: append/verify/show/archive, plus merge and sessions
+          _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
+          audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
@@ -341,7 +341,7 @@ L6:
 L7:
   ado-connect -> _ado_connect, _output
   audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
-  audit-journal -> _journal_io, _output
+  audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
@@ -1462,6 +1462,16 @@ stopped it.
 The CLI over `_journal_io`: `append | verify | show | archive | merge | sessions`, turning
 the library's dicts into printed lines and an exit code (0 healthy, warnings allowed;
 1 findings — the chain does not hold, or a merge refused; 2 usage).
+
+**`verify` reads BOTH chained records; every other subcommand is the journal's alone.** Since
+the evidence ledger was given this chain there are two committed append-only files beside a
+manifest, and they differ in what they are for rather than in how they are protected — so one
+command asks them one question. Each prints its own labelled verdict (`OK (journal)` /
+`OK (evidence)`, `BROKEN (<record>)`), neither can hide the other's, and the exit code is
+non-zero when either has findings. `--json` returns `{ok, journal, evidence}`: the old flat
+keys are *gone* rather than kept beside the new ones, because a reader still taking a
+top-level `findings` would be reading the journal's alone and calling it the verdict.
+
 One file per writer per month (`<journal dir>/<YYYY-MM>.<writerId>.jsonl`, default beside the
 manifest) so parallel worktrees never conflict; each row carries `{v, ts, actor, action,
 target, summary, stateHash, prev, hash}`, sha256 over canonical JSON, with the first row's
@@ -2600,7 +2610,37 @@ truthy reader would call clean, and a step's `ran` keeps its `None` rather than 
 **`read_rows()` counts what it lost.** A torn line is skipped *and* counted, which is where this
 departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for telemetry and wrong
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
-and a bare list could not tell them apart.
+and a bare list could not tell them apart. The **parse** is `_journal_io.rows_from_text`'s and only
+the **counting rule** is local, so a row the chain grades and a row this returns can never be two
+different things.
+
+**Every row is hash-chained, with the trail's chain and not a second one.** `append_row()` links
+each row onto the file's tail — `prev`, then `hash` over the canonical row, seeded from the file's
+own basename by `genesis_prev()` — and `verify()` reads the links back. All of it is spelled with
+`_journal_io`'s `row_hash`, `genesis_prev` and `canonical`: a ledger with a chain of its own
+invention would be a second answer to *was this row edited*, free to disagree with the trail beside
+it. Before this, the record of the **measurement** was the one committed file here a string replace
+could edit with every verdict in the tree staying green. The append now takes the journal's file
+lock and **raises** when it cannot — `prev` is read off the tail, so two writers that both read it
+would write the same link and manufacture a break that reads exactly like a deleted run.
+
+**It does not replace the journal anchor, and the module says what each layer reaches.** The chain
+catches an edited row, a deleted or reordered one, and a whole file dropped over another writer's —
+and it is the only one of the three that answers with a FINDING. The anchor `record()` writes is
+the weaker layer, not the fallback: it is a warning, it is compared only against the newest trail
+row naming the file, and a row written through `append_row()` alone is anchored by nothing. The one
+rewrite the chain cannot see — every row rewritten and every hash recomputed forward — is git's.
+
+**A row written before the chain existed is a counted warning, never a finding.** Grading those as
+tampering would turn this check's first run red in every project that upgrades, and a check whose
+opening verdict is a wall of findings nobody means to act on is one its reader learns to skip. The
+gap closes itself: `link_after()` hashes an unchained row to make the `prev` of whatever follows,
+so the next recorded run puts every row before it under the chain. What *is* a finding is an
+unchained row **after** a chained one — without that the chain is opt-out, since deleting two keys
+would put a row back outside it — and the finding names the innocent reading (an older copy of the
+plugin appended it) rather than asserting forgery, because nothing there can tell the two apart.
+`audit-journal.py verify` is the command that prints both records' verdicts and exits non-zero when
+either has findings.
 
 **The manifest pointer is a cache, and the write that updates it is the one allowed to fail.**
 `write_pointer()` puts three keys — `runId`, `status`, `at` — on the task or the phase, **in the

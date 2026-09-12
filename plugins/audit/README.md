@@ -722,7 +722,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `tddReminder.sourceGlobs` / `testGlobs` | What counts as source vs test files (source also feeds the shell-write guard) | common code (incl. `.ipynb`) / test patterns |
 | `tddReminder.throttleMinutes` | Minimum gap between nudges | `10` |
 | `tddReminder.inProgressPolicy` | Manifest interplay: `skip-gate-only` \| `skip-all` \| `warn-always` | `skip-gate-only` |
-| `evidence.dir` | Where the test-evidence record lives: one append-only NDJSON file per writer per month, **committed** beside the manifest — unlike the usage ledger, which is local scratch — so a recorded run survives a clone. Empty keeps it beside `manifestPath` | beside the manifest |
+| `evidence.dir` | Where the test-evidence record lives: one append-only, **hash-chained** NDJSON file per writer per month, **committed** beside the manifest — unlike the usage ledger, which is local scratch — so a recorded run survives a clone and an edited row is a finding. Empty keeps it beside `manifestPath` | beside the manifest |
 | `usage.enabled` | Meter token usage on Stop / SubagentStop | `true` |
 | `usage.ledgerDir` | Where the monthly NDJSON ledger + scan cursors live (deliberately outside `stateDir`, which is GC'd) | `.claude/usage` |
 | `usage.authorMode` | How the spender is recorded: `email` \| `name` \| `hash` \| `none` | `email` |
@@ -1304,13 +1304,25 @@ docs/audit/evidence/2026-08.<writerId>.jsonl       # one file per writer per mon
 {"v":1,"runId":"…","ts":"…","scope":"task","taskId":"P2.1","status":"passed",
  "steps":[{"name":"test","command":"npm test","exit":0,"durationMs":…}],
  "testedState":{"head":"…","scopeDigest":"…","dirtyDigest":"…","…Basis":"…"},
- "observations":{"ranTotal":…,"treeMutated":[…],"coverage":[…],"…Basis":"…"}}
+ "observations":{"ranTotal":…,"treeMutated":[…],"coverage":[…],"…Basis":"…"},
+ "prev":"…","hash":"…"}
 ```
 
 Append-only, split per writer per month so parallel worktrees never conflict on it, and
 **committed** beside the manifest — unlike the usage ledger, which is local scratch — so a
-recorded run reaches whoever clones the plan. Then a `testEvidence` pointer on the task or
-the phase that ran:
+recorded run reaches whoever clones the plan.
+
+**And hash-chained, with the same chain as the audit trail.** `prev` is the previous row's
+`hash`, the first row's is derived from the file's own name, and
+`audit-journal.py verify` reads **both** records and exits non-zero when either has
+findings — so a recorded `failed` edited into a `passed` is a FINDING rather than a silent
+rewrite of the thing a green gate points at. Tamper-**evident**, not tamper-proof, exactly
+as the trail is; [SECURITY.md](../../SECURITY.md) has what that does and does not cover. A
+ledger written before this shipped has rows carrying neither key: those are reported as a
+counted warning naming what is unprotected, never as tampering, and the next recorded run
+links onto them.
+
+Then a `testEvidence` pointer on the task or the phase that ran:
 
 ```json
 "testEvidence": {"runId": "…", "status": "passed", "at": "2026-08-10T09:12:44Z"}

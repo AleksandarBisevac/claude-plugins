@@ -3,7 +3,7 @@
 The commands around the audit trail: append a row, verify the chain, show it, archive it.
 
     audit-journal.py append   --action <a> [--target <path>] [--summary <text>]
-    audit-journal.py verify   [--json]
+    audit-journal.py verify   [--json]      (the trail AND the evidence ledger)
     audit-journal.py show     [--limit N] [--json] [--target <path>]
     audit-journal.py archive  [--before YYYY-MM]
     audit-journal.py merge    --file <journal file> [--ours F --theirs F]
@@ -13,6 +13,15 @@ The commands around the audit trail: append a row, verify the chain, show it, ar
 
 Exit codes: 0 healthy (warnings allowed) - 1 findings (the chain does not hold,
 or a merge refused) - 2 usage error.
+
+`verify` READS BOTH CHAINED RECORDS beside the manifest -- the trail, and the
+evidence ledger `_evidence_io.py` writes a row into for every recorded gate run.
+The ledger carried no chain at all until it was given the trail's, so the record
+of the MEASUREMENT -- the file a green gate points at -- was the one file here a
+string replace could edit with nothing reporting a finding. Each record prints its
+own verdict and the exit code is non-zero when EITHER has findings; `cmd_verify`
+carries why that is one command rather than two. Every other subcommand on this
+page is the journal's alone.
 
 `merge` is the verb a journal conflict needs and did not have (F306). One writer
 on two branches is ordinary while a phase is paused, and the per-writer file
@@ -68,6 +77,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _journal_io  # noqa: E402  (the trail this command is a front end for)
+import _evidence_io  # noqa: E402  (the OTHER chained record `verify` now reads)
 
 # The trail, under the names this command has always called it by. NOT copies:
 # `_journal_io` (layer 1) owns every one of them, and `tests/test_audit_journal.py`
@@ -145,6 +155,7 @@ write_merged = _journal_io.write_merged
 anchor_verdict = _journal_io.anchor_verdict
 rows_unaccounted = _journal_io.rows_unaccounted
 verify = _journal_io.verify
+verify_evidence = _evidence_io.verify
 _normalise = _journal_io._normalise
 _append = _journal_io._append
 _git_status_sets = _journal_io._git_status_sets
@@ -183,26 +194,49 @@ def cmd_append(args, out):
 
 
 def cmd_verify(args, out):
+    """Verify BOTH chained records this plan commits: the trail and the evidence ledger.
+
+    ONE COMMAND BECAUSE THERE IS ONE QUESTION. The two files differ in what they
+    are for and not in how they are protected -- both are committed beside the
+    manifest, both are append-only, and since the ledger was chained both answer
+    "was a row edited after it was written" with the same hashes. A second command
+    for the second file would be a second place to forget to look, and the record
+    of a MEASUREMENT is the one a green gate points at.
+
+    Each record reports its own verdict and neither can hide the other's: the exit
+    code is non-zero when EITHER has findings, and a record with no directory
+    yet says so instead of counting as clean.
+    """
     project = os.path.abspath(args.project)
     res = verify(project)
+    evidence = verify_evidence(project)
     if args.as_json:
-        out(json.dumps(res, indent=2, sort_keys=True))
-        return 1 if res["findings"] else 0
-    if not res["exists"]:
-        out("[audit-journal] no journal yet at %s" % res["dir"])
-        return 0
-    for line in res["warnings"]:
-        out("WARNING: " + line)
-    for line in res["findings"]:
-        out("FINDING: " + line)
-    if res["findings"]:
-        out("\nBROKEN: %d finding(s) across %d row(s) in %s"
-            % (len(res["findings"]), res["rows"], res["dir"]))
-        return 1
-    out("OK: %d row(s) in %d file(s) chain cleanly%s"
-        % (res["rows"], len(res["files"]),
-           " (%d warning(s))" % len(res["warnings"]) if res["warnings"] else ""))
-    return 0
+        # NESTED, AND THE OLD FLAT KEYS ARE GONE RATHER THAN KEPT BESIDE THE NEW
+        # ONES. A reader that went on reading a top-level `findings` would be
+        # reading the journal's alone and calling it the verdict -- a smaller
+        # number, silently, which is the one failure direction a record may not
+        # have. `ok` stays where it was and now means both.
+        out(json.dumps({"ok": bool(res["ok"] and evidence["ok"]),
+                        "journal": res, "evidence": evidence},
+                       indent=2, sort_keys=True))
+        return 1 if (res["findings"] or evidence["findings"]) else 0
+    for label, rep in (("journal", res), ("evidence", evidence)):
+        if not rep["exists"]:
+            out("[audit-journal] no %s yet at %s" % (label, rep["dir"]))
+            continue
+        for line in rep["warnings"]:
+            out("WARNING: " + line)
+        for line in rep["findings"]:
+            out("FINDING: " + line)
+        if rep["findings"]:
+            out("BROKEN (%s): %d finding(s) across %d row(s) in %s"
+                % (label, len(rep["findings"]), rep["rows"], rep["dir"]))
+        else:
+            out("OK (%s): %d row(s) in %d file(s) chain cleanly%s"
+                % (label, rep["rows"], len(rep["files"]),
+                   " (%d warning(s))" % len(rep["warnings"])
+                   if rep["warnings"] else ""))
+    return 1 if (res["findings"] or evidence["findings"]) else 0
 
 
 # --- resolving a divergence, and reading a writer back to its session ---------

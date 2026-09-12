@@ -46,6 +46,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import hashlib
+import io
 import json
 import os
 import sys
@@ -56,6 +57,7 @@ from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
 import _journal_io                                 # noqa: E402  (k5-k8 patch target)
+import _evidence_io                                # noqa: E402  (the OTHER chained record verify reads)
 
 M = _loader.load_script("audit-journal.py", modname="audit_journal")
 
@@ -402,8 +404,11 @@ def _cases(check):
                         cproj)
         check("i2 append prints the row it wrote", code == 0 and "config.write" in txt)
         code, txt = run(["verify"], cproj)
-        check("i3 verify is 0 on a clean chain and counts the rows",
-              code == 0 and "OK: 1 row(s)" in txt, txt)
+        check("i3 verify is 0 on a clean chain, counts the rows, and NAMES WHICH "
+              "RECORD it counted them in - two chained records report here now, "
+              "and one unlabelled `OK: N row(s)` per record is a reader who "
+              "cannot tell which file was clean", code == 0
+              and "OK (journal): 1 row(s)" in txt, txt)
         code, txt = run(["show"], cproj)
         check("i4 show prints the row", code == 0 and "config.write" in txt)
         code, txt = run(["show", "--json"], cproj)
@@ -432,6 +437,49 @@ def _cases(check):
               code == 1 and parsed(txt, {}).get("ok") is False, txt)
         code, txt = run(["nonsense"], cproj)
         check("i10 an unknown command is a usage error", code == 2)
+
+        # `verify` READS BOTH CHAINED RECORDS. The trail is not the only
+        # committed, append-only, hash-chained file beside a manifest any more:
+        # the evidence ledger holds the record of the MEASUREMENT, which is the
+        # file a green gate points at. Everything below proves the second record
+        # can drive this command on its own - a verdict that only ever moved with
+        # the journal would be a command that reports one record and looks like
+        # it reports two.
+        eproj = os.path.join(tmp, "cli-evidence")
+        os.makedirs(os.path.join(eproj, "docs", "audit"))
+        M.append(eproj, {"action": "config.write", "target": "",
+                       "summary": "a clean trail beside it"})
+        _ev_row = {"v": 1, "runId": "run-1", "ts": "2026-06-01T10:00:00Z",
+                   "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+                   "status": "failed", "steps": [], "failed": []}
+        _ev_path = _evidence_io.append_row(eproj, _ev_row)
+        code, txt = run(["verify"], eproj)
+        check("i11 a clean ledger is verified and REPORTED, not merely tolerated "
+              "- a record this command walks in silence is one nobody can tell "
+              "from a record it never opened",
+              code == 0 and "OK (evidence): 1 row(s)" in txt
+              and "OK (journal):" in txt, txt)
+        _ev_text = io.open(_ev_path, encoding="utf-8").read()
+        io.open(_ev_path, "w", encoding="utf-8").write(
+            _ev_text.replace('"status":"failed"', '"status":"passed"'))
+        code, txt = run(["verify"], eproj)
+        check("i12 a recorded `failed` rewritten to `passed` EXITS 1 while the "
+              "journal beside it is clean. This is the defect the chain was "
+              "added for, taken to the exit code a pipeline reads: before it, "
+              "the same rewrite left this command printing OK and returning 0",
+              code == 1 and "FINDING" in txt and "BROKEN (evidence)" in txt
+              and "OK (journal):" in txt, txt)
+        _i13 = parsed(run(["verify", "--json"], eproj)[1], {})
+        check("i13 ...and `--json` carries both records under their own names "
+              "with a single `ok` over the pair. The old flat shape is GONE "
+              "rather than kept beside the new one: a reader still reading a "
+              "top-level `findings` would be reading the journal's alone and "
+              "calling it the verdict - a smaller number, in silence: %r"
+              % (sorted(_i13),),
+              _i13.get("ok") is False
+              and _i13.get("journal", {}).get("ok") is True
+              and _i13.get("evidence", {}).get("ok") is False
+              and "findings" not in _i13)
 
         # --- j: row v2 -- the optional `details` block ------------------------
         # The hash covers whatever fields are present, so a v1 row and a v2 row

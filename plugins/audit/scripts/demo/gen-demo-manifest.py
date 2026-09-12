@@ -1708,6 +1708,13 @@ def write_evidence(manifest, out_dir):
     a value that function returns nothing of, and the only thing that touches a
     disk is this. The directory is asked of `_evidence_io` rather than joined here,
     so the fixture lands wherever a real project's record would.
+
+    AND CHAINED, THROUGH `_evidence_io.chain_file`. A fixture whose rows carry no
+    `prev` and no `hash` is a fixture of a ledger the recorder cannot produce any
+    more -- every surface photographed from it would show a record with none of
+    the protection a reader is being sold. The links are computed by the module
+    that writes the real ones, seeded from the same basename, so a demo cannot
+    drift into a second opinion about what a chained row looks like.
     """
     config = {"manifestPath": "audit-plan.json"}
     directory = _evidence_io.evidence_dir(out_dir, config)
@@ -1722,9 +1729,10 @@ def write_evidence(manifest, out_dir):
         months.setdefault(_journal_io.month_of(row.get("ts")), []).append(row)
     written = []
     for month in sorted(months):
-        path = os.path.join(directory, "%s.%s.jsonl" % (month, EVIDENCE_WRITER))
+        name = "%s.%s.jsonl" % (month, EVIDENCE_WRITER)
+        path = os.path.join(directory, name)
         with open(path, "w", encoding="utf-8") as fh:
-            for row in months[month]:
+            for row in _evidence_io.chain_file(months[month], name):
                 fh.write(_journal_io.canonical(row) + "\n")
         written.append(path)
     return written

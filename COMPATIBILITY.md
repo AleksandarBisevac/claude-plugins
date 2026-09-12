@@ -124,6 +124,15 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   The **contents of the evidence file itself are not promised**, for the reason the
   usage ledger's NDJSON fields are not: it is a record this plugin writes and
   re-derives, and the manifest block is the interface.
+- **A ledger written before the evidence rows were hash-chained keeps verifying.**
+  Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
+  and `audit-journal.py verify` reports those as a **counted warning naming what is
+  unprotected — never as tampering**, so upgrading does not turn a project's record
+  red. That grading is the promise, not the row shape: what is *not* promised is that
+  the two keys keep their spelling, and what stays a finding either way is an
+  unchained row appearing *after* a chained one in the same file, since without that
+  the chain would be opt-out. The verdict a record reaches is the thing to depend on;
+  the bytes it reaches it from are not.
 
 ### Not promised
 

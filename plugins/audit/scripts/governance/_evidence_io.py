@@ -29,6 +29,16 @@ single shared file would conflict on every merge -- the one thing the sharded
 manifest layout exists to avoid. The writer id and the month come from
 `_journal_io`, so the two records name the same writer the same way.
 
+EVERY ROW IS HASH-CHAINED, using the trail's own chain and not a second one. The
+row that records a MEASUREMENT was the last unchained file this plugin committed,
+and a plain string replace could turn a recorded `failed` into a recorded `passed`
+with nothing reporting a finding. `append_row` links each row onto the file's tail
+and `verify()` reads the links back; both spell the chain with `_journal_io`'s
+`row_hash`, `genesis_prev` and `canonical`. What that covers, what the journal
+anchor covers instead of it, and what a row written before the chain existed is
+graded as, are all at the section marked `the chain, and what each layer covers`
+-- read it before trusting any of the three for something it does not do.
+
 EVERY ANCHOR ROW HERE GOES THROUGH `_journal_io.append_from_cli` (F287), not
 `append`. `run-test-gate.py` is the only caller of the functions here that write
 one, and it is a script the operator runs from Bash: nothing else can claim the
@@ -41,7 +51,6 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__evidence_io.py` -- see `plugins/audit/tests/_harness.py`.
 """
 import binascii
-import json
 import os
 import sys
 import time
@@ -355,13 +364,172 @@ def row_for(project, result, scope, ids, identity, published=None):
     return row
 
 
+# --- the chain, and what each layer covers ------------------------------------
+# ONE CHAIN, NOT A SECOND ONE. `prev` and `hash` mean here exactly what they mean
+# in the trail, and they are computed by the journal's OWN `row_hash`,
+# `genesis_prev` and `canonical`. A ledger with a chain of its own invention would
+# be a second answer to "was this row edited", free to disagree with the record
+# beside it the first time either was touched -- and the record of the
+# MEASUREMENT is the last file in this plugin that should have its own opinion
+# about what tampering looks like.
+#
+# WHAT EACH LAYER COVERS, written here because this one does NOT replace the
+# anchor and must not be read as having done so:
+#
+#   this chain          a row edited in place, a row deleted, rows reordered, and
+#                       a whole file dropped over another writer's file (the seed
+#                       is the file's own BASENAME). It is the only one of the
+#                       three that answers with a FINDING.
+#   the journal anchor  `record()` writes the whole file's sha256 into the trail
+#                       as `stateHash`, which is what catches the one rewrite this
+#                       chain cannot: every row rewritten and every hash
+#                       recomputed forward. It is the WEAKER layer, not the
+#                       fallback -- it is a warning rather than a finding, it is
+#                       compared only against the NEWEST trail row naming the
+#                       file (so the next recorded run re-anchors rewritten bytes
+#                       and the warning goes), and a row written through
+#                       `append_row` alone is anchored by nothing at all.
+#   git                 the committed copy. The only layer a forger cannot also
+#                       rewrite without rewriting history on every clone.
+#
+# A ROW FROM BEFORE THE CHAIN IS NOT A FINDING, and that is a decision rather than
+# an omission. Every ledger written by an earlier release holds rows with no
+# `hash`, and grading those as tampering would turn the first run of this check
+# red in every project that upgrades -- a check whose opening verdict is a wall of
+# findings nobody intends to act on is one its reader learns to skip, which costs
+# more than the rows it would have caught. They are reported as a COUNTED WARNING
+# naming what is not protected, and the gap closes itself: `link_after` hashes an
+# unchained row to make the `prev` of whatever follows it, so the next recorded
+# run puts every row before it under the chain.
+#
+# WHAT IS A FINDING IS AN UNCHAINED ROW AFTER A CHAINED ONE. Without that the
+# chain is opt-out: delete two keys from a row and it is "legacy" again. The two
+# innocent readings are named in the finding's own text, because one of them --
+# an older copy of the plugin appending into a file a newer copy had chained -- is
+# real and has a repair that is not a forensic hunt.
+CHAIN_KEYS = ("prev", "hash")
+
+
+def link_after(previous):
+    """The `prev` a row appended after `previous` must carry.
+
+    A row carrying no `hash` is HASHED HERE rather than skipped, which is what
+    puts a ledger written before the chain existed under the chain the moment the
+    next run is recorded: edit one of those rows afterwards and the first chained
+    row that follows it stops following anything.
+    """
+    stored = previous.get("hash")
+    if isinstance(stored, str) and stored:
+        return stored
+    return _journal_io.row_hash(previous)
+
+
+def chain_onto(row, tail, basename):
+    """`row` with its two chain keys set, linked onto `tail` in the file `basename`.
+
+    `tail` is every row already in that file, oldest first. BOTH KEYS ARE
+    ASSIGNED, never defaulted: a `prev` the caller brought is the link the row had
+    in some other file, and keeping it would put a row into this chain carrying a
+    predecessor that is not the row before it. The brought `hash` needs no such
+    care and is not stripped -- `row_hash` excludes the key from its own input, so
+    the digest covers the row's content either way, and a `pop` here would be a
+    second guard over a rule that is already one function's own.
+    """
+    out = dict(row)
+    out["prev"] = (link_after(tail[-1]) if tail
+                   else _journal_io.genesis_prev(basename))
+    out["hash"] = _journal_io.row_hash(out)
+    return out
+
+
+def chain_file(rows, basename):
+    """Every row of one file, linked in order. The whole-file spelling of `chain_onto`.
+
+    A writer that produces a file in one pass -- the demo generator, a ledger
+    being re-linked by hand after an edit -- must not spell the seeding rule a
+    second time, because the second spelling is the one that gets the genesis
+    wrong and leaves a file that verifies only against itself.
+    """
+    out = []
+    for row in rows or []:
+        out.append(chain_onto(row, out, basename))
+    return out
+
+
+def verify_rows(rows, basename):
+    """The chain verdict for ONE file's rows. The pure half of `verify`.
+
+    `{"rows", "chained", "unchained", "findings", "warnings"}` -- `rows` as read,
+    including the `_unparseable` markers `_journal_io.read_file` leaves behind, so
+    a corrupted line is graded where it sits rather than silently closing the gap
+    between the rows either side of it.
+
+    THE PREV A ROW MUST CARRY IS `link_after`'s, NOT "the previous `hash`", and
+    the difference is the whole of the legacy story: after an unchained row the
+    expected link is that row's computed hash, so editing it breaks the chained
+    row that follows. After a CORRUPTED line nothing can be expected at all and
+    the link check is skipped for one row -- the same concession `_journal_io`
+    makes, and for the same reason: the row's own `hash` check still fires, so a
+    corrupted line buys a forger one unchecked link and no unchecked content.
+    """
+    out = {"rows": 0, "chained": 0, "unchained": 0,
+           "findings": [], "warnings": []}
+    expected = _journal_io.genesis_prev(basename)
+    for i, row in enumerate(rows or []):
+        if row.get("_unparseable"):
+            out["findings"].append(
+                "%s line %d is not valid JSON, and it is not the last line -- a "
+                "recorded run was corrupted" % (basename, row.get("_line") or (i + 1)))
+            expected = None
+            continue
+        out["rows"] += 1
+        stored = row.get("hash")
+        if not isinstance(stored, str) or not stored:
+            if out["chained"]:
+                out["findings"].append(
+                    "%s row %d (run %s) carries no chain while the rows before it "
+                    "do -- either an older copy of the plugin appended it (ask "
+                    "/audit:doctor which copy ran) or a chained row's links were "
+                    "stripped to take it out of the chain. Nothing here can tell "
+                    "those apart" % (basename, i + 1, row.get("runId") or "?"))
+            else:
+                out["unchained"] += 1
+            expected = link_after(row)
+            continue
+        out["chained"] += 1
+        if stored != _journal_io.row_hash(row):
+            out["findings"].append(
+                "%s row %d (run %s) does not hash to its own contents -- it was "
+                "edited after it was written"
+                % (basename, i + 1, row.get("runId") or "?"))
+        elif expected is not None and row.get("prev") != expected:
+            out["findings"].append(
+                "%s row %d (run %s) does not follow the row before it -- a run "
+                "was deleted, the rows were reordered, a row before it was "
+                "edited, or this file was renamed"
+                % (basename, i + 1, row.get("runId") or "?"))
+        expected = stored
+    if out["unchained"]:
+        out["warnings"].append(
+            "%s: %d recorded run(s) at the head of this file carry no chain and "
+            "nothing protects them -- they were written before the ledger was "
+            "chained. They are not evidence of tampering. The next run recorded "
+            "into this file links onto them and closes the gap"
+            % (basename, out["unchained"]))
+    return out
+
+
 # --- writing and reading ------------------------------------------------------
 def append_row(project, row, session_id=None, config=None):
-    """Append one row; return the file it landed in.
+    """Append one row, chained onto the file's tail; return the file it landed in.
 
-    O_APPEND of one bounded line, with NO LOCK - the usage ledger's argument,
-    which holds here because the file is per writer per month: the only writer
-    that can race is this session with itself.
+    THE LOCK IS THE CHAIN'S, and it is why this is no longer the bare O_APPEND the
+    usage ledger gets away with. `prev` is read off the last row in the file, so
+    two appends by one writer that both read that tail would write the same `prev`
+    and produce a break indistinguishable from a deleted run. The journal's own
+    lock is taken rather than a second one written here; when it cannot be taken
+    the append RAISES, because a false tamper verdict is worse than a missing row
+    and `record()` already declines to report a run whose evidence was not stored.
     """
     config = _journal_io.load_config(project) if config is None else config
     directory = evidence_dir(project, config)
@@ -371,9 +539,31 @@ def append_row(project, row, session_id=None, config=None):
         directory, row.get("ts") or _now(), actor,
         fallback=None if _journal_io.has_session(actor)
         else _journal_io.writer_token(project, config))
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(_journal_io.canonical(row) + "\n")
+    lock = _journal_io._acquire(path, record="the evidence ledger")
+    try:
+        rows, _torn = _journal_io.read_file(path)
+        tail = [r for r in rows if not r.get("_unparseable")]
+        linked = chain_onto(row, tail, os.path.basename(path))
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(_journal_io.canonical(linked) + "\n")
+    finally:
+        _journal_io._release(lock)
     return path
+
+
+def ledger_files(project, config=None):
+    """Every ledger file, sorted. One listing, so no reader invents a second.
+
+    Named rather than inlined because `read_rows` and `verify` must walk the SAME
+    set: a verdict about a file no consumer reads, or a consumer reading a file no
+    verdict covers, are both silences that look like agreement.
+    """
+    directory = evidence_dir(project, config)
+    try:
+        return [os.path.join(directory, n)
+                for n in sorted(os.listdir(directory)) if n.endswith(".jsonl")]
+    except Exception:
+        return []
 
 
 def read_rows(project, config=None):
@@ -384,36 +574,101 @@ def read_rows(project, config=None):
     lost EVIDENCE row is the failure this file exists to prevent. `files` is
     reported for the same reason - "no rows" and "no files" are different answers
     and a bare list could not tell them apart.
+
+    THE PARSE IS `_journal_io.rows_from_text`'s AND THE COUNT IS THIS FUNCTION'S,
+    which is the split that lets `verify` and this reader disagree about nothing.
+    A second parser here is how a row the chain graded would come to be a row this
+    never returned: same bytes, two opinions about what a row even is. What stays
+    local is the RULE -- the trail forgives a torn tail as a crash, and this
+    counts it, because a lost measurement is not a lost note.
     """
     config = _journal_io.load_config(project) if config is None else config
-    directory = evidence_dir(project, config)
     rows, unreadable, files = [], 0, 0
-    try:
-        names = sorted(n for n in os.listdir(directory) if n.endswith(".jsonl"))
-    except Exception:
-        return {"rows": [], "files": 0, "unreadable": 0}
-    for name in names:
+    for path in ledger_files(project, config):
         files += 1
         try:
-            with open(os.path.join(directory, name), "r",
-                      encoding="utf-8", errors="replace") as fh:
-                lines = fh.read().splitlines()
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
         except Exception:
             unreadable += 1
             continue
-        for line in lines:
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
+        parsed, torn = _journal_io.rows_from_text(text)
+        for obj in parsed:
+            if obj.get("_unparseable"):
                 unreadable += 1
-                continue
-            if isinstance(obj, dict):
-                rows.append(obj)
             else:
-                unreadable += 1
+                rows.append(obj)
+        if torn:
+            unreadable += 1
     return {"rows": rows, "files": files, "unreadable": unreadable}
+
+
+def verify(project, config=None):
+    """Does every recorded run still hash to what it said, in the order it said it?
+
+    `{"ok", "dir", "exists", "rows", "files", "findings", "warnings", "unchained"}`
+    -- `_journal_io.verify`'s shape on purpose, so a surface asking both records
+    the same question reads one answer twice rather than two answers once.
+
+    FINDINGS are breaks: a run edited after it was written, a run deleted or
+    reordered, a file dropped over another writer's file, a corrupted line, a run
+    appended with no chain into a file whose earlier rows have one, and a ledger
+    file that could not be read at all. WARNINGS are the honest maybes: a torn
+    tail, and the rows that predate the chain.
+
+    WHAT THIS DOES NOT ASK, so that nothing reads it as having asked. It does not
+    compare the file against its committed copy and it does not compare it against
+    the trail's `stateHash` -- `_journal_io.verify` already does the second for
+    every evidence file `record()` anchored, and a second opinion here would be a
+    second answer to one question. The rewrite this cannot see at all is the whole
+    file re-written with every hash recomputed forward; that one is the anchor's
+    and git's, and the section above says how far each of them reaches.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    directory = evidence_dir(project, config)
+    out = {"ok": True, "dir": directory, "exists": os.path.isdir(directory),
+           "rows": 0, "files": [], "findings": [], "warnings": [],
+           "unchained": 0}
+    if not out["exists"]:
+        return out
+    for path in ledger_files(project, config):
+        name = os.path.basename(path)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except Exception as exc:
+            # A FINDING, NOT A SKIP. `_journal_io.read_file` answers an unreadable
+            # file with no rows, which is the right fail-open for a reader walking
+            # a directory that raced a `git mv` -- and exactly the wrong answer for
+            # the question being asked here, because "no rows, no findings" is what
+            # a clean file also prints. A record nothing can read is not a record
+            # that holds, and it is the state a forger would settle for.
+            out["findings"].append(
+                "%s could not be read (%s), so not one run in it was checked"
+                % (name, exc))
+            out["files"].append({"file": name, "rows": 0, "chained": 0,
+                                 "unchained": 0,
+                                 "findings": [out["findings"][-1]],
+                                 "warnings": []})
+            out["ok"] = False
+            continue
+        rows, torn = _journal_io.rows_from_text(text)
+        verdict = verify_rows(rows, name)
+        if torn:
+            verdict["warnings"].append(
+                "%s ends with a partial line -- a writer was interrupted. The "
+                "runs before it are intact; nothing was hidden by it." % (name,))
+        out["rows"] += verdict["rows"]
+        out["unchained"] += verdict["unchained"]
+        out["findings"].extend(verdict["findings"])
+        out["warnings"].extend(verdict["warnings"])
+        out["files"].append({"file": name, "rows": verdict["rows"],
+                             "chained": verdict["chained"],
+                             "unchained": verdict["unchained"],
+                             "findings": verdict["findings"],
+                             "warnings": verdict["warnings"]})
+    out["ok"] = not out["findings"]
+    return out
 
 
 def record(project, result, scope, ids, identity, published=None, config=None):
@@ -432,6 +687,14 @@ def record(project, result, scope, ids, identity, published=None, config=None):
     Fail-soft on the journal half, `_journal_io.append`'s own contract: a run that
     was recorded must not be reported as unrecorded because the trail could not be
     written.
+
+    THE RETURNED `row` IS THE RUN'S CONTENT AND NOT THE LINE ON DISK. `prev`
+    depends on which file the row lands in and on what was already in it, so the
+    two chain keys are added by `append_row` at the moment of the write and the
+    dict here never carries them. Nothing downstream wants them: `pointer_for`
+    caches identity, verdict and moment, and a hash cached beside the row it
+    digests would be this repository's most repeated defect wearing a new field
+    name. Hash the file, not the return value.
     """
     config = _journal_io.load_config(project) if config is None else config
     row = row_for(project, result, scope, ids, identity, published=published)

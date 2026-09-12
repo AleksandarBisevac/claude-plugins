@@ -434,6 +434,299 @@ def _cases(check):
               empty["rows"] == [] and empty["files"] == 0
               and empty["unreadable"] == 0)
 
+        # --- the chain ------------------------------------------------------
+        # THE DEFECT THIS BLOCK EXISTS FOR, driven before it was written: two runs
+        # were recorded, a plain string replace turned the recorded `failed` into
+        # `passed`, and every verdict in the tree stayed green. The row that
+        # records a MEASUREMENT was the one committed file with no chain.
+        #
+        # Every case here is PAIRED with the one that fails when the check is
+        # weakened rather than broken, because a chain is exactly the kind of code
+        # a green suite proves nothing about: a `verify` that returned "no
+        # findings" unconditionally passes any case that only tampers.
+        def _chain_project(name, config=None):
+            """A fresh project with its own ledger. FRESH, never reused: a chain
+            is per file, and a case that inherited another case's rows would be
+            grading a history it did not write."""
+            return _project(os.path.join(tmp, name),
+                            {} if config is None else config)
+
+        def _ledger(proj):
+            return M.ledger_files(proj)[0]
+
+        def _lines(path):
+            return io.open(path, encoding="utf-8").read().splitlines()
+
+        def _rewrite(path, lines):
+            io.open(path, "w", encoding="utf-8").write(
+                "".join(ln + "\n" for ln in lines))
+
+        def _run(run_id, status, ts):
+            return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+                    "taskId": "P1.1", "phaseId": "P1", "status": status,
+                    "steps": [], "failed": []}
+
+        c1 = _chain_project("chain-clean")
+        cp = M.append_row(c1, _run("run-1", "failed", "2026-06-01T10:00:00Z"))
+        M.append_row(c1, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
+        c_rows = [json.loads(ln) for ln in _lines(cp)]
+        check("ec1 an appended run carries both chain keys, and the FIRST row's "
+              "`prev` is derived from the file's own basename rather than from a "
+              "constant - a shared seed would let a whole file be dropped over "
+              "another writer's file and verify perfectly: %r"
+              % ((c_rows[0].get("prev"), bool(c_rows[0].get("hash"))),),
+              c_rows[0]["prev"] == _journal_io.genesis_prev(os.path.basename(cp))
+              and isinstance(c_rows[0].get("hash"), str) and c_rows[0]["hash"])
+
+        check("ec2 ...and the second row's `prev` IS the first row's `hash`, "
+              "computed by the journal's own `row_hash` rather than by a second "
+              "spelling of it. Asserted against `row_hash` and not a literal: a "
+              "literal keeps agreeing after the two chains diverge",
+              c_rows[1]["prev"] == c_rows[0]["hash"]
+              and c_rows[0]["hash"] == _journal_io.row_hash(c_rows[0])
+              and c_rows[1]["hash"] == _journal_io.row_hash(c_rows[1]))
+
+        clean = M.verify(c1)
+        check("ec3 a ledger nobody touched verifies GREEN, counted, with no "
+              "findings and no warnings - the half that fails when the chain is "
+              "made to over-fire, and without it every tamper case below is "
+              "satisfied by a `verify` that always reports a break: %r"
+              % ((clean["ok"], clean["rows"], len(clean["findings"]),
+                  len(clean["warnings"])),),
+              clean["ok"] is True and clean["rows"] == 2
+              and clean["findings"] == [] and clean["warnings"] == []
+              and clean["exists"] is True and clean["unchained"] == 0)
+
+        # THE DRIVEN TAMPER, spelled the way it was driven: a plain string
+        # replace of the recorded verdict, nothing else touched.
+        _rewrite(cp, [ln.replace('"status":"failed"', '"status":"passed"')
+                      for ln in _lines(cp)])
+        tampered = M.verify(c1)
+        check("ec4 a plain string replace turning a recorded `failed` into "
+              "`passed` is a FINDING and takes `ok` with it. This is the defect: "
+              "before the chain, the same rewrite left every verdict in the tree "
+              "green, and the record of the MEASUREMENT was the one committed "
+              "file a reader could edit: %r"
+              % ((tampered["ok"], tampered["findings"]),),
+              tampered["ok"] is False and len(tampered["findings"]) == 1
+              and "does not hash to its own contents" in tampered["findings"][0]
+              and "run-1" in tampered["findings"][0])
+
+        c2 = _chain_project("chain-deleted")
+        dp = M.append_row(c2, _run("run-1", "failed", "2026-06-01T10:00:00Z"))
+        M.append_row(c2, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
+        M.append_row(c2, _run("run-3", "passed", "2026-06-03T10:00:00Z"))
+        d_lines = _lines(dp)
+        _rewrite(dp, [d_lines[0], d_lines[2]])
+        deleted = M.verify(c2)
+        check("ec5 a run DELETED from the middle is a finding on the row that "
+              "followed it - the PAIR to ec4 and not a repetition of it: every "
+              "surviving row still hashes to its own contents, so a check that "
+              "only re-hashed rows would call this file clean: %r"
+              % (deleted["findings"],),
+              deleted["ok"] is False and len(deleted["findings"]) == 1
+              and "does not follow the row before it" in deleted["findings"][0]
+              and "run-3" in deleted["findings"][0])
+
+        c3 = _chain_project("chain-renamed")
+        rp = M.append_row(c3, _run("run-1", "passed", "2026-06-01T10:00:00Z"))
+        moved_to = os.path.join(os.path.dirname(rp), "2026-05.otherwriter.jsonl")
+        shutil.move(rp, moved_to)
+        renamed = M.verify(c3)
+        check("ec6 the SAME BYTES under a different file name stop verifying - "
+              "this is what the basename seed buys, and it is the attack ec1 "
+              "only half proves: one writer's whole month copied over another's "
+              "would otherwise verify perfectly, every `prev` still matching its "
+              "predecessor: %r" % (renamed["findings"],),
+              renamed["ok"] is False and len(renamed["findings"]) == 1
+              and "does not follow the row before it" in renamed["findings"][0])
+
+        # --- rows written before the chain existed --------------------------
+        # THE DECISION, exercised in both directions. An old row is a counted
+        # warning; an old row AFTER a chained one is a finding. Neither half is
+        # safe alone: warn at everything and the first run of this check is red in
+        # every project that upgrades, and nobody reads it again; treat every
+        # unchained row as legacy and the chain is opt-out, because deleting two
+        # keys puts a row back outside it.
+        c4 = _chain_project("chain-legacy")
+        lp = M.append_row(c4, _run("run-1", "failed", "2026-06-01T10:00:00Z"))
+        legacy_rows = [_run("old-1", "failed", "2026-06-01T08:00:00Z"),
+                       _run("old-2", "passed", "2026-06-01T09:00:00Z")]
+        _rewrite(lp, [_journal_io.canonical(r) for r in legacy_rows])
+        old_only = M.verify(c4)
+        check("ec7 a ledger written before the chain existed is a COUNTED "
+              "WARNING and never a finding, and `ok` stays true. Grading those "
+              "rows as tampering would turn the first run of this check red in "
+              "every project that upgrades, and a check whose opening verdict is "
+              "a wall of findings nobody intends to act on is one its reader "
+              "learns to skip: %r"
+              % ((old_only["ok"], old_only["unchained"], old_only["warnings"]),),
+              old_only["ok"] is True and old_only["findings"] == []
+              and old_only["unchained"] == 2
+              and len(old_only["warnings"]) == 1
+              and "carry no chain" in old_only["warnings"][0])
+
+        M.append_row(c4, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
+        healed = M.verify(c4)
+        after_legacy = [json.loads(ln) for ln in _lines(lp)][-1]
+        check("ec8 ...and the next recorded run LINKS ONTO them, so the gap "
+              "closes itself rather than staying open forever: the new row's "
+              "`prev` is the hash of the unchained row it follows, which is what "
+              "`link_after` is for: %r"
+              % ((after_legacy["prev"] == _journal_io.row_hash(legacy_rows[-1]),
+                  healed["unchained"]),),
+              after_legacy["prev"] == _journal_io.row_hash(legacy_rows[-1])
+              and healed["ok"] is True and healed["unchained"] == 2)
+
+        edited_legacy = _lines(lp)
+        edited_legacy[1] = edited_legacy[1].replace('"status":"passed"',
+                                                    '"status":"failed"')
+        _rewrite(lp, edited_legacy)
+        healed_broken = M.verify(c4)
+        check("ec9 ...and editing one of those old rows AFTERWARDS is now a "
+              "finding, reported on the chained row that followed it. The pair "
+              "with ec7 is the whole decision: the old rows are unprotected only "
+              "until the next run is recorded, and this is the case that fails "
+              "if `link_after` is weakened to 'the previous row's stored hash': "
+              "%r" % (healed_broken["findings"],),
+              healed_broken["ok"] is False
+              and len(healed_broken["findings"]) == 1
+              and "run-2" in healed_broken["findings"][0])
+
+        c5 = _chain_project("chain-stripped")
+        sp = M.append_row(c5, _run("run-1", "failed", "2026-06-01T10:00:00Z"))
+        M.append_row(c5, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
+        stripped = []
+        for ln in _lines(sp):
+            obj = json.loads(ln)
+            if obj["runId"] == "run-2":
+                obj.pop("hash")
+                obj.pop("prev")
+            stripped.append(_journal_io.canonical(obj))
+        _rewrite(sp, stripped)
+        evaded = M.verify(c5)
+        check("ec10 a row with its links STRIPPED so it would read as an old row "
+              "is a FINDING, because the rows before it chain. Without this the "
+              "chain is opt-out - delete two keys and ec4's tamper is legal "
+              "again - and the finding names the innocent reading (an older copy "
+              "of the plugin appended it) rather than asserting forgery: %r"
+              % (evaded["findings"],),
+              evaded["ok"] is False and len(evaded["findings"]) == 1
+              and "carries no chain while the rows before it do"
+              in evaded["findings"][0]
+              and "older copy of the plugin" in evaded["findings"][0])
+
+        # --- what is NOT a break --------------------------------------------
+        c6 = _chain_project("chain-torn")
+        tp = M.append_row(c6, _run("run-1", "passed", "2026-06-01T10:00:00Z"))
+        with io.open(tp, "a", encoding="utf-8") as fh:
+            fh.write('{"runId":"run-2","st')
+        torn = M.verify(c6)
+        check("ec11 a TORN TAIL is a warning and not a finding - it is what a "
+              "crash mid-append leaves, the rows before it are intact, and "
+              "nothing was hidden by it. A record that graded a crash as forgery "
+              "would teach its reader that a finding means nothing: %r"
+              % ((torn["ok"], torn["warnings"]),),
+              torn["ok"] is True and torn["findings"] == []
+              and len(torn["warnings"]) == 1
+              and "partial line" in torn["warnings"][0])
+
+        # THE CORRUPTED ROW IS OVERWRITTEN, NOT INSERTED BESIDE, and the
+        # difference is the whole case: a garbage line ADDED between two intact
+        # rows leaves the second one's `prev` still naming the first, so the
+        # suspension below would be doing nothing and a mutation removing it
+        # would survive. Overwriting row two destroys the hash row three points
+        # at, which is the only shape where "nothing can say what this should
+        # have followed" is true.
+        c7 = _chain_project("chain-corrupt")
+        xp = M.append_row(c7, _run("run-1", "passed", "2026-06-01T10:00:00Z"))
+        M.append_row(c7, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
+        M.append_row(c7, _run("run-3", "passed", "2026-06-03T10:00:00Z"))
+        x_lines = _lines(xp)
+        _rewrite(xp, [x_lines[0], "{corrupted half a row", x_lines[2]])
+        corrupt = M.verify(c7)
+        check("ec12 a corrupted line in the MIDDLE is a finding, and the row "
+              "after it is NOT also accused of a break it cannot be judged for: "
+              "the row it should have followed is the one that was destroyed, so "
+              "the link check is suspended for one row while that row's own hash "
+              "is still read. One finding, not two - a record that reported a "
+              "second break it could not substantiate would be teaching its "
+              "reader to discount findings: %r" % (corrupt["findings"],),
+              corrupt["ok"] is False and len(corrupt["findings"]) == 1
+              and "not valid JSON" in corrupt["findings"][0])
+
+        c9 = _chain_project("chain-unreadable")
+        up = M.append_row(c9, _run("run-1", "passed", "2026-06-01T10:00:00Z"))
+        with open(up, "wb") as fh:
+            fh.write(b'{"runId":"run-1","status":"\xff\xfe not utf-8"}\n')
+        unreadable = M.verify(c9)
+        check("ec17 a ledger file that cannot be READ is a finding, not a file "
+              "walked in silence. The shared reader answers an unreadable file "
+              "with no rows, which is right for a consumer racing a `git mv` and "
+              "exactly wrong here: 'no rows, no findings' is what a clean file "
+              "prints too, and an unreadable record is the state a forger would "
+              "settle for: %r" % (unreadable["findings"],),
+              unreadable["ok"] is False and len(unreadable["findings"]) == 1
+              and "could not be read" in unreadable["findings"][0]
+              and unreadable["files"][0]["rows"] == 0)
+
+        gone = M.verify(os.path.join(tmp, "chain-nothing-here"))
+        check("ec13 a project that has never recorded anything is `exists` "
+              "false, ok, and silent - this is asked on every repo a surface "
+              "opens, and a finding here would accuse every project that has not "
+              "run a gate yet: %r"
+              % ((gone["exists"], gone["ok"], gone["rows"]),),
+              gone["exists"] is False and gone["ok"] is True
+              and gone["rows"] == 0 and gone["findings"] == []
+              and gone["warnings"] == [])
+
+        # --- the two spellings of one chain ---------------------------------
+        one_pass = M.chain_file([_run("run-1", "failed", "2026-06-01T10:00:00Z"),
+                                 _run("run-2", "passed", "2026-06-02T10:00:00Z")],
+                                os.path.basename(cp))
+        check("ec14 `chain_file` produces exactly what appending row by row "
+              "produced - compared against the rows `append_row` actually wrote "
+              "into that same file rather than against a literal, because the "
+              "whole point of the function is that the demo generator and the "
+              "recorder cannot spell the seed differently: %r"
+              % ([r["hash"][:8] for r in one_pass],),
+              [r["prev"] for r in one_pass] == [r["prev"] for r in c_rows]
+              and [r["hash"] for r in one_pass] == [r["hash"] for r in c_rows])
+
+        brought = M.chain_onto({"runId": "x", "prev": "SOME-OTHER-CHAIN",
+                                "hash": "NOT-A-HASH"}, [], "f.jsonl")
+        check("ec15 both chain keys are ASSIGNED, never defaulted. A `prev` the "
+              "caller brought is the link that row had in some other file, and "
+              "keeping it would splice a row into this chain carrying a "
+              "predecessor that is not the row before it - the shape a "
+              "`setdefault` would produce, and one that verifies nowhere: %r"
+              % (brought,),
+              brought["prev"] == _journal_io.genesis_prev("f.jsonl")
+              and brought["hash"] == _journal_io.row_hash(
+                  {"runId": "x", "prev": brought["prev"]})
+              and brought["hash"] != "NOT-A-HASH")
+
+        c8 = _chain_project("chain-locked")
+        kp = M.append_row(c8, _run("run-1", "passed", "2026-06-01T10:00:00Z"))
+        io.open(kp + ".lock", "w", encoding="utf-8").write("")
+        # THROUGH `attempt`, because the failing direction of this case is an
+        # append that DOES NOT raise - and a bare try/finally that then tidied the
+        # lock file the mutated code had already removed would escape, taking the
+        # whole suite with it and reporting this case by nobody's name.
+        _ok, _why = _harness.attempt(
+            M.append_row, c8, _run("run-2", "passed", "2026-06-01T10:00:00Z"))
+        locked = _ok is False and "evidence ledger" in str(_why)
+        if os.path.exists(kp + ".lock"):
+            os.unlink(kp + ".lock")
+        check("ec16 an append whose lock is already held RAISES rather than "
+              "writing - `prev` is read off the file's tail, so two writers that "
+              "both read it would write the same link and produce a break "
+              "indistinguishable from a deleted run. A false tamper verdict is "
+              "worse than a missing row, and `record` already declines to report "
+              "a run whose evidence was not stored: %r" % (locked,),
+              locked is True
+              and len(_lines(kp)) == 1)
+
         # --- the anchor ---------------------------------------------------
         recorded = M.record(plain, RESULT, "task",
                             {"taskId": "P1.2", "phaseId": "P1"}, IDENT,

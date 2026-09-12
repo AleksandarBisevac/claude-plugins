@@ -399,6 +399,29 @@ point:
   that identifies a person: the paths, the host names, the arguments. That is
   data minimisation and friction, not anonymisation.
 
+- **The evidence record is chained too, and the trail's section above is its
+  section.** Until it was, the record of the *measurement* — the file a green gate
+  points at — was the one committed file here with no chain at all: a string
+  replace turning a recorded `failed` into `passed` left `verify` reporting no
+  findings. Every row now carries `prev` and `hash`, computed by the journal's own
+  functions and seeded from the file's own basename, and `audit-journal.py verify`
+  reads **both** records and exits non-zero when either has findings. What it
+  detects and what it cannot are word for word the trail's, including the forger
+  who rewrites the whole file. Two things are this record's own. A row written by a
+  release **before** the chain existed carries neither key and is reported as a
+  counted warning naming what is unprotected, never as tampering — grading an
+  upgrade as forgery is how a check teaches its reader to skip it — and the gap
+  closes itself, since the next recorded run links onto those rows. And an
+  unchained row appearing **after** a chained one *is* a finding, because without
+  that the chain is opt-out: deleting two keys would put a row back outside it.
+  The finding names the innocent reading (an older copy of the plugin appended it)
+  rather than asserting forgery; nothing there can tell the two apart.
+  The journal anchor that predates this is the **weaker** layer and not a fallback:
+  it records the whole file's digest as a *warning*, compares it only against the
+  newest trail row naming the file — so a later recorded run re-anchors rewritten
+  bytes and the warning goes — and a row written without going through the
+  recorder is anchored by nothing.
+
 - **The evidence record is committed too, and carries no program output at all.**
   A test gate's stdout is the highest-risk text this plugin could ever store — stack
   traces, absolute paths, environment values, occasionally a token — so it is not

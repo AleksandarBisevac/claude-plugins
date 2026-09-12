@@ -800,7 +800,13 @@ def session_index(project, config=None):
 # producing a break that reads exactly like a deleted row. A false tamper verdict
 # is worse than a missing row, so when the lock cannot be taken the append is
 # declined rather than risked.
-def _acquire(path):
+#
+# TWO CHAINED RECORDS TAKE THIS LOCK, which is why the refusal names the one it
+# is about rather than saying "journal" for both. `_evidence_io.append_row` reads
+# a tail for `prev` exactly as `_append` does, and a lock of its own in that file
+# would be a second implementation of one rule -- the shape this module already
+# declines for the chain itself.
+def _acquire(path, record="journal"):
     lock = path + ".lock"
     deadline = time.time() + LOCK_WAIT_SECONDS
     while True:
@@ -818,7 +824,7 @@ def _acquire(path):
         except OSError:
             pass
         if time.time() >= deadline:
-            raise IOError("journal is locked by another writer: %s" % lock)
+            raise IOError("%s is locked by another writer: %s" % (record, lock))
         time.sleep(0.02)
 
 
