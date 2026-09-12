@@ -216,6 +216,11 @@
       "id": "P36",
       "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
       "shard": "phases/P36.json"
+    },
+    {
+      "id": "P37",
+      "title": "before-you-claim: the authorship gate for the classes the register keeps recording",
+      "shard": "phases/P37.json"
     }
   ],
   "fileIndex": {
@@ -236,7 +241,8 @@
       "P32.10"
     ],
     ".gitignore": [
-      "P4.4"
+      "P4.4",
+      "P37.2"
     ],
     "CHANGELOG.md": [
       "P2.2",
@@ -261,7 +267,8 @@
       "P11.3",
       "P15.5",
       "P19.2",
-      "P32.10"
+      "P32.10",
+      "P37.2"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -903,7 +910,8 @@
       "P31.2",
       "P32.5",
       "P32.6",
-      "P32.9"
+      "P32.9",
+      "P37.2"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -957,7 +965,8 @@
       "P24.1",
       "P32.10",
       "P32.9",
-      "P36.2"
+      "P36.2",
+      "P37.2"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
@@ -1293,7 +1302,8 @@
     ],
     "CLAUDE.md": [
       "P32.10",
-      "P35.1"
+      "P35.1",
+      "P37.2"
     ],
     "examples/acme-store/evidence/2026-06.e7c1a94b2f08d635.jsonl": [
       "P32.10"
@@ -1336,6 +1346,27 @@
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9"
+    ],
+    ".claude/skills/before-you-claim/SKILL.md": [
+      "P37.1"
+    ],
+    ".claude/skills/before-you-claim/references/questions.md": [
+      "P37.1"
+    ],
+    ".claude/skills/before-you-claim/scripts/claim-lines.py": [
+      "P37.1"
+    ],
+    ".claude/skills/before-you-claim/evals/evals.json": [
+      "P37.1"
+    ],
+    ".claude/hooks/require-claim-block.py": [
+      "P37.2"
+    ],
+    ".claude/settings.json": [
+      "P37.2"
+    ],
+    "tools/sweep-selftests.py": [
+      "P37.2"
     ]
   },
   "bugs": [
