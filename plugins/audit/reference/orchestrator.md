@@ -627,7 +627,17 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    sandbox, or **the OS ending the runner** (an out-of-memory reaper, a crash inside it, a cgroup
    limit, another measurement on the host starving it of CPU). The first three exit non-zero having
    run ZERO checks; the last is reported by the kill itself, and the banner names which member it
-   was underneath. This is the "infrastructure failure" arm of step 4c below, now measured
+   was underneath. **A red that measured NOTHING and named a file that was already dirty when the
+   run started and that this work does not declare is the same answer one cause over** — a
+   whole-program check fails on a sibling executor's half-written file whatever the work under
+   test is, and the mutation bracket cannot see that file because it was already half-written
+   before the first snapshot. Every clause is required and `run-test-gate.unattributable_failure`
+   is what holds them: a gate that measured nothing stays **red** when the tree was clean (a task
+   whose own test file does not compile collects nothing too), when the dirty file is one this
+   work declares, and when no step's output blamed it — that last one because your own step 2
+   leaves `attempts` and `status` uncommitted in the plan at every run, so ambient dirt proves
+   nothing. The line under the banner names the file the run blamed. This is the "infrastructure failure"
+   arm of step 4c below, now measured
    rather than judged: fix the runner and re-run, do **not** spend a retry on the task, and do
    **not** record it as a red suite. `GATE TIMED OUT` is the same shape one cause over — the step
    was stopped at its bound and reached no verdict, so read nothing about the work into it.

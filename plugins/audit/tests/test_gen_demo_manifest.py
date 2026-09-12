@@ -968,11 +968,19 @@ def _cases(check):
         # work does not declare, the real `run_status` will read a shorter list
         # than this line hands it and the disagreement lands here rather than in
         # a published fixture.
+        # ...AND THE SIXTH IS READ OFF THE ROW FOR THAT SAME REASON, in the
+        # spelling a LEDGER ROW has it: `row_for` carries the bounded sentence
+        # (`attributionBasis`) and not the raw path list, and the arm only asks
+        # whether there is one. A row that names dirt outside the declared scope
+        # beside a red that measured nothing is a run whose verdict the real
+        # function moves, so hardcoding None here would compare the copy against
+        # a rule this one does not have.
         def _real(r):
             return _gate.run_status(r["steps"], r["failed"],
                                     r["observations"]["ranTotal"],
                                     r.get("cancelledBy"),
-                                    r["observations"]["treeMutated"])
+                                    r["observations"]["treeMutated"],
+                                    r.get("attributionBasis"))
 
         _disagreed = [(r["runId"], r["status"], _real(r))
                       for r in _rows_b if r["status"] != _real(r)]

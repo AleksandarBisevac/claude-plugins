@@ -412,6 +412,139 @@ def attributed_mutations(mutated, owned, foreign):
     return list(owned), list(foreign or [])
 
 
+# --- what the tree ALREADY carried, and the one red it excuses ----------------
+# THE SNAPSHOT IS THE EARLIER ONE, AND THAT IS THE WHOLE FAULT. Everything above
+# sorts `after - before`: what moved DURING the run. The row this exists for had
+# `treeMutated == []` - the value that means KNOWN CLEAN - because the sibling
+# executor's file was ALREADY half-written when the gate started, so nothing moved
+# between the two snapshots and the bracket had nothing to attribute. The state
+# that broke the gate was in `before` the whole time and no reader looked at it.
+#
+# WHAT WAS REPORTED. Three "false red" rows were brought by an operator; asked for
+# the raw rows he withdrew two, which were real failures with counts in the
+# thousands. The survivor was a task gate whose typecheck exited non-zero and
+# whose jest step collected nothing, run in a shared tree while a sibling task's
+# executor was editing files. `tsc` compiles the WHOLE PROGRAM, so a half-written
+# file belonging to another task fails it regardless of whose file it is.
+#
+# NOTHING HERE EXCUSES ANYTHING ON ITS OWN. `unattributable_failure` below is the
+# decision and every clause it asks is stated there with what goes wrong without
+# it; these two functions only answer the questions it asks.
+
+
+def dirty_outside(before, owns):
+    """`(paths, basis)` - what the tree already carried that this work does not declare.
+
+    THE SPLIT IS `classify_mutations`' AND IS NOT COPIED, because the question is
+    the same question - does this porcelain line name a declared file - asked of
+    a different set of lines. A second spelling of that would answer a rename or
+    a git-quoted path differently the first time either was fixed in one place.
+
+    NOTHING IS EXCUSED WHERE NOTHING CAN BE ATTRIBUTED, which is the direction
+    this function has to be wrong in. With no declared files EVERY dirty path is
+    trivially "outside the declared scope", so reading an empty scope as foreign
+    dirt would excuse every failing run on every dirty tree - real failures turned
+    into infrastructure, permanently, in a hash-chained row. `classify_mutations`
+    already answers None for exactly that state and this keeps it a None.
+    """
+    if before is None:
+        return None, ("git could not describe the tree before the run, so what "
+                      "it already carried is not knowable")
+    if not before:
+        return [], "the tree carried no dirty path when the run started"
+    _owned, foreign, _basis = classify_mutations(before, owns)
+    if foreign is None:
+        return None, ("the work under test declares no files, so a path that was "
+                      "already dirty can be attributed neither to it nor away "
+                      "from it")
+    if not foreign:
+        return [], ("every path dirty at run start is one the work under test "
+                    "declares")
+    return foreign, ("%d of %d path(s) dirty at run start name no file this work "
+                     "declares: %s"
+                     % (len(foreign), len(before),
+                        _output.some_of(foreign, budget=SAMPLE_BUDGET)))
+
+
+def _named_by_run(line, named):
+    """Whether the run's own output mentioned a path this porcelain line names.
+
+    BOTH OF THE LINE'S NAMES ARE ASKED, for `_declared_by`'s reason: a rename
+    carries two, and a runner blaming either of them is blaming this line.
+
+    `_PATHISH` over-matches on purpose and that is tolerable here for a narrower
+    reason than the one `files_named` gives. A spurious token can only widen the
+    excuse if it is spelled EXACTLY like a path git reports as dirty, which is a
+    far smaller set than "any token that looks path-shaped".
+    """
+    if not named:
+        return False
+    spellings = set(_norm(p) for p in _ev.porcelain_paths(line))
+    return any(_norm(tok) in spellings for tok in named)
+
+
+def unattributable_failure(failed, ran_total, before, owns, named):
+    """`(paths, basis)` for a red that is NOT this work's; `(None, None)` for one
+    that is.
+
+    EVERY CONJUNCT OR NEITHER, and the ones after the first are what keep this
+    honest. A suite that collects nothing because THIS work left a syntax error
+    in a test file, and a red-first test written against a module that does not
+    exist yet, both measure exactly nothing and are both the work's own failure.
+    Excusing those records no verdict, spends no retry on work that needs one,
+    and hides the defect - the F323 class, real failures excused as
+    infrastructure. So the zero moves nothing on its own.
+
+    AND AMBIENT DIRT IS NOT EVIDENCE EITHER, WHICH IS THE THIRD CONJUNCT AND WAS
+    MEASURED RATHER THAN REASONED. Driven end to end on a scratch project: the
+    second run of the same gate was excused by the FIRST run's own bookkeeping -
+    the manifest pointer, the evidence ledger and the journal, none of which a
+    task declares and none of which can fail a typecheck. That is not a corner
+    either: `reference/orchestrator.md` step 2 edits the phase's manifest file
+    (`status`, `attempts`, `startedAt`) before the executor is spawned, so the
+    plan's own state is dirty and undeclared at EVERY gate run in the real
+    workflow, and a rule reading tree state alone would excuse every red that
+    measured nothing, permanently, and make the paragraph above unreachable.
+    So the dirty path must be one the RUN ITSELF BLAMED: the reported row's
+    typecheck printed `other/sibling.ts(2,1): error TS1005` - the very file the
+    sibling executor was half way through writing. That is attribution evidence
+    rather than a coincidence of timing, and it is the operation the excuse now
+    reads instead of the weather.
+
+    WHAT THAT COSTS, STATED RATHER THAN FOUND LATER: a runner that prints no
+    paths, or prints them in a shape `files_named` does not recognise, never
+    reaches this arm however dirty the tree was. Its red STANDS - which is the
+    direction an excuse has to be wrong in, because the other one is a verdict
+    nobody records and a retry nobody spends.
+
+    IT ONLY EVER DISPLACES `failed`, so it is asked only where there is a red to
+    attribute. A gate that came back green having measured nothing is
+    `no-checks`, which blames nobody and names its own repair (the gate skipped
+    everything - fix the gate), and a tree somebody else made dirty explains none
+    of that.
+
+    THE ZERO IS THE RUN'S, READ FROM `ran_total` AND NOWHERE ELSE. That is the
+    same number `measured_state` reads one row down to write `nothing` on a step,
+    and asking the two questions off two values is how a row and a verdict come
+    to disagree about one run. It is a POSITIVE zero: `ran_total is None` means no
+    runner in this gate published a count, which is not evidence that nothing ran
+    - the rule `run_status` and `never_started` already follow.
+    """
+    if not failed or ran_total != 0:
+        return None, None
+    paths, basis = dirty_outside(before, owns)
+    if not paths:
+        return None, None
+    blamed = [line for line in paths if _named_by_run(line, named)]
+    if not blamed:
+        return None, None
+    return blamed, ("this gate measured nothing and came back red naming a file "
+                    "that was already dirty when it started and that this work "
+                    "does not declare, so its red is not evidence about this "
+                    "work: %s; the run named %s"
+                    % (basis, _output.some_of(blamed, budget=SAMPLE_BUDGET)))
+
+
 # --- what state was actually tested -------------------------------------------
 # `head` cannot answer this and never could. A TASK gate runs BEFORE the task
 # commit, so a run executes against HEAD plus staged edits plus unstaged ones plus
@@ -1435,9 +1568,9 @@ def failed_steps(steps):
             if st["exit"] != 0 and not st.get("outcome")]
 
 
-def run_status(steps, failed, ran_total, cancelled_by, refused):
-    """The run's one word, from what its steps did, what stopped it, and what it
-    rewrote.
+def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
+    """The run's one word, from what its steps did, what stopped it, what it
+    rewrote, and what the tree already carried.
 
     PRECEDENCE, AND WHY IT IS THIS ORDER. `failed` sits ABOVE the no-verdict
     words deliberately: a step that ran and exited non-zero is a CERTAIN red, and
@@ -1487,7 +1620,17 @@ def run_status(steps, failed, ran_total, cancelled_by, refused):
     it as an observation mark beside the badge. What may never happen again is
     `passed`.
 
-    `cancelled_by` AND `refused` HAVE NO DEFAULT. There is one production caller,
+    AND `failed` IS THE ONLY WORD `unattributable` DISPLACES, which is where the
+    F323 objection lands: a red excused is a verdict nobody records and a retry
+    nobody spends, so the excuse is allowed exactly where the red says nothing
+    about the work - `unattributable_failure` is the whole of that judgement and
+    holds both halves of it. Every more specific no-verdict word above still wins
+    on a run that is also one of them: `could-not-run` here names a run whose red
+    cannot be read, and `timed-out` names the step that was stopped at its bound,
+    which is the finding with the repair attached.
+
+    `cancelled_by`, `refused` AND `unattributable` HAVE NO DEFAULT. There is one
+    production caller,
     and an argument nobody has to pass is an argument a later caller forgets -
     which would spell an interrupted run `passed` and lose it silently, and is
     literally how F280 got here: a `run_status` that could not see the tree
@@ -1498,11 +1641,16 @@ def run_status(steps, failed, ran_total, cancelled_by, refused):
     on it is what halted correct runs.
     """
     outcomes = [st.get("outcome") for st in steps]
-    if failed:
+    if failed and not unattributable:
         return "failed"
     if TIMED_OUT in outcomes:
         return TIMED_OUT
     if CANNOT_RUN in outcomes:
+        return CANNOT_RUN
+    if failed:
+        # Reached only through the guard on the arm above, so this is the excused
+        # red and nothing else: the two words between them describe a run this
+        # one does not, and a red that was never excused has already returned.
         return CANNOT_RUN
     if cancelled_by is not None:
         return CANCELLED
@@ -1645,6 +1793,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     # own subject.
     refused, _reported = attributed_mutations(mutated, owned_changes,
                                               foreign_changes)
+    # OFF `before`, NEVER OFF `mutated`. The bracket above answers what moved
+    # DURING the run and the reported row's answer to that was `[]`; the paths
+    # that broke that gate were already dirty when the first command started, and
+    # `before` is the only snapshot that holds them.
+    not_attributable, attribution = unattributable_failure(failed, ran_total,
+                                                           before, owns, named)
     return {"steps": steps, "testedState": state,
             "treeMutated": mutated, "treeBasis": basis,
             # THE FULL SET STAYS `treeMutated`, and the split is additive: the
@@ -1655,8 +1809,15 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             "treeMutatedForeign": foreign_changes,
             "ranTotal": ran_total, "countsBasis": counts_basis(steps),
             "durationMs": _elapsed_ms(started),
+            # THE PATHS AND THE SENTENCE TRAVEL TOGETHER OR NOT AT ALL. Both are
+            # None on the ordinary run, which is this file's shape for a claim
+            # nobody is making: a basis with no claim under it is noise, and a
+            # verdict word with no basis beside it is the thing this whole file
+            # exists to prevent.
+            "notAttributable": not_attributable,
+            "attributionBasis": attribution,
             "status": run_status(steps, failed, ran_total, cancelled_by,
-                                 refused),
+                                 refused, not_attributable),
             # ALWAYS PRESENT, None WHEN NOTHING STOPPED THE RUN - the shape
             # `treeMutated` and `overlap` already use. A key that appeared only on
             # an interrupted run could not be told from a build that does not
@@ -1676,7 +1837,12 @@ def render(res, out=print):
                "%d check(s) ran" % ran if ran is not None
                else "check count not knowable from this runner"))
     code = E_OK
-    if res["failed"]:
+    # THE SAME LIST THE STATUS WORD READS, for F280's reason: the verdict line and
+    # the record disagreeing about one run is the fault this file keeps being
+    # repaired for, and `GATE RED` over a run whose row says `could-not-run` is
+    # exactly that shape with the halves swapped.
+    excused = res.get("notAttributable")
+    if res["failed"] and not excused:
         out("GATE RED: %s" % ", ".join(res["failed"]))
         code = E_FAIL
     # THE NO-VERDICT WORDS HAD NO ARM HERE AT ALL, and that was worth finding
@@ -1707,12 +1873,38 @@ def render(res, out=print):
                  if st.get("outcome") == CANNOT_RUN and not st.get("signal")]
     stalled = [st["name"] for st in res["steps"]
                if st.get("outcome") == TIMED_OUT]
-    if unstarted or killed:
+    # THE THIRD MEMBER REACHES THE BANNER THE DOCUMENT ALREADY KEYS ON, which is
+    # the whole of how it costs no retry: `reference/orchestrator.md` keys its
+    # infrastructure arm on this literal - "`GATE COULD NOT RUN` is not the
+    # task's failure ... do NOT spend a retry" - so a member printed under a
+    # banner of its own would be a line that document has never heard of, and an
+    # orchestrator following it would fall through to "gates RAN and are red" and
+    # burn every `maxAttempts` on a tree state no code change fixes. Nothing here
+    # touches `attempts`: this script never has, the signal member did not either,
+    # and a second convention for the same decision is one that can disagree.
+    #
+    # AND IT IS A RUN-LEVEL MEMBER WHERE THE OTHER TWO ARE A STEP'S. The steps
+    # that went red really did exit non-zero and each one's row still says so;
+    # what cannot be attributed is the run, because the fact that excuses it is a
+    # fact about the TREE the whole run was measured against.
+    if unstarted or killed or excused:
         out("GATE COULD NOT RUN: %s reached no verdict. That is an "
             "INFRASTRUCTURE failure and not this work's, so it is not a red "
             "suite and must not be recorded as one. Fix the runner and re-run; "
             "do not spend a retry on the task."
-            % (", ".join(unstarted + [st["name"] for st in killed]),))
+            % (", ".join(unstarted + [st["name"] for st in killed]
+                         + (res["failed"] if excused else [])),))
+        if excused:
+            out("  %s came back RED having measured nothing, and it named a "
+                "file that was ALREADY dirty when the run started and that this "
+                "work does not declare: %s. A whole-program check fails on "
+                "somebody else's half-written file whatever the work under test "
+                "is, so this red is not evidence about it. Re-run once nobody "
+                "else is writing here."
+                % (", ".join(res["failed"]),
+                   _output.some_of(excused, budget=SAMPLE_BUDGET)))
+            if res.get("attributionBasis"):
+                out("  basis: %s" % (res["attributionBasis"],))
         if unstarted:
             out("  %s never got as far as a check - a missing command, a runner "
                 "that died before its first test, a port it could not bind."
@@ -1785,13 +1977,16 @@ def render(res, out=print):
             "else is running before you commit.")
     if (owned_changes or foreign_changes) and res.get("treeBasis"):
         out("  basis: %s" % res["treeBasis"])
-    if res["ranTotal"] == 0 and not unstarted and not killed:
+    if res["ranTotal"] == 0 and not unstarted and not killed and not excused:
         # `unstarted` OWNS THIS SENTENCE WHEN IT FIRES. The claim below is "that
         # is exit 0", and a step that died at exit 48 having collected no test
         # makes it false - the same zero, a different fact, and the line above
         # already said which. `killed` is here for exactly that reason one cause
         # over: a runner that printed `0 passed` and was then SIGKILLed also
         # reaches a positive zero, and "that is exit 0" is false of `-9` too.
+        # `excused` is the third: that zero sits beside a step that came back
+        # RED, so "that is exit 0" is false of it as well, and the banner above
+        # has already said what the zero means on this run.
         out("NO CHECK RAN: every step reported zero checks. That is exit 0 and it "
             "is not a verdict - a gate that skipped everything and a gate that "
             "verified everything are the same exit code, and this is the one that "

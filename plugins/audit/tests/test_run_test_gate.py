@@ -709,16 +709,17 @@ def _cases(check):
           res_zm["status"] == "no-checks" and res_zm["ranTotal"] == 0
           and res_zm["treeMutatedOwned"] != [])
     os.remove(os.path.join(own, "src", "mine.ts"))
-    _ok4, _why4 = _harness.attempt(M.run_status, [], [], None, None)
-    check("ow12 `run_status` takes the refused list WITH NO DEFAULT, so a "
+    _ok4, _why4 = _harness.attempt(M.run_status, [], [], None, None, [])
+    check("ow12 `run_status` takes the refused list AND the unattributable one "
+          "WITH NO DEFAULT, so a "
           "caller that forgets it is a TypeError rather than a run silently "
           "spelled `passed`. That is not defensiveness: an argument nobody has "
           "to pass is how F280 arrived, and this is the arm that stops it "
           "coming back. %r" % (_why4,),
           _ok4 is False and _why4.startswith("TypeError:")
-          # ...and the five-argument call still answers, so the case above is a
+          # ...and the complete call still answers, so the case above is a
           # missing ARGUMENT and not a function that raises whatever it is given.
-          and M.run_status([], [], None, None, []) == "passed")
+          and M.run_status([], [], None, None, [], None) == "passed")
     _am_ref, _am_rep = M.attributed_mutations(None, None, None)
     _am_ref2, _am_rep2 = M.attributed_mutations([" M a.py"], None, None)
     _am_ref3, _am_rep3 = M.attributed_mutations(
@@ -1039,6 +1040,329 @@ def _cases(check):
           # basis for this word IS `ran`, and a row carrying the reading alone
           # would be a claim whose evidence stayed behind.
           and [r["steps"][0].get("ran") for r in _rows] == [4, 0, None])
+
+    # --- and when that zero moves the verdict ------------------------------
+    # THE ROW THAT SURVIVED. Of the three "false reds" the operator brought, two
+    # were withdrawn on the raw evidence - real failures with counts in the
+    # thousands. The third was a task gate whose typecheck exited non-zero and
+    # whose jest step collected nothing, run in a tree a SIBLING EXECUTOR was
+    # editing at the same time: `tsc` compiles the whole program, so a
+    # half-written file belonging to another task fails it regardless of whose
+    # file it is.
+    #
+    # AND ITS `treeMutated` WAS EMPTY, which is what made it unreadable. The
+    # mutation bracket compares before to after, the sibling's file was ALREADY
+    # half-written when the gate started, so nothing moved inside the window and
+    # the row said KNOWN CLEAN. The evidence was in the BEFORE snapshot, which no
+    # verdict looked at.
+    attrib = _harness.fixture_root("run-test-gate-attribution-")
+    subprocess.run(["git", "init", "-q", attrib], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.makedirs(os.path.join(attrib, "src"))
+    os.makedirs(os.path.join(attrib, "other"))
+    with open(os.path.join(attrib, "base.txt"), "w") as fh:
+        fh.write("base\n")
+    for arg in (["add", "--", "base.txt"],
+                ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
+        subprocess.run(["git", "-C", attrib] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _sibling_half = os.path.join(attrib, "other", "sibling.ts")
+
+    def _reported_gate(_project, command, _timeout=None):
+        # The two steps of the reported row. `tsc --noEmit` prints diagnostics
+        # and no summary any reader here can count, so its `ran` is None; jest
+        # with nothing to collect prints a positive zero at a non-zero exit.
+        if "tsc" in command:
+            return 2, ("other/sibling.ts(2,1): error TS1005: '}' expected.\n"
+                       "Found 1 error.\n"), {}
+        return 1, "Tests:       0 total\nNo tests found, exiting with code 1\n", {}
+
+    _gate_cmds = [("typecheck", "tsc --noEmit"), ("test", "npx jest")]
+    with open(_sibling_half, "w") as fh:
+        fh.write("export const half = {\n")
+    res_ua = M.run_gate(attrib, _gate_cmds, runner=_reported_gate,
+                        owns=["src/mine.ts"])
+    lines = []
+    code_ua = M.render(res_ua, out=lines.append)
+    text_ua = "\n".join(lines)
+    check("ua1 THE FAULT: a gate that MEASURED NOTHING and came back red, in a "
+          "tree that already carried changes outside the declared scope, is "
+          "`could-not-run` and not `failed`. The word costs no retry and signs "
+          "nothing off, which is the pair of things this run has earned: %r"
+          % ((res_ua["status"], res_ua["failed"], res_ua["notAttributable"]),),
+          res_ua["status"] == M.CANNOT_RUN
+          # ...and the steps keep their own answers, which is what makes the
+          # excuse checkable rather than a mute: the red step is still named.
+          and res_ua["failed"] == ["typecheck"]
+          and res_ua["notAttributable"] == ["?? other/sibling.ts"]
+          and res_ua["ranTotal"] == 0)
+    check("ua2 ...and the bracket that was SUPPOSED to see this saw nothing. "
+          "`treeMutated` is the EMPTY LIST - the value that means known clean - "
+          "because the sibling's file was already half-written when the run "
+          "started, so it moved no line between the two snapshots. The fact is "
+          "in the BEFORE snapshot and nowhere else, and that is the whole "
+          "difference between this condition and `classify_mutations`: %r"
+          % ((res_ua["treeMutated"], res_ua["notAttributable"]),),
+          res_ua["treeMutated"] == [] and res_ua["treeMutatedForeign"] == []
+          and res_ua["notAttributable"])
+    check("ua3 ...and the terminal says the same word as the record. `GATE RED` "
+          "is gone, the banner is the literal `reference/orchestrator.md` keys "
+          "its infrastructure arm on - which is how this member costs no retry, "
+          "the script touching `attempts` nowhere - and the line under it names "
+          "the paths that were already dirty: %r" % (text_ua[:120],),
+          code_ua == M.E_FAIL
+          and "GATE COULD NOT RUN" in text_ua and "GATE RED" not in text_ua
+          and "do not spend a retry" in text_ua
+          and "other/sibling.ts" in text_ua
+          and "typecheck" in text_ua.split("GATE COULD NOT RUN")[1]
+          # ...and the zero does not get the sentence that calls it exit 0.
+          and "NO CHECK RAN" not in text_ua
+          and "basis:" in text_ua)
+
+    os.remove(_sibling_half)
+    res_clean = M.run_gate(attrib, _gate_cmds, runner=_reported_gate,
+                           owns=["src/mine.ts"])
+    lines = []
+    code_clean = M.render(res_clean, out=lines.append)
+    text_clean = "\n".join(lines)
+    check("ua4 THE CASE THAT MUST NOT MOVE, and it is the whole reason the "
+          "condition has two halves: the SAME gate, measuring the same nothing, "
+          "on a tree nobody else was writing to, is still `failed` and still "
+          "says GATE RED. A task whose own test file does not compile collects "
+          "nothing too, and excusing that records no verdict, spends no retry "
+          "and hides the defect: %r"
+          % ((res_clean["status"], res_clean["notAttributable"],
+              res_clean["attributionBasis"]),),
+          res_clean["status"] == "failed" and res_clean["failed"] == ["typecheck"]
+          and res_clean["notAttributable"] is None
+          and res_clean["attributionBasis"] is None
+          and "GATE RED" in text_clean and code_clean == M.E_FAIL)
+
+    def _own_file_broken(_project, command, _timeout=None):
+        # THE HONEST RED IN ITS PUREST SHAPE: the work's OWN half-written file,
+        # named by its OWN typecheck, with the suite collecting nothing after
+        # it. Every clause of the condition is satisfied except the ownership
+        # split, so this is the case that goes red the moment that split stops
+        # being asked.
+        if "tsc" in command:
+            return 2, "src/mine.ts(2,1): error TS1005: '}' expected.\n", {}
+        return 1, "Tests:       0 total\nNo tests found\n", {}
+
+    with open(os.path.join(attrib, "src", "mine.ts"), "w") as fh:
+        fh.write("export const mine = {\n")
+    res_owndirt = M.run_gate(attrib, _gate_cmds, runner=_own_file_broken,
+                             owns=["src/mine.ts"])
+    check("ua5 ...and dirt this work DECLARES excuses nothing either, which is "
+          "the same rule read off the other half of the split. The tree is "
+          "dirty, nothing was measured, and the only uncommitted file is the "
+          "work's own - so there is nobody else to attribute the red to and the "
+          "word stays `failed`: %r"
+          % ((res_owndirt["status"], res_owndirt["notAttributable"],
+              M.dirty_outside(M._porcelain(attrib), ["src/mine.ts"])),),
+          res_owndirt["status"] == "failed"
+          and res_owndirt["notAttributable"] is None
+          and M.dirty_outside(M._porcelain(attrib), ["src/mine.ts"])[0] == [])
+    os.remove(os.path.join(attrib, "src", "mine.ts"))
+
+    with open(_sibling_half, "w") as fh:
+        fh.write("export const half = {\n")
+    res_noscope = M.run_gate(attrib, _gate_cmds, runner=_reported_gate, owns=[])
+    _no_paths, _no_basis = M.dirty_outside(M._porcelain(attrib), [])
+    check("ua6 THE OVER-FIRE DIRECTION: with NO declared files every dirty path "
+          "is trivially 'outside the declared scope', so a reader taking the "
+          "empty scope for foreign dirt would excuse every failing run on every "
+          "dirty tree - real failures turned into infrastructure, in a "
+          "hash-chained row. Nothing is attributed where nothing can be: %r"
+          % ((res_noscope["status"], _no_paths, _no_basis),),
+          res_noscope["status"] == "failed"
+          and res_noscope["notAttributable"] is None
+          and _no_paths is None and "declares no files" in _no_basis)
+
+    def _red_with_checks(_project, command, _timeout=None):
+        # The two rows the operator WITHDREW: red for cause, having really
+        # measured. The tree is as dirty as ua1's and this must stay `failed`.
+        if "tsc" in command:
+            return 2, "src/mine.ts(2,1): error TS1005: '}' expected.\n", {}
+        return 1, "Tests:       3 failed, 1200 passed, 1203 total\n", {}
+
+    res_measured = M.run_gate(attrib, _gate_cmds, runner=_red_with_checks,
+                              owns=["src/mine.ts"])
+    check("ua7 ...and a red that MEASURED is untouched by a dirty tree. The two "
+          "rows withdrawn from the report came back red having run checks in "
+          "the thousands, and the column that separated them from ua1 was the "
+          "count - so a condition reading the tree alone would have excused "
+          "them all: %r"
+          % ((res_measured["status"], res_measured["ranTotal"],
+              res_measured["notAttributable"]),),
+          res_measured["status"] == "failed"
+          and res_measured["ranTotal"] == 1203
+          and res_measured["notAttributable"] is None)
+
+    def _red_uncountable(_project, _command, _timeout=None):
+        # eslint's shape: a real red from a runner no reader here can count. It
+        # NAMES the dirty foreign file, so the only thing keeping this red is
+        # the count - which is the arm this case is about.
+        return 1, "other/sibling.ts\n  2:1  error  Parsing error\n", {}
+
+    res_unknown = M.run_gate(attrib, [("lint", "eslint .")],
+                             runner=_red_uncountable, owns=["src/mine.ts"])
+    check("ua8 ...and NOT-KNOWABLE is not nothing, on this condition as on "
+          "every other one in the file. `ranTotal is None` means no runner in "
+          "this gate published a count, which is not evidence that nothing ran "
+          "- and reading it as one would excuse every red from every runner "
+          "outside the summary table whenever anything else was dirty: %r"
+          % ((res_unknown["ranTotal"], res_unknown["steps"][0].get("measured"),
+              res_unknown["status"]),),
+          res_unknown["ranTotal"] is None
+          and res_unknown["steps"][0].get("measured") == M.MEASURED_UNKNOWN
+          and res_unknown["status"] == "failed"
+          and res_unknown["notAttributable"] is None)
+
+    def _skips_everything(_project, _command, _timeout=None):
+        return 0, ("check yaml.....................Skipped\n"
+                   "black.........................Skipped\n"), {}
+
+    res_zero_green = M.run_gate(attrib, [("lint", "pre-commit run --all-files")],
+                                runner=_skips_everything, owns=["src/mine.ts"])
+    lines = []
+    M.render(res_zero_green, out=lines.append)
+    check("ua9 ...and `failed` is the ONLY word this displaces. A gate that "
+          "came back green having measured nothing is `no-checks` - it blames "
+          "nobody and names its own repair, the gate skipped everything - and a "
+          "tree somebody else made dirty explains none of that. The excuse is "
+          "asked only where there is a red to attribute: %r"
+          % ((res_zero_green["status"], res_zero_green["ranTotal"],
+              res_zero_green["notAttributable"]),),
+          res_zero_green["status"] == "no-checks"
+          and res_zero_green["notAttributable"] is None
+          and "NO CHECK RAN" in "\n".join(lines))
+
+    _ua_row = _ev_io.row_for(attrib, res_ua, "task",
+                             {"phaseId": "P1", "taskId": "P1.1"},
+                             {"runId": "run-attrib", "ts": "2026-09-13T00:00:00Z"})
+    _clean_row = _ev_io.row_for(attrib, res_clean, "task",
+                                {"phaseId": "P1", "taskId": "P1.1"},
+                                {"runId": "run-clean",
+                                 "ts": "2026-09-13T00:00:00Z"})
+    check("ua10 ...and the BASIS crosses into the committed row, because this "
+          "is the one member of the class the row cannot be read back for: "
+          "`steps[].outcome` carries the members a step observes and "
+          "`testedState.dirtyBasis` counts the dirty paths without saying whose "
+          "they were, so a `could-not-run` recorded here would have arrived "
+          "with nothing under it. Written only where there is something to "
+          "write, like `cancelledBy`: %r"
+          % ((_ua_row.get("attributionBasis"),
+              "attributionBasis" in _clean_row),),
+          "other/sibling.ts" in (_ua_row.get("attributionBasis") or "")
+          and _ua_row.get("status") == M.CANNOT_RUN
+          # ...and the raw path list does NOT, which is the division `treeBasis`
+          # already makes: the bounded sentence is what a reader needs and an
+          # unbounded list is what a committed row may not grow.
+          and "notAttributable" not in _ua_row
+          and "attributionBasis" not in _clean_row
+          and _clean_row.get("status") == "failed")
+
+    # THE SHAPE THAT REACHES THE NEW ARMS, and the mutation battery is what
+    # found it missing. In every case above, the step that collected nothing
+    # also exited non-zero, so `never_started` had already put `could-not-run`
+    # on it - and the status arm, the banner and the `NO CHECK RAN` suppression
+    # were all satisfied by that EXISTING member before this one was consulted.
+    # Deleting each of the three new branches left the suite green. Here the
+    # zero comes back at exit 0, so no step carries an outcome at all and the
+    # run-level condition is the only thing that can move anything.
+    def _red_then_silent_zero(_project, command, _timeout=None):
+        if "tsc" in command:
+            return 2, "other/sibling.ts(2,1): error TS1005: '}' expected.\n", {}
+        return 0, "Tests:       0 total\n", {}
+
+    res_runlevel = M.run_gate(attrib, _gate_cmds, runner=_red_then_silent_zero,
+                              owns=["src/mine.ts"])
+    lines = []
+    code_rl = M.render(res_runlevel, out=lines.append)
+    text_rl = "\n".join(lines)
+    check("ua11 a run whose steps each carry NO outcome of their own still "
+          "moves: the zero came back at exit 0, so nothing inferred "
+          "`could-not-run` for a step, and the red belongs to a step that "
+          "published no count. The word, the banner and the retry sentence "
+          "come from the run-level condition or from nowhere: %r"
+          % ((res_runlevel["status"],
+              [st.get("outcome") for st in res_runlevel["steps"]],
+              res_runlevel["failed"], code_rl),),
+          res_runlevel["status"] == M.CANNOT_RUN
+          and [st.get("outcome") for st in res_runlevel["steps"]] == [None, None]
+          and res_runlevel["failed"] == ["typecheck"] and code_rl == M.E_FAIL
+          and "GATE COULD NOT RUN" in text_rl and "GATE RED" not in text_rl
+          and "do not spend a retry" in text_rl
+          # ...and the zero is not handed the sentence that calls it exit 0.
+          # One step here really did exit 0 and the other exited 2, so `NO CHECK
+          # RAN: ... That is exit 0` would be false of the run it described.
+          and "NO CHECK RAN" not in text_rl)
+
+    os.remove(_sibling_half)
+    res_rl_clean = M.run_gate(attrib, _gate_cmds, runner=_red_then_silent_zero,
+                              owns=["src/mine.ts"])
+    lines = []
+    code_rlc = M.render(res_rl_clean, out=lines.append)
+    check("ua12 ...and the same run on a tree nobody else was writing to is "
+          "`failed` and says GATE RED, which is the half a repair that always "
+          "fires would take away. Both of these reach the new arms; only one of "
+          "them may come out of them: %r"
+          % ((res_rl_clean["status"], res_rl_clean["notAttributable"],
+              code_rlc),),
+          res_rl_clean["status"] == "failed"
+          and res_rl_clean["notAttributable"] is None
+          and code_rlc == M.E_FAIL and "GATE RED" in "\n".join(lines)
+          and "GATE COULD NOT RUN" not in "\n".join(lines))
+
+    # THE THIRD CONJUNCT, AND IT WAS MEASURED RATHER THAN REASONED. Driven end
+    # to end on a scratch project, the SECOND run of this gate was excused by
+    # the FIRST run's own bookkeeping: the manifest pointer, the evidence ledger
+    # and the journal are dirty, undeclared by any task, and incapable of
+    # failing a typecheck. `reference/orchestrator.md` step 2 makes that the
+    # normal state rather than an accident - it edits the phase's manifest file
+    # before the executor is spawned - so a rule reading tree state alone
+    # excuses every red that measured nothing and ua4 becomes unreachable in the
+    # real workflow. The dirty path has to be one the RUN ITSELF BLAMED.
+    with open(os.path.join(attrib, "other", "bookkeeping.json"), "w") as fh:
+        fh.write("{\"attempts\": 2}\n")
+    res_ambient = M.run_gate(attrib, _gate_cmds, runner=_red_then_silent_zero,
+                             owns=["src/mine.ts"])
+    _amb_paths, _amb_basis = M.dirty_outside(M._porcelain(attrib),
+                                             ["src/mine.ts"])
+    check("ua13 ...and dirt the run NEVER NAMED excuses nothing, which is what "
+          "keeps ua4 reachable outside a fixture. The tree carries an "
+          "undeclared file - the shape the orchestrator's own `attempts` edit "
+          "has at every gate run - and no step's output mentions it, so there "
+          "is no evidence tying the red to it and the red stands: %r"
+          % ((res_ambient["status"], _amb_paths,
+              res_ambient["notAttributable"]),),
+          res_ambient["status"] == "failed"
+          and res_ambient["notAttributable"] is None
+          # ...and the path really WAS foreign dirt, so the case is about the
+          # naming arm and not about a tree that happened to be clean.
+          and _amb_paths == ["?? other/bookkeeping.json"])
+    with open(_sibling_half, "w") as fh:
+        fh.write("export const half = {\n")
+    res_blamed = M.run_gate(attrib, _gate_cmds, runner=_red_then_silent_zero,
+                            owns=["src/mine.ts"])
+    check("ua14 ...and the PAIRED POSITIVE separates the two in one tree: with "
+          "both files dirty and undeclared, only the one the typecheck printed "
+          "is carried. A repair that handed over the whole foreign set would "
+          "pass ua1 exactly as this does and would name a file nothing blamed: "
+          "%r" % ((res_blamed["status"], res_blamed["notAttributable"]),),
+          res_blamed["status"] == M.CANNOT_RUN
+          and res_blamed["notAttributable"] == ["?? other/sibling.ts"]
+          # ...and the basis keeps the two apart rather than merging them: the
+          # whole foreign set is what was dirty, and the tail is the part the
+          # run blamed. A reader gets both and can tell which is which.
+          and "bookkeeping" in (res_blamed["attributionBasis"] or "")
+          and "bookkeeping" not in
+          (res_blamed["attributionBasis"] or "").split("the run named")[-1]
+          and "sibling.ts" in
+          (res_blamed["attributionBasis"] or "").split("the run named")[-1])
+    os.remove(os.path.join(attrib, "other", "bookkeeping.json"))
+    os.remove(_sibling_half)
 
     # --- a failing gate, and both facts at once ---------------------------
     def _fail_and_rewrite(project, _command, _timeout=None):

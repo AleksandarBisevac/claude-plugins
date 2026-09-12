@@ -323,6 +323,19 @@ def row_for(project, result, scope, ids, identity, published=None):
     # just as well.
     if result.get("cancelledBy") is not None:
         row["cancelledBy"] = str(result["cancelledBy"])
+    # ...AND THE SECOND SUCH WORD, FOR THE SAME REASON AND NOT BY ANALOGY. A
+    # `could-not-run` reached because the tree was ALREADY dirty outside the
+    # declared scope is the one member of that class the row cannot be read back
+    # for: `steps[].outcome` carries the two members a step observes, `ran` and
+    # `measured` carry the zero, but the state that excused the red was in a
+    # `git status` snapshot taken before the first command and nothing else here
+    # holds it -- `testedState.dirtyBasis` counts those paths without saying
+    # whose they were. So the sentence crosses, bounded, exactly as
+    # `run-test-gate.render` prints it; the raw path list does not, which is the
+    # division `treeBasis` already makes for the ownership split. Written only
+    # when there is something to write, like the key above it.
+    if result.get("attributionBasis") is not None:
+        row["attributionBasis"] = str(result["attributionBasis"])
     # WHERE THE `steps` LIST CAME FROM (F312). `steps` names the entries that
     # executed and carries no declaration beside them, and the manifest that
     # declared them is not on the row -- so two rows with different `steps` differ
