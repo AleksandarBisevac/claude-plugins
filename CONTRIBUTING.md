@@ -72,7 +72,8 @@ the script is only a caller:
 # the `--covered` skip) and a third in verify.sh that checked LESS (the exit code
 # alone) — so a file that exited 0 having asserted nothing was green locally and red
 # in CI. The runner holds the union of all three rules and walks hooks/, scripts/,
-# tests/ AND tools/ recursively through `_output.py_files`, so a file added one
+# tests/, tools/ AND .claude/hooks/ recursively through `_output.py_files`, so a
+# file added one
 # directory down is swept without anyone editing a glob.
 #
 # IT SWEEPS tests/ TOO, which is why the second `find` loop that used to sit here is

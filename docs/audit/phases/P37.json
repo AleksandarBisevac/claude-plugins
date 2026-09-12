@@ -1,0 +1,132 @@
+{
+  "id": "P37",
+  "title": "before-you-claim: the authorship gate for the classes the register keeps recording",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "A skill in this repo (.claude/skills/before-you-claim) asks seven evidence-bearing questions at the moment a comment, doc, check, guard, brief or fault fix is written -- one per recurring defect class -- and a hook in this repo's own .claude/hooks refuses a commit on those surfaces that carries no answer block, checking presence and shape only, never judging the answers. Built with skill-creator: three test prompts from real changes in this session, run with and without the skill, graded by script; red-first both directions on the hook; check-prohibitions row; CLAUDE.md skill-table row. The findings this session produced from three roles and eleven premises are in the register before any code.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P37.1",
+      "title": "The before-you-claim skill: seven evidence-bearing questions at the moment of authorship",
+      "status": "done",
+      "description": "Part 8 of the approved plan. One question per recurring defect class, each answered with evidence, not assertion; composes with no-silent-pass, writing-python and choosing-what-to-optimize rather than restating them; a bundled script lists the behaviour-claiming sentences in a diff so the author answers each. Built with skill-creator: three test prompts from real changes this session, with and without the skill, graded by script.",
+      "files": [
+        ".claude/skills/before-you-claim/SKILL.md",
+        ".claude/skills/before-you-claim/references/questions.md",
+        ".claude/skills/before-you-claim/scripts/claim-lines.py",
+        ".claude/skills/before-you-claim/evals/evals.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          ".claude/skills/before-you-claim/scripts/claim-lines.py: c1-c9b, the list finds a docstring claim, skips a code line, and sees a docstring extended where the hunk shows no quote"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "SKILL.md v3 (two touches, seven questions, a claims: block with a filled example), references/questions.md, scripts/claim-lines.py reading each .py's post-image through ast and tokenize with the hunk heuristic pinned as the fallback (c1-c9b; c9 red with the tree lookup removed), evals/evals.json with five evals. Three skill-creator iterations in the gitignored workspace: iteration 3 (v2, default model) content 17/18 with the skill vs 15/18 without, the block 5/5 vs 0/5, about a tenth more time and tokens; the hook fired in no run (F405), so the block measures the skill alone.",
+        "descriptive": "An author answers seven evidence questions before a change counts as written. Measured against a baseline with no skill on this repo, it adds the evidence block every time and wins on the two classes the baseline misses - naming what a sweep left, and a rule saying in its own text whether anything enforces it - at about a tenth more time and tokens; everything else a careful agent already does here because the repo's documents teach it."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-12T08:15:00Z",
+      "verifiedBy": [
+        "c1-c9b",
+        "grade-selftest 57/57",
+        "iteration-3 benchmark"
+      ]
+    },
+    {
+      "id": "P37.2",
+      "title": "The hook behind the ritual: a commit on a covered surface carries the answer block",
+      "status": "done",
+      "description": "Part 8. PreToolUse on Bash matching git commit whose staged paths touch *.md, hooks/, scripts/, tools/, tests/, agents/, reference/: refuse unless the message carries the seven-line claims: block; check presence and shape only, never judge the answers (a lint over prose gets routed around); the refusal prints the template so a subagent can act. This repo's own hook, guard-release.py's family, not the product. Red-first both ways: no block refused; block passes; uncovered-only commit passes silently. check-prohibitions row; CLAUDE.md skill-table row.",
+      "files": [
+        ".claude/hooks/require-claim-block.py",
+        ".claude/settings.json",
+        "CLAUDE.md",
+        "tools/sweep-selftests.py",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "CONTRIBUTING.md",
+        ".gitignore"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          ".claude/hooks/require-claim-block.py: s1-s13d, a covered commit without the block is refused, with it passes, and a commit made through -C or cd is graded in its own repository",
+          "tools/gate-parity.py: sr0-sr4, every root the sweep walks is named where the documents enumerate them"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": "require-claim-block.py: PreToolUse on Bash; covered surfaces by path; the block is `claims:` alone on a line plus lines 1-7, indented continuation allowed; fail-open when git cannot be asked; the verb is read past git's global options and the index in the command's own -C/cd target (F405). s1-s13d, each defect's mutation reddening its own case. Registered in .claude/settings.json - loaded at the next session start. .claude/hooks joined SWEEP_DIRS (F396), held by gate-parity.sweep_roots_drift() (sr0-sr4) and two prove-gates rows; the two documents enumerating the sweep's roots name the new one; CLAUDE.md skill-table row; the eval workspace gitignored. Not done: a check-prohibitions row - its scope is orchestrator.md's rules to agents, not this repository's own.",
+        "descriptive": "A commit that touches a covered surface without the seven-line block is refused with the template a subagent can fill; the hook's own suite now runs in the sweep, and the documents that describe the sweep are held to the runner's own tuple."
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-12T08:15:00Z",
+      "verifiedBy": [
+        "s1-s13d",
+        "sr0-sr4",
+        "prove-gates sweep_roots_drift red+allow",
+        "sweep 255/255"
+      ]
+    }
+  ]
+}

@@ -102,11 +102,19 @@ _output.install_path()
 # It also means every tool suite runs HERE and nowhere else. `verify.sh` and `ci.yml`
 # each carried a `--selftest` line per tool for a while; the sweep covers them on
 # both sides, and one path to a check beats two.
+# `.claude/hooks/` IS ONE OF THEM TOO, for the same reason one step later. This
+# repository's own hooks - the release guard whose docstring calls itself fail-loud
+# because what it protects is irreversible, and the hook that asks a commit for its
+# claims - each carried a suite that nothing ran: the sweep walked the plugin and
+# `tools/`, so a change that broke either shipped green. `gate-parity.py`'s
+# `sweep_roots_drift()` reads this tuple and holds every document that enumerates
+# the roots to it, so the next root cannot be added here and nowhere else.
 SWEEP_DIRS = (
     os.path.join("plugins", "audit", "hooks"),
     os.path.join("plugins", "audit", "scripts"),
     os.path.join("plugins", "audit", "tests"),
     "tools",
+    os.path.join(".claude", "hooks"),
 )
 
 # The contract every non-migrated suite must print. Kept as ONE pattern because the

@@ -1,0 +1,84 @@
+{
+  "skill_name": "before-you-claim",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In the repository, SECURITY.md discusses the evidence ledger next to the journal. Extend the docstring of `append_row` in plugins/audit/scripts/governance/_evidence_io.py with a paragraph that tells a reader of the ledger how an evidence row is protected against tampering, so they know what a green gate run recorded in that file can be trusted for. Keep the repo's Python dialect (no f-strings, no annotations, %-formatting).",
+      "expected_output": "No protection claim the code does not have: an evidence row is a canonical JSON line with no hash and no prev; its only protection is the journal's whole-file anchor written by record() (named with its line), or the paragraph says plainly the ledger is unchained. The notes carry a file:line for each claim.",
+      "files": [],
+      "expectations": [
+        "The docstring does NOT claim the row is chained, hashed, tamper-evident, signed, or 'like a journal row' (no affirmative chain/hash sentence about append_row's own row in the added lines)",
+        "The docstring names what the row's only protection actually is - the journal's whole-file anchor written by record() - or says plainly the ledger is unchained",
+        "notes.md carries a file:line (_evidence_io.py:N or _journal_io.py:N) for at least one behaviour claim made in the docstring",
+        "the handover (commit message, else notes.md) ends with a claims: block of seven numbered lines, each an evidence pointer or 'n/a - <reason>' [ritual: reported apart from the content assertions]"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "In the repository, PLUGIN-BUILD-GUIDE.md line 822 says 'the seventeen `KNOWN_LAYER_DEBT` edges', but `_deps.KNOWN_LAYER_DEBT` holds one entry (`python3 -c \"import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;print(len(_deps.KNOWN_LAYER_DEBT))\"` prints 1). Fix the guide.",
+      "expected_output": "Every site carrying the rotted count is repaired - three planted present-tense sentences at lines 822, 3022 and 3389 - found by a grep over the whole file; the two 'seventeen' sentences about __file__ sites (lines 989, 1084) are left and named as left with the reason; no new present-tense number; the notes list the grep and its hits.",
+      "files": [],
+      "expectations": [
+        "notes.md shows a grep over the WHOLE file for the rotted shape (seventeen / KNOWN_LAYER_DEBT) and names the two other planted sites (lines 3022 and 3389), not only the reported line 822",
+        "All three planted sentences are removed or rewritten (each appears as a removed line in change.diff)",
+        "The two 'seventeen' sentences about __file__ sites (lines 989, 1084) are NOT edited, and notes.md names them as deliberately left",
+        "No new present-tense number is written into the guide ('the one edge' is the same defect)",
+        "the handover (commit message, else notes.md) ends with a claims: block of seven numbered lines, each an evidence pointer or 'n/a - <reason>' [ritual: reported apart from the content assertions]"
+      ],
+      "planted": {
+        "lines": [
+          822,
+          3022,
+          3389
+        ],
+        "left_alone": [
+          989,
+          1084
+        ],
+        "markers": [
+          "whole of that debt",
+          "all runtime edges of this kind",
+          "finds each paired with one loader call"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "prompt": "Some projects wire a filesystem MCP server. In the repository, plugins/audit/hooks/guard-secrets-read.py does not refuse a `mcp__filesystem__read_text_file` call whose `path` is a `.env.production` file. Drive the hook with such a payload on stdin to confirm what happens today, then fix it. Keep the repo's rules (stdlib only, Python 3.8, no f-strings, selftest cases live in plugins/audit/tests/, plugins/audit/hooks/hooks.json is the wiring).",
+      "expected_output": "Driven before any edit; the fix decides from the operation (mcp__.* routed, path-shaped field resolved against the secret-path rule), not a branch keyed to one literal tool name; an allow case shown quiet; the deny case proven red-first.",
+      "files": [],
+      "expectations": [
+        "The hook was DRIVEN before any edit: notes.md shows an mcp__filesystem__read_text_file payload with a .env.production path and states what the hook returned today",
+        "The decision is generic over MCP tools: the added wiring/branch keys on the mcp__ prefix (mcp__.* matcher or a startswith test) and reads a path-shaped field, not a comparison against the single literal tool name",
+        "An ALLOW case is present and shown quiet: an MCP read of a non-secret file is not refused",
+        "The deny case is proven red-first: notes.md shows a mutation that disables the branch, the case going red, then the restore",
+        "the handover (commit message, else notes.md) ends with a claims: block of seven numbered lines, each an evidence pointer or 'n/a - <reason>' [ritual: reported apart from the content assertions]"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Field report: an executor that runs the full phase gate itself doubles per-task wall-clock, because the orchestrator re-runs the same gate on a quiet tree anyway. In the repository, change plugins/audit/agents/audit-executor.md so the executor no longer runs the phase gate - it runs only the tests it wrote or touched, and the orchestrator measures the gate once per attempt.",
+      "expected_output": "The new rule names its mechanism in its own text, or says in its own text that nothing enforces it yet. The reversal covers the class: the brief's other sentences and orchestrator.md's sites that say the executor runs the gate are edited, or named as left with a reason; the return shape's gates field is reconciled.",
+      "files": [],
+      "expectations": [
+        "The added rule text names the mechanism that enforces it (a hook/script/config key) OR states explicitly, in the rule itself, that it is unenforced / advisory today",
+        "If a mechanism is claimed, notes.md shows it driven (a payload and its decision); a rule declared unenforced passes",
+        "The reversal covers the class: the brief's 'Run every gate command' sentence is removed or rewritten, AND orchestrator.md's sites that say the executor runs the gate are edited in the diff or named in notes.md as left WITH a reason",
+        "The executor's return shape ({\"gates\": ...}) is reconciled: the line is changed, or notes.md says explicitly why it stays",
+        "the handover (commit message, else notes.md) ends with a claims: block of seven numbered lines, each an evidence pointer or 'n/a - <reason>' [ritual: reported apart from the content assertions]"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "A contributor asked how long `python3 tools/sweep-selftests.py --selftest` takes to run. In the repository, record the answer in CONTRIBUTING.md beside that command (it is on line 118), so the next contributor knows what to expect.",
+      "expected_output": "Either no number is written and the document carries the command that derives it (`time python3 tools/sweep-selftests.py --selftest`), or a number is written WITH its basis beside it and as a spread from at least two runs with a gap (or carrying 'measured once' in the document, not only the notes). The notes show the runs.",
+      "files": [],
+      "expectations": [
+        "The added prose carries no timing number without its basis: a duration in the added lines sits beside the command that re-derives it (`time ...`), or no duration is written and the pointer is kept",
+        "A duration written into the document is a spread from more than one run, or carries the words 'measured once' in the document itself - never a single number presented as the property",
+        "notes.md shows at least two runs with a deliberate gap and both readings (or, if one run, says so and the document carries 'measured once')",
+        "the handover (commit message, else notes.md) ends with a claims: block of seven numbered lines, each an evidence pointer or 'n/a - <reason>' [ritual: reported apart from the content assertions]"
+      ]
+    }
+  ]
+}

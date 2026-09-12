@@ -680,6 +680,14 @@ TABLE = (
  ("isolation_drift", "CLAUDE.md", "sub", r"PYTHONPYCACHEPREFIX",
   (r"PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE"),
   "tools/gate-parity.py", "is0"),
+ # THE DOCUMENT FALLING BEHIND THE RUNNER, one root at a time. This repository's
+ # own hooks under `.claude/hooks/` were swept by nothing while every document
+ # enumerated the same roots; `sweep_roots_drift()` reads the runner's tuple and
+ # asks each document to name every member. The mutation is the enumeration losing
+ # the one root that lives outside the plugin, and `sr0` is the case that reads the
+ # real runner against every side.
+ ("sweep_roots_drift", "CLAUDE.md", "sub", r"tools/ AND \.claude/hooks/",
+  (r"tools/ AND \.claude/hooks/", "tools/"), "tools/gate-parity.py", "sr0"),
  # F232 VERBATIM, and the mutation is the row that actually shipped.
  # `render-report.py` is excused locally on a reason that NAMES the local gate
  # making the equivalent claim; strike that name out and the reason excuses
@@ -1354,6 +1362,14 @@ ALLOW = (
   "            if not any(name in text for name in groups[held])]",
   "            if not all(name in text for name in groups[held])]",
   "tools/gate-parity.py", "is2"),
+ # THE OVER-FIRE ONE TOKEN AWAY: demand the root's whole path where the documents
+ # say `hooks/`, and every honest sentence is convicted - a lint people delete. `sr2`
+ # is the fixture that names the plugin's roots the way the documents do, and it
+ # fails on that version.
+ ("sweep_roots_drift", "tools/gate-parity.py", "replace",
+  "            if not any(name in w for w in windows)]",
+  "            if not any(root in w for w in windows)]",
+  "tools/gate-parity.py", "sr2"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

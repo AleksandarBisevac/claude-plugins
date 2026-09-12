@@ -20,6 +20,10 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-release.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-claim-block.py\""
           }
         ]
       }

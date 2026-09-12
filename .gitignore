@@ -54,3 +54,6 @@ TODO.local.md
 
 # Agent worktrees: working copies, never content of this repo.
 .claude/worktrees/
+
+# skill-creator eval workspaces: agents' outputs and benchmarks, not repo content
+.claude/skills/before-you-claim-workspace/

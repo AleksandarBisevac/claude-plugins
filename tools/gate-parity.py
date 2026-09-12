@@ -65,6 +65,10 @@ here was a second reader of the same files:
     must be named by every document describing that isolation, and the sweep must
     agree with itself about what it watches. `isolation_drift()` reads the runner's
     own constants rather than restating them.
+  * every root the sweep walks must be named where each document enumerates
+    them. `sweep_roots_drift()` reads the runner's `SWEEP_DIRS` off its AST, so a
+    root added to the runner alone - which is how this repository's own hooks
+    went unswept - turns the case red by the root's name.
   * every fail mode `SECURITY.md` documents must be the one `hooks.json` registers,
     and every wired hook-and-event pair must have a row. `failmode_table_drift()`
     says why that document's drift is a security claim rather than a stale
@@ -949,6 +953,121 @@ def isolation_drift(repo=None):
                           % (", ".join("`%s`" % (n,) for n in names),)))
     return {"prose": prose, "runner": runner, "groups": groups, "watched": watched,
             "sides": sides, "problem": None}
+
+
+
+# --- the sweep's roots against every document that enumerates them -----------
+# This repository's own hooks under `.claude/hooks/` carried suites that nothing
+# ran: the runner walked the plugin and `tools/`, and every document describing
+# the sweep enumerated the same roots, so a root missing from the runner was
+# invisible to every side at once. Adding the root was one line; what stops the
+# next one from being added to the runner alone is this rule, which reads the
+# runner's own tuple and asks each document to name every member of it.
+SWEEP_ROOT_SIDES = (("CLAUDE.md", CLAUDE_REL), ("CONTRIBUTING.md", DOC_REL))
+PLUGIN_PREFIX = "plugins/audit/"
+
+
+def _path_literal(node):
+    """The parts of a string literal or an `os.path.join` of string literals, else None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join" and node.args
+            and all(isinstance(a, ast.Constant) and isinstance(a.value, str)
+                    for a in node.args)):
+        return [a.value for a in node.args]
+    return None
+
+
+def sweep_roots(source):
+    """(roots as posix strings, problem) for the runner - one of the two is empty.
+
+    Read off the AST rather than imported, for the reason `pinned_env_groups()`
+    gives: a runner is not a file the checks may import. A source that will not
+    parse, carries no `SWEEP_DIRS`, or spells a member as anything but a literal
+    path is REPORTED, because each of those is the shape of a runner walking
+    nothing, and a caller told the difference is the whole rule.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as exc:
+        return [], "does not parse: %s" % (exc,)
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "SWEEP_DIRS"):
+            if not isinstance(node.value, ast.Tuple) or not node.value.elts:
+                return [], "SWEEP_DIRS is not a non-empty tuple"
+            roots = []
+            for elt in node.value.elts:
+                parts = _path_literal(elt)
+                if parts is None:
+                    return [], "a SWEEP_DIRS member is not a literal path"
+                roots.append("/".join(parts))
+            return roots, None
+    return [], "carries no SWEEP_DIRS"
+
+
+def root_name(root):
+    """How a document names a root: the plugin's directories by bare name - the
+    documents say `hooks/` and `scripts/`, never `plugins/audit/hooks` - and a root
+    outside the plugin by its whole path, because `.claude/hooks` and
+    `plugins/audit/hooks` share a basename and one must not vouch for the other."""
+    if root.startswith(PLUGIN_PREFIX):
+        return root[len(PLUGIN_PREFIX):]
+    return root
+
+
+def enumeration_windows(text, names):
+    """Each line joined with the one after it - prose wraps - that names at least
+    three of `names`: the sentences where a document enumerates what the sweep walks."""
+    lines = text.splitlines()
+    out = []
+    for i in range(len(lines)):
+        window = lines[i] + "\n" + (lines[i + 1] if i + 1 < len(lines) else "")
+        if sum(1 for n in names if n in window) >= 3:
+            out.append(window)
+    return out
+
+
+def unnamed_roots(text, roots, names):
+    """[(root, note)] for every root the document's enumeration leaves out, or one
+    row saying the document enumerates nothing - never an empty list for that."""
+    windows = enumeration_windows(text, names)
+    if not windows:
+        return [("-", "enumerates none of the sweep's roots")]
+    return [(root, "is not named where the document enumerates what the sweep walks")
+            for root, name in zip(roots, names)
+            if not any(name in w for w in windows)]
+
+
+def sweep_roots_drift(repo=None):
+    """{"roots", "prose", "sides", "problem"} for the tree; `prose` is
+    [(side, root, note)] and `problem` is set when the runner could not be read."""
+    root_dir = repo or REPO
+    try:
+        with io.open(os.path.join(root_dir, SWEEP_REL), encoding="utf-8") as fh:
+            source = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        return {"roots": [], "prose": [], "sides": 0,
+                "problem": "%s could not be read: %s" % (SWEEP_REL, exc)}
+    roots, problem = sweep_roots(source)
+    if problem is not None:
+        return {"roots": [], "prose": [], "sides": 0,
+                "problem": "%s %s" % (SWEEP_REL, problem)}
+    names = [root_name(r) for r in roots]
+    prose, sides = [], 0
+    for label, rel in SWEEP_ROOT_SIDES:
+        try:
+            with io.open(os.path.join(root_dir, rel), encoding="utf-8") as fh:
+                text = fh.read()
+        except (IOError, OSError, UnicodeDecodeError) as exc:
+            prose.append((label, "-", "could not be read: %s" % (exc,)))
+            continue
+        sides += 1
+        prose.extend((label, root, note)
+                     for root, note in unnamed_roots(text, roots, names))
+    return {"roots": roots, "prose": prose, "sides": sides, "problem": None}
 
 
 # --- SECURITY.md's fail-mode table against the wiring it describes ------------
@@ -2692,6 +2811,52 @@ def _cases(check):
           "ran: %r" % (_no_repo["problem"],),
           _no_repo["problem"] is not None and _no_repo["prose"] == []
           and _no_repo["sides"] == 0)
+
+    # --- the sweep's roots against every document that enumerates them --------
+    # This repository's own hooks under `.claude/hooks/` carried suites nothing ran:
+    # the runner walked the plugin and `tools/`, every document enumerated the same
+    # roots, and a root missing from the runner was invisible to every side at once.
+    _sr = sweep_roots_drift()
+    check("sr0 THE LIVE CLAIM: every root the sweep walks is named where each "
+          "document enumerates them, read off the runner's own tuple %r over %d "
+          "document(s), with a run that could not ask the question saying so "
+          "instead of coming back empty: %r / %r"
+          % (_sr["roots"], _sr["sides"], _sr["problem"], _sr["prose"]),
+          _sr["problem"] is None and _sr["prose"] == []
+          and _sr["sides"] == len(SWEEP_ROOT_SIDES)
+          and ".claude/hooks" in _sr["roots"])
+
+    _fx_roots = ["plugins/audit/hooks", "plugins/audit/scripts", "tools",
+                 ".claude/hooks"]
+    _fx_names = [root_name(r) for r in _fx_roots]
+    _behind = unnamed_roots("# the sweep walks hooks/, scripts/ AND tools/,\n"
+                            "# each in a scratch dir\n", _fx_roots, _fx_names)
+    check("sr1 a document that enumerates the roots and leaves one out IS "
+          "reported, by the root's whole path - the direction that catches a "
+          "root added to the runner alone: %r" % (_behind,),
+          _behind == [(".claude/hooks", "is not named where the document "
+                       "enumerates what the sweep walks")])
+
+    _named = unnamed_roots("walks hooks/, scripts/,\ntools/ AND .claude/hooks/ "
+                           "recursively", _fx_roots, _fx_names)
+    check("sr2 ...and the plugin's directories count as named by their bare name "
+          "across a wrapped line - the documents say `hooks/`, never "
+          "`plugins/audit/hooks` - so a rule demanding the whole path would "
+          "convict every honest sentence: %r" % (_named,),
+          _named == [])
+
+    _silent = unnamed_roots("a document about something else entirely\n",
+                            _fx_roots, _fx_names)
+    check("sr3 a document that enumerates nothing is reported as such rather "
+          "than as one that agrees - an empty list is what agreement looks "
+          "like: %r" % (_silent,),
+          _silent == [("-", "enumerates none of the sweep's roots")])
+
+    _sr_none = sweep_roots_drift(os.path.join(REPO, "no-such-repo-dir"))
+    check("sr4 a tree with no runner in it is a NAMED problem rather than a "
+          "document set that agrees with nothing: %r" % (_sr_none["problem"],),
+          _sr_none["problem"] is not None and _sr_none["prose"] == []
+          and _sr_none["sides"] == 0)
 
     # --- SECURITY.md's fail modes against the wiring that decides them --------
     # F319: the table says, per hook and per event, whether a missing interpreter

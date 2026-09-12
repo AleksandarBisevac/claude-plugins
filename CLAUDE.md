@@ -124,6 +124,7 @@ taken before any code is written and is wrong most often when it is taken from a
 | anything depending on an external API's behaviour | `verifying-external-behavior` |
 | a check that passes locally and fails in CI | `reproducing-ci-locally` |
 | making anything faster, or deferring a slow thing | `choosing-what-to-optimize` |
+| any comment, docstring, document, check, guard, brief, or fix for a recorded fault | `before-you-claim` |
 
 `grill-me` is deliberately not a row. The column is *what you are working on*, and that is
 not what selects it: the user asks to be interviewed about a plan before it is written, and
@@ -189,7 +190,7 @@ The commands it calls, with the manifest and plugin-structure half handed to
 out here is left out on the record and not by omission:
 
 ```bash
-python3 tools/sweep-selftests.py           # hooks, scripts, tests AND tools/, each in a scratch dir
+python3 tools/sweep-selftests.py           # hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir
 python3 tools/sweep-selftests.py --selftest
 python3 tools/gate-parity.py               # every description of the gate set, compared
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
