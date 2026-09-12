@@ -75,7 +75,8 @@ TEMPLATE = """claims:
 # The second added the global-option run and the separators `&&`, `;`, `||` - and still
 # missed the commonest shape an agent writes, because `^` is not `re.MULTILINE` and a
 # `git commit` that BEGINS ITS OWN LINE after a heredoc has none of those to its left.
-# Three of five baseline runs in one eval committed a covered surface that way.
+# Baseline runs in one eval of this repo's own skill committed a covered surface that
+# way, and every one of them was graded "not a commit".
 #
 # A third pattern would be a third widening. What the guard needs is the shell's own
 # reading: a command is a list of statements, and a newline separates two statements
@@ -456,9 +457,9 @@ def _selftest():
             shutil.rmtree(tmp2, ignore_errors=True)
 
         # 14. THE SHAPE THAT WALKED PAST TWO EARLIER PATTERNS. A heredoc builds the
-        # message, then `git commit` begins its own LINE. Three of five baseline runs in
-        # one eval of this repo's own skill committed a covered surface this way, and the
-        # guard called every one of them "not a commit".
+        # message, then `git commit` begins its own LINE. Baseline runs in an eval of this
+        # repo's own skill committed a covered surface this way, and the guard called every
+        # one of them "not a commit".
         #
         # STAGE A COVERED PATH FIRST. Case 13 left the index reset, and the first version
         # of these cases inherited that: s14b read "no claim-bearing surface staged" and
