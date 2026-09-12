@@ -465,6 +465,12 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 `extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
+`covering_key` is the matcher over any of those file maps (exact, the path as a directory, a
+directory the path sits under), shared so a verdict and the sentence explaining it cannot answer
+it differently; `declaring_tasks` is the read-only companion that keeps every status instead of
+filtering to `in_progress`, and it exists for the refusal TEXT alone — require-plan names which
+of two causes it found (no task declares this file, or one does and nobody started it) while
+still deciding on `in_progress` coverage and nothing else.
 `within_root` is the containment question `rel_path` cannot answer: relpath hands a path
 in another tree back as a run of `..` segments, an ordinary string that read as repo
 source and got a scratch file in the system temp directory refused by the plan gate. It
@@ -2957,10 +2963,27 @@ Refusals — a live id, a task id, a parked reservation, and a sharded id whose 
 existing phase already occupies — all land before any write, and a rollback deletes a shard the
 write had just created rather than leaving a phase body the restored index no longer points at.
 The `phase.add` journal row carries the outcome in its summary, because `_journal_io.DETAILS_KEYS`
-is an allow-list that drops an unlisted details key in silence. One row builder now serves all
-three verbs: `cancel` had its own and passed the whole viewer DICT as `actor.author`, which
+is an allow-list that drops an unlisted details key in silence. One row builder now serves every
+verb here: `cancel` had its own and passed the whole viewer DICT as `actor.author`, which
 `_journal_io` normalises to a null author with `via: unknown`, so every cancel row went in
 anonymous and nothing on the row said so.
+
+**`start <taskId>` is the promotion the plan gate reads.** `add` writes `status: "pending"`,
+and `hooks/_config.in_progress_task_map` — what `require-plan.py` resolves an allowed path
+through — skips every task that is not `in_progress`, its `fileIndex` arm included (that arm
+only re-adds paths for ids already in the filtered set). So a task added to a phase that is
+already running has its OWN declared `files` denied on the first `Edit`, and the only
+promotions were `/audit:run`, which promotes AND spawns, and a hand edit. The verb writes
+exactly what `reference/orchestrator.md` → *Execute the task*, step 2 prescribes as an
+orchestrator `Edit` — `status`, `startedAt`, `attempts += 1` — through the same lock,
+revalidate-from-disk and rollback, with a `task.start` row carrying `changes` and `attempt`.
+Widening the map to read `pending` was the other repair and was rejected: the map has three
+consumers, so that edit opens every file of every pending task in the running phase at once
+and deletes the per-task narrowing the gate's decision order exists for. It is deliberately
+NOT idempotent — `attempts` counts spawns, and a call on a running task is the retry step 4
+prescribes — and it refuses a terminal task, a phase id, and a start that would pass
+`maxAttempts` (the `blocked` transition owes an ADO echo and a human, so it stays the
+orchestrator's).
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

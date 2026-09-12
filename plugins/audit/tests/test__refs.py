@@ -2600,12 +2600,12 @@ def _cases(check):
     # THE VACUITY GUARD, and it is not decoration: `_tk_off == {}` is also what an
     # intersection that had gone EMPTY returns, which is how a renamed verb on
     # either side would leave this line green over nothing.
-    check("tk3 ...and the intersection is the four verbs the script owns across "
-          "the two docs, with `move` on the hint side alone because it is an "
-          "Edit procedure rather than a script call - counted, so a rename on "
-          "either side is a finding rather than a silent skip: %r"
+    check("tk3 ...and the intersection is the script verbs the two docs name, "
+          "with `move` on the hint side alone because it is an Edit procedure "
+          "rather than a script call - enumerated, so a rename on either side "
+          "is a finding rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "add-phase", "cancel", "scope"]
+          _tk_shared == ["add", "add-phase", "cancel", "scope", "start"]
           and "move" in _tk_flags and "move" not in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time

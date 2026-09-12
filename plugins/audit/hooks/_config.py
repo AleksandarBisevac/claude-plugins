@@ -1348,6 +1348,80 @@ def in_progress_files(root, manifest_rel):
         return set()
 
 
+def covering_key(file_map, rel):
+    """The key of a rel-file -> [...] map that covers `rel`, or None.
+
+    The three forms a manifest `files` list is written in: the path itself,
+    the path as a directory, or a directory entry `rel` sits under. It lives
+    here rather than beside the one decision that asks it because the REFUSAL
+    TEXT asks it too, over a different map — and a message that named a
+    declaring task the gate would not in fact have been opened by is the same
+    false claim in a new place. One matcher, so the two cannot disagree."""
+    if rel in file_map:
+        return rel
+    if (rel + "/") in file_map:
+        return rel + "/"
+    for f in file_map:
+        if f.endswith("/") and rel.startswith(f):
+            return f
+    return None
+
+
+def declaring_tasks(root, manifest_rel, rel):
+    """[{"taskId", "status"}] for every task declaring `rel` WHATEVER its status
+    — its own `files` or a `fileIndex` row keyed to it. Empty list when none
+    does, and on any error.
+
+    FOR A MESSAGE, NEVER FOR A VERDICT. `in_progress_task_map` above drops
+    every task that is not `in_progress`, and that filter is the gate: an
+    unstarted task is a plan, not permission, so reading this map in the
+    decision would hand an agent the files of every task nobody has started.
+    The decision therefore still reads that map alone and this one answers the
+    question it threw the evidence away to answer — WHICH of the two causes a
+    refusal found: no task declares this file, or one does and is not started.
+
+    Never raises. An error here costs the refusal its second sentence, not its
+    verdict."""
+    out = []
+    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+    if not isinstance(manifest, dict):
+        return out
+
+    statuses = {}   # task id -> status, for every task in the plan
+    fmap = {}       # rel file -> [task id], in declaration order
+    try:
+        for phase in manifest.get("phases", []) or []:
+            for task in phase.get("tasks", []) or []:
+                tid = task.get("id")
+                if not tid:
+                    continue
+                statuses[tid] = task.get("status")
+                for f in task.get("files", []) or []:
+                    fmap.setdefault(strip_line_suffix(f), []).append(tid)
+    except Exception:
+        pass
+
+    # The index arm is what makes this worth having: a file can reach a task
+    # through `fileIndex` alone, and the id has to be a task the plan actually
+    # holds or the status beside it would be invented.
+    try:
+        for fpath, task_ids in (manifest.get("fileIndex", {}) or {}).items():
+            for tid in task_ids or []:
+                if tid in statuses:
+                    key = strip_line_suffix(fpath)
+                    if tid not in fmap.get(key, []):
+                        fmap.setdefault(key, []).append(tid)
+    except Exception:
+        pass
+
+    key = covering_key(fmap, rel)
+    if key is None:
+        return out
+    for tid in fmap.get(key, []):
+        out.append({"taskId": tid, "status": statuses.get(tid)})
+    return out
+
+
 def manifest_state(root, manifest_rel):
     """How much the plan gate actually knows:
     {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None}.

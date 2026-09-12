@@ -324,6 +324,65 @@ def _owner_note(root, cfg, state_dir, session_id, rel,
         return None
 
 
+def _declaration_note(root, manifest_rel, rel, manifest_exists):
+    """The refusal's second sentence and the remedy each audience gets, keyed on
+    WHICH of the two causes actually holds:
+    {"stated": <sentence>|None, "subagent": <clause>, "orchestrator": <clause>}.
+
+    The refusal used to state one cause for both. It told a subagent the file was
+    "outside your task's `files`" and told the main agent to add a task for it
+    "(status \"in_progress\")" — sentences that are only true when NO task
+    declares the file. When one does and is merely unstarted, the first is flatly
+    false and the second sends the orchestrator to write a second task declaring
+    a file the plan already covers. The gate had the fact and dropped it:
+    `_config.in_progress_task_map` filters every other status away before
+    `decide` ever looks, so nothing downstream could tell the two apart.
+
+    The state, not the verb, is the load-bearing half of the unstarted remedy:
+    `in_progress` is what opens a task's `files`, and the command is named as the
+    route to it. Written that way because the route may be respelled and the
+    state cannot be — a refusal naming a remedy its reader cannot reach is the
+    fault this repo has already paid for twice.
+
+    `stated` is None when there is no manifest at all: "no task declares this"
+    would be true of an empty file, a missing one and a plan that never mentions
+    the path, and only one of those is worth a reader's line. That branch is
+    reachable only through planGate:"deny"/enforce:true, whose own cause sentence
+    already says the refusal holds regardless of what the plan contains."""
+    declared = (_config.declaring_tasks(root, manifest_rel, rel)
+                if manifest_exists else [])
+    if not declared:
+        return {
+            "stated": ("No task in %s declares %s - it is in no task's `files` "
+                       "and in no `fileIndex` row." % (manifest_rel, rel)
+                       if manifest_exists else None),
+            "subagent": ("report to the orchestrator that %s is outside your "
+                         "task's `files` and why you need it. It will either "
+                         "widen the scope and tell you to carry on, or add a "
+                         "task for the work" % rel),
+            "orchestrator": ("add a task covering this file to %s (status "
+                             "\"in_progress\")" % manifest_rel),
+        }
+    named = ", ".join(
+        "%s (status \"%s\")" % (d.get("taskId") or "?", d.get("status") or "?")
+        for d in declared)
+    first = declared[0].get("taskId") or "?"
+    return {
+        "stated": ("%s IS declared by %s - a task's `files` open only while its "
+                   "own status is \"in_progress\"." % (rel, named)),
+        "subagent": ("report to the orchestrator that %s is already declared by "
+                     "%s and that the task has not been started. What has to "
+                     "change is that task's status, to \"in_progress\" - not "
+                     "the `files` list - and starting the task "
+                     "(`/audit:task start %s`) is the route"
+                     % (rel, named, first)),
+        "orchestrator": ("the task declaring it has not been started, so move "
+                         "%s to status \"in_progress\" (`/audit:task start %s` "
+                         "is the route). Do not add a second task for a file "
+                         "the plan already declares" % (first, first)),
+    }
+
+
 def _warned_files(state_dir, session_id):
     """The uncovered files this session has already been told about in full.
 
@@ -490,16 +549,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #    only: the verdict never hardens past "warn", and no gate event is
     #    written — this is coordination, not a gate verdict.
     tmap = _config.in_progress_task_map(root, manifest_rel)
-    covering = None
-    if rel in tmap:
-        covering = rel
-    elif (rel + "/") in tmap:
-        covering = rel + "/"
-    else:
-        for f in tmap:
-            if f.endswith("/") and rel.startswith(f):
-                covering = f
-                break
+    covering = _config.covering_key(tmap, rel)
     if covering is not None:
         if commit_state:
             note = _owner_note(root, cfg, sd, session_id, rel, manifest_rel,
@@ -703,6 +753,15 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         _config.append_gate_event(ld, {
             "event": "deny", "file": rel, "mode": "deny", "reason": reason,
             "sessionId": session_id})
+    # WHICH of the two causes, named. This reads a SECOND, read-only map
+    # (`_config.declaring_tasks`) that the verdict above never consults: the
+    # decision is still `in_progress` coverage alone, so nothing here can widen
+    # what the gate allows — a task the plan has not started opens no file, and
+    # saying which task it is does not start it.
+    note = _declaration_note(root, manifest_rel, rel, state.get("exists"))
+    head = "Outside the running plan (%s): %s\n%s\n" % (reason, rel, cause)
+    if note["stated"]:
+        head += note["stated"] + "\n"
     # THE REMEDY BRANCHES BY AUDIENCE, and it did not (F251, F262). The old text
     # told every reader to "add a task covering this file to <manifest>" — but a
     # subagent may not edit the manifest (`agents/audit-executor.md` puts it with
@@ -718,15 +777,11 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     if str((data or {}).get("agent_id") or "").strip():
         return (
             "block",
-            "Outside the running plan (%s): %s\n"
-            "%s\n"
+            "%s"
             "YOU ARE A SUBAGENT, so this one is not yours to resolve: the "
             "manifest belongs to the orchestrator, and widening a scope from "
             "inside a task is how a plan stops describing the work.\n"
-            "Do this: STOP, and report to the orchestrator that %s is outside "
-            "your task's `files` and why you need it. It will either widen the "
-            "scope and tell you to carry on, or add a task for the work - "
-            "either way you will not be re-spawned.\n"
+            "Do this: STOP, and %s - either way you will not be re-spawned.\n"
             # F284. THIS USED TO PROMISE THE WIDENING FLATLY, and at sign-off
             # that promise was false. `_config.in_progress_task_map` reads only
             # `in_progress` tasks, and sign-off runs when every task is `done` -
@@ -740,24 +795,22 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             "which does not make it yours), put the change somewhere it does "
             "not belong to dodge the refusal, or abandon work you have already "
             "done. All three have happened, and each was worse than stopping."
-            % (reason, rel, cause, rel),
+            % (head, note["subagent"]),
         )
     return (
         "block",
-        "Outside the running plan (%s): %s\n"
-        "%s\n"
+        "%s"
         "Two ways forward, weighed:\n"
-        "  1. This is part of the work at hand -> add a task covering this "
-        "file to %s (status \"in_progress\"). Preferred: the change lands in "
-        "the plan, reviewed and recorded. If a subagent is running, widen its "
-        "scope and message it to continue - do not re-spawn it.\n"
+        "  1. This is part of the work at hand -> %s. Preferred: the change "
+        "lands in the plan, reviewed and recorded. If a subagent is running, "
+        "widen its scope and message it to continue - do not re-spawn it.\n"
         "  2. This is genuinely a one-off -> the HUMAN types %s in their own "
         "prompt to opt out for one change. Agents cannot arm it; it is "
         "single-use, logged, and expires unused after %d minutes.\n"
         "Exempt regardless: %s, and the first single small (magnitude <= %d: "
         "lines added, chars/200, or lines removed - whichever is larger) "
         "non-exempt file per session."
-        % (reason, rel, cause, manifest_rel, keyword,
+        % (head, note["orchestrator"], keyword,
            _config.BYPASS_TTL_SECONDS // 60, ", ".join(exempt), threshold),
     )
 

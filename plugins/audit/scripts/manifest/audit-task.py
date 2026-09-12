@@ -22,6 +22,8 @@ Usage:
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py start <taskId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py scope <taskId> [manifest] [--files f1,f2]
@@ -73,8 +75,8 @@ Exit codes:
      rolled back byte-for-byte); the findings are printed either way
   2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args,
      a `--description` off argv that a shell has already eaten part of, or a
-     flag passed to a verb that does not READ it -- one parser serves all five,
-     so argparse accepts every flag on every verb and half of those pairs used
+     flag passed to a verb that does not READ it -- one parser serves every
+     verb, so argparse accepts every flag on each of them and half of those used
      to write nothing and report success (F295). The refusal names the verb
      that does read it; `VERB_FLAGS` is the table and the suite derives the
      same answer off this file's call graph.
@@ -648,7 +650,7 @@ def resolve_briefs(args, out, stream=None):
 def stdin_notes_key(args):
     """`{"stdinNotes": [...]}` for a verb's `--json` block, or `{}`.
 
-    ONE DEFINITION, FIVE JSON BRANCHES, spelled the way `result.update(jres)`
+    ONE DEFINITION, EVERY JSON BRANCH, spelled the way `result.update(jres)`
     beside it already is. An advisory a human is told and a machine is not is an
     advisory two consumers disagree about, and the key is absent rather than
     empty when there is nothing to say - which is what lets a reader tell "no
@@ -1739,6 +1741,280 @@ def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
                         details)
 
 
+# --- start: the promotion the plan gate reads ------------------------------------
+# `add` writes `status: "pending"`, `startedAt: null`, `attempts: 0`, and
+# `hooks/_config.in_progress_task_map` -- the map `hooks/require-plan.py` resolves
+# an allowed path through -- skips every task whose status is not `in_progress`,
+# its `fileIndex` arm included (that arm only re-adds paths for ids already in the
+# filtered set). So a task added to a phase that is ALREADY RUNNING is born in a
+# state where its own declared files are refused on the first Edit, and the only
+# way out was the hand edit `commands/task.md` forbids: `/audit:run <taskId>`
+# promotes AND spawns, so there was no way to promote without running. Driven and
+# confirmed; a field report measured two executors returning zero edits, each
+# having spent a subagent's budget, both refused on a path their task's `files`
+# declared.
+#
+# WIDENING THE MAP TO READ `pending` IS THE OTHER REPAIR, AND IT WAS REJECTED. That
+# map has three consumers -- `require-plan.py`, `remind-tdd.py` (which reads its
+# `testsMode`) and `_config.in_progress_files` -- so one edit there would open, in
+# one move, every file declared by every pending task in the running phase. That
+# deletes the per-task narrowing the plan gate's decision order exists for, which
+# `plugins/audit/tests/test_require_plan.py` pins and `require-plan.py` reasons
+# from. The narrowing is the guard; the missing half was a verb.
+_DEFAULT_MAX_ATTEMPTS = 3           # conventions' New task template
+
+
+def _attempt_ceiling(task):
+    """The `maxAttempts` this task records, or the template's default.
+
+    `bool` is excluded for `_manifest_io.recorded_attempt`'s reason: `True` is an
+    `int` in Python, so a manifest carrying `maxAttempts: true` would otherwise
+    read as a ceiling of one. A missing, non-integer or non-positive value is not
+    a ceiling anybody set, so the template default answers for it -- refusing
+    every start on a hand-edited manifest instead would put this verb out of
+    reach exactly where the hand edit it replaces has already been used.
+    """
+    value = (task or {}).get("maxAttempts")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return _DEFAULT_MAX_ATTEMPTS
+    return value
+
+
+def _start_task(task, now):
+    """Promote one task to running; returns the three values it held before.
+
+    THE FIELDS ARE `reference/orchestrator.md`'s STEP 2 VERBATIM -- *Set
+    `task.status = "in_progress"`, `task.startedAt = <ISO now>`,
+    `task.attempts += 1`* -- because this verb exists to BE that Edit. A writer
+    that stamped anything the prescribed Edit does not would make two records of
+    one run disagree depending on which route promoted the task.
+
+    `startedAt` IS RE-STAMPED ON A RE-START, which is what step 2 says and
+    therefore what the hand edit does today. It is not self-evidently the right
+    field semantics -- the usage `window` attribution reads
+    `startedAt`/`completedAt` as the task's whole lifetime, so a re-stamp narrows
+    the window a previous attempt sat in -- but that is a question about the
+    prescription, and answering it differently here in silence is how one field
+    comes to mean two things.
+
+    THE PRIOR VALUES ARE READ BEFORE THE WRITE, for `_locked_cancel`'s reason one
+    verb over: afterwards every one of them says `in_progress`, and the `from`
+    half of the journal row is gone from the manifest as well as from the row.
+    """
+    was = {"status": task.get("status"),
+           "attempts": _mio.recorded_attempt(task),
+           "startedAt": task.get("startedAt")}
+    task["status"] = "in_progress"
+    task["startedAt"] = now
+    task["attempts"] = (was["attempts"] or 0) + 1
+    return was
+
+
+def _start_changes(tid, was, task):
+    """The `changes` rows for a promotion -- id/field/from/to, one per field.
+
+    THE SHAPE IS THE ALLOW-LIST'S, not a per-field key invented here:
+    `_journal_io.DETAILS_KEYS` carries `changes` and drops anything unlisted in
+    silence, which `_journal_phase_add` records the cost of. All three rows are
+    written even when a value did not move -- a re-start that kept `pending` is
+    not a thing, but a `startedAt` that happens to equal the old one is, and a
+    row list built by filtering equality would make a reader work out which
+    fields the verb even touches.
+    """
+    return [{"id": tid, "field": "status",
+             "from": was["status"], "to": task.get("status")},
+            {"id": tid, "field": "startedAt",
+             "from": was["startedAt"], "to": task.get("startedAt")},
+            {"id": tid, "field": "attempts",
+             "from": was["attempts"], "to": task.get("attempts")}]
+
+
+def _start_details(task_id, phase_id, was, task):
+    """The `details` block for a `task.start` row, built where a case can read it.
+
+    SEPARATE FROM THE APPEND ON PURPOSE. `_journal_io` drops a key that is not on
+    `DETAILS_KEYS` in SILENCE, so a row read back out of the trail is identical
+    whether the writer handed over an allow-listed block or one carrying an
+    invented key beside it -- which means no assertion about the written row can
+    see the mistake `_journal_phase_add` records paying for. Built here, the
+    handover itself is the thing a case can compare against the allow-list.
+    """
+    details = {"taskId": task_id, "phaseId": phase_id,
+               "changes": _start_changes(task_id, was, task)}
+    attempt = task.get("attempts")
+    if attempt is not None:
+        details["attempt"] = attempt
+    return details
+
+
+def _journal_start(project, config, mpath, task_id, phase_id, was, task):
+    """The `task.start` row: what the promotion moved, and which attempt it is.
+
+    `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
+    `_journal_scope`'s reasoning for the second of them applies here unchanged,
+    and more directly: this row IS the attempt increment, so a trail that
+    recorded the promotion without the number would leave a reader counting
+    attempts by counting rows, which is the same number only while nothing else
+    ever writes the field.
+
+    A RE-START SAYS SO IN ITS SUMMARY, because `audit-journal list` prints the
+    summary and nothing else. A retry whose row read like a first start would
+    have to be told apart by opening `details`, and the retry is the row a reader
+    of a task that failed is looking for.
+    """
+    attempt = task.get("attempts")
+    if was["status"] == "in_progress":
+        summary = ("%s RE-STARTED in %s: attempt %s, the previous one left it "
+                   "in_progress" % (task_id, phase_id, attempt))
+    else:
+        summary = ("%s started in %s: attempt %s, was %s"
+                   % (task_id, phase_id, attempt, was["status"]))
+    return _journal_row(project, config, mpath, "task.start", summary,
+                        _start_details(task_id, phase_id, was, task))
+
+
+def _locked_start(args, project, config, mpath, tid, out):
+    """Promote one task to `in_progress`, under the lock, with a row and a
+    revalidation -- the path every mutating verb in this file takes.
+
+    THE TERMINAL REFUSAL IS `_locked_cancel`'s, one verb over and for the same
+    reason: re-opening a `done` or `cancelled` task by flipping its status would
+    rewrite history with no record of what it said before, and a `done` task
+    carries a commit that was graded against the scope it holds.
+
+    A RE-START IS NOT REFUSED AND NOT IDEMPOTENT, WHICH IS THE DECISION.
+    `attempts` counts SPAWNS, not states. `reference/orchestrator.md`'s step 4
+    leaves a task `in_progress` when its gates run red and sends it back through
+    step 2, so a second call on an already-running task IS that retry rather than
+    a repeat of the first call. Refusing it would leave the retry path with no
+    verb at all -- back to the hand edit -- and returning 0 having written
+    nothing would freeze the count `blocked` is derived from, so a run could
+    retry for ever while the plan went on saying it had been attempted once.
+    That is the failure mode an idempotent spelling buys, and it is worse than a
+    double call costing an attempt, which this reports by number every time.
+
+    THE CEILING IS THE OTHER HALF OF THE PRESCRIBED STEP, so it is checked here:
+    step 2 pairs the increment with *if `task.attempts > (task.maxAttempts or
+    3)`, do NOT spawn -- set `status = "blocked"`*. A verb that wrote the
+    increment and dropped that half would hand back exit 0 on a task the caller
+    must not spawn. It REFUSES rather than writing `blocked` itself: that
+    transition owes an ADO echo and a human, both of which belong to the
+    orchestrator, and a verb that half-performs a transition it cannot finish is
+    a worse answer than one that names the number and stops.
+    """
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    kind, node, phase = _find_target(assembled, tid)
+    if kind is None:
+        out("[audit-task] no task with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if kind != "task":
+        # A phase is promoted by the run that enters it (orchestrator step 1a),
+        # not here, and the ids look alike enough that guessing is wrong.
+        out("[audit-task] %s is a PHASE -- `start` promotes one task, and a "
+            "phase enters in_progress on the run that enters it "
+            "(/audit:phase %s)" % (tid, tid))
+        return E_USAGE
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        out("[audit-task] %s is already %s -- terminal work is not re-started "
+            "by this verb; the follow-up is a new task (/audit:task add)"
+            % (tid, status))
+        return E_USAGE
+    ceiling = _attempt_ceiling(node)
+    attempts = _mio.recorded_attempt(node) or 0
+    if attempts + 1 > ceiling:
+        out("[audit-task] %s records %s attempt(s) against a maxAttempts of "
+            "%s, so this start would spend one past the ceiling -- refused. "
+            "The orchestrator's move here is `blocked` plus a human "
+            "(reference/orchestrator.md, Execute the task, step 2), which this "
+            "verb will not write on its own because that transition also owes "
+            "an ADO echo." % (tid, attempts, ceiling))
+        return E_USAGE
+
+    now = _utc_now()
+    was = _start_task(node, now)
+    phase_id = phase.get("id")
+    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    written_manifest = {}
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the start would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_start(project, config, mpath, tid, phase_id, was, node)
+    # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
+    # case it serves is a task whose edits are being denied -- so a blocker list
+    # is something the operator has to see and `/audit:run` is where readiness
+    # decides a spawn. `_readiness_lines` is deliberately not reused: its other
+    # branch hands back `/audit:run <id>`, which on a task this call has just put
+    # in_progress is advice to trip `run.md`'s interrupted-run warning.
+    waiting = _waiting_on(assembled, node)
+    if args.as_json:
+        result = {"ok": True, "id": tid, "phase": phase_id,
+                  "status": node.get("status"), "startedAt": node.get("startedAt"),
+                  "attempt": node.get("attempts"), "maxAttempts": ceiling,
+                  "restarted": was["status"] == "in_progress",
+                  "was": was["status"],
+                  "changes": _start_changes(tid, was, node),
+                  "written": written, "warnings": warnings,
+                  "ready": not waiting, "waitingOn": waiting}
+        result.update(jres)
+        result.update(stdin_notes_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if was["status"] == "in_progress":
+        out("[audit-task] %s RE-STARTED in %s -- it was already in_progress, so "
+            "this is the retry step 2 of reference/orchestrator.md prescribes, "
+            "and it spends an attempt" % (tid, phase_id))
+    else:
+        out("[audit-task] %s started in %s -- was %s" % (tid, phase_id,
+                                                         was["status"]))
+    out("  attempt %s, against a recorded ceiling of %s"
+        % (node.get("attempts"), ceiling))
+    out("  startedAt %s" % (node.get("startedAt"),))
+    out("  the plan gate now resolves this task's `files` -- that is what the "
+        "promotion buys, and it is per task: no other pending task in %s moved"
+        % (phase_id,))
+    if waiting:
+        out("  NOTE: still waiting on %s -- promoted anyway, because this verb "
+            "does not decide a spawn; /audit:run is where readiness does"
+            % ", ".join(waiting))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the task.start row")
+    out("  written: %s" % ", ".join(written))
+    return 0
+
+
 # --- add-phase: one more phase in a plan that already exists ---------------------
 # F58. Everything that WROTE a phase before this verb wrote a whole plan or moved
 # one that had already been written somewhere else, so "I have a live plan and a
@@ -2725,6 +3001,20 @@ def cmd_scope(args, out):
                            args, project, config, mpath, tid, out))
 
 
+def cmd_start(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to start
+    if not tid:
+        out("[audit-task] start needs a task id")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_start(
+                           args, project, config, mpath, tid, out))
+
+
 def cmd_cancel(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -2761,7 +3051,7 @@ def cmd_add(args, out):
 
 
 # --- which verb reads which flag (F295) ------------------------------------------
-# ONE PARSER SERVES FIVE VERBS, so argparse accepts every flag on every one of them
+# ONE PARSER SERVES EVERY VERB, so argparse accepts every flag on every one of them
 # and each verb's writer reads only the subset it knows. Driven across the whole
 # grid, half the (verb, flag) pairs were accepted, wrote nothing and reported
 # success with exit 0: `scope --outcome`, `retarget --files`, `add --id`,
@@ -2777,9 +3067,9 @@ def cmd_add(args, out):
 #
 # THE FLAGS EVERY VERB READS, spelled once. `_resolve_project` reads
 # `project_dir`, `_under_lock` reads `takeover`, and every verb's report branches
-# on `as_json`, so these are not per-verb facts: listing them five times would let
-# one verb quietly stop reading one while the table went on saying it did. The
-# suite's `vf8` asserts this is EXACTLY the intersection of the five derived sets,
+# on `as_json`, so these are not per-verb facts: listing them once per verb would
+# let one verb quietly stop reading one while the table went on saying it did. The
+# suite's `vf8` asserts this is EXACTLY the intersection of the derived sets,
 # so a flag that becomes universal cannot stay listed per verb and one that stops
 # being universal cannot stay here either.
 #
@@ -2802,6 +3092,14 @@ VERB_FLAGS = {
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear"),
     "cancel": ("reason",),
+    # EMPTY ON PURPOSE, and it is a row rather than an omission: `start` takes
+    # an id and writes the three fields `reference/orchestrator.md` prescribes,
+    # so every flag on this parser except the universal ones belongs to some
+    # other verb and passing one here is the F295 usage error. A verb ABSENT
+    # from this table would instead be refused every flag including the
+    # universal ones, and `vf6` grades the row against the real dispatch either
+    # way.
+    "start": (),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "area", "outcome", "description",
@@ -2824,7 +3122,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
-                            "retarget"])
+                            "retarget", "start"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -3023,7 +3321,7 @@ def main(argv, out=print):
     # the doors cannot describe different verbs.
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
-             "retarget": cmd_retarget}
+             "retarget": cmd_retarget, "start": cmd_start}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

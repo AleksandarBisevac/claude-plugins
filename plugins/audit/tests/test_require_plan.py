@@ -710,6 +710,166 @@ def _cases(check):
     except Exception:
         pass
 
+    # (s) WHICH OF TWO CAUSES THE REFUSAL FOUND. One sentence was printed for
+    # both - "outside your task's `files`" to a subagent, "add a task covering
+    # this file (status \"in_progress\")" to the orchestrator - and both are
+    # true only when NO task declares the path. When one does and nobody has
+    # started it, the first is flatly false and the second sends the
+    # orchestrator to write a second task for a file the plan already declares.
+    # The gate had the fact and dropped it: `in_progress_task_map` filters every
+    # other status away before `decide` looks, and its fileIndex arm re-adds
+    # only ids already inside that filtered set.
+    SAN = "src/search/sanitize.ts"
+    MAN = "docs/audit/audit-plan.json"
+
+    def plan_with(status):
+        """P2 running; P2.5 declares SAN twice over - `files` AND fileIndex."""
+        return {"meta": {"version": 2},
+                "phases": [{"id": "P2", "title": "search",
+                            "status": "in_progress",
+                            "tasks": [{"id": "P2.5", "title": "sanitize",
+                                       "status": status, "files": [SAN]}]}],
+                "fileIndex": {SAN: ["P2.5"]}}
+
+    def refuse(sid, agent=False, file_path=SAN):
+        """The verdict + message for one out-of-policy edit at the deny tier."""
+        data = payload("Edit", file_path, new_string=big, sid=sid)
+        if agent:
+            data["agent_id"] = "exec-5d10"
+        ok, got = _harness.attempt(M.decide, data, cfg=cfg_graded, state_dir=sd,
+                                   logs_dir=ld)
+        return got if ok else ("EXC", str(got))
+
+    write_manifest(plan_with("pending"))
+    v_s, m_s = refuse("selftest-s1", agent=True)
+    check("s1 a SUBAGENT refused a file an UNSTARTED task declares is no "
+          "longer told the file is outside every task's `files` - the sentence "
+          "that is false in exactly this state - and the task is named with "
+          "the status the plan holds",
+          v_s == "block" and "outside your task's `files`" not in m_s
+          and (SAN + " IS declared by P2.5 (status \"pending\")") in m_s,
+          repr(m_s))
+    check("s2 ...and its remedy names the STATE that has to change, the verb "
+          "only as the route to it: a command respelt later leaves the "
+          "sentence true, and the `files` list is named as the wrong thing to "
+          "touch",
+          "to \"in_progress\"" in m_s and "/audit:task start P2.5" in m_s
+          and "not the `files` list" in m_s, repr(m_s))
+    v_o, m_o = refuse("selftest-s2")
+    check("s3 the ORCHESTRATOR is sent to start P2.5, never to add a second "
+          "task declaring a file the plan already declares",
+          v_o == "block" and "add a task covering this file" not in m_o
+          and "move P2.5 to status \"in_progress\"" in m_o
+          and "Do not add a second task" in m_o, repr(m_o))
+
+    v_u, m_u = refuse("selftest-s3", agent=True, file_path="src/search/new.ts")
+    check("s4 the OTHER cause keeps its own sentence and its own remedy: a "
+          "file no task declares is still 'outside your task's `files`', and "
+          "no task id is invented to fill the gap",
+          v_u == "block" and "outside your task's `files`" in m_u
+          and "declares src/search/new.ts" in m_u
+          and "P2.5" not in m_u, repr(m_u))
+    v_uo, m_uo = refuse("selftest-s4", file_path="src/search/new.ts")
+    check("s5 ...and the orchestrator's undeclared remedy is the one it always "
+          "was - add a task, with no task to start named beside it",
+          v_uo == "block" and "add a task covering this file" in m_uo
+          and "/audit:task start" not in m_uo, repr(m_uo))
+
+    write_manifest(plan_with("in_progress"))
+    v_ok, m_ok = refuse("selftest-s5")
+    check("s6 THE ALLOWED SET DID NOT MOVE: the same file under the same task "
+          "at status in_progress is allowed exactly as before - naming an "
+          "unstarted task in a message is not starting it",
+          v_ok == "allow", repr((v_ok, m_ok)))
+    write_manifest(plan_with("pending"))
+    v_no, _m_no = refuse("selftest-s6")
+    check("s7 ...and at status pending the same edit is still refused, so s6 "
+          "is not a gate that quietly stopped gating",
+          v_no == "block", repr(v_no))
+    check("s8 the DECISION's map still holds in_progress coverage alone: the "
+          "pending task is invisible to it and visible only to the read-only "
+          "lookup the message uses",
+          _config.covering_key(
+              _config.in_progress_task_map(str(tmp), MAN), SAN) is None
+          and [d["taskId"] for d in
+               _config.declaring_tasks(str(tmp), MAN, SAN)] == ["P2.5"],
+          repr(_config.declaring_tasks(str(tmp), MAN, SAN)))
+
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.5", "title": "sanitize",
+                                           "status": "pending"}]}],
+                    "fileIndex": {SAN: ["P2.5"]}})
+    v_fi, m_fi = refuse("selftest-s7", agent=True)
+    check("s9 a declaration carried ONLY by fileIndex is found too - the arm "
+          "in_progress_task_map skips for every id outside its filtered set",
+          v_fi == "block" and "P2.5 (status \"pending\")" in m_fi, repr(m_fi))
+
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.4", "title": "shipped",
+                                           "status": "done", "files": [SAN]},
+                                          {"id": "P2.5", "title": "other",
+                                           "status": "pending"}]}]})
+    v_d, m_d = refuse("selftest-s8", agent=True)
+    check("s10 the status printed is the one the plan holds rather than "
+          "'pending' assumed: a DONE task that declares the file is named as "
+          "done, so nobody is sent to start work that is finished",
+          v_d == "block" and "P2.4 (status \"done\")" in m_d, repr(m_d))
+
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.7", "title": "dir",
+                                           "status": "pending",
+                                           "files": ["src/search/"]}]}]})
+    v_dir, m_dir = refuse("selftest-s9", agent=True)
+    check("s11 a task declaring the DIRECTORY declares the file under it - the "
+          "message asks the same matcher the decision does, so it can never "
+          "name a task that would not in fact have opened the file",
+          v_dir == "block" and "P2.7 (status \"pending\")" in m_dir,
+          repr(m_dir))
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.7", "title": "dir",
+                                           "status": "in_progress",
+                                           "files": ["src/search/"]}]}]})
+    v_dok, _m_dok = refuse("selftest-s9b")
+    check("s11b ...and the DECISION reads that same matcher: the directory arm "
+          "still covers a file under it, which is what the extraction into "
+          "`_config.covering_key` moved out of `decide` and had to leave "
+          "behaving identically",
+          v_dok == "allow", repr(v_dok))
+
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.8", "title": "sibling",
+                                           "status": "pending",
+                                           "files": ["src/search/index.ts"]}]}]})
+    v_sib, m_sib = refuse("selftest-s10", agent=True)
+    check("s12 ...and a task declaring a SIBLING file is NOT named: the "
+          "sentence is about this path, not about the phase it might have "
+          "belonged to. This is the case that goes red if the declaring "
+          "lookup is widened until it over-fires",
+          v_sib == "block" and "P2.8" not in m_sib
+          and "outside your task's `files`" in m_sib, repr(m_sib))
+
+    clear_manifest()
+    cfg_enf_s = dict(cfg_graded)
+    cfg_enf_s["enforce"] = True
+    v_nm, m_nm = M.decide(offending("selftest-s11"), cfg=cfg_enf_s,
+                          state_dir=sd, logs_dir=ld)
+    check("s13 with NO manifest the refusal says nothing about declarations: "
+          "'no task declares this' is equally true of a missing plan, an empty "
+          "one and one that never mentions the path, and only the config cause "
+          "is worth the reader's line",
+          v_nm == "block" and "declares" not in m_nm
+          and "enforce: true" in m_nm, repr(m_nm))
+
     # (i) the gate events feed (v0.34 B3). Verdicts used to leave NO trace -
     # only the bypass had a log - so each branch now drops one compact line
     # into <logsDir>/plan-gate-events.jsonl. Pre records only what has no Post

@@ -53,7 +53,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # task with no `tests` object), qg (F207: add-phase's empty gate), wd (F271: the
 # widening `scope` refused on the very task it exists for), pb (F275: the owning
 # phase's blockedBy, the readiness term this file's own copy never carried),
-# eb (F285: the brief a shell had already eaten, and the stdin route out).
+# eb (F285: the brief a shell had already eaten, and the stdin route out),
+# pr (the `start` verb: the promotion the plan gate reads).
 def _cases(check):
     import contextlib
     import io
@@ -2576,15 +2577,15 @@ def _cases(check):
               and "Follow-up work is a new task" in txt
               and "the plan gate now matches" not in txt)
         _stmod = _panel_write._journalmod()
-        _st_rows = [r for r in (_stmod.read_all(st_proj) if _stmod else [])
+        _pr_rows = [r for r in (_stmod.read_all(st_proj) if _stmod else [])
                     if r.get("action") == "task.scope"]
         check("st3 ...and the row DATES it, because a settlement written into a "
               "finished task's record is exactly the thing a reader will later "
-              "ask when happened: %r" % (_st_rows[-1:],),
-              len(_st_rows) == 1
-              and "WIDENED" in (_st_rows[0].get("summary") or "")
-              and "done" in (_st_rows[0].get("summary") or "")
-              and (_st_rows[0].get("details") or {}).get("attempt") == 1)
+              "ask when happened: %r" % (_pr_rows[-1:],),
+              len(_pr_rows) == 1
+              and "WIDENED" in (_pr_rows[0].get("summary") or "")
+              and "done" in (_pr_rows[0].get("summary") or "")
+              and (_pr_rows[0].get("details") or {}).get("attempt") == 1)
         stn_proj, stn_mp = mk("st-done-narrow", stm)
         code, txt = run(["scope", "P2.1", "--files", "src/other.ts",
                          "--project-dir", stn_proj])
@@ -3119,7 +3120,7 @@ def _cases(check):
                    if ph.get("id") == "P3"] == [["make check ; true"]])
 
         # ---- (vf) F295: a flag a verb does not read is a usage error ----------
-        # ONE PARSER SERVES FIVE VERBS. Driven across the grid before the fix,
+        # ONE PARSER SERVES EVERY VERB. Driven across the grid before the fix,
         # half the (verb, flag) pairs were ACCEPTED, wrote nothing and reported
         # success with exit 0 - `scope --outcome`, `retarget --files`,
         # `add --id`, `add-phase --risk`, `add-phase --files` among them. F196,
@@ -3173,7 +3174,13 @@ def _cases(check):
                    "add-phase": ["add-phase", "T", "--outcome", "o"],
                    "cancel": ["cancel", "P2.3", "--reason", "r"],
                    "scope": ["scope", "P2.3", "--files", "src/a.ts"],
-                   "retarget": ["retarget", "P2", "--gate", "true"]}
+                   "retarget": ["retarget", "P2", "--gate", "true"],
+                   # `start` takes an id and NO flag of its own, so its row here
+                   # is the bare call. `vf3` still drives the whole option list
+                   # against it, which is the point: a verb whose `VERB_FLAGS`
+                   # row is empty is the one where a stray flag has nowhere to
+                   # be quietly absorbed.
+                   "start": ["start", "P2.3"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3187,8 +3194,9 @@ def _cases(check):
                     _vf_leaks.append((_vfv, _vf_opts[_vfd]))
         with open(vf_mp, "rb") as _fh:
             _vf_after3 = _fh.read()
-        check("vf3 ...and the WHOLE grid: every flag no verb of the five reads "
-              "exits 2 on that verb, and not one of those calls wrote a byte. "
+        check("vf3 ...and the WHOLE grid: every flag no verb of this parser "
+              "reads exits 2 on that verb, and not one of those calls wrote a "
+              "byte. "
               "Counted over the parser's own option list, so a flag added "
               "tomorrow is inside this case by existing - which is the half "
               "that makes `--rename`'s birth defect impossible to repeat: %r"
@@ -3207,14 +3215,23 @@ def _cases(check):
                  "retarget/--outcome"),
                 (["scope", "P2.3", "--files", "src/a.ts", "--json"],
                  "scope/--json"),
+                # `start` declares NO flag of its own, so the universal ones are
+                # the only thing it can be shown to still take - and a verb with
+                # an empty `VERB_FLAGS` row is exactly where an over-wide
+                # refusal would land first.
+                (["start", "P2.3", "--json"], "start/--json"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
-              "works, and `--json` / `--project-dir` reach all five - a guard "
+              "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
-              "inside the day: %r" % (_vf_ok,),
-              sorted(_vf_ok.values()) == [0] * 5)
+              "inside the day - and the verbs covered are DERIVED off the table, "
+              "so a verb added with no second-direction case is red rather than "
+              "silently uncovered: %r" % (_vf_ok,),
+              _vf_ok != {} and sorted(set(_vf_ok.values())) == [0]
+              and sorted(set(w.split("/")[0] for w in _vf_ok))
+              == sorted(M.VERB_FLAGS))
         _vf_empty = run(["cancel", "P2.3", "--reason", "r", "--description",
                          "", "--project-dir", vf_proj])[0]
         check("vf5 ...and the census reads ARGV rather than the namespace: "
@@ -3236,9 +3253,9 @@ def _cases(check):
         def vf_doors(tree):
             """{verb: door function} off `main`'s own `doors` map.
 
-            DERIVED AND NOT LISTED. The roots of the walk below are the five
+            DERIVED AND NOT LISTED. The roots of the walk below are the
             functions the dispatch actually reaches, and a list of them kept
-            here would be a sixth description of the verb set - which is the
+            here would be one more description of the verb set - which is the
             failure `test__refs.py`'s `_AT_WRITERS` records paying for.
             """
             for node in ast.walk(tree):
@@ -3323,7 +3340,8 @@ def _cases(check):
         _vf_unresolved = sorted(d for d in _vf_map.values()
                                 if d not in _vf_defs)
         check("vf7 ...over a door map, a call graph and an option list that all "
-              "actually resolved: five verbs, every door found in the AST, and "
+              "actually resolved: the parser's own verb list, every door found "
+              "in the AST, and "
               "each derived set non-empty. `add` reaching `_build_task` and "
               "`retarget` reaching `--rename` are named because those are the "
               "two edges the closure exists for: %r"
@@ -3427,11 +3445,319 @@ def _cases(check):
               _vf_vague == [])
         _vf_common = set.intersection(*[_vf_derived[v] for v in _vf_derived])
         check("vf8 ...and `UNIVERSAL_FLAGS` is EXACTLY the intersection of the "
-              "five derived sets, so a flag that becomes universal cannot stay "
+              "derived sets, so a flag that becomes universal cannot stay "
               "listed per verb and one that stops being universal cannot stay "
               "here - the table's own vocabulary is derived too: %r"
               % (sorted(_vf_common),),
               _vf_common == set(M.UNIVERSAL_FLAGS))
+
+        # ---- (pr) `start`: the promotion the plan gate reads ------------------
+        # THE DEFECT, driven: `add` writes `status: "pending"`, and
+        # `hooks/_config.in_progress_task_map` - what `require-plan.py` resolves
+        # an allowed path through - skips every task that is not `in_progress`,
+        # its `fileIndex` arm included (that arm only re-adds paths for ids
+        # already in the filtered set). So a task added to a phase that is
+        # ALREADY RUNNING is born with its own declared files denied on the
+        # first Edit, and the only promotions were `/audit:run`, which promotes
+        # AND spawns, and a hand edit. A field report measured two executors
+        # returning zero edits, each having spent a subagent's budget, both
+        # refused on a path their task's `files` declared.
+        #
+        # THE MAP IS ASKED HERE RATHER THAN ASSERTED ABOUT. Reading the task
+        # back out of the manifest proves the three fields were written; it
+        # proves nothing about the hook, and the hook is the reason the verb
+        # exists. So this group imports the gate's own resolver and asks it the
+        # question the denial asks - before, and after.
+        import _config as _pr_cfg
+        _PR_REL = "docs/audit/audit-plan.json"
+
+        def pr_map(proj):
+            return _pr_cfg.in_progress_task_map(proj, _PR_REL)
+
+        def pr_fixture():
+            fx = base_manifest()
+            # P2.3 IS GIVEN A FILE ON PURPOSE. It is the OTHER pending task in
+            # the same running phase, and without a path of its own `pr3` could
+            # not tell the per-task promotion from the rejected widening: a map
+            # taught to read `pending` opens whatever the pending tasks declare,
+            # and a task declaring nothing exposes nothing either way.
+            fx["phases"][1]["tasks"][1]["files"] = ["src/pending.ts"]
+            fx["fileIndex"]["src/pending.ts"] = ["P2.3"]
+            fx["phases"][1]["tasks"].append(
+                {"id": "P2.4", "title": "fresh", "status": "pending",
+                 "description": "", "files": ["src/fresh.ts"],
+                 "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                           "gate": ["test"]},
+                 "model": "sonnet", "skills": [], "risk": "low",
+                 "blockedBy": [], "dependsOn": [], "attempts": 0,
+                 "maxAttempts": 3, "commit": None,
+                 "outcome": {"technical": None, "descriptive": None},
+                 "startedAt": None, "completedAt": None, "verifiedBy": []})
+            fx["fileIndex"]["src/fresh.ts"] = ["P2.4"]
+            return fx
+
+        projpr, mppr = mk("st-start", pr_fixture())
+        _pr_before_map = pr_map(projpr)
+        code, txt = run(["start", "P2.4", "--project-dir", projpr])
+        _pr_after_map = pr_map(projpr)
+        tpr = task_in(mppr, "P2.4")
+        check("pr1 a pending task in a RUNNING phase is promoted: the fields "
+              "are `reference/orchestrator.md` step 2's, and nothing else on "
+              "the task moved - %r"
+              % ((code, tpr.get("status"), tpr.get("attempts"),
+                  bool(tpr.get("startedAt"))),),
+              code == 0 and tpr.get("status") == "in_progress"
+              and tpr.get("attempts") == 1
+              and isinstance(tpr.get("startedAt"), str)
+              and tpr.get("startedAt").endswith("Z")
+              and tpr.get("completedAt") is None
+              and tpr.get("files") == ["src/fresh.ts"])
+        check("pr2 THE DEFECT, asked of the gate's own resolver rather than of "
+              "the manifest: `src/fresh.ts` is a path the task DECLARES, and "
+              "`in_progress_task_map` did not resolve it before the promotion "
+              "and does after. This is what the two zero-edit executors were "
+              "denied on: before=%r after=%r"
+              % (_pr_before_map.get("src/fresh.ts"),
+                 _pr_after_map.get("src/fresh.ts")),
+              "src/fresh.ts" not in _pr_before_map
+              and _pr_after_map.get("src/fresh.ts")
+              == [{"taskId": "P2.4", "testsMode": "gate-only"}])
+        check("pr3 SECOND-DIRECTION CASE: the promotion is PER TASK, which is "
+              "the whole reason `in_progress_task_map` was not widened to read "
+              "`pending` instead. P2.3 declares `src/pending.ts` and is pending "
+              "in the same running phase, and that path is STILL unresolved "
+              "after this call - a map that had been widened would have opened "
+              "it in the same move: %r" % (sorted(_pr_after_map),),
+              sorted(_pr_after_map) == ["src/fresh.ts"])
+
+        # NOT IDEMPOTENT, AND THAT IS THE DECISION. `attempts` counts SPAWNS:
+        # step 4 of the orchestrator leaves a task `in_progress` when its gates
+        # run red and sends it back through step 2, so a second call IS that
+        # retry. A verb that returned 0 having written nothing would freeze the
+        # count `blocked` is derived from, and a run could retry for ever while
+        # the plan said it had been attempted once.
+        code2, txt2 = run(["start", "P2.4", "--project-dir", projpr])
+        tpr2 = task_in(mppr, "P2.4")
+        check("pr4 a start on a task that is ALREADY in_progress spends an "
+              "attempt rather than returning success having written nothing - "
+              "and says RE-STARTED, so a double call is visible: %r"
+              % ((code2, tpr2.get("attempts"), "RE-STARTED" in txt2),),
+              code2 == 0 and tpr2.get("attempts") == 2
+              and tpr2.get("status") == "in_progress"
+              and "RE-STARTED" in txt2)
+
+        # THE CEILING. Step 2 pairs the increment with "if `task.attempts >
+        # (task.maxAttempts or 3)`, do NOT spawn" - a verb writing the increment
+        # and dropping that half hands back exit 0 on a task the caller must not
+        # spawn. It refuses rather than writing `blocked`, which owes an ADO
+        # echo and a human.
+        projmx, mpmx = mk("st-ceiling", pr_fixture())
+        _pr_climb = [run(["start", "P2.4", "--project-dir", projmx])[0]
+                     for _prn in range(3)]
+        with open(mpmx, "rb") as _fh:
+            _pr_at_ceiling = _fh.read()
+        code3, txt3 = run(["start", "P2.4", "--project-dir", projmx])
+        with open(mpmx, "rb") as _fh:
+            _pr_after_ceiling = _fh.read()
+        check("pr5 a start that would take `attempts` PAST `maxAttempts` is "
+              "refused, the manifest is byte identical, and the message names "
+              "the count, the ceiling and whose move `blocked` is: %r"
+              % (txt3[:160],),
+              code3 == 2 and _pr_after_ceiling == _pr_at_ceiling
+              and "maxAttempts" in txt3 and "blocked" in txt3
+              and (task_in(mpmx, "P2.4") or {}).get("attempts") == 3)
+        check("pr5b ALLOW CASE, and it is the direction an over-wide guard "
+              "breaks: every attempt UP TO the ceiling goes through, so a "
+              "comparison off by one would refuse the last retry the plan is "
+              "entitled to. The exit codes are kept rather than inferred from "
+              "the count, because a refused call and a written one both leave "
+              "`attempts` short: %r" % ((_pr_climb,
+                                         (task_in(mpmx, "P2.4") or {}).get(
+                                             "attempts")),),
+              _pr_climb == [0, 0, 0]
+              and (task_in(mpmx, "P2.4") or {}).get("attempts") == 3
+              and (task_in(mpmx, "P2.4") or {}).get("status") == "in_progress")
+
+        # A ceiling nobody set is not a reason to refuse every start: the
+        # template default answers, the way `recorded_attempt` refuses to invent
+        # a count but this field has a documented default to fall back on.
+        _pr_junk = pr_fixture()
+        _pr_junk["phases"][1]["tasks"][-1]["maxAttempts"] = True
+        projjk, mpjk = mk("st-ceiling-junk", _pr_junk)
+        check("pr6 `maxAttempts: true` is not a ceiling of one - `bool` is an "
+              "`int` in Python, and the template default answers for a value "
+              "nobody set: %r" % ((M._attempt_ceiling({"maxAttempts": True}),
+                                   M._attempt_ceiling({"maxAttempts": 0}),
+                                   M._attempt_ceiling({}),
+                                   M._attempt_ceiling({"maxAttempts": 7})),),
+              run(["start", "P2.4", "--project-dir", projjk])[0] == 0
+              and M._attempt_ceiling({"maxAttempts": True}) == 3
+              and M._attempt_ceiling({"maxAttempts": 0}) == 3
+              and M._attempt_ceiling({}) == 3
+              and M._attempt_ceiling({"maxAttempts": 7}) == 7)
+
+        # TERMINAL IS TERMINAL, `_locked_cancel`'s rule one verb over: flipping
+        # a finished status back would rewrite history with no record of what it
+        # said before, and a `done` task carries a commit graded against the
+        # scope it holds.
+        projtm, mptm = mk("st-terminal", pr_fixture())
+        run(["cancel", "P2.3", "--reason", "dropped", "--project-dir", projtm])
+        with open(mptm, "rb") as _fh:
+            _pr_tm_before = _fh.read()
+        _pr_term = {}
+        for _prtid in ("P2.1", "P2.3"):
+            _pr_term[_prtid] = run(["start", _prtid, "--project-dir", projtm])
+        with open(mptm, "rb") as _fh:
+            _pr_tm_after = _fh.read()
+        check("pr7 a `done` task and a `cancelled` one are each refused BY "
+              "NAME, and neither call wrote a byte: %r"
+              % (dict((k, (v[0], v[1][:70])) for k, v in _pr_term.items()),),
+              _pr_term["P2.1"][0] == 2 and _pr_term["P2.3"][0] == 2
+              and "already done" in _pr_term["P2.1"][1]
+              and "already cancelled" in _pr_term["P2.3"][1]
+              and _pr_tm_after == _pr_tm_before)
+        check("pr8 a PHASE id is refused rather than promoted, and an id that "
+              "resolves to nothing says so - the two look alike enough that a "
+              "verb guessing between them guesses wrong: %r"
+              % ((run(["start", "P2", "--project-dir", projtm])[1][:80],
+                  run(["start", "P9.9", "--project-dir", projtm])[1][:60]),),
+              run(["start", "P2", "--project-dir", projtm])[0] == 2
+              and "PHASE" in run(["start", "P2", "--project-dir", projtm])[1]
+              and run(["start", "P9.9", "--project-dir", projtm])[0] == 2
+              and run(["start", "", "--project-dir", projtm])[0] == 2)
+
+        # THE ROW. `changes` and `attempt` are keys `_journal_io.DETAILS_KEYS`
+        # already carries; a `startedAt` key invented for this writer would be
+        # dropped in silence and believed, which is `_journal_phase_add`'s note.
+        projjr, mpjr = mk("st-journal", pr_fixture())
+        run(["start", "P2.4", "--project-dir", projjr])
+        _prjm = _panel_write._journalmod()
+        _pr_rows = [r for r in (_prjm.read_all(projjr) if _prjm else [])
+                    if r.get("action") == "task.start"]
+        _pr_det = (_pr_rows[0].get("details") or {}) if _pr_rows else {}
+        check("pr9 the trail carries ONE `task.start` row whose details are "
+              "exactly the allow-listed keys the writer means, with the status "
+              "it moved FROM - read before the write, because afterwards every "
+              "one of them says in_progress: %r" % ((sorted(_pr_det),
+                                                     _pr_det.get("changes")),),
+              len(_pr_rows) == 1
+              and sorted(_pr_det) == ["attempt", "changes", "phaseId", "taskId"]
+              and _pr_det.get("attempt") == 1
+              and _pr_det.get("taskId") == "P2.4"
+              and [c for c in _pr_det["changes"] if c["field"] == "status"]
+              == [{"id": "P2.4", "field": "status", "from": "pending",
+                   "to": "in_progress"}]
+              and [c["field"] for c in _pr_det["changes"]]
+              == ["status", "startedAt", "attempts"])
+        # THE HANDOVER, NOT THE ROW, and the two are different questions:
+        # `_journal_io` drops an unlisted key in SILENCE, so a row read back is
+        # identical whether the writer handed over an allow-listed block or one
+        # carrying an invented key beside it. `pr9` above cannot see that, and a
+        # key written, dropped and believed is the exact failure
+        # `_journal_phase_add` records - so the block the writer BUILDS is
+        # compared against the allow-list `_journal_io` really holds.
+        import _journal_io as _pr_jio
+        _pr_hand = M._start_details(
+            "P2.4", "P2", {"status": "pending", "attempts": 0,
+                           "startedAt": None},
+            {"attempts": 1, "status": "in_progress", "startedAt": "Z"})
+        check("pr9c ...and every key the WRITER hands over is on "
+              "`_journal_io.DETAILS_KEYS`, asked of that module rather than of "
+              "the row it produced - an unlisted key is dropped without a word, "
+              "so no assertion about the written row can see one: %r"
+              % (sorted(_pr_hand),),
+              sorted(_pr_hand) == ["attempt", "changes", "phaseId", "taskId"]
+              and set(_pr_hand) <= set(_pr_jio.DETAILS_KEYS)
+              and all(set(c) <= set(_pr_jio.CHANGE_KEYS) | set(["id"])
+                      for c in _pr_hand["changes"]))
+        run(["start", "P2.4", "--project-dir", projjr])
+        _pr_rows2 = [r for r in (_prjm.read_all(projjr) if _prjm else [])
+                     if r.get("action") == "task.start"]
+        check("pr9b ...and a RE-START says so in the SUMMARY, because "
+              "`audit-journal list` prints the summary and nothing else - a "
+              "retry that read like a first start would have to be told apart "
+              "by opening `details`: %r"
+              % ([r.get("summary") for r in _pr_rows2],),
+              len(_pr_rows2) == 2
+              and "RE-STARTED" in (_pr_rows2[1].get("summary") or "")
+              and "RE-STARTED" not in (_pr_rows2[0].get("summary") or ""))
+
+        # READINESS IS REPORTED, NEVER ENFORCED: the case this verb exists for
+        # is a task whose edits are being denied right now, and `/audit:run` is
+        # where readiness decides a spawn.
+        _pr_wait = pr_fixture()
+        _pr_wait["phases"][1]["tasks"][-1]["dependsOn"] = ["P2.3"]
+        projwt, mpwt = mk("st-waiting", _pr_wait)
+        codew, txtw = run(["start", "P2.4", "--project-dir", projwt])
+        check("pr10 a task with an unmet `dependsOn` is still promoted, with a "
+              "NOTE naming what it waits on - and the note is the whole of it, "
+              "which is why the status moved anyway: %r" % (txtw[-200:],),
+              codew == 0
+              and (task_in(mpwt, "P2.4") or {}).get("status") == "in_progress"
+              and "NOTE:" in txtw and "P2.3" in txtw.split("NOTE:")[-1])
+        codej, txtj = run(["start", "P2.4", "--project-dir", projwt, "--json"])
+        _pr_json = {}
+        try:
+            _pr_json = json.loads(txtj)
+        except Exception:
+            pass
+        check("pr11 the --json block is the same facts as DATA, with the "
+              "advisory among them rather than printed beside an object a "
+              "caller has to parse: %r" % (sorted(_pr_json),),
+              codej == 0 and _pr_json.get("ok") is True
+              and _pr_json.get("waitingOn") == ["P2.3"]
+              and _pr_json.get("ready") is False
+              and _pr_json.get("restarted") is True
+              and _pr_json.get("was") == "in_progress"
+              and _pr_json.get("attempt") == 2
+              and _pr_json.get("maxAttempts") == 3
+              and _pr_json.get("phase") == "P2"
+              and _pr_json.get("journaled") is True)
+
+        # THE SHARDED LAYOUT, because a promotion writes a TASK and a task lives
+        # in its phase's shard: a writer that reached for the index would leave
+        # a manifest whose assembled task still said `pending`.
+        projsh, mpsh = mk("st-sharded", pr_fixture(), sharded=True)
+        _sh_idx = _mio.read_json(mpsh)
+        _sh_base = os.path.dirname(mpsh)
+        _sh_of = dict((s.get("id"), os.path.join(_sh_base, s["shard"]))
+                      for s in _sh_idx["phases"] if isinstance(s, dict))
+        with open(_sh_of["P1"], "rb") as _fh:
+            _sh_p1 = _fh.read()
+        with open(mpsh, "rb") as _fh:
+            _sh_index = _fh.read()
+        codesh, _txtsh = run(["start", "P2.4", "--project-dir", projsh])
+        check("pr12 the sharded layout promotes in the phase's SHARD, leaves "
+              "an untouched phase's shard and the index byte-identical, and the "
+              "gate's resolver reads the assembled result: %r"
+              % ((codesh, (task_in(mpsh, "P2.4") or {}).get("status")),),
+              codesh == 0 and _mio.is_sharded(_sh_idx)
+              and (task_in(mpsh, "P2.4") or {}).get("status") == "in_progress"
+              and open(_sh_of["P1"], "rb").read() == _sh_p1
+              and open(mpsh, "rb").read() == _sh_index
+              and pr_map(projsh).get("src/fresh.ts")
+              == [{"taskId": "P2.4", "testsMode": "gate-only"}])
+
+        # AN ALREADY-INVALID MANIFEST REFUSES BEFORE ANY WRITE, the `r3` rule
+        # for this verb: a promotion written onto findings nobody has fixed is
+        # a second problem on top of the first.
+        _pr_bad = pr_fixture()
+        _pr_bad["phases"][1]["tasks"][-1]["blockedBy"] = ["NOPE"]
+        projbd, mpbd = mk("st-invalid", _pr_bad)
+        with open(mpbd, "rb") as _fh:
+            _pr_bd_before = _fh.read()
+        codebd, txtbd = run(["start", "P2.4", "--project-dir", projbd])
+        check("pr13 an already-invalid manifest refuses BEFORE the write, and "
+              "the two arms are told apart by their own words rather than by "
+              "the exit code: dropping the pre-check leaves the byte compare "
+              "green, because the post-write arm catches the same findings and "
+              "rolls back to the same bytes with the same exit 1. `nothing "
+              "written` is the pre-check; `rolled back` is the other one: %r"
+              % (txtbd[:100],),
+              codebd == 1
+              and "already invalid -- nothing written" in txtbd
+              and "rolled back" not in txtbd
+              and open(mpbd, "rb").read() == _pr_bd_before)
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

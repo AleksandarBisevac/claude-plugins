@@ -1,13 +1,14 @@
 ---
-description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:task — add a task to the manifest, move one between phases, or close one
+# /audit:task — add a task to the manifest, promote one, move one between phases, or close one
 
 **`$ARGUMENTS`**: subcommand `add` followed by a quoted title and any of the
 flags in the `argument-hint` above;
+or subcommand `start` followed by a task id;
 or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
@@ -25,7 +26,7 @@ chance to **paraphrase** a value the caller had already decided — the defect `
 had (see *The operator's words go in VERBATIM* below).
 
 **A flag belongs to the verb whose hint carries it, and passing it to another one is a
-usage error.** One `argparse` parser serves all five verbs, so argparse accepts every
+usage error.** One `argparse` parser serves every verb of the writer script, so it accepts every
 flag on every one of them — and each verb's writer only ever read its own subset, so
 half the pairs used to be accepted, write nothing and report success with exit 0
 (`scope --outcome`, `add --id`, `add-phase --risk`, `retarget --files`). Those now exit
@@ -196,6 +197,57 @@ the brief that still *reads* complete and is not.
 
 Every verb here that takes `--description` refuses the same way, because the flag
 is one flag on one parser and each of them writes the value straight into the manifest.
+
+## Subcommand: `start <taskId>`
+
+Promote a task to `in_progress` **without spawning anything**. This is the verb for the
+case `add` creates: a task added to a phase that is already running is written
+`status: "pending"`, `startedAt: null`, `attempts: 0`, and the plan gate resolves an
+allowed path only through tasks that are `in_progress` — `hooks/require-plan.py` reads
+`hooks/_config.in_progress_task_map`, which skips every other status and whose
+`fileIndex` arm only re-adds paths for ids already in that filtered set. So the new
+task's **own** declared files are refused on its first `Edit`. Measured: two executors
+returned zero edits, each having spent a subagent's budget, both denied on a path their
+task's `files` declared.
+
+Until this verb the only promotions were `/audit:run <taskId>`, which promotes **and**
+spawns, and the hand edit this file forbids everywhere else.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 [--json]
+```
+
+What it writes — exactly the fields `reference/orchestrator.md` → *Execute the task*,
+step 2 prescribes as an orchestrator `Edit`, and nothing besides:
+
+- `status: "in_progress"`, `startedAt` stamped at the moment of the call, and
+  `attempts` incremented.
+- **journal** → one `task.start` row whose `details.changes` names each field with the
+  value it held, plus `details.attempt` — both keys the `_journal_io.DETAILS_KEYS`
+  allow-list already carries, so nothing is written that the trail would drop in silence.
+- Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
+  `add`.
+
+**It is not idempotent, and that is deliberate.** `attempts` counts spawns, not states:
+step 4 of the orchestrator leaves a task `in_progress` when its gates run red and sends
+it back through step 2, so calling `start` on a running task **is** that retry and spends
+an attempt. The report says `RE-STARTED` and names the attempt every time, so a double
+call is visible rather than silent. A verb that returned success having written nothing
+would freeze the count `blocked` is derived from.
+
+**Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
+phase enters `in_progress` on the run that enters it); a `done` or `cancelled` task, named
+as such — terminal work is not re-opened by flipping a status, and the follow-up is a new
+task; and a start that would take `attempts` past the task's `maxAttempts`. That last one
+refuses rather than writing `blocked` itself: that transition also owes an ADO echo and a
+human, both of which belong to the orchestrator, and the refusal names the count and the
+ceiling so the caller can make it.
+
+**Readiness is reported, never enforced.** A task with unmet `blockedBy`/`dependsOn` is
+still promoted, with a `NOTE:` naming what it waits on — `/audit:run` is where readiness
+decides a spawn, and the case this verb exists for is a task whose edits are being denied
+right now. **Nothing refuses a promotion of unready work**, here or in the script; the
+note is the whole of it.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 
