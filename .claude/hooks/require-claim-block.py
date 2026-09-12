@@ -24,9 +24,13 @@ with no block and no message. That allow case is what keeps this hook installed:
 fires on every commit is a guard somebody switches off.
 
 WHERE THE MESSAGE COMES FROM. `-m "<text>"` (any number of them, joined), `-F <file>` /
-`--file <file>`, or a `git commit` with neither - which opens an editor this hook cannot see,
-so it is allowed through: the hook cannot refuse what it cannot read, and it says so rather
-than guessing. `--amend --no-edit` reuses HEAD's message, which is read from git.
+`--file <file>`, `-F -` when the command carries the text in a heredoc, and `--amend
+--no-edit`, which reuses HEAD's message read from git. A `git commit` with none of those
+opens an editor this hook cannot see and is allowed through: no message exists yet, a human
+is about to type one, and the hook says so rather than guessing. A message that DOES exist
+and reaches git on a channel this hook will never hold - `-F -` fed by a pipe - is refused
+instead, naming the routes it can read; `message_of` decides which of the two an unreadable
+message earns, and the comment above it says why the line falls there.
 
 Fail-open on its own malfunction, like every advisory hook in `SECURITY.md`'s table: if git
 cannot be asked or the payload is not a commit, allow silently. The thing it protects is a
@@ -92,12 +96,13 @@ _HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _SEPARATORS = re.compile(r"&&|\|\||[;\n|]")
 
 
-def statements(command):
-    """The command cut into the statements a shell would run, heredoc bodies removed.
+def _cut(command):
+    """(statement texts, [(heredoc word, body)]) - one walk, both halves.
 
-    Returns the statement texts in order. A statement that is empty after the cut is
-    dropped, so `a && && b` yields two rather than three."""
-    out, pending = [], []
+    The bodies are KEPT because `git commit -F - <<WORD` delivers its message in one, and
+    they are kept SEPARATELY for the same reason they were dropped before: only the first
+    half is ever classified, so a body remains data no matter what it spells."""
+    pending, bodies = [], []
     lines = (command or "").splitlines()
     i = 0
     while i < len(lines):
@@ -106,12 +111,42 @@ def statements(command):
         marks = _HEREDOC.findall(line)
         i += 1
         for _quote, word in marks:
-            # Skip the body; the terminator may be indented when `<<-` was used.
+            # Collect the body; the terminator may be indented when `<<-` was used.
+            body = []
             while i < len(lines) and lines[i].strip() != word:
+                body.append(lines[i])
                 i += 1
             i += 1                       # step over the terminator itself
+            bodies.append((word, "\n".join(body)))
     text = "\n".join(pending)
-    return [s.strip() for s in _SEPARATORS.split(text) if s.strip()]
+    return [s.strip() for s in _SEPARATORS.split(text) if s.strip()], bodies
+
+
+def statements(command):
+    """The command cut into the statements a shell would run, heredoc bodies removed.
+
+    Returns the statement texts in order. A statement that is empty after the cut is
+    dropped, so `a && && b` yields two rather than three."""
+    return _cut(command)[0]
+
+
+def heredoc_on(command, statement):
+    """The text a heredoc opened by `statement` would feed to its standard input, or None
+    when there is not exactly one such text to read.
+
+    The word is read from the statement's OWN text - `git commit -F - <<'MSG'` carries
+    `<<'MSG'` in it - so a body opened by some other statement, which git's stdin never
+    sees, is not offered here. None when the statement opens no heredoc (a pipe, a
+    redirect from a file, a here-string), when it opens more than one, or when the word it
+    names was opened elsewhere too with different text: reading the wrong body would let
+    through a commit whose real message nobody graded, so an ambiguity is not read."""
+    words = [w for _quote, w in _HEREDOC.findall(statement or "")]
+    if len(words) != 1:
+        return None
+    bodies = set(body for word, body in _cut(command)[1] if word == words[0])
+    if len(bodies) != 1:
+        return None
+    return bodies.pop()
 
 
 def _git_verb(statement):
@@ -139,8 +174,20 @@ def _git_verb(statement):
     return None
 
 
+def _commit_statement(command):
+    """The statement that runs the commit, or None when none does.
+
+    Its text is where `heredoc_on` reads the redirect word: the heredoc that feeds git's
+    standard input is the one opened on the commit's own line, never one opened by some
+    other statement of the same command."""
+    for statement in statements(command):
+        if _git_verb(statement) == "commit":
+            return statement
+    return None
+
+
 def is_commit(command):
-    return any(_git_verb(s) == "commit" for s in statements(command))
+    return _commit_statement(command) is not None
 
 
 def target_dir(command, cwd):
@@ -183,8 +230,57 @@ def _shell_split(command):
         return command.split()
 
 
+# A MESSAGE ON STANDARD INPUT IS A MESSAGE THAT EXISTS, SO IT IS GRADED.
+#
+# `git commit -F -` and `git commit -F /dev/stdin` are one operation - git reads the text
+# on file descriptor 0 - and they used to get opposite verdicts, neither of them chosen.
+# `-` was joined to the target directory, the open of a file called `-` failed, and an
+# unreadable message was graded fail-open. `/dev/stdin` opened, and what it read was THIS
+# PROCESS's standard input: the hook's own JSON payload channel, consumed at `main`'s
+# `json.load(sys.stdin)`. Driven with a block on the hook's stdin and none in the
+# heredoc, that arm ALLOWED a commit carrying no block at all.
+#
+# The line between fail-open and refusal is not "can the hook read it" but WHETHER THERE
+# IS A MESSAGE YET. The editor arm has none - a human is about to type one, and a hook
+# cannot refuse what has not been written. A message on stdin has been written already;
+# the author picked a channel, and the hook's business is the message, not the channel.
+# So when the channel is a heredoc the text is IN the command and is read from there, and
+# the same message delivered by `-m`, by `-F <file>` or by a heredoc gets one verdict.
+# When it is anything else - a pipe, a redirect, a here-string - the message exists, this
+# hook is never going to hold that descriptor, and the commit is REFUSED with the routes
+# it can read.
+#
+# Refusing the heredoc as well would have been the shorter rule and is the wrong one: it
+# would refuse commits that CARRY a complete block, for the spelling of their delivery
+# alone. The docstring's reason for letting an uncovered staging through applies here
+# too - a guard that fires on work it has nothing to say about is a guard somebody
+# switches off.
+STDIN_ROUTES = ("-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0")
+
+STDIN_UNREADABLE = (
+    "this commit takes its message from standard input, which is a channel this hook does "
+    "not hold - what it would read there is its own payload, not git's message. Deliver "
+    "the message a way that can be graded: `-m \"<text>\"`, `-F <file>`, or `-F -` with the "
+    "text in a heredoc on the commit itself")
+
+
 def message_of(command, cwd):
-    """(message, source) - the commit message this command will use, or (None, why)."""
+    """(message, source, unreadable) - the commit message this command will use.
+
+    `unreadable` is None when the message was read. Otherwise `message` is None, `source`
+    says why, and `unreadable` carries the verdict that reason has earned: "allow" where
+    no message exists yet or where the hook may simply have resolved a path the shell
+    resolves differently, "deny" where a message exists and was handed to git on a
+    channel this hook will never have."""
+    statement = _commit_statement(command)
+    if statement is None:
+        return None, "not a commit", "allow"
+    # The flag scan reads the WHOLE command, not just that statement: the statement cutter
+    # treats every newline as a separator, so a multi-line `-m "..."` message is several
+    # statements to it and scanning one of them would read only the part of the message
+    # that sits on the commit's own line. The
+    # cost is that a `-m` written inside a heredoc body still reaches this scan; the
+    # statement is used where it is sound - deciding which heredoc, if any, is git's stdin.
     argv = _shell_split(command)
     parts, i = [], 0
     from_file, amend_noedit = None, False
@@ -204,23 +300,32 @@ def message_of(command, cwd):
             amend_noedit = amend_noedit or ("--no-edit" in argv)
         i += 1
     if parts:
-        return "\n".join(parts), "-m"
+        return "\n".join(parts), "-m", None
     if from_file:
+        if from_file in STDIN_ROUTES:
+            body = heredoc_on(command, statement)
+            if body is None:
+                return None, STDIN_UNREADABLE, "deny"
+            return body, "-F - (the heredoc the command carries)", None
         path = from_file if os.path.isabs(from_file) else os.path.join(cwd, from_file)
         try:
             with io.open(path, encoding="utf-8", errors="replace") as fh:
-                return fh.read(), "-F"
+                return fh.read(), "-F", None
         except OSError as exc:
-            return None, "message file could not be read (%s)" % (exc,)
+            # Fail-open, unlike the channel above: a path is something this hook
+            # RESOLVES, and a resolution it got wrong where the shell got it right would
+            # refuse a commit whose message is on disk and carries the block. git fails
+            # on a `-F` it cannot read too, so no commit comes of it either way.
+            return None, "message file could not be read (%s)" % (exc,), "allow"
     if amend_noedit:
         try:
             out = subprocess.run(["git", "log", "-1", "--format=%B"], cwd=cwd,
                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                  timeout=5).stdout.decode("utf-8", "replace")
-            return out, "HEAD (--amend --no-edit)"
+            return out, "HEAD (--amend --no-edit)", None
         except Exception as exc:
-            return None, "HEAD message could not be read (%s)" % (exc,)
-    return None, "the message comes from an editor this hook cannot read"
+            return None, "HEAD message could not be read (%s)" % (exc,), "allow"
+    return None, "the message comes from an editor this hook cannot read", "allow"
 
 
 def staged_paths(cwd):
@@ -266,6 +371,21 @@ def block_verdict(message):
     return None
 
 
+def _refusal(why, hit):
+    """The deny reason: what is wrong, which staged surfaces make it matter, and the
+    template to fill. One builder, because a message this hook cannot read and a message
+    with no block ask the author for the same thing."""
+    return (
+        "[require-claim-block] %s, and this commit stages a surface the "
+        "`before-you-claim` skill covers: %s.\n"
+        "Answer the seven questions (evidence or `n/a - <reason>` per line) and put the "
+        "block in the commit message:\n\n%s\n\n"
+        "The hook checks that the block is present and has seven lines; the reviewer "
+        "judges the answers. Read .claude/skills/before-you-claim/SKILL.md for what each "
+        "line must carry."
+        % (why, ", ".join(hit[:4]) + (" ..." if len(hit) > 4 else ""), TEMPLATE))
+
+
 def decide(payload, cwd):
     """('allow'|'deny', reason). Pure over its inputs except for the two git reads."""
     command = ((payload or {}).get("tool_input") or {}).get("command") or ""
@@ -278,21 +398,15 @@ def decide(payload, cwd):
     hit = covered(paths)
     if not hit:
         return "allow", "no claim-bearing surface staged"
-    message, source = message_of(command, where)
+    message, source, unreadable = message_of(command, where)
     if message is None:
+        if unreadable == "deny":
+            return "deny", _refusal(source, hit)
         return "allow", source
     why = block_verdict(message)
     if why is None:
         return "allow", "claims block present (%s)" % source
-    return "deny", (
-        "[require-claim-block] %s, and this commit stages a surface the "
-        "`before-you-claim` skill covers: %s.\n"
-        "Answer the seven questions (evidence or `n/a - <reason>` per line) and put the "
-        "block in the commit message:\n\n%s\n\n"
-        "The hook checks that the block is present and has seven lines; the reviewer "
-        "judges the answers. Read .claude/skills/before-you-claim/SKILL.md for what each "
-        "line must carry."
-        % (why, ", ".join(hit[:4]) + (" ..." if len(hit) > 4 else ""), TEMPLATE))
+    return "deny", _refusal(why, hit)
 
 
 def main():
@@ -507,6 +621,67 @@ def _selftest():
         check("s16 target_dir follows a `cd` inside a multi-line command",
               target_dir(heredoc, os.path.dirname(tmp)) == os.path.normpath(tmp),
               target_dir(heredoc, os.path.dirname(tmp)))
+
+        # 17. A MESSAGE ON STANDARD INPUT IS ONE CASE, AND IT IS GRADED. `-F -`,
+        # `--file=-` and `-F /dev/stdin` all hand git the text on descriptor 0, and they
+        # used to get two different verdicts by accident: the first two were ALLOWED,
+        # because a file named `-` cannot be opened and an unreadable message was
+        # fail-open, while `/dev/stdin` opened the HOOK's own standard input - driven
+        # with a block on the payload channel and none in the heredoc, that arm allowed a
+        # commit carrying no block. Now the heredoc the command carries IS the message,
+        # so the verdict follows the text a reviewer would read.
+        subprocess.run(["git", "reset", "-q"], cwd=tmp)
+        subprocess.run(["git", "add", "tools/x.py"], cwd=tmp)
+
+        def on_stdin(flag, body):
+            return "%s <<'MSG'\n%s\nMSG\n" % (flag, body)
+
+        v, r = decide(payload(on_stdin("git commit -F -", "subject\n\nno block here")), tmp)
+        check("s17 a heredoc message with no block, delivered on stdin, is REFUSED",
+              v == "deny" and "no `claims:` block" in r, (v, r[:90]))
+        v, r = decide(payload(on_stdin("git commit -F -", good)), tmp)
+        check("s17b ...and the allow direction: the same route carrying the block PASSES, "
+              "so what decides is the message and not the channel",
+              v == "allow" and "heredoc" in r, (v, r[:90]))
+        v, r = decide(payload(on_stdin("git commit --file=/dev/stdin", good)), tmp)
+        check("s17c `--file=/dev/stdin` is the same operation as `-F -`, so it is the same "
+              "verdict", v == "allow" and "heredoc" in r, (v, r[:90]))
+        # The deny direction of `/dev/stdin` cannot be told from the accident by its
+        # verdict - an empty payload channel read as the message has no block either, so
+        # both rules refuse. So this one asserts the TEXT that was graded: it has to be
+        # the heredoc's, not whatever this process's own standard input happens to hold.
+        cmd = on_stdin("git commit -F /dev/stdin", "subject\n\nnothing anyone can review")
+        msg, source, unreadable = message_of(cmd, tmp)
+        check("s17d ...and what gets graded is the heredoc's text, not the hook's own "
+              "standard input",
+              unreadable is None and msg is not None and "nothing anyone can review" in msg,
+              (source, repr(msg)[:70]))
+
+        # 18. AND A STANDARD INPUT THE HOOK CANNOT SEE IS REFUSED, NOT WAVED THROUGH.
+        # This is where the stdin arm parts from the editor arm below it: a piped message
+        # has already been written, so there is something to grade and no human about to
+        # type it.
+        v, r = decide(payload('printf %s | git commit -F -' % shlex.quote(good)), tmp)
+        check("s18 a message piped into `-F -` is refused: it exists, and this hook does "
+              "not hold that channel", v == "deny" and "standard input" in r, (v, r[:90]))
+        check("s18b ...and the refusal names a route that CAN be read",
+              "`-F <file>`" in r, r[:240])
+
+        # 19. THE HEREDOC HAS TO BE THE COMMIT'S OWN. A body opened by another statement
+        # is on its way into a file and never reaches git's standard input; reading it
+        # would pass a blockless commit on the strength of text being written elsewhere.
+        elsewhere = "cat > notes.txt <<'MSG'\n%s\nMSG\ngit commit -F -" % good
+        v, r = decide(payload(elsewhere), tmp)
+        check("s19 a heredoc opened by a DIFFERENT statement is not this commit's stdin",
+              v == "deny" and "standard input" in r, (v, r[:90]))
+
+        # 20. Keeping the bodies must not make them statements - the property the
+        # classifier rests on. Both halves in one assertion: the body is there to be read,
+        # and the command is still not a commit.
+        check("s20 the bodies are kept WITHOUT becoming statements: `_cut` hands back the "
+              "body of that script, and the script is still not a commit",
+              bool(_cut(writes_a_script)[1]) and not is_commit(writes_a_script),
+              _cut(writes_a_script)[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     n = len(results); ok = sum(1 for x in results if x)
