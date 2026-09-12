@@ -68,38 +68,107 @@ TEMPLATE = """claims:
 6 <decision reads the operation, not the text; allow case proven quiet | n/a - no guard>
 7 <command beside the number | number deleted, pointer kept | n/a - no number written>"""
 
-# Global options may sit between `git` and the verb - `git -C ../wt commit`, `git -c
-# core.x=y commit`, `git --no-pager commit`. The first version read `git\s+commit` only,
-# so a commit made in a sibling worktree by `-C` was "not a commit" and passed with no
-# block: the guard read the command's spelling, not its verb.
-_GIT_COMMIT = re.compile(
-    r"(?:^|&&|;|\|\|)\s*git(?:\s+-[Cc]\s*\S+|\s+--\S+(?:\s+\S+)?)*\s+commit\b")
+# THE DECISION READS A STATEMENT'S VERB, NOT A PATTERN OVER THE COMMAND TEXT.
+#
+# Two earlier versions were patterns, and each was widened after it let a real commit
+# through. The first read `git\s+commit`, so `git -C ../wt commit` was "not a commit".
+# The second added the global-option run and the separators `&&`, `;`, `||` - and still
+# missed the commonest shape an agent writes, because `^` is not `re.MULTILINE` and a
+# `git commit` that BEGINS ITS OWN LINE after a heredoc has none of those to its left.
+# Three of five baseline runs in one eval committed a covered surface that way.
+#
+# A third pattern would be a third widening. What the guard needs is the shell's own
+# reading: a command is a list of statements, and a newline separates two statements
+# exactly as `&&` does. So the text is cut into statements and each is classified by the
+# argv it would run.
+#
+# HEREDOC BODIES ARE NOT STATEMENTS. Text on its way into a file is data; classifying it
+# as a command is the same defect one surface over, and this repo's own history guard has
+# it (it refuses a command whose only act is to write a file carrying a force-push
+# literal). So the splitter skips from a `<<WORD` to its terminator.
+
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_SEPARATORS = re.compile(r"&&|\|\||[;\n|]")
+
+
+def statements(command):
+    """The command cut into the statements a shell would run, heredoc bodies removed.
+
+    Returns the statement texts in order. A statement that is empty after the cut is
+    dropped, so `a && && b` yields two rather than three."""
+    out, pending = [], []
+    lines = (command or "").splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        pending.append(line)
+        marks = _HEREDOC.findall(line)
+        i += 1
+        for _quote, word in marks:
+            # Skip the body; the terminator may be indented when `<<-` was used.
+            while i < len(lines) and lines[i].strip() != word:
+                i += 1
+            i += 1                       # step over the terminator itself
+    text = "\n".join(pending)
+    return [s.strip() for s in _SEPARATORS.split(text) if s.strip()]
+
+
+def _git_verb(statement):
+    """The git subcommand this statement would run, or None when it is not git.
+
+    Global options may sit between `git` and the verb - `git -C ../wt commit`, `git -c
+    core.x=y commit`, `git --no-pager commit` - so the scan walks argv rather than
+    matching a shape."""
+    argv = _shell_split(statement)
+    # A leading assignment or `cd`-style prefix is not git; find the program itself.
+    while argv and ("=" in argv[0] and not argv[0].startswith("-")):
+        argv = argv[1:]
+    if not argv or os.path.basename(argv[0]) != "git":
+        return None
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a in ("-C", "-c"):
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        return a
+    return None
 
 
 def is_commit(command):
-    return bool(_GIT_COMMIT.search(command or ""))
+    return any(_git_verb(s) == "commit" for s in statements(command))
 
 
 def target_dir(command, cwd):
-    """The directory git will run in: `cwd`, moved by a leading `cd <dir> &&` and then by
-    every `-C <dir>` ahead of the verb, each relative to the one before - the way git
-    resolves them. The index this hook reads must be that directory's; reading the
-    session's directory instead graded an empty index for a commit made in a sibling
-    worktree and let a covered change through with no block."""
+    """The directory git will run in: `cwd`, moved by every `cd <dir>` statement ahead of
+    the commit and then by every `-C <dir>` ahead of the verb, each relative to the one
+    before - the way a shell and git resolve them. The index this hook reads must be that
+    directory's; reading the session's directory instead graded an empty index for a
+    commit made in a sibling worktree and let a covered change through with no block.
+
+    It walks the same statement list the classifier does, so a `cd` that is not the first
+    thing on the line still moves the directory - the earlier version matched only a
+    leading `cd <dir> &&` and then read argv across the whole remaining text, heredoc
+    body included."""
     where = cwd
-    text = (command or "").strip()
-    m = re.match(r"^cd\s+(\"[^\"]*\"|'[^']*'|\S+)\s*(?:&&|;)\s*", text)
-    if m:
-        where = os.path.join(where, m.group(1).strip("\"'"))
-        text = text[m.end():]
-    argv = _shell_split(text)
-    i = 0
-    while i < len(argv) and argv[i] != "commit":
-        if argv[i] == "-C" and i + 1 < len(argv):
-            where = os.path.join(where, argv[i + 1]); i += 2; continue
-        if argv[i].startswith("-C") and len(argv[i]) > 2:
-            where = os.path.join(where, argv[i][2:]); i += 1; continue
-        i += 1
+    for statement in statements(command):
+        argv = _shell_split(statement)
+        if argv and argv[0] == "cd" and len(argv) > 1:
+            where = os.path.join(where, argv[1])
+            continue
+        if _git_verb(statement) != "commit":
+            continue
+        i = 1
+        while i < len(argv) and argv[i] != "commit":
+            if argv[i] == "-C" and i + 1 < len(argv):
+                where = os.path.join(where, argv[i + 1]); i += 2; continue
+            if argv[i].startswith("-C") and len(argv[i]) > 2:
+                where = os.path.join(where, argv[i][2:]); i += 1; continue
+            i += 1
+        break
     return os.path.normpath(where)
 
 
@@ -385,6 +454,58 @@ def _selftest():
                   v == "allow" and r == "not a commit", (v, r))
         finally:
             shutil.rmtree(tmp2, ignore_errors=True)
+
+        # 14. THE SHAPE THAT WALKED PAST TWO EARLIER PATTERNS. A heredoc builds the
+        # message, then `git commit` begins its own LINE. Three of five baseline runs in
+        # one eval of this repo's own skill committed a covered surface this way, and the
+        # guard called every one of them "not a commit".
+        #
+        # STAGE A COVERED PATH FIRST. Case 13 left the index reset, and the first version
+        # of these cases inherited that: s14b read "no claim-bearing surface staged" and
+        # s14c PASSED without the message ever being looked at, which is a case asserting
+        # nothing. `decide` answers the staged question before the block question, so any
+        # case about a block has to put something covered in the index.
+        subprocess.run(["git", "add", "tools/x.py"], cwd=tmp)
+        msg = os.path.join(tmp, "msg.txt")
+        io.open(msg, "w").write("subject\n\nbody with no block\n")
+        heredoc = ("cd %s && cat > %s <<'MSG'\nsubject\n\nbody\nMSG\n"
+                   "git commit -F %s 2>&1 | tail -40" % (tmp, msg, msg))
+        check("s14 a `git commit` that BEGINS ITS OWN LINE after a heredoc is a commit",
+              is_commit(heredoc))
+        v, r = decide(payload(heredoc), tmp)
+        check("s14b ...and with a covered path staged and no block it is REFUSED",
+              v == "deny" and "no `claims:` block" in r, (v, r[:90]))
+        # The allow case has to put the block where the hook READS it - the file `-F`
+        # names, on disk. The first version of this case wrote it into the heredoc body
+        # instead, which is the text the command would have written had anything run it;
+        # nothing does, so the hook read the old file and refused. The case was right to
+        # be red.
+        msg_ok = os.path.join(tmp, "msg-ok.txt")
+        io.open(msg_ok, "w").write(good)
+        v, r = decide(payload(heredoc.replace(msg, msg_ok)), tmp)
+        check("s14c the allow case: the same shape WITH the block passes",
+              v == "allow", (v, r[:90]))
+
+        # 15. THE OVER-FIRE DIRECTION. Cutting on newlines must not turn every line that
+        # merely MENTIONS a commit into one: a heredoc body is data on its way to a file,
+        # and reading it as a command is the defect this guard exists to stop, one surface
+        # over. Both of these must stay quiet.
+        writes_a_script = ("cat > %s/probe.sh <<'EOF'\ngit commit -m x\nEOF\n"
+                           "echo wrote it" % tmp)
+        check("s15 a heredoc whose BODY contains `git commit` is not a commit - the body "
+              "is data being written to a file",
+              not is_commit(writes_a_script))
+        check("s15b ...and a bare `git status` on its own line is still not a commit",
+              not is_commit("echo hello\ngit status --short"))
+        check("s15c ...while `git commit` after a plain newline, with no heredoc at all, "
+              "IS one",
+              is_commit("echo hello\ngit commit -m x"))
+
+        # 16. The directory walk follows the same statements: a `cd` that is not the
+        # first thing on the line still moves the tree the index is read from.
+        check("s16 target_dir follows a `cd` inside a multi-line command",
+              target_dir(heredoc, os.path.dirname(tmp)) == os.path.normpath(tmp),
+              target_dir(heredoc, os.path.dirname(tmp)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     n = len(results); ok = sum(1 for x in results if x)
