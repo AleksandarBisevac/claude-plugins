@@ -479,19 +479,106 @@ def _cases(check):
               "change nothing. Without this row gh30 is satisfied by a guard "
               "that refuses every command it is shown. REFUSED: %r" % (_refused,),
               _refused == [])
-        # THE HEREDOC, as a KNOWN COST rather than a discovery. The module
-        # docstring used to claim a heredoc body is allowed like a commit message
-        # and it is not: `shlex` splits `<<'EOF'` at the `<` and lexes the body as
-        # bare words. It stays refused on purpose - whether a heredoc body is DATA
-        # or a COMMAND depends on what consumes it, and `sh <<EOF` is a script.
-        v, why = _decide(repo, "cat <<'EOF' > NOTES.md\nnever run " + _G
-                         + "\nEOF")
-        check("gh32 KNOWN COST: a heredoc body naming a forbidden command is "
-              "REFUSED, unlike a commit message. `cat <<EOF` is data and "
-              "`sh <<EOF` is a script, and nothing here can tell them apart, so "
-              "the conservative direction is kept and written down instead of "
-              "being claimed away",
+        # THE HEREDOC - gh32 IS A SECOND RECORDED DECISION REVERSED, INVERTED AND
+        # NOT DELETED, for the same reason gh6g above is. It used to assert that a
+        # heredoc body naming a forbidden command stays REFUSED, carried as a
+        # "known cost" on the claim that nothing here could tell a `cat <<EOF`
+        # body from an `sh <<EOF` one. Two things were wrong with that. The cost
+        # was not a cost but a defect - a Bash call whose ONLY act was
+        # `cat > probe.py <<'PYEOF'`, writing a file whose content carried a
+        # force-push literal as a test payload, was refused with the force-push
+        # reason, no push requested and no remote named, and the author's way past
+        # it was to write the file with a different tool, which is a guard being
+        # routed around. And the claim was false: `guard-secrets-read` had told
+        # the two apart since F31, so the question was answerable and had an
+        # answer in this very directory. It now lives in `_config.split_heredocs`,
+        # which both guards call.
+        #
+        # BOTH DIRECTIONS ARE LOAD-BEARING HERE and the deny half is not
+        # decoration: a body fed to a SHELL or an INTERPRETER is text a machine
+        # runs, and dropping it too would turn the fix into a bypass anyone could
+        # spell in one line.
+        for _cid, _cmd, _what in (
+                ("gh32", "cat <<'EOF' > NOTES.md\nnever run " + _G + "\nEOF",
+                 "the case that used to say the opposite"),
+                ("gh32a", "cat > fixtures/payloads.txt <<'EOF'\n"
+                          "git push --force origin main\nEOF\n"
+                          "python3 run-probe.py fixtures/payloads.txt",
+                 "the reported shape - a file of test payloads, written and then "
+                 "read by a runner. The BODY has to be bare words for this case "
+                 "to separate the two versions: a payload wrapped in quotes was "
+                 "already one shlex word and was already allowed, so writing it "
+                 "that way would have been a case no mutation could redden"),
+                ("gh32b", "cat > NOTES.md <<'EOF'\nnever run git push --force "
+                          "origin main\nEOF\necho \"unbalanced",
+                 "...and the same body where something AFTER the heredoc will not "
+                 "parse, which is the only shape that reaches the raw-text "
+                 "fallback once the body is gone. It is here because the "
+                 "mutation that grades the unstripped text in that fallback "
+                 "SURVIVED every other case in this block - the fallback is a "
+                 "second reading and it has to read the same text"),
+                ("gh32c", "cat > NOTES.md <<'EOF'\nnever run " + _G + " drop\nEOF",
+                 "the stash arm, because a fix to one arm is not a fix to the "
+                 "class"),
+                ("gh32d", "git commit -F - <<'MSG'\ndocs: say why git rebase -i "
+                          "is refused here\nMSG",
+                 "a commit message on stdin is data git never executes, which is "
+                 "the same rule gh6g draws for `-m`")):
+            v, why = _decide(repo, _cmd)
+            check("%s a heredoc body on its way into a FILE is data, not a "
+                  "command: %s" % (_cid, _what), v == "allow", repr((v, why)))
+        for _cid, _cmd, _what in (
+                ("gh33a", "bash <<'EOF'\ngit push --force origin main\nEOF",
+                 "a body fed to a shell IS a script, and this is the spelling the "
+                 "old reasoning was right to be afraid of"),
+                ("gh33b", "bash -s <<'EOF'\n" + _G + " drop\nEOF",
+                 "the same, one arm over - `-s` reads the program from stdin"),
+                ("gh33c", "cat <<'EOF' | bash\ngit push --force origin main\nEOF",
+                 "`cat` does not execute it, but the PIPE hands it to something "
+                 "that does, and what the far side does cannot be read here"),
+                ("gh33d", "cat > NOTES.md <<'EOF'\ngit push --force origin main\n",
+                 "a heredoc whose terminator never arrives is left in the text, "
+                 "so an unreadable command is judged exactly as strictly as "
+                 "before any of this existed")):
+            v, why = _decide(repo, _cmd)
+            check("%s ...and the body a machine WILL run is still graded: %s"
+                  % (_cid, _what), v == "deny", repr((v, why)))
+        # THE THREE BUCKETS, COUNTED RATHER THAN FOUND, and the counting is the
+        # point: `in` would be satisfied by a version that kept all three bodies
+        # (the pre-fix guard, gh32 red) and by one that dropped all three (a
+        # one-line bypass, gh33a-gh33c red). Only the counts separate the three.
+        _views = ("cat > notes.md <<'D'\ngit stash drop databody\nD\n"
+                  "bash -s <<'S'\ngit stash drop shellbody\nS\n"
+                  "python3 - <<'P'\ngit stash drop codebody\nP")
+        # A LIMIT, MEASURED AND RECORDED RATHER THAN DISCOVERED. The head of the
+        # heredoc line is tested for an interpreter at its END, so a REDIRECT
+        # TARGET ending in one of those names reads as an invocation: `cat >
+        # probe.sh <<EOF` is graded as a script and its content is still refused,
+        # where `cat > probe.py <<EOF` is data. Narrowing it (`sh` may not follow
+        # a dot) takes BOTH patterns, not one - the mutation that changed only
+        # `_STDIN_SHELL` left this case green, because `_STDIN_INTERP` names `sh`
+        # too and went on classifying the body. And it would be a WIDENING of
+        # `guard-secrets-read`, which shares this classification: a file written
+        # by `cat > deploy.sh <<EOF` would stop being graded as a script there
+        # too. That is a security boundary and a decision of its own, so this
+        # case records today's answer instead of quietly changing it.
+        v, why = _decide(repo, "cat > probe.sh <<'EOF'\ngit push --force origin "
+                               "main\nEOF")
+        check("gh35 KNOWN LIMIT, and this case is its record: a heredoc whose "
+              "redirect target ENDS IN an interpreter name (`probe.sh`) is still "
+              "graded as a script, because the head is matched at its end and a "
+              "filename sits there. The conservative direction, kept on purpose - "
+              "the narrowing would widen a secret guard that shares the rule",
               v == "deny", repr((v, why)))
+        check("gh34 the text the guard grades, per heredoc kind: the body going "
+              "into a FILE is gone, the body fed to a shell and the body fed to "
+              "an interpreter are both still there. An interpreter body is kept "
+              "on purpose - it is a program, and dropping it would be a hole "
+              "rather than a narrowing",
+              [M.runnable(_views).count(w)
+               for w in ("databody", "shellbody", "codebody")] == [0, 1, 1],
+              repr([M.runnable(_views).count(w)
+                    for w in ("databody", "shellbody", "codebody")]))
         v, why = _decide(repo, "git log --grep git --grep " + "stash")
         check("gh28 a second `git` in an ARGUMENT does not start an invocation - "
               "a verb's args stop at a separator and nothing else. Stopping them "

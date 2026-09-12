@@ -23,15 +23,32 @@ It reads two ways, and the first one decides almost every call:
     over-fire on quoted text and are the conservative answer where nothing can
     be parsed at all.
 
-**A HEREDOC IS NOT A QUOTED ARGUMENT, and this document used to claim it was.**
-`shlex` splits `<<'EOF'` at the `<` and lexes the body as bare words, so
-`cat <<'EOF' > NOTES.md` / `never run git stash` / `EOF` is REFUSED. That is left
-as it is rather than fixed, because whether a heredoc body is DATA or a COMMAND
-depends on what consumes it - `cat <<EOF` is data, `sh <<EOF` is a script, and
-`guard-secrets-read` already grades an interpreter heredoc as a body. Refusing
-both is the conservative direction; the cost is that writing one of these rules
-into a file through a heredoc is refused, and the way past it is an editor or an
-`echo`. Measured cost, stated rather than discovered.
+**A HEREDOC BODY IS GRADED BY WHAT CONSUMES IT**, which is the third reading and
+the one this document twice got wrong. `shlex` splits `<<'EOF'` at the `<` and
+lexes the body as bare words, so every body used to arrive as command words: a
+call whose ONLY act was `cat > probe.py <<'PYEOF'` - a file whose content carried
+a force-push literal as a test payload - was refused with the force-push reason,
+having requested no push and named no remote. The author's way past it was to
+write the file with another tool, which is the routed-around outcome that makes
+a guard worthless. The previous paragraph here called that a measured cost and
+said nothing could tell the two apart; `guard-secrets-read` could, and had since
+F31. So the question is asked once, in `_config.split_heredocs`: a body fed to an
+interpreter or a shell (`python3 - <<PY`, `bash -s <<EOF`, `cat <<EOF | bash`) is
+text a machine RUNS and every rule below still reads it, and a body on its way
+into a file is data and is gone before the first token is read.
+
+WHAT THAT GIVES UP, measured against the version before it rather than guessed
+at. A file WRITTEN by one command and EXECUTED by a later one is no longer read:
+`cat > probe.txt <<EOF` / a forbidden command / `EOF` / `sh probe.txt` was
+refused before and is allowed now. It is one spelling of a gap that was already
+open - the same two steps written `printf '...' > probe.txt` then `sh probe.txt`
+were allowed before this change and after it, because a quoted argument was never
+a command - and closing it means reading files, which this hook never does. The
+`.sh` spelling of it is still refused, for a reason that is an accident rather
+than a design: the heredoc's head is matched at its END, so a redirect target
+named `probe.sh` reads as an `sh` invocation. `test_guard_history_rewrite.py`'s
+gh35 records that, and says why narrowing it is a decision about
+`guard-secrets-read` and not about this file.
 
 `git reset --hard` shows the other half of the same idea - one spelling is not
 one operation:
@@ -102,9 +119,9 @@ import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 # `SECURITY.md`, so writing about the rule is a DAILY operation here, and the
 # guard would have refused the commit message for its own change. A guard that
 # fires on writing about it is the same defect as one that fires on a read.
-# (It also refused a HEREDOC whose body merely contained the string, and that
-# half is NOT fixed - see the module docstring for why refusing it is the
-# deliberate direction rather than the remaining bug.)
+# (It also refused a HEREDOC whose body merely contained the string. That half is
+# fixed now, one layer earlier: `runnable()` below drops a body nothing executes
+# before the tokenizer sees it, so those words never reach this scan at all.)
 #
 # THE FIX IS THE CLASS, NOT THE CASE, and it is applied to BOTH arms - two arms
 # with two rules is the shape the next reader mis-generalises. Tokenized, the
@@ -161,6 +178,28 @@ GLOBAL_VALUE_OPT = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
 _SEP_SPLIT = re.compile(r"([;&|()`<>\n]+)")
 _SEP_ONLY = re.compile(r"^[;&|()`<>\n]+$")
 _MAX_NEST = 3          # `sh -c "sh -c ..."`; a bound, not a feature
+
+
+def runnable(command):
+    """The text this command RUNS: the same command, minus any heredoc body that
+    is on its way into a FILE.
+
+    THE OPERATION IS `cat > probe.py`, NOT THE BYTES IT WRITES. A call whose only
+    act was writing a probe file was refused for a force push, because the file's
+    content carried one as a test payload - and the way past a guard like that is
+    another tool, after which it guards nothing. A body fed to an interpreter or
+    a shell is still text a machine runs and every rule below still reads it;
+    `_config.split_heredocs` draws that line, and this file has no copy of it
+    because a hook may not import another hook and two copies would drift.
+
+    Every reading goes through here - `git_invocations` at its entry, and each
+    arm's raw-text fallback - so the parse and the fallback can never grade
+    different strings, and no call site can forget. It is its own function
+    rather than a call inside the lexer for the same reason `shell_words` is not
+    the place a policy lives: the lexer reads what it is handed, and a case can
+    hand it a body on purpose.
+    """
+    return _config.runnable_text(command or "")
 
 
 def shell_words(command):
@@ -286,8 +325,14 @@ def git_invocations(command, depth=0):
     removed: it bought no coverage (`sudo git stash drop` and `xargs git stash
     drop` are found by the word scan either way) and it cost a false refusal on
     `git log --grep git --grep stash`, where the second `git` is a search term.
+
+    The text is passed through `runnable()` FIRST: a heredoc body on its way into
+    a file is not something this command runs, so it must not be able to
+    contribute a verb. Doing it at this one door rather than at the four arms is
+    what makes it impossible for one arm to forget, and the recursion below
+    re-enters the same door, so no nesting depth is graded by a different rule.
     """
-    words, parsed = shell_words(command)
+    words, parsed = shell_words(runnable(command))
     if not parsed:
         return None
     out = []
@@ -427,8 +472,9 @@ def always_refused(command):
     """
     invocations = git_invocations(command)
     if invocations is None:
+        text = runnable(command)       # the fallback grades the same text
         for pattern, why in _ALWAYS:
-            if pattern.search(command or ""):
+            if pattern.search(text):
                 return why
         return None
     for verb, args in invocations:
@@ -452,7 +498,7 @@ def amend_requested(command):
     """Does this command amend a commit? True/False, never a maybe."""
     invocations = git_invocations(command)
     if invocations is None:
-        return bool(_AMEND.search(command or ""))
+        return bool(_AMEND.search(runnable(command)))
     return any(verb == "commit" and _has_option(args, "--amend")
                and not help_requested(args)
                for verb, args in invocations)
@@ -538,7 +584,7 @@ def _stash_operations_text(command):
     purpose: a fallback nothing exercises is a fallback nobody knows is broken.
     """
     out = []
-    for m in _STASH.finditer(command or ""):
+    for m in _STASH.finditer(runnable(command)):
         rest = _FLAGS.sub(" ", m.group(1) or "")
         sub = ""
         for word in rest.split():
@@ -640,7 +686,7 @@ def reset_target(command):
     """
     invocations = git_invocations(command)
     if invocations is None:
-        m = _RESET_HARD.search(command or "")
+        m = _RESET_HARD.search(runnable(command))
         if not m:
             return None
         rest = _FLAGS.sub(" ", m.group(1) or "")

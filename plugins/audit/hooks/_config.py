@@ -826,6 +826,128 @@ def _areas_of_fallback(area):
     return out
 
 
+# --- a Bash command's heredoc bodies: data, or text a machine will run --------
+# WHY THIS IS HERE AND NOT IN A GUARD. Two guards in this directory have to
+# answer the same question before they grade anything - `guard-secrets-read`
+# (F31/F116: a commit message quoting `cat <key>` is prose, a `python3 - <<PY`
+# body is a program) and `guard-history-rewrite` (which refused a command whose
+# only act was to WRITE A FILE, because the file's content named a force push).
+# A hook may not import another hook; `_config` is the only module all of them
+# already load. So the answer lives once, here, and both guards call it. The
+# alternative was a second copy in the second guard, which is how the two would
+# drift into disagreeing about what a heredoc is.
+#
+# `.claude/hooks/require-claim-block.py` asks a narrower version of this question
+# and keeps its OWN copy DELIBERATELY: it is this repository's configuration, the
+# plugin is a product that ships without `.claude/` at all, and a config hook
+# importing product internals inverts that dependency. Two homes on either side
+# of a release boundary is a boundary; two homes inside this directory would just
+# be a duplicate.
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+# The head of a heredoc line, when what it invokes reads its PROGRAM from stdin.
+# `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
+# capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
+# `cat <<EOF` are not, because the body is data those commands never execute.
+_STDIN_INTERP = re.compile(
+    r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
+    r"(?:\s+-[A-Za-z-]+)*\s*-?\s*$",
+    re.IGNORECASE,
+)
+# The SHELL subset of the line above, tested first because `_STDIN_INTERP` holds
+# for both and the two answers are not interchangeable (F116). A body fed to
+# `bash -s` is shell text and the shell-grammar rules must read it; a body fed to
+# `python3 -` is a program in another language, where a shell READ VERB is a word
+# inside a string and the interpreter arms are what grade it.
+_STDIN_SHELL = re.compile(
+    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*-?\s*$", re.IGNORECASE)
+
+
+def split_heredocs(cmd):
+    """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
+
+    F31, found while committing a fix to `guard-secrets-read`: the guard refused
+    its own commit, because the message DESCRIBED the write forms it had just
+    learned and every branch there scans the whole command text. Probing that
+    turned up the mirror defect -- `python3 - <<'PY'` performs exactly what
+    `python3 -c` does and walked straight through, because the pattern knew the
+    `-c` SPELLING rather than the capability. One root, two directions.
+
+    So the body is separated from the text and handed back only when something
+    RUNS it. Prose on its way into a file stops being read as code; a heredoc fed
+    to python or node starts being read as the code it is.
+
+    F116 SPLIT THAT ONE BUCKET IN TWO, because "is this code" was never the whole
+    question: the LANGUAGE the body is code IN decides which rules may read it. A
+    body fed to `bash -s` is shell text; a body fed to `python3 -` is a program in
+    a language where a shell read verb is an ordinary word. Both used to arrive in
+    one list, so the shell-grammar rules read Python source and refused a write
+    whose payload was an English sentence quoting a command.
+
+    A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
+    the consumer does not execute is DATA and leaves -- unless the head line pipes
+    it onward, in which case what the far side does with it cannot be read here
+    and it is kept as shell. `cat <<EOF | bash` really is a way to run a command.
+
+    Fail-safe about its own limits: a heredoc whose terminator never arrives is
+    left in the text, so an unparseable command is judged exactly as strictly as
+    before this existed. The pipe is read on the heredoc's own line only -- a
+    pipeline continued onto the next line with a backslash is not seen, which is
+    said here rather than left to be discovered.
+    """
+    if "<<" not in (cmd or ""):
+        return (cmd or ""), [], []
+    lines = (cmd or "").split("\n")
+    kept, code, shell, i = [], [], [], 0
+    while i < len(lines):
+        line = lines[i]
+        m = _HEREDOC_START.search(line)
+        if not m:
+            kept.append(line)
+            i += 1
+            continue
+        delim = m.group(2)
+        # Look for the terminator before consuming anything: without one there is
+        # no body to separate, only a line that happens to contain `<<`.
+        end = None
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip() == delim:
+                end = j
+                break
+        if end is None:
+            kept.append(line)
+            i += 1
+            continue
+        head = line[:m.start()].strip()
+        kept.append(line[:m.start()])
+        body = "\n".join(lines[i + 1:end])
+        if _STDIN_SHELL.search(head):
+            shell.append(body)
+        elif _STDIN_INTERP.search(head):
+            code.append(body)
+        elif "|" in line[m.end():]:
+            shell.append(body)
+        i = end + 1
+    return "\n".join(kept), code, shell
+
+
+def runnable_text(cmd):
+    """The command with only the spans nothing executes removed (F116).
+
+    Everything a machine will run in SOME language: the text, shell bodies and
+    interpreter bodies. For a rule that is about a CAPABILITY rather than about
+    shell grammar -- writing a file, reaching the environment, rewriting history
+    -- where the interpreter body is still evidence and dropping it would open a
+    hole. Only the data body leaves.
+
+    This is the view a guard wants when it asks "what does this command DO": the
+    body of `cat > probe.py <<'PY'` is on its way into a file and the guard that
+    read it as a command refused a write, while `python3 - <<'PY'` and
+    `cat <<'EOF' | bash` keep every byte they are graded on.
+    """
+    text, code, shell = split_heredocs(cmd)
+    return "\n".join([text] + shell + code)
+
+
 # --- guard config (edits / secrets / tdd) -------------------------------------
 def token_vars(cfg):
     try:

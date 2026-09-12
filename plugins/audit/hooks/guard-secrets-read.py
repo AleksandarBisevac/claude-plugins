@@ -333,7 +333,7 @@ def _resolve_write_expr(expr, bindings):
     Returns None when the argument is something this cannot read - a call, an
     f-string, a name bound to anything but literals. None means "no target", not
     "no write", and the caller treats it as nothing to judge, which keeps this on
-    the same side of the line `_clauses` and `_split_heredocs` are on: unreadable
+    the same side of the line `_clauses` and `split_heredocs` are on: unreadable
     input is never quietly graded as clean by INVENTING a target for it.
 
     F103 IS THAT PARAGRAPH BEING FALSE. The body used to ask `_STRING_LITERAL`
@@ -739,94 +739,13 @@ def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
 
 
-_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-# The head of a heredoc line, when what it invokes reads its program from stdin.
-# `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
-# capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
-# `cat <<EOF` are not, because the body is data those commands never execute.
-_STDIN_INTERP = re.compile(
-    r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
-    r"(?:\s+-[A-Za-z-]+)*\s*-?\s*$",
-    re.IGNORECASE,
-)
-# The SHELL subset of the line above, tested first because `_STDIN_INTERP` holds
-# for both and the two answers are not interchangeable (F116). A body fed to
-# `bash -s` is shell text and the shell-grammar rules must read it; a body fed to
-# `python3 -` is a program in another language, where a shell READ VERB is a word
-# inside a string and the interpreter arms are what grade it.
-_STDIN_SHELL = re.compile(
-    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*-?\s*$", re.IGNORECASE)
-
-
-def _split_heredocs(cmd):
-    """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
-
-    F31, found while committing a fix to this file: the guard refused its own
-    commit, because the message DESCRIBED the write forms it had just learned and
-    every branch here scans the whole command text. Probing that turned up the
-    mirror defect -- `python3 - <<'PY'` performs exactly what `python3 -c` does
-    and walked straight through, because the pattern knows the `-c` SPELLING
-    rather than the capability. One root, two directions.
-
-    So the body is separated from the text and handed back only when it feeds an
-    interpreter. Prose in a commit message stops being read as code; a heredoc
-    fed to python or node starts being read as the code it is.
-
-    F116 SPLIT THAT ONE BUCKET IN TWO, because "is this code" was never the whole
-    question: the LANGUAGE the body is code IN decides which rules may read it. A
-    body fed to `bash -s` is shell text; a body fed to `python3 -` is a program in
-    a language where a shell read verb is an ordinary word. Both used to arrive in
-    one list, so the shell-grammar rules read Python source and refused a write
-    whose payload was an English sentence quoting a command.
-
-    A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
-    the consumer does not execute is DATA and leaves -- unless the head line pipes
-    it onward, in which case what the far side does with it cannot be read here
-    and it is kept as shell. `cat <<EOF | bash` really is a way to run a command,
-    and it was already walking past Rule #2's dump verb through `_executed_text`
-    before this function drew the distinction. Same reasoning as the emitter
-    pattern's refusal to strip a clause ending in a pipe, in the same shape.
-
-    Fail-safe about its own limits, like `_clauses`: a heredoc whose terminator
-    never arrives is left in the text, so an unparseable command is judged
-    exactly as strictly as before this existed. The pipe is read on the heredoc's
-    own line only -- a pipeline continued onto the next line with a backslash is
-    not seen, which is said here rather than left to be discovered.
-    """
-    if "<<" not in cmd:
-        return cmd, [], []
-    lines = cmd.split("\n")
-    kept, code, shell, i = [], [], [], 0
-    while i < len(lines):
-        line = lines[i]
-        m = _HEREDOC_START.search(line)
-        if not m:
-            kept.append(line)
-            i += 1
-            continue
-        delim = m.group(2)
-        # Look for the terminator before consuming anything: without one there is
-        # no body to separate, only a line that happens to contain `<<`.
-        end = None
-        for j in range(i + 1, len(lines)):
-            if lines[j].strip() == delim:
-                end = j
-                break
-        if end is None:
-            kept.append(line)
-            i += 1
-            continue
-        head = line[:m.start()].strip()
-        kept.append(line[:m.start()])
-        body = "\n".join(lines[i + 1:end])
-        if _STDIN_SHELL.search(head):
-            shell.append(body)
-        elif _STDIN_INTERP.search(head):
-            code.append(body)
-        elif "|" in line[m.end():]:
-            shell.append(body)
-        i = end + 1
-    return "\n".join(kept), code, shell
+# THE RULE ITSELF NOW LIVES IN `_config.split_heredocs`, and this file reads it
+# from there. F31 and F116 were found here, but `guard-history-rewrite` needs the
+# same three-way grading before it can tell a command from a file it is writing,
+# and a hook may not import another hook. `_config` is the one module both
+# already load, so the classification has one home and the reasoning behind each
+# of the three buckets travelled with it. `_shell_text` stays here because only
+# this file's shell-grammar rules want the view that drops interpreter bodies.
 
 
 def _shell_text(cmd):
@@ -845,7 +764,7 @@ def _shell_text(cmd):
     here -- it wants the secret token alone, with no read verb in front of it. So
     every refusal this view gives up is made by a stricter rule one branch down.
     """
-    text, _code, shell = _split_heredocs(cmd)
+    text, _code, shell = _config.split_heredocs(cmd)
     return "\n".join([text] + shell)
 
 
@@ -858,9 +777,11 @@ def _runnable_text(cmd):
     layer, writing a file -- where the interpreter body is still evidence and
     dropping it would open a hole. Only the data body leaves, which is exactly
     F31's rule spent on the branches that never got it.
+
+    A name in this file for `_config.runnable_text`: the view is wanted by the
+    history guard too, so the join lives beside the split that feeds it.
     """
-    text, code, shell = _split_heredocs(cmd)
-    return "\n".join([text] + shell + code)
+    return _config.runnable_text(cmd)
 
 
 # --- text that is DATA, for Rule #2's dump verb ---------------------------------
@@ -911,8 +832,8 @@ def _executed_text(cmd):
     side. So the second kind of list is legitimate exactly where the first is not,
     and that is why this is a fix rather than a hole.
 
-    Heredocs come from `_split_heredocs`, which already draws this line and draws
-    it correctly (F31): a body fed to an interpreter is CODE and comes back, so
+    Heredocs come from `_config.split_heredocs`, which already draws this line and
+    draws it correctly (F31): a body fed to an interpreter is CODE and comes back, so
     `python3 - <<PY` is still judged as `python3 -c` is, and only a body fed to
     something like `git commit -F -` or `cat` leaves. Nothing about that grading
     changes here; this only spends it on one more branch.
@@ -923,7 +844,7 @@ def _executed_text(cmd):
     rule exists to read. ECHO_SECRET reads `_runnable_text` instead, which is the
     same heredoc rule without the emitter half.
     """
-    text, code, shell = _split_heredocs(cmd)
+    text, code, shell = _config.split_heredocs(cmd)
     text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args, text)
     return "\n".join([text] + shell + code)
 
@@ -1253,7 +1174,7 @@ def _decide_core(data, root, cfg):
         # so `python3 - <<PY` is judged exactly as `python3 -c` is.
         # F116 sorted those bodies by LANGUAGE for the branches above; here both
         # kinds are code and both are graded, which is what they already were.
-        _text, _code_bodies, _shell_bodies = _split_heredocs(cmd)
+        _text, _code_bodies, _shell_bodies = _config.split_heredocs(cmd)
         # (clause, is it already known to be code). A heredoc body carries no
         # `-c` spelling of its own -- being fed to an interpreter IS its
         # spelling -- so it arrives pre-judged rather than re-matched.
