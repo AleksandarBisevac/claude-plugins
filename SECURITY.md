@@ -103,7 +103,7 @@ commit and the command above does not.
 
 | Hook | Event | No interpreter | On internal error |
 |---|---|---|---|
-| `guard-secrets-read` | PreToolUse Read/Grep/Bash | **ask** (manual approval prompt, loud) | allow (fail-open) |
+| `guard-secrets-read` | PreToolUse Read/Grep/Bash/MCP | **ask** (manual approval prompt, loud) | allow (fail-open) |
 | `guard-edits` | PreToolUse edits | **ask** | allow |
 | `guard-history-rewrite` | PreToolUse Bash | **ask** | allow |
 | `require-plan` | PreToolUse edits | **ask** | allow |
@@ -190,6 +190,20 @@ direction of its risk is stated rather than hidden: a read spelled in a way none
 sees would pass. It was made because the previous rule refused prose — writing a summary that
 mentioned `.env` was reported as *"Reading a secret file"* — and a guard that fires on prose is one
 people route around, which costs more than it protects.
+
+**An MCP file tool is judged on the paths its payload names, and refused whatever it
+meant to do with one.** The guard walks every path-shaped value in the call, at any
+depth — one file under `path`, a batch under `paths`, a `file_path`, a `file:` URI —
+and asks it the question the `Read` tool's `file_path` is asked. It never reads the
+server segment of `mcp__<server>__<operation>`: that is a name the operator chose, and
+the same server is `mcp__filesystem__` on one machine and `mcp__fs__` on the next. It
+does not read the operation's verb either, and that is the trade stated plainly:
+**creating a `.env` through an MCP server is refused**, where the `Write` tool does not
+refuse it. Telling a read from a write inside a `PreToolUse` payload can only be done by
+guessing at a server author's spelling — of the verb, of the argument key, or of whether
+a body is attached — and every one of those guesses fails in the direction that loses the
+file. This one fails in the direction that costs a retry. Calls naming no secret path,
+directory listings included, are untouched.
 
 **Neither plan gate governs a path OUTSIDE the consuming repository, and it says which
 rather than falling silent.** `_config.rel_path` is `os.path.relpath`, which answers a path

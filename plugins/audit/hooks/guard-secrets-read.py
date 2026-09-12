@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse guard (matcher: Read|Grep|Bash).
+PreToolUse guard (matcher: Read|Grep|Bash|mcp__.*).
 
 Enforces two universal secret-safety rules as a hard backstop:
   - Rule #1: never read the *contents* of .env / credentials / signing material.
@@ -30,6 +30,17 @@ Covered read vectors:
                      echoing token-like variables;
                  (d) a command that reaches the environment layer with the harness
                      sandbox switched off (`dangerouslyDisableSandbox`).
+  - MCP tools  → every path-shaped VALUE in the payload, at any depth, against
+                 SECRET_PATH (+ extras). Two halves of that sentence are the
+                 rule. The tool name is `mcp__<server>__<operation>` and the
+                 server half is an alias the operator chose — the same npm
+                 filesystem server is `mcp__filesystem__` on one machine and
+                 `mcp__fs__` on the next — so nothing here reads it. The
+                 argument keys are the same problem one level down (`path`,
+                 `paths` as a list, `file_path`, `uri`), so nothing here reads
+                 those either: the walk takes values and asks them the question
+                 the `Read` branch asks its `file_path`. `_decide_core` says
+                 which side this takes on a write and why.
 
 WHAT THIS HOOK CAN AND CANNOT DO — the ceiling, stated here because leaving it
 unstated is what made it a defect. Every matcher above reads the TEXT of a tool
@@ -739,6 +750,83 @@ def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
 
 
+# --- MCP tool calls: the operation, never the server it was installed under -----
+def _mcp_operation(tool):
+    """The last `__`-separated segment of an MCP tool name, or "".
+
+    An MCP tool is `mcp__<server>__<operation>`, and the server segment is a name
+    the OPERATOR typed into their own config: one npm filesystem server is
+    `mcp__filesystem__read_text_file` in one setup and `mcp__fs__read_text_file`
+    in the next. So the server half carries nothing a guard may decide on.
+
+    This is used in the refusal sentence alone — it names the call back to the
+    person who made it. No verdict is taken from its spelling, which is the point:
+    a list of read verbs here would be `_READ_VERB` again, and that list is only
+    ever as complete as the servers whose spellings someone happened to think of.
+    """
+    parts = [p for p in str(tool or "").split("__") if p]
+    return parts[-1] if len(parts) > 1 else ""
+
+
+def _locators(node, limit=2000):
+    """Every path-shaped string a tool payload names, at any depth, in payload order.
+
+    THE ARGUMENT KEYS ARE NOT READ, because they are the server author's
+    vocabulary and not a contract: one read names its file under `path`, a batch
+    read holds a list under `paths`, others use `file_path` or `uri`. A walk over
+    VALUES asks the same question of all of them and of the ones nobody here has
+    seen yet.
+
+    Two narrowings, and both are structural rather than a list of names. A
+    `file:` URI is reduced to the path inside it, so the locator that reaches the
+    secret rule is spelled the way that rule matches. And a string carrying a
+    NEWLINE is a body, not a locator — that is what keeps the `content` of a
+    write from being graded as a filename, without this function having to know
+    that a key called `content` exists.
+    """
+    out = []
+    queue = [node]
+    i = 0
+    while i < len(queue) and i < limit:
+        item = queue[i]
+        i += 1
+        if isinstance(item, dict):
+            queue.extend([item[key] for key in item])
+        elif isinstance(item, (list, tuple)):
+            queue.extend(list(item))
+        elif isinstance(item, str):
+            text = item.strip()
+            if not text or "\n" in text:
+                continue
+            low = text.lower()
+            if low.startswith("file://"):
+                text = text[len("file://"):]
+            elif low.startswith("file:"):
+                text = text[len("file:"):]
+            text = _config.slashed(text)
+            if text and text not in out:
+                out.append(text)
+    return out
+
+
+def _mcp_secret_target(ti, extras):
+    """(every locator the payload names, the first one that is a secret file).
+
+    The second element is None when the call names no secret file at all, which
+    is the ordinary MCP call and the verdict that keeps this guard installed.
+
+    Both halves are wanted by two callers — `_decide_core` refuses on the hit,
+    and the gate events row hands every locator to the redactor — so they are
+    resolved once, here. Resolving them twice would be two chances for the
+    decision and the recorded sentence to disagree about which path this was.
+    """
+    found = _locators(ti if isinstance(ti, dict) else {})
+    for loc in found:
+        if SECRET_PATH.search(loc) or _hits_extra(loc, extras):
+            return (found, loc)
+    return (found, None)
+
+
 # THE RULE ITSELF NOW LIVES IN `_config.split_heredocs`, and this file reads it
 # from there. F31 and F116 were found here, but `guard-history-rewrite` needs the
 # same three-way grading before it can tell a command from a file it is writing,
@@ -1020,15 +1108,33 @@ def _append_verdict_event(root, cfg, data, verdict, msg):
     first and nothing that needs comparing. None back from it means the
     redaction could not run, and then the cell is OMITTED rather than written
     raw: the same fail direction `_command_facts` takes one field over, and the
-    same argument as the empty `file` cell above."""
+    same argument as the empty `file` cell above.
+
+    AND AN MCP PAYLOAD NAMES ITS TARGET WHEREVER ITS SERVER LIKES, so the three
+    fixed keys are not asked of one: `_mcp_secret_target` hands back the same
+    locators the verdict was taken from — including the ones that arrived inside
+    a list — and every one of them goes to the redactor."""
     try:
         ti = (data or {}).get("tool_input", {}) or {}
-        # The three keys a message here can interpolate, and the same three
-        # `target` picks from. Read names `file_path`; Grep names `path` or
-        # `glob`, and BOTH are passed because a Grep call can carry the two and
-        # be denied on the one `target` did not pick.
-        named = (ti.get("file_path"), ti.get("path"), ti.get("glob"))
-        target = ti.get("file_path") or ti.get("path") or ti.get("glob")
+        tool = str((data or {}).get("tool_name", "") or "")
+        if tool.startswith("mcp__"):
+            # A LIST IS SOMEWHERE A PATH ARRIVES, and the redactor has to be
+            # handed it. The three fixed keys below cover the two tools that
+            # spell their target in one of them; a batch read holds its files
+            # under `paths`, so the element that earned the denial occurred in
+            # no value this function knew about and the sentence quoting it went
+            # to the feed with an absolute path in it — the same defect as the
+            # unredacted `reason` cell, one payload shape further on. The
+            # resolver that DECIDED is the one asked here, so the cell and the
+            # verdict cannot name two different paths.
+            named, target = _mcp_secret_target(ti, _extra_patterns(cfg))
+        else:
+            # The three keys a message here can interpolate, and the same three
+            # `target` picks from. Read names `file_path`; Grep names `path` or
+            # `glob`, and BOTH are passed because a Grep call can carry the two
+            # and be denied on the one `target` did not pick.
+            named = (ti.get("file_path"), ti.get("path"), ti.get("glob"))
+            target = ti.get("file_path") or ti.get("path") or ti.get("glob")
         first_line = str(msg or "").splitlines()[0] if msg else ""
         shown = _config.redact_paths(root, first_line, named)
         _config.append_gate_event(
@@ -1260,6 +1366,40 @@ def _decide_core(data, root, cfg):
                         "the file with an in_progress task." % hit)
             return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
         return ("allow", "bash: no secret read")
+
+    if tool.startswith("mcp__"):
+        # THE SIDE CHOSEN, AND ITS COST: a secret file named by an MCP call is
+        # refused whatever the call means to do with it — read it, write it, or
+        # only stat it. So creating a `.env` through a filesystem server is
+        # refused here where the `Write` tool would not refuse it, and that is a
+        # real over-block, paid on purpose.
+        #
+        # It is paid because every way of telling a read from a write inside a
+        # PreToolUse payload fails in the LEAK direction, and this guard's whole
+        # subject is the leak. The operation's verb is the server author's
+        # spelling (`read_text_file`, `get_file_contents`, `view`, `cat`), so a
+        # list of read verbs misses the next server's. The argument keys are that
+        # same list one level down. "The payload carries bytes, so it is a write"
+        # calls any read that also carries a revision or an encoding a write. And
+        # "the file does not exist yet, so nothing can leak" answers about THIS
+        # machine's filesystem while the server may be reading another host's.
+        # A miss on any of those costs the file; this costs a retry, and it costs
+        # it only on a call that named a secret file.
+        #
+        # The friction is bounded by the same rule the header states: NAMES are
+        # never the target. A directory listing names a directory, which is not a
+        # secret path, so the ordinary MCP traffic this guard now sees goes
+        # through it silently.
+        found, hit = _mcp_secret_target(ti, extras)
+        if hit:
+            return ("block",
+                    "An MCP call naming a secret file is blocked (Rule #1): %s\n"
+                    "This server calls the operation `%s`, and a PreToolUse "
+                    "payload cannot tell a read of that file from a write to it "
+                    "— so the file is refused either way. Listing names is fine; "
+                    "contents are not. Ask the user to paste any value you "
+                    "actually need." % (hit, _mcp_operation(tool) or "?"))
+        return ("allow", "mcp: names no secret path (%d locators)" % len(found))
 
     return ("allow", "unhandled tool")
 

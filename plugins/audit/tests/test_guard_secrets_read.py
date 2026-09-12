@@ -32,6 +32,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -1167,6 +1168,135 @@ def _cases(check):
     finally:
         _sh_x.rmtree(tmp_x, ignore_errors=True)
 
+    # --- (w) the wiring: a guard nothing routes to never runs --------------------
+    # THE HALF NO CALL TO `decide` CAN SEE. The branch below can be perfect and the
+    # hook still never launch, because `hooks.json` decides which tool names are
+    # handed to it - and a matcher of `Read|Grep|Bash` is not a name an MCP call
+    # has. Asked by MATCHING a real tool name against the registered matcher
+    # rather than by comparing the matcher to a string: the question is whether
+    # the call arrives, not how the arrival is spelled.
+    _wiring = json.loads(
+        Path(_harness.HOOKS_DIR, "hooks.json").read_text(encoding="utf-8"))
+
+    def _matchers_for(hook_file):
+        out = []
+        for blk in (_wiring.get("hooks") or {}).get("PreToolUse") or []:
+            for hk in blk.get("hooks") or []:
+                if hook_file in (hk.get("command") or ""):
+                    out.append(blk.get("matcher") or "")
+        return out
+
+    def _reaches(tool_name):
+        return any(re.match("(?:%s)\\Z" % mt, tool_name)
+                   for mt in _matchers_for("guard-secrets-read.py"))
+
+    check("mw1 an MCP tool name REACHES this guard - three servers' spellings of "
+          "one operation are matched against the registered matcher, because two "
+          "of them are aliases an operator chose and none of them may have to be "
+          "known in advance",
+          _reaches("mcp__filesystem__read_text_file")
+          and _reaches("mcp__fs__read_file")
+          and _reaches("mcp__some-other-server__slurp_bytes"),
+          repr(_matchers_for("guard-secrets-read.py")))
+    check("mw2 ...while the tools it already covered still reach it and an edit "
+          "tool does not - a matcher widened to `.*` passes w1 and fails here, "
+          "and one narrowed back to the edit guards' fails the first half",
+          _reaches("Read") and _reaches("Grep") and _reaches("Bash")
+          and not _reaches("Edit") and not _reaches("Write"),
+          repr(_matchers_for("guard-secrets-read.py")))
+
+    # --- (m) MCP tool calls: the operation, not the server -----------------------
+    def mcp(tool, ti):
+        return {"tool_name": tool, "tool_input": ti, "cwd": str(tmp)}
+
+    _expect("m1 mcp read of a dotenv blocked", "block",
+            mcp("mcp__filesystem__read_text_file",
+                {"path": "apps/foo/.env.production"}))
+    # m2 IS THE SERVER-NAME CASE. Same npm server, an alias the operator typed;
+    # a branch keyed on `mcp__filesystem__` passes m1 and fails here.
+    _expect("m2 ...and the same operation under a DIFFERENT server alias is "
+            "blocked identically", "block",
+            mcp("mcp__fs__read_file", {"path": "apps/foo/.env"}))
+    # m3-m5 ARE THE ARGUMENT-KEY CASES: a list, a URI, a third spelling of the
+    # single-file key. A resolver reading `path` alone passes m1 and m2 and fails
+    # all three.
+    _expect("m3 a dotenv arriving as one element of a `paths` LIST is blocked",
+            "block",
+            mcp("mcp__filesystem__read_multiple_files",
+                {"paths": ["docs/README.md", "apps/foo/.env"]}))
+    _expect("m4 a dotenv arriving as a file: URI is blocked", "block",
+            mcp("mcp__files__fetch", {"uri": "file:///srv/app/.env"}))
+    _expect("m5 a dotenv arriving under `file_path` is blocked", "block",
+            mcp("mcp__git__show", {"file_path": "deploy/.env", "ref": "HEAD"}))
+    # m6 IS THE VERB CASE. Nothing in this file has ever heard of `slurp_bytes`,
+    # and that is exactly the operation an allow-list of read verbs would let past.
+    _expect("m6 an operation verb this guard has never seen is blocked on the "
+            "path it names", "block",
+            mcp("mcp__weird__slurp_bytes", {"target": "ops/credentials.json"}))
+    _expect("m7 a dotenv nested inside a structure is still found", "block",
+            mcp("mcp__bulk__apply",
+                {"ops": [{"kind": "read", "args": {"src": "infra/.env"}}]}))
+    _expect("m8 a consuming repo's extra secret pattern reaches an MCP locator "
+            "too", "block",
+            mcp("mcp__filesystem__read_text_file", {"path": "app/.secretrc"}),
+            use_cfg=cfg_extra)
+
+    # THE ALLOW CASES. They are what keeps this guard installed: the deny above
+    # widened the set of tools this hook sees from three to every MCP server the
+    # operator has, so ordinary traffic through those servers has to stay silent.
+    _expect("m9 an mcp read of an ordinary document is allowed", "allow",
+            mcp("mcp__filesystem__read_text_file", {"path": "docs/README.md"}))
+    _expect("m10 an mcp read of a source file is allowed", "allow",
+            mcp("mcp__fs__read_file", {"path": "apps/foo/index.ts"}))
+    _expect("m11 an mcp directory listing is allowed - a directory is not a "
+            "secret path, so naming one costs no verb knowledge", "allow",
+            mcp("mcp__filesystem__list_directory", {"path": "apps/foo"}))
+    _expect("m12 an mcp stat of an ordinary file is allowed", "allow",
+            mcp("mcp__filesystem__get_file_info", {"path": "apps/foo/index.ts"}))
+    _expect("m13 an mcp call naming no path at all is allowed", "allow",
+            mcp("mcp__azure-devops__wit_query",
+                {"query": "SELECT [System.Id] FROM WorkItems"}))
+    _expect("m14 a dotenv NAME inside a sentence is not a locator - the guard "
+            "refuses prose nowhere else either", "allow",
+            mcp("mcp__memory__create_entities",
+                {"entities": [{"name": "note",
+                               "observations": ["copy .env before deploying"]}]}))
+    # m15 IS THE BODY CASE, and it is the allow the newline rule buys. The content
+    # of a write is not a filename; without that rule its last line IS one.
+    _expect("m15 a write BODY whose last line is a dotenv path is not a locator",
+            "allow",
+            mcp("mcp__filesystem__write_file",
+                {"path": "apps/foo/index.ts",
+                 "content": "const a = 1\n// see /etc/app/.env"}))
+    _expect("m16 a dotenv TEMPLATE is allowed through MCP, the same exemption "
+            "the Read branch gives it", "allow",
+            mcp("mcp__filesystem__read_text_file",
+                {"path": "apps/foo/.env.example"}))
+    _expect("m17 a tool whose name only CONTAINS mcp is not an MCP call - the "
+            "test is the prefix, so `Bashmcp__x` falls through unhandled",
+            "allow", {"tool_name": "notmcp__srv__read_text_file",
+                      "tool_input": {"path": "apps/foo/.env"},
+                      "cwd": str(tmp)})
+
+    # The two resolvers, asked directly - the verdicts above cannot tell a wrong
+    # operation name from a right one, because no verdict is taken from it.
+    check("m18 the operation is the LAST __-segment, so one operation under two "
+          "server aliases resolves to one name",
+          M._mcp_operation("mcp__filesystem__read_text_file") == "read_text_file"
+          and M._mcp_operation("mcp__fs__read_text_file") == "read_text_file"
+          and M._mcp_operation("mcp__srv__a__b") == "b"
+          and M._mcp_operation("Read") == "",
+          repr(M._mcp_operation("mcp__filesystem__read_text_file")))
+    check("m19 the locator walk takes VALUES in payload order, at any depth, "
+          "strips a file: scheme and drops a body - counted, so a walk that "
+          "also returned the body would fail on the length rather than on a "
+          "membership test that a longer list still satisfies",
+          M._locators({"path": "a/.env", "paths": ["b.md", "file://c/.env"],
+                       "content": "x\ny", "n": 3})
+          == ["a/.env", "b.md", "c/.env"],
+          repr(M._locators({"path": "a/.env", "paths": ["b.md", "file://c/.env"],
+                            "content": "x\ny", "n": 3})))
+
     # (t) A4 (v0.36): deny/ask verdicts leave one line in the gate events feed,
     # require-plan's shape (v0.34 B3) — this guard's denials were invisible in
     # the feed the panel reads. Telemetry only: an allow writes nothing, and
@@ -1366,6 +1496,42 @@ def _cases(check):
               and _raw.count(_harness.in_json(str(_away))) == _in_file_cells,
               repr((_rw[-1], _in_file_cells,
                     _raw.count(_harness.in_json(str(_away))))))
+        # t11: THE SAME LEAK, ONE PAYLOAD SHAPE FURTHER ON. The redactor is only
+        # given the values a caller says its message interpolated, and that
+        # caller knew three fixed keys - so a path that arrived as the second
+        # element of a LIST was in none of them and the sentence quoting it went
+        # to the feed whole. Same fixture as t7: a directory this project does
+        # not contain, which is the shape a home directory has.
+        _away_in_list = str(_away / "deploy" / ".env")
+        _v, _m = M.decide(
+            {"tool_name": "mcp__filesystem__read_multiple_files",
+             "tool_input": {"paths": ["docs/README.md", _away_in_list]},
+             "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t11 an MCP deny over a path that arrived inside a LIST records "
+              "the REDACTED spelling: the absolute path occurs 0 times in "
+              "`reason`, the outside token once, `file` names the element the "
+              "verdict was about, and the terminal message still names the file",
+              _v == "block" and len(_rw) == 9
+              and str(_rw[-1].get("reason", "")).count(_away_in_list) == 0
+              and str(_rw[-1].get("reason", ""))
+              .count(_config.slashed(_away_in_list)) == 0
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 1
+              and _rw[-1].get("file") == _config.slashed(_away_in_list)
+              and _m.count(_config.slashed(_away_in_list)) == 1,
+              repr((_m, _rw[-1])))
+        # The second-direction case, as t8 is for t7: a redaction that always
+        # fires passes t11 and fails here.
+        _v, _ = M.decide({"tool_name": "mcp__fs__read_file",
+                          "tool_input": {"path": "apps/z/.env"},
+                          "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t12 ...while an in-repository MCP deny still NAMES the file in "
+              "`reason`, so the row stays actionable",
+              _v == "block" and len(_rw) == 10
+              and str(_rw[-1].get("reason", "")).count("apps/z/.env") == 1
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 0
+              and _rw[-1].get("file") == "apps/z/.env", repr(_rw[-1]))
     finally:
         if _prev_t is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

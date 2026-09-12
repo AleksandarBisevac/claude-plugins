@@ -439,7 +439,7 @@ short forms may collide with built-ins like `/init`). All three read
 ### `plugins/audit/hooks/hooks.json`
 Maps events → scripts, every entry running through
 `sh "${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh" <script> <ask|open>` with a 10 s timeout:
-- PreToolUse `Read|Grep|Bash` → `guard-secrets-read.py` (fail mode **ask**)
+- PreToolUse `Read|Grep|Bash|mcp__.*` → `guard-secrets-read.py` (fail mode **ask**)
 - PreToolUse `Bash` → `guard-history-rewrite.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
 - PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
