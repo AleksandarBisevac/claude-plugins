@@ -372,9 +372,18 @@ point:
   every hash forward, produces a chain that verifies. There is no way around this:
   a tamper-**proof** log needs a secret the tamperer cannot read, and there is
   nowhere on a user's own machine to keep one from that same user. Deleting the
-  journal, or a file of it, is the same class of act — and deliberately loud
-  rather than silent: `verify` sees the rows go missing and the file's history is
-  in git. A row **inserted between** committed rows is no longer forbidden
+  journal, or a file of it, is the same class of act — and this bullet used to
+  call it *"deliberately loud rather than silent: `verify` sees the rows go
+  missing"*, which was **wrong**, and wrong about the cheapest of the three
+  attacks. Every pass walked the files that were **on disk**, so a deleted file
+  held no missing rows — it was in no list at all, and the chain over what
+  remained verified clean with `rows: 0` and nothing to say. `verify` now asks git
+  what it **tracks** under the journal and the evidence directory and compares
+  that against the working tree, so a **committed file that is gone is a FINDING
+  naming it**, whether one file went or the directory went whole. A file that was
+  never committed and is then deleted still leaves nothing behind — that is
+  absence rather than evidence, and the doctor's *never committed* warning is
+  what covers it. A row **inserted between** committed rows is no longer forbidden
   outright either, which is the price of the merge above — and this bullet used to
   present the mitigation as *"the chain itself plus the merge commit's two
   parents"*, which reads like a check and is not one. **Nothing requires a merge

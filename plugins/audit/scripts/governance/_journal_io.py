@@ -44,9 +44,17 @@ editing, deleting or reordering a row breaks the chain at that point and `verify
 names it. What it CANNOT do is stop someone rewriting the whole file: with no
 secret key -- and there is nowhere on a user's machine to keep one that the same
 user cannot read -- a forger who recomputes every hash forward produces a chain
-that verifies. Deleting the file is the same class of act, and is deliberately
-loud rather than silent: `verify` sees the rows it names go missing, and the
-committed journal is a file in git history.
+that verifies. Deleting the file is the same class of act, and the sentence here
+used to say it was "deliberately loud rather than silent: `verify` sees the rows
+it names go missing". That was wrong, and wrong about the easiest attack of the
+three: every pass walked the files that were ON DISK, so a deleted file was not a
+file with missing rows, it was a file in nobody's list, and the chain over what
+remained verified clean. `gone_findings` asks the question the walks could not:
+what does git TRACK here that the working tree does not have. A committed file
+that is gone is now a finding naming it. A file that was never committed and is
+deleted leaves nothing behind for anything to compare against -- that gap is
+absence, not evidence, and what covers it is the doctor's warning about journal
+files that have never been committed.
 
 So the threat it addresses is the realistic one: a quiet edit, an accidental
 truncation, an out-of-band write nobody meant to hide. It is a smoke detector,
@@ -1766,6 +1774,158 @@ def _git_status_sets(directory):
         return None
 
 
+def deleted_from_worktree(tokens, exists):
+    """Which repo-relative paths a `git status --porcelain -z` listing says git
+    TRACKS and the working tree no longer holds. The pure half of
+    `tracked_but_gone`, split out so the classification is testable with no
+    repository -- `tokens` is the NUL-split listing, `exists(path)` answers
+    whether that repo-relative path is on disk.
+
+    WHY THE DISK CHECK IS NOT REDUNDANT WITH THE `D`. `git rm --cached` stages a
+    deletion of a file that is still sitting there, and porcelain prints BOTH
+    `D  <path>` and `?? <path>` for it -- measured, not assumed. Reading the `D`
+    alone would report a file the reader can see as gone, which is the accusation
+    that gets a check switched off. The pair is the question: git tracks it AND
+    the working tree does not have it.
+
+    A RENAME'S ORIGIN IS NOT A DELETION, and it is the case this had to get right
+    before it could ship here at all: `archive` git-mv's a whole month file into
+    `archive/`, and between the mv and its commit porcelain prints
+    `R  archive/<name>` with `<name>` as the following token. That origin path is
+    absent from disk and is absent for a reason git itself supplies, so the token
+    is consumed and never graded. The destination is graded like any other entry,
+    which is what still catches `git mv a b` followed by `rm b` (`RD`).
+
+    THE TWO TESTS ARE INDEPENDENT, and each keeps out something the other lets
+    through. The status test reads a two-letter verdict git computed: an entry
+    whose X or Y is `D` is a path git says the worktree has lost, while `??`,
+    ` M` and `UU` carry no `D` and are not that claim however absent the path has
+    since become -- git scanned the directory, this stats it a moment later, and a
+    file that vanished in between is not a file git reported as deleted. The disk
+    test is the other half, for a `D` on a path that is right there. Only the pair
+    is the question, and a path's spelling is no part of either."""
+    gone, i = [], 0
+    while i < len(tokens):
+        tok = tokens[i]
+        i += 1
+        if len(tok) < 4 or tok[2] != " ":
+            continue
+        xy, path = tok[:2], tok[3:]
+        if xy[0] in ("R", "C") and i < len(tokens):
+            i += 1                  # the origin side: it MOVED, not vanished
+        if "D" not in xy:
+            continue                # `??` and every present-file status land here
+        if not exists(path):
+            gone.append(path)
+    return sorted(set(gone))
+
+
+def tracked_but_gone(project, directory):
+    """Every file git tracks under `directory` that is not in the working tree --
+    sorted repo-relative paths, `[]` when there are none, and `None` when the
+    question COULD NOT BE ASKED.
+
+    `None` is this module's existing word for that (`_git_status_sets` answers the
+    same way) and it is kept rather than folded into `[]`, because a machine with
+    no git and a directory with nothing missing are two different states and only
+    one of them is reassuring. Every caller here fails open on it: no git binary,
+    no repository, a journal configured outside the repository, git erroring --
+    none of those is evidence of a deletion, and a project that has never been a
+    git repository must stay silent.
+
+    WHAT THIS CLOSES. The chain is a rule about rows WITHIN a file and the git
+    anchor is a rule about one file's committed past; both walk the files that are
+    on disk, so a whole file that is gone was in neither question -- it was simply
+    not in the list, and the chain over what remained verified clean. Comparing
+    the tracked set against the working tree is the only place that absence can be
+    seen from.
+
+    GIT'S STATUS, NOT GIT'S INDEX, and the difference is a false accusation. A
+    sparse checkout tracks paths it deliberately does not materialise: `git
+    ls-files` lists them and the worktree does not have them, so an index listing
+    reports a correctly-configured checkout as a deleted trail -- measured on a
+    cone-mode checkout, where `status` printed nothing and `ls-files` printed
+    every path. `status` already knows about skip-worktree and answers the
+    question that was actually asked.
+
+    A SHALLOW CLONE ANSWERS THIS EXACTLY AS A FULL ONE DOES, which is why nothing
+    here degrades the way `_commit_trail.dangling` has to. That check asks whether
+    an OBJECT named by an old SHA is still in the store, and `--depth` cuts the
+    store, so a negative answer stops being an answer. This one asks what the
+    INDEX holds, and the index is the checked-out tree whatever the history behind
+    it was truncated to -- driven on a `--depth 1` clone whose journal was
+    committed past the cut, where deleting the file produced the same ` D` line
+    and the same finding as in the full repository. A file tracked only in a
+    commit the clone does not have is not in
+    the index either, so it is never named: this check accuses nothing it cannot
+    see in the working copy's own index.
+    """
+    try:
+        import shutil
+        import subprocess
+        if not shutil.which("git"):
+            return None
+        top = subprocess.run(
+            ["git", "-C", project, "rev-parse", "--show-toplevel"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if top.returncode != 0:
+            return None
+        root = (top.stdout or b"").decode("utf-8", "replace").strip()
+        if not root:
+            return None
+        # Asked from the repository ROOT with the directory as a pathspec, not
+        # from the directory itself: the directory is exactly the thing that may
+        # be gone, and `git -C <a path that is not there>` cannot be asked at all.
+        # Porcelain prints repo-relative paths, so `root` is what turns one back
+        # into a path to look for.
+        out = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain", "-z", "-uall",
+             "--", os.path.abspath(directory)],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if out.returncode != 0:
+            return None
+        tokens = (out.stdout or b"").decode("utf-8", "replace").split("\0")
+        return deleted_from_worktree(
+            tokens, lambda p: os.path.exists(os.path.join(root, p)))
+    except Exception:
+        return None
+
+
+def gone_finding(where):
+    """The FINDING sentence for one tracked file the working tree no longer has.
+
+    A FUNCTION RATHER THAN A FORMAT STRING AT THE RETURN, for the reason
+    `_anchor_warning` is one: the text is only ever produced with a real
+    repository behind it, so a case that wanted to read the sentence would have
+    to build one, and the highest-stakes prose in the module would be the prose
+    nothing could reach.
+
+    ONE SENTENCE FOR BOTH RECORDS. The trail and the evidence ledger are both
+    committed beside the manifest, both append-only, and a file removed from
+    either is the same removal; a second wording would be a second account of
+    what happened, free to drift the first time either was edited. Which record
+    it was is already on the line the caller prints around it.
+
+    IT NAMES THE FILE AND WHAT WOULD ANSWER FOR IT, because the deletion itself
+    says nothing about intent: git holds the file's content and the commit that
+    removed it, and both are one command away."""
+    return ("%s is tracked by git and is NOT in the working tree -- the whole "
+            "file is gone, and a chain over the files that are still here "
+            "cannot see past its own absence. Restore it (git checkout -- %s) "
+            "or find what removed it (git log --diff-filter=D -- %s)"
+            % (where, where, where))
+
+
+def gone_findings(project, directory):
+    """The findings for every file git tracks under `directory` that the working
+    tree no longer holds. `[]` when there are none AND when git could not be
+    asked -- `tracked_but_gone` keeps those two apart, and this is the caller
+    that deliberately does not: a finding is what a reader acts on, and there is
+    nothing to act on either way."""
+    return [gone_finding(where)
+            for where in (tracked_but_gone(project, directory) or [])]
+
+
 def rows_unaccounted(have_text, result_text):
     """Which parseable rows of `have_text` appear NOWHERE in `result_text`.
 
@@ -2037,8 +2197,9 @@ def verify(project, config=None):
 
     Returns {"ok", "dir", "exists", "rows", "files": [...], "findings", "warnings"}.
     FINDINGS are breaks -- an edited row, a deleted or reordered one, a file that
-    is not the file its genesis names, and a committed row that is no longer in
-    the working copy with its content intact. WARNINGS are the honest maybes: a
+    is not the file its genesis names, a committed row that is no longer in the
+    working copy with its content intact, and a file git tracks that is not in the
+    working tree at all. WARNINGS are the honest maybes: a
     torn tail (a crash, not a cover-up), out-of-band drift (the document moved
     with no row to say why -- which is normal for anything the plugin did not
     write), and a file whose LINKS were recomputed while every committed row's
@@ -2050,13 +2211,23 @@ def verify(project, config=None):
     `anchor_verdict` carries the property that replaced the byte prefix, what it
     stopped being able to forbid, and why. The byte prefix is still tried first
     and still settles almost every file.
+
+    AND THE FILES THAT ARE NOT HERE ARE ASKED ABOUT FIRST. Every pass below walks
+    what is on disk, so a tracked file that was deleted is in none of them; the
+    chain over the files that remain then verifies clean and this said `ok`.
+    `gone_findings` is that question, and it runs BEFORE the `exists` gate,
+    because a journal directory removed whole is the same deletion with more
+    files in it -- and it is fail-open, so a project git cannot be asked about
+    is silent rather than accused.
     """
     config = load_config(project) if config is None else config
     directory = journal_dir(project, config)
     out = {"ok": True, "dir": directory, "exists": os.path.isdir(directory),
            "rows": 0, "files": [], "findings": [], "warnings": [],
            "enabled": enabled(config)}
+    out["findings"].extend(gone_findings(project, directory))
     if not out["exists"]:
+        out["ok"] = not out["findings"]
         return out
     # F-B3: one porcelain for the whole directory decides which files pay the
     # single-file anchor check. None = git unavailable, ask per file (the

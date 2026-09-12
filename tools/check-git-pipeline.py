@@ -543,6 +543,47 @@ def check_journal_anchor_fires(fx):
                    _output.some_of(findings, render=repr)))
 
 
+def check_journal_file_deleted(fx):
+    """Deleting a COMMITTED journal file is a finding that names the file.
+
+    THE RED TEAM'S CASE, DRIVEN. `rm` one committed journal file, `git status`
+    prints `D`, and before this existed `verify()` came back `ok` with `rows: 0`
+    and an empty file list while the doctor called the chain intact. Nothing was
+    lying: the chain grades rows within a file and the anchor grades one file
+    against its committed past, and both walk the files that are ON DISK, so a
+    file that is gone was in neither question. `SECURITY.md` said the act was
+    "deliberately loud rather than silent" and it was the quietest of the three.
+
+    Unreachable outside a real repository twice over: the check asks git what the
+    INDEX holds, and it is bounded by whether the file was committed at all. It
+    runs after g9, which is what put the journal in a commit.
+
+    The count is the assertion, not the word: a change that turned the deletion
+    into two findings, or that broke the chain as a side effect, would pass a
+    check that only looked for a phrase.
+    """
+    paths = journal_files(fx)[:1]
+    if not paths:
+        return False, "the fixture has no journal file to delete"
+    name = _output.posix_rel(paths[0], fx["root"])
+    body = io.open(paths[0], "rb").read()
+    try:
+        os.remove(paths[0])
+        code, out = script(fx, "audit-journal.py", "verify", "--project", ".")
+    finally:
+        # Put it back whatever happened - every check after this one reads the
+        # same tree, and a raise between the two writes would hand them a journal
+        # this check deleted.
+        with io.open(paths[0], "wb") as fh:
+            fh.write(body)
+    findings = [ln for ln in out.splitlines() if ln.startswith("FINDING:")]
+    named = [ln for ln in findings
+             if name in ln and "NOT in the working tree" in ln]
+    ok = code == 1 and len(findings) == 1 and len(named) == 1
+    return ok, ("exit %r, %d finding(s): %s"
+                % (code, len(findings), _output.some_of(findings, render=repr)))
+
+
 def check_meter_wiring(fx):
     """`meter-usage.py` through the launcher, and the ledger's author is git's.
 
@@ -1122,6 +1163,8 @@ CHECKS = (
      check_journal_anchor_holds),
     ("g10 removing a committed row fires the git anchor, and only it",
      check_journal_anchor_fires),
+    ("g10b deleting a committed journal file is a finding that names it - the "
+     "act the chain and the anchor both walk past", check_journal_file_deleted),
     ("g11 meter-usage is WIRED: a ledger row, authored by git's identity",
      check_meter_wiring),
     ("g12 ...and a second pass over one transcript adds nothing",

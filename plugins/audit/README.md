@@ -1200,9 +1200,12 @@ committed past**: every row the committed copy carries must still be in the work
 with its content unchanged and in the same order, so the "rewrite the whole file and
 recompute every hash" forgery stops verifying the moment the journal is in git. (A
 byte-for-byte prefix is still the fast path, since it implies presence, content and order at
-once; it stopped being the *rule* when `merge` began re-linking rows.) `/audit:doctor` runs
-the same check; a broken chain and a changed committed past are its only journal FINDINGs,
-because they are the only ones that cannot happen by accident.
+once; it stopped being the *rule* when `merge` began re-linking rows.) It also catches a
+journal file **git tracks that is not in the working tree at all** — the one thing every pass
+above walks past, because they all read the files that are on disk and a deleted file has no
+rows to read. `/audit:doctor` runs the same check; a broken chain, a changed committed past
+and a tracked file that is gone are its only journal FINDINGs, because they are the only ones
+that cannot happen by accident.
 
 **Tamper-evident, not tamper-proof**, and the difference is the whole honest claim: absolute
 immutability of local files does not exist — you own the disk, and with no secret key (there
@@ -1227,8 +1230,13 @@ distinguishes them**, and that is a property of the check rather than a gap wait
 fix: neither a merge commit nor a `journal.merge` row is required for the warning to be
 the harmless one, so `/audit:doctor` reports how many rows arrived rather than which ones,
 says it cannot tell a merge from a splice, and sends you to `audit-journal.py show` to read
-them and judge for yourself. Deleting the file is the same class of act, and is loud rather
-than silent. It is a smoke detector wired to three alarms, not a vault. See
+them and judge for yourself. Deleting the file is the same class of act; this paragraph used
+to call it *"loud rather than silent"* and that was not true of the code — the walks read what
+was on disk, so a deleted file was not a file with missing rows but a file in nobody's list,
+and `verify` came back clean. It is loud now because `verify` compares what git **tracks**
+against the working tree, and names a committed file that is gone. A file that was never
+committed still leaves nothing behind when it goes; that is what the doctor's *never
+committed* warning is for. It is a smoke detector wired to three alarms, not a vault. See
 [SECURITY.md](../../SECURITY.md#the-audit-trail-tamper-evident-not-tamper-proof).
 
 The **completion records** are journal rows the `journal-writes` hook derives from the

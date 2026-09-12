@@ -680,6 +680,54 @@ def _cases(check):
               and gone["rows"] == 0 and gone["findings"] == []
               and gone["warnings"] == [])
 
+        # THE LEDGER HAS THE TRAIL'S DELETION HOLE BECAUSE IT HAS THE TRAIL'S
+        # SHAPE. Every pass above walks `ledger_files`, which lists what is on
+        # disk - so a whole file that was removed is in no list, the chain over
+        # what remains verifies clean, and `rows: 0` reads exactly like a project
+        # that never ran a gate. A real repository is the only place that can be
+        # told apart, because the evidence is what git still TRACKS.
+        if not shutil.which("git"):
+            print("SKIP ec18 (git is not on PATH)")
+            print("SKIP ec19 (git is not on PATH)")
+        else:
+            rmp = os.path.join(tmp, "removed-ledger")
+            os.makedirs(os.path.join(rmp, "docs", "audit"))
+            subprocess.run(["git", "init", "-q", rmp], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for _k, _v in (("user.email", "p@example.com"), ("user.name", "P")):
+                subprocess.run(["git", "-C", rmp, "config", _k, _v], check=True)
+            rpath = M.append_row(rmp, _run("run-1", "passed",
+                                           "2026-06-01T10:00:00Z"))
+            subprocess.run(["git", "-C", rmp, "add", "-A"], check=True,
+                           stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", rmp, "-c", "commit.gpgsign=false",
+                            "commit", "-q", "-m", "e"], check=True,
+                           stdout=subprocess.DEVNULL)
+            _clean_after_commit = M.verify(rmp)
+            os.remove(rpath)
+            _removed = M.verify(rmp)
+            check("ec18 a COMMITTED ledger file deleted from the working tree is "
+                  "a FINDING naming it - before this it left `ok` true with no "
+                  "findings and no files, which is what a project that has never "
+                  "recorded a run also prints. The record of the measurement is "
+                  "the one a green gate points at: %r" % (_removed["findings"],),
+                  _removed["ok"] is False and len(_removed["findings"]) == 1
+                  and os.path.basename(rpath) in _removed["findings"][0]
+                  and "NOT in the working tree" in _removed["findings"][0])
+            subprocess.run(["git", "-C", rmp, "checkout", "--", "."], check=True,
+                           stdout=subprocess.DEVNULL)
+            _back = M.verify(rmp)
+            check("ec19 SECOND DIRECTION, BOTH WAYS: committing the ledger is "
+                  "not itself a finding, and putting the deleted file back takes "
+                  "the finding away - a check bound to anything other than what "
+                  "git says the worktree is missing would fire on one of these: "
+                  "%r / %r"
+                  % (_clean_after_commit["findings"], _back["findings"]),
+                  _clean_after_commit["ok"] is True
+                  and _clean_after_commit["findings"] == []
+                  and _back["ok"] is True and _back["findings"] == []
+                  and _back["rows"] == 1)
+
         # --- the two spellings of one chain ---------------------------------
         one_pass = M.chain_file([_run("run-1", "failed", "2026-06-01T10:00:00Z"),
                                  _run("run-2", "passed", "2026-06-02T10:00:00Z")],

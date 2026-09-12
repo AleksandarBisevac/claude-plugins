@@ -373,6 +373,46 @@ def _cases(check):
                   and "out-of-band drift is a document" not in _fix(rep,
                                                                     "journal"))
 
+        # A JOURNAL THAT IS NOT THERE IS NOT A JOURNAL THAT WAS NEVER WRITTEN,
+        # and dt11 above is why these two need telling apart: both leave the
+        # directory absent, and this check reported both as the ok line "no
+        # writes recorded yet". `verify` asks git what the index still holds
+        # under the path before it gives up on a walk with nothing to walk, so
+        # the removed one arrives here with findings - and a FINDING is right,
+        # because a committed trail does not leave by accident.
+        if not have_git:
+            print("SKIP dt50 (git is not on PATH)")
+            print("SKIP dt51 (git is not on PATH)")
+        else:
+            wiped = os.path.join(tmp, "wiped")
+            wfile = _committed_journal(wiped)
+            shutil.rmtree(_journal_io.journal_dir(wiped))
+            rep = base.Report()
+            M.check_journal(rep, wiped, {}, cfgmod, wiped)
+            check("dt50 a committed journal directory REMOVED WHOLE is a FINDING "
+                  "naming the file git still tracks, not the ok line a project "
+                  "that has never recorded anything gets - the chain grades rows "
+                  "inside a file and the anchor grades one file, so a file that "
+                  "is gone was in neither question: %r / %r"
+                  % (_detail(rep, "journal"), _fix(rep, "journal")),
+                  _levels(rep, "journal") == ["FINDING"]
+                  and os.path.basename(wfile) in _detail(rep, "journal")
+                  and "still tracks" in _detail(rep, "journal")
+                  and "git checkout --" in _fix(rep, "journal"))
+            # THE OVER-FIRE DIRECTION, and the one that decides whether this
+            # check survives contact with a fresh clone: restoring the files
+            # must take the finding away completely, not soften it.
+            subprocess.run(["git", "-C", wiped, "checkout", "--", "."],
+                           check=True, stdout=subprocess.DEVNULL)
+            rep = base.Report()
+            M.check_journal(rep, wiped, {}, cfgmod, wiped)
+            check("dt51 SECOND DIRECTION: the same repository with the files put "
+                  "back is an OK line again - the finding is bound to what git "
+                  "says the worktree is missing, so it cannot linger once "
+                  "nothing is: %r" % (_detail(rep, "journal"),),
+                  _levels(rep, "journal") == ["OK"]
+                  and "chain intact" in _detail(rep, "journal"))
+
         drift = os.path.join(tmp, "drifted")
         os.makedirs(os.path.join(drift, "docs", "audit"))
         dman = os.path.join(drift, mrel)

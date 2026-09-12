@@ -602,6 +602,21 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         return
     where = _output.posix_rel(res.get("dir") or project, project)
     if not res.get("exists"):
+        # A directory that is not there reads as "nothing has been recorded yet"
+        # ONLY while git agrees there was nothing. `verify` asks what the index
+        # still holds under that path before it gives up on the walk, so a
+        # journal removed whole comes back with findings and no directory - and
+        # reporting that as a clean never-used project is the same silence the
+        # findings were added to break, one layer up.
+        if res.get("findings"):
+            rep.finding("journal",
+                        "%s is not there and git still tracks what was in it: %s"
+                        % (where, "; ".join(res["findings"][:3])),
+                        "the trail is committed on purpose - restore it with "
+                        "`git checkout -- %s` and run `audit-journal.py verify`, "
+                        "or read `git log --diff-filter=D -- %s` for what "
+                        "removed it" % (where, where))
+            return
         rep.ok("journal", "no writes recorded yet (%s does not exist)" % where)
         return
     # D4 / F-F1: the git anchor only pins committed history. An uncommitted

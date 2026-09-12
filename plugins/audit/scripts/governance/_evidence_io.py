@@ -402,8 +402,12 @@ def row_for(project, result, scope, ids, identity, published=None):
 #                       file (so the next recorded run re-anchors rewritten bytes
 #                       and the warning goes), and a row written through
 #                       `append_row` alone is anchored by nothing at all.
-#   git                 the committed copy. The only layer a forger cannot also
-#                       rewrite without rewriting history on every clone.
+#   git                 the committed copy, and the one absence neither layer
+#                       above can be asked about: a file the index holds and the
+#                       working tree does not. Both of those read rows, and a
+#                       deleted file has none to read -- it drops out of the walk
+#                       instead of failing it. The only layer a forger cannot
+#                       also rewrite without rewriting history on every clone.
 #
 # A ROW FROM BEFORE THE CHAIN IS NOT A FINDING, and that is a decision rather than
 # an omission. Every ledger written by an earlier release holds rows with no
@@ -629,20 +633,31 @@ def verify(project, config=None):
     file that could not be read at all. WARNINGS are the honest maybes: a torn
     tail, and the rows that predate the chain.
 
+    IT ASKS GIT EXACTLY ONE QUESTION, and it is the one no walk of this directory
+    can answer: which ledger files does git TRACK that the working tree does not
+    have. `ledger_files` lists what is on disk, so a whole file that was deleted
+    was never in the loop below and the chain over the files that remained came
+    back clean -- the same hole the trail had, in the record a green gate points
+    at, so it is closed by the same function (`_journal_io.gone_findings`) rather
+    than by a second one written here. It runs before the `exists` gate, because
+    an evidence directory removed whole is that deletion with more files in it.
+
     WHAT THIS DOES NOT ASK, so that nothing reads it as having asked. It does not
-    compare the file against its committed copy and it does not compare it against
-    the trail's `stateHash` -- `_journal_io.verify` already does the second for
-    every evidence file `record()` anchored, and a second opinion here would be a
-    second answer to one question. The rewrite this cannot see at all is the whole
-    file re-written with every hash recomputed forward; that one is the anchor's
-    and git's, and the section above says how far each of them reaches.
+    compare a file that IS here against its committed copy and it does not compare
+    it against the trail's `stateHash` -- `_journal_io.verify` already does the
+    second for every evidence file `record()` anchored, and a second opinion here
+    would be a second answer to one question. The rewrite this cannot see at all is
+    the whole file re-written with every hash recomputed forward; that one is the
+    anchor's and git's, and the section above says how far each of them reaches.
     """
     config = _journal_io.load_config(project) if config is None else config
     directory = evidence_dir(project, config)
     out = {"ok": True, "dir": directory, "exists": os.path.isdir(directory),
            "rows": 0, "files": [], "findings": [], "warnings": [],
            "unchained": 0}
+    out["findings"].extend(_journal_io.gone_findings(project, directory))
     if not out["exists"]:
+        out["ok"] = not out["findings"]
         return out
     for path in ledger_files(project, config):
         name = os.path.basename(path)

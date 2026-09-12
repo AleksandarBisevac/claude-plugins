@@ -2390,7 +2390,11 @@ warning, a disabled journal with none is an ok line. `check_journal` delegates t
 journal's own `verify` rather than re-deriving the verdict — a diagnostic with its own
 opinion about whether a chain is intact is a second implementation that can disagree with the
 one that matters — and grades a BROKEN chain a FINDING, because a row that was edited, deleted
-or reordered is not something that happens by accident. Everything else is a WARNING at most,
+or reordered is not something that happens by accident. A journal file **git tracks that is
+not in the working tree** is the other FINDING, and it reaches the doctor even when the whole
+directory is gone: `verify` asks git what the index holds under that path before it gives up
+on a walk that has nothing to walk, so a removed trail is reported as a removed trail rather
+than as a project that has never recorded anything. Everything else is a WARNING at most,
 and the warnings are not one thing: a torn tail is an interrupted writer, out-of-band drift is
 a recorded document moving with no row to explain it, and a **RE-LINKED** chain is a file whose
 committed rows all survived while the bytes after one of them are new (F306).

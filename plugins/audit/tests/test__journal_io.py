@@ -205,6 +205,8 @@ def _cases(check):
                "normalise_details", "append", "row_content", "rows_digest",
                "merge_rows", "merge_text", "write_merged", "anchor_verdict",
                "rows_unaccounted",
+               "deleted_from_worktree", "tracked_but_gone",
+               "gone_finding", "gone_findings",
                "verify", "_normalise", "_append",
                "_git_status_sets", "_git_anchor_finding")
 
@@ -2110,6 +2112,157 @@ def _cases(check):
             shutil.rmtree(mtmp, ignore_errors=True)
 
     with_env(None, lambda: _merge_cases(check))
+    _gone_cases(check)
+
+
+def _gone_cases(check):
+    """A file git TRACKS that the working tree does not have.
+
+    THE CLASSIFICATION IS GRADED HERE AND THE REPOSITORY IS DRIVEN NEXT DOOR.
+    `deleted_from_worktree` takes the NUL-split porcelain listing and a predicate
+    saying what is on disk, so every status shape below - including the two that
+    need a `git rm --cached` and a staged `git mv` to produce - is a fixture here
+    rather than a repository nobody builds. `tools/check-git-pipeline.py` owns the
+    end-to-end drive (g22), where a real commit is really deleted; what these
+    cases hold is the grading it would take a dozen fixtures to reach, and the
+    fail-open direction, which is the one that decides whether a machine with no
+    git accuses its owner.
+
+    Every listing is spelled the way `status --porcelain -z` hands one over: the
+    entries are NUL-TERMINATED, not NUL-separated, so a real split leaves a
+    trailing empty string. Building them any other way would test a parser the
+    module never runs."""
+    JD = "docs/audit/journal/"
+
+    def listing(*entries):
+        return list(entries) + [""]
+
+    def disk(*present):
+        held = set(present)
+        return lambda p: p in held
+
+    _gw1 = M.deleted_from_worktree(listing(" D " + JD + "2026-01.a.jsonl"),
+                                   disk())
+    check("gw1 a tracked file deleted from the working tree is named - the "
+          "whole finding, and the thing the chain could not see because every "
+          "pass walks the files that ARE on disk: %r" % (_gw1,),
+          _gw1 == [JD + "2026-01.a.jsonl"])
+
+    # MEASURED, NOT ASSUMED: `git rm --cached <f>` prints BOTH of these lines for
+    # one file that is sitting right there. A check reading the `D` alone reports
+    # a file its reader can open as gone, which is the accusation that gets a
+    # guard switched off - so this is the allow case the deny side must not eat.
+    _gw2 = M.deleted_from_worktree(
+        listing("D  " + JD + "b.jsonl", "?? " + JD + "b.jsonl"),
+        disk(JD + "b.jsonl"))
+    check("gw2 ALLOW: a staged deletion of a file that is STILL ON DISK "
+          "(`git rm --cached`, which porcelain prints as `D ` and `??` "
+          "together) is not named - git tracking it and the worktree lacking it "
+          "are two conditions and only the pair is the question: %r" % (_gw2,),
+          _gw2 == [])
+
+    _gw3 = M.deleted_from_worktree(
+        listing("R  " + JD + "archive/c.jsonl", JD + "c.jsonl",
+                " D " + JD + "d.jsonl"),
+        disk(JD + "archive/c.jsonl"))
+    check("gw3 ALLOW: a staged `git mv` into archive/ - what the `archive` "
+          "subcommand does - leaves its ORIGIN absent from disk for a reason "
+          "git itself supplies, so the origin is not named while a real "
+          "deletion beside it still is: %r" % (_gw3,),
+          _gw3 == [JD + "d.jsonl"])
+
+    # What CONSUMING the origin token buys, made observable: a tracked path may
+    # itself look like a status line, and a parser that read the origin as an
+    # entry would grade it as one. The name is legal in a journal directory.
+    _gw4 = M.deleted_from_worktree(
+        listing("R  " + JD + "archive/e.jsonl", "xD gone.jsonl"),
+        disk(JD + "archive/e.jsonl"))
+    check("gw4 ...and the origin token is CONSUMED rather than skipped by luck: "
+          "an origin path that would itself parse as a status line is not read "
+          "as one: %r" % (_gw4,), _gw4 == [])
+
+    _gw5 = M.deleted_from_worktree(
+        listing("RD " + JD + "archive/f.jsonl", JD + "f.jsonl"), disk())
+    check("gw5 ...while a rename whose DESTINATION was then deleted is named at "
+          "its destination - the origin is still git's business and the file is "
+          "still gone: %r" % (_gw5,), _gw5 == [JD + "archive/f.jsonl"])
+
+    _gw6a = M.deleted_from_worktree(
+        listing(" M " + JD + "g.jsonl", "?? " + JD + "h.jsonl",
+                "UU " + JD + "i.jsonl"),
+        disk(JD + "g.jsonl", JD + "h.jsonl", JD + "i.jsonl"))
+    check("gw6 ALLOW: modified, untracked and conflicted files that are all on "
+          "disk name nothing - only a status carrying a `D` is git saying the "
+          "worktree lost the file: %r" % (_gw6a,), _gw6a == [])
+
+    # THE SAME THREE, ABSENT, and this is the case that makes the status test
+    # load-bearing rather than decoration. It is a RACE and not a hypothesis:
+    # git scanned the directory, this stats it a moment later, and anything can
+    # have happened in between - so an UNTRACKED file that vanished in that
+    # window would be reported as a deleted trail by a rule that read the disk
+    # alone, which is precisely the never-tracked-and-absent case that must stay
+    # silent. The verdict is git's, taken at the moment git took it; a later stat
+    # is not evidence to overrule it with, and the next `verify` sees the real
+    # ` D` if there is one.
+    _gw6b = M.deleted_from_worktree(
+        listing(" M " + JD + "g.jsonl", "?? " + JD + "h.jsonl",
+                "UU " + JD + "i.jsonl"), disk())
+    check("gw6b ALLOW, AND THE HALF THE DISK CHECK CANNOT DO: the same three "
+          "statuses with none of the files on disk STILL name nothing - a "
+          "modified, untracked or conflicted path that disappeared between "
+          "git's scan and this stat is not git saying it was deleted, and an "
+          "untracked file is not tracked however absent it is: %r" % (_gw6b,),
+          _gw6b == [])
+
+    check("gw7 ALLOW: a directory with nothing to report is the empty list, "
+          "which is what a fresh project and a fully committed one both look "
+          "like",
+          M.deleted_from_worktree(listing(), disk()) == []
+          and M.deleted_from_worktree([""], disk()) == [])
+
+    _gw8 = M.deleted_from_worktree(
+        listing(" D " + JD + "archive/2025-12.a.jsonl",
+                " D " + JD + "2026-01.a.jsonl"), disk())
+    check("gw8 a journal directory removed WHOLE is the same deletion with more "
+          "files in it, and every one is named, sorted so two runs report the "
+          "same order: %r" % (_gw8,),
+          _gw8 == [JD + "2026-01.a.jsonl", JD + "archive/2025-12.a.jsonl"])
+
+    # `git -C <a path that is not there>` cannot be asked WHEREVER this suite
+    # runs, which is what makes the sentinel deterministic - a directory that
+    # merely has no `.git` of its own may still sit inside somebody's checkout.
+    _tmp = tempfile.mkdtemp(prefix="journal-gone-")
+    try:
+        _nowhere = os.path.join(_tmp, "not-a-repository-at-all")
+        _gw9 = M.tracked_but_gone(_nowhere, os.path.join(_nowhere, "journal"))
+        check("gw9 ALLOW: git that cannot be asked answers None, the word this "
+              "module already uses for an unasked question - NOT the empty list, "
+              "because 'no git here' and 'nothing is missing' are two states and "
+              "only one of them is reassuring: %r" % (_gw9,), _gw9 is None)
+        check("gw10 ...and the finding builder turns that into no findings at "
+              "all rather than raising or inventing one, which is what a "
+              "project that has never been a git repository must see",
+              M.gone_findings(_nowhere, os.path.join(_nowhere, "journal")) == [])
+        _fresh = os.path.join(_tmp, "fresh-project")
+        os.makedirs(os.path.join(_fresh, "docs", "audit", "journal"))
+        _gw11 = M.verify(_fresh)
+        check("gw11 ALLOW, AND THE ONE EVERY SURFACE PAYS: a project whose "
+              "journal directory holds nothing git ever tracked verifies clean "
+              "and silent - a never-tracked file that is absent is absence, not "
+              "evidence: %r" % (_gw11["findings"],),
+              _gw11["ok"] is True and _gw11["findings"] == [])
+    finally:
+        shutil.rmtree(_tmp, ignore_errors=True)
+
+    _gw12 = M.gone_finding("docs/audit/journal/2026-01.a.jsonl")
+    check("gw12 the finding NAMES the file and carries both commands that "
+          "answer for it - the content git still holds, and the commit that "
+          "removed it. A deletion says nothing about intent, so a sentence that "
+          "only accused would leave its reader nowhere to go: %r" % (_gw12,),
+          _gw12.count("docs/audit/journal/2026-01.a.jsonl") == 3
+          and "git checkout -- docs/audit/journal/2026-01.a.jsonl" in _gw12
+          and "git log --diff-filter=D -- docs/audit/journal/2026-01.a.jsonl"
+          in _gw12)
 
 
 def _selftest():

@@ -481,6 +481,48 @@ def _cases(check):
               and _i13.get("evidence", {}).get("ok") is False
               and "findings" not in _i13)
 
+        # A RECORD WHOSE DIRECTORY IS GONE IS NOT A RECORD THAT WAS NEVER
+        # WRITTEN, and the two used to print the same line. `verify` asks git
+        # what the index still holds under the path before it gives up on a walk
+        # with nothing to walk, so a trail deleted WHOLE arrives here with
+        # findings and `exists` false - and this command printed "no journal yet"
+        # and then exited 1, which is a refusal with its reason withheld. Driven
+        # against a real repository as g10b in `tools/check-git-pipeline.py`;
+        # what is stubbed here is only the verdict, so the branch that prints it
+        # is graded without this suite building a repository.
+        # The stub goes on the module that DEFINES `cmd_verify`, because that is
+        # where `cmd_verify` looks the name up - the lesson k5-k8 learned the
+        # other way round when their stub was installed one module too high and
+        # measured a call that never happened.
+        _held = M.verify
+        try:
+            M.verify = lambda project, config=None: {
+                "ok": False,
+                "dir": os.path.join(eproj, "docs", "audit", "journal"),
+                "exists": False, "rows": 0, "files": [],
+                "findings": [M.gone_finding("docs/audit/journal/2026-09.a.jsonl")],
+                "warnings": [], "enabled": True}
+            code, txt = run(["verify"], eproj)
+        finally:
+            M.verify = _held
+        check("i14 a journal directory that is NOT THERE while git still tracks "
+              "what was in it prints the finding and names the file, instead of "
+              "the `no journal yet` line a never-used project gets - the exit "
+              "code moved with the verdict either way, so the only thing the old "
+              "branch withheld was the reason: %r" % (txt,),
+              code == 1 and "no journal yet" not in txt
+              and "2026-09.a.jsonl" in txt and "FINDING:" in txt
+              and "BROKEN (journal)" in txt, txt)
+        _fresh = os.path.join(tmp, "cli-nothing-recorded")
+        os.makedirs(os.path.join(_fresh, "docs", "audit"))
+        _f_code, _f_txt = run(["verify"], _fresh)
+        check("i15 SECOND DIRECTION: a project that has never recorded anything "
+              "still gets the `no journal yet` line and exit 0 - widening i14's "
+              "branch to every missing directory would take that line away from "
+              "every fresh repo, which is the allow case the deny must not eat",
+              _f_code == 0 and "no journal yet" in _f_txt
+              and "FINDING" not in _f_txt, _f_txt)
+
         # --- j: row v2 -- the optional `details` block ------------------------
         # The hash covers whatever fields are present, so a v1 row and a v2 row
         # share a file with no migration; everything here pins that claim.

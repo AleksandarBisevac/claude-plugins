@@ -154,6 +154,10 @@ merge_text = _journal_io.merge_text
 write_merged = _journal_io.write_merged
 anchor_verdict = _journal_io.anchor_verdict
 rows_unaccounted = _journal_io.rows_unaccounted
+deleted_from_worktree = _journal_io.deleted_from_worktree
+tracked_but_gone = _journal_io.tracked_but_gone
+gone_finding = _journal_io.gone_finding
+gone_findings = _journal_io.gone_findings
 verify = _journal_io.verify
 verify_evidence = _evidence_io.verify
 _normalise = _journal_io._normalise
@@ -205,7 +209,9 @@ def cmd_verify(args, out):
 
     Each record reports its own verdict and neither can hide the other's: the exit
     code is non-zero when EITHER has findings, and a record with no directory
-    yet says so instead of counting as clean.
+    yet says so instead of counting as clean -- unless git still tracks files
+    under that path, which is a record that was REMOVED rather than one that was
+    never written, and is printed as the findings it is.
     """
     project = os.path.abspath(args.project)
     res = verify(project)
@@ -221,9 +227,16 @@ def cmd_verify(args, out):
                        indent=2, sort_keys=True))
         return 1 if (res["findings"] or evidence["findings"]) else 0
     for label, rep in (("journal", res), ("evidence", evidence)):
-        if not rep["exists"]:
+        if not rep["exists"] and not rep["findings"]:
             out("[audit-journal] no %s yet at %s" % (label, rep["dir"]))
             continue
+        # A DIRECTORY THAT IS NOT THERE CAN STILL CARRY FINDINGS, and the second
+        # half of that condition is what stops this command exiting 1 while
+        # printing "no journal yet" and nothing else. `verify` asks git what the
+        # index holds under the path before it gives up on a walk with nothing to
+        # walk, so a trail removed WHOLE arrives here with findings and no
+        # directory - the loudest state this command can be in, and the one it
+        # was describing as an empty project.
         for line in rep["warnings"]:
             out("WARNING: " + line)
         for line in rep["findings"]:
