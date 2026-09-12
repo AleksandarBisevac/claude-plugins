@@ -176,6 +176,18 @@ allows, and it is deliberate — the exemption is there so the ORCHESTRATOR can 
 and a task that edits the plan it is judged by is a task nobody can review. Measured on a live run:
 four of five tasks meeting a refusal took that door because it was the only one open.
 
+**And the shell is not a second door to it.** `Edit` refusing an executor its shard closed nothing
+while the executor still held `Bash`: `.json` is no source extension and `docs/audit/**` is an
+exempt glob, so both tests the shell-write branch ran answered "nothing here" for the one file
+this section protects hardest, and `sed -i` on a shard produced no verdict at all. The manifest is
+now part of that branch's target set explicitly — the configured `manifestPath`, its lockfile, and
+the phase shards `_config.governing_lock` resolves beside it — so `sed -i`, `tee` and a redirect
+into any of them get the verdict `Edit` gives: refused to a subagent, refused to a session that is
+not the live lock holder, and allowed to the orchestrator doing its own bookkeeping. Explicitly,
+and not by calling `.json` a source extension: that spelling would also refuse every
+`package.json`, `tsconfig.json` and test fixture in a consuming repository, which is how a guard
+earns being switched off.
+
 **No secret guard is graded.** Secret reads, the token-logging ban and the shell secret
 checks deny by default at every tier, with or without a manifest: reading `.env` is wrong
 regardless of whether a plan exists, so those guards need no evidence to be correct. If you
@@ -258,8 +270,11 @@ sessions writing one shard in one working tree produce **no git conflict**, beca
 sees two versions, so the loser's bookkeeping silently overwrites the winner's. Everything
 uncertain resolves to *allow*, in keeping with the fail-open posture above.
 
-Through `sed -i` and friends the same write cannot be caught before it lands
-(bypass class 1 below); `guard-bash-writes` reports it afterwards instead.
+`require-plan` names the tool half of it. The same denial is asked of the shell write forms
+`guard-secrets-read` can see — `sed -i`, `tee`, `>`/`>>` — against the same resolved paths, on the
+same fail-open table, so a live holder's shard is refused before the write lands rather than
+reported after it. What stays uncatchable at that moment is the residual of bypass class 1 below,
+the writes no static reading of a command can find; `guard-bash-writes` reports those afterwards.
 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
@@ -532,6 +547,9 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    0. **Since 0.27.0** it also reports a shell write into a manifest or phase
    shard held by another live session — previously invisible twice over, since
    `manifestPath` was skipped outright and `.json` is not a source extension.
+   `guard-secrets-read` now refuses that write at PreToolUse for the forms it can
+   read, so what this report is left holding is the same residual as the rest of
+   the class: a manifest write no static reading of the command could find.
 
    **This paragraph used to say it detects ANY shell write into an unplanned
    source file. It does not, and has not since F-P-24.** The real predicate is

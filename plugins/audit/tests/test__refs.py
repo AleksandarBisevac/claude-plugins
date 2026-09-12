@@ -371,13 +371,19 @@ def _cases(check):
     real = M.referenced_paths()
     hook_hits = [h for h in real if h[0].startswith(_FX_HOOKS)]
     hook_script_hits = [h for h in hook_hits if h[3].startswith(_FX_SCRIPTS)]
-    check("a3 the real hooks/ tree reaches SCRIPTS exactly three times - the three "
-          "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py strings "
-          "require-plan.py carries. The DEPTH is part of the claim: the anchored "
-          "pattern's tail spans directories, so a domain folder appearing in the "
-          "path must keep the hit resolving to the file rather than dropping it",
-          len(hook_script_hits) == 3
-          and set(h[0] for h in hook_script_hits) == set([_FX_HOOKS + "require-plan.py"])
+    check("a3 the real hooks/ tree reaches SCRIPTS through one pointer and no "
+          "other - ${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py, carried "
+          "by the hooks that can refuse a manifest write: require-plan on the Edit "
+          "side and guard-secrets-read on the shell side. Asserted as the two SETS "
+          "rather than as a tally, because the tally rotted the moment the second "
+          "of those hooks learned to refuse the write and had to name the same "
+          "remedy. The DEPTH is part of the claim: the anchored pattern's tail "
+          "spans directories, so a domain folder appearing in the path must keep "
+          "the hit resolving to the file rather than dropping it",
+          bool(hook_script_hits)
+          and set(h[0] for h in hook_script_hits)
+          == set([_FX_HOOKS + "require-plan.py",
+                  _FX_HOOKS + "guard-secrets-read.py"])
           and set(h[3] for h in hook_script_hits)
           == set([_FX_SCRIPTS + "governance/audit-lock.py"]), repr(hook_script_hits))
     # a4's subject moved with the suite it belongs to. The unanchored
@@ -386,12 +392,18 @@ def _cases(check):
     # live in `tests/test_guard_secrets_read.py`. The claim is unchanged - an
     # unanchored plugin path inside the plugin's OWN Python is a fixture, not a
     # reference - so it is made where the fixture actually is. Both halves matter:
-    # the hook no longer carries it, and the test file must not start counting it.
+    # the test file must not start counting it, and the hook must carry no fixture
+    # path of its own. The second half asks which FILE a hit resolves to rather
+    # than whether the hook contributes any: the hook now names the lock script
+    # for real, in the refusal it prints when a shell write meets a live lock, and
+    # a check reading "this hook reaches scripts/ nowhere" would have to be
+    # weakened to a lie to keep that.
     _fx_file = _FX_TESTS + "test_guard_secrets_read.py"
     check("a4 ...and guard-secrets-read.py's build.py fixture contributes none of them",
           [h for h in real if h[0] == _fx_file] == []
           and [h for h in hook_script_hits
-               if h[0].endswith("guard-secrets-read.py")] == [],
+               if h[0].endswith("guard-secrets-read.py")
+               and h[3] != _FX_SCRIPTS + "governance/audit-lock.py"] == [],
           repr([h for h in real if h[0] == _fx_file]))
     # The tests/ branch, on the real tree rather than on a fixture: every hook is a
     # migrated hook now, and each one's docstring and `--selftest` pointer name where

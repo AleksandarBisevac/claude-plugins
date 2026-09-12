@@ -62,6 +62,12 @@ Plan-first backstop for Bash WRITES (this is the only hook that sees Bash):
     in_progress manifest task covers: `sed -i`, `tee <file>`, and `>`/`>>`
     redirects (which also catches `cat > file <<EOF` heredocs). The block
     message steers to the Edit/Write tools, which the plan gate governs.
+  - those same write forms aimed at the MANIFEST - the configured `manifestPath`,
+    its lockfile, or a phase shard `_config.governing_lock` resolves - which are
+    refused to a subagent and to a session that is not the live lock holder,
+    exactly as `require-plan` refuses them to `Edit`. Not by calling `.json` a
+    source extension: that would refuse every package.json in a consumer's repo.
+    `_manifest_write_hit` and `_manifest_write_verdict` hold the two halves.
 
 Trade-off (accepted): the matchers are text-based and may over-block an innocent
 one-liner that merely mentions `.env` (e.g. `cp .env.example .env`). We accept
@@ -1069,6 +1075,103 @@ def _source_write_hit(cmd, root, cfg):
     return None
 
 
+# --- the manifest, reached by shell instead of by Edit ---------------------------
+_SHELL_SUBAGENT_MANIFEST = (
+    "%s is the audit plan, and the plan belongs to the orchestrator.\n"
+    "You are a subagent: your job is one task, and a task that edits the plan it "
+    "is being judged by is a task nobody can review. The Edit tool already refuses "
+    "you this file; `sed -i`, `tee` and a redirect are the same act spelled "
+    "differently, so they are refused here too.\n"
+    "Do this: STOP, and tell the orchestrator what you need - a wider `files` "
+    "scope, a status change, a new task. It owns those writes and will make them, "
+    "then tell you to carry on.\n"
+    "If you reached for a shell write to get past a plan-gate refusal on a source "
+    "file, that is the case this rule exists for: report the refusal instead."
+)
+
+_SHELL_MANIFEST_LOCK = (
+    "%s is under the %s lock, held by another LIVE session (%s).\n"
+    "  doing: %s\n"
+    "  basis: %s\n"
+    "Writing it now would overwrite their work with no conflict and no warning -\n"
+    "one working tree, so git never sees two versions.\n"
+    "A shell write is the one form that cannot be reviewed before it lands, so do\n"
+    "NOT edit around the lock with it. Wait for that run, check it, or take the\n"
+    "lock over properly so the record says who holds it:\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py\" status\n"
+    "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py\" acquire "
+    "%s --takeover"
+)
+
+
+def _manifest_write_hit(cmd, root, cfg):
+    """First manifest path `cmd` writes to via sed -i / tee / a `>`(`>>`) redirect
+    - the index, its lockfile, or one of its phase shards - or None.
+
+    THE TARGET SET IS RESOLVED, NEVER SPELLED. `manifestPath` comes from the
+    project's config and the shards come from `_config.governing_lock`, which is
+    the same predicate require-plan, guard-edits, journal-writes and
+    guard-bash-writes ask; a project that moved the manifest or renamed a shard
+    file is covered because the resolution moves with it, and the Edit side and
+    this side cannot drift apart over what counts as the plan.
+
+    Adding `.json` to `_config.source_exts` would have reached these files too -
+    and every package.json, tsconfig.json and test fixture in a consumer's
+    repository with them. A guard that refuses unrelated files is a guard the
+    operator switches off, so the set is explicit instead of extensional.
+
+    NO CONTAINMENT FILTER, and its absence is the measured thing rather than an
+    oversight. The source-write half needs `within_root` because it grades a path
+    by its EXTENSION, and `../../../private/tmp/probe.py` is a source file by that
+    test. Here the path is compared against a repo-relative literal, which is
+    already negative for everything outside the tree - that is the very case
+    `_config.within_root`'s own docstring says its callers do not need it for. A
+    `within_root` call here was written first and left no case able to fail:
+    deleted, allowed and denied the same commands, which is a check that cannot
+    fail rather than a guard."""
+    manifest_rel = str(cfg.get("manifestPath")
+                       or _config.DEFAULTS["manifestPath"])
+    for t in _shell_write_targets(cmd):
+        rel = _config.rel_path(root, t)
+        if (rel == manifest_rel or rel == manifest_rel + ".lock"
+                or _config.governing_lock(manifest_rel, rel)):
+            return rel
+    return None
+
+
+def _manifest_write_verdict(data, root, cfg, rel):
+    """("block", msg) when a shell write to manifest path `rel` is refused, else
+    None - and the two refusals are require-plan's two, in its order.
+
+    A SUBAGENT IS REFUSED THE PLAN. The executor keeps Bash after the Edit tool
+    refuses it the manifest, so the one act the security model says a subagent may
+    not perform - editing the shard it is being judged by - was reachable by typing
+    `sed`. The verdict has to follow the operation rather than the tool that spells
+    it, which is the whole of this branch.
+
+    A LIVE LOCK HOLDER IS STILL A LIVE LOCK HOLDER. Two sessions writing one shard
+    in one working tree produce no git conflict, so the loser's bookkeeping
+    silently replaces the winner's; that this write arrived by shell makes it
+    worse, not exempt.
+
+    Everything else - the orchestrator's own bookkeeping, an abandoned lock, an
+    unattributable one, no git at all - is None, so the caller falls through to the
+    source-write gate. That is require-plan's answer for the same payload, and
+    matching it is the point: the manifest is exempt from the PLAN gate on both
+    sides, not unconditionally writable on either."""
+    if str(data.get("agent_id") or "").strip():
+        return ("block", _SHELL_SUBAGENT_MANIFEST % (rel,))
+    manifest_rel = str(cfg.get("manifestPath")
+                       or _config.DEFAULTS["manifestPath"])
+    conflict = _config.manifest_lock_conflict(
+        root, cfg, manifest_rel, rel, str(data.get("session_id", "") or ""))
+    if conflict and conflict["live"]:
+        return ("block", _SHELL_MANIFEST_LOCK % (
+            rel, conflict["lock"], conflict["holder"], conflict["note"],
+            conflict["basis"], conflict["lock"]))
+    return None
+
+
 def _append_verdict_event(root, cfg, data, verdict, msg):
     """One line into the gate events feed for a deny/ask verdict (v0.36 A4).
 
@@ -1314,6 +1417,20 @@ def _decide_core(data, root, cfg):
                         "can review the change. This is a best-effort backstop — "
                         "full Bash-write coverage needs a PostToolUse diff check."
                         % (_EVAL_SHAPE[how],))
+        # BEFORE the source-write gate, and before any exempt glob is consulted,
+        # because the manifest is not a source file and is not this gate's subject
+        # under either heading: `.json` is no source extension and the default
+        # exempt globs swallow `docs/audit/**`, so both of the tests below answered
+        # "nothing to see" for the one file the security model protects hardest.
+        # require-plan asks the manifest question first for the same reason.
+        #
+        # Falls THROUGH on None rather than returning: a command that writes the
+        # manifest and a source file in one breath still owes the source verdict.
+        mhit = _manifest_write_hit(runnable, root, cfg)
+        if mhit:
+            refusal = _manifest_write_verdict(data, root, cfg, mhit)
+            if refusal is not None:
+                return refusal
         # F116: over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.

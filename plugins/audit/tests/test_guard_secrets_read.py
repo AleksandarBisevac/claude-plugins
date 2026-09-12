@@ -396,6 +396,192 @@ def _cases(check):
           _v == "block" and "Phase P7 is in_progress" in _m, repr(_m))
     _sh2.rmtree(tmp / "docs", ignore_errors=True)
 
+    # (sm) THE MANIFEST REACHED BY SHELL INSTEAD OF BY `Edit`. Both tests the
+    # shell-write branch ran answered "nothing here" for the plan itself: `.json`
+    # is no source extension and `docs/audit/**` is an exempt glob. The executor
+    # keeps Bash after `Edit` has refused it the manifest, so the one act a
+    # subagent may not perform was reachable by typing `sed`. The target set is
+    # RESOLVED - `manifestPath` from the config, the shards from
+    # `_config.governing_lock` - which is what sm12-sm14 below are about: a
+    # hardcoded `docs/audit/phases/` passes the deny cases and fails those.
+    _smdir = tmp / "docs" / "audit"
+    (_smdir / "phases").mkdir(parents=True, exist_ok=True)
+    (_smdir / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2},
+         "phases": [{"id": "P1", "title": "p", "shard": "phases/P1.json"}]}),
+        encoding="utf-8")
+    (_smdir / "phases" / "P1.json").write_text(json.dumps(
+        {"id": "P1", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "in_progress",
+                    "files": ["src/covered/mod.ts"]}]}), encoding="utf-8")
+
+    def sub(cmd):
+        """A Bash payload from a SUBAGENT - `agent_id` is present on one and
+        absent on the orchestrator's, which is how both plan gates tell them
+        apart."""
+        data = bash(cmd)
+        data["agent_id"] = "agent-sm"
+        return data
+
+    _expect("sm1 a subagent's `sed -i` on its own phase shard is refused, as the "
+          "Edit tool already refuses it", "block",
+          sub("sed -i 's/pending/done/' docs/audit/phases/P1.json"))
+    _expect("sm2 ...and on the manifest index", "block",
+          sub("sed -i 's/a/b/' docs/audit/audit-plan.json"))
+    _expect("sm3 ...through `tee`, which names the file the same way", "block",
+          sub("echo '{}' | tee docs/audit/phases/P1.json"))
+    _expect("sm4 ...and through a plain redirect", "block",
+          sub("echo '{}' > docs/audit/audit-plan.json"))
+    _expect("sm5 ...and the lockfile beside it, which is the other way a run "
+          "gets edited around", "block",
+          sub("echo '{}' > docs/audit/audit-plan.json.lock"))
+    # THE ALLOW CASES. Every one of them is a file the OVER-BLOCK would take:
+    # `.json` added to `_config.source_exts` reaches all of sm6-sm9, which is
+    # every package manifest, tsconfig and fixture in a consumer's repository -
+    # and a guard that refuses those is a guard that gets switched off.
+    _expect("sm6 an unrelated .json is untouched - `.json` never became a source "
+          "extension", "allow", sub("sed -i 's/a/b/' package.json"))
+    _expect("sm7 ...including one a redirect writes, deep in the tree", "allow",
+          sub("echo '{}' > src/fixtures/data.json"))
+    _expect("sm8 ...and one in the manifest's OWN directory that is not the "
+          "manifest", "allow", sub("sed -i 's/a/b/' docs/audit/notes.json"))
+    _expect("sm9 ...and one UNDER the shard directory, which holds shards and "
+          "not a tree of them", "allow",
+          sub("sed -i 's/a/b/' docs/audit/phases/nested/P1.json"))
+    _expect("sm10 the ORCHESTRATOR's own bookkeeping is not refused: `Edit` "
+          "allows it the manifest, so this allows it too", "allow",
+          bash("sed -i 's/a/b/' docs/audit/phases/P1.json"))
+    _expect("sm11 ...and a subagent running the plugin's own script is not "
+          "refused either - the verdict reads the WRITE, never a command that "
+          "mentions the plan", "allow",
+          sub("python3 scripts/manifest/audit-task.py add --phase P1 --title t"))
+    _expect("sm12 ...nor is a shell write to an exempt path that is not the "
+          "manifest, which is where the manifest clause running FIRST could "
+          "have cost something", "allow",
+          sub("echo hi > docs/audit/journal/2026-09.jsonl"))
+    cfg_moved = _config._deep_merge(_config.DEFAULTS,
+                                    {"manifestPath": "plan/my-plan.json"})
+    _expect("sm13 a project that MOVED the manifest is covered: the path comes "
+          "from the config and is never spelled here", "block",
+          sub("sed -i 's/a/b/' plan/my-plan.json"), use_cfg=cfg_moved)
+    _expect("sm14 ...and so are its shards, under whatever a phase id names "
+          "them", "block", sub("sed -i 's/a/b/' plan/phases/Q-07.json"),
+          use_cfg=cfg_moved)
+    _expect("sm15 ...while the DEFAULT path stops being special there - the set "
+          "MOVED with the config, it did not grow", "allow",
+          sub("sed -i 's/a/b/' docs/audit/phases/P1.json"), use_cfg=cfg_moved)
+    # sm16-sm17: the target is a RESOLVED path, not the token the command spelled.
+    # Both directions, because each alone is satisfied by a wrong implementation:
+    # a raw-text comparison passes sm16 and fails sm17, and one that only checks a
+    # basename passes sm17 and fails sm16.
+    _sm16 = [_harness.attempt(M.decide, sub("sed -i 's/a/b/' ../other-audit/"
+                                            + _tail), cfg=cfg)
+             for _tail in ("docs/audit/audit-plan.json",
+                           "docs/audit/phases/P1.json")]
+    check("sm16 a SIBLING checkout's plan is not this plan, index or shard, "
+          "even spelled exactly like one - equality, never a suffix",
+          all(ok and got[0] == "allow" for ok, got in _sm16), repr(_sm16))
+    _expect("sm17 ...while THIS shard named by absolute path is still refused",
+          "block",
+          sub("sed -i 's/a/b/' %s" % (tmp / "docs" / "audit" / "phases"
+                                      / "P1.json",)))
+    _ok_sm, _got_sm = _harness.attempt(
+        M.decide, sub("sed -i 's/x/y/' docs/audit/phases/P1.json"), cfg=cfg)
+    _m_sm = _got_sm[1] if _ok_sm else str(_got_sm)
+    check("sm18 the refusal NAMES the shard and the channel back to the "
+          "orchestrator, so a refused subagent has somewhere to go instead of a "
+          "second spelling to try",
+          _ok_sm and _got_sm[0] == "block"
+          and "docs/audit/phases/P1.json" in _m_sm
+          and "tell the orchestrator" in _m_sm, repr(_m_sm))
+
+    # sm19-sm22: the OTHER half of require-plan's manifest refusal. Two sessions
+    # writing one shard in one working tree produce no git conflict, so the
+    # loser's bookkeeping silently replaces the winner's - and arriving by shell
+    # makes that worse rather than exempt, because nothing can review it first.
+    import platform as _plat_sm
+    import subprocess as _sp_sm
+    _lock_tmp = Path(tempfile.mkdtemp(prefix="guard-secrets-lock-"))
+    _prev_sm = os.environ.get("CLAUDE_PROJECT_DIR")
+    _prev_env_sm = [(k, os.environ.get(k))
+                    for k in ("CLAUDE_PID", "CLAUDE_CODE_SESSION_ID")]
+    try:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(_lock_tmp)
+        for _k_sm, _ in _prev_env_sm:
+            os.environ.pop(_k_sm, None)
+        (_lock_tmp / "docs" / "audit" / "phases").mkdir(parents=True,
+                                                        exist_ok=True)
+        _lockmod = _config._load_lock_lib()
+        if not _sh2.which("git") or _lockmod is None:
+            print("SKIP sm19-sm22 (no git on PATH, or _locks.py did not load)")
+        else:
+            _sp_sm.run(["git", "init", "-q", str(_lock_tmp)], check=True,
+                       stdout=_sp_sm.DEVNULL, stderr=_sp_sm.DEVNULL)
+            _ld_sm = Path(_lockmod.lock_dir(str(_lock_tmp)))
+            _ld_sm.mkdir(parents=True, exist_ok=True)
+
+            def _write_lock_sm(name, session, pid=None):
+                with open(_ld_sm / (name + ".lock"), "w",
+                          encoding="utf-8") as fh:
+                    json.dump({"hostname": _plat_sm.node(),
+                               "pid": os.getpid() if pid is None else pid,
+                               "sessionId": session, "note": name}, fh)
+
+            def _dead_pid_sm():
+                """A pid that is certainly gone: spawned, waited on, reaped."""
+                proc = _sp_sm.Popen([sys.executable, "-c", ""],
+                                    stdout=_sp_sm.DEVNULL,
+                                    stderr=_sp_sm.DEVNULL)
+                proc.wait()
+                return proc.pid
+
+            def _shard_sm(session):
+                return {"tool_name": "Bash", "session_id": session,
+                        "cwd": str(_lock_tmp),
+                        "tool_input": {
+                            "command": "sed -i 's/a/b/' "
+                                       "docs/audit/phases/P1.json"}}
+
+            _write_lock_sm("phase-P1", "another-live-session")
+            _ok19, _got19 = _harness.attempt(M.decide, _shard_sm("mine"),
+                                             cfg=cfg)
+            check("sm19 a shard another LIVE session holds is refused to the "
+                  "ORCHESTRATOR too - that denial was the Edit tool's alone, "
+                  "and `sed -i` was the way around it",
+                  _ok19 and _got19[0] == "block"
+                  and "another-live-session" in _got19[1]
+                  and "phase-P1" in _got19[1], repr(_got19))
+            _ok20, _got20 = _harness.attempt(
+                M.decide, _shard_sm("another-live-session"), cfg=cfg)
+            check("sm20 ...and the HOLDER's own shell write goes through, or "
+                  "the gate would deny the session doing the work",
+                  _ok20 and _got20[0] == "allow", repr(_got20))
+            _write_lock_sm("phase-P1", "a-crashed-session", pid=_dead_pid_sm())
+            _ok21, _got21 = _harness.attempt(M.decide, _shard_sm("mine"),
+                                             cfg=cfg)
+            check("sm21 ...but an ABANDONED lock does not deny - nobody is "
+                  "writing against you, and friction after a crash protects "
+                  "nothing; only a LIVE holder is in the way",
+                  _ok21 and _got21[0] == "allow", repr(_got21))
+            os.remove(str(_ld_sm / "phase-P1.lock"))
+            _ok22, _got22 = _harness.attempt(M.decide, _shard_sm("mine"),
+                                             cfg=cfg)
+            check("sm22 ...and with no lock at all the write is clear again: "
+                  "taking a lock is honoured, never required",
+                  _ok22 and _got22[0] == "allow", repr(_got22))
+    finally:
+        if _prev_sm is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_sm
+        for _k_sm, _v_sm in _prev_env_sm:
+            if _v_sm is None:
+                os.environ.pop(_k_sm, None)
+            else:
+                os.environ[_k_sm] = _v_sm
+        _sh2.rmtree(str(_lock_tmp), ignore_errors=True)
+    _sh2.rmtree(tmp / "docs", ignore_errors=True)
+
     # (s23+) F-B-1: the inline-eval heuristics judge each CLAUSE on its own
     # facts. A redirect in clause one plus an eval in clause two used to be read
     # as one command and denied — reproduced live with exactly s23's command
