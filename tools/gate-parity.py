@@ -1669,6 +1669,13 @@ NOT_AN_EXEMPTION = {
                     "in both directions - so a row adds a thing the document must "
                     "do rather than excusing it from one, and the reason on each "
                     "row says which enum is the authority",
+    "PROJECT_BASES": "a RULE table, and the opposite of an exemption twice over: "
+                     "the rows ARE the order a manifest writer resolves its "
+                     "project root in, and each sentence is the clause the "
+                     "command PRINTS to say which row won - so a row obliges a "
+                     "verb to explain itself rather than excusing it from a "
+                     "check, and a row nothing can resolve to is a red case "
+                     "rather than a quiet excuse",
     "_PANEL_FILES": "the panel's own local files, with the remedy the doctor prints "
                     "when one is tracked - subjects of a check, not excuses from it",
     "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "

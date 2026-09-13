@@ -881,7 +881,168 @@ def reached_a_verdict(text, command=None):
     return any(pattern.search(body) for _name, pattern in _END_OF_RUN)
 
 
-def counts_basis(steps):
+# --- what a count may be ADDED to, and what each step COST ---------------------
+# P46.5, reported from a live audit. A project's `meta.buildCommands` mapped one
+# entry to a plain runner invocation and another to the SAME runner with coverage
+# on. The gate ran both, so the identical checks executed twice, and the TOTAL it
+# printed was the suite counted twice - which the operator and the reviewer both
+# read as thoroughness, because a bigger count reads as more assurance. The number
+# that should have exposed the duplication is the number that concealed it.
+#
+# AND THE DUPLICATE STEP COULD ONLY COST. On a later sign-off the plain step
+# PASSED and the coverage step came back RED on the identical checks - a flaky
+# index-build race, not a threshold. A step that can only agree with another step
+# or be flaky adds no assurance; it doubles the exposure to every nondeterminism
+# in the suite and buys a re-run.
+#
+# WHERE THE WARNING LIVES, AND THE PLACES IT DELIBERATELY DOES NOT. Here, in the
+# process that ran both commands, because the evidence that two entries are one
+# suite is the OUTPUT - the count each printed and the suite files each named -
+# and nothing but the run holds it.
+#
+#   * NOT `scripts/manifest/validate-manifest.py`. It sees the command STRINGS,
+#     so the only comparison available to it is over the spelling: `vitest run`
+#     and `vitest run --coverage` differ as text and are one suite, while
+#     `npm test` in two workspaces is the same text and two suites. A check that
+#     reads what a command SAYS instead of what it DOES is the class this plugin
+#     keeps being repaired for, and here it would both miss the reported run and
+#     refuse honest manifests.
+#   * NOT the config reference. A sentence there is read once, when the manifest
+#     is first written; the duplicate entry is added later, by somebody who is
+#     not reading it. It would also enforce nothing, which is this repo's
+#     definition of a rule that is absent.
+#
+# ONE OF THEM AND NOT TWO. A second copy of this warning somewhere that cannot
+# see the run's output would disagree with this one the first time either moved,
+# and the copy that cannot measure would be the one people learned to ignore.
+
+
+def suite_paths(named):
+    """The paths a runner printed AS TESTS IT RAN - what identifies a suite.
+
+    NOT every path in the output, and that narrowing is the whole reason this
+    comparison can be made at all. `--coverage` prints a table naming the
+    SOURCES under a suite, so the two runs of one suite print different path
+    sets while running identical tests; the suites they name are the same
+    either way. `_is_suite_path` is this file's existing reading of "the runner
+    printed this as a test", and asking it here keeps one answer to that
+    question rather than a second one that can drift from it.
+
+    EMPTY IS NOT AN ANSWER ABOUT THE SUITE, which is why the caller treats it as
+    NOT KNOWABLE rather than as "ran nothing": a `pre-commit` gate names hooks,
+    and an eslint run names the sources it linted, and neither has said which
+    suite it was.
+    """
+    return frozenset(p for p in (named or ()) if _is_suite_path(p))
+
+
+# What a pair of equal counts turned out to be. Spelled as words for
+# `measured_state`'s reason: the answers are not points on a scale, and the
+# difference between PROVEN and NOT ESTABLISHED is exactly the difference this
+# change must not blur.
+SAME_SUITE = "same-suite"
+MAYBE_SAME = "not-established"
+
+
+def shared_counts(steps, named):
+    """Steps whose check counts are one measurement rather than two - or may be.
+
+    `named` is parallel to `steps`: each entry is `files_named`'s answer for
+    that step, so a set of paths or None.
+
+    THREE READINGS OF ONE EQUALITY, and only the first may change the total:
+
+      * the steps printed the SAME non-empty set of suite paths -> they ran the
+        same suite, so the second count is the first count again and adding them
+        would report a gate twice its size;
+      * at least one of them printed NO suite path -> nothing here can compare
+        what they ran. Reported as MAY BE the same and still ADDED, because
+        de-duplicating on a resemblance would quietly delete a real count;
+      * they printed DIFFERENT suite paths -> they are demonstrably different
+        suites that happen to be the same size, which is an ordinary thing for a
+        gate to be. Nothing is said and both are added.
+
+    THE THIRD READING IS THE ONE THIS FUNCTION IS GRADED ON. Two suites of equal
+    size are common, and a version that collapsed them would under-report every
+    such gate - a lie in the opposite direction and a harder one to notice,
+    since a total that is too small looks like caution. `sc5` is the allow case
+    that goes red the moment the set comparison is weakened to a count
+    comparison.
+
+    A ZERO IS NEVER GROUPED. It is additively identical either way, so a group
+    over it could only add noise to a run `NO CHECK RAN` already owns entirely.
+    """
+    by_count = {}
+    for idx, step in enumerate(steps or ()):
+        ran = step.get("ran")
+        if not ran:
+            continue
+        by_count.setdefault(ran, []).append(idx)
+    groups = []
+    for ran in sorted(by_count):
+        idxs = by_count[ran]
+        if len(idxs) < 2:
+            continue
+        buckets, silent = {}, []
+        for idx in idxs:
+            suites = suite_paths((named or [])[idx]
+                                 if idx < len(named or []) else None)
+            if suites:
+                buckets.setdefault(suites, []).append(idx)
+            else:
+                silent.append(idx)
+        for suites in sorted(buckets, key=lambda s: sorted(s)):
+            members = buckets[suites]
+            if len(members) < 2:
+                continue
+            groups.append({"verdict": SAME_SUITE, "ran": ran,
+                           "names": [steps[i]["name"] for i in members],
+                           "files": sorted(suites), "silent": None})
+        if silent:
+            # EVERY STEP AT THIS COUNT, not only the quiet ones: a step that
+            # named no suite could be the same run as ANY of the others, so a
+            # group listing only the quiet ones would name the wrong parts.
+            groups.append({"verdict": MAYBE_SAME, "ran": ran,
+                           "names": [steps[i]["name"] for i in idxs],
+                           "files": None,
+                           "silent": [steps[i]["name"] for i in silent]})
+    return groups
+
+
+def additive_total(steps, shared):
+    """`ranTotal`: the SIZE of the gate, with a proven duplicate counted once.
+
+    None WHEN NO STEP ANSWERED, unchanged and load-bearing: a gate whose runners
+    publish no count has not told us it ran nothing, and this function may not
+    invent a zero to subtract from.
+    """
+    counts = [st.get("ran") for st in (steps or ()) if st.get("ran") is not None]
+    if not counts:
+        return None
+    total = sum(counts)
+    for grp in (shared or ()):
+        if grp["verdict"] == SAME_SUITE:
+            total -= grp["ran"] * (len(grp["names"]) - 1)
+    return total
+
+
+def human_duration(ms):
+    """A step's `durationMs` in the unit a reader compares two steps in.
+
+    None IN, None OUT, the rule the rest of this file follows: a step carrying no
+    duration has not told us it was instant, and the caller says so rather than
+    printing a zero it measured nowhere.
+    """
+    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 0:
+        return None
+    if ms < 1000:
+        return "%d ms" % (ms,)
+    if ms < 60000:
+        return "%.1f s" % (ms / 1000.0,)
+    return "%d m %02d s" % (ms // 60000, (ms % 60000) // 1000)
+
+
+def counts_basis(steps, shared):
     """Why `ranTotal` is the number it is - or why it is not a number at all.
 
     WRITTEN BY NOTHING BEFORE THIS, WHILE BEING READ BY FOUR THINGS.
@@ -896,22 +1057,43 @@ def counts_basis(steps):
     THE PARTIAL CASE IS THE ONE WORTH THE FUNCTION. `ranTotal` is the sum over
     the steps that ANSWERED, so on a mixed gate it is a floor and not a size, and
     a reader with the number alone cannot tell that from a complete count.
+
+    AND `shared` IS WHY THE TOTAL IS NOT ALWAYS THAT SUM (P46.5). Where two
+    steps ran one suite the number below counts it once, and where this reader
+    could not establish that it adds them and says so - see `shared_counts`. The
+    clause is appended HERE rather than given a key of its own for `treeBasis`'s
+    reason: the ledger, the report and the panel all render this string already,
+    so a field of its own would reach a terminal and none of the three surfaces
+    on which a committed row is read.
     """
     if not steps:
         return "no step reported, so there is no count to explain"
     counted = [st for st in steps if st.get("ran") is not None]
     silent = [str(st.get("name")) for st in steps if st.get("ran") is None]
     if not counted:
-        return ("no step printed a summary this reader can count (%s), so the "
-                "size of this gate is not knowable from its output"
-                % (_output.some_of(silent, budget=SAMPLE_BUDGET),))
-    if silent:
-        return ("%d of %d step(s) printed a summary this reader counted; %s did "
-                "not, so this total is a floor and not a size"
-                % (len(counted), len(steps),
-                   _output.some_of(silent, budget=SAMPLE_BUDGET)))
-    return ("counted from each runner's own summary line, over %d step(s)"
-            % (len(steps),))
+        basis = ("no step printed a summary this reader can count (%s), so the "
+                 "size of this gate is not knowable from its output"
+                 % (_output.some_of(silent, budget=SAMPLE_BUDGET),))
+    elif silent:
+        basis = ("%d of %d step(s) printed a summary this reader counted; %s "
+                 "did not, so this total is a floor and not a size"
+                 % (len(counted), len(steps),
+                    _output.some_of(silent, budget=SAMPLE_BUDGET)))
+    else:
+        basis = ("counted from each runner's own summary line, over %d step(s)"
+                 % (len(steps),))
+    for grp in (shared or ()):
+        names = _output.some_of(grp["names"], budget=SAMPLE_BUDGET)
+        if grp["verdict"] == SAME_SUITE:
+            basis += ("; %s each reported %d check(s) over the same suite "
+                      "file(s), so that count is in this total ONCE and is not "
+                      "added" % (names, grp["ran"]))
+        else:
+            basis += ("; %s each reported %d check(s) and %s named no suite "
+                      "file, so they are ADDED here and may be one suite twice"
+                      % (names, grp["ran"],
+                         _output.some_of(grp["silent"], budget=SAMPLE_BUDGET)))
+    return basis
 
 
 def never_started(exit_code, ran, outcome):
@@ -1676,6 +1858,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     state = _tree_stamp.tested_state(project, owns, before)
     started = time.monotonic()
     steps, texts = [], []
+    # STRICTLY PARALLEL TO `steps`, which `texts` is not: it is appended the
+    # moment the runner returns, so a stop signal arriving while a step's row is
+    # still being built leaves it one entry long. `shared_counts` indexes one
+    # list by the other, and a list that can be off by one is a list that would
+    # attribute one step's paths to another.
+    step_named = []
     cancelled_by = None
     try:
         for name, command in commands:
@@ -1744,6 +1932,11 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
                 step["failing"], step["failingBasis"] = failing_lines(
                     text, _ev.MAX_FAILING)
             steps.append(step)
+            # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
+            # come apart. Scraped per step rather than sliced out of the joined
+            # text below, because which STEP printed a path is the whole
+            # question here and the join throws that away.
+            step_named.append(files_named(text))
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -1793,10 +1986,15 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
         # is a basis with no claim under it, which this file's own rule calls
         # noise - and it would be on the overwhelming majority of rows.
         basis = "%s; %s" % (basis, own_basis)
-    counts = [s["ran"] for s in steps if s["ran"] is not None]
     named = files_named("".join(texts)) if texts else None
     overlap, cbasis = coverage(owns, named)
-    ran_total = sum(counts) if counts else None
+    # P46.5. THE TOTAL IS THE SIZE OF THE GATE AND NOT THE SIZE OF ITS RUNS. A
+    # plain sum over the steps reported one suite twice as twice as much
+    # assurance, which is the reading that concealed a duplicated command for a
+    # whole audit. `shared_counts` decides what may be added; `additive_total`
+    # does the adding, so the decision and the arithmetic cannot disagree.
+    shared = shared_counts(steps, step_named)
+    ran_total = additive_total(steps, shared)
     failed = failed_steps(steps)
     # THE VERDICT READS THE SAME LIST THE VERDICT LINE REFUSES ON. `render` and
     # `--json` take the other half of this pair; before F280 the status word took
@@ -1818,7 +2016,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             # heard of the split reads exactly what it read before.
             "treeMutatedOwned": owned_changes,
             "treeMutatedForeign": foreign_changes,
-            "ranTotal": ran_total, "countsBasis": counts_basis(steps),
+            "ranTotal": ran_total, "countsBasis": counts_basis(steps, shared),
+            # THE PARTS, SO THE TOTAL IS NEVER THE ONLY THING ON OFFER. The
+            # basis above carries the same finding as a sentence for the three
+            # surfaces that render it; this is the structured half, for `--json`
+            # and for `render`, which prints each group beside the steps it is
+            # about. `[]` on the ordinary run, not None: nothing was undecided,
+            # which is a measurement rather than a missing one.
+            "sharedCounts": shared,
             "durationMs": _elapsed_ms(started),
             # THE PATHS AND THE SENTENCE TRAVEL TOGETHER OR NOT AT ALL. Both are
             # None on the ordinary run, which is this file's shape for a claim
@@ -1843,8 +2048,16 @@ def render(res, out=print):
     """Print the answer and return the exit code it earns."""
     for step in res["steps"]:
         ran = step["ran"]
-        out("  %-12s exit %-3d %s"
-            % (step["name"], step["exit"],
+        # WHAT THE STEP COST, ON THE STEP'S OWN LINE AND NOT AS A TOTAL (P46.5).
+        # `durationMs` has been recorded per step and for the run since this
+        # script existed, and the terminal printed neither - so "where does the
+        # time go" needed somebody to decide to go and measure it, and a gate
+        # running one suite twice looked exactly like a gate running two. Per
+        # step and right-aligned in a column of its own, because the reading
+        # that matters is one step against another.
+        took = human_duration(step.get("durationMs"))
+        out("  %-12s exit %-3d %10s  %s"
+            % (step["name"], step["exit"], took or "(not timed)",
                "%d check(s) ran" % ran if ran is not None
                else "check count not knowable from this runner"))
         # UNDER THE STEP AND NOT UNDER THE VERDICT, because this is a per-step
@@ -1861,6 +2074,31 @@ def render(res, out=print):
             for line in step["failing"]:
                 out("      %s" % (line,))
             out("      basis: %s" % (step["failingBasis"],))
+    # THE PARTS, PRINTED WHERE THE TOTAL IS READ (P46.5). Above the verdict
+    # banners and below the steps, because this is a statement about the steps
+    # and `reference/orchestrator.md` keys its arms on the banner literals - a
+    # line interleaved among those changes a surface another document reads.
+    # NEITHER LINE IS A REFUSAL. `GATE GREEN` is still green with a duplicated
+    # step in it: the duplication costs wall clock and exposure to flakiness,
+    # and neither is evidence about the work under test. What it corrects is the
+    # NUMBER, which was the thing being read as assurance.
+    for grp in (res.get("sharedCounts") or ()):
+        if grp["verdict"] == SAME_SUITE:
+            out("SAME SUITE COUNTED ONCE: %s each reported %d check(s) over the "
+                "same suite file(s) - %s - so the total below holds that count "
+                "ONCE. A second command over the same suite can only agree with "
+                "the first or be flaky, so it adds no assurance while doubling "
+                "what a nondeterminism in that suite costs."
+                % (", ".join(grp["names"]), grp["ran"],
+                   _output.some_of(grp["files"], budget=SAMPLE_BUDGET)))
+        else:
+            out("SAME COUNT, SAME SUITE NOT ESTABLISHED: %s each reported %d "
+                "check(s), and %s named no suite file - so nothing here can "
+                "compare what they ran. They MAY be one suite run twice; the "
+                "total below ADDS them, which makes it an upper bound until "
+                "somebody looks."
+                % (", ".join(grp["names"]), grp["ran"],
+                   _output.some_of(grp["silent"], budget=SAMPLE_BUDGET)))
     code = E_OK
     # THE SAME LIST THE STATUS WORD READS, for F280's reason: the verdict line and
     # the record disagreeing about one run is the fault this file keeps being

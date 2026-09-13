@@ -347,7 +347,8 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    **A file the task must CREATE belongs in `files` too, before it exists.** `files` is what the plan
    gate matches an edit against, and the gate asks the manifest, never the disk — so a declared path
    that is not there yet is a legitimate creation target and `/audit:task add` reports it as
-   `note: not on disk (a new file?)` rather than as a problem. Leave it out and the executor is
+   `note: not on disk under <the project root it searched> (new files?)` rather than as a problem.
+   Leave it out and the executor is
    refused on its **first** write with no legal way forward: a live run wrote a task whose
    description ordered three new files while `files` named only the three it read, and the run
    dead-ended there. Say what the task will create, not only what it will read. When `gitRoot` is not `.`, prefer writing the

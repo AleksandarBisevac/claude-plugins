@@ -96,11 +96,14 @@ Exit codes:
 Design decisions, each mirroring a precedent rather than inventing one:
 
   * PROJECT (F-C-1). Which root owns the journal, the lock, the config and
-    the file-existence notes: an explicit --project-dir wins; else a NAMED
-    manifest derives the project upward from ITSELF (first ancestor holding
-    `.claude/` or `.git` -- naming another project's manifest from this cwd
-    must not journal or lock into THIS repo, the class audit-usage's
-    resolve_ledger already solved); else $CLAUDE_PROJECT_DIR, else the cwd.
+    the file-existence notes is decided by `_panel_write.PROJECT_BASES`, which
+    is that order AND the clause each row is chosen for, in one place because
+    every verb here now PRINTS the clause. Naming another project's manifest
+    from this cwd must not journal or lock into THIS repo -- the class
+    audit-usage's resolve_ledger already solved. Every verb also says so out
+    loud when the tree the caller is standing in is not the tree being written
+    (`_panel_write.standing_elsewhere`, which states why that is a warning and
+    neither silence nor a refusal); on a same-tree call it prints nothing.
 
   * LOCK. The whole read-allocate-write runs under the INDEX lock, taken via
     audit-lock.py's own module (`main(["acquire", "index", ...])`) -- ids are
@@ -738,6 +741,24 @@ def _empty_task_gate_note(now):
             % ("now " if now else "",))
 
 
+def _not_on_disk_note(project, missing):
+    """The `files` entries nothing answered for, and WHERE nothing was found.
+
+    It used to name the path alone, once per path. Read from a linked worktree
+    whose plan lives in another checkout, that was the only line in the whole
+    report that touched on a tree at all -- and it was the one line that could
+    have said which tree had been searched and did not.
+
+    THE DIRECTORY RIDES THE SENTENCE, NOT EACH PATH. An advisory that repeats a
+    constant per file is the shape an operator learns to skip, which is a fault
+    this plan already carries once; the paths are a list on the one line instead.
+    """
+    if not missing:
+        return None
+    return ("  note: not on disk under %s (new files?): %s"
+            % (project, ", ".join(missing)))
+
+
 def _readiness_lines(waiting, tid):
     """The sentences `add` and `scope` both print about whether a task can run now.
 
@@ -951,28 +972,52 @@ def _rescope_refusal(tid, task, blockers):
 _project_of_manifest = _panel_write.project_of_manifest
 
 
-def _resolve_project(args):
-    """Which root owns the journal, the lock, the config and the file notes.
+def resolve_basis(args):
+    """{"root", "basis", "why"}: which root owns the journal, the lock, the
+    config and the file notes -- and the row of `_panel_write.PROJECT_BASES`
+    that chose it.
 
     F-C-1: keying this off the cwd while the manifest was explicitly named
     wrote the `task.add` journal row into the CWD repo's journal -- the exact
     class audit-usage's resolve_ledger solved ("When a manifest was named,
-    search upward from IT"). The decision table:
-
-      explicit --project-dir            -> it (the human said so)
-      else a NAMED manifest             -> derived upward from the manifest
-                                           ITSELF (beats CLAUDE_PROJECT_DIR:
-                                           the env names the session's repo,
-                                           the positional names THIS add's)
-      else                              -> $CLAUDE_PROJECT_DIR, then the cwd
-                                           (audit-usage's resolve_project
-                                           order)
+    search upward from IT"). The order below IS the table's order, top-down,
+    and the table carries the clause each row is chosen for, so this function
+    holds no sentence of its own to disagree with the one an operator reads.
     """
     if args.project_dir:
-        return os.path.abspath(args.project_dir)
+        return _panel_write.project_basis(os.path.abspath(args.project_dir),
+                                          "--project-dir")
     if args.manifest:
-        return _project_of_manifest(args.manifest)
-    return os.path.abspath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        return _panel_write.project_basis(_project_of_manifest(args.manifest),
+                                          "manifest argument")
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env:
+        return _panel_write.project_basis(os.path.abspath(env),
+                                          "$CLAUDE_PROJECT_DIR")
+    return _panel_write.project_basis(os.path.abspath(os.getcwd()),
+                                      "the working directory")
+
+
+def _resolve_project(args):
+    """The root alone, for the seven doors that only need somewhere to write."""
+    return resolve_basis(args)["root"]
+
+
+def project_basis_key(args):
+    """`{"projectBasis": {...}}` for a verb's `--json` block, off the answer
+    `_under_lock` already computed.
+
+    THE KEY IS `_panel_write`'S, so this command and `set-priority.py` cannot
+    ship two shapes of one fact. What is local is only WHERE the answer is kept:
+    `_under_lock` leaves it on `args` because it costs a `git rev-parse`, and a
+    second ask per verb could contradict the line already printed. `{}` when
+    nothing put it there -- a verb reached without the shared door has resolved
+    no root, and an invented one is the guess this whole pair exists to stop.
+    """
+    info = getattr(args, "project_basis", None)
+    if not info:
+        return {}
+    return _panel_write.project_basis_key(info)
 
 
 # --- the lock ------------------------------------------------------------------
@@ -1772,6 +1817,7 @@ def _locked_add(args, project, config, mpath, title, out):
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
@@ -1810,8 +1856,9 @@ def _locked_add(args, project, config, mpath, title, out):
     unnamed_note = _unnamed_add_note(unnamed_add)
     if unnamed_note:
         out(unnamed_note)
-    for fpath in missing:
-        out("  note: not on disk (a new file?): %s" % fpath)
+    missing_note = _not_on_disk_note(project, missing)
+    if missing_note:
+        out(missing_note)
     for row in healed:
         out("  healed: %s" % _panel_write._fmt_change(row))
     # Grouped, not one line per item: a plan whose phases carry no area tag put
@@ -1960,6 +2007,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
                   "written": written, "warnings": warnings}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
@@ -2277,6 +2325,7 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if was["status"] == "in_progress":
@@ -2663,6 +2712,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "written": written, "warnings": warnings}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s done in %s -- was %s" % (tid, phase_id, was["status"]))
@@ -2930,6 +2980,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] phase %s added -- %s" % (pid, title))
@@ -2962,7 +3013,18 @@ def _under_lock(args, project, out, body):
     under it, so the read-modify-write is serialized (manifest-conventions ->
     ID allocation). What each verb checks before this point differs and stays in
     its own door; what happens after it does not differ at all, and three copies
-    of that would be three answers to "where is the manifest"."""
+    of that would be three answers to "where is the manifest".
+
+    IT IS ALSO WHERE EVERY VERB SAYS WHICH TREE IT IS WRITING, for that same
+    reason and one more: the seven doors reach this function and nothing else
+    they all reach comes after the project is known, so a verb cannot be added
+    that quietly skips the line. It is emitted BEFORE the manifest check, so a
+    refusal a reader is about to argue with already names the root it was
+    arguing about. Under `--json` it is not printed at all -- the payload must
+    stay one parseable object -- and travels as `projectBasis` instead."""
+    args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
+    if args.project_basis["note"] and not args.as_json:
+        out(args.project_basis["note"])
     config = _panel_write.read_config(project)
     mpath = (os.path.abspath(args.manifest) if args.manifest
              else _panel_write._manifest_path(project, config))
@@ -3423,6 +3485,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s scoped in %s" % (tid, phase_id))
@@ -3495,8 +3558,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     elif claimed:
         out("  fileIndex re-derived -- now claimed by this task: %s"
             % ", ".join(claimed))
-    for fpath in missing:
-        out("  note: not on disk (a new file?): %s" % fpath)
+    missing_note = _not_on_disk_note(project, missing)
+    if missing_note:
+        out(missing_note)
     risk_rows = [row for row in changes if row["field"] == "risk"]
     if risk_rows and node.get("model") != _model_floor(risk_rows[0]["to"]):
         # THE BASIS FOR A NON-CHANGE. `add` derives the model from risk when the
@@ -3684,6 +3748,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
                   "written": written, "warnings": warnings}
         result.update(jres)
         result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s retargeted" % (pid,))

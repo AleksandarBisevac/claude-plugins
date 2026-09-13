@@ -60,7 +60,8 @@ def _base_manifest():
 # --- cases --------------------------------------------------------------------
 # Letters taken in this file (NEW file -- fresh letter space): w (the write),
 # u (uniqueness + --force), c (--clear), y (layout: sharded vs single),
-# j (journal + --json), e (usage errors), v (revalidation).
+# j (journal + --json), e (usage errors), v (revalidation),
+# tw (P46.2: the tree the caller stands in against the tree the command writes).
 def _cases(check):
     root = tempfile.mkdtemp(prefix="set-priority-selftest-")
 
@@ -286,6 +287,50 @@ def _cases(check):
               code == 2 and "nope.json" in out, "%r %r" % (code, out))
         check("e3 ...and none of those errors wrote anything",
               raw(mp)["phases"][0].get("priority") is None)
+
+        # --- (tw) the tree you stand in vs the tree you write ------------------
+        # THE SECOND MANIFEST WRITER, held to the same answer. `audit-task.py`
+        # is where the incident happened; this command reaches the same shared
+        # resolution and the same lock, so a fix that taught only one of them to
+        # name its tree would be the fix for the instance. A REAL linked
+        # worktree, because the question is put to git.
+        import subprocess
+        import _panel_write
+
+        def _git_q(cwd, argv):
+            return subprocess.run(
+                ["git", "-C", cwd, "-c", "user.email=selftest@example.invalid",
+                 "-c", "user.name=Selftest"] + list(argv),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL).returncode
+
+        tw_proj, tw_mp = project()
+        _git_q(root, ["init", "-q", tw_proj])
+        _git_q(tw_proj, ["add", "-A"])
+        _git_q(tw_proj, ["commit", "-qm", "fixture"])
+        tw_tree = os.path.join(root, "tw-worktree")
+        _git_q(tw_proj, ["worktree", "add", "-q", "-b", "tw-branch", tw_tree])
+        _tw_cwd = os.getcwd()
+        try:
+            os.chdir(tw_tree)
+            code, out = run([tw_mp, "P3", "1"])
+        finally:
+            os.chdir(_tw_cwd)
+        check("tw1 pinning a phase from a linked worktree names the tree it "
+              "wrote and the row of the shared table that chose it, in the "
+              "table's own words: %r" % (out[:140],),
+              code == 0 and "WARNING" in out
+              and os.path.realpath(tw_tree) in out and tw_proj in out
+              and dict(_panel_write.PROJECT_BASES)["manifest argument"] in out,
+              "%r %r" % (code, out))
+        try:
+            os.chdir(tw_proj)
+            code, out = run([tw_mp, "P3", "--clear"])
+        finally:
+            os.chdir(_tw_cwd)
+        check("tw2 THE ALLOW CASE: the same command from the tree that holds "
+              "the manifest says nothing new: %r" % (out[:140],),
+              code == 0 and "standing in" not in out, "%r %r" % (code, out))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

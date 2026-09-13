@@ -870,6 +870,19 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    are counted — a skipped test is exactly what this line exists to catch. Where the count is
    unknowable the script says so rather than filling it in, and `observations.countsBasis` on the
    recorded row says which steps were counted and which printed nothing it could read.
+
+   **The count on `GATE GREEN` is the size of the GATE, not the sum of its runs, and two lines
+   above it say when those differ.** `SAME SUITE COUNTED ONCE` means two entries printed the same
+   count over the same suite files, so the total holds that count once — a duplicated command
+   (the same runner with and without coverage is the reported shape) doubles the wall clock and
+   the exposure to a flaky suite while adding no assurance. `SAME COUNT, SAME SUITE NOT
+   ESTABLISHED` means a step named no suite file, so the two are ADDED and the total is an upper
+   bound. **Neither is a refusal and neither moves the exit code** — they correct the number, and
+   `run-test-gate.shared_counts` is what decides between them, with `sc3` and `sc5` pinning both
+   directions. Report the line to the human with the verdict; do not spend a retry on it and do
+   not edit `meta.buildCommands` on your own account, because which of two entries a project
+   wants kept is not a question this run answers. **Every step's line now carries what that step
+   cost**, so a doubled run is visible on a green gate without anyone deciding to measure it.
 3. **`invariantsChecked`** — run, from the project directory and **before** step 5c, because
    `close-phase.py` deletes the branch by default and that takes with it the reflog this reads.
    The ordering is not advice: it is why this step is numbered ahead of the landing step rather

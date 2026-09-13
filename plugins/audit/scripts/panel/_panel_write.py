@@ -196,6 +196,115 @@ def project_of_manifest(mpath):
     return start
 
 
+# HOW A MANIFEST-WRITING COMMAND CHOOSES ITS ROOT, AS DATA AND NOT AS PROSE. The
+# table used to live in `audit-task._resolve_project`'s docstring, which is the
+# one place the code beside it cannot read - so the note below, which has to tell
+# an operator WHY this root and not the one they are standing in, would have been
+# a second telling of the rule, free to drift from the first the day the order
+# changed. `set-priority.py` reaches only the first two rows because its manifest
+# positional is required; the clause it prints is still this one.
+#
+# The KEY is what a caller passes to `project_basis`; the CLAUSE is what an
+# operator reads. Order is the rule itself, top-down, and F-C-1 set it: keying
+# the root off the cwd while the manifest was explicitly named wrote one repo's
+# journal row into another's.
+PROJECT_BASES = (
+    ("--project-dir",
+     "--project-dir named it, and an explicit root wins over everything below"),
+    ("manifest argument",
+     "the manifest argument named it, and the root is that file's first "
+     "ancestor holding `.claude/` or `.git` (the manifest's OWN tree)"),
+    ("$CLAUDE_PROJECT_DIR",
+     "$CLAUDE_PROJECT_DIR named the session's project and no manifest argument "
+     "narrowed it"),
+    ("the working directory",
+     "nothing named a project, so the working directory answered"),
+)
+
+_PROJECT_WHY = dict(PROJECT_BASES)
+
+
+def project_basis(root, basis):
+    """{"root", "basis", "why"} -- a resolved root carrying the row that chose it.
+
+    A ROOT WITH NO CLAUSE IS REFUSED rather than defaulted. The whole point of
+    this pair is that the claim travels with what makes it true, and a resolver
+    reaching a branch this table does not name is a resolver whose order has
+    grown past the table - which the caller's `main` turns into a loud internal
+    error, where a bland "resolved somehow" would go unread."""
+    if basis not in _PROJECT_WHY:
+        raise KeyError("no PROJECT_BASES row named %r" % (basis,))
+    return {"root": root, "basis": basis, "why": _PROJECT_WHY[basis]}
+
+
+def standing_elsewhere(basis, cwd=None, run=None):
+    """`basis` plus where the caller stands and the WARNING that owes them --
+    {"root", "basis", "why", "standingIn", "diverged", "note"}.
+
+    `note` is None on the ordinary call, which is the whole design: a command
+    whose every invocation grows a paragraph is a command whose paragraphs stop
+    being read, so the sentence appears only when the tree the operator is
+    standing in is not the tree being written.
+
+    A WARNING, AND DELIBERATELY NOT THE OTHER TWO. Silence is what this replaces:
+    a `scope --files` run from a linked worktree with the project variable naming
+    the main checkout wrote the main checkout's plan, shard, journal and evidence
+    and said so nowhere - the only line naming a tree was a note about a file
+    "not on disk". A REFUSAL would be wrong in the opposite direction:
+    `/audit:worktree` builds exactly this pairing on purpose, and a phase running
+    in a linked worktree writing the plan's own checkout is the sanctioned flow,
+    so a guard that stopped it would be switched off within a day. What is left
+    is the level a reader can act on without stopping - and there is something to
+    act on, because the plan gate later reads the in_progress task's `files` from
+    whichever manifest it finds, so a widening written to the other checkout does
+    not unblock the edit it was made for.
+
+    THE COMPARISON IS `_worktrees.same_tree` AND NOT `==`. git prints the
+    RESOLVED path, and on macOS every `tempfile.mkdtemp()` and `/tmp` itself are
+    symlinks into `/private` - a spelling comparison calls one directory two and
+    fires the warning on every ordinary call there, which is the failure that
+    would have stayed green on ubuntu CI.
+    """
+    here = os.getcwd() if cwd is None else cwd
+    tree = _worktrees.tree_root(here, run=run)["root"]
+    out = dict(basis)
+    out["standingIn"] = tree
+    out["diverged"] = bool(tree) and not _worktrees.same_tree(tree,
+                                                             basis["root"])
+    out["note"] = _wrong_tree_note(basis, tree) if out["diverged"] else None
+    return out
+
+
+PROJECT_BASIS_KEYS = ("root", "basis", "why", "standingIn", "diverged")
+
+
+def project_basis_key(info):
+    """`{"projectBasis": {...}}` for a manifest writer's `--json` block.
+
+    The human note's twin, and shared for the reason the note is: an advisory a
+    human is told and a machine is not is an advisory two consumers disagree
+    about. UNCONDITIONAL, unlike the note -- there is no call on which no root
+    was resolved, and a payload carrying the key only on a divergence would
+    leave its reader unable to tell "the same tree" from "a release that does
+    not answer this"."""
+    return {"projectBasis": dict((k, info[k]) for k in PROJECT_BASIS_KEYS)}
+
+
+def _wrong_tree_note(basis, tree):
+    """The lines `standing_elsewhere` hands a human when the trees differ."""
+    return ("WARNING: you are standing in %s, and this writes the plan under "
+            "%s -- %s.\n"
+            "  The manifest, the phase shard, the journal row and any evidence "
+            "this touches are the ones under %s; nothing under %s changes. The "
+            "plan gate reads the in_progress task's `files` from whichever "
+            "manifest it finds, so a scope widened in the other tree does not "
+            "unblock the edit it was made for.\n"
+            "  Not a refusal -- /audit:worktree creates this pairing on "
+            "purpose. To write THIS tree instead, pass `--project-dir %s` or "
+            "name a manifest under it."
+            % (tree, basis["root"], basis["why"], basis["root"], tree, tree))
+
+
 def snapshot(paths):
     """{path: bytes-or-None} for everything a rollback must restore."""
     snap = {}

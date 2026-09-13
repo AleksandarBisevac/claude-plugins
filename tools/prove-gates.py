@@ -694,7 +694,7 @@ TABLE = (
  # direction. `dk2b` is the live claim over the real tree; the fixture pair in
  # `dk3` proves the same rule where a reader can see both halves at once.
  ("dict_key_violations", S + "governance/run-test-gate.py", "replace",
-  '"ranTotal": ran_total, "countsBasis": counts_basis(steps),',
+  '"ranTotal": ran_total, "countsBasis": counts_basis(steps, shared),',
   '"ranTotal": ran_total,', DEP, "dk2b"),
 
  # --- F229: the meta-gate, whose silence takes four documents down with it ----

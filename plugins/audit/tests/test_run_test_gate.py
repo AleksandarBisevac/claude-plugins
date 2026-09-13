@@ -961,6 +961,200 @@ def _cases(check):
           and "not knowable" in (res_silent["countsBasis"] or "")
           and "test" in (res_silent["countsBasis"] or ""))
 
+    # --- P46.5: a total that added a suite to itself ----------------------
+    # REPORTED FROM A LIVE AUDIT. `meta.buildCommands` mapped one entry to a
+    # plain runner invocation and another to the SAME runner with coverage on.
+    # The gate ran both, the identical checks executed twice, and the TOTAL was
+    # the suite counted twice - which the operator and the reviewer both read as
+    # thoroughness. On a later sign-off the plain step passed and the coverage
+    # step came back RED on the identical checks, a flaky index-build race: the
+    # duplicate step could only agree with the other or be flaky, so it could
+    # only cost. These cases are about the total and about the per-step wall
+    # clock that makes a doubled run visible on the first green gate anybody
+    # reads.
+    def _vitest_plain(_project, _command, _timeout=None):
+        return 0, (" src/cart.test.js (12)\n"
+                   "Tests  12 passed (12)\n"), {}
+
+    def _vitest_cover(_project, _command, _timeout=None):
+        # THE SAME SUITE, AND A DIFFERENT SET OF PRINTED PATHS. `--coverage`
+        # adds a table naming the SOURCES under the suite, so a comparison over
+        # everything the runner printed would call these two different runs -
+        # which is why `suite_paths` narrows before comparing.
+        return 0, (" src/cart.test.js (12)\n"
+                   "Tests  12 passed (12)\n"
+                   " % Coverage report\n"
+                   " src/cart.js      |   91.2 |\n"), {}
+
+    def _vitest_other(_project, _command, _timeout=None):
+        return 0, (" src/user.test.js (12)\n"
+                   "Tests  12 passed (12)\n"), {}
+
+    def _pytest_quiet(_project, _command, _timeout=None):
+        # A REAL COUNT FROM A RUNNER THAT NAMED NO SUITE. `-q` prints the
+        # arithmetic and no file at all, which is the state where "same suite"
+        # can be suspected and not established.
+        return 0, "=== 12 passed in 0.30s ===\n", {}
+
+    check("sc1 THE COMPARISON IS OVER THE SUITES A RUNNER SAYS IT RAN, not over "
+          "every path it printed. A coverage table names the SOURCES under a "
+          "suite, so a set comparison over the whole output would report one "
+          "suite run twice as two different runs - and the narrowing is asked "
+          "of `_is_suite_path`, which this file already uses for the same "
+          "question: %r"
+          % ((sorted(M.suite_paths(M.files_named(
+              " src/cart.test.js (12)\n src/cart.js | 91.2 |\n"))),
+              sorted(M.suite_paths(M.files_named("no paths here\n")) or ())),),
+          M.suite_paths(M.files_named(
+              " src/cart.test.js (12)\n src/cart.js | 91.2 |\n"))
+          == frozenset(["src/cart.test.js"])
+          and M.suite_paths(M.files_named("=== 12 passed in 0.30s ===\n"))
+          == frozenset())
+
+    def _two_spellings(_project, command, _timeout=None):
+        return (_vitest_cover if "coverage" in command
+                else _vitest_plain)(_project, command)
+
+    res_dup = M.run_gate(tmp, [("unit", "npx vitest run"),
+                               ("unit-cov", "npx vitest run --coverage")],
+                         runner=_two_spellings)
+    check("sc2 A GATE THAT RUNS ONE SUITE TWICE REPORTS THE SUITE'S SIZE, not "
+          "twice it. The reported run printed the sum and both the operator and "
+          "the reviewer read it as thoroughness - the number that should have "
+          "exposed the duplication is the number that concealed it: %r"
+          % ((res_dup["ranTotal"],
+              [(g["verdict"], g["names"], g["ran"]) for g in
+               res_dup["sharedCounts"]]),),
+          res_dup["ranTotal"] == 12
+          and [g["verdict"] for g in res_dup["sharedCounts"]] == [M.SAME_SUITE]
+          and res_dup["sharedCounts"][0]["names"] == ["unit", "unit-cov"]
+          and res_dup["sharedCounts"][0]["files"] == ["src/cart.test.js"])
+
+    lines = []
+    code_dup = M.render(res_dup, out=lines.append)
+    text_dup = "\n".join(lines)
+    check("sc3 ...and the PARTS are printed beside the total, naming both steps "
+          "and the suite they share. A total on its own cannot be argued with; "
+          "the parts are what let a reader see the second step buys nothing and "
+          "costs a re-run every time that suite is flaky: %r"
+          % (text_dup,),
+          code_dup == M.E_OK and "SAME SUITE COUNTED ONCE" in text_dup
+          and "unit, unit-cov" in text_dup and "src/cart.test.js" in text_dup
+          and "12 check(s) ran" in text_dup
+          and "24 check(s) ran" not in text_dup)
+
+    def _one_quiet(_project, command, _timeout=None):
+        return (_pytest_quiet if "pytest" in command
+                else _vitest_plain)(_project, command)
+
+    res_maybe = M.run_gate(tmp, [("unit", "npx vitest run"),
+                                 ("api", "pytest -q")], runner=_one_quiet)
+    lines = []
+    code_maybe = M.render(res_maybe, out=lines.append)
+    text_maybe = "\n".join(lines)
+    check("sc4 WHERE IT CANNOT BE ESTABLISHED IT IS NOT ASSERTED, and the count "
+          "is still ADDED. A step that named no suite could be the same run as "
+          "the other or a different one of equal size, and silently dropping it "
+          "would delete a real measurement to avoid a suspected duplicate - the "
+          "same lie in the other direction: %r"
+          % ((res_maybe["ranTotal"],
+              [(g["verdict"], g["names"], g["silent"]) for g in
+               res_maybe["sharedCounts"]]),),
+          res_maybe["ranTotal"] == 24
+          and [g["verdict"] for g in res_maybe["sharedCounts"]] == [M.MAYBE_SAME]
+          and res_maybe["sharedCounts"][0]["silent"] == ["api"]
+          and "SAME SUITE NOT ESTABLISHED" in text_maybe
+          and "MAY be one suite run twice" in text_maybe
+          and "24 check(s) ran" in text_maybe
+          # NEITHER NEW LINE IS A REFUSAL, and that is the half
+          # `reference/orchestrator.md` had to be able to state: a duplicated
+          # or unresolved count costs wall clock and exposure to flakiness,
+          # and neither is evidence about the work under test. `sc3` holds the
+          # same boundary for the line that DOES change the total.
+          and code_maybe == M.E_OK)
+
+    def _two_suites(_project, command, _timeout=None):
+        return (_vitest_other if "user" in command
+                else _vitest_plain)(_project, command)
+
+    res_diff = M.run_gate(tmp, [("cart", "npx vitest run src/cart.test.js"),
+                                ("user", "npx vitest run src/user.test.js")],
+                          runner=_two_suites)
+    lines = []
+    code_diff = M.render(res_diff, out=lines.append)
+    text_diff = "\n".join(lines)
+    check("sc5 THE ALLOW CASE, AND IT IS THE ONE THIS FUNCTION IS GRADED ON: "
+          "two DIFFERENT suites of equal size are added, and nothing is said "
+          "about them. Equal counts are ordinary, so a version that collapsed "
+          "on the count alone would under-report every such gate - a total that "
+          "is too small, which looks like caution and is the harder lie to "
+          "notice: %r" % ((res_diff["ranTotal"], res_diff["sharedCounts"]),),
+          res_diff["ranTotal"] == 24 and res_diff["sharedCounts"] == []
+          and "SAME SUITE" not in text_diff
+          and "SAME COUNT" not in text_diff
+          and "24 check(s) ran" in text_diff and code_diff == M.E_OK)
+
+    res_zero = M.run_gate(tmp, [("a", "pre-commit run --all-files"),
+                                ("b", "pre-commit run --all-files")],
+                          runner=_all_skipped)
+    check("sc6 A ZERO IS NEVER GROUPED. It is additively identical either way, "
+          "so a group over it could only put a second sentence on a run "
+          "`NO CHECK RAN` already owns end to end - and that banner, not this, "
+          "is what refuses it: %r"
+          % ((res_zero["ranTotal"], res_zero["sharedCounts"]),),
+          res_zero["ranTotal"] == 0 and res_zero["sharedCounts"] == []
+          and res_zero["status"] == "no-checks")
+
+    check("sc7 ...and the finding reaches the COMMITTED row, not only the "
+          "terminal. `countsBasis` is what the ledger, the report and the panel "
+          "already render, so the clause rides there rather than in a fourth "
+          "field that would reach a terminal and none of the three: %r"
+          % ((res_dup["countsBasis"], res_maybe["countsBasis"]),),
+          "ONCE and is not added" in (res_dup["countsBasis"] or "")
+          and "unit-cov" in (res_dup["countsBasis"] or "")
+          and "may be one suite twice" in (res_maybe["countsBasis"] or "")
+          and "floor and not a size" not in (res_dup["countsBasis"] or ""))
+
+    check("sc8 the duration is spelled in the unit a reader COMPARES two steps "
+          "in, and a step carrying no duration says so rather than printing a "
+          "zero nobody measured: %r"
+          % ([M.human_duration(v) for v in (0, 940, 1500, 125000, None, -1)],),
+          M.human_duration(0) == "0 ms" and M.human_duration(940) == "940 ms"
+          and M.human_duration(1500) == "1.5 s"
+          and M.human_duration(125000) == "2 m 05 s"
+          and M.human_duration(None) is None and M.human_duration(-1) is None)
+
+    check("sc9 EVERY STEP'S LINE CARRIES WHAT THAT STEP COST. `durationMs` was "
+          "recorded per step and for the run since this script existed and the "
+          "terminal printed neither, so a gate running one suite twice looked "
+          "exactly like a gate running two, and 'where does the time go' needed "
+          "somebody to decide to go and measure it: %r" % (lines[:2],),
+          all(("ms" in ln or " s" in ln) for ln in text_diff.splitlines()[:2])
+          and "(not timed)" not in text_diff)
+    lines = []
+    M.render({"steps": [{"name": "u", "exit": 0, "ran": 3}], "failed": [],
+              "treeMutated": [], "treeBasis": "b", "ranTotal": 3,
+              "sharedCounts": [], "overlap": None, "coverageBasis": ""},
+             out=lines.append)
+    check("sc10 ...and a step whose duration was NOT recorded says that, rather "
+          "than borrowing the zero a missing key reads as. A fabricated `0 ms` "
+          "on a step nobody timed is the shape every other answer in this file "
+          "refuses: %r" % (lines[:1],),
+          "(not timed)" in lines[0] and "0 ms" not in lines[0])
+
+    check("sc11 ...and the three-way count vocabulary is untouched by the "
+          "arithmetic above it. A step whose runner publishes no summary is "
+          "still NOT KNOWABLE and never zero, the total over a mixed gate is "
+          "still a floor, and a de-duplicated gate is still `passed`: %r"
+          % ((res_silent["ranTotal"], res_mixed["ranTotal"],
+              res_dup["status"], res_dup["steps"][1]["measured"]),),
+          res_silent["ranTotal"] is None
+          and "not knowable" in (res_silent["countsBasis"] or "")
+          and res_mixed["ranTotal"] == 2
+          and "floor and not a size" in (res_mixed["countsBasis"] or "")
+          and res_dup["status"] == "passed"
+          and res_dup["steps"][1]["measured"] == M.MEASURED_CHECKS)
+
     # --- did the step measure anything, said as a word --------------------
     # THE READING, RECORDED WHERE IT WAS TAKEN. Reported from the field: three
     # rows brought as "false reds", two of them withdrawn on the raw evidence

@@ -104,17 +104,22 @@ _MAX_TIER_DEFAULT = 9
 
 # --- resolution ------------------------------------------------------------------
 def _resolve_project(args, mpath):
-    """Which root owns the journal, the lock and the config.
+    """{"root", "basis", "why"} — which root owns the journal, the lock and the
+    config, and the row of `_panel_write.PROJECT_BASES` that chose it.
 
     F-C-1's rule, and the function that answers it is `_panel_write`'s so that
     `audit-task.py` and this command cannot drift: an explicit --project-dir
     wins, otherwise a NAMED manifest derives the project upward from ITSELF.
     There is no env fallback here because the manifest is always named — the
-    positional is required, which is what makes the answer unambiguous.
+    positional is required, which is what makes the answer unambiguous. Those
+    two are the table's first two rows, and the clause an operator reads comes
+    from the table, so the two commands cannot explain one rule two ways.
     """
     if args.project_dir:
-        return os.path.abspath(args.project_dir)
-    return _panel_write.project_of_manifest(mpath)
+        return _panel_write.project_basis(os.path.abspath(args.project_dir),
+                                          "--project-dir")
+    return _panel_write.project_basis(_panel_write.project_of_manifest(mpath),
+                                      "manifest argument")
 
 
 def _max_tier(config):
@@ -322,6 +327,7 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
                   "overMaxTier": [{"phaseId": pid, "tier": t} for pid, t in over],
                   "maxTier": _max_tier(config)}
         result.update(jres)
+        result.update(_panel_write.project_basis_key(args.project_basis))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[set-priority] %s priority %s -> %s"
@@ -359,10 +365,20 @@ def cmd_set(args, out):
     if not parsed["ok"]:
         return E_USAGE
     tier = parsed["tier"]
-    project = _resolve_project(args, mpath)
+    basis = _resolve_project(args, mpath)
+    project = basis["root"]
     if not os.path.isdir(project):
         out("[set-priority] not a directory: %s" % project)
         return E_USAGE
+    # WHICH TREE THIS WRITES, on the one door this command has. `audit-task.py`
+    # says it from `_under_lock` for the same reason and in the same words; the
+    # sentence, the level and the argument for that level are
+    # `_panel_write.standing_elsewhere`'s, so a second manifest writer cannot
+    # describe the same situation differently. Silent on a same-tree call, and
+    # never printed under `--json`, which must stay one parseable object.
+    args.project_basis = _panel_write.standing_elsewhere(basis)
+    if args.project_basis["note"] and not args.as_json:
+        out(args.project_basis["note"])
     config = _panel_write.read_config(project)
     # The lock comes BEFORE the read: the whole read-check-write is serialized, so
     # two sessions cannot both find tier 1 free.

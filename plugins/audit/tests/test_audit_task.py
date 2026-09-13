@@ -57,7 +57,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
-# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record).
+# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
+# tw (P46.2: the tree the caller stands in against the tree the verb writes).
 def _cases(check):
     import contextlib
     import io
@@ -4597,6 +4598,205 @@ def _cases(check):
               and M._gate_entry_paths("lint") == []
               and M._gate_entry_paths("pytest tests/.coveragerc") \
                   == ["tests/.coveragerc"])
+
+        # ---- (tw) the tree you stand in vs the tree you write -----------------
+        # DRIVEN, AND THE FIXTURE IS THE INCIDENT: a checkout holding the plan,
+        # a linked worktree added from it on another branch, the project
+        # variable naming the checkout and no manifest argument. `scope --files`
+        # exited 0 with a note, and afterwards the CHECKOUT had a modified plan
+        # and a new journal while the worktree was clean. The one line that
+        # named a tree was a note about a file "not on disk", and it did not say
+        # which tree it had looked in.
+        #
+        # A REAL `git worktree add`, never a directory dressed as one: the
+        # divergence is decided by asking git where the caller is standing, so a
+        # fixture git would call an ordinary checkout proves nothing about the
+        # case that matters.
+        def _git_q(cwd, argv):
+            return subprocess.run(
+                ["git", "-C", cwd, "-c", "user.email=selftest@example.invalid",
+                 "-c", "user.name=Selftest"] + list(argv),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL).returncode
+
+        def mk_pair(name, manifest=None):
+            """(project, manifestPath, linkedWorktreePath) -- a real pair."""
+            proj, mp = mk(name, manifest or base_manifest(), git=True)
+            _git_q(proj, ["add", "-A"])
+            _git_q(proj, ["commit", "-qm", "fixture"])
+            tree = os.path.join(tmp, name + "-wt")
+            _git_q(proj, ["worktree", "add", "-q", "-b",
+                          name + "-branch", tree])
+            return proj, mp, tree
+
+        # The clauses, read off the table rather than retyped here: a case that
+        # spelled the sentence a second time would go green on a note that had
+        # stopped matching the rule the resolver follows, which is the whole
+        # thing this pair exists to prevent.
+        _tw_why = dict(_panel_write.PROJECT_BASES)
+        tw_proj, tw_mp, tw_tree = mk_pair("tw")
+        _tw_before = open(tw_mp, "rb").read()
+        _tw_twin = os.path.join(tw_tree, "docs", "audit", "audit-plan.json")
+        try:
+            _pin(tw_tree, tw_proj)
+            code, txt = run(["scope", "P2.3", "--files", "src/a.ts,src/new.ts"])
+        finally:
+            _unpin()
+        check("tw1 standing in a linked worktree with the project variable "
+              "naming the OTHER checkout, the verb names both roots and why "
+              "this one won -- the silence that let the incident happen: %r"
+              % (txt[:160],),
+              code == 0 and "WARNING" in txt
+              and os.path.realpath(tw_tree) in txt and tw_proj in txt
+              and _tw_why["$CLAUDE_PROJECT_DIR"] in txt)
+        check("tw2 ...and the warning is about a real divergence: the plan and "
+              "the journal moved in the CHECKOUT, the worktree's own copy of "
+              "the same file did not, and no journal appeared beside it",
+              open(tw_mp, "rb").read() != _tw_before
+              and open(_tw_twin, "rb").read() == _tw_before
+              and os.path.isdir(os.path.join(tw_proj, "docs", "audit",
+                                             "journal"))
+              and not os.path.isdir(os.path.join(tw_tree, "docs", "audit",
+                                                 "journal")))
+        _tw_disk = [ln for ln in txt.split("\n") if "not on disk" in ln]
+        check("tw3 the `not on disk` note carries the directory it searched, "
+              "ONCE for the whole list -- the report asked for the directory, "
+              "and an advisory that repeats a constant per file is the shape "
+              "people stop reading: %r" % (_tw_disk,),
+              len(_tw_disk) == 1 and tw_proj in _tw_disk[0]
+              and "src/a.ts" in _tw_disk[0] and "src/new.ts" in _tw_disk[0])
+
+        try:
+            _pin(tw_proj, tw_proj)
+            code, txt_same = run(["scope", "P2.3", "--files",
+                                  "src/a.ts,src/new.ts,src/more.ts"])
+        finally:
+            _unpin()
+        check("tw4 THE ALLOW CASE: an ordinary call from the checkout, where "
+              "the tree and the project agree, says nothing new -- a verb that "
+              "grew a paragraph on every invocation is one nobody reads: %r"
+              % (txt_same[:160],),
+              code == 0 and "standing in" not in txt_same
+              and _tw_why["$CLAUDE_PROJECT_DIR"] not in txt_same
+              and os.path.realpath(tw_proj) not in txt_same.replace(
+                  tw_proj, ""))
+
+        # EVERY VERB, because the fault is the writing and not the verb: the
+        # list is the parser's own, so a verb added past the shared door goes
+        # red here rather than shipping silent.
+        tw_all, tw_all_mp, tw_all_tree = mk_pair("tw-verbs")
+        _tw_head = subprocess.run(["git", "-C", tw_all, "rev-parse", "HEAD"],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+        _tw_sha = _tw_head.stdout.decode("utf-8", "replace").strip()
+        _tw_argv = (
+            ("add", ["add", "Fresh", "--phase", "P2"]),
+            ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
+            ("scope", ["scope", "P2.3", "--files", "src/a.ts"]),
+            ("start", ["start", "P2.3"]),
+            ("done", ["done", "P2.3", "--commit", _tw_sha]),
+            ("retarget", ["retarget", "P3", "--outcome", "changed its mind"]),
+            ("cancel", ["cancel", "P3", "--reason", "dropped"]),
+        )
+        _tw_silent = []
+        for _label, _argv in _tw_argv:
+            try:
+                _pin(tw_all_tree, tw_all)
+                _codev, _txtv = run(_argv)
+            finally:
+                _unpin()
+            if _codev != 0 or "standing in" not in _txtv \
+                    or os.path.realpath(tw_all_tree) not in _txtv:
+                _tw_silent.append((_label, _codev, _txtv[:140]))
+        check("tw5 every manifest-writing verb says which tree it wrote, and "
+              "the verbs are the PARSER's list rather than one typed here: %r"
+              % (_tw_silent,),
+              not _tw_silent
+              and sorted(lbl for lbl, _a in _tw_argv) == sorted(M.VERB_FLAGS))
+
+        tw_j, tw_j_mp, tw_j_tree = mk_pair("tw-json")
+        try:
+            _pin(tw_j_tree, tw_j)
+            codej, txtj = run(["start", "P2.3", "--json"])
+        finally:
+            _unpin()
+        # `.get` on both, so a payload that DROPPED the key fails this case
+        # rather than raising out of the suite and leaving every case after it
+        # unrun - an abort is red, but it is red about the wrong thing.
+        _tw_pb = json.loads(txtj).get("projectBasis") or {}
+        check("tw6 under `--json` the fact travels as DATA in the one object a "
+              "caller parses, never as lines printed beside it: %r" % (_tw_pb,),
+              codej == 0
+              and _tw_pb.get("diverged") is True
+              and _tw_pb.get("root") == tw_j
+              and _tw_pb.get("standingIn") == os.path.realpath(tw_j_tree)
+              and _tw_pb.get("why") == _tw_why["$CLAUDE_PROJECT_DIR"])
+        try:
+            _pin(tw_j, tw_j)
+            codej2, txtj2 = run(["scope", "P2.3", "--files", "src/a.ts",
+                                 "--json"])
+        finally:
+            _unpin()
+        _tw_pb2 = json.loads(txtj2).get("projectBasis") or {}
+        check("tw7 ...and it travels on the SAME-tree call too, where the human "
+              "render is silent: a machine that only ever saw the key on a "
+              "divergence could not tell agreement from a release that does "
+              "not answer this: %r" % (_tw_pb2,),
+              codej2 == 0
+              and _tw_pb2.get("diverged") is False
+              and _tw_pb2.get("standingIn") == os.path.realpath(tw_j))
+
+        # NO GIT, NO GUESS. `tmp` is a scratch directory in no repository, which
+        # is what a machine without git looks like to this code: the question
+        # comes back unanswered and the verb stays quiet, because a divergence
+        # nobody can verify is the advisory people learn to scroll past.
+        import _worktrees as _tw_wt
+        _tw_none = _tw_wt.tree_root(tmp)
+        tw_q, tw_q_mp = mk("tw-quiet", base_manifest())
+        try:
+            _pin(tmp, tw_q)
+            codeq, txtq = run(["scope", "P2.3", "--files", "src/a.ts"])
+        finally:
+            _unpin()
+        check("tw8 a caller standing outside any working tree gets silence "
+              "rather than a guessed divergence, and the unanswered question "
+              "says so in its own basis: %r" % (_tw_none,),
+              _tw_none["root"] is None and "could not be asked" in
+              _tw_none["basis"]
+              and codeq == 0 and "standing in" not in txtq)
+
+        tw_here, tw_here_mp = mk("tw-on-disk", base_manifest())
+        code, txt_disk = run(["scope", "P2.3", "--files",
+                              ".claude/audit.config.json",
+                              "--project-dir", tw_here])
+        check("tw10 ALLOW CASE for the other half: every declared path IS under "
+              "the root, so the note does not appear at all -- a line that "
+              "printed an empty list would name a directory to say nothing "
+              "about it: %r" % (txt_disk[:120],),
+              code == 0 and "not on disk" not in txt_disk)
+
+        _tw_parser = M.build_parser()
+        _tw_rows = []
+        try:
+            _pin(tw_proj, tw_proj)
+            for _a in (["add", "T", "--project-dir", tw_proj],
+                       ["add", "T", tw_mp], ["add", "T"]):
+                _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(_a)))
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(["add", "T"])))
+        finally:
+            _unpin()
+        check("tw9 every route names the table row that chose it and quotes "
+              "that row's clause, and between them the four routes reach every "
+              "row -- a row the resolver cannot produce, or a clause written "
+              "beside the table instead of in it, goes red here: %r"
+              % ([r["basis"] for r in _tw_rows],),
+              [r["basis"] for r in _tw_rows]
+              == ["--project-dir", "manifest argument", "$CLAUDE_PROJECT_DIR",
+                  "the working directory"]
+              and all(r["why"] == _tw_why[r["basis"]] for r in _tw_rows)
+              and sorted(r["basis"] for r in _tw_rows)
+              == sorted(k for k, _w in _panel_write.PROJECT_BASES))
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

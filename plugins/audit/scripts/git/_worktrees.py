@@ -524,6 +524,41 @@ def phase_trees(trees, wanted_branches, resolve=None):
 
 # --- questions that need git -----------------------------------------------------
 
+def tree_root(cwd, run=None):
+    """{"root", "basis"} -- the working tree `cwd` stands in; `root` is None when
+    git would not say.
+
+    ASKED OF GIT, NOT OF THE FILESYSTEM. A linked worktree's `.git` is a FILE, an
+    ordinary checkout's is a directory, and a subdirectory of either holds
+    neither -- so a marker hunt answers "is a repository rooted here" and not
+    "which working tree is this directory in", and those differ at exactly the
+    place a caller standing two levels down needs them to agree.
+
+    `standing_in` ANSWERS THE SAME QUESTION FROM A LIST, and is the door for a
+    caller that already has one: it is bounded to the worktrees of one
+    repository, which is what the sweep needs and what a caller holding nothing
+    but a directory cannot build. This door is bounded by nothing -- it names
+    whatever tree the directory is in, including one belonging to a repository
+    the caller has never heard of.
+
+    None rather than a guess when git is absent, refuses or times out. A caller
+    that renders "you are standing somewhere else" off a guess would announce it
+    on every machine without git, and a divergence nobody can verify is the
+    advisory people learn to scroll past.
+    """
+    fn = _runner(run)
+    asked = "git -C %s rev-parse --show-toplevel" % (cwd,)
+    code, out, err = fn(cwd, ["rev-parse", "--show-toplevel"])
+    if code != 0:
+        return {"root": None,
+                "basis": "%s could not be asked: %s"
+                         % (asked, (err or "").strip().split("\n")[0])}
+    top = (out or "").strip()
+    if not top:
+        return {"root": None, "basis": "%s answered with nothing" % (asked,)}
+    return {"root": top, "basis": asked}
+
+
 def merged_into(git_root, branch, parent, run=None):
     """{"answer", "basis", "detail"} -- CONTAINED, NOT_CONTAINED or UNKNOWN.
 
