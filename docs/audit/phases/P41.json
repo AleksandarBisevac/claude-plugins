@@ -1,0 +1,370 @@
+{
+  "id": "P41",
+  "title": "The promises SECURITY.md makes are true where a driven exploit says they are not",
+  "status": "done",
+  "description": "Six sentences in SECURITY.md that a driven exploit contradicted on 2026-09-12. The red-team drove each one in a temp directory from the file:line it names; none touched a real secret or this repo. Part 7 of the 3.0 analysis puts these first and the operator's answer to question 1 made the ledger's chain binding rather than advisory: nothing else ships ahead of them.",
+  "desiredOutcome": "Every SECURITY.md sentence a driven exploit contradicted either holds, or the document says plainly what it does not promise. The evidence ledger's rows carry the journal's chain, so the FAIL-to-PASS rewrite that verify() called clean becomes a finding with a non-zero exit; MCP tool calls reach the guards that already refuse the same operation by another name; a manifest shard rewritten by sed is refused for a subagent as its Edit already is; and a tracked journal file that is gone turns verify red rather than reporting a clean chain over the files that remain.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P41.1",
+      "title": "The evidence ledger carries the journal's chain",
+      "status": "done",
+      "description": "Evidence rows get the journal's `prev`/`hash` chain. The functions exist in `_journal_io`; `_evidence_io.append_row` writes a row with neither today, and `grep -c 'sha256|\"hash\"|\"prev\"|genesis'` over the two files is the measurement. Driven before the fix: two rows, a plain string replace of FAIL to PASS, then `verify()` returns ok with no findings. The record of the MEASUREMENT - the thing a green gate points at - is the one file with no chain. Done means that rewrite is a FINDING with a non-zero exit, and the clean case still verifies.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "SECURITY.md",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "examples/acme-store/evidence/2026-06.e7c1a94b2f08d635.jsonl",
+        "examples/acme-store/evidence/2026-07.e7c1a94b2f08d635.jsonl"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a FAIL rewritten to PASS in a recorded row is a finding and exits non-zero; an untouched ledger still verifies clean"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "e1873a9",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T00:04:56+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.2",
+      "title": "MCP calls reach the guards, bound to the operation not the server",
+      "status": "done",
+      "description": "`mcp__.*` reaches the four guards, with a branch that resolves the operation rather than the server's name. A filesystem MCP server can today read a dotenv, mark a task done, or turn the journal off in the config with no ask, no deny and no row. The read half was measured as TWO independent failures - the hooks.json matcher launches nothing for an MCP tool name, AND the decision falls through to allow for an unhandled tool - so fixing either alone leaves the hole open. Bind to the operation: the last `__`-separated segment, not the server prefix, because the same npm server is spelled differently in the next setup.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: an MCP read of a dotenv is denied under a server prefix the tests do not hardcode; an MCP read of a README stays quiet"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "66ff2b1",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-12T23:26:50+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.3",
+      "title": "A shard rewritten by sed is refused as its Edit already is",
+      "status": "done",
+      "description": "The manifest and shard `.json` paths join the shell-write gate's targets. `_config.source_exts` has no `.json`, so the one act SECURITY.md says a subagent is refused - editing its own shard - sails through by `sed -i` while the same file through `Edit` is refused. Recording catches it from the second Bash call on, and recording is not blocking. The allow case that must stay quiet is an unrelated `.json` that is not the manifest or a shard.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: sed -i on a phase shard is refused for a subagent; an unrelated .json stays quiet"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1e1e39e",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T01:12:54+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.4",
+      "title": "A tracked journal file that is gone turns verify red",
+      "status": "done",
+      "description": "A tracked journal file that is gone is a finding. `journal_files()` lists what is on disk, so truncation is caught and deletion is silent - `verify` reports a clean chain over the files that remain while SECURITY.md says deletion is \"deliberately loud rather than silent\". Diff `git ls-files` against the listing; tracked-but-gone is the finding. A file that was never tracked stays quiet, and so does a clone that legitimately has none.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "SECURITY.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: a committed journal file deleted from the worktree is a finding; an untracked absence is not"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "13adf88",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T01:45:17+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.5",
+      "title": "An MCP write reaches the plan gate, the journal and the token ban",
+      "status": "done",
+      "description": "The WRITE half of the MCP hole. Five hooks gate on fixed tool-name sets, so an MCP write tool escapes the plan gate, the self-edit protection, the token-logging ban and the audit journal alike - and a phase shard written through an MCP write is allowed where the same write by `sed` is now refused. Each hook is a separate guard with its own semantics, so each needs its own decision about which MCP operations count as a write; the read half's design rule holds throughout - bind to the operation and the resolved target, never to the server's name.",
+      "files": [
+        "plugins/audit/hooks/guard-edits.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/tests/test_guard_edits.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: an MCP write outside the plan is refused; an MCP write inside it is allowed and journaled"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "eb3395b",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T02:15:08+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.6",
+      "title": "The loud fallback covers a broken interpreter and an unset plugin root",
+      "status": "done",
+      "description": "The loud fallback covers a found-but-broken interpreter and an unset plugin root. A `python3` shim that exits 1 produces no output and exit 1 - an unhandled hook error, which the fail-mode table grades allow for every blocking guard - so the loud `ask` fires only when `command -v` finds nothing at all. And an unset `CLAUDE_PLUGIN_ROOT` exits 127 before the launcher can run, which is the failure the launcher's own header says it prevents.",
+      "files": [
+        "plugins/audit/hooks/py-launch.sh",
+        "plugins/audit/tests/test_py_launch.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_py_launch.py: an interpreter that exits non-zero produces the loud ask, not silence; an unset plugin root does the same"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ca096ee",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T02:11:53+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P41.7",
+      "title": "Every event names the agent, and a guard can say it reached one",
+      "status": "done",
+      "description": "Every journal event carries the agent that caused it, and every guard can say whether it reached a subagent. The analysis found that nothing proves a hook runs for the executor - the agent that writes the code - so every SECURITY.md promise about subagents is untested. This repo has since driven the other half and found hooks DO reach subagents; what no guard can still say is WHICH agent it refused, and the one measurement behind the zero-agent_id claim rests on one repo and one log, so it is re-taken here before anything is built on it.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: an event caused by a subagent carries its agent id; one caused by the orchestrator says so rather than leaving the field empty"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3cf8ffa",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T02:29:34+02:00",
+      "verifiedBy": []
+    }
+  ]
+}

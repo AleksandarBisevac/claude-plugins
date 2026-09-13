@@ -1,0 +1,210 @@
+{
+  "id": "P43",
+  "title": "The orchestrator's own errors get mechanisms",
+  "status": "in_progress",
+  "description": "Five orchestration errors were made in one long parallel run and each was recorded as it happened: a claim that an agent was running when none had been spawned; a tree-wide `git reset --hard` that destroyed uncommitted work in three places; a worktree diff taken against a branch that had moved, which silently reverted a sibling task's cases; task status hand-written into two files because no verb closes a task; and a brief that told an agent a field exists which does not. None was a knowledge failure - every rule was known and written down. They are moment-of-action failures, which is the class this repo already answers with a question plus a mechanism rather than with a reminder.",
+  "desiredOutcome": "The three orchestration failures a mechanism can catch are caught by one: a destructive tree-wide git command is refused while uncommitted work exists and names what would be lost; a task is closed by a verb that writes one record under the lock rather than by hand-editing two files; and a worktree's work is taken by a tool that diffs against the base that worktree actually had. What no mechanism can read - a claim about work in flight, and a brief that asserts what the code does not do - is carried by a skill whose every rule names the command that checks it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P43.1",
+      "title": "A destructive git command is refused while uncommitted work exists",
+      "status": "done",
+      "description": "A hook in this repository's own configuration refuses a tree-wide destructive git command while the working tree holds uncommitted work, and names what would be lost. `guard-history-rewrite` already refuses a force push because the trail must not be rewritten - it protects what is COMMITTED. Nothing protects what is not. One `git reset --hard` in this session destroyed a skill revision, the manifest index, and a phase's done-marks that existed in no other file.",
+      "files": [
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/settings.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          ".claude/hooks/guard-uncommitted.py: a tree-wide reset with uncommitted work is refused and names the files; the same command on a clean tree is quiet"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3da8779",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Landed and driven live; see the commit message's claims block."
+      },
+      "startedAt": "2026-09-13T08:58:28Z",
+      "completedAt": "2026-09-13T08:58:43Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P43.2",
+      "title": "audit-task.py done: a task is closed by a verb, not by two hand edits",
+      "status": "pending",
+      "description": "`audit-task.py done <taskId>` closes a task the way `start` opens one: status, completedAt and the commit it landed in, written once under the index lock with a journal row and a revalidation. Today there is no verb, so the orchestrator hand-edits the shard AND the index - and this session proved the cost, because a reset revealed that a phase's done-marks had been written only to the index and were gone. The same argument that justified `start` justifies this: one implementation beats a hand edit per site.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: done writes status, completedAt and commit under the lock with a journal row; a task that is already terminal is refused by name"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P43.3",
+      "title": "A worktree's work is taken against the base it actually had",
+      "status": "pending",
+      "description": "A tool takes a linked worktree's work against the base that worktree actually had, never against a branch that has moved since. This session took `git diff main` from a worktree whose `main` had advanced by three commits and silently reverted a sibling task's cases; it was caught only because a case count dropped. The base is not a guess - it is the worktree's own HEAD - and a tool that reads it removes the composition step where the mistake lives.",
+      "files": [
+        "tools/harvest-worktree.py",
+        "plugins/audit/tests/test_harvest_worktree.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/harvest-worktree.py: the diff is computed against the worktree's own HEAD; a base named by a moved branch is refused rather than used"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P43.4",
+      "title": "A verification carries the tree it was taken on",
+      "status": "done",
+      "description": "The cause under all of them: a verification is a claim about the tree it was taken on, and nothing carries that tree with it. The gate already solved this for itself - `tested_state` binds a verdict to a HEAD and the paths that were dirty, and says in its own docstring what that identity does and does not establish. The orchestrator has no equivalent, so an agent's case counts are a claim about ITS tree, quoted after a patch lands on a different one; a green gate survives an edit that invalidates it; and a doctor warning that the running hooks are an older copy is read once and never bound to the \"driven live\" claims taken afterwards. Give the orchestrator the same stamp the gate has: a verification carries the tree it was taken on, and a claim whose tree has moved is stale rather than wrong.",
+      "files": [
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "tools/gate-parity.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a stamp taken before an edit is reported stale afterwards; a stamp on an unchanged tree is still current; a tree git cannot describe yields no stamp rather than a false one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "0a94de8",
+      "outcome": {
+        "technical": "_tree_stamp.py holds the three identity fields; stamp-verification.py grades a stamp current / stale / unestablished, and unestablished is not unchanged.",
+        "descriptive": "The orchestrator's evidence carries the tree it was taken on."
+      },
+      "startedAt": "2026-09-13T08:58:28Z",
+      "completedAt": "2026-09-13T08:58:29Z",
+      "verifiedBy": []
+    }
+  ]
+}

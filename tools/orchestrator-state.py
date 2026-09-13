@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""What is actually happening right now, read rather than remembered.
+
+WHY THIS EXISTS. An orchestrator running several agents against one repository holds a
+model of the world that drifts from the world: agents finish, branches move, the tree gets
+dirty, a task is created and never spawned. Three times in one run this project's
+orchestrator wrote a verb in the first person - "I started it", "I am committing it" -
+before executing the action, and the sentence became the artifact instead of the action.
+Each time the rule against it was already written down and already known, which is why a
+rule is not the repair.
+
+So this is not a reminder. It is the read the report is written FROM: run it as the last
+thing in a turn, and say only what it printed. If it shows an idle slot, fill the slot
+before writing a word - a report composed while nothing is building is the failure this
+exists to catch.
+
+It answers four questions and nothing else:
+  - what is running, and how far along (the worktree, never the transcript, which does
+    not grow while an agent works);
+  - what is finished and waiting to be taken;
+  - what is uncommitted here;
+  - what is ready to start.
+
+IT NEVER SAYS WHETHER AN AGENT IS ALIVE. This process cannot see the agent list. The
+worktree is the evidence it has, and a worktree that is clean and whose HEAD has not moved
+means one of two things - nothing has been written yet, or nothing was ever spawned. It
+prints both, because telling them apart needs the agent list and saying only one of them
+would be the guess this tool exists to refuse.
+"""
+import io
+import json
+import os
+import subprocess
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _git(args, cwd=None):
+    try:
+        p = subprocess.run(["git"] + args, cwd=cwd or REPO, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=20)
+        return p.stdout.decode("utf-8", "replace").strip()
+    except Exception:
+        return ""
+
+
+def worktrees():
+    """(path, branch, head) for every linked worktree on a working branch."""
+    out, rows, cur = _git(["worktree", "list", "--porcelain"]), [], {}
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            if cur:
+                rows.append(cur)
+            cur = {"path": line[len("worktree "):]}
+        elif line.startswith("HEAD "):
+            cur["head"] = line[len("HEAD "):][:7]
+        elif line.startswith("branch "):
+            cur["branch"] = line[len("branch "):].replace("refs/heads/", "")
+    if cur:
+        rows.append(cur)
+    return [r for r in rows
+            if os.path.abspath(r.get("path", "")) != os.path.abspath(REPO)
+            and (r.get("branch") or "").startswith(("audit/", "p3", "p4"))]
+
+
+def ready_tasks(manifest):
+    """Task ids a RUNNING phase holds that nothing unfinished is waiting on.
+
+    None, not [], when the manifest cannot be read: "nothing is ready" and "nothing
+    could be read" are two different reports, and collapsing them is how an orchestrator
+    reads an unreadable plan as a finished one."""
+    try:
+        plan = json.load(io.open(os.path.join(REPO, manifest), encoding="utf-8"))
+    except Exception:
+        return None
+    out = []
+    for entry in plan.get("phases", []):
+        node = entry
+        if entry.get("shard"):
+            try:
+                node = json.load(io.open(
+                    os.path.join(REPO, "docs/audit", entry["shard"]), encoding="utf-8"))
+            except Exception:
+                continue
+        if node.get("status") != "in_progress":
+            continue
+        done = set(t["id"] for t in node.get("tasks", []) if t.get("status") == "done")
+        for task in node.get("tasks", []):
+            if task.get("status") != "pending":
+                continue
+            if not [d for d in (task.get("dependsOn") or []) if d not in done]:
+                out.append(task["id"])
+    return out
+
+
+def main():
+    head = _git(["rev-parse", "--short", "HEAD"])
+    print("HEAD %s" % head)
+
+    rows = worktrees()
+    if rows:
+        print("\nWORKTREES  (the live signal is the tree; a transcript does not grow)")
+    for row in rows:
+        dirty = [x for x in _git(["status", "--short"], cwd=row["path"]).splitlines()
+                 if x.strip()]
+        if dirty:
+            state = "WRITING    %d file(s) changed" % len(dirty)
+        elif row.get("head", "") != head:
+            state = "COMMITTED  in its own tree - diff against ITS head, not a branch"
+        else:
+            state = "NOTHING YET - it has not written, OR it was never spawned"
+        print("  %-32s %-12s %s" % (os.path.basename(row["path"]),
+                                    row.get("branch", "?"), state))
+
+    dirty = [l for l in _git(["status", "--short"]).splitlines() if l.strip()]
+    print("\nUNCOMMITTED HERE: %d path(s)" % len(dirty))
+    for line in dirty[:12]:
+        print("  " + line)
+    if len(dirty) > 12:
+        print("  ... and %d more" % (len(dirty) - 12))
+
+    ready = ready_tasks("docs/audit/audit-plan.json")
+    print("\nREADY NOW: %s" % ("the manifest could not be read" if ready is None
+                               else (", ".join(ready) if ready else "nothing")))
+    return 0
+
+
+# --- selftest -------------------------------------------------------------------
+def _selftest():
+    import shutil
+    import tempfile
+    results = []
+
+    def check(label, ok, detail=""):
+        results.append(ok)
+        print("%s %s%s" % ("PASS" if ok else "FAIL", label,
+                           ("  -- " + str(detail)[:110]) if (detail and not ok) else ""))
+
+    box = tempfile.mkdtemp(prefix="orchstate-")
+    json.dump({"phases": [
+        {"id": "P1", "title": "t", "status": "in_progress", "tasks": [
+            {"id": "P1.1", "status": "pending", "dependsOn": []},
+            {"id": "P1.2", "status": "pending", "dependsOn": ["P1.1"]},
+            {"id": "P1.3", "status": "done", "dependsOn": []},
+            {"id": "P1.4", "status": "pending", "dependsOn": ["P1.3"]}]},
+        {"id": "P0", "title": "t", "status": "done", "tasks": [
+            {"id": "P0.1", "status": "pending", "dependsOn": []}]}]},
+        io.open(os.path.join(box, "audit-plan.json"), "w"))
+
+    global REPO
+    keep = REPO
+    try:
+        REPO = box
+        got = ready_tasks("audit-plan.json")
+        check("s1 a pending task nothing unfinished waits on is ready",
+              "P1.1" in (got or []), got)
+        check("s2 ...one waiting on an UNFINISHED task is not",
+              "P1.2" not in (got or []), got)
+        check("s3 ...one waiting on a FINISHED task is",
+              "P1.4" in (got or []), got)
+        check("s4 a task in a phase that is not running is never ready",
+              "P0.1" not in (got or []), got)
+        REPO = os.path.join(box, "does-not-exist")
+        check("s5 an unreadable manifest answers None rather than an empty list, so "
+              "'nothing is ready' cannot be read off 'nothing could be read'",
+              ready_tasks("audit-plan.json") is None)
+    finally:
+        REPO = keep
+        shutil.rmtree(box, ignore_errors=True)
+
+    n, ok = len(results), sum(1 for x in results if x)
+    print("\n%s: %d/%d cases passed"
+          % ("ALL PASS" if ok == n else "SELFTEST FAILED", ok, n))
+    return 0 if ok == n else 1
+
+
+if __name__ == "__main__":
+    if "--selftest" in sys.argv[1:]:
+        raise SystemExit(_selftest())
+    raise SystemExit(main())

@@ -1,0 +1,158 @@
+{
+  "id": "P38",
+  "title": "The claim hook reads the operation, not the spelling",
+  "status": "done",
+  "description": "Three guards in this repo's own configuration stop reading a command's spelling and start reading its operation, so the evidence ritual the previous phase shipped actually reaches the commits it was written for. Field report 12 measured two of the three classes costing whole round trips; the third was found by this repo's own eval driving its own hook.",
+  "desiredOutcome": "Every git commit this repo's own hooks can see is graded by the operation git will perform, not by a pattern over the command text: a commit whose verb begins a new line is refused like any other, a message delivered on stdin is not allowed by an OSError, and a command whose only act is to write a file is not refused because of a literal inside its heredoc. Each of the three is proven red in both directions - the deny case, and the allow case going red when the guard is widened until it over-fires.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P38.1",
+      "title": "The commit guard reads a statement's verb, not the command's spelling",
+      "status": "done",
+      "description": "`require-claim-block.py` classifies each statement of a shell command by the argv git will run, not by one regex over the whole string. A newline is a statement separator exactly as `&&`, `;` and `||` are, so the heredoc-then-commit shape three of five baseline eval runs produced is graded like any other commit. The allow cases must stay quiet: a `git status` on its own line, and a `git commit` appearing inside a quoted string that is data rather than a command.",
+      "files": [
+        ".claude/hooks/require-claim-block.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          ".claude/hooks/require-claim-block.py: a git commit whose verb begins a new line is refused; a git status on its own line stays quiet"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3c1871b",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T20:55:00Z",
+      "completedAt": "2026-09-12T21:51:47+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P38.2",
+      "title": "A message on stdin is decided by a rule, not by an OSError",
+      "status": "done",
+      "description": "A commit message delivered on stdin (`-F -`, `--file=-`, and the `/dev/stdin` spelling that already works) stops being graded by whether an OSError was raised when the hook tried to open a file named `-`. Today `-` is joined to the target directory, the open fails, and the decision falls through to allow - so the one route a subagent naturally composes is the one that is never checked. Decide it by rule: either refuse with a sentence naming the routes the hook can read, or read the heredoc body out of the command text. The editor arm stays allowed and keeps saying it cannot read what it cannot see.",
+      "files": [
+        ".claude/hooks/require-claim-block.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          ".claude/hooks/require-claim-block.py: a covered commit with its message on stdin is decided deliberately, not allowed by a failed open"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P38.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4ca49a3",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-12T22:10:03+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P38.3",
+      "title": "A heredoc body is data, not a command the history guard classifies",
+      "status": "done",
+      "description": "`guard-history-rewrite.py` stops classifying text that a command WRITES as a command it will RUN. A heredoc body is data on its way into a file; a quoted string literal is an operand. The guard must still refuse a real history rewrite, and must go quiet on a command whose only act is to write a file containing that literal - the shape that refused this repo's own probe and was routed around with a different tool within the minute.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: a force push is still refused; a heredoc that only writes a file carrying the same literal goes quiet"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5da12de",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T20:55:00Z",
+      "completedAt": "2026-09-12T22:20:01+02:00",
+      "verifiedBy": []
+    }
+  ]
+}

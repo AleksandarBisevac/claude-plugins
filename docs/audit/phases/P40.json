@@ -1,0 +1,167 @@
+{
+  "id": "P40",
+  "title": "A gate that measured nothing does not record a failure",
+  "status": "in_progress",
+  "description": "A gate step that exits non-zero having collected nothing produced no verdict about the tests, and the ledger records it as a failing suite. Field report 12's operator read three such rows as contention, withdrew two of them on inspection, and the one that survived was a gate measuring while a sibling executor wrote files. The column that separates them - `ran` - was on the row the whole time. A signal-killed gate is classified correctly and then handed to the operator with no retry at any parallelism.",
+  "desiredOutcome": "A recorded gate row says whether its steps measured anything, and a verdict of `failed` is reserved for a run that measured and found failures. A step that collected nothing is visible as such on the row; the gate verdict becomes `could-not-run` only when nothing was measured AND the tree carried dirty paths outside the declared scope at run start, with the basis naming them. A task whose own test file does not compile, with no foreign dirty paths, stays red - that case is proven red before either rule ships.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P40.1",
+      "title": "A step that collected nothing says so on the row",
+      "status": "done",
+      "description": "A step that exits non-zero having collected nothing is recorded as such on the evidence row - it is free, `ran` is already computed, and it is the fact a reader needs to tell a real failure from a run that never measured. This is the observation half only: the gate verdict does not change in this task. A field operator had three rows he read as contention, withdrew two on inspection, and the column that would have separated them at the time was already there.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a non-zero step with ran 0 is recorded as having measured nothing; a step that measured and failed is not"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "756446b",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T22:10:00Z",
+      "completedAt": "2026-09-12T23:11:56+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P40.2",
+      "title": "could-not-run when nothing was measured and the tree was dirty outside scope",
+      "status": "done",
+      "description": "The gate verdict becomes `could-not-run` when nothing was measured AND the tree carried dirty paths outside the declared scope at run start - the condition under which a whole-program step's failure is not attributable to this task. `_porcelain` already lists every dirty path before the run and `dirty_digest` already counts them; the mutation bracket's owned/foreign split is the reasoning to reuse. The case that must STAY RED is a task whose own test file does not compile with no foreign dirty paths, and it is proven red before the rule ships - that is F323's class, real failures excused as infrastructure.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: nothing measured plus foreign dirty paths is could-not-run; nothing measured with a clean foreign tree stays failed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P40.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6f27fad",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:09:23Z",
+      "completedAt": "2026-09-13T01:11:15+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P40.3",
+      "title": "A red gate names what failed",
+      "status": "done",
+      "description": "A red gate records that the suite failed and how many checks ran, never WHICH tests failed. Three field reports name the same cost; two operators wrote their own failing-test reporter around the gate rather than read the record. The runner's own output is read for the path scan and for the check count and then dropped - it reaches neither the result nor the row. Twice an operator had a red gate and no way to act on it from the record, recovering the names from a project artefact the next run overwrites. Parse the failing names where the summary reader recognises the runner, else keep a capped tail, and put them on the row as an observation.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a jest-shaped red gate records the failing suite and test names; an unrecognised runner records a capped tail rather than silence"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": "33d2f26",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Landed and driven live; see the commit message's claims block."
+      },
+      "startedAt": "2026-09-13T08:58:29Z",
+      "completedAt": "2026-09-13T08:58:43Z",
+      "verifiedBy": []
+    }
+  ]
+}

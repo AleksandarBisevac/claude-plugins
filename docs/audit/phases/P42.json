@@ -1,0 +1,317 @@
+{
+  "id": "P42",
+  "title": "The loop the agents run in closes",
+  "status": "in_progress",
+  "description": "The loop the agents run in does not close. A retry spawns cold - nothing from attempt N enters attempt N+1's brief, so the executor re-runs the gate to rediscover what it already proved red. The reviewer receives the diff and never the claim, so it cannot check code against what was asserted, and its checklist never asks whether a test can fail. The executor's return is a shape nothing validates, so a false green is silently superseded rather than flagged. And an agent that is REFUSED the mutation its own discipline requires has no word for that outcome, so it reports an inference where it owes an unverified.",
+  "desiredOutcome": "An attempt that failed hands its successor what it learned; the reviewer is handed the executor's claim and asked whether the change does what the task asked; the executor's return is validated by a script so a false green is a discrepancy rather than a superseded note; and a proof that could not be made is reported as such, with the refusal verbatim as its basis, rather than downgraded to a sentence read off the code.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P42.1",
+      "title": "A proof that could not be made says so, and carries why",
+      "status": "done",
+      "description": "The executor's return gains a three-valued word for a red-first proof: proved, not-proved, or could-not-prove - the last carrying the refusal verbatim as its basis, exactly as `could-not-run` carries the signal. A field agent was DENIED the temporary revert that proves an assertion can fail, and reported the assertion's value as an inference from reading the code - in a pipeline whose own brief says a verification claim carries its evidence and that \"verified\" with nothing behind it counts as NOT done. The plugin had the right principle and no vocabulary, and the gap opens under any refusal: a host classifier, a read-only worktree, a sandbox.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test__refs.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the executor brief and the orchestrator reference both name the three-valued word, and the schema admits it"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5d32fa5",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T02:38:49+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P42.2",
+      "title": "The reviewer is handed the claim and asked whether it holds",
+      "status": "done",
+      "description": "The reviewer is handed the task's own description, the diff and the executor's claim, and answers one question the gates cannot: does this change do what was asked. Today it receives the diff, the phase's desired outcome and a skill name - never the task description, the outcome or the evidence - so it cannot check code against what was claimed, and its checklist never asks whether a test can fail, which is this register's most-recorded defect class. It is authorised to run tests and is handed none. The operator accepted the cost of one cheap call per task rather than at sign-off only, because that is where the claim is made.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the reviewer brief asks the intent question and names what it is handed; the orchestrator's spawn passes the task description and the executor's outcome"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a317c19",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:00:00Z",
+      "completedAt": "2026-09-13T02:47:07+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P42.3",
+      "title": "A retry carries what the last attempt learned, and the return is validated",
+      "status": "done",
+      "description": "A retry spawns cold and the executor's return is a shape nothing validates. Nothing from attempt N enters attempt N+1's brief - not the outcome, not the failing test - so the executor re-runs the gate to rediscover what it already proved red, and the only \"last outcome\" anywhere is the echo to a human. Separately the return shape lives in the brief alone; the orchestrator's fallback text never mentions the field that populates verifiedBy, so a fallback path drops it, and a false green is silently superseded by the orchestrator's own run rather than flagged as the discrepancy it is.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the retry brief names the prior outcome and the failing test; a returned shape missing the evidence field is a discrepancy the orchestrator must not silently supersede"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a4d1332",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Landed and driven live; see the commit message's claims block."
+      },
+      "startedAt": "2026-09-13T08:58:28Z",
+      "completedAt": "2026-09-13T08:58:43Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P42.4",
+      "title": "Three instructions stop contradicting the code they describe",
+      "status": "done",
+      "description": "Three places where the plugin's instructions contradict themselves or the code. The TDD reminder exempts gate-only and not regression, so a task told to implement first and lock with a test afterwards gets \"write a test first\" on its first source edit, and the hook has no subagent awareness at all. A subagent's refusal says STOP and report and never names the command the orchestrator's own reference calls the remedy. And \"trivial\" has two definitions in one file pair - an unavoidable adjacent fix in the brief, and a magnitude with one file per session in the plan gate.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_remind_tdd.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_remind_tdd.py: a regression task's first source edit draws no write-a-test-first nudge; a tdd task's still does"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "e1cf2bd",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Landed and driven live; see the commit message's claims block."
+      },
+      "startedAt": "2026-09-13T08:58:28Z",
+      "completedAt": "2026-09-13T08:58:43Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P42.5",
+      "title": "executor.runsGate: the saving stops living in a handoff note",
+      "status": "in_progress",
+      "description": "The executor runs the phase gate and the orchestrator runs it again with --record, because only the recorded run is evidence - two full-suite runs per task by default. An operator suppressed the executor's run in every spawn prompt and measured that as the largest single waste of the previous wave, but a sentence in a handoff note is not a mechanism: the next session that does not read it pays double. A config key resolved into the spawn prompt the way skills already are, defaulting to the executor running only the tests it wrote.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__refs.py",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__config.py: the key resolves to its default when absent and to each of its values when set; an unknown value is refused rather than silently read as the default"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-13T00:00:00Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P42.6",
+      "title": "A high-risk confirmation can be given in advance and recorded",
+      "status": "done",
+      "description": "Two smaller field items with their own commands. A phase gate whose risk is high demands a human answer an unattended run cannot give, so the orchestrator must either block for hours or quietly override the rule - and there is no way to give the answer in advance and have it recorded. And the commit template the plugin ships collides with a common commitlint configuration: the documented subject plus a real phase title exceeds a hundred characters, and an unwrapped body line exceeds the body limit. Both are the project's rules rather than the plugin's, but the plugin ships the template.",
+      "files": [
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/scripts/governance/record-risk-confirmation.py",
+        "plugins/audit/tests/test_record_risk_confirmation.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__output.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a pre-given confirmation lands as its own journal row carrying the operator's words verbatim; a phase without one still asks"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4b3b7a2",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Landed and driven live; see the commit message's claims block."
+      },
+      "startedAt": "2026-09-13T08:58:28Z",
+      "completedAt": "2026-09-13T08:58:43Z",
+      "verifiedBy": []
+    }
+  ]
+}

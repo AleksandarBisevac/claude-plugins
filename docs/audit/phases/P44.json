@@ -1,0 +1,201 @@
+{
+  "id": "P44",
+  "title": "The plan gate says one thing to one file",
+  "status": "in_progress",
+  "description": "Field report 8's last three sections, triaged 2026-09-13: two write rules grading one file two ways, and an advisory notice that repeats itself per file while its wording fits a tier it does not run at.",
+  "desiredOutcome": "All three write surfaces grade one file one way and the interpreter arm names the path, the cause, the remedy and the exempt classes as the shell arm does - while every secret READ stays denied at every tier, which is the sentence that must remain literally true. And the advisory notice speaks its paragraph once per session, names each later file on one line with the running total, and stops asking to be relayed before a write that has already landed.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P44.1",
+      "title": "One file, one verdict, whichever writer wrote it",
+      "status": "pending",
+      "description": "`guard-secrets-read` runs two write rules and the stricter one ignores the plan tier entirely, while its message blames the plan-first gate. A `.ts` file written through `python3 -c` or a heredoc is refused even when an in_progress task declares it, and even with the gate turned off - while the same file written by `echo >`, `sed -i` or `tee` is allowed. The shell arm names the path, the cause, the remedy and the exempt classes; the interpreter arm names none of them. Parity was built deliberately for the shell arm and never extended, and the plugin's own help publishes the claim that the halves grade identically.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/scripts/config/_help.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a python3 -c write of a file an in_progress task declares is allowed; a python3 -c READ of a dotenv stays denied with the gate off"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P44.2",
+      "title": "The advisory notice speaks once per session, then counts",
+      "status": "pending",
+      "description": "The advisory plan-gate notice repeats its whole explanatory paragraph once per FILE, asks to be relayed \"verbatim before continuing\" after the write has already landed, and calls the twelfth uncovered file the second. Speak the paragraph once per session; every later file adds one line naming it and the running total, which is already computed in the session slot; and drop \"before continuing\" at a tier where there is nothing left to continue. The reporter's stronger proposal - stop entirely after N uncovered edits - silences the warn tier, which two field reports praised, and is refused.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: the paragraph is spoken once per session and later files get one line with the running total; the warn tier still speaks"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P44.3",
+      "title": "The can-this-test-fail question reaches an inherited test",
+      "status": "pending",
+      "description": "The reviewer now asks whether a test it was handed can fail, but its subject is the tests the EXECUTOR added, answered from the red-first word. All three field instances were INHERITED tests - a test that would still pass if the behaviour it names were deleted - and the brief routes those to a channel that no document and no script reads. Bound the question to the tests the task's own gate command selects, so the per-task review stays as cheap as it was measured to be; running it over the codebase would spend exactly that.",
+      "files": [
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the reviewer brief bounds the question to the tests the task's gate selects and says what it does not reach"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P44.4",
+      "title": "The sign-off order is met before a phase runs, not after",
+      "status": "pending",
+      "description": "Review then fix then gate once IS the documented sign-off order and has been for releases, and neither of two operators ever reached it - both ran the gate twice and one proposed the order as new. So nothing is missing from the procedure; what is missing is the REASON beside it and a surface an operator meets before running a phase rather than at sign-off. The paragraph that cost a hundred and seventy thousand tokens stays exactly where it is.",
+      "files": [
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the phase command states the order and its reason where an operator meets it before running"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

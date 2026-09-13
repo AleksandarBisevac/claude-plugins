@@ -1,0 +1,115 @@
+{
+  "id": "P39",
+  "title": "A task added to a running phase can be worked",
+  "status": "done",
+  "description": "A task added to a phase that is already running is born `pending`, and the plan gate resolves allowed paths through `in_progress` tasks only - so its own declared files are refused on the first edit. Field report 12 measured two executors returning zero edits and spending their tokens on a refusal that names the wrong cause. There is no CLI verb that promotes a task without also spawning one, so the only route is an orchestrator Edit of the shard.",
+  "desiredOutcome": "A task added to a running phase can be worked without a hand edit of the shard: one verb promotes it, under the same lock and journal row every other mutating verb carries, and refuses a terminal task. And when the plan gate does refuse, its message names which of the two causes it is - the file is not in any task's files, or a task declares it and is not started - because a message that misdirects costs a round trip that a message that refuses does not.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P39.1",
+      "title": "audit-task.py start: the verb that promotes a task without spawning one",
+      "status": "done",
+      "description": "`audit-task.py` gains a `start <taskId>` verb: it writes `status: in_progress`, `startedAt` and `attempts += 1` - exactly the three fields `reference/orchestrator.md` already prescribes an orchestrator Edit for - under the index lock, with a journal row, revalidating the manifest afterwards like every other mutating verb. It refuses a `done` or `cancelled` task, and says so. Widening `_config.in_progress_task_map` to read `pending` was considered and rejected: it has three consumers and would open every file declared by every pending task in the running phase, deleting the per-task narrowing the decision order exists for.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: start promotes a pending task and journals it; a done or cancelled task is refused by name"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "096e5cc",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:40:00Z",
+      "completedAt": "2026-09-12T23:11:31+02:00",
+      "verifiedBy": []
+    },
+    {
+      "id": "P39.2",
+      "title": "The plan gate's refusal names the cause it actually found",
+      "status": "done",
+      "description": "`require-plan.py`'s refusal names which of the two causes it is. Today a path that IS in a task's `files` and in `fileIndex`, whose task is merely `pending`, draws \"Outside the running plan\" and - on the subagent branch - \"report that <path> is outside your task's `files`\", which the manifest contradicts. The gate holds the fact and discards it: `in_progress_task_map` filters the task out before the decision is made. Carry the distinction into the message: the file is in no task's files, or a task declares it and is not started, with the remedy for each.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: a path declared by a pending task draws a refusal naming the status, not the scope"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "096e5cc",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-12T21:40:00Z",
+      "completedAt": "2026-09-12T23:11:31+02:00",
+      "verifiedBy": []
+    }
+  ]
+}
