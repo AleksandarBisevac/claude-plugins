@@ -232,6 +232,28 @@ def classify(data, *, cfg, root):
     return (None, "not a manifest or config path", tool, ti)
 
 
+def _actor(data, root, cfg):
+    """Who this row is about: the person, the session, and WHICH AGENT of it.
+
+    ONE HOME FOR EVERY LANE. The edit lane and the unsandboxed-Bash lane both
+    build a row, and an actor assembled twice is how the two come to disagree
+    about who a write belongs to — the same argument `_manifest_rows` makes about
+    the row itself one section down.
+
+    `agent` is always present on a row this hook writes, and that is the point of
+    it: a subagent's call records the subagent, the orchestrator's records
+    `_config.MAIN_AGENT`, and a reader of a committed row can tell those apart.
+    An absent field could not — it would mean "the orchestrator" and "nobody
+    recorded it" at once, which is the state every row written before this
+    release is in. The panel and the CLI write rows too and no agent made those,
+    so they pass none and `_journal_io` leaves the field off; `via` is what says
+    which kind of row is being read."""
+    return {"author": _author(root, cfg),
+            "sessionId": str(data.get("session_id") or "") or None,
+            "agent": _config.agent_of(data),
+            "via": "hook"}
+
+
 def _entry(action, rel, tool, ti, data, root, cfg):
     """The row's news — action, target, summary, actor. Everything that makes it
     a CHAIN (v, ts, stateHash, prev, hash) belongs to audit-journal.py and is
@@ -240,9 +262,7 @@ def _entry(action, rel, tool, ti, data, root, cfg):
         "action": action,
         "target": rel,
         "summary": "%s wrote %s" % (_how(tool, ti), rel),
-        "actor": {"author": _author(root, cfg),
-                  "sessionId": str(data.get("session_id") or "") or None,
-                  "via": "hook"},
+        "actor": _actor(data, root, cfg),
     }
 
 
@@ -680,9 +700,7 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
         "target": "",
         "summary": "Bash ran outside the harness sandbox (recorded, not prevented)",
         "details": {"command": command, "cwd": str(data.get("cwd") or root)},
-        "actor": {"author": _author(root, cfg),
-                  "sessionId": str(data.get("session_id") or "") or None,
-                  "via": "hook"},
+        "actor": _actor(data, root, cfg),
     }]
 
 

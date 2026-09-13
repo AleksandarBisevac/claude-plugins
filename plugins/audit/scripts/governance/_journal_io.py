@@ -134,8 +134,23 @@ BASENAME and the hash chain survives only untouched bytes. Every reader
 (verify, show, the doctor) sees archived files exactly as it sees live ones;
 exactly one level deep, never a recursive walk.
 
+A SESSION IS NOT A WRITER EITHER, and that is the other half of the same gap.
+One session runs an orchestrator and its subagents; they share `session_id`, so
+`actor.sessionId` answers "which session" and could never answer "which agent" --
+while a subagent writing the manifest is precisely what `require-plan` and
+`guard-secrets-read` refuse, and a refusal with no record of who tripped it is
+half an answer. `actor.agent` carries the writer: a subagent's own id, or the
+word `hooks/_config.MAIN_AGENT` spells for the orchestrator. The word matters
+more than the id -- an EMPTY field would mean "the orchestrator did it" and
+"nobody recorded it" at the same time, and a reader could not tell which, so the
+only writer that knows says so explicitly and this module never guesses. A row
+from a writer that was no agent (the panel, the CLI) carries no `agent` at all,
+which is also what every row written before the field means; `actor.via` is what
+separates those two readings.
+
 ROW
-    {"v", "ts", "actor": {"author", "sessionId", "via" [, "envSessionId"]},
+    {"v", "ts", "actor": {"author", "sessionId", "via"
+                          [, "envSessionId"] [, "agent"]},
      "action", "target", "summary", "stateHash", "prev", "hash"}
 
 `hash` is sha256 over the canonical JSON of the row WITHOUT `hash`. `prev` is the
@@ -501,6 +516,30 @@ def writer_id(actor, fallback=None):
 
 ENV_SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
 MAX_SESSION_ID_CHARS = 64       # a uuid is 36; longer than this is not an id
+# THE ROW OWNS ITS OWN BOUND, and that is not a copy of the hook's. `_config`
+# bounds what a HOOK reports about its payload; this bounds what a COMMITTED ROW
+# may carry, and the panel, `audit-task.py` and the CLI reach this function
+# having gone past no hook at all. Deriving it from `hooks/_config` would also
+# make the row's shape depend on a fail-soft import that returns None whenever
+# the hooks are not reachable, which is a shape that changes by accident.
+MAX_AGENT_CHARS = 40
+
+
+def agent_token(value):
+    """A supplied agent name, safe and bounded for a committed row, else None.
+
+    None rather than a substitute, in both directions: a writer that names no
+    agent (the panel, the CLI) gets no field, and one whose name sanitises to
+    nothing gets no field either. Inventing one here would put this module in the
+    business of guessing which agent acted, and the only writer that can know is
+    the one holding the payload -- `hooks/_config.agent_of` names all three of
+    its answers so that nothing downstream has to.
+
+    It exposes nothing a row does not already expose: an agent id is an opaque
+    per-session id like `actor.sessionId` beside it, and it names neither a
+    machine nor a person."""
+    safe = _SAFE.sub("-", str(value or "").strip()).strip("-.")
+    return safe[:MAX_AGENT_CHARS].strip("-.") or None
 
 
 def env_session_id():
@@ -1143,6 +1182,18 @@ def _normalise(entry, project=None):
     env_sid = env_session_id()
     if env_sid and env_sid != row["actor"]["sessionId"]:
         row["actor"]["envSessionId"] = env_sid
+    # WHICH AGENT OF THAT SESSION, when the writer was an agent at all. One
+    # session runs an orchestrator and its subagents and they all share
+    # `sessionId`, so until this field the trail could say which SESSION changed
+    # the plan and never which WRITER inside it -- and a subagent editing the
+    # manifest is the exact act two guards refuse. The hook supplies a word for
+    # every case it can be in, including the orchestrator's; a writer that was no
+    # agent (the panel, the CLI) supplies none and gets no field, which is also
+    # what every row written before this release means. `via` is what keeps those
+    # two readings apart.
+    agent = agent_token(actor.get("agent"))
+    if agent:
+        row["actor"]["agent"] = agent
     details = normalise_details(entry.get("details"), project=project)
     if details is not None:
         row["v"] = DETAILS_VERSION

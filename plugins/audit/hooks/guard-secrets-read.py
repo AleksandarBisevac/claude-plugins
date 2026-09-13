@@ -1147,7 +1147,7 @@ def _manifest_write_verdict(data, root, cfg, rel):
     source-write gate. That is require-plan's answer for the same payload, and
     matching it is the point: the manifest is exempt from the PLAN gate on both
     sides, not unconditionally writable on either."""
-    if str(data.get("agent_id") or "").strip():
+    if _config.is_subagent(data):
         return ("block", _SHELL_SUBAGENT_MANIFEST % (rel,))
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])

@@ -727,6 +727,19 @@ than left to be discovered: a path with no slot at all is seeded and claimed not
 and a path that moved with no parseable pre-image carries `DERIVATION_MISSED` in its summary
 and in `details.reason`.
 
+**Which agent, not just which session.** One session runs an orchestrator and its subagents
+and they all share `session_id`, so `actor.sessionId` could say which *session* changed the
+plan and never which *writer* inside it — while a subagent editing the manifest is the exact
+act `require-plan` and `guard-secrets-read` refuse. Every row this hook writes carries
+`actor.agent`, resolved once in `_actor()` for both lanes: a subagent's own `agent_id`,
+sanitised, or the word `_config.MAIN_AGENT` for the orchestrator. **The word is the point** —
+an empty field would mean "the orchestrator did it" and "nobody recorded it" at the same
+time, and a reader of a committed file could not tell which. `_config.agent_of` is the one
+place the payload is read (`is_subagent` beside it is the same question as a predicate, and
+the guards above ask it there rather than each spelling the key itself); `_journal_io` bounds
+what reaches the row and writes no field at all for a writer that named no agent, which is
+what the panel and the CLI are and what every row written before the field is.
+
 Also PostToolUse on **Bash**, for one event that is not about the plan: a call carrying
 `dangerouslyDisableSandbox` appends `bash.unsandboxed` with a DIGEST of the command, its
 byte length, its program name and the cwd relative to the repo (`commandSha256`,
@@ -1481,6 +1494,18 @@ where executing an argument parser and four subcommand bodies to resolve one pat
 with no caller. Three of those reaches were `_loader` loads of `audit-journal.py`; the
 fourth, `_panel_state`'s, was the edge `_deps` deliberately could not see (it spelled
 `script_path()` on one line and `load()` on the next) and is now an ordinary import.
+
+**A row's actor answers "which agent", and absence there is a reading rather than a gap.**
+`actor.agent` carries the writer inside a session — a subagent's id, or the word the hooks
+spell the orchestrator with — because the `sessionId` beside it is shared by both and could
+never separate them. `agent_token()` sanitises and bounds it the way `env_session_id()` does
+its own field: an agent id is opaque and names neither a machine nor a person, so the
+question here is length and path safety, not redaction. A writer that named no agent gets no
+field, and this module never substitutes one: the panel and the CLI are not agents, and a
+default would write the orchestrator's name onto a row it did not write. `actor.via` is what
+tells that reading apart from a row written before the field existed. The field changes a
+row's bytes and the hash covers whatever fields are present, so both generations chain and
+verify in one file — `ag6`/`ag7` in `test__journal_io.py` drive exactly that file.
 
 **Two writes, with deliberately opposite failure contracts, and a reader who assumes one
 rule for both will get it wrong.** `append(project, entry)` returns the path the row landed

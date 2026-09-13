@@ -856,14 +856,12 @@ def background_basis(state, now):
 
 
 # --- the writers inside one session ------------------------------------------
-# The name the main agent is recorded under. It has no `agent_id` at all - probed,
-# not assumed (Claude Code 2.1.250, 2026-08-28: a PostToolUse hook dumping stdin
-# under `claude -p`, one main-agent Bash call and two parallel Task agents; the
-# subagents' payloads carried `agent_id` and `agent_type` at the top level and the
-# main agent's carried neither, while `session_id` and `transcript_path` were
-# IDENTICAL across all of them). A short word cannot collide with a real id, which
-# is a long hex string, and `writer_id` sanitises anyway.
-MAIN_WRITER = "main"
+# The name the main agent is recorded under. `_config` owns the word, the probe
+# behind it and the sanitiser, because the journal row and this state map have to
+# spell one writer one way or a reader joining them sees two. The local name stays
+# because this file's map and its messages are about WRITERS, and the main agent
+# is one of them.
+MAIN_WRITER = _config.MAIN_AGENT
 _AGENT_CAP = 20
 # How many peer names one clause spells out before it says how many it left. The
 # clause is injected into a model's context beside two other clauses, so the whole
@@ -875,7 +873,8 @@ _PEERS_SHOWN = 4
 def writer_id(data):
     """Which WRITER inside this session made this tool call.
 
-    -> the payload's `agent_id`, sanitised, or `MAIN_WRITER` when there is none
+    -> `_config.agent_of`: the payload's `agent_id`, sanitised, or `MAIN_WRITER`
+       when there is none
 
     THE SESSION IS NOT THE WRITER, which is the whole of F227. The state file is
     named `bash-writes-<session_id>.json` and every agent of one session shares
@@ -887,8 +886,7 @@ def writer_id(data):
     Sanitised because the value is quoted back into a message this hook injects
     into the model's context, and a payload field is not a place to trust.
     """
-    ident = _SAFE_SID.sub("-", str((data or {}).get("agent_id") or "")).strip("-.")
-    return ident[:40] or MAIN_WRITER
+    return _config.agent_of(data)
 
 
 def _sequenced(state):

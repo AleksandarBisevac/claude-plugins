@@ -1537,6 +1537,60 @@ def _cases(check):
         import shutil as _sh_rp
         _sh_rp.rmtree(rp_tmp, ignore_errors=True)
 
+    # --- which agent of this session made the call ------------------------------
+    # THE TWO ANSWERS MUST NOT COLLAPSE INTO ONE. A subagent's call names the
+    # subagent; the orchestrator's names the orchestrator IN WORDS. Everything
+    # downstream - a state map key, a committed journal row - inherits whichever
+    # of those this function gets wrong, and an empty answer is the one that
+    # cannot be read back at all.
+    check("ag1 the orchestrator is a WORD, not an absence: a payload with no "
+          "`agent_id` is `MAIN_AGENT` and is not a subagent, so a reader of a "
+          "recorded answer can tell 'the orchestrator did it' from 'nobody "
+          "recorded it': %r" % (M.agent_of({}),),
+          M.agent_of({}) == M.MAIN_AGENT and M.MAIN_AGENT
+          and not M.is_subagent({}))
+    check("ag2 ...and a subagent is its own id, which is the other half: the "
+          "two answers are different values and neither is empty: %r"
+          % (M.agent_of({"agent_id": "a6773d750dcfc821b"}),),
+          M.agent_of({"agent_id": "a6773d750dcfc821b"})
+          == "a6773d750dcfc821b"
+          and M.is_subagent({"agent_id": "a6773d750dcfc821b"}))
+    # THE OVER-FIRE ARM. Widening the presence test - reading the KEY instead of
+    # a non-empty VALUE - makes a main-agent payload that merely carries the
+    # field claim an agent, and the claim it lands on is the empty string: the
+    # exact unreadable state the word exists to prevent. These are the cases that
+    # go red when that happens, and they are about the ALLOW side.
+    for _blank in ({"agent_id": ""}, {"agent_id": "   "}, {"agent_id": None}):
+        check("ag3 a payload carrying the field EMPTY is still the orchestrator "
+              "- the presence of a key is not the presence of an agent, and "
+              "answering `''` here would put a blank where a name is read "
+              "back: %r" % (_blank,),
+              M.agent_of(_blank) == M.MAIN_AGENT
+              and not M.is_subagent(_blank))
+    check("ag4 a payload that is not a dict at all is the orchestrator rather "
+          "than an exception into a hook, which fails open the way this whole "
+          "module does",
+          M.agent_of(None) == M.MAIN_AGENT and not M.is_subagent(None))
+    _ag_junk = M.agent_of({"agent_id": "../../etc/passwd"})
+    check("ag5 an id is sanitised before anybody records it - no separator and "
+          "no traversal survives into a state-file key, an injected message or "
+          "a committed row: %r" % (_ag_junk,),
+          _ag_junk == "etc-passwd" and "/" not in _ag_junk
+          and ".." not in _ag_junk)
+    check("ag6 ...and bounded, because a payload field is not a place to trust "
+          "with a length: %r" % (len(M.agent_of({"agent_id": "b" * 300})),),
+          len(M.agent_of({"agent_id": "b" * 300})) == M.MAX_AGENT_CHARS)
+    # THE THIRD ANSWER, and the reason it is not folded into the first. An id
+    # made entirely of characters the sanitiser drops leaves nothing to name -
+    # but the payload DID name an agent, and calling that call the orchestrator's
+    # would attribute a subagent's write to the one writer it certainly was not.
+    _ag_gone = M.agent_of({"agent_id": "///"})
+    check("ag7 a subagent whose id sanitises away is NOT promoted to the "
+          "orchestrator: it stays a subagent and gets a name that says the id "
+          "was unusable: %r" % (_ag_gone,),
+          _ag_gone == M.UNNAMED_AGENT and _ag_gone != M.MAIN_AGENT
+          and M.is_subagent({"agent_id": "///"}))
+
 
 def _selftest():
     return _harness.run(_cases)

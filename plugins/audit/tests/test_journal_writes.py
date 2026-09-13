@@ -58,15 +58,22 @@ def _cases(check):
     os.environ["CLAUDE_PROJECT_DIR"] = tmp
     cfg = _config._deep_merge(_config.DEFAULTS, {})
 
-    def payload(tool, path, *, sid="sess-1", edits=None):
+    def payload(tool, path, *, sid="sess-1", edits=None, agent=None):
         if tool == "NotebookEdit":
             ti = {"notebook_path": path, "new_source": "x"}
         elif tool == "MultiEdit":
             ti = {"file_path": path, "edits": edits or [{}, {}]}
         else:
             ti = {"file_path": path, "content": "x"}
-        return {"tool_name": tool, "tool_input": ti, "session_id": sid,
-                "cwd": tmp}
+        out = {"tool_name": tool, "tool_input": ti, "session_id": sid,
+               "cwd": tmp}
+        # ABSENT unless a subagent made the call, which is the shape the harness
+        # actually sends: a default of "" here would make every case in this file
+        # exercise a payload no orchestrator ever produces, and the empty-field
+        # reading is the one thing these rows exist to rule out.
+        if agent is not None:
+            out["agent_id"] = agent
+        return out
 
     def verdict(tool, path, *, use_cfg=None, **kw):
         try:
@@ -153,6 +160,48 @@ def _cases(check):
               set(e) == {"action", "target", "summary", "actor"}, repr(sorted(e)))
         check("c4 the actor names the session and how the write arrived",
               e["actor"]["sessionId"] == "sess-1" and e["actor"]["via"] == "hook")
+
+        # --- which agent inside that session --------------------------------
+        # `sessionId` is shared by the orchestrator and every subagent it spawns,
+        # so these rows could say which SESSION changed the plan and never which
+        # WRITER - while a subagent editing the manifest is the exact act two
+        # guards refuse. The two answers below must stay two.
+        _orc = verdict("Edit", "docs/audit/audit-plan.json")[1]
+        _sub = verdict("Edit", "docs/audit/audit-plan.json",
+                       agent="a6773d750dcfc821b")[1]
+        check("c4a a write by the ORCHESTRATOR says so in words. A blank would "
+              "read as 'nobody recorded it' to anyone opening the committed "
+              "file, which is indistinguishable from the state of every row "
+              "written before the field: %r" % (_orc["actor"].get("agent"),),
+              # `.get`, so a row that stopped carrying the field FAILS BY NAME
+              # here instead of raising - the two are one defect and only one of
+              # them tells the next reader which claim went wrong.
+              _orc["actor"].get("agent") == _config.MAIN_AGENT
+              and _orc["actor"].get("agent") != "")
+        check("c4b ...and a write by a SUBAGENT names the subagent, so the two "
+              "are different values in the same field rather than one value and "
+              "an absence: %r vs %r"
+              % (_sub["actor"].get("agent"), _orc["actor"].get("agent")),
+              _sub["actor"].get("agent") == "a6773d750dcfc821b"
+              and _sub["actor"].get("agent") != _orc["actor"].get("agent"))
+        check("c4c the two lanes build ONE actor: the unsandboxed-Bash row "
+              "carries the same agent field as an edit row, which a second "
+              "hand-built actor is how they would stop doing",
+              M.unsandboxed_entries(
+                  {"tool_name": "Bash", "session_id": "sess-1", "cwd": tmp,
+                   "agent_id": "a6773d750dcfc821b",
+                   "tool_input": {"command": "ls",
+                                  "dangerouslyDisableSandbox": True}},
+                  cfg=cfg, root=tmp)[0]["actor"].get("agent")
+              == "a6773d750dcfc821b")
+        # THE OVER-FIRE ARM, at the surface that records rather than the one that
+        # decides: a main-agent payload that merely CARRIES the field must not
+        # come out claiming an agent, and the claim it would land on is `''`.
+        _blank = verdict("Edit", "docs/audit/audit-plan.json", agent="")[1]
+        check("c4d a payload carrying `agent_id` EMPTY still records the "
+              "orchestrator - the row never repeats a blank back at its "
+              "reader: %r" % (_blank["actor"].get("agent"),),
+              _blank["actor"].get("agent") == _config.MAIN_AGENT)
         v, e = verdict("Edit", "docs/audit/audit-plan.json", sid="")
         check("c5 a payload with no session id still produces a row",
               v == "journal" and e["actor"]["sessionId"] is None)

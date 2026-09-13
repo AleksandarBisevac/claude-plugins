@@ -193,7 +193,7 @@ def _cases(check):
                "MAX_CHANGES", "MAX_VALUE_CHARS", "MAX_DETAILS_BYTES",
                "MAX_SUMMARY_CHARS", "SUMMARY_TRUNCATED", "VALUE_TRUNCATED",
                "OUTSIDE_TOKEN", "UNNAMED_PROGRAM",
-               "ENV_SESSION_VAR", "MAX_SESSION_ID_CHARS",
+               "ENV_SESSION_VAR", "MAX_SESSION_ID_CHARS", "MAX_AGENT_CHARS",
                "MERGE_ACTION", "MERGE_VIA",
                "DEFAULT_DIRNAME", "ARCHIVE_DIRNAME", "DEFAULT_MANIFEST",
                "GENESIS", "LOCK_STALE_SECONDS", "LOCK_WAIT_SECONDS",
@@ -781,6 +781,106 @@ def _cases(check):
               os.path.basename(_newpp) != _oldpanel
               and "panel-" not in os.path.basename(_newpp)
               and M.read_file(_oldpp)[0][0]["prev"] == M.genesis_prev(_oldpanel))
+
+        # --- ag: which AGENT of the session, and which is not an agent at all --
+        # `sessionId` is shared by an orchestrator and every subagent it spawns,
+        # so the trail could name the SESSION that changed the plan and never the
+        # WRITER inside it. Two guards refuse a subagent the manifest; a refusal
+        # with no record of who tripped it is half an answer.
+        _ag_sub = with_env(None, lambda: M._normalise(
+            {"action": "manifest.edit", "target": "",
+             "actor": {"sessionId": "s1", "via": "hook",
+                       "agent": "a6773d750dcfc821b"}}))
+        _ag_orc = with_env(None, lambda: M._normalise(
+            {"action": "manifest.edit", "target": "",
+             "actor": {"sessionId": "s1", "via": "hook", "agent": "main"}}))
+        check("ag1 a row caused by a SUBAGENT names it, and a row caused by the "
+              "ORCHESTRATOR says so in words - two values in one field, not one "
+              "value and a blank, because a reader of a committed file cannot "
+              "tell 'the orchestrator did it' from 'nobody recorded it': "
+              "%r vs %r" % (_ag_sub["actor"].get("agent"),
+                            _ag_orc["actor"].get("agent")),
+              _ag_sub["actor"]["agent"] == "a6773d750dcfc821b"
+              and _ag_orc["actor"]["agent"] == "main"
+              and _ag_sub["actor"]["agent"] != _ag_orc["actor"]["agent"])
+        check("ag2 SECOND DIRECTION for r10: an agent adds exactly ONE key to "
+              "the actor and no other, so a field that started carrying "
+              "anything else fails here rather than being noticed by a reader",
+              set(_ag_orc["actor"]) == set(["author", "sessionId", "via",
+                                            "agent"]),
+              repr(sorted(_ag_orc["actor"])))
+        # THE WRITERS THAT ARE NOT AGENTS. The panel and the CLI append rows too
+        # and no agent made them, so this module invents nothing: naming one
+        # would be a guess, and the guess it would make is the orchestrator.
+        _ag_panel = with_env(None, lambda: M._normalise(
+            {"action": "config.write", "target": "",
+             "actor": {"sessionId": "s1", "via": "panel"}}))
+        check("ag3 a writer that names no agent gets no field - the panel and "
+              "the CLI are not agents, and a default here would put a writer's "
+              "name on a row it did not write: %r"
+              % (sorted(_ag_panel["actor"]),),
+              "agent" not in _ag_panel["actor"])
+        for _blank in ("", "   ", None, "///"):
+            _ag_b = with_env(None, lambda: M._normalise(
+                {"action": "config.write", "target": "",
+                 "actor": {"sessionId": "s1", "via": "hook",
+                           "agent": _blank}}))
+            check("ag4 an agent name that is blank or sanitises away leaves NO "
+                  "field rather than an empty one: a row repeating a blank back "
+                  "at its reader is the ambiguity the word exists to close "
+                  "(%r)" % (_blank,),
+                  "agent" not in _ag_b["actor"])
+        _ag_junk = with_env(None, lambda: M._normalise(
+            {"action": "config.write", "target": "",
+             "actor": {"sessionId": "s1", "via": "hook",
+                       "agent": "../../etc/passwd"}}))
+        check("ag5 an agent name is sanitised and bounded before it reaches a "
+              "COMMITTED row, exactly as the session ids beside it are - no "
+              "separator and no traversal survives: %r"
+              % (_ag_junk["actor"]["agent"],),
+              _ag_junk["actor"]["agent"] == "etc-passwd"
+              and len(M.agent_token("c" * 300)) == M.MAX_AGENT_CHARS)
+        # THE CHAIN OVER A MIXED FILE. The field changes a row's BYTES, and the
+        # hash covers whatever fields are present - so the question is not
+        # whether a new row verifies but whether a file holding both generations
+        # does. Same writer, same month, same file: an append reads the tail it
+        # is chaining onto, and that tail is a row written before the field.
+        _agp = os.path.join(tmp, "agentmix")
+        os.makedirs(os.path.join(_agp, "j"))
+        _agcfg = {"journal": {"dir": "j"}}
+        _agactor = {"author": None, "sessionId": "ag-sess-1", "via": "hook"}
+        _agname = "%s.ag-sess-1.jsonl" % time.strftime("%Y-%m", time.gmtime())
+        _agold = {"v": 1, "ts": time.strftime("%Y-%m-%dT00:00:00Z",
+                                              time.gmtime()),
+                  "actor": dict(_agactor), "action": "manifest.edit",
+                  "target": "", "summary": "written before the field existed",
+                  "stateHash": None, "prev": M.genesis_prev(_agname)}
+        _agold["hash"] = M.row_hash(_agold)
+        with open(os.path.join(_agp, "j", _agname), "w",
+                  encoding="utf-8") as fh:
+            fh.write(M.canonical(_agold) + "\n")
+        _agnewp = with_env(None, lambda: M.append(
+            _agp, {"action": "manifest.edit", "target": "",
+                   "summary": "written by a subagent",
+                   "actor": dict(_agactor, agent="a6773d750dcfc821b")},
+            config=_agcfg))
+        _agver = M.verify(_agp, _agcfg)
+        _agrows = M.read_file(os.path.join(_agp, "j", _agname))[0]
+        check("ag6 one file holding a row from before the field and a row "
+              "carrying it verifies clean, chain and all - the new row's `prev` "
+              "is the OLD row's hash, so the two generations are one chain and "
+              "not two: %r" % (_agver["findings"] + _agver["warnings"],),
+              _agver["ok"] and not _agver["findings"]
+              and not _agver["warnings"] and _agver["rows"] == 2
+              and os.path.basename(_agnewp or "") == _agname
+              and _agrows[1]["prev"] == _agold["hash"]
+              and _agrows[0]["hash"] == _agold["hash"])
+        check("ag7 ...and the old row is still readable as what it is: no "
+              "agent, so nothing was back-filled onto a row nobody could ask. "
+              "A migration that guessed here would have written the "
+              "orchestrator over an unknown writer",
+              "agent" not in _agrows[0]["actor"]
+              and _agrows[1]["actor"]["agent"] == "a6773d750dcfc821b")
 
         # --- target: absolute-inside collapses, absolute-outside does not ------
         _tin = os.path.join(proj, "docs", "audit", "audit-plan.json")

@@ -116,6 +116,7 @@ OUTSIDE_TOKEN = _journal_io.OUTSIDE_TOKEN
 UNNAMED_PROGRAM = _journal_io.UNNAMED_PROGRAM
 ENV_SESSION_VAR = _journal_io.ENV_SESSION_VAR
 MAX_SESSION_ID_CHARS = _journal_io.MAX_SESSION_ID_CHARS
+MAX_AGENT_CHARS = _journal_io.MAX_AGENT_CHARS
 MERGE_ACTION = _journal_io.MERGE_ACTION
 MERGE_VIA = _journal_io.MERGE_VIA
 DEFAULT_DIRNAME = _journal_io.DEFAULT_DIRNAME
@@ -906,9 +907,15 @@ def cmd_show(args, out):
         return 0
     for r in rows:
         actor = r.get("actor") or {}
-        out("%s  %-18s %-28s %s"
+        # WHICH AGENT, printed only when the row carries one. A row from the
+        # panel or the CLI names no agent and a row written before the field
+        # existed names none either, so a constant suffix here would be this
+        # command asserting something the row does not say.
+        agent = actor.get("agent")
+        out("%s  %-18s %-28s %s%s"
             % (r.get("ts"), r.get("action"), (r.get("target") or "")[-28:],
-               actor.get("author") or actor.get("sessionId") or "unknown"))
+               actor.get("author") or actor.get("sessionId") or "unknown",
+               ("  [agent %s]" % (agent,)) if agent else ""))
         if r.get("summary"):
             out("    %s" % r["summary"])
     return 0

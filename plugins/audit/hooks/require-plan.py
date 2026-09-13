@@ -577,11 +577,10 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     it was the only door left open. The contract and the guard have to agree,
     #     and the guard is the half that can be checked.
     #
-    #     `agent_id` is present on a subagent's payload and absent on the main
-    #     agent's, which is `guard-bash-writes`' probe. The orchestrator is
-    #     untouched: it has no `agent_id`, so every branch below runs for it
-    #     exactly as before.
-    if str(data.get("agent_id") or "").strip() and (
+    #     `_config.is_subagent` is the one place that question is asked; the probe
+    #     behind it is recorded there. The orchestrator is untouched: it is not a
+    #     subagent, so every branch below runs for it exactly as before.
+    if _config.is_subagent(data) and (
             rel == manifest_rel or rel == manifest_rel + ".lock"
             or _config.governing_lock(manifest_rel, rel)):
         return ("block", _SUBAGENT_MANIFEST % (rel, rel))
@@ -850,9 +849,9 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     # put in the wrong module, work reverted for a worse UX, and four tasks where
     # the agent edited the manifest itself because `docs/audit/**` is exempt.
     #
-    # A subagent's payload carries `agent_id` and the main agent's does not, which
-    # is the probe `guard-bash-writes` already relies on.
-    if str((data or {}).get("agent_id") or "").strip():
+    # `_config.is_subagent` is the one place that question is asked, and the probe
+    # behind it is recorded there.
+    if _config.is_subagent(data):
         return (
             "block",
             "%s"

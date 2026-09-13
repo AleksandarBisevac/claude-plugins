@@ -411,6 +411,22 @@ def _cases(check):
               and "OK (journal): 1 row(s)" in txt, txt)
         code, txt = run(["show"], cproj)
         check("i4 show prints the row", code == 0 and "config.write" in txt)
+        # WHICH AGENT, on the surface a human reads. The field is on the row, so
+        # `--json` has always been able to answer; a reader running `show` could
+        # not, which makes the trail able to record the answer and unable to give
+        # it. The CLI row above named no agent, so the same listing is both
+        # directions at once.
+        M.append(cproj, {"action": "manifest.edit", "target": "",
+                         "summary": "by a subagent",
+                         "actor": {"sessionId": "s", "via": "hook",
+                                   "agent": "a6773d750dcfc821b"}})
+        code, txt = run(["show"], cproj)
+        check("i4b show NAMES the agent on a row that carries one - and prints "
+              "nothing about agents on the row beside it that names none, so "
+              "the line is the row's claim rather than this command's: %r"
+              % (txt,),
+              code == 0 and "[agent a6773d750dcfc821b]" in txt
+              and txt.count("[agent ") == 1, txt)
         code, txt = run(["show", "--json"], cproj)
         _i5 = parsed(txt, [])
         check("i5 show --json is parseable and carries the chain fields",

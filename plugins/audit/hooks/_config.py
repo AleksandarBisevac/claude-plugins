@@ -354,6 +354,64 @@ def repo_root(data):
     return Path(root)
 
 
+# --- which agent of this session made the call ---------------------------------
+# THE ORCHESTRATOR IS A NAME HERE, NOT AN ABSENCE. A payload carries `agent_id`
+# only when a subagent made the call - probed, not assumed (Claude Code 2.1.250,
+# 2026-08-28: a PostToolUse hook dumping stdin under `claude -p`, one main-agent
+# Bash call and two parallel Task agents; the subagents' payloads carried
+# `agent_id` and `agent_type` at the top level and the main agent's carried
+# neither, while `session_id` and `transcript_path` were IDENTICAL across all of
+# them). So "no agent_id" means the orchestrator and nothing else - and writing
+# that down as a word is what separates "the orchestrator did it" from "nobody
+# recorded it". An empty field says both at once and a reader cannot tell which,
+# which is why no caller here is handed one.
+#
+# A short word cannot collide with a real agent id, which is a long hex string,
+# and `agent_of` sanitises anyway.
+MAIN_AGENT = "main"
+# ...AND A SUBAGENT WHOSE ID SURVIVES NO SANITISING IS NOT THE ORCHESTRATOR. The
+# payload named an agent and only the spelling was unusable, so the answer says
+# that rather than promoting the call to the one writer it certainly was not.
+UNNAMED_AGENT = "agent-unnamed"
+MAX_AGENT_CHARS = 40
+_AGENT_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def is_subagent(data):
+    """Whether a SUBAGENT made this tool call, rather than the orchestrator.
+
+    One spelling for a question several guards asked in their own: `require-plan`
+    refuses a subagent the manifest on the edit path and again on the scope path,
+    `guard-secrets-read` refuses it the same file arriving by shell, and
+    `guard-bash-writes` separates the writers inside one session by it. Each read
+    the payload key itself, so a change in how the harness spells it would have
+    had to be found at every site by whoever noticed first - list them with
+    `grep -rn agent_id plugins/audit/hooks/`.
+
+    The PRESENCE of the key decides, not the shape of its value: an id that
+    sanitises away is still a subagent, and `agent_of` is where that is named.
+    """
+    return bool(str((data or {}).get("agent_id") or "").strip())
+
+
+def agent_of(data):
+    """Which writer inside this session made the call.
+
+    -> the sanitised `agent_id`, `MAIN_AGENT` for the orchestrator, or
+       `UNNAMED_AGENT` for an id that sanitises away
+
+    Every answer is a word, so a caller that records one records an answer rather
+    than a blank. Sanitised and bounded because callers put the value where it is
+    read back: a key in a state file, a name quoted into a message injected into
+    the model's context, a field of a committed journal row. A payload field is
+    not a place to trust.
+    """
+    if not is_subagent(data):
+        return MAIN_AGENT
+    ident = _AGENT_SAFE.sub("-", str(data.get("agent_id"))).strip("-.")
+    return ident[:MAX_AGENT_CHARS].strip("-.") or UNNAMED_AGENT
+
+
 def _deep_merge(base, over):
     """Shallow-per-key deep merge: nested dicts merged one level, others replaced.
 
