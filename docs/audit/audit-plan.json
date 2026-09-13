@@ -310,7 +310,8 @@
       "P4.4",
       "P9.2",
       "P19.2",
-      "P32.10"
+      "P32.10",
+      "P51.1"
     ],
     ".gitignore": [
       "P4.4",
@@ -376,7 +377,8 @@
       "P2.3",
       "P4.4",
       "P7.2",
-      "P18.10"
+      "P18.10",
+      "P50.2"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -417,7 +419,8 @@
       "P18.10",
       "P23.3",
       "P27.1",
-      "P32.10"
+      "P32.10",
+      "P51.9"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -464,7 +467,12 @@
       "P42.6",
       "P44.1",
       "P44.2",
-      "P45.1"
+      "P45.1",
+      "P47.1",
+      "P49.1",
+      "P50.1",
+      "P50.2",
+      "P50.3"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -473,7 +481,9 @@
       "P42.1",
       "P42.5",
       "P42.4",
-      "P43.4"
+      "P43.4",
+      "P47.1",
+      "P50.5"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -487,7 +497,9 @@
       "P31.8",
       "P42.2",
       "P44.3",
-      "P43.4"
+      "P43.4",
+      "P47.4",
+      "P50.5"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -517,7 +529,11 @@
       "P32.5",
       "P32.2",
       "P34.6",
-      "P45.2"
+      "P45.2",
+      "P47.2",
+      "P48.3",
+      "P49.1",
+      "P50.1"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -547,7 +563,8 @@
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
-      "P18.5"
+      "P18.5",
+      "P47.4"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -560,7 +577,8 @@
       "P25.7",
       "P31.2",
       "P32.7",
-      "P33.2"
+      "P33.2",
+      "P48.1"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1"
@@ -576,7 +594,9 @@
       "P39.1",
       "P43.2",
       "P45.1",
-      "P46.1"
+      "P46.1",
+      "P51.6",
+      "P51.7"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -590,7 +610,8 @@
       "P41.5",
       "P41.7",
       "P42.5",
-      "P44.1"
+      "P44.1",
+      "P47.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -604,7 +625,8 @@
       "P20.1",
       "P31.6",
       "P41.5",
-      "P41.7"
+      "P41.7",
+      "P51.3"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4"
@@ -628,7 +650,8 @@
       "P41.5",
       "P41.7",
       "P42.4",
-      "P44.1"
+      "P44.1",
+      "P51.3"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -645,7 +668,8 @@
       "P41.7"
     ],
     "plugins/audit/hooks/meter-usage.py": [
-      "P15.4"
+      "P15.4",
+      "P47.6"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
@@ -708,7 +732,13 @@
       "P44.4",
       "P43.4",
       "P46.4",
-      "P46.5"
+      "P46.5",
+      "P47.1",
+      "P47.4",
+      "P47.6",
+      "P48.1",
+      "P48.2",
+      "P50.4"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -719,7 +749,11 @@
       "P18.2",
       "P32.7",
       "P34.1",
-      "P42.1"
+      "P42.1",
+      "P47.4",
+      "P48.2",
+      "P49.1",
+      "P51.8"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -742,7 +776,10 @@
       "P35.1",
       "P36.15",
       "P42.6",
-      "P43.4"
+      "P43.4",
+      "P47.3",
+      "P50.5",
+      "P51.2"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -759,18 +796,22 @@
     ],
     "plugins/audit/scripts/_loader.py": [
       "P10.1",
-      "P15.4"
+      "P15.4",
+      "P51.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
       "P15.4",
-      "P22.8"
+      "P22.8",
+      "P47.3"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
       "P15.4",
       "P35.1",
-      "P36.15"
+      "P36.15",
+      "P50.5",
+      "P51.2"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -797,7 +838,9 @@
       "P18.7",
       "P18.9",
       "P21.2",
-      "P22.11"
+      "P22.11",
+      "P47.3",
+      "P51.6"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -807,7 +850,8 @@
       "P15.4",
       "P25.1",
       "P32.7",
-      "P34.7"
+      "P34.7",
+      "P51.9"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -825,7 +869,9 @@
       "P10.3",
       "P14.3",
       "P18.6",
-      "P26.1"
+      "P26.1",
+      "P47.2",
+      "P48.4"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -835,7 +881,8 @@
       "P36.11",
       "P41.1",
       "P41.4",
-      "P41.7"
+      "P41.7",
+      "P48.1"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -850,7 +897,8 @@
       "P25.7",
       "P32.7",
       "P33.2",
-      "P46.6"
+      "P46.6",
+      "P48.1"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -875,7 +923,8 @@
     ],
     "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
-      "P15.4"
+      "P15.4",
+      "P50.6"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -888,7 +937,8 @@
       "P12.4",
       "P12.5",
       "P14.1",
-      "P18.7"
+      "P18.7",
+      "P49.3"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -899,7 +949,8 @@
       "P13.1",
       "P13.2",
       "P13.3",
-      "P15.4"
+      "P15.4",
+      "P51.9"
     ],
     "plugins/audit/scripts/ui/panel.css": [
       "P11.1"
@@ -918,10 +969,12 @@
       "P11.2"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
-      "P14.1"
+      "P14.1",
+      "P47.6"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
-      "P15.4"
+      "P15.4",
+      "P47.1"
     ],
     "plugins/audit/scripts/manifest/validate-manifest.py": [
       "P1.5",
@@ -930,7 +983,8 @@
       "P5.2",
       "P15.4",
       "P32.2",
-      "P45.2"
+      "P45.2",
+      "P51.5"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -1012,7 +1066,9 @@
       "P23.3",
       "P32.3",
       "P41.1",
-      "P42.5"
+      "P42.5",
+      "P50.2",
+      "P50.6"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1022,7 +1078,8 @@
       "P18.2",
       "P25.1",
       "P32.7",
-      "P42.1"
+      "P42.1",
+      "P50.6"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1048,7 +1105,9 @@
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
-      "P18.9"
+      "P18.9",
+      "P47.2",
+      "P49.3"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6"
@@ -1062,7 +1121,8 @@
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
-      "P26.1"
+      "P26.1",
+      "P47.2"
     ],
     "tools/prove-gates.py": [
       "P18.6",
@@ -1080,7 +1140,8 @@
       "P42.1",
       "P42.3",
       "P42.6",
-      "P46.5"
+      "P46.5",
+      "P50.5"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1147,7 +1208,8 @@
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
-      "P31.6"
+      "P31.6",
+      "P51.3"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
@@ -1179,10 +1241,12 @@
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
-      "P41.4"
+      "P41.4",
+      "P48.4"
     ],
     "QUICKSTART.md": [
-      "P18.10"
+      "P18.10",
+      "P50.1"
     ],
     "plugins/audit/scripts/governance/run-test-gate.py": [
       "P22.1",
@@ -1246,7 +1310,8 @@
       "P41.2",
       "P41.3",
       "P42.4",
-      "P44.1"
+      "P44.1",
+      "P51.3"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -1264,7 +1329,13 @@
       "P42.6",
       "P45.1",
       "P46.2",
-      "P46.1"
+      "P46.1",
+      "P48.2",
+      "P50.1",
+      "P51.5",
+      "P51.6",
+      "P51.7",
+      "P51.8"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1282,7 +1353,12 @@
       "P42.6",
       "P45.1",
       "P46.2",
-      "P46.1"
+      "P46.1",
+      "P48.2",
+      "P50.1",
+      "P51.5",
+      "P51.6",
+      "P51.7"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1294,11 +1370,19 @@
     "plugins/audit/scripts/manifest/_manifest_phases.py": [
       "P22.4",
       "P32.2",
-      "P45.2"
+      "P45.2",
+      "P47.2",
+      "P47.4",
+      "P51.6",
+      "P51.8"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
-      "P32.2"
+      "P32.2",
+      "P47.2",
+      "P47.4",
+      "P51.6",
+      "P51.8"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1325,7 +1409,8 @@
       "P22.14"
     ],
     "plugins/audit/tests/test__manifest_io.py": [
-      "P22.8"
+      "P22.8",
+      "P47.3"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8"
@@ -1336,7 +1421,8 @@
       "P31.2",
       "P42.1",
       "P42.3",
-      "P42.6"
+      "P42.6",
+      "P50.4"
     ],
     "plugins/audit/tests/test__refs.py": [
       "P23.1",
@@ -1352,7 +1438,8 @@
       "P42.6",
       "P44.3",
       "P44.4",
-      "P45.1"
+      "P45.1",
+      "P50.4"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -1366,10 +1453,12 @@
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
       "P32.7",
-      "P34.7"
+      "P34.7",
+      "P51.9"
     ],
     "plugins/audit/tests/test_render_report.py": [
-      "P25.1"
+      "P25.1",
+      "P51.9"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -1421,7 +1510,8 @@
       "P41.4",
       "P41.7",
       "P40.3",
-      "P46.1"
+      "P46.1",
+      "P47.5"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -1430,7 +1520,8 @@
       "P36.8",
       "P41.4",
       "P41.7",
-      "P40.3"
+      "P40.3",
+      "P47.5"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -1441,12 +1532,17 @@
       "P41.1",
       "P41.4",
       "P40.3",
-      "P46.3"
+      "P46.3",
+      "P48.3",
+      "P49.2",
+      "P51.2",
+      "P51.4"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
       "P31.6",
-      "P34.4"
+      "P34.4",
+      "P47.5"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
@@ -1464,10 +1560,12 @@
       "P35.1",
       "P36.15",
       "P42.6",
-      "P43.4"
+      "P43.4",
+      "P50.5"
     ],
     "plugins/audit/commands/doctor.md": [
-      "P31.2"
+      "P31.2",
+      "P48.4"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2"
@@ -1482,7 +1580,9 @@
       "P32.5",
       "P32.6",
       "P35.1",
-      "P36.15"
+      "P36.15",
+      "P47.3",
+      "P51.2"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
@@ -1510,13 +1610,15 @@
       "P32.7",
       "P33.2",
       "P34.1",
-      "P46.6"
+      "P46.6",
+      "P48.1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
       "P33.2",
       "P34.1",
-      "P46.6"
+      "P46.6",
+      "P48.1"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -1543,7 +1645,9 @@
       "P32.7"
     ],
     "tools/check-example-ledgers.py": [
-      "P32.10"
+      "P32.10",
+      "P50.3",
+      "P51.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1596,7 +1700,8 @@
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
-      "P41.4"
+      "P41.4",
+      "P48.4"
     ],
     ".claude/skills/before-you-claim/SKILL.md": [
       "P37.1"
@@ -1624,7 +1729,8 @@
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
-      "P42.5"
+      "P42.5",
+      "P47.1"
     ],
     "examples/acme-store/evidence/2026-07.e7c1a94b2f08d635.jsonl": [
       "P41.1"
@@ -1635,7 +1741,8 @@
     "plugins/audit/tests/test__config.py": [
       "P41.5",
       "P41.7",
-      "P42.5"
+      "P42.5",
+      "P47.1"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6"
@@ -1675,6 +1782,66 @@
     "tools/orchestrator-state.py": [
       "P43.5",
       "P44.1"
+    ],
+    "plugins/audit/scripts/config/_config_rules.py": [
+      "P47.1"
+    ],
+    "plugins/audit/tests/test_validate_config.py": [
+      "P47.1"
+    ],
+    "plugins/audit/scripts/panel/_panel_page.py": [
+      "P47.3"
+    ],
+    "plugins/audit/scripts/governance/close-phase.py": [
+      "P47.3"
+    ],
+    "plugins/audit/tests/test_usage_ledger.py": [
+      "P47.6"
+    ],
+    "plugins/audit/scripts/status/_gate_feed.py": [
+      "P48.3",
+      "P49.1"
+    ],
+    "plugins/audit/tests/test__gate_feed.py": [
+      "P48.3",
+      "P49.1"
+    ],
+    "plugins/audit/scripts/usage/_usage_economics.py": [
+      "P49.2"
+    ],
+    "plugins/audit/scripts/panel/_panel_usage.py": [
+      "P49.2"
+    ],
+    "plugins/audit/tests/test__usage_economics.py": [
+      "P49.2"
+    ],
+    "plugins/audit/scripts/panel/_panel_runstate.py": [
+      "P49.3"
+    ],
+    "plugins/audit/tests/test__panel_runstate.py": [
+      "P49.3"
+    ],
+    "examples/acme-store/audit-plan.json": [
+      "P50.3",
+      "P51.1"
+    ],
+    "plugins/audit/commands/migrate.md": [
+      "P50.6"
+    ],
+    "plugins/audit/tests/test_migrate_manifest.py": [
+      "P50.6"
+    ],
+    "tools/check-committed-pii.py": [
+      "P51.4"
+    ],
+    "plugins/audit/scripts/manifest/_warning_groups.py": [
+      "P51.5"
+    ],
+    "plugins/audit/tests/test__warning_groups.py": [
+      "P51.5"
+    ],
+    "plugins/audit/scripts/report/_report_md.py": [
+      "P51.9"
     ]
   },
   "bugs": [
