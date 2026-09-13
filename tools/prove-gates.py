@@ -490,6 +490,23 @@ TABLE = (
  # has nowhere to put what the documents just promised.
  ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
   '            "could-not-prove",\n', "", REF, "rf2"),
+ # P42. THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
+ # is that event with a shorter diff. `testsAdded` is what fills `task.verifiedBy`,
+ # so this is the shipped defect with the name changed - the field was declared,
+ # the fallback path restated every rule beside it, and nobody asked for this one.
+ ("return_shape_drift", "plugins/audit/agents/audit-executor.md", "replace",
+  '"testsAdded"', '"testsWritten"', REF, "rs1"),
+ # ...and the direction that actually shipped: the reference stops naming a field
+ # AS a field. The backticks are the whole rule rather than a typographic taste -
+ # `gates` in a sentence is a report about a run, in backticks it is a key a prompt
+ # can ask a subagent for - so taking them off is taking the ask away.
+ ("return_shape_drift", "plugins/audit/reference/orchestrator.md", "replace",
+  "`gates` per gate", "gates per gate", REF, "rs1"),
+ # ...and the DECLARATION going missing, which neither row above reaches: with no
+ # trigger there is no block, and a check that read a clean sheet out of that would
+ # be grading a reference which asks for nothing as one that asks for everything.
+ ("return_shape_drift", "plugins/audit/agents/audit-executor.md", "replace",
+  "Report back a structured outcome:", "Report back what happened:", REF, "rs2"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -1506,6 +1523,14 @@ ALLOW = (
  ("red_first_drift", S + "_refs.py", "replace",
   "            if RED_FIRST_TRIGGER not in text:",
   '            if "" not in text:', REF, "rf7"),
+ # P42. The TOP-LEVEL restriction dropped, so every nested key of the declared
+ # shape is demanded as a standalone backticked word of its own: a reference that
+ # writes `outcome` = `{ technical, descriptive }` is convicted for naming both
+ # halves in one breath, which is honest prose and the ordinary way to write it.
+ # The restriction is the only thing keeping this check's width from becoming
+ # noise, which is the same argument `rf7` makes for its trigger.
+ ("return_shape_drift", S + "_refs.py", "replace",
+  "            if (depth == 1\n", "            if (True\n", REF, "rs6"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -

@@ -56,7 +56,22 @@ _FX_SCRIPTS = M.PLUGIN_REL + "/scripts/"
 _FX_HOOKS = M.PLUGIN_REL + "/hooks/"
 _FX_COMMANDS = M.PLUGIN_REL + "/commands/"
 _FX_AGENTS = M.PLUGIN_REL + "/agents/"
+_FX_REFERENCE = M.PLUGIN_REL + "/reference/"
 _FX_TESTS = M.PLUGIN_REL + "/tests/"
+
+# A brief that declares a return shape, written the way the real one is: the block
+# is the paragraph after the trigger, nested keys sit inside the objects that name
+# them, and a placeholder stands where a gate's own name would.
+_RS_BRIEF = (
+    "You execute exactly one task.\n"
+    "\n"
+    "Report back a structured outcome:\n"
+    "\n"
+    '{"gates": {"<gate>": "pass|fail|could-not-run", ...},\n'
+    ' "outcome": {"technical": "what was done", "descriptive": "one line"},\n'
+    ' "testsAdded": ["test name/id", ...]}\n'
+    "\n"
+    "Nothing after the block belongs to it.\n")
 
 
 # The two tools, named rather than spelled as paths, for the same reason every fixture
@@ -2513,6 +2528,91 @@ def _cases(check):
               _d2["checked"] == 2 and "agents/prose.md" in _d2["missing"])
     finally:
         shutil.rmtree(_tmp_rf, ignore_errors=True)
+
+    # --- (rs) P42: the return shape, and the path that stopped asking for it ----
+    # The executor's return is prose an agent writes: nothing parses it, nothing
+    # rejects it, and its only reader is the orchestrator - the one actor that
+    # could fill a missing field in without noticing. So the boundary cannot be
+    # validated and these cases do not pretend otherwise; what they hold is the
+    # pair of DOCUMENTS. The brief declares the shape; the reference tells an
+    # orchestrator what to ask for and carries the fallback path that restates the
+    # rules inline when the agent type is unavailable - and that path named no
+    # `testsAdded`, which is the field `task.verifiedBy` is filled from. Every rule
+    # beside it had been copied faithfully.
+    _rs = M.return_shape_drift()
+    check("rs1 every field of the executor's declared return is a field the "
+          "orchestrator reference ASKS FOR, in backticks. The word in a sentence "
+          "is a report about a run; the word in backticks is a key of the object a "
+          "subagent hands back, and only the second is something a prompt can ask "
+          "for: %r" % (_rs,),
+          _rs["missing"] == [] and "testsAdded" in _rs["keys"])
+    _rs_brief = _product_doc(M.RETURN_SHAPE_BRIEF)
+    check("rs2 ...and the field list is READ OFF the brief rather than kept here. "
+          "A second copy of the shape in this file would be the very drift the "
+          "check exists to refuse - it would keep passing on the day the brief "
+          "grew a field nobody else heard of: %r" % (_rs["keys"],),
+          bool(_rs["keys"])
+          and all(('"%s"' % (k,)) in _rs_brief for k in _rs["keys"]))
+    _rs_orch = _product_doc("reference/orchestrator.md")
+    check("rs3 the reference names what enforces the shape IN THE RULE'S OWN "
+          "SENTENCE, says in the same breath that the return itself is prose and "
+          "unparsed, sends the fallback path to PASTE the brief instead of "
+          "restating it, briefs a retry with what the last attempt proved, and "
+          "calls a return that disagrees with the recorded row a discrepancy "
+          "rather than a thing its own measurement quietly corrects",
+          "`return_shape_drift()` in" in _rs_orch
+          and "the return itself is prose, and nothing parses it" in _rs_orch
+          and "paste `agents/audit-executor.md` into" in _rs_orch
+          and "A retry is not a fresh start" in _rs_orch
+          and "the failing gate ENTRY, never the failing test" in _rs_orch
+          and "that is a DISCREPANCY and not a correction" in _rs_orch)
+
+    _tmp_rs = tempfile.mkdtemp(prefix="qg-rs-")
+    try:
+        _write(_tmp_rs, _FX_AGENTS + "audit-executor.md", _RS_BRIEF)
+        _d = M.return_shape_drift(_tmp_rs)
+        check("rs4 a reader that cannot be READ is a finding and not a skip. A "
+              "check that lost the document it grades would otherwise report a "
+              "clean sheet over the one thing it could no longer see: %r"
+              % (_d["missing"],),
+              _d["keys"] == ["gates", "outcome", "testsAdded"]
+              and len(_d["missing"]) == 1
+              and _d["missing"][0].startswith(M.RETURN_SHAPE_READER
+                                              + " <unreadable:"))
+        _write(_tmp_rs, _FX_REFERENCE + "orchestrator.md",
+               "The subagent returns `gates` and `outcome`.\n")
+        _d = M.return_shape_drift(_tmp_rs)
+        check("rs5 THE DENY CASE: a field the brief declares and the reference "
+              "never asks for is reported BY NAME - which is the live defect, with "
+              "the names changed: %r" % (_d["missing"],),
+              _d["missing"] == ["testsAdded: %s never asks for it"
+                                % (M.RETURN_SHAPE_READER,)])
+        _write(_tmp_rs, _FX_REFERENCE + "orchestrator.md",
+               "It returns `gates`, `outcome` and `testsAdded`, and the halves of\n"
+               "`outcome` are named by the object that holds them.\n")
+        _d = M.return_shape_drift(_tmp_rs)
+        # THE ALLOW CASE, and it is the one that decides whether this check
+        # survives contact with a real document. Drop the top-level restriction and
+        # every nested key is demanded as a standalone backticked word - a
+        # reference that writes `outcome` = `{ technical, descriptive }` is
+        # convicted for naming both halves in one breath, which is honest prose and
+        # how a check gets routed around inside a day.
+        check("rs6 THE ALLOW CASE: a reference that names every TOP-LEVEL field "
+              "owes nothing for the nested ones, which the object holding them "
+              "already names: %r" % (_d,),
+              _d["missing"] == [])
+        _write(_tmp_rs, _FX_AGENTS + "audit-executor.md",
+               "You execute one task. Report what happened when you are done.\n")
+        _d = M.return_shape_drift(_tmp_rs)
+        check("rs7 a brief that declares NO shape is a finding too, and for the "
+              "reason above: the silent reading of it is a reference that asks for "
+              "nothing being graded as a reference that asks for everything: %r"
+              % (_d["missing"],),
+              _d["keys"] == [] and len(_d["missing"]) == 1
+              and _d["missing"][0].startswith(M.RETURN_SHAPE_BRIEF
+                                              + ": no return shape"))
+    finally:
+        shutil.rmtree(_tmp_rs, ignore_errors=True)
 
     # --- the phase verbs: two spellings, one writer ----------------------------
     # WHY HERE. `tools/affected.py` routes an edit under `plugins/audit/commands/`

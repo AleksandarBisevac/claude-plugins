@@ -1005,6 +1005,147 @@ def red_first_drift(repo_root=None):
             "schema": _red_first_schema_gaps(root)}
 
 
+# --- the shape the executor hands back, and who has to keep asking for it -------
+# P42. THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
+# and the orchestrator -- the one actor that could quietly fill a gap in -- is also
+# its only reader. So the return itself cannot be validated at the boundary, and
+# saying that plainly is the point rather than an apology: what CAN be checked is
+# the pair of documents that describe it, and this is that check.
+#
+# THE DEFECT IT WAS WRITTEN FOR. `agents/audit-executor.md` declares the shape.
+# `reference/orchestrator.md` tells an orchestrator what to ask for, and carries a
+# FALLBACK path -- the agent type is unavailable, so the rules get restated inline
+# -- which named no `testsAdded` at all. That is the field `task.verifiedBy` is
+# filled from, so on that path the test names an executor reported were asked for
+# by nobody and recorded nowhere, and no gate could say so.
+#
+# WHY NOT THE OTHER TWO ROUTES, because both were available and neither reaches it.
+# A manifest vocabulary entry grades a value once it has been WRITTEN INTO the plan,
+# and a field nobody asked for never is -- the same blind spot the `redFirst` enum
+# one function up states about itself. A script the orchestrator runs on the
+# returned object would grade what the ORCHESTRATOR TYPED, which is a transcription
+# made by the actor whose omission is the bug.
+#
+# WHAT IT STILL CANNOT SEE, written here because a green run is evidence of nothing
+# wider: that the reader asks for a field in the right place, that it does anything
+# with the answer, or that an executor ever filled the field in. A document naming
+# every key in one dead sentence passes.
+RETURN_SHAPE_BRIEF = "agents/audit-executor.md"
+RETURN_SHAPE_READER = "reference/orchestrator.md"
+
+# The sentence the declared block follows. The brief keeps the shape in one place
+# and this reads it from there; a copy of the keys here would be the second
+# declaration this check exists to refuse.
+RETURN_SHAPE_TRIGGER = "Report back a structured outcome:"
+
+# ...and how the reader has to name a field: IN BACKTICKS, never as the English
+# word. `RED_FIRST_POINTER` makes this argument one function up -- `gates` in a
+# sentence is a report about a run, `gates` in backticks is a key of the object a
+# subagent hands back, and only the second is something a prompt can ask for.
+_RETURN_IDENT = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+
+
+def _plugin_doc(root, rel):
+    """(text, finding) for a document under the plugin, read whole.
+
+    An unreadable document comes back as a FINDING and never as empty text: a scan
+    that lost its own subject would otherwise report a clean sheet over the one
+    thing it could no longer see.
+    """
+    path = os.path.join(root, PLUGIN_REL, *rel.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read(), None
+    except OSError as exc:
+        return None, "%s <unreadable: %s>" % (rel, exc)
+
+
+def _return_block(text):
+    """The declared return object in the brief, or None when it declares none.
+
+    The paragraph after the trigger, read by position: the brief writes the shape as
+    one unbroken block, so blank-line to blank-line is the whole rule and no needle
+    per field has to be kept in step with it.
+    """
+    at = (text or "").find(RETURN_SHAPE_TRIGGER)
+    if at < 0:
+        return None
+    lines, started = [], False
+    for line in text[at + len(RETURN_SHAPE_TRIGGER):].splitlines():
+        if not line.strip():
+            if started:
+                break
+            continue
+        started = True
+        lines.append(line)
+    return "\n".join(lines) if started else None
+
+
+def _return_keys(block):
+    """The TOP-LEVEL field names of the declared block, in written order.
+
+    DEPTH-AWARE RATHER THAN A LINE REGEX, and the restriction is the rule rather
+    than an implementation detail. A nested key is named by the object that holds
+    it -- `outcome` = `{ technical, descriptive }` names both halves in one breath
+    -- so demanding each one again as a standalone backticked word would convict a
+    reader for prose it has no reason to carry, and a check that over-fires on
+    honest documents is one somebody routes around. A placeholder (`"<gate>"`) is
+    not an identifier and is not one of these.
+    """
+    keys, depth, i = [], 0, 0
+    while i < len(block):
+        ch = block[i]
+        if ch == '"':
+            end = block.find('"', i + 1)
+            if end < 0:
+                break
+            word = block[i + 1:end]
+            after = end + 1
+            while after < len(block) and block[after] in " \t\r\n":
+                after += 1
+            if (depth == 1
+                    and after < len(block) and block[after] == ":"
+                    and _RETURN_IDENT.match(word) and word not in keys):
+                keys.append(word)
+            i = end + 1
+            continue
+        if ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+        i += 1
+    return keys
+
+
+def return_shape_drift(repo_root=None):
+    """{"missing": [finding, ...], "keys": [field, ...]} -- fields of the executor's
+    declared return that the orchestrator reference never asks for.
+
+    Empty `missing` is the healthy answer. A brief that declares no shape, a block
+    with no field in it and a document that cannot be read are all findings rather
+    than skips, for the reason `_plugin_doc` gives.
+    """
+    root = repo_root or REPO_ROOT
+    brief, unreadable = _plugin_doc(root, RETURN_SHAPE_BRIEF)
+    if unreadable is not None:
+        return {"missing": [unreadable], "keys": []}
+    block = _return_block(brief)
+    if block is None:
+        return {"missing": ["%s: no return shape under %r"
+                            % (RETURN_SHAPE_BRIEF, RETURN_SHAPE_TRIGGER)],
+                "keys": []}
+    keys = _return_keys(block)
+    if not keys:
+        return {"missing": ["%s: a declared return shape with no field in it"
+                            % (RETURN_SHAPE_BRIEF,)], "keys": []}
+    reader, unreadable = _plugin_doc(root, RETURN_SHAPE_READER)
+    if unreadable is not None:
+        return {"missing": [unreadable], "keys": keys}
+    missing = ["%s: %s never asks for it" % (key, RETURN_SHAPE_READER)
+               for key in keys if ("`" + key + "`") not in reader]
+    return {"missing": missing, "keys": keys}
+
+
 def command_flag_drift(repo_root=None):
     """{"missing": [(command, flag), ...], "checked": n} -- flags the README omits.
 

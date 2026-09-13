@@ -332,8 +332,11 @@ report, because `git switch -c` is about to fail anyway.
    general-purpose fallback below, effort cannot be pinned and reverts to the session's — an
    accepted degradation.) Its tool list is pinned (no web tools, no nested agents) and its
    system prompt carries the invariants; if that agent type is unavailable (older Claude
-   Code), fall back to a general-purpose subagent and restate every rule below inline. In the
-   spawn prompt:
+   Code), fall back to a general-purpose subagent and **paste `agents/audit-executor.md` into
+   its prompt** rather than restating the rules below from memory. That file is the
+   declaration of both the rules and the return shape, and restating it is how this path came
+   to ask for no `testsAdded` — the field `task.verifiedBy` is filled from — while every rule
+   beside it was faithfully copied. In the spawn prompt:
    - Tell it to **first invoke each resolved skill** via the `Skill` tool (load conventions before coding).
      Resolve them as **each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped, area
      first** — house conventions before task specifics, because a subagent that reads the specifics
@@ -366,10 +369,14 @@ report, because `git switch -c` is about to fail anyway.
      nothing under `scripts/` reads this vocabulary. So asking for the block is yours, and
      one that did not come back is recorded as absent rather than filled in.
    - It must run `task.tests.gate` (through `run-test-gate.py`, which applies `meta.nodePreamble`
-     itself) and report pass/fail per
-     gate plus a structured **outcome** = `{ technical, descriptive }`. It must distinguish
-     **"gates ran and failed"** from **"gates could not run"** (command not found, runner crashed
-     before executing tests, zero tests collected where `tests.add` expects some).
+     itself) and return **the shape `agents/audit-executor.md` declares** — `gates` per gate
+     command, `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that become
+     `task.verifiedBy`) and `redFirst` (above). The brief holds the wording of each, including
+     the pass/fail/could-not-run distinction the arms in step 4 turn on;
+     `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list
+     falls behind the brief's, which is the only part of the return anything can check —
+     **the return itself is prose, and nothing parses it**, so a field that did not come back
+     is recorded as absent and never filled in.
    - **After the subagent returns, YOU run the task's gate through the script and record it:**
 
      ```
@@ -383,6 +390,21 @@ report, because `git switch -c` is about to fail anyway.
      the wrapper made. `--task` resolves that task's `tests.gate` when it declares one and falls
      back to the phase's otherwise, saying which — so a task with no gate of its own is never
      credited with having passed one.
+
+     **When the return and the row disagree, that is a DISCREPANCY and not a correction.**
+     A return calling every gate green, against a row whose `status` is anything but
+     `passed`, used to be settled by silently preferring this run: the plan came out right and
+     the disagreement was written down nowhere. Record both readings in
+     `task.outcome.technical` — what the return claimed, what the row answered, and its
+     `runId` — and take whichever arm the gates below ask for; the arm is unchanged, what
+     changes is that the record says the claim was wrong once, and the retry bullet below is
+     what carries that into the next attempt. **It is not a verdict on the executor**, and
+     reading it as one is the way to get it wrong: the tree is shared, so a sibling landing
+     between the two runs turns a green into a red honestly, and the row's
+     `attributionBasis` — plus `could-not-run`, which is what the gate answers when the red
+     is in files this task does not declare — is what separates that case from a false claim.
+     Nothing compares the two for you: the return is prose and no script reads it, so a
+     comparison you did not make reads afterwards exactly like one that agreed.
 
      **And the RECORD says which, not just the terminal (F312).** The row carries `gateSource`,
      `task` or `phase`, beside the `steps` that ran. Read that and never `scope`: `scope` is the
@@ -457,13 +479,36 @@ report, because `git switch -c` is about to fail anyway.
      re-spawn throws away everything it has read and re-reads it: measured on a live run, five
      refusals out of twelve tasks were resolved by re-spawning at 60–150k tokens each, about a
      third of that phase's whole cost. The gate was right every time; the re-spawn was the waste.
-   - **What an executor meeting a failure in a file it does not own is looking at.** Parallel
-     executors share one working tree and each runs the full gate, so a sibling mid-edit — or a
-     sibling doing red-first *correctly*, with its test written before its module — makes tsc, the
-     linter or the suite fail for reasons that are not this task's. Say so in the executor prompt.
-     Correctness is not at risk (you re-gate on a quiet tree in step 4); turns spent diagnosing a
-     neighbour's work in progress are the cost, and an executor that knows the shape stops paying
-     it. It must not "fix" a failure in a file outside its `files`.
+   - **A retry is not a fresh start: when `task.attempts > 1`, the prompt carries what the
+     last attempt already proved.** Nothing of one attempt reaches the next on its own, so an
+     executor re-runs the gate to rediscover a red you have already recorded and then walks
+     the same dead end. Read each of these back and put it in the prompt:
+     - `task.outcome.technical` — where you wrote what the last attempt did and why you
+       stopped it. It is the only place any of that is in prose.
+     - `task.testEvidence` — `runId`, `status`, `at`. That is the WHOLE of what the plan
+       caches (`_evidence_io.pointer_for`, deliberately nothing countable): it says a run
+       happened and what word it got, and nothing else.
+     - the gate's own output if this session printed it — `GATE RED: <entries>`, and the
+       per-step `exit` and check-count lines above the banner. On a resumed session that
+       output is gone, and the ledger row under `evidence.dir` keyed by that `runId` is
+       where it still is.
+     - `task.redFirst` when it is set, so a proof that could not be MADE is not walked into
+       the same refusal twice.
+
+     **What the gate records is the failing gate ENTRY, never the failing test.** `GATE RED`
+     names entries, the row's `failed` list is those same names, and `_evidence_io.row_for()`
+     assembles a row from named fields with no runner output crossing into it — so the test's
+     name is nowhere on the record. If the last attempt named it, it is in `outcome.technical`
+     and only there: quote it from there, and where it is not there say the record does not
+     carry it rather than sending the retry to re-derive a red you already have.
+
+     It does **not** carry the last attempt's diff. A red gate commits nothing and reverts
+     nothing, so those edits are in the working tree the retry inherits: the tree is the
+     attempt, and the brief is the record of what the attempt ANSWERED.
+
+     **Nothing checks that a re-spawn carried any of this** — `attempts` is incremented in
+     step 2 and no gate reads a prompt — so it is yours, and a retry briefed with nothing
+     looks afterwards exactly like one briefed well.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
      For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
