@@ -3879,6 +3879,8 @@ def _cases(check):
     #
     # So the cases skip, and say so. Weakening them into something that passes
     # on both would mean asserting a `cancelled` row nothing cancelled.
+    _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
+
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
     else:
@@ -3897,6 +3899,480 @@ def _cases(check):
                 "events, so there would be no interrupted run to look at"
                 % (_asserts,),
                 console_events() and signal.SIGINT not in console_events())
+
+
+def _reuse_cases(check):
+    """A verdict already measured on these bytes, and everything that must stop it.
+
+    THE CASES COME IN PAIRS ON PURPOSE. Every one that shows a repeat firing has
+    one beside it showing it refused, because a repeat is the one feature here
+    whose failure mode is SILENCE: a gate that quietly does not run looks exactly
+    like a gate that ran and passed, which is the fault this whole file exists
+    for wearing a new coat. So the over-fires - two trees that differ, two gates
+    that differ - are the cases that matter, and the allow cases are the ones a
+    guard tightened until it never fires would break.
+
+    A FUNCTION SO THE BLOCK CAN BE NAMED, for `_interrupt_cases`' reason: the
+    fixture is a real repository with a real manifest, and an escape while it is
+    being built has to arrive as one named failing case rather than as an escape
+    that ends the suite.
+    """
+    # --- an entry whose SUBJECT is a path the identity leaves out ---------------
+    # AHEAD OF THE FIXTURE ON PURPOSE. These three ask a pure function and need no
+    # repository, and the rest of this block does - so leaving them at the end put
+    # them behind a fixture that any widening of the rule breaks, and the allow
+    # case then never ran at all. A case that cannot be reached is not a case, and
+    # the whole point of this one is to go red when somebody widens the rule.
+    #
+    # The identity drops the paths this plugin writes itself, because a recorded
+    # run rewrites them and no later run could otherwise match. An entry that
+    # GRADES one of those files is what that reasoning does not cover, and it was
+    # driven before the rule existed: a gate whose one entry validated the plan
+    # reported green over a plan that no longer validated, and wrote `passed`
+    # into the phase.
+    left_out = ["audit-plan.json", "docs/audit/evidence", "docs/audit/journal"]
+    check("ru26 an entry whose command NAMES a path the identity leaves out is "
+          "reported, with the entry and the path, so a repeat cannot answer for "
+          "bytes the identity never read: %r"
+          % (M.grades_left_out([("validate", "python3 v.py audit-plan.json")],
+                               left_out),),
+          M.grades_left_out([("validate", "python3 v.py audit-plan.json")],
+                            left_out) == [("validate", "audit-plan.json")])
+
+    # THE ALLOW CASE, AND IT IS THE ONE THAT MATTERS. Every ordinary gate entry
+    # names none of these, so widening this rule to "any entry" would turn the
+    # repeat off everywhere - which is the cheap way to make the feature look
+    # safe while removing the whole of its value.
+    check("ru27 ...and an ordinary entry names none of them, so the repeat stays "
+          "available for the gates this feature exists for: %r"
+          % (M.grades_left_out([("unit", "pytest -q tests/"),
+                                ("lint", "ruff check src")], left_out),),
+          M.grades_left_out([("unit", "pytest -q tests/"),
+                             ("lint", "ruff check src")], left_out) == [])
+
+    check("ru28 the basename is matched too, because an entry names the plan the "
+          "way an operator types it and not the way the manifest resolves it",
+          M.grades_left_out([("v", "validate ./audit-plan.json")],
+                            ["docs/audit/audit-plan.json"])
+          == [("v", "docs/audit/audit-plan.json")])
+
+    root = _harness.fixture_root("run-test-gate-reuse-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    for name, body in (("a.py", "declared = 1\n"), ("b.py", "undeclared = 1\n")):
+        with open(os.path.join(root, "src", name), "w") as fh:
+            fh.write(body)
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+
+    def _plan(gate, build):
+        """Rewrite the index and the shard. The manifest is OUTSIDE the identity,
+        so a case changing the gate is changing exactly one thing."""
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 3, "buildCommands": build},
+                       "phases": [{"id": "P1", "title": "one",
+                                   "shard": "phases/P1.json"}]}, fh)
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                       "testGate": gate, "tasks": [
+                           {"id": "P1.1", "title": "t", "status": "in_progress",
+                            "files": ["src/a.py"]}]}, fh)
+
+    _plan(["ok"], {"ok": "true", "other": "true", "red": "false"})
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for arg in (["add", "--", "docs", ".claude", "src"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+
+    def _run(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record"]
+                      + list(extra), out=lines.append)
+        return code, "\n".join(lines)
+
+    # --- what the identity is made of, asked directly -----------------------
+    # `reuse_identity` reads `meta.buildCommands` out of whatever manifest it is
+    # handed and the ENTRY NAMES out of the commands, so these four cases change
+    # one thing each and watch the key. Built inline rather than through files:
+    # what is being separated is the declaration from the executed string, and a
+    # fixture would put a manifest read between the two.
+    declared = {"meta": {"buildCommands": {"ok": "true"}}}
+    prefixed = {"meta": {"buildCommands": {"ok": "true"},
+                         "nodePreamble": "source ~/.nvm/nvm.sh && nvm use"}}
+    plain_key = M.reuse_identity(root, mp, declared, [("ok", "true")],
+                                 ["src/a.py"])
+    pre_key = M.reuse_identity(
+        root, mp, prefixed,
+        [("ok", "source ~/.nvm/nvm.sh && nvm use && true")], ["src/a.py"])
+    check("ru1 THE COMPARISON IS OVER THE GATE THE MANIFEST DECLARES, NOT OVER "
+          "THE EXECUTED STRING. These two runs execute different strings - one "
+          "carries `meta.nodePreamble` in front - and they are the same gate, so "
+          "they share an identity. Comparing what was executed would make two "
+          "operators whose shell preludes differ unable to ever agree: %r"
+          % (plain_key["key"] == pre_key["key"],),
+          plain_key["key"] is not None
+          and plain_key["key"] == pre_key["key"])
+
+    remapped = M.reuse_identity(root, mp, {"meta": {"buildCommands":
+                                                    {"ok": "pytest -q"}}},
+                                [("ok", "pytest -q")], ["src/a.py"])
+    check("ru2 OVER-FIRE, AND IT IS THE ONE COMPARING ENTRY NAMES ALONE FAILS: "
+          "the same entry `ok` remapped to a different command is a DIFFERENT "
+          "gate. An entry is a label, and a key made of labels would repeat a "
+          "verdict measured by a command nobody runs any more: %r"
+          % (remapped["key"] != plain_key["key"],),
+          remapped["key"] is not None
+          and remapped["key"] != plain_key["key"])
+
+    two_entries = M.reuse_identity(
+        root, mp, {"meta": {"buildCommands": {"ok": "true", "other": "true"}}},
+        [("ok", "true"), ("other", "true")], ["src/a.py"])
+    check("ru3 OVER-FIRE: a gate with a SECOND entry in it is not the gate with "
+          "one, even where both entries resolve to the same command. Two "
+          "commands can fail independently and a verdict over one of them says "
+          "nothing about the other: %r"
+          % (two_entries["key"] != plain_key["key"],),
+          two_entries["key"] != plain_key["key"])
+
+    other_scope = M.reuse_identity(root, mp, declared, [("ok", "true")],
+                                   ["src/a.py", "src/b.py"])
+    check("ru4 OVER-FIRE: the FILES the work declares are in the identity too. "
+          "The ownership split, the coverage answer and the excused red are all "
+          "read against that list, so one tree and one gate with two different "
+          "declarations reach two different verdicts: %r"
+          % (other_scope["key"] != plain_key["key"],),
+          other_scope["key"] != plain_key["key"])
+
+    excluded = _ev_io.recorded_paths(root, mp)
+    check("ru5 the paths this recorder writes are DERIVED and include the "
+          "SHARD, which is the one the assembled manifest cannot name: assembly "
+          "replaces every `shard` stub with the phase it points at, so a reader "
+          "of the assembled dict leaves the shard inside the identity and no "
+          "second run ever matches: %r" % (excluded,),
+          "docs/audit/evidence" in excluded
+          and "docs/audit/journal" in excluded
+          and "docs/audit/audit-plan.json" in excluded
+          and "docs/audit/phases/P1.json" in excluded)
+
+    # --- through `main`, which is where the wiring lives --------------------
+    code_one, text_one = _run()
+    code_two, text_two = _run()
+    rows = _recorded_rows(evdir)
+    first, second = rows[0], rows[1]
+    check("ru6 THE REQUIREMENT: a second run over an unchanged tree REPEATS the "
+          "first run's verdict instead of taking it again, and the summary says "
+          "so before it says anything else. The first run measured; this one did "
+          "not: exit=%r %r"
+          % (code_two, text_two.splitlines()[1:2]),
+          code_one == M.E_OK and code_two == M.E_OK
+          and "GATE VERDICT REUSED" not in text_one
+          and "GATE VERDICT REUSED" in text_two
+          # The step table is the discriminator a banner cannot fake: it is
+          # printed per command that ran, so a repeat has none of it.
+          and "exit 0" in text_one and "exit " not in text_two)
+
+    check("ru7 ...and it NAMES THE RUN IT CAME FROM and the IDENTITY that "
+          "matched, both of them, because a repeated verdict with neither is a "
+          "claim with no basis - and the way back to a measurement is printed "
+          "beside it: %r" % (text_two.splitlines()[2:3],),
+          first["runId"] in text_two
+          and second[_ev_io.REUSE_KEY] in text_two
+          and "--no-reuse" in text_two
+          and M.REUSE_LIMIT in text_two)
+
+    check("ru8 ...and the ROW says it too, naming the same run. A summary a "
+          "terminal scrolls away is not a record: the ledger is what a later "
+          "reader opens, and a repeated verdict that reached it looking like a "
+          "measurement is a run this plugin never made: %r"
+          % ({"verdictSource": second.get("verdictSource"),
+              "reusedFrom": second.get("reusedFrom")},),
+          second.get(_ev_io.VERDICT_SOURCE) == _ev_io.REUSED
+          and (second.get("reusedFrom") or {}).get("runId") == first["runId"]
+          and first.get(_ev_io.VERDICT_SOURCE) is None
+          and second.get("status") == first.get("status"))
+
+    check("ru9 ...and it carries NO observation it did not make. Nothing ran, so "
+          "there are no steps, no tree comparison and no check count - and each "
+          "of those is null with the sentence that says why rather than the "
+          "empty list that would mean KNOWN CLEAN: %r"
+          % ({"steps": second.get("steps"),
+              "treeMutated": second.get("treeMutated")},),
+          second.get("steps") == []
+          and second.get("treeMutated") is None
+          and second["observations"]["ranTotal"] is None
+          and "no command ran" in (second["observations"]["treeBasis"] or ""))
+
+    json_lines = []
+    code_json = M.main([mp, "P1", "--project-dir", root, "--json"],
+                       out=json_lines.append)
+    payload = json.loads("\n".join(json_lines))
+    check("ru10 ...and the MACHINE half says it as well, which is the third "
+          "surface and the one a CI job reads. A consumer switching on `status` "
+          "alone would sign this off as a measurement: exit=%r %r"
+          % (code_json, payload.get("verdictSource")),
+          code_json == M.E_OK and payload.get("status") == "passed"
+          and payload.get(_ev_io.VERDICT_SOURCE) == _ev_io.REUSED
+          and (payload.get("reusedFrom") or {}).get("runId") == first["runId"]
+          and payload.get("steps") == [])
+
+    forced_code, forced_text = _run("--no-reuse")
+    forced = _recorded_rows(evdir)[-1]
+    check("ru11 THE OPERATOR'S WAY BACK, and it is why a repeat may be the "
+          "default at all: `--no-reuse` measures. A cache with no override is a "
+          "cache somebody deletes by hand: exit=%r %r"
+          % (forced_code, "GATE GREEN" in forced_text),
+          forced_code == M.E_OK
+          and "GATE VERDICT REUSED" not in forced_text
+          and "exit 0" in forced_text
+          and forced.get(_ev_io.VERDICT_SOURCE) is None)
+
+    check("ru12 ...and the forced run still RECORDS an identity, which is the "
+          "half an override is free to lose: a measurement that recorded none "
+          "would leave the next run nothing to match, and one operator's "
+          "override would become everybody's: %r"
+          % (forced.get(_ev_io.REUSE_KEY) == first.get(_ev_io.REUSE_KEY),),
+          forced.get(_ev_io.REUSE_KEY) is not None
+          and forced.get(_ev_io.REUSE_KEY) == first.get(_ev_io.REUSE_KEY))
+
+    # THE NEWEST ROW ON THIS IDENTITY HAS TO BE A REPEAT for the next case to be
+    # a measurement: with a MEASURED row newest, a version that skipped nothing
+    # would land on the right run by accident and the case would assert nothing.
+    _run()
+    chained = _recorded_rows(evdir)[-1]
+    again_code, _again_text = _run()
+    again = _recorded_rows(evdir)[-1]
+    check("ru13 A REPEAT IS NEVER REPEATED FROM. The newest row carrying this "
+          "identity is itself a repeat, and this run reaches PAST it to the run "
+          "that MEASURED - a chain of copies would make a reader walk it to find "
+          "out whether anything was ever measured at all: newest repeat=%r "
+          "named=%r"
+          % (chained.get("runId"),
+             (again.get("reusedFrom") or {}).get("runId")),
+          again_code == M.E_OK
+          and chained.get(_ev_io.VERDICT_SOURCE) == _ev_io.REUSED
+          and chained.get("runId") != forced["runId"]
+          and (again.get("reusedFrom") or {}).get("runId") == forced["runId"])
+
+    # --- OVER-FIRE ONE: two trees that are not the same tree ----------------
+    # THE FILE IS UNDECLARED AND ALREADY DIRTY, which is the exact configuration
+    # the recorded `testedState` cannot tell apart: its dirty digest records
+    # WHICH paths were dirty and never their contents, and `src/b.py` is dirty on
+    # both sides. A repeat keyed on that block would skip this run.
+    with open(os.path.join(root, "src", "b.py"), "w") as fh:
+        fh.write("undeclared = 2\n")
+    _run()
+    dirty_once = _recorded_rows(evdir)[-1]
+    with open(os.path.join(root, "src", "b.py"), "w") as fh:
+        fh.write("undeclared = 3\n")
+    edited_code, edited_text = _run()
+    dirty_twice = _recorded_rows(evdir)[-1]
+    check("ru14 OVER-FIRE, AND IT IS THE ONE THE OBVIOUS IDENTITY FAILS: "
+          "rewriting an ALREADY-DIRTY file the work does not declare MEASURES "
+          "again. Asserted as a pair - the two runs' `testedState` agrees, so "
+          "the block a reader would reach for first says these are one run, and "
+          "the content identity says they are two: testedState same=%r key "
+          "differs=%r"
+          % (dirty_once["testedState"] == dirty_twice["testedState"],
+             dirty_once.get(_ev_io.REUSE_KEY)
+             != dirty_twice.get(_ev_io.REUSE_KEY)),
+          edited_code == M.E_OK
+          and "GATE VERDICT REUSED" not in edited_text
+          and dirty_once["testedState"] == dirty_twice["testedState"]
+          and dirty_once.get(_ev_io.REUSE_KEY) is not None
+          and dirty_once.get(_ev_io.REUSE_KEY)
+          != dirty_twice.get(_ev_io.REUSE_KEY))
+
+    # --- OVER-FIRE TWO: two gates that are not the same gate ----------------
+    _plan(["other"], {"ok": "true", "other": "true", "red": "false"})
+    gate_code, gate_text = _run()
+    check("ru15 OVER-FIRE: the SAME tree with a DIFFERENT gate entry measures. "
+          "The manifest is outside the identity's tree half on purpose - this "
+          "recorder rewrites it on every run - so the gate half is the only "
+          "thing that can catch an edit to it, and a key without it would repeat "
+          "a verdict for a gate nobody has run: exit=%r %r"
+          % (gate_code, "GATE VERDICT REUSED" in gate_text),
+          gate_code == M.E_OK and "GATE VERDICT REUSED" not in gate_text)
+
+    repeat_code, repeat_text = _run()
+    check("ru16 ...and the ALLOW case one line later: the new gate's SECOND run "
+          "does repeat. A guard tightened until it never fires passes every "
+          "case above this one: exit=%r %r"
+          % (repeat_code, "GATE VERDICT REUSED" in repeat_text),
+          repeat_code == M.E_OK and "GATE VERDICT REUSED" in repeat_text)
+
+    # --- a red verdict is repeated as a red one -----------------------------
+    _plan(["red"], {"ok": "true", "other": "true", "red": "false"})
+    red_one_code, _red_one = _run()
+    red_two_code, red_two_text = _run()
+    red_row = _recorded_rows(evdir)[-1]
+    check("ru17 A FAILING VERDICT IS REPEATED AS ONE, banner and exit code both. "
+          "`reference/orchestrator.md` keys its arms on those literals, so a "
+          "repeat printed under a banner of its own would be a line that "
+          "document has never heard of - the reader meets `REUSED` first and the "
+          "machine still meets the word it switches on: exit=%r/%r %r"
+          % (red_one_code, red_two_code, "GATE RED" in red_two_text),
+          red_one_code == M.E_FAIL and red_two_code == M.E_FAIL
+          and "GATE VERDICT REUSED" in red_two_text
+          and "GATE RED: red" in red_two_text
+          and red_row.get("status") == "failed"
+          and red_row.get("failed") == ["red"])
+
+    # --- which verdicts may be repeated at all ------------------------------
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), encoding="utf-8") as fh:
+        published = set(((((json.load(fh).get("$defs") or {})
+                           .get("testEvidence") or {}).get("properties") or {})
+                         .get("status") or {}).get("enum") or [])
+    sorted_out = M.REUSABLE_STATUS | M.NOT_REUSABLE_STATUS
+    check("ru18 EVERY VERDICT THE RUNNER CAN PRODUCE IS SORTED INTO ONE OF THE "
+          "TWO SETS, asked of the PUBLISHED enum rather than of a list retyped "
+          "here. `empty-gate` is the one word outside it because `main` returns "
+          "before a gate runs at all; a word added to the runner and to neither "
+          "set lands here rather than in whichever half an arithmetic default "
+          "would have handed it: %r"
+          % (sorted(published - sorted_out),),
+          published - sorted_out == set(("empty-gate",))
+          and not (M.REUSABLE_STATUS & M.NOT_REUSABLE_STATUS)
+          and M.REUSABLE_STATUS == frozenset(("passed", "failed")))
+
+    identity = M.reuse_identity(root, mp, declared, [("ok", "true")],
+                                ["src/a.py"])
+    ids = M.subject_ids("P1", None, "phase")
+
+    def _row(status, extra=None):
+        row = {"runId": "R-%s" % (status,), "ts": "2026-01-01T00:00:00Z",
+               "scope": "phase", "phaseId": "P1", "status": status,
+               _ev_io.REUSE_KEY: identity["key"]}
+        row.update(extra or {})
+        return row
+
+    refused = [w for w in sorted(M.NOT_REUSABLE_STATUS)
+               if _ev_io.reusable_run([_row(w)], "phase", ids, identity["key"],
+                                      M.REUSABLE_STATUS) is not None]
+    check("ru19 ...and not one of the refused words is repeated, each asserted "
+          "on its own row. Three of them are facts about the MACHINE or the "
+          "operator, which the tree does not hold and a repeat would cache; the "
+          "other two are true of the tree and would still be false of THIS run, "
+          "which rewrote nothing and counted nothing: %r" % (refused,),
+          refused == [])
+
+    check("ru20 THE PAIRED POSITIVE, and it is the one that makes the case above "
+          "a measurement rather than a function that always answers None: the "
+          "same row with a repeatable word IS found",
+          _ev_io.reusable_run([_row("passed")], "phase", ids, identity["key"],
+                              M.REUSABLE_STATUS) is not None,
+          repr(identity["key"]))
+
+    # THREE ROWS, ONE DIFFERENCE EACH, so the two narrowings are separable: a
+    # row that differs in BOTH would be refused by either one on its own and the
+    # case would pass with one of them gone.
+    other_phase = _row("passed", {"phaseId": "P9"})
+    other_scope = _row("passed", {"scope": "task"})
+    task_row = _row("passed", {"scope": "task", "taskId": "P1.1"})
+    check("ru21 AN IDENTITY IS NOT A SUBJECT. Two tasks can declare the same "
+          "files and the same gate, so their runs share a key - and a repeat "
+          "has to NAME the run it came from, which makes somebody else's phase, "
+          "and the same ids under a different pointer scope, two wrong runs to "
+          "name: %r"
+          % ([_ev_io.reusable_run([r], "phase", ids, identity["key"],
+                                  M.REUSABLE_STATUS)
+              for r in (other_phase, other_scope)],),
+          _ev_io.reusable_run([other_phase], "phase", ids, identity["key"],
+                              M.REUSABLE_STATUS) is None
+          and _ev_io.reusable_run([other_scope], "phase", ids, identity["key"],
+                                  M.REUSABLE_STATUS) is None
+          and _ev_io.reusable_run([task_row], "task",
+                                  M.subject_ids("P1", "P1.1", "task"),
+                                  identity["key"], M.REUSABLE_STATUS)
+          is not None)
+
+    check("ru22 a key that could not be established matches NOTHING, and that is "
+          "the same refusal `field_state` makes one module over: `None == None` "
+          "is True in Python and false in English, and a tree git would not "
+          "describe must never repeat a verdict taken on a tree it could",
+          _ev_io.reusable_run([_row("passed", {_ev_io.REUSE_KEY: None})],
+                              "phase", ids, None, M.REUSABLE_STATUS) is None)
+
+    # A TREE GIT WILL NOT LIST, DRIVEN THROUGH `main`. A fresh directory with no
+    # repository in it: the gate still runs, the verdict is still real, and the
+    # one thing that cannot happen is a repeat - in either direction.
+    nogit = _harness.fixture_root("run-test-gate-reuse-nogit-")
+    os.makedirs(os.path.join(nogit, "docs", "audit"))
+    nomp = os.path.join(nogit, "docs", "audit", "audit-plan.json")
+    with open(nomp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {"ok": "true"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "status": "in_progress", "testGate": ["ok"],
+                               "tasks": []}]}, fh)
+    nogit_lines = []
+    nogit_code = M.main([nomp, "P1", "--project-dir", nogit],
+                        out=nogit_lines.append)
+    nogit_text = "\n".join(nogit_lines)
+    check("ru25 WHERE THE IDENTITY CANNOT BE ESTABLISHED, THAT IS WHAT IS SAID. "
+          "A missing basis is the thing to report, not a silence a reader has to "
+          "diagnose: the gate still ran and still answered, and the one fact "
+          "added is that no verdict here can be repeated in either direction: "
+          "exit=%r %r" % (nogit_code, nogit_text.splitlines()[1:2]),
+          nogit_code == M.E_OK
+          and "identity: NOT established" in nogit_text
+          and "git would not list this tree" in nogit_text
+          and "GATE GREEN" in nogit_text
+          and "GATE VERDICT REUSED" not in nogit_text)
+
+    unrenderable = []
+    unrenderable_code = M.render_reuse(
+        {"status": "no-checks", "failed": [], "reusedFrom": {"runId": "R9"},
+         _ev_io.REUSE_KEY: "1:sha256:aa", "reuseBasis": "b"},
+        out=unrenderable.append)
+    check("ru23 ...and `render_reuse` REFUSES a word it cannot state rather than "
+          "falling through to the green line. `main` never hands it one, which "
+          "is exactly why this arm has to exist: a word added to one of the two "
+          "sets and forgotten here would otherwise print as a pass: exit=%r %r"
+          % (unrenderable_code, "\n".join(unrenderable).splitlines()[-1:],),
+          unrenderable_code == M.E_FAIL
+          and "GATE COULD NOT RUN" in "\n".join(unrenderable)
+          and "GATE GREEN" not in "\n".join(unrenderable))
+
+    # THE REFUSAL, END TO END. The pure cases above prove `reusable_run` sorts
+    # the words; this proves `main` hands it the set at all. The row is planted
+    # rather than produced, because manufacturing a real infrastructure failure
+    # would test the OS rather than this decision - and a planted row is exactly
+    # what a machine that failed yesterday leaves behind.
+    _plan(["ok"], {"ok": "true", "other": "true", "red": "false"})
+    seed_code, _seed_text = _run("--no-reuse")
+    seeded = _recorded_rows(evdir)[-1]
+    # NEWEST BY `ts`, which is what makes this a measurement: an older planted
+    # row would be passed over by the newest-wins rule whether the status filter
+    # existed or not. A session id is handed in so the writer takes the session
+    # path and mints no token file - a write into the tree here would move the
+    # very identity the run below has to match.
+    _ev_io.append_row(root, {
+        "v": _ev_io.ROW_VERSION, "runId": "planted-could-not-run",
+        "ts": "2099-01-01T00:00:00Z", "scope": "phase", "phaseId": "P1",
+        "status": M.CANNOT_RUN, "failed": [], "steps": [],
+        _ev_io.REUSE_KEY: seeded.get(_ev_io.REUSE_KEY)},
+        session_id="planted-row")
+    after_code, after_text = _run()
+    landed = [r for r in _recorded_rows(evdir)
+              if r.get("runId") != "planted-could-not-run"][-1]
+    check("ru24 AN INFRASTRUCTURE FAILURE IS NEVER REPEATED, through `main` and "
+          "not only through the helper. The newest row on this identity says "
+          "`could-not-run`, and the repair for that word is to fix the runner "
+          "and re-run - a repeat would cache the broken machine and hand it back "
+          "to the operator who has just fixed it: exit=%r/%r %r"
+          % (seed_code, after_code, "GATE VERDICT REUSED" in after_text),
+          seed_code == M.E_OK and after_code == M.E_OK
+          and "GATE VERDICT REUSED" in after_text
+          and (landed.get("reusedFrom") or {}).get("runId")
+          == seeded.get("runId"))
 
 
 def _interrupt_cases(check):

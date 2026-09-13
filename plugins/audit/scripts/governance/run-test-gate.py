@@ -74,6 +74,17 @@ at all the answer is "not knowable from this output" and never "no overlap" --
 the same rule the check count follows, for the same reason. What this guarantees
 is that no outcome is silent.
 
+AND THE CHEAPEST GATE IS THE ONE THAT DOES NOT RUN TWICE. A phase signed off more
+than once runs its gate again over bytes nothing has touched, and the ledger
+beside it already holds what that gate answered - so a run whose tree content and
+whose declared gate match a recorded one REPEATS that verdict instead of taking
+it again. The identity is a content digest and never `testedState`, whose dirty
+half records which paths were dirty and not what is in them; `REUSE_LIMIT` states
+what a match does and does not establish, `--no-reuse` is the way back to a
+measurement, and every surface that shows the verdict says it was repeated and
+names the run it came from. A repeat is not a run, and nothing here lets a reader
+read it as one.
+
 Exit codes:
   0  every command passed, the tree is unchanged, and at least one check ran
   1  a command failed, or the gate mutated the tree, or nothing ran, or the OS
@@ -1690,6 +1701,20 @@ def attempt_of(manifest, task_id):
     return _mio.recorded_attempt(_mio.tasks_by_id(manifest).get(task_id))
 
 
+def declared_gate(entries, build):
+    """`[(name, command)]` - what the MANIFEST says this gate is, and nothing else.
+
+    THE DECLARATION, SEPARATED FROM THE EXECUTION. `_resolved` puts the
+    operator's preamble in front of each of these before a shell sees it, and the
+    two are different things to compare: the preamble is a property of the
+    machine the gate is being run on, and two machines running the same declared
+    gate must not read as two different gates. Spelled once and called twice so
+    the pair cannot come apart.
+    """
+    return [(e, build.get(e, e)) for e in entries
+            if isinstance(e, str) and e.strip()]
+
+
 def _resolved(entries, build, preamble=None):
     """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
@@ -1715,9 +1740,8 @@ def _resolved(entries, build, preamble=None):
     door along.
     """
     lead = (preamble or "").strip() if isinstance(preamble, str) else ""
-    return [(e, ("%s && %s" % (lead, build.get(e, e))) if lead
-             else build.get(e, e))
-            for e in entries if isinstance(e, str) and e.strip()]
+    return [(e, ("%s && %s" % (lead, command)) if lead else command)
+            for e, command in declared_gate(entries, build)]
 
 
 def gate_of(manifest, phase_id, task_id=None):
@@ -1759,6 +1783,215 @@ def gate_of(manifest, phase_id, task_id=None):
             return resolved, "task", None
     return (_resolved(phases[0].get("testGate") or [], build, preamble),
             "phase", None)
+
+
+# --- a verdict already measured on these bytes --------------------------------
+# WHAT MAKES TWO GATE RUNS THE SAME RUN. Three things, and the identity is the
+# digest of all three together:
+#
+#   * THE TREE'S CONTENT, through `_tree_stamp.content_digest`. Not
+#     `testedState`: that block's dirty digest records WHICH paths were dirty and
+#     never their contents, so keying on it would repeat a verdict across a real
+#     edit to any file the work does not declare - a stale answer standing in for
+#     a real one, which is the failure this runner has already been repaired for
+#     from the other end.
+#   * THE GATE THE MANIFEST DECLARES - `declared_gate`, the entries and what each
+#     one names. NOT the executed string, which is what the row stores verbatim:
+#     that string carries `meta.nodePreamble` in front of it, which is the shell
+#     prelude the machine needs, and two operators whose preludes differ would
+#     never match though they declared one gate between them. What an entry
+#     RESOLVES to is in the comparison because an entry alone is a label: remap
+#     `lint` and the label holds still while the gate becomes a different one.
+#   * THE FILES THE WORK DECLARES, because they are not a label either. The
+#     ownership split, the coverage answer and the excused red are all read
+#     against that list, so two runs over one tree with different declared files
+#     reach different verdicts and are not one run.
+#
+# WHAT THE IDENTITY DOES NOT ESTABLISH IS PRINTED BESIDE IT, in `REUSE_LIMIT`.
+REUSE_LIMIT = ("the tree's content and the gate the manifest declares - not that "
+               "the machine is the one that measured. A file git ignores, an "
+               "installed package, an environment variable, the clock, the "
+               "network and a check that answers differently twice are all "
+               "outside it, and so are this plugin's own records: the manifest, "
+               "its shards, the ledger and the trail are left out because a "
+               "recorded run rewrites them")
+
+# WHICH VERDICTS SURVIVE BEING REPEATED, and it is a short list on purpose.
+# `passed` and `failed` are statements about the work under test that the same
+# bytes through the same commands have to reproduce. The other four are not:
+#
+#   * `could-not-run`, `timed-out` and `cancelled` are facts about the machine or
+#     the operator - a missing interpreter, a load spike, a Ctrl-C. Repeating one
+#     would cache an infrastructure failure the operator has probably just fixed,
+#     and the fix is not in the tree.
+#   * `gate-mutated` and `no-checks` are true of the tree, and repeating them
+#     would still be a lie about THIS run: the first says the gate rewrote files
+#     it was grading and nothing was rewritten here, the second says every step
+#     reported zero checks and no step reported anything here.
+#
+# SPELLED AS TWO SETS RATHER THAN ONE AND A SUBTRACTION, so a word added to the
+# runner's vocabulary lands in neither and is caught by the case that asks for
+# the union, instead of falling into whichever half the arithmetic hands it.
+REUSABLE_STATUS = frozenset(("passed", "failed"))
+NOT_REUSABLE_STATUS = frozenset((GATE_MUTATED, "no-checks", TIMED_OUT,
+                                 CANNOT_RUN, CANCELLED))
+
+
+def subject_ids(phase_id, task_id, source):
+    """The identity keys a run is filed under, spelled once.
+
+    The lookup and the write have to agree about what "the same work" is: an
+    answer computed twice is two answers, and the failure would be a verdict
+    repeated from a run about somebody else's task.
+    """
+    ids = {"phaseId": phase_id}
+    if source == "task" or task_id:
+        ids["taskId"] = task_id
+    return ids
+
+
+def grades_left_out(gate, excluded):
+    """The gate entries whose command NAMES a path this identity leaves out.
+
+    WHY AN ENTRY CAN BE ITS OWN COUNTER-EXAMPLE. The content identity drops the
+    paths this plugin writes itself - the manifest, its shards, the ledger, the
+    trail - because a recorded run rewrites all four and no later run could
+    otherwise ever match. That reasoning is about the RECORDER. It says nothing
+    about an entry whose subject happens to be one of those files, and for such
+    an entry the exclusion removes exactly the bytes it is grading: driven, a
+    gate whose one entry validates the plan reported green over a plan that no
+    longer validated, and wrote `passed` into the phase.
+
+    WHAT IS ESTABLISHED HERE IS THAT THE COMMAND NAMES THE PATH, and not that it
+    reads it - nothing short of running it could establish that, and running it
+    is the cost this whole feature exists to avoid. So the conclusion is the
+    conservative one and the sentence says which it is: a named path means the
+    verdict is MEASURED rather than repeated. Wrong in this direction costs a run;
+    wrong in the other direction is a stale pass, which is the failure the rest of
+    this module is written against.
+
+    The basename is matched as well as the path, because a gate entry commonly
+    names the plan the way the operator types it rather than the way the manifest
+    resolves it.
+    """
+    named = []
+    for name, command in gate or []:
+        text = command if isinstance(command, str) else ""
+        for path in excluded or []:
+            if not (isinstance(path, str) and path.strip()):
+                continue
+            if path in text or os.path.basename(path) in text:
+                named.append((name, path))
+                break
+    return named
+
+
+def reuse_identity(project, manifest_path, manifest, commands, owns):
+    """`{key, basis, limit, grading}` - what this run would have to match to be a
+    repeat, and the entries that stop it being one.
+
+    `key` is None when the tree's content could not be established; the basis
+    then says why, and a None never matches a None - `reusable_run` refuses an
+    empty key outright, for `field_state`'s reason one module over.
+
+    `grading` is non-empty when an entry names a path the identity leaves out.
+    The key is still computed and still recorded in that case, because the row
+    has to carry what this run was taken on whether or not a repeat was allowed -
+    a run that recorded no identity leaves the next one nothing to match.
+    """
+    excluded = _ev.recorded_paths(project, manifest_path)
+    content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
+    build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    if not isinstance(build, dict):
+        build = {}
+    gate = [[name, command] for name, command
+            in declared_gate([n for n, _c in (commands or [])], build)]
+    scope = _tree_stamp.declared_scope(owns)
+    grading = grades_left_out(gate, excluded)
+    if content is None:
+        return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
+                "grading": grading}
+    return {"key": _tree_stamp.identity_of([content, gate, scope]),
+            "basis": "%s; over that, the %d gate command(s) this manifest "
+                     "declares and the %d file(s) the work under test declares"
+                     % (cbasis, len(gate), len(scope)),
+            "limit": REUSE_LIMIT,
+            "grading": grading}
+
+
+def reused_result(identity, row, elapsed_ms):
+    """`run_gate`'s shape for a verdict that was NOT taken here.
+
+    THE SHAPE IS KEPT AND THE CLAIMS ARE NOT. Every observation a run makes is
+    None on this dict with the sentence that says why, because nothing was
+    observed: no command ran, so no tree bracket was taken, no runner named a
+    path and no check was counted. An empty list in any of those places would be
+    a measurement, and this run made none.
+
+    `status` AND `failed` ARE COPIED, which is the one claim that crosses. They
+    are the verdict being repeated - that is the whole point - and `reusedFrom`
+    names the row they came from on the same dict, so a reader who doubts the
+    copy has the original.
+    """
+    return {
+        _ev.VERDICT_SOURCE: _ev.REUSED,
+        "status": row.get("status"),
+        "failed": list(row.get("failed") or []),
+        "steps": [],
+        "reusedFrom": {"runId": row.get("runId"), "ts": row.get("ts"),
+                       "status": row.get("status")},
+        _ev.REUSE_KEY: identity.get("key"),
+        "reuseBasis": identity.get("basis"),
+        "durationMs": elapsed_ms,
+        "treeMutated": None,
+        "treeBasis": "no command ran, so the tree was not bracketed",
+        "treeMutatedOwned": None, "treeMutatedForeign": None,
+        "ranTotal": None,
+        "countsBasis": "no command ran, so nothing here counted a check",
+        "sharedCounts": [],
+        "notAttributable": None, "attributionBasis": None,
+        "cancelledBy": None,
+        "overlap": None,
+        "coverageBasis": ("no command ran, so no runner named a path here; the "
+                          "run named above is where that question was asked"),
+    }
+
+
+def render_reuse(res, out=print):
+    """Print a verdict nothing here measured, and return the code it earns.
+
+    THE BLOCK COMES FIRST AND THE BANNER STILL COMES. `reference/orchestrator.md`
+    keys its arms on the banner literals, so a repeat printed under a banner of
+    its own would be a line that document has never heard of and an orchestrator
+    reading it would fall through - the same consequence chain a killed step's
+    member was given its existing banner to avoid. So the reader meets "nothing
+    ran" before they meet the verdict, and the machine still meets the word it
+    switches on.
+    """
+    prior = res.get("reusedFrom") or {}
+    out("GATE VERDICT REUSED: nothing ran here. This verdict was MEASURED by run "
+        "%s at %s, on a tree with the identity below, and is being repeated "
+        "rather than re-taken." % (prior.get("runId"), prior.get("ts")))
+    out("  identity: %s" % (res.get(_ev.REUSE_KEY),))
+    out("  basis:    %s" % (res.get("reuseBasis"),))
+    out("  says:     %s" % (REUSE_LIMIT,))
+    out("  measure:  re-run with --no-reuse to take this gate again on this tree.")
+    if res["status"] == "failed":
+        out("GATE RED: %s" % ", ".join(res.get("failed") or []))
+        return E_FAIL
+    if res["status"] != "passed":
+        # REACHABLE THROUGH THIS FUNCTION AND NOT THROUGH `main`, which only ever
+        # repeats a `REUSABLE_STATUS` word. Refusing loudly rather than falling
+        # through to the green line is what stops a word added to one of those
+        # sets and forgotten here from being printed as a pass.
+        out("GATE COULD NOT RUN: the recorded verdict is %r, which is not a word "
+            "this repeat knows how to state. Nothing was measured here and "
+            "nothing may be read from it - re-run with --no-reuse."
+            % (res["status"],))
+        return E_FAIL
+    out("GATE GREEN: verdict reused from run %s; no check ran here."
+        % (prior.get("runId"),))
+    return E_OK
 
 
 def _spawn_kwargs():
@@ -2606,9 +2839,7 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
     and only when absent, and both of its sources are independent -- so a refused
     stamp leaves the ledger dating the boundary exactly as it did a moment before.
     """
-    ids = {"phaseId": args.phase}
-    if source == "task" or args.task:
-        ids["taskId"] = args.task
+    ids = subject_ids(args.phase, args.task, source)
     # ABSENT IS AN ANSWER HERE, and `row_for` is what keeps it one: it drops an
     # identity key whose value is None, so a task whose plan records no attempts
     # leaves the field OFF the row instead of defaulting it to a number nobody
@@ -2678,6 +2909,12 @@ def main(argv, out=print):
     # that instruction exists, a flag nothing sets is better than a default that
     # writes into every repository the gate has ever been run in.
     p.add_argument("--record", dest="record", action="store_true")
+    # THE OPERATOR'S WAY BACK TO A MEASUREMENT, and the reason a repeat is
+    # allowed to be the default at all: a cache with no override is a cache that
+    # gets deleted by hand. It suppresses the LOOKUP and not the identity - the
+    # row this run writes still carries one, or a forced run would leave nothing
+    # for the next one to match.
+    p.add_argument("--no-reuse", dest="no_reuse", action="store_true")
     # The repair a refused pointer names. It runs the ledger against the plan and
     # nothing else - no gate, no subprocess - so it is safe to hand a human who
     # has just been told their pointer did not land.
@@ -2726,15 +2963,49 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
-    # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
-    # signal actually lands in - a gate step is where the wall clock goes - and
-    # arming it wider would mean holding a handler over the recording below, where
-    # a second Ctrl-C should be free to stop a session that is already stopping.
-    previous = _arm_interrupt()
-    try:
-        res = run_gate(project, commands, owns=owns, timeout=args.timeout)
-    finally:
-        _disarm_interrupt(previous)
+    # ASKED BEFORE THE GATE AND WHATEVER THE ANSWER IS. The identity is what the
+    # row this run writes has to carry, so a `--no-reuse` run computes one too -
+    # a forced measurement that recorded no identity would leave the next run
+    # nothing to match, which turns one operator's override into everybody's.
+    started = time.monotonic()
+    identity = reuse_identity(project, args.manifest, manifest, commands, owns)
+    prior = None
+    if identity.get("grading"):
+        # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
+        # line existed: a gate whose single entry validates the plan reported
+        # GREEN over a plan that no longer validated, because the plan is among
+        # the paths the identity leaves out. The refusal is printed rather than
+        # silent, and it names the entry - an operator who sees a gate measure
+        # every time is owed the reason, or the next reader removes the cache.
+        for name, path in identity["grading"]:
+            out("[run-test-gate] %s names %s, which this identity leaves out, so "
+                "this run is MEASURED and not repeated. Whether the command reads "
+                "that path is not established here; naming it is enough, because "
+                "the other way round is a verdict that no longer describes the "
+                "thing it graded" % (name, path))
+    elif not args.no_reuse:
+        prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
+                                 subject_ids(args.phase, args.task, source),
+                                 identity["key"], REUSABLE_STATUS)
+    if prior is not None:
+        res = reused_result(identity, prior, _elapsed_ms(started))
+    else:
+        # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
+        # signal actually lands in - a gate step is where the wall clock goes - and
+        # arming it wider would mean holding a handler over the recording below, where
+        # a second Ctrl-C should be free to stop a session that is already stopping.
+        previous = _arm_interrupt()
+        try:
+            res = run_gate(project, commands, owns=owns, timeout=args.timeout)
+        finally:
+            _disarm_interrupt(previous)
+        # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
+        # manifest and must not: it is the function the cases drive without a
+        # repository around it, and an identity computed inside it would be a
+        # second reading of the tree taken after the first command had already
+        # had its chance to rewrite one.
+        res[_ev.REUSE_KEY] = identity["key"]
+        res["reuseBasis"] = identity["basis"]
     # `gateSource` IS RECORDED AND `subject` IS NOT, and the split is the rule
     # about a cached claim rather than an oversight (F312). Provenance is not
     # recoverable from the row - `_evidence_io.row_for` carries the reasoning -
@@ -2772,6 +3043,20 @@ def main(argv, out=print):
     # reader who assumed otherwise would credit the wrong declaration.
     out("[run-test-gate] %s: %d command(s), %s gate"
         % (subject, len(commands), source))
+    if identity["key"] is None:
+        # THE MISSING BASIS IS THE THING TO SAY. Every other run records an
+        # identity and this one cannot, so no verdict taken here will ever be
+        # repeated and no earlier one could have been - and silence would leave
+        # a reader wondering why their repeat did not fire, with nothing in the
+        # output to read it off.
+        out("  identity: NOT established - %s. Nothing measured on this tree "
+            "can be repeated, in either direction." % (identity["basis"],))
+    # A REPEAT IS NOT A RUN AND IS NOT RENDERED AS ONE. `render` prints a step
+    # table, a tree comparison and a count, and a repeat has none of those to
+    # print - filling them with the earlier run's would be this process stating
+    # observations it never made.
+    if res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
+        return render_reuse(res, out=out)
     return render(res, out=out)
 
 

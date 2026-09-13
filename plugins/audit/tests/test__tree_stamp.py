@@ -24,6 +24,13 @@ here is what the MOVE and the new question added.
 - **Moved outranks unanswerable.** A tree with one field moved and another
   unreadable HAS moved, and reporting that as ungradeable would hide a fact
   already in hand.
+- **The content identity is graded against the stamp, in one fixture.** `tsc2`
+  makes the same edit twice and asks both questions: the stamp says `current`
+  and the content digest moves. A caller skipping work on the stamp's word
+  would skip it after a real change, which is what this function was added to
+  stop — and asserting only the half that moves would pass against a digest
+  that moves on everything, so `tsc1` is the quiet tree that has to agree with
+  itself and `tsc3` is the commit that has to change nothing.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -307,6 +314,202 @@ def _unknowable_cases(check):
           and _states(ranked)["scopeDigest"] == M.MOVED)
 
 
+# --- the content identity: every byte git reports -----------------------------
+def _content_cases(check):
+    repo = _seeded_repo("tree-stamp-content-")
+    mine = os.path.join(repo, "src", "mine.py")
+    theirs = os.path.join(repo, "src", "theirs.py")
+
+    first, basis = M.content_digest(repo)
+    again, _second_basis = M.content_digest(repo)
+    check("tsc1 THE ALLOW CASE, AND IT IS THE ONE A WIDENED IDENTITY BREAKS: a "
+          "tree nothing has touched hashes to the same value twice. An identity "
+          "that moved on its own would refuse every repeat, which is a cache "
+          "nobody keeps: %r" % (basis,),
+          first is not None and first == again
+          and "tracked path(s)" in (basis or ""))
+
+    # THE CASE THE THREE STAMP FIELDS CANNOT PASS, asserted as a PAIR in one
+    # fixture: the same edit, graded by both questions, answering differently.
+    # `tsl2` above is the stamp half and this is the content half, and the two
+    # sitting apart is what stops a reader taking either for the other.
+    _write(theirs, "w = 2\n")
+    dirty_once, _once = M.content_digest(repo)
+    stamp, _state = M.take(repo, ["src/mine.py"])
+    _write(theirs, "w = 3\n")
+    dirty_twice, _twice = M.content_digest(repo)
+    graded = M.compare(stamp, repo)
+    check("tsc2 A REWRITE OF AN ALREADY-DIRTY FILE OUTSIDE THE DECLARED SCOPE "
+          "MOVES THIS, while the stamp over the same edit still says `current`. "
+          "That gap is the whole reason this function exists: a caller skipping "
+          "work on the stamp's word would skip it after a real change to any "
+          "file the work does not declare: content moved=%r stamp=%r"
+          % (dirty_once != dirty_twice, graded["verdict"]),
+          dirty_once is not None and dirty_twice is not None
+          and dirty_once != dirty_twice
+          and graded["verdict"] == M.CURRENT)
+
+    _git(repo, "add", "-A")
+    staged, _sb = M.content_digest(repo)
+    _git(repo, "commit", "-q", "-m", "the same bytes, now committed")
+    committed, _cb = M.content_digest(repo)
+    check("tsc3 COMMITTING CHANGES NOTHING, because nothing in the tree changed: "
+          "the index entries a commit writes are the ones that were already "
+          "there. A caller whose identity moved every time the orchestrator "
+          "committed a task would never get a second run to match: %r"
+          % ((staged == committed),),
+          staged is not None and staged == committed)
+
+    _write(mine, "v = 900\n")
+    edited, _eb = M.content_digest(repo)
+    check("tsc4 ...and editing a TRACKED file moves it, which is the direction "
+          "the case above could pass without: an identity that never moved at "
+          "all would agree with itself across every tree there is",
+          edited is not None and edited != committed)
+
+    _git(repo, "checkout", "--", "src/mine.py")
+    with open(os.path.join(repo, ".gitignore"), "w") as fh:
+        fh.write("ignored/\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "ignore rules")
+    os.makedirs(os.path.join(repo, "ignored"))
+    before_ignored, _ib = M.content_digest(repo)
+    _write(os.path.join(repo, "ignored", "build.log"), "output nobody tracks\n")
+    after_ignored, _ab = M.content_digest(repo)
+    check("tsc5 THE BOUND, EXERCISED RATHER THAN DESCRIBED: a file git IGNORES "
+          "moves nothing here. The ignore rules are git's and this asks git for "
+          "them rather than re-deriving them, so what falls outside is exactly "
+          "what falls outside for every other reader - and `CONTENT_LIMIT` is "
+          "where that is said to whoever prints it: %r"
+          % ((before_ignored == after_ignored),),
+          before_ignored is not None and before_ignored == after_ignored
+          and "a file git ignores" in M.CONTENT_LIMIT)
+
+    untracked = os.path.join(repo, "src", "arrived.py")
+    _write(untracked, "somebody added this\n")
+    appeared, _pb = M.content_digest(repo)
+    _write(untracked, "...and then rewrote it\n")
+    rewritten, _rb = M.content_digest(repo)
+    check("tsc6 an UNTRACKED file that is not ignored is inside the identity, "
+          "and so is a rewrite of one. Porcelain reports STATUS, so an "
+          "already-untracked file being rewritten moves no status line at all - "
+          "this reads the bytes instead: %r"
+          % ((appeared != after_ignored, rewritten != appeared),),
+          appeared != after_ignored and rewritten != appeared)
+    os.remove(untracked)
+
+    _write(mine, "v = 77\n")
+    unstaged, _ub = M.content_digest(repo)
+    _git(repo, "add", "src/mine.py")
+    staged, _sb = M.content_digest(repo)
+    check("tsc14 ...and the SAME BYTES STAGED are not the same entry as those "
+          "bytes unstaged, which is this discriminating MORE finely than content "
+          "does. The cost is a repeat refused where one would have been sound - "
+          "time, never a wrong verdict - and it is pinned here so the sentence "
+          "saying so is a checked one rather than a hope: %r"
+          % ((unstaged != staged),),
+          unstaged is not None and staged is not None and unstaged != staged)
+    _git(repo, "reset", "-q", "--", "src/mine.py")
+    _git(repo, "checkout", "--", "src/mine.py")
+
+    # THE INDEX HALF, ON ITS OWN. Every case above leaves the changed file DIRTY,
+    # so the bytes read off the worktree carry them and the entries `ls-files -s`
+    # returns are never the only thing separating two trees. Two CLEAN trees are
+    # what asks whether those entries are in the digest at all - and a checkout
+    # between two gate runs is exactly this shape.
+    _write(mine, "v = 100\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "one committed content")
+    clean_one, one_basis = M.content_digest(repo)
+    _write(mine, "v = 200\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "another committed content")
+    clean_two, two_basis = M.content_digest(repo)
+    check("tsc15 TWO CLEAN TREES WITH DIFFERENT COMMITTED CONTENT DIFFER, and "
+          "the basis says both were clean - nothing differed from the index on "
+          "either side, so the tracked entries are the ONLY thing telling them "
+          "apart. Drop those and every clean tree in the world hashes alike: %r"
+          % ((one_basis, two_basis),),
+          clean_one is not None and clean_one != clean_two
+          and "read 0 path(s)" in (one_basis or "")
+          and "read 0 path(s)" in (two_basis or ""))
+
+
+def _excluded_cases(check):
+    repo = _seeded_repo("tree-stamp-excluded-")
+    os.makedirs(os.path.join(repo, "records"))
+    ledger = os.path.join(repo, "records", "runs.jsonl")
+    _write(ledger, "one row\n")
+
+    kept, _kb = M.content_digest(repo)
+    dropped, dbasis = M.content_digest(repo, excluded=["records"])
+    _write(ledger, "one row\nand another\n")
+    dropped_again, _db2 = M.content_digest(repo, excluded=["records"])
+    check("tsc7 A PATH THE CALLER EXCLUDES IS OUT, AND STAYS OUT WHEN IT MOVES. "
+          "A caller that writes its own records into the tree it is judging "
+          "would otherwise never see two identities agree - the first write "
+          "changes the tree the second run is measured against: same=%r"
+          % ((dropped == dropped_again),),
+          dropped is not None and dropped == dropped_again and dropped != kept
+          and "left out" in (dbasis or ""))
+
+    other, _ob = M.content_digest(repo, excluded=["src"])
+    check("tsc8 ...and the exclusion travels INSIDE the digest, so two "
+          "identities taken over DIFFERENT subjects cannot come out equal and "
+          "read as agreement. Without it, 'everything but the ledger' and "
+          "'everything but the source' would be the same claim whenever what "
+          "was left happened to match",
+          other is not None and other != dropped)
+
+    os.makedirs(os.path.join(repo, "records-archive"))
+    sibling = os.path.join(repo, "records-archive", "old.jsonl")
+    before_sibling, _sb = M.content_digest(repo, excluded=["records"])
+    _write(sibling, "a directory whose name STARTS with the excluded one\n")
+    after_sibling, _ab = M.content_digest(repo, excluded=["records"])
+    check("tsc9 THE PREFIX MATCHES ON A SEGMENT BOUNDARY. `records` must not "
+          "swallow `records-archive`: a widened match here drops real source out "
+          "of the identity in silence, and silence is the direction that "
+          "produces a repeat over a tree nobody compared: %r"
+          % ((before_sibling != after_sibling),),
+          before_sibling != after_sibling)
+
+    # Taken NOW rather than reusing `kept`, which was read before the two writes
+    # above: a case comparing against a stale digest would be asserting that the
+    # tree had not changed, which is a different claim and a false one.
+    whole, _wb = M.content_digest(repo)
+    blanks, _bb = M.content_digest(repo, excluded=["", "   ", None, 7])
+    check("tsc10 ...and a blank or non-string exclusion is not one, so a caller "
+          "handing this a list with a hole in it excludes nothing rather than "
+          "excluding everything: %r" % ((blanks == whole),),
+          blanks is not None and blanks == whole)
+
+
+def _identity_cases(check):
+    plain = _harness.fixture_root("tree-stamp-content-nogit-")
+    _write(os.path.join(plain, "a.txt"), "not a repository\n")
+    nothing, nbasis = M.content_digest(plain)
+    check("tsc11 a directory git will not list has NO content identity, and the "
+          "basis says so. None rather than a digest of an empty listing, which "
+          "is a real value that would compare equal to the next unanswerable "
+          "tree and read as agreement: %r" % (nbasis,),
+          nothing is None and "git would not list this tree" in (nbasis or ""))
+
+    one = M.identity_of(["a", ["b"], []])
+    same = M.identity_of(["a", ["b"], []])
+    other = M.identity_of(["a", ["b"], ["c"]])
+    check("tsc12 `identity_of` is a function of its parts and of nothing else, "
+          "and differing parts differ. Both halves, because an identity that "
+          "answered the same thing every time would match every tree there is: "
+          "%r" % (one,),
+          one is not None and one == same and one != other)
+
+    check("tsc13 ...and it carries its VERSION in front of the digest, so a "
+          "later spelling of the payload cannot quietly compare equal to this "
+          "one - a collision here is a verdict repeated over a tree it was "
+          "never taken on: %r" % (one,),
+          one.startswith("%d:" % (M.IDENTITY_VERSION,)))
+
+
 # --- what the reader is shown -------------------------------------------------
 def _render_cases(check):
     repo = _seeded_repo("tree-stamp-render-")
@@ -351,6 +554,9 @@ def _cases(check):
     _harness.stage(check, "tsf", _field_cases)
     _harness.stage(check, "tst", _tree_cases)
     _harness.stage(check, "tsu", _unknowable_cases)
+    _harness.stage(check, "tsc", _content_cases)
+    _harness.stage(check, "tsc-excluded", _excluded_cases)
+    _harness.stage(check, "tsc-identity", _identity_cases)
     _harness.stage(check, "tsr", _render_cases)
 
 

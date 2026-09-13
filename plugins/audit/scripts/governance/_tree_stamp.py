@@ -12,14 +12,24 @@ row records and the stamp an orchestrator carries in a report are the same
 arithmetic over the same bytes. A second expression of "which tree was this"
 would BE a second tree identity, and the first thing two of those do is disagree.
 
-WHAT IS NEW HERE IS ONLY THE SECOND QUESTION: given a stamp taken earlier, is the
-tree still the one it names? That is `compare()`, and its answer has THREE words
-and not two. `current` and `stale` are the two a reader expects; `unestablished`
-is the one this tree's vocabulary insists on - `porcelain()`'s None below, the
-doctor's `running_plugin_verdict`, `_evidence_io`'s null check count are all the
-same refusal, that a question which could not be asked must never be reported as
-the comfortable answer. A stamp graded against a directory git will not describe
-is not a stamp that matched.
+THE SECOND QUESTION IS: given a stamp taken earlier, is the tree still the one it
+names? That is `compare()`, and its answer has THREE words and not two. `current`
+and `stale` are the two a reader expects; `unestablished` is the one this tree's
+vocabulary insists on - `porcelain()`'s None below, the doctor's
+`running_plugin_verdict`, `_evidence_io`'s null check count are all the same
+refusal, that a question which could not be asked must never be reported as the
+comfortable answer. A stamp graded against a directory git will not describe is
+not a stamp that matched.
+
+AND THE THIRD IS THE ONE THE THREE FIELDS ABOVE CANNOT ANSWER: are the BYTES the
+same? `content_digest()` is that question, and it exists because the fields above
+were asked to carry a decision they cannot support - a verdict repeated instead
+of re-measured. `DIRTY_LIMIT` below is why: a digest over which paths were dirty
+says nothing about what is in them. So the content identity is built from a
+different pair of git questions, it reads file bytes rather than status words,
+and it is kept apart from the stamp rather than folded into it - a stamp is a
+cheap discriminator carried in prose, and this is an expensive one nobody pastes
+into a commit message.
 
 AND A STALE ANSWER NAMES THE FIELD THAT MOVED. "Stale" on its own sends a reader
 back to re-run everything; HEAD having moved, the declared work having changed,
@@ -215,6 +225,158 @@ def tested_state(project, owns, before):
     return {"head": _head(project), "headBasis": HEAD_BASIS,
             "scopeDigest": scope, "scopeBasis": sbasis,
             "dirtyDigest": dirty, "dirtyBasis": dbasis}
+
+
+# --- the content identity: every byte git reports ------------------------------
+# WHY NOT THE THREE FIELDS ABOVE. `DIRTY_LIMIT` says it in the words the stamp
+# prints: that digest records WHICH paths were dirty and never their contents,
+# and `SCOPE_LIMIT` is exact for the declared files and silent about everything
+# else. Both are retry discriminators, which is all a gate row needed of them.
+# A caller that skips work because "this tree was measured already" needs the
+# other question, and answering it off those fields would skip a re-run after a
+# real edit to any file the work does not declare.
+#
+# BUILT FROM WHAT GIT REPORTS, NEVER FROM A WALK WRITTEN HERE. A walk has to
+# re-derive which files are ignored, and a second expression of "which files
+# count" is the thing this module exists to prevent. Two questions, both of them
+# git's own:
+#
+#   * `ls-files -s` is the INDEX - one entry per tracked path, carrying the blob
+#     git already hashed. It covers a staged edit as well as a committed one,
+#     which `rev-parse HEAD` cannot: a gate runs before the task commit, and on a
+#     staged tree HEAD is not what the commands read.
+#   * `ls-files --modified --deleted --others --exclude-standard` is everything
+#     the worktree says differently from that index, with the ignore rules
+#     applied by git. Those paths are the only ones whose BYTES are read, so the
+#     cost is the size of the diff and not the size of the repository.
+#
+# AND BOTH ARE ASKED WITH `-z`. Git QUOTES a path it will not print raw - a
+# control byte, a quote, and under the default `core.quotePath` every non-ASCII
+# byte as an octal escape - so a reader of the unseparated output needs an
+# unquoting rule, and a second such rule is a second answer about which file is
+# which. NUL-separated output is printed verbatim and there is nothing to undo.
+CONTENT_LIMIT = ("the bytes git reports from this directory: the index entry of "
+                 "every tracked path, and the current content of every path git "
+                 "names as differing from that index or as untracked and not "
+                 "ignored. It does not reach a file git ignores, the inside of "
+                 "a submodule, a package installed outside the tree, an "
+                 "environment variable, the clock or the network")
+
+# How many differing paths this identity will open before it refuses to answer.
+# A REFUSAL RATHER THAN A SLOW ANSWER: the set is "everything git calls modified
+# or untracked", which on a tree carrying an unignored dependency directory has
+# no bound at all - and an identity that costs more than the measurement it saves
+# is not one worth taking. Refusing leaves the caller measuring, which is the
+# direction that cannot produce a wrong verdict.
+CONTENT_READ_LIMIT = 4000
+
+# One version in front of every identity this module mints. A later spelling of
+# the payload would otherwise be free to collide with this one, and a collision
+# here is a verdict repeated over a tree it was never taken on.
+IDENTITY_VERSION = 1
+
+
+def _git_fields(project, args):
+    """git's NUL-separated output as a list of fields, or None when it will not
+    answer.
+
+    None for `porcelain`'s reason and with its force: an empty list is a real
+    answer about a real tree, and handing one back for a directory git refused to
+    describe is the false clean sheet this file is against.
+    """
+    try:
+        out = subprocess.run(["git", "-C", project] + list(args),
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=120)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    return [f for f in out.stdout.decode("utf-8", "replace").split("\0") if f]
+
+
+def _outside(excluded):
+    """A predicate: is this path under one of `excluded`?
+
+    Prefix matching on a SEGMENT boundary, so `docs/audit` does not swallow
+    `docs/audit-notes.md` - a silent widening here would drop real source out of
+    the identity and is the direction that produces a wrong match.
+    """
+    prefixes = [p.strip("/") for p in (excluded or [])
+                if isinstance(p, str) and p.strip()]
+
+    def _drop(path):
+        return any(path == pre or path.startswith(pre + "/") for pre in prefixes)
+    return _drop
+
+
+def content_digest(project, excluded=None):
+    """`(digest, basis)` - one digest over every byte git reports, or None and why.
+
+    `excluded` is the paths the CALLER writes and must not be judged by, as
+    project-relative prefixes; they travel INSIDE the digest, so two identities
+    taken over different subjects cannot come out equal and read as agreement.
+
+    WHAT IT ESTABLISHES AND WHAT IT DOES NOT is `CONTENT_LIMIT`, which is the
+    sentence a caller prints rather than a docstring nobody renders.
+
+    IT DISCRIMINATES MORE FINELY THAN CONTENT IN ONE PLACE, and that is worth
+    knowing rather than discovering: the same bytes staged and unstaged are two
+    entries of different shapes here - git's blob id on one side, this file's own
+    file digest on the other - so `git add` alone moves the answer. A caller
+    reads that as "not the same tree" and measures again, which costs time and
+    can never cost a wrong verdict; the reverse error is the one that cannot be
+    afforded, so this is the side to be wrong on.
+    """
+    drop = _outside(excluded)
+    index = _git_fields(project, ("ls-files", "-s", "-z"))
+    differing = _git_fields(project, ("ls-files", "-z", "--modified",
+                                      "--deleted", "--others",
+                                      "--exclude-standard"))
+    if index is None or differing is None:
+        return None, ("git would not list this tree, so its content is not "
+                      "established and nothing measured on it can be repeated")
+    tracked = []
+    for entry in index:
+        head, sep, path = entry.partition("\t")
+        if not sep:
+            # REFUSED, NOT SKIPPED. Every `ls-files -s` entry carries a tab, so
+            # one that does not means this output is not the output being read -
+            # and dropping it would quietly narrow the identity to whatever git
+            # happened to print.
+            return None, ("git printed an index entry with no path in it (%r), "
+                          "so this tree was not read whole" % (entry[:60],))
+        if drop(path):
+            continue
+        tracked.append([path, head])
+    paths = sorted(set(p for p in differing if not drop(p)))
+    if len(paths) > CONTENT_READ_LIMIT:
+        return None, ("%d path(s) differ from the index or are untracked, which "
+                      "is more than this identity opens; the tree's content is "
+                      "left unestablished rather than half-read"
+                      % (len(paths),))
+    current = [[p, _journal_io.file_hash(os.path.join(project, p))]
+               for p in paths]
+    left_out = sorted(set(p for p in (excluded or [])
+                          if isinstance(p, str) and p.strip()))
+    basis = ("git listed %d tracked path(s) and read %d path(s) that differ "
+             "from the index or are untracked" % (len(tracked), len(current)))
+    if left_out:
+        basis = ("%s; %d path(s) the caller writes itself were left out: %s"
+                 % (basis, len(left_out), _output.some_of(left_out)))
+    return _digest([sorted(tracked), current, left_out]), basis
+
+
+def identity_of(parts):
+    """`<version>:<digest>` over `parts`, or None when nothing could be hashed.
+
+    ONE SPELLING FOR EVERY IDENTITY MINTED HERE, so two of them cannot be hashed
+    two ways, and the version is in FRONT of the digest rather than only inside
+    it: a reader comparing two of these by eye has to be able to see that they
+    are answers to the same question before they read the hex.
+    """
+    packed = _digest(parts)
+    return None if packed is None else "%d:%s" % (IDENTITY_VERSION, packed)
 
 
 # --- the stamp a verification carries ------------------------------------------

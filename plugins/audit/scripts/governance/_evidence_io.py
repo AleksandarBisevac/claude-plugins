@@ -125,6 +125,64 @@ def in_evidence(project, path, config=None):
         return False
 
 
+def recorded_paths(project, manifest_path, config=None):
+    """Every path THIS recorder writes, as project-relative prefixes, sorted.
+
+    WHO NEEDS IT. A caller asking "is this tree the one that was measured?" has to
+    leave the recorder's own output out of the answer, or the first recorded run
+    changes the tree and no second run can ever match it. That is a narrowing, so
+    it is DERIVED from the writers rather than listed: `evidence_dir` and
+    `journal_dir` are asked where they put their files, and the shards come off
+    the index's own `shard` stubs, so a repo that moved its plan moves this with
+    it.
+
+    THE RAW INDEX AND NEVER THE ASSEMBLED MANIFEST, which is `_phase_file`'s rule
+    and it is here for the same trap: assembly REPLACES each `shard` stub with
+    the phase body it names, so a reader handed the assembled dict finds no shard
+    paths at all and leaves every one of them inside the identity. The failure is
+    quiet - an identity that simply never matches anything - which is why the raw
+    read happens here rather than being left to a caller who already has a
+    manifest in hand.
+
+    WHAT THE NARROWING COSTS IS THE CALLER'S TO STATE, not this function's to
+    hide: the manifest is in here, so a gate whose subject IS the manifest is one
+    such a caller cannot tell apart. The parts of the manifest that decide what a
+    gate DOES - the entries and the declared files - are things the caller reads
+    directly and can put in its own key.
+
+    A PATH OUTSIDE `project` IS DROPPED rather than returned relative, and the
+    drop is safe in the one direction that matters: it leaves MORE of the tree
+    inside the identity, and git never names such a path anyway.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    writes = [evidence_dir(project, config), _journal_io.journal_dir(project, config)]
+    if manifest_path:
+        base = os.path.dirname(os.path.abspath(manifest_path))
+        writes.append(os.path.abspath(manifest_path))
+        try:
+            index = _mio.read_json(manifest_path)
+        except Exception:
+            # The manifest itself is excluded above whatever happens here, so an
+            # index nobody can read costs a caller its shards and never its
+            # correctness: MORE of the tree stays inside the identity, which is
+            # the direction that refuses a match rather than inventing one.
+            index = {}
+        for stub in ((index or {}).get("phases") or []):
+            shard = stub.get("shard") if isinstance(stub, dict) else None
+            if isinstance(shard, str) and shard.strip():
+                writes.append(os.path.normpath(os.path.join(base, shard.strip())))
+    rels = []
+    for path in writes:
+        try:
+            rel = os.path.relpath(path, project).replace(os.sep, "/")
+        except Exception:
+            continue
+        if rel == ".." or rel.startswith("../") or rel == ".":
+            continue
+        rels.append(rel)
+    return sorted(set(rels))
+
+
 # --- what a row may carry -----------------------------------------------------
 # ASSEMBLED FROM NAMED FIELDS, NEVER COPIED. `row_for` reads the keys below out of
 # whatever it is handed and nothing else, which is what makes the shape of a row a
@@ -142,6 +200,24 @@ def in_evidence(project, path, config=None):
 # a committed file raw.
 ROW_VERSION = 1
 ACTION_RECORDED = "test.evidence.recorded"
+
+# WHERE A VERDICT CAME FROM, WHICH IS NOT WHAT THE VERDICT IS. `status` says what
+# the gate answered; this says whether THIS run is the one that asked. The word
+# is its own rather than borrowed: `could-not-run` already means "no verdict, for
+# a reason that is not the work's", and a repeated verdict is the opposite of
+# that - there IS a verdict, it is simply not this run's measurement. Overloading
+# the one to spell the other would lose both.
+#
+# ABSENT MEANS MEASURED. Every row written before this field existed was a
+# measurement, so a missing key is the true answer for all of them and no
+# back-fill is owed; a key present on every row could not be told from a build
+# that does not write it.
+VERDICT_SOURCE = "verdictSource"
+REUSED = "reused"
+# The identity that has to match for one run to stand in for another. It is
+# recorded on the row rather than re-derived, because it is a statement about the
+# tree AT THAT MOMENT and the moment is gone.
+REUSE_KEY = "reuseKey"
 
 # A run with more steps than this is a build, not a gate; more paths than this is
 # a rewrite, not a diff. Both cuts are COUNTED beside the list they cut, because a
@@ -409,6 +485,29 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # THE IDENTITY THE NEXT RUN COMPARES ITSELF AGAINST. It is not derivable from
+    # anything else on the row and it never will be: `testedState` holds a digest
+    # of WHICH paths were dirty, which is silent about their contents, so a
+    # reader trying to recover this from the row would recover a different
+    # question's answer. Written only when the writer computed one - a tree git
+    # would not describe has no identity, and a null here would compare equal to
+    # the next null and read as agreement.
+    if result.get(REUSE_KEY) is not None:
+        row[REUSE_KEY] = str(result[REUSE_KEY])
+    # ...AND WHETHER THIS ROW IS A MEASUREMENT AT ALL. A row that repeats an
+    # earlier verdict says so and names the run it repeats, so no reader meets a
+    # verdict without meeting the run that took it. `status` and `failed` are
+    # COPIED onto such a row on purpose, which is the one place this file's rule
+    # against a cached claim yields: the source is named right here, so the copy
+    # is checkable rather than free-floating, and a row whose `status` were
+    # absent could not be rendered by any surface that reads one.
+    if result.get(VERDICT_SOURCE) is not None:
+        row[VERDICT_SOURCE] = str(result[VERDICT_SOURCE])
+    prior = result.get("reusedFrom")
+    if isinstance(prior, dict) and prior.get("runId"):
+        row["reusedFrom"] = dict(
+            (key, str(prior[key])) for key in ("runId", "ts", "status")
+            if prior.get(key) is not None)
     for key in ("taskId", "phaseId"):
         if ids.get(key) is not None:
             row[key] = str(ids[key])
@@ -1014,6 +1113,69 @@ def latest_by_subject(rows):
         current = best.get(key)
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row
+    return best
+
+
+def _same_subject(row, ids):
+    """Do a row and a set of identity keys name the same work?
+
+    Compared as strings and with ABSENT kept distinct from any value, which is
+    `row_for`'s own rule read back: a phase-scope row carries no `taskId` at all,
+    and letting a missing key match a present one would hand a phase's verdict to
+    a task.
+    """
+    for key in ("taskId", "phaseId"):
+        left = row.get(key)
+        right = (ids or {}).get(key)
+        if (left is None) != (right is None):
+            return False
+        if left is not None and str(left) != str(right):
+            return False
+    return True
+
+
+def reusable_run(rows, scope, ids, key, statuses):
+    """The newest recorded run a caller may repeat instead of measuring, or None.
+
+    FIVE CONDITIONS AND EVERY ONE OF THEM NARROWS. The identity has to match, the
+    subject has to be the same work, the row has to be a MEASUREMENT rather than
+    another repeat, and the verdict has to be one the caller says may be
+    repeated. Drop any of them and this returns a run that answers a different
+    question.
+
+    THE IDENTITY IS NOT THE SUBJECT, which is why both are asked. Two tasks can
+    declare the same files and the same gate, and their runs would then share an
+    identity; a repeated verdict has to NAME the run it came from, and a run
+    about somebody else's task is not a thing to name.
+
+    A ROW THAT WAS ITSELF A REPEAT IS SKIPPED, so the run a caller is pointed at
+    is always the one that did the measuring. A chain would be a chain of copies,
+    and the first reader to follow it would have to walk to find out whether
+    anything was ever measured at all.
+
+    `statuses` HAS NO DEFAULT. Which verdicts survive being repeated is a
+    judgement about what a verdict MEANS, and it belongs to whoever produces
+    them; a default here would be this file quietly deciding that an
+    infrastructure failure is a property of the bytes.
+    """
+    if not key:
+        return None
+    best = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get(REUSE_KEY) != key:
+            continue
+        if row.get(VERDICT_SOURCE) == REUSED:
+            continue
+        if row.get("status") not in statuses:
+            continue
+        if str(row.get("scope") or "") != str(scope or ""):
+            continue
+        if not _same_subject(row, ids):
+            continue
+        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
+            best = row
     return best
 
 
