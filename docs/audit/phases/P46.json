@@ -117,7 +117,7 @@
     {
       "id": "P46.3",
       "title": "A tree already measured is not measured again",
-      "status": "in_progress",
+      "status": "done",
       "description": "A gate run whose tree and resolved command are already recorded reuses that verdict instead of re-measuring. Twelve phase-gate runs over three phases took a hundred and two minutes; three were strictly necessary. The plugin has the information and does not ask: the one ledger read in the whole runner is the reconcile path, which runs no gate at all. But the identity the report proposes is NOT sound - the dirty digest records which paths were dirty and never their contents, so a cache on it skips a re-run after a real change to any undeclared file. A sound identity is a content digest over the gate's actual subject, and building it is most of this task. The resolved command IS already on the row, verbatim; compare the gate ENTRY rather than the executed string, because an operator's shell prelude differs.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -150,19 +150,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f1bbc65",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_tree_stamp.content_digest builds a content identity from git's own two listings; reuse_identity joins it with the declared gate and the declared scope; _evidence_io.reusable_run applies five narrowings; grades_left_out refuses a repeat for an entry naming a path the identity excludes.",
+        "descriptive": "A gate whose tree, declared gate and declared files are already recorded repeats that verdict instead of re-measuring, and says so loudly."
       },
       "startedAt": "2026-09-13T16:50:50Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-13T18:19:07Z",
+      "verifiedBy": [
+        "tsc1-tsc15",
+        "ru1-ru28"
+      ]
     },
     {
       "id": "P46.4",
       "title": "A signal death is retried once, and says so",
-      "status": "in_progress",
+      "status": "done",
       "description": "A gate killed by a signal is retried once at reduced parallelism and says so on the row and in the output. The classification is already right - a signal death with no end-of-run report is an infrastructure failure, not a red suite, and spends no retry - and then it stops, and the operator re-runs by hand, which cost four runs in one session. The cause is knowable: each worker starts its own in-memory database, so the ceiling is memory per worker, and every run at three workers passed while every run at four or at the default crashed. The second attempt is a different measurement and must be legible as one. What must not move: a real failure excused as infrastructure is this register's F323, and the case that proves a genuine red stays red is the one that ships first.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -193,14 +196,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ccce018",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ended_by_signal's existing classification is the precondition; run_gate retries once, lowered_parallelism derives and splices the new bound or names which of four states prevented it, observed_step is the shared loop body so both attempts are read by one rule, and the row carries retriedAfterSignal and retryBasis.",
+        "descriptive": "A gate killed by a signal is run once more at a lowered worker bound, and every surface says the verdict is the second attempt's."
       },
       "startedAt": "2026-09-13T16:50:50Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-13T17:47:40Z",
+      "verifiedBy": [
+        "rk0",
+        "rk1",
+        "rk2",
+        "rk3",
+        "rk3b",
+        "rk4",
+        "rk5",
+        "rk6",
+        "rk7"
+      ]
     },
     {
       "id": "P46.5",
