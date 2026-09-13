@@ -485,7 +485,13 @@ report, because `git switch -c` is about to fail anyway.
      - the gate run you just recorded (`evidence: recorded <runId>`), so the reviewer reads
        your measurement instead of making a second one. Do **not** pass a review skill and do
        not ask it to invoke one — that is sign-off's call, and leaving it out is what keeps
-       this one cheap.
+       this one cheap;
+     - the task's `tests.gate` **commands themselves**, resolved through `meta.buildCommands`
+       where an entry is a `key:project` name. The run tells the reviewer the gate passed; the
+       commands tell it which test files that gate selects, and that selection is the whole
+       bound on the inherited-test question in `agents/audit-reviewer.md`. Hand it the phase's
+       gate instead when the task declares none, saying which — an unbounded question is one
+       the reviewer answers `not-asked`, which is the honest outcome and not a free one.
 
      It returns `intent.answer` — `matches` / `diverges` / `cannot-tell` — beside its ordinary
      `findings`, and the two are **routed apart** because they are different classes of
@@ -504,6 +510,14 @@ report, because `git switch -c` is about to fail anyway.
        not the code.
      - `redFirst` of `not-proved` on a `tdd` task → a human action item too. A test seen only
        passing may assert nothing, and the task's own gate cannot tell you that.
+     - `inheritedTests` of `flagged` → the entries are already in `findings` and route the
+       ordinary way, so this word is not a second channel — it is what tells you a `findings`
+       entry naming a file no task declares is a vacuous test rather than a bug. Read its
+       `resolution` as a task that PROVES the test can fail: the reviewer judged it by reading
+       and has no edit tools, so the red belongs to an executor that does. `not-asked` →
+       record the word and its `inheritedTestsBasis` in `task.outcome.technical`. It is what a
+       gate naming no test files earns, and a gap the record shows is worth more than a clean
+       sheet the record invented.
 
      None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
      measurement that decides whether a task is done, and a cheap per-task reviewer that could

@@ -294,6 +294,32 @@ def _return_top_keys(text):
     return re.findall(r'^ "([A-Za-z]+)":', block[:end], re.M)
 
 
+def _return_nested_keys(text, parent):
+    """The field names declared INSIDE one top-level key of that return block.
+
+    `_return_top_keys` reads the outer layer by indentation and stops there, which
+    left the inner one unread: the PROSE naming a field and the TEMPLATE declaring
+    it are two sentences, and a case pinning only the prose stayed green while the
+    template renamed the field under it. A nested field has no column of its own,
+    so this reads braces instead - from `"<parent>": {` to the matching close.
+    `[]` for a parent that is not declared, which every case reading this fails on.
+    """
+    at = text.rfind('"%s": {' % parent)
+    if at < 0:
+        return []
+    start = text.find("{", at)
+    depth, i = 0, start
+    while i < len(text):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return re.findall(r'"([A-Za-z]+)":', text[start:i])
+        i += 1
+    return []
+
+
 def _md_section(text, heading_prefix):
     """The lines from the first `## ` heading starting with `heading_prefix` up to
     the next `## `. `""` when nothing matches, for `_product_doc`'s reason."""
@@ -3226,6 +3252,126 @@ def _cases(check):
               len(_iq_run)),),
           min(len(_REV), len(_EXE), len(_EXP), len(_iq_exec), len(_iq_signoff),
               len(_iq_run)) > 400)
+    # --- the inherited test: the question reaches a test the task did NOT write ----
+    # WHAT WAS WRONG. "Can this test fail?" had one subject - the tests the executor
+    # ADDED - and was answered from the executor's own red-first word. Every instance
+    # the field reports named was a test the task INHERITED: already in the tree,
+    # left passing by the change, and still passing if the behaviour it names were
+    # deleted. Those went to `preExisting`, which nothing reads.
+    #
+    # WHY THE BOUND IS PINNED AND NOT JUST THE QUESTION. The question over a codebase
+    # is affordable exactly once, after which the per-task call stops being made - so
+    # a pin that only asked whether the brief poses it would be satisfied by the
+    # version that gets the reviewer switched off. `ih3` is the bound and `ih5` is the
+    # channel, and neither is optional decoration around `ih1`.
+    #
+    # THE PAIRS AGAIN, for iq2's reason: `ih2`, `ih7` and `ih9` are the allow cases -
+    # each widening of a pin here lands on a document that legitimately does not carry
+    # the sentence, and that is what goes red.
+    _ih_sec = _md_section(_REV, "## Can this test fail?")
+    _ih_toks = ("gate", "test")
+    _ih_asked = _question_lines(_ih_sec, *_ih_toks)
+    check("ih1 the brief asks the INHERITED-test question - a question, in the "
+          "section that already asks whether a test can fail, naming the gate that "
+          "bounds it and the deletion that answers it. A brief asking only about "
+          "the tests the executor added asks nothing about the ones every field "
+          "report actually named: %r" % (_ih_asked,),
+          _ih_asked != [] and any("deleted" in q for q in _ih_asked))
+    _ih_elsewhere = dict((rel, _question_lines(_product_doc(rel), *_ih_toks))
+                         for rel in ("agents/audit-executor.md",
+                                     "agents/audit-explorer.md"))
+    _ih_weakenable = dict((rel, all(tok in _product_doc(rel) for tok in _ih_toks))
+                          for rel in _ih_elsewhere)
+    check("ih2 ...and the briefs that legitimately do not ask it stay quiet, while "
+          "carrying every token of it as ordinary prose. THE ALLOW CASE: weaken "
+          "ih1 to a substring over the document and both go red, which the second "
+          "half is what proves - a quiet that came from a token nobody writes "
+          "would be a quiet this case never earned: %r"
+          % ((_ih_elsewhere, _ih_weakenable),),
+          all(v == [] for v in _ih_elsewhere.values())
+          and all(_ih_weakenable.values()))
+    _ih_sq = _squash(_ih_sec)
+    _ih_bound = dict((tok, tok in _ih_sq)
+                     for tok in ("The bound is `tests.gate`",
+                                 "reach a test no command in `tests.gate` selects",
+                                 "the answer is `not-asked`"))
+    check("ih3 ...BOUNDED to the tests that task's own gate selects, with the "
+          "unreached set named and a word for the gate that bounds nothing. The "
+          "bound is what keeps the call cheap enough to go on being made, and a "
+          "gap stated is a gap the next reader can close: %r" % (_ih_bound,),
+          all(_ih_bound.values()))
+    _ih_reading = dict((tok, tok in _ih_sq)
+                       for tok in ("judgement from READING",
+                                   "as though you had watched it not fail",
+                                   "is not widened by this question"))
+    check("ih4 ...and the brief says which KIND of claim the answer is. The "
+          "reviewer has no edit tools and may not mutate the tree, so it cannot "
+          "delete the behaviour and watch the test stay green - an answer written "
+          "as though it had is the exact defect the question exists to catch, one "
+          "level up: %r" % (_ih_reading,),
+          all(_ih_reading.values()))
+    _ih_route = dict((tok, tok in _ih_sq)
+                     for tok in ("`findings`, not `preExisting`",
+                                 "`preExisting` is read by nothing",
+                                 "records `findings` in `phase.review.findings`",
+                                 "Nothing enforces the routing"))
+    check("ih5 ...and routes the answer to a channel something READS, naming the "
+          "reader in the rule's own sentence and saying what is unenforced about "
+          "it. A finding filed where nothing looks is the defect one level up - "
+          "the same shape as a rule with no mechanism: %r" % (_ih_route,),
+          all(_ih_route.values()))
+    _ih_words = dict((tok, tok in _REV)
+                     for tok in ("`intent.inheritedTests`",
+                                 "`intent.inheritedTestsBasis`", "`none-found`",
+                                 "`flagged`", "`not-asked`"))
+    _ih_nested = _return_nested_keys(_REV, "intent")
+    check("ih6 ...reported as a sibling of `redFirst` INSIDE `intent`, with a "
+          "basis beside the word and no new top-level key: `intent` is where this "
+          "brief already keeps an answer that is not a finding, and a fifth "
+          "top-level key is how the return shape gets collapsed by the next "
+          "author. BOTH SENTENCES, the prose and the TEMPLATE the reviewer "
+          "copies - pinning the prose alone left the template free to rename the "
+          "field under it, which is how this case was first written and how it "
+          "survived its own mutation: %r"
+          % ((_ih_words, _return_top_keys(_REV), _ih_nested),),
+          all(_ih_words.values())
+          and _return_top_keys(_REV) == ["findings", "preExisting", "intent",
+                                         "verdict"]
+          and "redFirst" in _ih_nested
+          and "inheritedTests" in _ih_nested
+          and "inheritedTestsBasis" in _ih_nested)
+    check("ih7 the PER-TASK routing in the orchestrator reference reads the word "
+          "and says where its entries go, out of the task section - while the "
+          "SIGN-OFF section names it nowhere, because the bound is a task's own "
+          "gate and sign-off has no single task. THE ALLOW CASE for ih7's first "
+          "half: point it at the whole document and the second half goes red: %r"
+          % (("`inheritedTests`" in _iq_exec, "inheritedTests" in _iq_signoff),),
+          "`inheritedTests`" in _iq_exec and "`findings`" in _iq_exec
+          and "inheritedTests" not in _iq_signoff)
+    _ih_handed = ("| `tests.gate` | task |" in _REV,
+                  "`tests.gate` **commands themselves**" in _iq_exec)
+    check("ih8 ...and the input the bound is made of is actually HANDED OVER: the "
+          "brief lists `tests.gate` among what it is given and the spawn passes "
+          "the commands, not only the recorded run. A question bounded by an "
+          "input nobody passes is answered `not-asked` every time: %r"
+          % (_ih_handed,),
+          all(_ih_handed))
+    check("ih9 ...and the brief's claim that nothing reads `preExisting` is TRUE "
+          "of the document it names: the orchestrator reference mentions the key "
+          "nowhere, while the channel it does route is named there. THE ALLOW "
+          "CASE: give `preExisting` a reader in that reference and this goes red "
+          "with the sentence in the brief, which is the point - the claim is "
+          "wrong the moment the routing changes - which is why the brief names "
+          "THIS case in the sentence that makes the claim, where its reader is: %r"
+          % (("preExisting" in _ORC, "phase.review.findings" in _ORC,
+              "`ih9`" in _REV),),
+          "preExisting" not in _ORC and "phase.review.findings" in _ORC
+          and "`ih9`" in _REV)
+    check("ih10 ...over a section that actually resolved: `_md_section` returns "
+          "empty for a heading that moved, and every `in` above would then be "
+          "false while every `not in` stayed green over nothing at all: %r"
+          % (len(_ih_sec),),
+          len(_ih_sec) > 400)
 
 
 def _selftest():

@@ -31,6 +31,7 @@ reported.
 | gate results | task | per-gate `pass` / `fail` / `could-not-run`, and the run the orchestrator recorded |
 | `testsAdded` | task | the tests the executor says it added |
 | `redFirst` | task | its own word for whether a new test was proved able to fail — when it sent one |
+| `tests.gate` | task | the task's own gate commands — the set that bounds the inherited-test question below |
 | review skill | phase | the resolved skill name, when the project sets one |
 
 ## The intent question
@@ -76,6 +77,53 @@ You cannot make a test red yourself: you have no edit tools and must not mutate 
 So `not-proved` is the honest answer when nothing names a red run. Never report `proved`
 because the test looks like it would fail.
 
+### The tests this task did not write
+
+Everything above is about the tests the executor ADDED, answered from its own word. Every
+instance this project's register has recorded was a test the task INHERITED: one already
+in the repository, which the change leaves passing, and which would go on passing if the
+behaviour its name claims were deleted. Nobody had asked that question of those, so ask
+it:
+
+> **Of the tests this task's own gate command selects — would any of them still pass if
+> the behaviour it names were deleted?**
+
+**The bound is `tests.gate`, and the bound is the point.** Ask it of the test files those
+commands select and of nothing else. Asking it of a codebase would spend the one thing
+that makes this call worth making per task — it is cheap — and a reviewer expensive enough
+to skip is a reviewer that gets skipped. So the question does **not** reach a test no
+command in `tests.gate` selects, the rest of the project's suite, or a file the gate never
+names. When the gate runs a whole project rather than named test files, when you were
+handed no `tests.gate`, or when its entries are `key:project` names you cannot resolve to a
+command, the answer is `not-asked` and the basis says which of those it was — a bound
+reported is a gap the next reader can close, and a bound left unsaid reads as a clean
+sheet.
+
+**It is a judgement from READING, and it has to be written as one.** You have no edit tools
+and must not mutate the tree, so you cannot delete the behaviour and watch the test stay
+green — the only thing that would settle it. What you can see is the shape that produces
+it: an assertion over a value the behaviour never reaches, a `try` swallowing the failure
+the assertion was for, a filter that narrows to nothing before anything is asserted, a case
+whose only claim is that a call did not raise. Name the shape and the `file:line`. Never
+write that a test cannot fail as though you had watched it not fail. The one invocation
+allowed under **What you may run** is not widened by this question: it belongs to the test
+the executor named, and it tells absent from present, never able-to-fail from not.
+
+**Where it goes: `findings`, not `preExisting`.** The INHERITED rule under **Hard rules**
+is the reason — the change is being credited with a gate this test sits in, so a test in
+that gate that cannot fail is what the change is standing on, and `preExisting` is read by
+nothing. Its `resolution` is a task that proves the test can fail, never a fix applied
+here, because making a test red is an edit. `reference/orchestrator.md` records `findings`
+in `phase.review.findings` and turns one in a file no task declares into a NEW TASK at
+sign-off: that is what reads this. **Nothing enforces the routing** — no hook reads a
+subagent's return — so the run's own recorded outcome is the verdict either way.
+
+Report the answer itself as `intent.inheritedTests` — `none-found`, `flagged` or
+`not-asked` — beside `redFirst`, which is where this brief keeps an answer that is not a
+finding. `intent.inheritedTestsBasis` names the gate commands you read and the files they
+selected, or what stopped you asking. Silence is not `none-found`: a question nobody
+recorded asking reads afterwards exactly like one that came back clean.
+
 ## What you may run, and what you must not
 
 You have Bash so you can LOOK, not so you can re-measure.
@@ -109,7 +157,13 @@ a broken one leaves behind is a gate run the orchestrator's record does not acco
   would miss, violations of the phase's desired outcome, security regressions, and
   dead/leftover debug code.
 - Charge findings to the DIFF, not the codebase: pre-existing problems outside the
-  changed lines go into `preExisting`, not `findings`.
+  changed lines go into `preExisting`, not `findings`. **Nothing reads `preExisting`**:
+  no hook reads a subagent's return at all, and `reference/orchestrator.md` — the one
+  actor that does — names the key in no step of the run, so it is an observation for
+  whoever reads the transcript and never a queue. A class that must be ACTED on does not
+  belong in it; the inherited-test rule above routes to `findings` for that reason, and
+  `ih9` in `plugins/audit/tests/test__refs.py` fails the build if that reference ever
+  grows a reader while this sentence still says it has none.
 - A file the diff never touched can still be charged to the diff. That rule is
   about what the change INHERITED, not what it broke at a distance: when the
   change alters a shape crossing a boundary — the column written, the field on a
@@ -144,7 +198,9 @@ Your ENTIRE final message is ONLY this JSON object (no prose):
             "note": "what the diff does, said against what the task asked and what was claimed",
             "missing": ["<an input you were not handed>", ...],
             "redFirst": "proved|not-proved|could-not-prove|not-applicable",
-            "redFirstBasis": "the command and exit code that proves it, or what was absent"},
+            "redFirstBasis": "the command and exit code that proves it, or what was absent",
+            "inheritedTests": "none-found|flagged|not-asked",
+            "inheritedTestsBasis": "the gate commands read and the files they selected, or what stopped you asking"},
  "verdict": "clean | findings"
 }
 
