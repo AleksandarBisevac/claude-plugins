@@ -54,7 +54,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # widening `scope` refused on the very task it exists for), pb (F275: the owning
 # phase's blockedBy, the readiness term this file's own copy never carried),
 # eb (F285: the brief a shell had already eaten, and the stdin route out),
-# pr (the `start` verb: the promotion the plan gate reads).
+# pr (the `start` verb: the promotion the plan gate reads),
+# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record).
 def _cases(check):
     import contextlib
     import io
@@ -3099,10 +3100,17 @@ def _cases(check):
               "OUTSIDE it was measured rather than assumed: `--gate` carries a "
               "COMMAND (`make check ; true` trips the gap shapes and is exactly "
               "right), and the id lists leave an empty element `_split_csv` "
-              "already drops: %r" % (sorted(M.PROSE_FLAGS),),
+              "already drops. `--descriptive` and `--technical` joined it with "
+              "`done`, and they are the same argument as `--reason`: both halves "
+              "of a task's `outcome` are the operator's own sentence, one "
+              "rendered by every report surface and one quoted back to the next "
+              "executor: %r" % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "outcome", "reason", "rename"]
+              == ["description", "descriptive", "outcome", "reason", "rename",
+                  "technical"]
               and "gate" not in M.PROSE_FLAGS
+              and "commit" not in M.PROSE_FLAGS
+              and "verified_by" not in M.PROSE_FLAGS
               and M.shell_eaten_gap("make check ; true"))
         _pf_gate = run(["retarget", "P3", "--gate", "make check ; true",
                         "--project-dir", pf_proj])
@@ -3129,7 +3137,20 @@ def _cases(check):
         # three incidents.
         import ast
         import re
-        vf_proj, vf_mp = mk("vf-flags", base_manifest())
+        # ONE RUNNING TASK IN THE FIXTURE, because `done` is the only verb here
+        # whose base call needs a target it can legally close. Without it every
+        # `done` row of the grid below would exit 2 for a reason of its own and
+        # the stray-flag refusal would be riding on another refusal - which is a
+        # row that asserts nothing while looking green.
+        _vf_fx = base_manifest()
+        _vf_fx["phases"][1]["tasks"].append(
+            {"id": "P2.9", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3, "commit": None,
+             "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
+             "outcome": {"technical": None, "descriptive": None},
+             "verifiedBy": []})
+        _VF_SHA = "0123456789abcdef0123456789abcdef01234567"
+        vf_proj, vf_mp = mk("vf-flags", _vf_fx)
         with open(vf_mp, "rb") as _fh:
             _vf_before = _fh.read()
         code, txt = run(["add-phase", "Later work", "--outcome", "shipped",
@@ -3180,7 +3201,11 @@ def _cases(check):
                    # against it, which is the point: a verb whose `VERB_FLAGS`
                    # row is empty is the one where a stray flag has nowhere to
                    # be quietly absorbed.
-                   "start": ["start", "P2.3"]}
+                   "start": ["start", "P2.3"],
+                   # ...and `done` on the running task the fixture carries, with
+                   # the one flag it requires: a base call that could not close
+                   # anything would refuse every row for its own reason.
+                   "done": ["done", "P2.9", "--commit", _VF_SHA]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3220,6 +3245,13 @@ def _cases(check):
                 # an empty `VERB_FLAGS` row is exactly where an over-wide
                 # refusal would land first.
                 (["start", "P2.3", "--json"], "start/--json"),
+                # `done` reads four flags of its own AND the universal ones, and
+                # this is the call that proves the refusal above did not widen
+                # onto them: the close really happens, which the grid's byte
+                # compare could never show.
+                (["done", "P2.9", "--commit", _VF_SHA,
+                  "--descriptive", "impact", "--technical", "what was done",
+                  "--verified-by", "t_one,t_two", "--json"], "done/--commit"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
@@ -3758,6 +3790,402 @@ def _cases(check):
               and "already invalid -- nothing written" in txtbd
               and "rolled back" not in txtbd
               and open(mpbd, "rb").read() == _pr_bd_before)
+
+        # ---- (pd) `done`: the close, and the SHA that makes it a record -------
+        # THE LOSS, from this repository and not from a scenario. With no verb
+        # for the close, the orchestrator hand-wrote a task's completion into the
+        # phase shard AND the manifest index; a later `git reset --hard` reverted
+        # the index, the shard turned out never to have carried the marks at all,
+        # and the record of three finished tasks survived only in their commit
+        # subjects - rebuilt afterwards out of `git log`. `start` gave the
+        # promotion a verb (the `pr` group above) and left the close a hand edit,
+        # which is the half that still has to be true a month later.
+        _PD_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+        def pd_fixture(last=False):
+            fx = base_manifest()
+            if last:
+                # ...so the task closed below is the LAST open one in P2, which
+                # is the phase question this verb had to settle.
+                fx["phases"][1]["tasks"][1]["status"] = "done"
+            fx["phases"][1]["tasks"].append(
+                {"id": "P2.4", "title": "running", "status": "in_progress",
+                 "description": "", "files": ["src/fresh.ts"],
+                 "tests": {"mode": "gate-only", "add": [],
+                           "expectRedFirst": False, "gate": ["test"]},
+                 "model": "sonnet", "skills": [], "risk": "low",
+                 "blockedBy": [], "dependsOn": [], "attempts": 1,
+                 "maxAttempts": 3, "commit": None,
+                 # A HALF THAT IS ALREADY WRITTEN, on purpose: step 4's
+                 # test-failure arm puts the last red gate's reason here and the
+                 # retry brief quotes it back, so `pd2` can ask whether a close
+                 # that mentions neither half leaves it standing.
+                 "outcome": {"technical": "attempt 1: gate red on t_checkout",
+                             "descriptive": None},
+                 "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
+                 "verifiedBy": []})
+            fx["fileIndex"]["src/fresh.ts"] = ["P2.4"]
+            return fx
+
+        def pd_repo(name, manifest):
+            """A fixture whose project really IS a git repository with a commit.
+
+            A REAL REPO RATHER THAN A STUB, for `test__commit_trail.py`'s reason
+            one module over: the question this verb asks is whether git resolves
+            a SHA, and a fake answer to it would be the suite agreeing with the
+            code about a third party neither of them asked.
+            """
+            proj, mpath = mk(name, manifest, git=True)
+            for argv in (["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "Test User"],
+                         ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            head = subprocess.run(["git", "-C", proj, "rev-parse", "HEAD"],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+            return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
+
+        projpd, mppd = mk("dn-close", pd_fixture())
+        codepd, txtpd = run(["done", "P2.4", "--project-dir", projpd,
+                             "--commit", _PD_SHA,
+                             "--descriptive", "checkout no longer double-charges",
+                             "--verified-by", "t_double_charge, t_refund"])
+        tpd = task_in(mppd, "P2.4")
+        check("pd1 a started task closes with `reference/orchestrator.md` step "
+              "4's OWN fields and nothing besides - 4b's status and stamp, 4c's "
+              "SHA - and the fields it was not told about are untouched: %r"
+              % ((codepd, tpd.get("status"), tpd.get("commit"),
+                  tpd.get("verifiedBy")),),
+              codepd == 0 and tpd.get("status") == "done"
+              and tpd.get("commit") == _PD_SHA
+              and isinstance(tpd.get("completedAt"), str)
+              and tpd.get("completedAt").endswith("Z")
+              and tpd.get("verifiedBy") == ["t_double_charge", "t_refund"]
+              and tpd.get("attempts") == 1
+              and tpd.get("startedAt") == "2026-01-01T00:00:00Z"
+              and tpd.get("files") == ["src/fresh.ts"])
+        check("pd2 THE OUTCOME HALVES MOVE ONLY WHEN THE CALLER NAMES THEM, and "
+              "the half nobody named still says what the failed attempt left "
+              "there. A close that wrote the whole object would delete the last "
+              "red gate's own words - the sentence the retry brief quotes - on "
+              "its way to recording that the work arrived: %r"
+              % (tpd.get("outcome"),),
+              (tpd.get("outcome") or {}).get("descriptive")
+              == "checkout no longer double-charges"
+              and (tpd.get("outcome") or {}).get("technical")
+              == "attempt 1: gate red on t_checkout")
+
+        # THE SHA IS THE VERB. Three refusals guard it and they fail for three
+        # different reasons, so they are driven apart: no flag at all, a value
+        # that is not an object id, and an id this clone can answer for and does
+        # not have.
+        projns, mpns = mk("dn-nosha", pd_fixture())
+        with open(mpns, "rb") as _fh:
+            _pd_ns_before = _fh.read()
+        _pd_nosha = run(["done", "P2.4", "--project-dir", projns])
+        _pd_head = run(["done", "P2.4", "--project-dir", projns,
+                        "--commit", "HEAD"])
+        _pd_branch = run(["done", "P2.4", "--project-dir", projns,
+                          "--commit", "main"])
+        with open(mpns, "rb") as _fh:
+            _pd_ns_after = _fh.read()
+        check("pd3 a close with NO --commit is refused, and the manifest is byte "
+              "identical: a done task carrying no SHA is the state /audit:doctor "
+              "already reports, and `done` is terminal here so nothing in this "
+              "file could correct it afterwards: %r" % (_pd_nosha[1][:120],),
+              _pd_nosha[0] == 2 and "needs --commit" in _pd_nosha[1]
+              and _pd_ns_after == _pd_ns_before)
+        check("pd4 ...and a NAME is refused before git is asked at all. `HEAD` "
+              "and a branch both RESOLVE, so a check that only asked git would "
+              "write one into a field the schema calls a SHA, where it goes on "
+              "meaning whatever it points at later - and this is the arm that "
+              "still fires on a machine with no git: %r"
+              % ((_pd_head[0], _pd_branch[0], _pd_head[1][:90]),),
+              _pd_head[0] == 2 and _pd_branch[0] == 2
+              and "SHA" in _pd_head[1] and "SHA" in _pd_branch[1]
+              and _pd_ns_after == _pd_ns_before)
+
+        projgt, mpgt, _pd_head_sha = pd_repo("dn-git", pd_fixture())
+        with open(mpgt, "rb") as _fh:
+            _pd_gt_before = _fh.read()
+        _pd_bogus = run(["done", "P2.4", "--project-dir", projgt,
+                         "--commit", "0" * 40])
+        with open(mpgt, "rb") as _fh:
+            _pd_gt_after = _fh.read()
+        check("pd5 a SHA git CAN be asked about and does not have is refused, "
+              "nothing written: writing one would put /audit:doctor's "
+              "'fabricated or collected SHA' finding into the manifest "
+              "deliberately, and its remedy nulls the trail: %r"
+              % (_pd_bogus[1][:120],),
+              _pd_bogus[0] == 2 and _pd_gt_after == _pd_gt_before
+              and "0" * 12 in _pd_bogus[1]
+              and _pd_head_sha != "" and len(_pd_head_sha) == 40)
+        _pd_real = run(["done", "P2.4", "--project-dir", projgt, "--json",
+                        "--commit", _pd_head_sha])
+        _pd_real_json = {}
+        try:
+            _pd_real_json = json.loads(_pd_real[1])
+        except Exception:
+            pass
+        check("pd5b ALLOW CASE, and it is the direction the refusal above breaks "
+              "in: the repository's REAL head closes the task and the report "
+              "says the SHA was verified. A guard widened until it convicted "
+              "every SHA would be routed around inside the day: %r"
+              % ((_pd_real[0], _pd_real_json.get("commitVerified")),),
+              _pd_real[0] == 0 and _pd_real_json.get("commitVerified") is True
+              and (task_in(mpgt, "P2.4") or {}).get("commit") == _pd_head_sha)
+        # THE UNASKED QUESTION, which is `_commit_trail.is_shallow`'s rule read
+        # forward: with no repository to ask, `rev-parse` failing says the
+        # question was never put. Refusing here would refuse honest closes on
+        # CI's default (shallow) checkout and then send the operator to
+        # `repair-commits.py --apply`, which NULLS an intact trail.
+        _pd_unv = run(["done", "P2.4", "--project-dir", projns, "--json",
+                       "--commit", "0" * 40])
+        _pd_unv_json = {}
+        try:
+            _pd_unv_json = json.loads(_pd_unv[1])
+        except Exception:
+            pass
+        # ITS OWN PROJECT for the human line: `projns` has just closed P2.4, and
+        # a second call there would answer `already done` - an exit-2 sentence
+        # that carries no NOT VERIFIED and would make this read as green for the
+        # wrong reason.
+        projuh, _mpuh = mk("dn-unverified-human", pd_fixture())
+        _pd_unv_human = run(["done", "P2.4", "--project-dir", projuh,
+                             "--commit", "0" * 40])
+        check("pd5c ...and where git cannot be asked the same SHA is WRITTEN and "
+              "SAID to be unverified, never refused: a project that is not a "
+              "repository answers nothing, and a claim with no basis is reported "
+              "as missing rather than guessed. The human line carries the word: "
+              "%r" % ((_pd_unv[0], _pd_unv_json.get("commitVerified")),),
+              _pd_unv[0] == 0
+              and _pd_unv_json.get("commitVerified") is False
+              and (task_in(mpns, "P2.4") or {}).get("commit") == "0" * 40
+              and "NOT VERIFIED" in _pd_unv_human[1])
+
+        # TERMINAL IS TERMINAL, `_locked_start`'s and `_locked_cancel`'s rule:
+        # re-closing a finished task would rewrite history with no record of what
+        # it said before, and a done task already carries a commit graded against
+        # the scope it holds.
+        projtd, mptd = mk("dn-terminal", pd_fixture())
+        run(["cancel", "P2.3", "--reason", "dropped", "--project-dir", projtd])
+        with open(mptd, "rb") as _fh:
+            _pd_td_before = _fh.read()
+        _pd_term = {}
+        for _pdtid in ("P2.1", "P2.3"):
+            _pd_term[_pdtid] = run(["done", _pdtid, "--project-dir", projtd,
+                                    "--commit", _PD_SHA])
+        with open(mptd, "rb") as _fh:
+            _pd_td_after = _fh.read()
+        check("pd6 a `done` task and a `cancelled` one are each refused BY NAME, "
+              "and neither call wrote a byte: %r"
+              % (dict((k, (v[0], v[1][:60])) for k, v in _pd_term.items()),),
+              _pd_term["P2.1"][0] == 2 and _pd_term["P2.3"][0] == 2
+              and "already done" in _pd_term["P2.1"][1]
+              and "already cancelled" in _pd_term["P2.3"][1]
+              and _pd_td_after == _pd_td_before)
+
+        # NEVER STARTED IS A REFUSAL, NOT A WARNING, and the predicate is the one
+        # this file already has: `_started` reads TWO independent signals, so a
+        # task put back to `pending` carrying its count is not mistaken for one
+        # that was never spawned. Both directions are driven, because the wrong
+        # narrowing (status alone) is green on the first and red on the second.
+        projus, mpus = mk("dn-unstarted", pd_fixture())
+        with open(mpus, "rb") as _fh:
+            _pd_us_before = _fh.read()
+        _pd_never = run(["done", "P2.3", "--project-dir", projus,
+                         "--commit", _PD_SHA])
+        with open(mpus, "rb") as _fh:
+            _pd_us_after = _fh.read()
+        check("pd7 a task that was never started is refused: `pending` with no "
+              "attempt means no spawn was ever written down, so the close would "
+              "lay a TERMINAL state over a hole this file then refuses to "
+              "re-decide - and it is the shape /audit:doctor grades as positive "
+              "evidence of an edit outside the pipeline, so writing it would "
+              "manufacture that finding. The refusal names the remedy: %r"
+              % (_pd_never[1][-90:],),
+              _pd_never[0] == 2 and _pd_us_after == _pd_us_before
+              and "start P2.3" in _pd_never[1]
+              and M._started({"status": "pending", "attempts": 0}) is False)
+        _pd_back = pd_fixture()
+        # F190's SHAPE: a task that ran, failed and was put back to `pending`
+        # carries the count with no status left to show for it.
+        _pd_back["phases"][1]["tasks"][1]["attempts"] = 2
+        projbk, mpbk = mk("dn-back-to-pending", _pd_back)
+        _pd_ran = run(["done", "P2.3", "--project-dir", projbk,
+                       "--commit", _PD_SHA])
+        check("pd7b SECOND DIRECTION, and it is the one a narrower predicate "
+              "breaks: the SAME `pending` status with an attempt recorded DOES "
+              "close, because the trail has the spawn in it. A guard reading "
+              "`status` alone would refuse a legitimate close and be routed "
+              "around: %r" % ((_pd_ran[0],
+                               M._started({"status": "pending",
+                                           "attempts": 2})),),
+              _pd_ran[0] == 0
+              and (task_in(mpbk, "P2.3") or {}).get("status") == "done"
+              and M._started({"status": "pending", "attempts": 2}) is True)
+
+        check("pd8 a PHASE id is refused rather than closed - a phase reaches "
+              "done through SIGN-OFF, which writes a review verdict and a merge "
+              "stamp beside the status - and an id resolving to nothing, or to "
+              "no id at all, says so: %r"
+              % ((run(["done", "P2", "--project-dir", projus,
+                       "--commit", _PD_SHA])[1][:80],),),
+              run(["done", "P2", "--project-dir", projus,
+                   "--commit", _PD_SHA])[0] == 2
+              and "PHASE" in run(["done", "P2", "--project-dir", projus,
+                                  "--commit", _PD_SHA])[1]
+              and run(["done", "P9.9", "--project-dir", projus,
+                       "--commit", _PD_SHA])[0] == 2
+              and run(["done", "", "--project-dir", projus,
+                       "--commit", _PD_SHA])[0] == 2)
+
+        # THE ROW. `task.complete` and `task.commit` are DERIVED by
+        # `hooks/journal-writes.py` from the write itself and step 4c forbids
+        # appending them by hand, so this verb's row is `task.done` - named after
+        # the verb, the way `task.start` and `task.cancel` are.
+        projjd, mpjd = mk("dn-journal", pd_fixture())
+        run(["done", "P2.4", "--project-dir", projjd, "--commit", _PD_SHA,
+             "--technical", "one module rewritten, cases added beside it"])
+        _pdjm = _panel_write._journalmod()
+        _pd_all = _pdjm.read_all(projjd) if _pdjm else []
+        _pd_rows = [r for r in _pd_all if r.get("action") == "task.done"]
+        _pd_det = (_pd_rows[0].get("details") or {}) if _pd_rows else {}
+        check("pd9 the trail carries ONE `task.done` row whose details are the "
+              "allow-listed keys the writer means, with the status and the SHA "
+              "it moved FROM - and NOT a `task.complete`, which "
+              "`hooks/journal-writes.py` derives from this very write: two "
+              "writers of one action means duplicate rows and a doctor whose "
+              "completion count is no longer a count: %r"
+              % ((sorted(_pd_det), [r.get("action") for r in _pd_all]),),
+              len(_pd_rows) == 1
+              and [r for r in _pd_all if r.get("action") == "task.complete"] == []
+              and sorted(_pd_det) == ["changes", "commit", "completedAt",
+                                      "phaseId", "taskId"]
+              and _pd_det.get("commit") == _PD_SHA
+              and _pd_det.get("taskId") == "P2.4"
+              and [c for c in _pd_det["changes"] if c["field"] == "status"]
+              == [{"id": "P2.4", "field": "status", "from": "in_progress",
+                   "to": "done"}]
+              and _PD_SHA[:12] in (_pd_rows[0].get("summary") or ""))
+        # THE HANDOVER, NOT THE ROW, which is `pr9c`'s distinction one verb over:
+        # `_journal_io` drops an unlisted key in SILENCE, so a row read back is
+        # identical whether the writer handed over an allow-listed block or one
+        # carrying an invented key beside it.
+        import _journal_io as _pd_jio
+        _pd_closed = {"status": "done", "completedAt": "Z", "commit": _PD_SHA,
+                      "outcome": {"descriptive": "d", "technical": "t"},
+                      "verifiedBy": ["t_one"]}
+        _pd_hand = M._done_details(
+            "P2.4", "P2", {"status": "in_progress", "completedAt": None,
+                           "commit": None, "descriptive": None,
+                           "technical": None, "verifiedBy": []},
+            _pd_closed)
+        check("pd9b ...and every key the WRITER hands over is on "
+              "`_journal_io.DETAILS_KEYS`, asked of that module rather than of "
+              "the row it produced - `commit` and `completedAt` are already "
+              "there because the hook's own derived rows put them there, so this "
+              "row invents no vocabulary: %r" % (sorted(_pd_hand),),
+              set(_pd_hand) <= set(_pd_jio.DETAILS_KEYS)
+              and all(set(c) <= set(_pd_jio.CHANGE_KEYS)
+                      for c in _pd_hand["changes"])
+              and len(_pd_hand["changes"]) <= _pd_jio.MAX_CHANGES)
+        check("pd9c the `changes` list is the fields the call WROTE and no "
+              "others: `status`, `completedAt` and `commit` every time, the "
+              "outcome halves and `verifiedBy` only when the caller passed them. "
+              "A row for an untouched field would claim a write that did not "
+              "happen, which is the one thing a trail must never do: %r"
+              % ([c["field"] for c in _pd_det["changes"]],),
+              [c["field"] for c in _pd_det["changes"]]
+              == ["status", "completedAt", "commit", "outcome.technical"])
+
+        # THE PHASE QUESTION, SETTLED AND CHECKABLE IN BOTH DIRECTIONS.
+        projls, mpls = mk("dn-last", pd_fixture(last=True))
+        codels, txtls = run(["done", "P2.4", "--project-dir", projls, "--json",
+                             "--commit", _PD_SHA])
+        _pd_last = {}
+        try:
+            _pd_last = json.loads(txtls)
+        except Exception:
+            pass
+        _pd_phase = [p for p in (_mio.load_manifest(mpls).get("phases") or [])
+                     if p.get("id") == "P2"]
+        # `projpd` closed P2.4 at `pd1` and P2.3 was left pending, so it is
+        # STARTED here before it is closed: the never-started refusal is `pd7`'s
+        # subject and would otherwise answer this case instead.
+        run(["start", "P2.3", "--project-dir", projpd])
+        codelh, txtlh = run(["done", "P2.3", "--project-dir", projpd,
+                             "--commit", _PD_SHA])
+        check("pd10 closing the LAST open task does NOT flip the phase, and the "
+              "report says whose move that is. `phase.status = done` is written "
+              "only by sign-off's last step, beside `review.status`, "
+              "`review.outcome` and `mergedAt` - so a verb flipping it here "
+              "would be asserting a review and a merge it never saw: %r"
+              % ((codels, _pd_last.get("phaseComplete"),
+                  _pd_last.get("phaseStatus")),),
+              codels == 0 and _pd_last.get("phaseComplete") is True
+              and _pd_last.get("phaseOpenTasks") == []
+              and _pd_last.get("phaseStatus") == "in_progress"
+              and _pd_phase != [] and _pd_phase[0].get("status") == "in_progress"
+              and "sign-off" in txtlh.lower())
+        check("pd11 SECOND DIRECTION: a close that leaves work open reports the "
+              "ids rather than the sign-off line, so the sentence above is a "
+              "statement about this phase and not one the verb prints either "
+              "way. `P2.3` was the last one here, and the earlier close in this "
+              "same project named it as still open: %r"
+              % ((codelh, txtlh.splitlines()[-2:]),),
+              codelh == 0
+              and "still has open work: P2.3" in txtpd
+              and "no open task left" not in txtpd
+              and "no open task left" in txtlh)
+
+        # THE SHARDED LAYOUT, because a close writes a TASK and a task lives in
+        # its phase's shard: a writer reaching for the index would leave a
+        # manifest whose assembled task still said `in_progress` - which is the
+        # exact half the hand edit got wrong when it wrote BOTH.
+        projsd, mpsd = mk("dn-sharded", pd_fixture(), sharded=True)
+        _sd_idx = _mio.read_json(mpsd)
+        _sd_base = os.path.dirname(mpsd)
+        _sd_of = dict((s.get("id"), os.path.join(_sd_base, s["shard"]))
+                      for s in _sd_idx["phases"] if isinstance(s, dict))
+        with open(_sd_of["P1"], "rb") as _fh:
+            _sd_p1 = _fh.read()
+        with open(mpsd, "rb") as _fh:
+            _sd_index = _fh.read()
+        codesd, _txtsd = run(["done", "P2.4", "--project-dir", projsd,
+                              "--commit", _PD_SHA])
+        check("pd12 the sharded layout closes in the phase's SHARD, leaves an "
+              "untouched phase's shard and the INDEX byte-identical, and the "
+              "assembled manifest agrees with the shard - one place for one "
+              "fact, which is the whole of the loss this verb answers: %r"
+              % ((codesd, (task_in(mpsd, "P2.4") or {}).get("status")),),
+              codesd == 0 and _mio.is_sharded(_sd_idx)
+              and (task_in(mpsd, "P2.4") or {}).get("status") == "done"
+              and (task_in(mpsd, "P2.4") or {}).get("commit") == _PD_SHA
+              and open(_sd_of["P1"], "rb").read() == _sd_p1
+              and open(mpsd, "rb").read() == _sd_index)
+
+        # AN ALREADY-INVALID MANIFEST REFUSES BEFORE ANY WRITE, `pr13`'s rule for
+        # this verb, and the two arms are told apart by their own words: dropping
+        # the pre-check leaves the byte compare green, because the post-write arm
+        # catches the same findings and rolls back to the same bytes.
+        _pd_bad = pd_fixture()
+        _pd_bad["phases"][1]["tasks"][-1]["blockedBy"] = ["NOPE"]
+        projbd2, mpbd2 = mk("dn-invalid", _pd_bad)
+        with open(mpbd2, "rb") as _fh:
+            _pd_bd_before = _fh.read()
+        codebd2, txtbd2 = run(["done", "P2.4", "--project-dir", projbd2,
+                               "--commit", _PD_SHA])
+        check("pd13 an already-invalid manifest refuses BEFORE the write: "
+              "`nothing written` is the pre-check and `rolled back` is the other "
+              "arm, and the exit code cannot tell them apart: %r"
+              % (txtbd2[:90],),
+              codebd2 == 1
+              and "already invalid -- nothing written" in txtbd2
+              and "rolled back" not in txtbd2
+              and open(mpbd2, "rb").read() == _pd_bd_before)
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

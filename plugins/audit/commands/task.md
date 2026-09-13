@@ -1,14 +1,15 @@
 ---
-description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:task — add a task to the manifest, promote one, move one between phases, or close one
+# /audit:task — add a task to the manifest, promote one, close one, move one between phases, or cancel one
 
 **`$ARGUMENTS`**: subcommand `add` followed by a quoted title and any of the
 flags in the `argument-hint` above;
 or subcommand `start` followed by a task id;
+or subcommand `done` followed by a task id and `--commit <sha>`;
 or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
@@ -248,6 +249,80 @@ still promoted, with a `NOTE:` naming what it waits on — `/audit:run` is where
 decides a spawn, and the case this verb exists for is a task whose edits are being denied
 right now. **Nothing refuses a promotion of unready work**, here or in the script; the
 note is the whole of it.
+
+## Subcommand: `done <taskId> --commit <sha>`
+
+Close a task that **landed**. This is `start`'s twin at the other end of the lifecycle,
+and it exists because there was no verb for the close: `reference/orchestrator.md` →
+*Execute the task*, step 4 prescribed two hand `Edit`s — 4b's status and completion
+stamp, 4c's SHA — and a hand edit writes wherever the hand goes. Measured in this
+repository: one run wrote a task's completion into the phase **shard** and the manifest
+**index**, a later `git reset --hard` reverted the index, the shard turned out never to
+have carried the marks at all, and the record of three finished tasks survived only in
+their commit subjects. Two places for one fact is one place and one lie.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
+  --commit "$(git -C <gitRoot> rev-parse HEAD)" \
+  --descriptive "<one-line impact>" --technical "<what was actually done>" \
+  --verified-by "<test names this task added>" [--json]
+```
+
+**Call it at the END of step 4c, after `git rev-parse HEAD`** — the SHA does not exist
+until the commit does. The manifest write then rides along with the next task's commit
+or with sign-off, which is exactly what step 4c already prescribes for `task.commit`;
+what changes is that one write carries both halves instead of two writes carrying one
+each. Do **not** amend.
+
+What it writes — exactly the fields step 4 prescribes, and nothing besides:
+
+- `status: "done"`, `completedAt` stamped at the moment of the call, and `commit` set to
+  the SHA you passed.
+- `outcome.descriptive` / `outcome.technical` from `--descriptive` / `--technical`, and
+  `verifiedBy` from `--verified-by` (a comma list; `--verified-by ""` empties it). **A
+  half you do not name is left exactly as it was** — step 4's test-failure arm writes the
+  last red gate's reason into `outcome.technical` and the retry brief quotes it from
+  there, so a close that rewrote the whole object would delete that on its way to
+  recording success. The report says which of them went unrecorded rather than leaving
+  you to notice.
+- **journal** → one `task.done` row carrying the SHA in its summary and `details`.
+  It is deliberately **not** `task.complete`: that action and `task.commit` are derived
+  by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them
+  by hand, so this row is the verb's own — and it is what records the close on a machine
+  where no hook is watching.
+- Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
+  `add`.
+
+**`--commit` is required, and it is what makes this a record rather than a status flip.**
+A `done` task with no SHA is a state `/audit:doctor` already reports, and because `done`
+is terminal here nothing in this command can correct it afterwards. The value must be an
+object id (7–40 hex): `HEAD`, a branch and a tag all *resolve*, and writing one into a
+field the schema calls a SHA leaves a row that means something different next month.
+
+**Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
+phase reaches `done` only through sign-off, which writes a review verdict and a merge
+stamp beside the status); a `done` or `cancelled` task, named as such; a missing or
+non-SHA `--commit`; a SHA git can be asked about and does not have; and a task that was
+**never started** — `pending` with no attempt recorded means no spawn was ever written
+down, so the close would lay a terminal state over a hole, which is also the shape
+`/audit:doctor` grades as positive evidence of an edit outside the pipeline. Run
+`/audit:task start <taskId>` first.
+
+**A SHA git could not be asked about is written, not refused**, and the report says so:
+with no git on PATH, or in a **shallow** clone where the object is past the cut, a failed
+`rev-parse` means the question was never put — and the doctor's remedy for a false
+*missing* nulls the SHA, so grading the unasked question as a negative would refuse
+honest closes on CI's default checkout and then invite destroying an intact trail.
+
+**Closing the last open task does not close the phase, and nothing here ever will.**
+`phase.status = "done"` is written only by the last step of sign-off, beside
+`phase.review.status`, `phase.review.outcome` and `mergedAt` — the status **is** the claim
+that review, the test gate, the invariant check and the merge all happened, and this verb
+saw none of them. So the last close reports that sign-off is due (`/audit:review
+<phaseId>`) and leaves the field alone. **Nothing refuses a close that leaves a phase
+complete-but-unsigned**; the line is the whole of it, and the `pd` group in
+`plugins/audit/tests/test_audit_task.py` is what keeps the field untouched in both
+directions.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 

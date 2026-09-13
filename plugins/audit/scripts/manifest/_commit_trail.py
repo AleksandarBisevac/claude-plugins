@@ -105,6 +105,44 @@ def is_shallow(git_root):
     return True if val == "true" else (False if val == "false" else None)
 
 
+def resolve(git_root, sha, cut=None):
+    """`"present"`, `"absent"` or `"unchecked"` for ONE sha in this clone.
+
+    THE EXISTENCE HALF OF `dangling`, LIFTED SO A SECOND CALLER CANNOT REACH A
+    DIFFERENT ANSWER. `/audit:task done` grades a SHA it is being handed BEFORE it
+    writes it, which is the same question this module exists to hold once: does
+    git have this object. Asking it again in the writer would be the second walk
+    the docstring above says not to take.
+
+    THE THREE-WAY ANSWER IS THE POINT, and `is_shallow` is why. A `rev-parse` that
+    fails means the object is not here only in a clone that can answer for the
+    world; in a truncated one, or with no git to ask, the same failure means the
+    question was never put. So a negative becomes `unchecked` wherever the clone
+    cannot support the accusation, and a POSITIVE survives everywhere -- an object
+    that resolves really is present.
+
+    `cut` is the shallow verdict when the caller already holds one: `dangling`
+    pays for it once per call rather than once per row. Passed None it is asked
+    here, which is what a single-SHA caller wants.
+
+    THE NO-GIT BRANCH IS REACHABLE ONLY FROM THAT SECOND CALLER -- `dangling`
+    returns every row as `unchecked` before it reaches this function. It is
+    spelled anyway, because a caller handed an empty root would otherwise get an
+    answer out of a `_git` that never ran.
+    """
+    if not (git_root and shutil.which("git")):
+        return "unchecked"
+    code, _ = _git(git_root, ["rev-parse", "-q", "--verify",
+                              "%s^{commit}" % sha])
+    if code is None:
+        return "unchecked"
+    if code == 0:
+        return "present"
+    if cut is None:
+        cut = is_shallow(git_root) is not False
+    return "unchecked" if cut else "absent"
+
+
 def dangling(manifest, git_root):
     """`{"missing": [...], "unreachable": [...], "unchecked": [...]}`.
 
@@ -158,13 +196,12 @@ def dangling(manifest, git_root):
     cut = is_shallow(git_root) is not False
     for phase_id, task_id, sha in rows:
         row = (phase_id, task_id, sha)
-        code, _ = _git(git_root, ["rev-parse", "-q", "--verify",
-                                  "%s^{commit}" % sha])
-        if code is None:
+        verdict = resolve(git_root, sha, cut)
+        if verdict == "unchecked":
             unchecked.append(row)
             continue
-        if code != 0:
-            (unchecked if cut else missing).append(row)
+        if verdict == "absent":
+            missing.append(row)
             continue
         # Fast path: almost every recorded commit is an ancestor of HEAD.
         code, _ = _git(git_root, ["merge-base", "--is-ancestor", sha, "HEAD"])

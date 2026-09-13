@@ -2874,7 +2874,7 @@ def _cases(check):
           "rather than a script call - enumerated, so a rename on either side "
           "is a finding rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "add-phase", "cancel", "scope", "start"]
+          _tk_shared == ["add", "add-phase", "cancel", "done", "scope", "start"]
           and "move" in _tk_flags and "move" not in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time

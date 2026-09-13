@@ -202,6 +202,45 @@ def _cases(check):
               "guessing 'not truncated' would restore the false accusation on "
               "the machine least able to argue with it",
               M.is_shallow(os.path.join(tmp, "nope-not-a-repo")) is None)
+
+        # --- resolve(): one SHA, before it is ever written ----------------------
+        # P43.2. `/audit:task done` grades the SHA it is HANDED, so it needs the
+        # existence question asked of ONE id rather than of a manifest. Lifted
+        # out of `dangling` rather than spelled a second time in the writer -
+        # this module's docstring says why - so these cases pin that the lifted
+        # function keeps every distinction the loop above was tested for, and
+        # that `dangling` still answers exactly as it did.
+        check("r1 a SHA this clone HAS is present, and one it has never seen is "
+              "absent - the two answers the writer turns into 'write it' and "
+              "'refuse'",
+              M.resolve(f88_repo, f88_shas[2]) == "present"
+              and M.resolve(f88_repo, "0" * 40) == "absent",
+              repr((M.resolve(f88_repo, f88_shas[2]),
+                    M.resolve(f88_repo, "0" * 40))))
+        check("r2 THE DISTINCTION THAT MATTERS: the same fabricated SHA is "
+              "UNCHECKED in a shallow clone and unchecked with no git root at "
+              "all. A writer grading either as absent would refuse honest closes "
+              "on CI's default checkout, and then send the operator to "
+              "`repair-commits.py --apply`, which NULLS a trail that was intact",
+              M.resolve(shallow, "0" * 40) == "unchecked"
+              and M.resolve(None, f88_shas[2]) == "unchecked"
+              and M.resolve(_notrepo, "0" * 40) == "unchecked",
+              repr((M.resolve(shallow, "0" * 40), M.resolve(None, f88_shas[2]),
+                    M.resolve(_notrepo, "0" * 40))))
+        check("r3 ...and a POSITIVE survives the cut, which is the half a "
+              "blanket 'shallow means unchecked' would lose: the shallow clone's "
+              "own HEAD really is present, so the writer can still verify the "
+              "SHA an operator just made there",
+              M.resolve(shallow, _git(shallow, "rev-parse", "HEAD")
+                        .stdout.decode().strip()) == "present")
+        check("r4 the `cut` argument is the shallow verdict the caller already "
+              "paid for, not a second opinion: forced True it turns the absent "
+              "answer into unchecked and leaves the present one alone, which is "
+              "exactly how `dangling` asks it once per call instead of once per "
+              "row",
+              M.resolve(f88_repo, "0" * 40, True) == "unchecked"
+              and M.resolve(f88_repo, f88_shas[2], True) == "present"
+              and M.resolve(f88_repo, "0" * 40, False) == "absent")
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

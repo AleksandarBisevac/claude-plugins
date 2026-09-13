@@ -24,6 +24,10 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py done <taskId> --commit <sha> [manifest]
+                [--descriptive TEXT|-] [--technical TEXT|-]
+                [--verified-by t1,t2]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py scope <taskId> [manifest] [--files f1,f2]
@@ -63,10 +67,15 @@ Usage:
   backticks intact; a heredoc with a QUOTED word is the shell-proof form.
   A description consisting of the single character `-` cannot be spelled
   from this flag, and is not a description. Every flag in PROSE_FLAGS takes
-  that `-` and is checked the same way (F293) -- `--reason`, `--outcome` and
-  `--rename` as well as `--description`. STDIN IS ONE STREAM, so at most one
-  flag per call may claim it and a call where two do is refused before
-  anything is read, naming the two.
+  that `-` and is checked the same way (F293) -- `PROSE_FLAGS` is the list,
+  and it is a tuple rather than a sentence here so a flag added to it cannot
+  be added to a prose enumeration nobody updates. STDIN IS ONE STREAM, so at
+  most one flag per call may claim it and a call where two do is refused
+  before anything is read, naming the two.
+  `done` closes a task the way `start` opens one, and it is the only verb
+  here whose flag is REQUIRED for the record rather than for the field:
+  `--commit` is the SHA the work landed in, without which the close is the
+  state `/audit:doctor` already reports (`done`, no commit).
 
 Exit codes:
   0  written, manifest valid
@@ -198,6 +207,13 @@ import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer 
 #                                            the shape grades the same field this verb
 #                                            writes - two parses would be two opinions
 #                                            about what `commit_scope` then judges)
+import _commit_trail          # noqa: E402  (is a SHA still in this clone? A downward
+#                                            edge, L7 -> L1, and the ONE answer the
+#                                            doctor and `repair-commits.py` already
+#                                            share -- `done` grades the SHA it is
+#                                            handed before writing it, and a third
+#                                            walk putting that question to git would
+#                                            be a third answer to disagree with)
 import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose materialize`
 #                                            allocates against - live AND parked ids - plus
 #                                            the two rules over it. A second taken set here
@@ -430,7 +446,16 @@ def shell_eaten_gap(text):
 # outcomes, summaries, descriptions and cancel reasons alike: the gap shapes fire on
 # none of them. A guard that convicts the corpus it ships with is a guard somebody
 # routes around inside a day.
-PROSE_FLAGS = ("description", "reason", "outcome", "rename")
+#
+# `--descriptive` AND `--technical` ARE THE TWO HALVES OF A TASK'S `outcome`,
+# spelled with the schema's own field names so neither has to be explained twice.
+# They belong here for `--reason`'s reason exactly: `outcome.descriptive` is the
+# line every report surface renders (`_report_html.py` reads it first and falls
+# back to `technical`), and `outcome.technical` is what a retry brief quotes back
+# to the next executor -- a clause a shell ate out of either is a sentence that
+# reads whole and is not.
+PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
+               "technical")
 
 # ...AND THE TITLE, WHICH IS NOT A FLAG AT ALL. The first draft of F293 closed the
 # class for flags and left this, which put the guard on the CORRECTION path and not
@@ -2015,6 +2040,403 @@ def _locked_start(args, project, config, mpath, tid, out):
     return 0
 
 
+# --- done: the close the record is made of ---------------------------------------
+# P43.2. `start` gave the promotion a verb and the close still had none, so
+# `reference/orchestrator.md`'s step 4 stayed two hand Edits: 4b's status and
+# completion stamp, 4c's SHA. Measured here: one run wrote a task's completion into
+# the phase shard AND the manifest index, a later `git reset --hard` reverted the
+# index, the shard turned out never to have carried the marks at all, and the record
+# of three finished tasks survived only in their commit subjects -- rebuilt
+# afterwards out of `git log`. Two places for one fact is one place and one lie, and
+# the one a reader would have opened was the empty one.
+#
+# THE SHA IS REQUIRED, which is the decision this verb turns on. It is what fixes
+# the close to something git can be asked about afterwards -- `_commit_trail` and
+# `_invariants.commit_scope` both grade a task through it -- and `/audit:doctor`
+# already warns about done tasks that carry none. A verb that made that state cheap
+# to reach would be a verb that manufactures the finding it exists to prevent.
+#
+# WHICH PUTS THE CALL AT THE END OF STEP 4c, after `git rev-parse HEAD`: the SHA
+# does not exist until the commit does. The manifest write then rides along with the
+# next task's commit or with sign-off, which is exactly what 4c already prescribes
+# for `task.commit` -- so the ordering is the document's rather than a new one, and
+# what changes is that ONE write carries both halves instead of two writes carrying
+# one each.
+#
+# THE COMPLETION ROWS ARE NOT THIS VERB'S TO WRITE. `hooks/journal-writes.py`
+# derives `task.complete` and `task.commit` from the write itself, and step 4c says
+# never to append those by hand: two writers means duplicate rows and a doctor whose
+# completion count is no longer a count. So the row here is `task.done`, named after
+# the verb the way `task.start` and `task.cancel` are, and it is what records the
+# close where no hook is watching -- that hook sees a tool call, and this script is
+# also run straight from a terminal.
+_SHA_SHAPE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
+def _commit_shape_refusal(sha):
+    """The refusal for a `--commit` value that is not a SHA at all, or None.
+
+    SYNTAX BEFORE GIT, and it is the half that still fires where git cannot be
+    asked. `HEAD`, a branch name and a tag all RESOLVE -- `git rev-parse` hands
+    each of them back a commit -- so a check that only asked git would accept a
+    NAME into a field the schema calls a SHA, where it goes on meaning whatever
+    that ref points at next month. A trail whose rows move afterwards is not one.
+    """
+    if _SHA_SHAPE.match((sha or "").strip()):
+        return None
+    return ("[audit-task] --commit %r is not a commit SHA (7-40 hex characters). "
+            "`task.commit` is an OBJECT id, so a name -- HEAD, a branch, a tag -- "
+            "would go on resolving to whatever it points at later, and the trail's "
+            "worth is that a written row cannot move. Pass the output of "
+            "`git rev-parse HEAD`." % (sha,))
+
+
+def _commit_git_note(git_root, sha):
+    """`(refusal, note)` for a SHA git was asked about -- at most one of them set.
+
+    `_commit_trail.resolve` IS THE ANSWER, asked rather than re-derived: that
+    module holds this question for `/audit:doctor` and for `repair-commits.py`,
+    and a third walk putting it to git would be a third answer waiting to disagree
+    with the other two.
+
+    A NEGATIVE IS A REFUSAL ONLY IN A CLONE THAT CAN ANSWER FOR IT, which is
+    `_commit_trail.is_shallow`'s rule read forward. With no git on PATH, in a
+    shallow clone, or where git will not answer, a failed `rev-parse` says the
+    question was never put rather than that the object does not exist -- and the
+    doctor's remedy for a false `missing` is `repair-commits.py --apply`, which
+    NULLS the SHA. Graded the other way this verb would refuse honest closes on
+    CI's default checkout and then invite an operator to destroy an intact trail.
+    So the unasked question is written and SAID; only the answered negative
+    refuses.
+    """
+    verdict = _commit_trail.resolve(git_root, sha)
+    if verdict == "present":
+        return None, None
+    if verdict == "absent":
+        return ("[audit-task] git cannot resolve %s in %s -- refused. A "
+                "`task.commit` that resolves nowhere is what /audit:doctor "
+                "reports as a fabricated SHA or one gc has collected, and "
+                "writing one here would put that finding into the manifest "
+                "deliberately. Commit first, then pass `git rev-parse HEAD`."
+                % (sha[:12], git_root), None)
+    return None, ("  commit %s: NOT VERIFIED -- no git on PATH, git would not "
+                  "answer, or this clone is SHALLOW and the object is past where "
+                  "it was cut. An unasked question is not a clean trail; the SHA "
+                  "was written as given (`git fetch --unshallow` makes it "
+                  "askable)" % (sha[:12],))
+
+
+def _done_task(task, now, commit, descriptive, technical, verified):
+    """Close one task; returns the values it held before.
+
+    THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
+    `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and
+    `task.verifiedBy`* and 4c's *Capture the SHA ... and write it into
+    `task.commit`* -- because this verb exists to BE those two Edits. `_start_task`
+    states the rule one verb over: a writer that stamped anything the prescribed
+    Edit does not would make two records of one run disagree depending on which
+    route closed the task.
+
+    `completedAt` AND `commit` ARE WRITTEN UNCONDITIONALLY, which the terminal
+    refusal in `_locked_done` is what makes safe: the only task reaching here is an
+    unfinished one, so there is no earlier close to overwrite.
+
+    THE OUTCOME HALVES ARE TOUCHED ONLY WHEN THE CALLER PASSED THEM, and `None`
+    (the flag absent) is told apart from `""` (the flag passed empty). That is not
+    tidiness: step 4's test-failure arm writes the last red gate's reason into
+    `outcome.technical` and the retry brief quotes it back from there, so a close
+    that nulled the half nobody mentioned would delete the record of how the work
+    got here on its way to saying it arrived.
+
+    THE PRIOR VALUES ARE READ BEFORE THE WRITE, for `_locked_cancel`'s reason two
+    verbs over: afterwards every one of them says `done`, and the `from` half of
+    the journal row is gone from the manifest as well as from the row.
+    """
+    prior = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
+    was = {"status": task.get("status"),
+           "completedAt": task.get("completedAt"),
+           "commit": task.get("commit"),
+           "descriptive": prior.get("descriptive"),
+           "technical": prior.get("technical"),
+           "verifiedBy": task.get("verifiedBy")}
+    task["status"] = "done"
+    task["completedAt"] = now
+    task["commit"] = commit
+    if descriptive is not None or technical is not None:
+        outcome = task.get("outcome")
+        if not isinstance(outcome, dict):
+            outcome = {}
+        if descriptive is not None:
+            outcome["descriptive"] = descriptive
+        if technical is not None:
+            outcome["technical"] = technical
+        task["outcome"] = outcome
+    if verified is not None:
+        task["verifiedBy"] = verified
+    return was
+
+
+def _done_changes(tid, was, task):
+    """The `changes` rows for a close -- id/field/from/to, one per field WRITTEN.
+
+    THE SHAPE IS THE ALLOW-LIST'S (`_journal_io.DETAILS_KEYS` carries `changes` and
+    drops anything unlisted in silence), which is `_start_changes`' reasoning
+    unchanged.
+
+    WHERE THIS DIFFERS FROM `_start_changes` IS THE OPTIONAL HALF, and the
+    difference is what each row asserts. `start` writes three fields every time, so
+    filtering by equality there would hide which fields the verb even touches. Here
+    `status`, `completedAt` and `commit` are written every time and the outcome
+    halves and `verifiedBy` only when the caller passed them -- so a row for an
+    untouched one would claim a write that did not happen, which is the opposite
+    mistake and the worse one on a trail.
+    """
+    rows = [{"id": tid, "field": "status",
+             "from": was["status"], "to": task.get("status")},
+            {"id": tid, "field": "completedAt",
+             "from": was["completedAt"], "to": task.get("completedAt")},
+            {"id": tid, "field": "commit",
+             "from": was["commit"], "to": task.get("commit")}]
+    outcome = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
+    for half in ("descriptive", "technical"):
+        if outcome.get(half) != was[half]:
+            rows.append({"id": tid, "field": "outcome.%s" % half,
+                         "from": was[half], "to": outcome.get(half)})
+    if task.get("verifiedBy") != was["verifiedBy"]:
+        rows.append({"id": tid, "field": "verifiedBy",
+                     "from": was["verifiedBy"], "to": task.get("verifiedBy")})
+    return rows
+
+
+def _done_details(task_id, phase_id, was, task):
+    """The `details` block for a `task.done` row, built where a case can read it.
+
+    SEPARATE FROM THE APPEND FOR `_start_details`' REASON, word for word:
+    `_journal_io` drops a key that is not on `DETAILS_KEYS` in SILENCE, so a row
+    read back out of the trail looks identical whether the writer handed over an
+    allow-listed block or one carrying an invented key beside it -- and no
+    assertion about the WRITTEN row can see the difference. Built here, the
+    handover is the thing a case compares against the allow-list.
+
+    `commit` AND `completedAt` ARE BOTH ALREADY ON THAT LIST, put there by the
+    hook's own derived rows, so this row invents no vocabulary of its own.
+    """
+    details = {"taskId": task_id, "phaseId": phase_id,
+               "changes": _done_changes(task_id, was, task),
+               "completedAt": task.get("completedAt")}
+    if task.get("commit"):
+        details["commit"] = task.get("commit")
+    return details
+
+
+def _journal_done(project, config, mpath, task_id, phase_id, was, task):
+    """The `task.done` row: what closed, against which commit, and out of what.
+
+    NOT `task.complete`. That action and `task.commit` are DERIVED by
+    `hooks/journal-writes.py` from the write itself, and `reference/
+    orchestrator.md` step 4c forbids appending them by hand -- two writers means
+    duplicate rows and a doctor whose completion count is no longer a count. This
+    row is the verb's own, the way `task.start` and `task.cancel` are, and it is
+    the only record of the close on a machine where that hook never runs.
+
+    THE SHA RIDES THE SUMMARY TOO, for the reason `_journal_cancel` gives about its
+    reason: `audit-journal list` prints the summary and nothing else, and the
+    commit is the one thing a reader of a finished task is looking for. It exposes
+    nothing new -- the same SHA is in the manifest this row is about.
+    """
+    summary = ("%s done in %s: commit %s, was %s"
+               % (task_id, phase_id, str(task.get("commit") or "")[:12],
+                  was["status"]))
+    return _journal_row(project, config, mpath, "task.done", summary,
+                        _done_details(task_id, phase_id, was, task))
+
+
+def _still_open(phase):
+    """The ids in `phase` that are not finished -- `_mio.TERMINAL` is the word.
+
+    Read AFTER the close, so the task this call just finished is already out of it.
+    Cancelled counts as finished for the validator's reason one module over: a
+    phase that signed off around dropped work is not a slip.
+    """
+    return [str(t.get("id")) for t in (phase.get("tasks") or [])
+            if isinstance(t, dict) and t.get("status") not in _mio.TERMINAL]
+
+
+def _locked_done(args, project, config, mpath, tid, out):
+    """Close one task, under the lock, with a row and a revalidation -- the path
+    every mutating verb in this file takes.
+
+    THE TERMINAL REFUSAL IS `_locked_start`'s AND `_locked_cancel`'s, and it is
+    named the same way by both: re-closing a `done` or `cancelled` task would
+    rewrite history with no record of what it said before, and a `done` task
+    already carries a commit that was graded against the scope it holds.
+
+    A TASK THAT WAS NEVER STARTED IS REFUSED, NOT WARNED, and that is the decision.
+    `pending` with no attempt recorded means no spawn was ever written down, so the
+    close would lay a terminal state over a hole -- and terminal is exactly the
+    state this file will not re-decide, so the hole could afterwards be filled by
+    no verb here. It is also the shape `/audit:doctor` reads as POSITIVE evidence
+    that the manifest was edited outside the pipeline (a done task inside the
+    completion-record era with no receipt), so warning and writing would
+    manufacture that finding rather than report it. The remedy costs one command
+    and nothing irreversible, so the refusal names it. `_started` is the predicate
+    rather than a second reading of `status`: that function already holds the two
+    independent signals -- a task put back to `pending` carrying its count, and a
+    task moved to `blocked` before its first spawn -- and this verb must not have a
+    third opinion about what "has been attempted" means.
+
+    THE PHASE IS REPORTED AND NEVER FLIPPED, which is `start`'s shape for the other
+    end of the lifecycle. `reference/orchestrator.md`'s *Phase sign-off* is a
+    strict-order procedure -- review resolution, the reviewer agent, the test gate,
+    the invariant check, the optional runtime boot, the merge -- and only its last
+    step writes `phase.status = "done"`, beside `phase.review.status`,
+    `review.outcome` and `mergedAt`. A verb that flipped the phase because the last
+    task closed would be asserting every one of those happened: the status IS the
+    claim that sign-off passed, and this verb holds no basis for it. So the last
+    close says sign-off is due and leaves the field alone, which the `pd` group in
+    `plugins/audit/tests/test_audit_task.py` pins in both directions.
+    """
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    kind, node, phase = _find_target(assembled, tid)
+    if kind is None:
+        out("[audit-task] no task with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if kind != "task":
+        # A phase reaches `done` through sign-off, not here, and the ids look
+        # alike enough that guessing is wrong -- `_locked_start` draws the same
+        # line at the other end.
+        out("[audit-task] %s is a PHASE -- `done` closes one task, and a phase "
+            "reaches done only through sign-off (/audit:review %s), which writes "
+            "the review verdict and the merge stamp beside the status"
+            % (tid, tid))
+        return E_USAGE
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        out("[audit-task] %s is already %s -- terminal work is not re-closed by "
+            "this verb (edit the manifest deliberately if it is wrong)"
+            % (tid, status))
+        return E_USAGE
+    if not _started(node):
+        out("[audit-task] %s is %s and records no attempt, so closing it would "
+            "lay a terminal state over a hole: nothing says the work was ever "
+            "spawned, and `done` is the one state this verb will not re-decide "
+            "afterwards. Record the attempt first (/audit:task start %s), then "
+            "close it." % (tid, status, tid))
+        return E_USAGE
+    sha = (args.commit or "").strip()
+    shape = _commit_shape_refusal(sha)
+    if shape:
+        out(shape)
+        return E_USAGE
+    # Where git runs: `_doctor_setup.check_git`'s spelling, byte for byte -- the
+    # project plus the config's `gitRoot`, absolute, for a workspace whose
+    # repository is a subdirectory. A third answer here would send this verb to a
+    # different repository from the one the doctor grades the same SHA in, and the
+    # two verdicts would then disagree about one manifest.
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    refusal, unverified = _commit_git_note(git_root, sha)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+
+    now = _utc_now()
+    verified = None if args.verified_by is None else _split_csv(args.verified_by)
+    was = _done_task(node, now, sha, args.descriptive, args.technical, verified)
+    phase_id = phase.get("id")
+    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    written_manifest = {}
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the close would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_done(project, config, mpath, tid, phase_id, was, node)
+    open_left = _still_open(phase)
+    outcome = node.get("outcome") if isinstance(node.get("outcome"), dict) else {}
+    if args.as_json:
+        result = {"ok": True, "id": tid, "phase": phase_id,
+                  "status": node.get("status"),
+                  "completedAt": node.get("completedAt"),
+                  "commit": node.get("commit"),
+                  "commitVerified": unverified is None,
+                  "was": was["status"],
+                  "outcome": {"descriptive": outcome.get("descriptive"),
+                              "technical": outcome.get("technical")},
+                  "verifiedBy": node.get("verifiedBy"),
+                  "changes": _done_changes(tid, was, node),
+                  "phaseOpenTasks": open_left,
+                  "phaseComplete": not open_left,
+                  "phaseStatus": phase.get("status"),
+                  "written": written, "warnings": warnings}
+        result.update(jres)
+        result.update(stdin_notes_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s done in %s -- was %s" % (tid, phase_id, was["status"]))
+    out("  completedAt %s" % (node.get("completedAt"),))
+    out("  commit %s" % (node.get("commit"),))
+    if unverified:
+        out(unverified)
+    # EACH LINE CARRIES ITS BASIS, THE ABSENT ONE INCLUDED. A close that said
+    # nothing about the outcome would read as a close that recorded one; these are
+    # the fields sign-off and the report render, and the caller is the only one who
+    # can still supply them.
+    for half, flag in (("descriptive", "--descriptive"),
+                       ("technical", "--technical")):
+        if outcome.get(half):
+            out("  outcome.%s: %s" % (half, outcome[half]))
+        else:
+            out("  outcome.%s: not recorded -- pass %s" % (half, flag))
+    if node.get("verifiedBy"):
+        out("  verifiedBy: %s" % ", ".join(str(v) for v in node["verifiedBy"]))
+    else:
+        out("  verifiedBy: not recorded -- pass --verified-by with the test "
+            "names this task added")
+    if open_left:
+        out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
+    else:
+        out("  %s has no open task left -- SIGN-OFF is what closes a phase "
+            "(/audit:review %s) and this verb does not: `phase.status` is still "
+            "%r, because a done phase also asserts a review verdict and a merge "
+            "that only sign-off can write"
+            % (phase_id, phase_id, phase.get("status")))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the task.done row")
+    out("  written: %s" % ", ".join(written))
+    return 0
+
+
 # --- add-phase: one more phase in a plan that already exists ---------------------
 # F58. Everything that WROTE a phase before this verb wrote a whole plan or moved
 # one that had already been written somewhere else, so "I have a live plan and a
@@ -3015,6 +3437,30 @@ def cmd_start(args, out):
                            args, project, config, mpath, tid, out))
 
 
+def cmd_done(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to close
+    if not tid:
+        out("[audit-task] done needs a task id")
+        return E_USAGE
+    if not (args.commit or "").strip():
+        # The whole point of the verb, and `cmd_cancel`'s `--reason` one door
+        # down is the shape: a close with no commit is the state /audit:doctor
+        # already reports, and it cannot be corrected afterwards because `done`
+        # is terminal here.
+        out("[audit-task] done needs --commit <sha> -- the SHA is what fixes "
+            "this close to work git can still be asked about, and a done task "
+            "carrying none is what /audit:doctor reports. Commit first, then "
+            "pass `git rev-parse HEAD`.")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_done(
+                           args, project, config, mpath, tid, out))
+
+
 def cmd_cancel(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -3100,6 +3546,11 @@ VERB_FLAGS = {
     # universal ones, and `vf6` grades the row against the real dispatch either
     # way.
     "start": (),
+    # `done` closes what `start` opened, and `commit` is the row that makes the
+    # verb worth having rather than an optional extra -- `cmd_done` refuses
+    # without it, which is a different check from this one: this table says which
+    # flags the verb READS, and the door says which of them it requires.
+    "done": ("commit", "descriptive", "technical", "verified_by"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "area", "outcome", "description",
@@ -3122,7 +3573,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
-                            "retarget", "start"])
+                            "retarget", "start", "done"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -3162,6 +3613,23 @@ def build_parser():
     p.add_argument("--outcome", default=None)
     p.add_argument("--area", default=None)
     p.add_argument("--review-skill", dest="review_skill", default=None)
+    # `done` only. The SHA of the commit the task's work landed in, which is what
+    # `task.commit` has always been and what `_commit_trail` asks git about. Not
+    # `--sha`: the field is `commit` on every surface that renders it, and a flag
+    # spelled differently from the field it writes is one more translation for a
+    # reader to keep straight.
+    p.add_argument("--commit", default=None)
+    # ...and the two halves of `task.outcome`, spelled with the schema's own field
+    # names. `--outcome` was already taken by a PHASE's `desiredOutcome` on
+    # `add-phase` and `retarget`, and reusing one flag for two different fields on
+    # two different nouns is how a caller writes the right words into the wrong
+    # place.
+    p.add_argument("--descriptive", default=None, metavar="TEXT")
+    p.add_argument("--technical", default=None, metavar="TEXT")
+    # `verifiedBy`: the test names this task added, the field `reference/
+    # orchestrator.md` step 4b fills beside the outcome. A comma list of names for
+    # `--blocked-by`'s reason, and `--verified-by ""` empties it for the same one.
+    p.add_argument("--verified-by", dest="verified_by", default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -3321,7 +3789,8 @@ def main(argv, out=print):
     # the doors cannot describe different verbs.
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
-             "retarget": cmd_retarget, "start": cmd_start}
+             "retarget": cmd_retarget, "start": cmd_start,
+             "done": cmd_done}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
