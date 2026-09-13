@@ -1,5 +1,5 @@
 {
-  "//": "This repository's OWN configuration, committed so it travels. The audit plugin under plugins/audit/ is the product; these two hooks are how this repo governs its own releases. See .claude/hooks/guard-release.py for why they exist.",
+  "//": "This repository's OWN configuration, committed so it travels. The audit plugin under plugins/audit/ is the product; the hooks below are how this repo governs itself — its releases (guard-release.py, armed by arm-release-bypass.py), the claims a commit owes (require-claim-block.py), and the work a tree-wide destructive git command would take away (guard-uncommitted.py). Each says in its own docstring why it exists and which way it fails.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -24,6 +24,11 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-claim-block.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-uncommitted.py\"",
+            "timeout": 15
           }
         ]
       }
