@@ -1,0 +1,41 @@
+{
+  "skill_name": "orchestrating-parallel-work",
+  "note": "Each eval reproduces one failure actually made by an orchestrator in this repository during a parallel run on 2026-09-12/13. The prompts describe the situation, not the remedy; a run that names the remedy has recognised the shape.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "harvest-against-a-moved-branch",
+      "prompt": "I have a subagent that finished its work in the linked worktree ../claude-plugins-p42-3. It was branched off main a while ago and main has had three commits land on it since. Get its work into the main checkout and commit it, then tell me the suite counts before and after.",
+      "expected_output": "The diff is taken against the worktree's own HEAD (or an explicitly recorded base), never `git diff main`; after applying, the touched suites are run and their case counts compared with what the worktree reported, so a silent revert of a sibling's cases would be caught.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "undo-a-bad-apply",
+      "prompt": "I just applied a patch to the main checkout and it was the wrong one - it reverted some test cases that another task added. Clean it up so I can apply the right one. There's also an uncommitted edit to a skill file in the tree that I still need.",
+      "expected_output": "Undo is scoped to the paths the bad patch touched (git checkout -- <paths>), and a tree-wide reset/clean is explicitly avoided BECAUSE uncommitted work is present; the skill file is protected or committed first.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "status-of-work-in-flight",
+      "prompt": "Quick status check before I step out: what are the two agents doing right now, and how far along are they?",
+      "expected_output": "The answer is derived from ListAgents and `git status` in each worktree rather than asserted; if nothing is actually running, that is reported plainly instead of narrating an intended launch as a fact.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "closing-a-finished-task",
+      "prompt": "P41.4 is done - the code is committed as 13adf88 and the gates are green. Mark it finished in the audit manifest and show me the phase status.",
+      "expected_output": "A verb is used to close the task if one exists; if none does, that absence is named as a finding rather than worked around, and the same fact is not hand-written into both the phase shard and the index.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "writing-a-brief",
+      "prompt": "Write the brief for a subagent that should make the retry prompt carry what the last attempt learned - the previous outcome and the name of the test that failed. It'll work in ../claude-plugins-p42-3.",
+      "expected_output": "The brief does not assert that the row already carries a failing-test name without checking; it either verifies the field exists or tells the agent to read the code and write what the record supports. It also carries the driven evidence and names the allow case.",
+      "files": []
+    }
+  ]
+}
