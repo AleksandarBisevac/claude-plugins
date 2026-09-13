@@ -19,6 +19,7 @@ months. Only an identity assertion fails on that, and only if something makes it
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import errno
 import json
 import os
 import shutil
@@ -129,6 +130,62 @@ def _cases(check):
         check("r2 an unreadable or corrupt lock is {} rather than a raise - the "
               "panel badges a lock it cannot parse instead of 500ing",
               M.read_lock(bad) == {} and M.read_lock(os.path.join(tmp, "no")) == {})
+
+        # --- an interrupted take ----------------------------------------------
+        # A claim file with nothing in it names no session, no pid and no start,
+        # so every identity rule falls through to the age rule - which answers
+        # LIVE, and holds a lock the whole machine consults on behalf of a run
+        # that never recorded itself.
+        empty = os.path.join(tmp, "empty.lock")
+        open(empty, "w").close()
+        live, basis = M.judge(M.read_lock(empty), empty, host="thishost")
+        check("e1 a claim file with nothing in it is NOT live: there is no "
+              "holder here for the refusing bias to protect", live is False,
+              basis)
+        check("e2 ...and the basis says a take was interrupted rather than "
+              "naming a session to go and wait for",
+              "interrupted" in basis and "empty" in basis, basis)
+        check("e3 ...while a claim that HAS content and cannot be parsed stays "
+              "LIVE, because something wrote it - this is the one uncertainty "
+              "that resolves away from refusing, and it must not widen",
+              M.judge(M.read_lock(bad), bad, host="thishost")[0] is True)
+
+        # --- the claim is written in one step ---------------------------------
+        # A create and then a write is two steps, and a run killed between them
+        # is what `e1` has to clean up after. The record goes into a sibling and
+        # is linked onto the name, so the file either carries it or is not there.
+        fresh = os.path.join(tmp, "fresh.lock")
+        res = M._claim(fresh, {"sessionId": "s-1", "pid": 4242})
+        check("e4 _claim answers in exactly one of three ways and a free name "
+              "is `taken`: %r" % (res,),
+              res == {"taken": True, "exists": False, "error": None})
+        check("e5 ...and the record is IN the file the claim created, so there "
+              "is no moment when the name exists carrying nothing",
+              M.read_lock(fresh).get("sessionId") == "s-1"
+              and os.path.getsize(fresh) > 0)
+        res2 = M._claim(fresh, {"sessionId": "s-2"})
+        check("e6 ...a name already claimed is `exists`, which is the caller's "
+              "contention path and NOT an error - the two are different facts "
+              "and are reported as two: %r" % (res2,),
+              res2 == {"taken": False, "exists": True, "error": None})
+        check("e6b ...and nothing of the refused taker reached the file",
+              M.read_lock(fresh).get("sessionId") == "s-1")
+
+        def _no_hard_links(_src, _dst):
+            raise OSError(errno.EPERM, "this filesystem has no hard links")
+
+        fallback = os.path.join(tmp, "fallback.lock")
+        res3 = M._claim(fallback, {"sessionId": "s-3"}, link=_no_hard_links)
+        check("e7 where hard links do not exist the claim still lands whole - a "
+              "weaker lock beats the no lock at all that raising here would "
+              "leave: %r" % (res3,),
+              res3["taken"] is True
+              and M.read_lock(fallback).get("sessionId") == "s-3")
+        check("e8 the sibling the record was written in is gone afterwards. It "
+              "is not a `.lock`, so nothing would ever have read it as one - a "
+              "lock directory filling up with them is the bug: %r"
+              % (sorted(n for n in os.listdir(tmp) if n.startswith(".claim-")),),
+              [n for n in os.listdir(tmp) if n.startswith(".claim-")] == [])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -182,6 +239,34 @@ def _cases(check):
                   code == M.E_USAGE)
             check("a8 collect() over an empty dir is [] and does not raise",
                   M.collect(proj) == [])
+
+            # THE DOCUMENTED ESCAPE HAS TO CLEAR WHAT AN INTERRUPTED TAKE LEAVES.
+            # An empty claim read as a fresh lock with no pid, which is LIVE: the
+            # refusal told the operator to stop rather than offering the takeover,
+            # so deleting a file by hand was the only way on - and this lock is
+            # machine-wide, so every gate on the machine waited with it.
+            stranded = os.path.join(M.lock_dir(proj), "phase-P7.lock")
+            open(stranded, "w").close()
+            lines = []
+            code = M.acquire(proj, "phase-P7", session="s-C", pid=live,
+                             out=lines.append)
+            check("e9 acquiring over an empty claim OFFERS the takeover instead "
+                  "of refusing as live - the escape a refusal names has to be "
+                  "one that can clear what it found",
+                  code == M.E_STALE and any("--takeover" in x for x in lines),
+                  lines)
+            check("e9b ...and no line invents a session to go looking for, "
+                  "because an empty claim names nobody",
+                  not any("an unknown session" in x for x in lines), lines)
+            lines = []
+            code = M.acquire(proj, "phase-P7", session="s-C", pid=live,
+                             takeover=True, out=lines.append)
+            check("e10 ...and the takeover clears it, which is the whole point: "
+                  "a repair that needs a hand-deleted file is the class of "
+                  "repair this plugin exists to remove",
+                  code == 0
+                  and M.read_lock(stranded).get("sessionId") == "s-C", lines)
+            M.release(proj, "phase-P7", session="s-C", out=lambda *_a: None)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

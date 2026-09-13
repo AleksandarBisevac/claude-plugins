@@ -87,7 +87,11 @@ def _cases(check):
     # someone edited audit-lock.py — it went red the first time the full suite ran
     # against an unmodified checkout. A test whose verdict depends on the clock
     # relative to a source file's mtime asserts nothing you can rely on.
+    # THE CONTENT IS THE CASE, not incidental to it: a claim file with nothing in
+    # it is an interrupted take and is graded as one, so this fixture has to be a
+    # lock that somebody WROTE and that cannot be read back.
     _fd, _mt = tempfile.mkstemp(prefix="audit-lock-mtime-")
+    os.write(_fd, b"{not json")
     os.close(_fd)
     check("j6 an unreadable lock with a fresh file is not a licence to seize it",
           M.judge({}, _mt)[0] is True)
@@ -247,6 +251,81 @@ def _cases(check):
               code == M.E_ERR and "not a git repository" in txt)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # (p) a lock directory that cannot be written
+    # THE CREATE WAS GUARDED AGAINST THE NAME ALREADY EXISTING AND NOTHING ELSE.
+    # The directory above it had its own guard, so a lock directory that exists
+    # and refuses a new file - a shared checkout, a mounted volume, a machine
+    # where somebody else ran the last gate - raised straight out of the library,
+    # past every caller that reads an exit code. A lock is a coordination
+    # advisory, so failing to write one costs a lock; raising costs a run.
+    pro = tempfile.mkdtemp(prefix="audit-lock-ro-")
+    try:
+        if not shutil.which("git"):
+            print("SKIP p* (git not installed)")
+        else:
+            subprocess.run(["git", "init", "-q", pro], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            pld = M.lock_dir(pro)
+            os.makedirs(pld, exist_ok=True)
+            os.chmod(pld, 0o500)
+            try:
+                # READ THE WAY THE PRODUCT READS IT: try the create. Running as
+                # root, and a filesystem that does not enforce the mode, both
+                # leave a directory that is unwritable only on paper.
+                _probe = os.path.join(pld, "probe-create")
+                try:
+                    _pfd = os.open(_probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                                   0o644)
+                    os.close(_pfd)
+                    os.unlink(_probe)
+                    _enforced = False
+                except OSError:
+                    _enforced = True
+                if not _enforced:
+                    for _lbl in ("p1", "p1b", "p2"):
+                        _harness.skip(check, _lbl, "this process can still create "
+                                      "a file in a directory it just made "
+                                      "unwritable, so there is no refusal here "
+                                      "to observe", not _enforced)
+                else:
+                    lines = []
+                    _ok, _code = _harness.attempt(
+                        M.acquire, pro, "index", session="s-RO",
+                        pid=os.getpid(), out=lines.append)
+                    check("p1 a lock directory that cannot be written RETURNS a "
+                          "code instead of raising - the exception went past "
+                          "every caller that reads one and cost a run, not a "
+                          "lock", _ok and _code == M.E_ERR, _code)
+                    check("p1b ...and the message names what could not be done. "
+                          "An operator told the lock is HELD goes looking for a "
+                          "run that was never there",
+                          any("could not take" in x for x in lines)
+                          and not any("HELD" in x for x in lines), lines)
+
+                    # THE ALLOW SIDE. The same unwritable directory, with a live
+                    # claim in it: the fail-open is on the CREATE and must never
+                    # reach the holder, or a refusal becomes a shrug.
+                    os.chmod(pld, 0o700)
+                    M._write_lock(os.path.join(pld, "index.lock"),
+                                  {"hostname": here, "pid": os.getpid(),
+                                   "sessionId": "s-HOLDER", "startedAt": now,
+                                   "note": "holding"})
+                    os.chmod(pld, 0o500)
+                    lines = []
+                    _ok, _code = _harness.attempt(
+                        M.acquire, pro, "index", session="s-RO",
+                        pid=os.getpid(), out=lines.append)
+                    check("p2 ...while a LIVE claim in that same unwritable "
+                          "directory is still refused as held, and its holder "
+                          "still named - a lock that cannot be taken and a lock "
+                          "that is held are two facts, not one",
+                          _ok and _code == M.E_LIVE
+                          and any("s-HOLDER" in x for x in lines), lines)
+            finally:
+                os.chmod(pld, 0o700)
+    finally:
+        shutil.rmtree(pro, ignore_errors=True)
 
     # argparse writes its usage text to stderr on an invalid choice; swallow it so
     # a passing suite prints only its own lines.

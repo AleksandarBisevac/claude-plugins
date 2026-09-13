@@ -25,6 +25,13 @@ file, which `/audit:doctor` already explains. `audit-lock.py`'s own docstring
 carries the full argument for liveness-over-age, including why the 60-minute rule
 was wrong in BOTH directions and why `os.kill(pid, 0)` cannot be used on Windows.
 
+AN EMPTY CLAIM IS NOT AN UNCERTAINTY, WHICH IS WHY IT IS THE ONE THING THAT READS
+DEAD. A file with no record in it names no session, no pid and no start, so there
+is no holder for the bias to be protecting -- it is a take that was interrupted
+before it said who it was, and `_interrupted_take()` grades it as that instead of
+making every run on the machine wait out a threshold on its behalf. Anything
+present but unparseable stays LIVE: something wrote it.
+
 `judge()` returns a BASIS beside every verdict, never a bare boolean: "another
 session holds this" is a claim a human is about to act on, and the sentence that
 makes it checkable is the difference between a lock and a superstition.
@@ -140,6 +147,42 @@ def _age_minutes(info, path):
         return 0.0
 
 
+def _interrupted_take(info, path):
+    """True when the claim at `path` carries no record at all -- an empty file.
+
+    AN EMPTY CLAIM IS A TAKE THAT DID NOT FINISH, NOT A RUN TO WAIT FOR. It names
+    no session, no pid and no start, so the identity rules have nothing to read
+    and the age rule answers instead -- and answering LIVE there holds a lock
+    every run on this machine consults, for as long as the threshold says, on
+    behalf of a run that never recorded itself. The one thing that tells this
+    apart from a lock somebody wrote by hand is that a hand-written one has
+    something in it; zero bytes is the signature of a create whose write never
+    came.
+
+    This is the ONLY uncertainty that resolves away from LIVE, and it is not an
+    exception to the bias: there is no holder to protect. Anything present but
+    unparseable stays live, because something wrote it.
+    """
+    if info:
+        return False
+    try:
+        return os.path.getsize(path) == 0
+    except OSError:
+        return False            # no file, or none that can be asked: unchanged
+
+
+def _claim_holder(info, path):
+    """One phrase for whoever left this claim, for a line a human will act on.
+
+    An empty claim names nobody, and calling that "an unknown session" invents a
+    run for the reader to go looking for -- the same mistake in the same
+    direction as reporting a lock that could not be taken as one that is held.
+    """
+    return (info.get("sessionId") or info.get("hostname")
+            or ("a take that did not finish recording itself"
+                if _interrupted_take(info, path) else "an unknown session"))
+
+
 def judge(info, path, host=None):
     """Is this lock held by a live run? -> (live: bool, basis: str).
 
@@ -149,6 +192,10 @@ def judge(info, path, host=None):
     """
     host = host or platform.node()
     info = info if isinstance(info, dict) else {}
+    if _interrupted_take(info, path):
+        return False, ("the claim file is empty -- a take was interrupted "
+                       "before it recorded who took it, so there is no run "
+                       "here to wait for")
     pid, lock_host = info.get("pid"), info.get("hostname")
     age = _age_minutes(info, path)
     if pid and lock_host == host:
@@ -268,6 +315,80 @@ def _write_lock(path, info):
         raise
 
 
+def _link_into_place(tmp, path, link, info):
+    """Give the finished claim its real name, or write it where links cannot.
+
+    Raises FileExistsError when that name is already claimed -- that IS the
+    exclusivity test, so the caller's contention path runs exactly as it did
+    when the create was the test.
+
+    The fallback exists because hard links are not universal, and a filesystem
+    without them would otherwise leave a project with no lock rather than a
+    weaker one. It reopens the window between the create and the write; what
+    lands in that window is an empty claim, which `judge` reads for what it is.
+    """
+    try:
+        link(tmp, path)
+    except FileExistsError:
+        raise
+    except OSError:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(info, fh)
+
+
+def _claim(path, info, link=os.link):
+    """Put a COMPLETE record at `path` -> `{"taken", "exists", "error"}`.
+
+    Exactly one of the three is set. `taken`: this call created the claim.
+    `exists`: somebody already has that name, and who they are is the caller's
+    next question. `error`: the sentence naming what could not be done, which is
+    a different fact from either of the other two and must be reported as one.
+
+    THE RECORD LANDS WITH THE CLAIM OR THE FILE IS NOT THERE. A create followed
+    by a write is two steps, and a run killed between them leaves a claim naming
+    nobody on a lock every run on this machine consults. So the record goes into
+    a sibling first and is linked into place, and the LINK is what refuses a name
+    already taken -- the same no-window test the exclusive create was, with the
+    write moved in front of it instead of behind.
+
+    `link` IS AN ARGUMENT BECAUSE ITS FAILING BRANCH HAS TO BE REACHABLE. The
+    fallback under it cannot be reached wherever hard links work, and no suite
+    can take them away from the machine it is running on -- so the seam is how
+    that branch gets driven at all, and a branch no case can drive is a branch
+    nothing proves.
+    """
+    if os.path.exists(path):
+        # ASKED BEFORE THE SIBLING IS BUILT, and not to save the work: a
+        # directory can refuse a new file while still holding a live claim, and
+        # a taker that reported "could not write" there would send its reader
+        # after a permission problem instead of the run that holds the lock.
+        return {"taken": False, "exists": True, "error": None}
+    tmp = None                  # allocated inside the try, so the removal below
+                                # can tell "never created" from "created"
+    try:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".",
+                                   prefix=".claim-", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(info, fh)
+        # mkstemp is private to its creator; a lock the whole machine consults
+        # has to be readable by whoever else is about to ask about it.
+        os.chmod(tmp, 0o644)
+        _link_into_place(tmp, path, link, info)
+    except FileExistsError:
+        return {"taken": False, "exists": True, "error": None}
+    except OSError as exc:
+        return {"taken": False, "exists": False, "error": "%s" % (exc,)}
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass            # a sibling left behind is litter, not a lock:
+                                # `collect` reads `.lock` names and nothing else
+    return {"taken": True, "exists": False, "error": None}
+
+
 # --- taking and giving back ----------------------------------------------------
 # `acquire` and `release` take plain arguments rather than an argparse Namespace,
 # and that is the whole reason they could move. They were `cmd_acquire(args, out)`
@@ -303,7 +424,7 @@ def available(project):
 
     THE THIRD ANSWER, and leaving it out re-broke the panel. `acquire` returns
     `E_ERR` both for "not a git repository" - where there is no lock to take and
-    never was - and for a real failure creating the directory. A caller that
+    never was - and for a directory or a claim it could not write. A caller that
     refuses to write on every non-zero code therefore refuses in a project with no
     `.git`, which is a case the panel has a documented fallback for: it drops to a
     working-tree lockfile and proceeds under the weaker guarantee.
@@ -368,19 +489,30 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         info["sessionId"] = sid
 
     path = os.path.join(ld, name + ".lock")
-    try:                        # O_EXCL: the create IS the test, with no window
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(info, fh)
+    claim = _claim(path, info)
+    if claim["taken"]:
         out("[audit-lock] acquired %s%s" % (name, "" if pid else
                                             " (no pid recorded -- age rule applies)"))
         return 0
-    except FileExistsError:
-        pass
+    if claim["error"]:
+        # FAIL OPEN, AND SAY WHICH QUESTION WENT UNANSWERED. This lock is a
+        # coordination advisory rather than a guard, and an advisory that cannot
+        # be written must not stop the work it was advising about -- nor reach
+        # its caller as an exception, which costs a run rather than a lock.
+        # What it must never do is borrow the sentence for a lock that is HELD:
+        # nobody was found and nobody was probed, so an operator sent to wait
+        # for a live run would be waiting for a run that was never there.
+        out("[audit-lock] could not take %s: %s" % (name, claim["error"]))
+        out("             NOT a report that %s is held -- the claim could not be "
+            "written, so nothing was established about who, if anyone, has it."
+            % (name,))
+        out("             The lock is advisory: this refuses the LOCK, not the "
+            "work. Fall back to whatever guard you have, or fix %s." % (ld,))
+        return E_ERR
 
     held = read_lock(path)
     live, basis = judge(held, path)
-    who = held.get("sessionId") or held.get("hostname") or "an unknown session"
+    who = _claim_holder(held, path)
     what = held.get("note") or name
     if live and not takeover:
         out("[audit-lock] %s is HELD by a live run -- %s" % (name, who))

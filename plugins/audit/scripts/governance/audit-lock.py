@@ -58,14 +58,29 @@ silently corrupted shard; a false "alive" means a refusal the human clears by
 deleting one file, which `/audit:doctor` already tells them how to do. Those two
 mistakes are not the same size, so the tie does not go to convenience.
 
+An EMPTY claim is the one thing that reads dead, and it is not a tie: a file with
+no record in it names nobody, so there is no holder the bias could protect. It is
+a take that was interrupted before it recorded itself, it is offered for takeover
+like any other run that is not there, and `_locks._interrupted_take()` is where
+that is decided. Anything present but unparseable stays LIVE -- something wrote it.
+
 A pid can be reused by an unrelated process, which reads as LIVE -- the same safe
 direction, and the reason the recorded pid must be one that outlives the acquire
 call (the orchestrator's own, via $CLAUDE_PID). This script's pid dies the
 instant it exits, so it is never what gets written; with no durable pid available
 we record none and stay on the age rule rather than inventing liveness.
 
-Acquire is also race-free now: O_CREAT|O_EXCL replaces the prose's
-"if the file exists ... else write it", which had a window between the two.
+Acquire is also race-free: the claim is written into a sibling and then linked
+onto its real name, and the LINK is what refuses a name already taken. That
+replaces the prose's "if the file exists ... else write it", which had a window
+between the two, and it closes the second window the exclusive create left --
+the one between creating the claim and describing it, where a killed run used to
+strand a file naming nobody.
+
+And a lock that cannot be written is reported as that, never as a lock that is
+HELD: the claim is a coordination advisory, so failing to write one refuses the
+lock and not the work, and the caller reads the exit code below rather than
+catching an exception.
 """
 import argparse
 import json
