@@ -258,6 +258,41 @@
       "title": "The plan gate says one thing to one file",
       "shard": "phases/P44.json",
       "status": "in_progress"
+    },
+    {
+      "id": "P45",
+      "title": "The task gate stops being the phase gate in disguise",
+      "shard": "phases/P45.json"
+    },
+    {
+      "id": "P46",
+      "title": "A gate costs what it measures, and no more",
+      "shard": "phases/P46.json"
+    },
+    {
+      "id": "P47",
+      "title": "The agents' loop, the parts still in a handoff note",
+      "shard": "phases/P47.json"
+    },
+    {
+      "id": "P48",
+      "title": "The plugin reads its own trail back",
+      "shard": "phases/P48.json"
+    },
+    {
+      "id": "P49",
+      "title": "The plugin offers its own bar, and measures value not only cost",
+      "shard": "phases/P49.json"
+    },
+    {
+      "id": "P50",
+      "title": "First contact, the orchestrator's weight, and the 2.x migration",
+      "shard": "phases/P50.json"
+    },
+    {
+      "id": "P51",
+      "title": "The small open ones",
+      "shard": "phases/P51.json"
     }
   ],
   "fileIndex": {
@@ -334,7 +369,8 @@
       "P40.3",
       "P42.4",
       "P42.6",
-      "P43.4"
+      "P43.4",
+      "P44.1"
     ],
     "README.md": [
       "P2.3",
@@ -351,7 +387,8 @@
       "P32.8",
       "P41.1",
       "P41.4",
-      "P41.6"
+      "P41.6",
+      "P44.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -424,7 +461,10 @@
       "P41.4",
       "P41.5",
       "P40.3",
-      "P42.6"
+      "P42.6",
+      "P44.1",
+      "P44.2",
+      "P45.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -476,7 +516,8 @@
       "P31.8",
       "P32.5",
       "P32.2",
-      "P34.6"
+      "P34.6",
+      "P45.2"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -533,7 +574,9 @@
       "P32.4",
       "P32.2",
       "P39.1",
-      "P43.2"
+      "P43.2",
+      "P45.1",
+      "P46.1"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -546,7 +589,8 @@
       "P41.3",
       "P41.5",
       "P41.7",
-      "P42.5"
+      "P42.5",
+      "P44.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -631,7 +675,8 @@
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
       "P7.2",
-      "P32.2"
+      "P32.2",
+      "P45.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -661,7 +706,9 @@
       "P42.6",
       "P44.3",
       "P44.4",
-      "P43.4"
+      "P43.4",
+      "P46.4",
+      "P46.5"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -731,7 +778,8 @@
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
       "P15.4",
-      "P18.7"
+      "P18.7",
+      "P44.1"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -801,7 +849,8 @@
       "P25.5",
       "P25.7",
       "P32.7",
-      "P33.2"
+      "P33.2",
+      "P46.6"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -880,7 +929,8 @@
       "P5.1",
       "P5.2",
       "P15.4",
-      "P32.2"
+      "P32.2",
+      "P45.2"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -1029,7 +1079,8 @@
       "P37.2",
       "P42.1",
       "P42.3",
-      "P42.6"
+      "P42.6",
+      "P46.5"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1146,7 +1197,10 @@
       "P40.1",
       "P40.2",
       "P40.3",
-      "P43.4"
+      "P43.4",
+      "P46.3",
+      "P46.4",
+      "P46.5"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1161,7 +1215,10 @@
       "P40.1",
       "P40.2",
       "P40.3",
-      "P43.4"
+      "P43.4",
+      "P46.3",
+      "P46.4",
+      "P46.5"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1204,7 +1261,10 @@
       "P32.2",
       "P39.1",
       "P43.2",
-      "P42.6"
+      "P42.6",
+      "P45.1",
+      "P46.2",
+      "P46.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1219,7 +1279,10 @@
       "P32.2",
       "P39.1",
       "P43.2",
-      "P42.6"
+      "P42.6",
+      "P45.1",
+      "P46.2",
+      "P46.1"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1230,7 +1293,8 @@
     ],
     "plugins/audit/scripts/manifest/_manifest_phases.py": [
       "P22.4",
-      "P32.2"
+      "P32.2",
+      "P45.2"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1287,7 +1351,8 @@
       "P42.3",
       "P42.6",
       "P44.3",
-      "P44.4"
+      "P44.4",
+      "P45.1"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -1312,7 +1377,8 @@
       "P25.4",
       "P25.5",
       "P25.7",
-      "P33.2"
+      "P33.2",
+      "P46.6"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1354,7 +1420,8 @@
       "P41.1",
       "P41.4",
       "P41.7",
-      "P40.3"
+      "P40.3",
+      "P46.1"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -1373,7 +1440,8 @@
       "P40.2",
       "P41.1",
       "P41.4",
-      "P40.3"
+      "P40.3",
+      "P46.3"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1441,12 +1509,14 @@
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
       "P33.2",
-      "P34.1"
+      "P34.1",
+      "P46.6"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
       "P33.2",
-      "P34.1"
+      "P34.1",
+      "P46.6"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -1502,7 +1572,8 @@
       "P36.1"
     ],
     "plugins/audit/tests/test_validate_manifest.py": [
-      "P32.2"
+      "P32.2",
+      "P45.2"
     ],
     "examples/acme-store/phases/BF1.json": [
       "P32.2"
@@ -1588,19 +1659,22 @@
       "P42.6"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
-      "P43.4"
+      "P43.4",
+      "P46.3"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4"
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
-      "P43.4"
+      "P43.4",
+      "P46.3"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4"
     ],
     "tools/orchestrator-state.py": [
-      "P43.5"
+      "P43.5",
+      "P44.1"
     ]
   },
   "bugs": [
