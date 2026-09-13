@@ -102,6 +102,14 @@ Every newly created task MUST be initialized with ALL of:
 `dependsOn: []` (empty when none) and a `tests` object with `mode`, `add`,
 `expectRedFirst`, `gate`.
 
+**`tests.gate` is the task's own scope, not a copy of the phase's.** The phase gate is
+wide because its question is wide, and a task gate is narrowed to the task's own files —
+a wider one does not answer its question any better, it answers the PHASE's question
+again, once per attempt, per task, per phase running in parallel. `commands/init.md` →
+step 5.3 is where a plan's gates are derived; `/audit:task add` derives one the same way
+for a task added later and prints which default it took (`commands/task.md` → *The task
+gate is derived*).
+
 **Every `tests.add` entry is written `"<path>: <what it asserts>"`**, the path being
 the repo-relative file the case will live in — even when it does not exist yet. That
 leading path is what `/audit:task add` and `scope` carry into the task's `files` and

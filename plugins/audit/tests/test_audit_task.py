@@ -4187,6 +4187,252 @@ def _cases(check):
               and "rolled back" not in txtbd2
               and open(mpbd2, "rb").read() == _pd_bd_before)
 
+        # ---- (tg) P45.1: the gate `add` DERIVES, and the basis it reports -----
+        # A generated plan handed every task the phase's whole gate, so a phase of
+        # nine tasks ran the full suite nine times to prove what the one sign-off
+        # run proves; the operator who reported it retargeted them by hand and
+        # then had to hand-edit `tests.gate` inside a shard three separate times,
+        # which is the edit `commands/task.md` forbids. Both field reports said
+        # the same thing. The input was already in hand: `--tests-add` was parsed
+        # one line BELOW the copy of `phase.testGate`, and thrown away.
+        #
+        # THE BASIS IS ASSERTED IN EVERY CASE BELOW, including the ones where the
+        # derived entries and the phase's happen to be equal. A gate that is right
+        # for the wrong reason prints identically, and the third default (the wide
+        # one) is reached both when it is correct and when the derivation quietly
+        # failed - the sentence is the only thing that tells those apart.
+        def gate_manifest():
+            def seeded(tid, gate, files):
+                return {"id": tid, "title": "seed", "status": "done",
+                        "files": files,
+                        "tests": {"mode": "gate-only", "add": [],
+                                  "expectRedFirst": False, "gate": gate}}
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "npm run lint",
+                                           "test": "npm test",
+                                           "typecheck": "npm run typecheck",
+                                           # A KEY THAT LOOKS LIKE A PATH. `tg7`
+                                           # is the only case that can tell a
+                                           # check reading the declaration from
+                                           # one reading the punctuation.
+                                           "web.spec": "npm test -- web"}},
+                "phases": [
+                    # P1: the spelling recorded IN the plan (commands/init.md
+                    # step 5.3 - nothing else persists it).
+                    {"id": "P1", "title": "Path-scoped", "status": "in_progress",
+                     "testGate": ["lint", "test", "typecheck"],
+                     "tasks": [seeded(
+                         "P1.1",
+                         ["lint", "npm test -- src/search/query.test.ts"],
+                         ["src/search/query.ts"])]},
+                    # P2: every sibling on the wide KEY. The phase gate carries
+                    # one entry the sibling's does not, so a derivation that
+                    # wrongly read P2.1 as a spelling would change the VALUE here
+                    # and not only the sentence.
+                    {"id": "P2", "title": "Wide keys", "status": "pending",
+                     "testGate": ["lint", "test", "typecheck"],
+                     "tasks": [seeded("P2.1", ["lint", "test"],
+                                      ["src/cart/total.ts"])]},
+                    # P3: a wide LITERAL - no key, no path. The arm that a
+                    # loosened filename bound breaks.
+                    {"id": "P3", "title": "Wide literal", "status": "pending",
+                     "testGate": ["lint", "test"],
+                     "tasks": [seeded("P3.1", ["npm test"],
+                                      ["src/cart/stepper.ts"])]},
+                    {"id": "P4", "title": "Keyed like a path",
+                     "status": "pending", "testGate": ["lint"],
+                     "tasks": [seeded("P4.1", ["web.spec"],
+                                      ["src/web/app.ts"])]},
+                    # P5: the same path-shaped KEY, this time riding alongside a
+                    # real path-scoped entry. The only arrangement in which the
+                    # copy-through arm of `_repointed` can be wrong.
+                    {"id": "P5", "title": "Both at once", "status": "pending",
+                     "testGate": ["lint", "test"],
+                     "tasks": [seeded(
+                         "P5.1",
+                         ["web.spec", "npm test -- src/web/home.test.ts"],
+                         ["src/web/home.ts"])]},
+                ],
+                "fileIndex": {"src/search/query.ts": ["P1.1"],
+                              "src/cart/total.ts": ["P2.1"],
+                              "src/cart/stepper.ts": ["P3.1"],
+                              "src/web/app.ts": ["P4.1"],
+                              "src/web/home.ts": ["P5.1"]},
+                "bugs": [],
+            }
+
+        tg_proj, tg_mp = mk("tg-derive", gate_manifest())
+
+        def tg_gate(tid):
+            return ((task_in(tg_mp, tid) or {}).get("tests") or {}).get("gate")
+
+        codetg, txttg = run(
+            ["add", "Sanitize the sort parameter", "--phase", "P1",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/search/sort.test.ts: rejects an unknown key"])
+        check("tg1 DEFAULT ONE: the task's own `tests.add` paths, in the "
+              "sibling's spelling - the case the task promises to author is what "
+              "its gate runs, and the report names which default it took: %r"
+              % ((tg_gate("P1.2"), [ln for ln in txttg.split("\n")
+                                    if ln.startswith("  gate:")]),),
+              codetg == 0
+              and tg_gate("P1.2") == ["lint",
+                                      "npm test -- src/search/sort.test.ts"]
+              and "narrowed to this task's tests.add paths, in P1.1's spelling" \
+                  in txttg)
+        check("tg1b ...and the shared key rides THROUGH untouched while only the "
+              "path-scoped entry moves - `lint` has one scope for every task in "
+              "the phase, so substituting into it would narrow nothing and lose "
+              "the step: %r" % (tg_gate("P1.2"),),
+              (tg_gate("P1.2") or [None])[0] == "lint")
+
+        codetg, txttg = run(
+            ["add", "Cache the facet counts", "--phase", "P1",
+             "--project-dir", tg_proj, "--files", "src/search/facets.ts"])
+        check("tg2 DEFAULT TWO: no case named, so the task's `files` go in "
+              "instead - same spelling, same sibling, and the basis says which "
+              "of the two it was: %r"
+              % ((tg_gate("P1.3"), codetg),),
+              codetg == 0
+              and tg_gate("P1.3") == ["lint",
+                                      "npm test -- src/search/facets.ts"]
+              and "narrowed to this task's files, in P1.1's spelling" in txttg)
+
+        codetg, txttg = run(
+            ["add", "Two cases at once", "--phase", "P1",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/search/a.test.ts: one",
+             "--tests-add", "src/search/b.test.ts: two"])
+        check("tg3 every path goes in where the FIRST of the sibling's stood, so "
+              "the flags around them survive a substitution nothing parsed - a "
+              "gate that ran only the first case would be a green bought on half "
+              "the work: %r" % (tg_gate("P1.4"),),
+              codetg == 0
+              and tg_gate("P1.4") == [
+                  "lint",
+                  "npm test -- src/search/a.test.ts src/search/b.test.ts"])
+
+        # ---- THE ALLOW CASES: a wide gate the project CHOSE stays wide --------
+        # This is the direction that decides whether the change is honest. A
+        # derivation that silently narrows a deliberately wide gate is worse than
+        # the cost it saves: a gate that stops selecting the tests it was meant to
+        # is a green that means less than it did. All three phases below have to
+        # come back with the phase's own entries AND with a basis that says the
+        # wide one was taken and why.
+        codetg, txttg = run(
+            ["add", "Debounce the stepper", "--phase", "P2",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/cart/stepper.test.ts: coalesces two clicks"])
+        check("tg4 ALLOW CASE: every sibling carries the wide KEY, so the plan "
+              "records no spelling to read one off - the phase's testGate, with "
+              "the reason. Its third entry is the one a wrongly-narrowed gate "
+              "would drop: %r" % ((tg_gate("P2.2"), codetg),),
+              codetg == 0
+              and tg_gate("P2.2") == ["lint", "test", "typecheck"]
+              and "the phase's testGate, wide" in txttg
+              and "no sibling task in P2 declares a path-scoped gate entry" \
+                  in txttg)
+
+        codetg, txttg = run(
+            ["add", "Trim the banner", "--phase", "P3",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/cart/banner.test.ts: hides on an empty cart"])
+        check("tg5 ALLOW CASE, and the one a loosened filename bound breaks: a "
+              "wide LITERAL (`npm test`) names no file, so it is not a spelling "
+              "either - a token has to carry an extension or be a dotfile to "
+              "count as a path: %r" % ((tg_gate("P3.2"), codetg),),
+              codetg == 0 and tg_gate("P3.2") == ["lint", "test"]
+              and "the phase's testGate, wide" in txttg)
+
+        codetg, txttg = run(
+            ["add", "Nothing named at all", "--phase", "P1",
+             "--project-dir", tg_proj])
+        check("tg6 ALLOW CASE at the other end: the sibling IS path-scoped and "
+              "this task names no file, so there is nothing to point a gate at - "
+              "the wide entry, and a DIFFERENT reason, because `no spelling` and "
+              "`no paths` are two states an operator repairs differently: %r"
+              % ((tg_gate("P1.5"), codetg),),
+              codetg == 0
+              and tg_gate("P1.5") == ["lint", "test", "typecheck"]
+              and "P1.1 is path-scoped but this task names no file" in txttg)
+
+        codetg, txttg = run(
+            ["add", "Keyed like a path", "--phase", "P4",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/web/app.test.ts: renders the shell"])
+        check("tg7 ALLOW CASE, reading the DECLARATION and not the punctuation: "
+              "`web.spec` is a `meta.buildCommands` key whose name happens to "
+              "look like a file, and a key is wide by declaration however it is "
+              "spelled - only a check that asked the manifest can tell: %r"
+              % ((tg_gate("P4.2"), codetg),),
+              codetg == 0 and tg_gate("P4.2") == ["lint"]
+              and "the phase's testGate, wide" in txttg)
+
+        # ---- the two flags still win, and still say so ------------------------
+        codetg, txttg = run(
+            ["add", "Explicit", "--phase", "P1", "--project-dir", tg_proj,
+             "--gate", "npx vitest run src/x.test.ts"])
+        check("tg8 `--gate` is not a default and is not derived from: what the "
+              "caller typed, reported as theirs: %r"
+              % ((tg_gate("P1.6"), "from --gate" in txttg),),
+              codetg == 0
+              and tg_gate("P1.6") == ["npx vitest run src/x.test.ts"]
+              and "from --gate" in txttg)
+        codetg, txttg = run(
+            ["add", "Ungradeable", "--phase", "P1", "--project-dir", tg_proj,
+             "--gate-clear"])
+        check("tg9 `--gate-clear` still reaches the EMPTY gate (F201) - the "
+              "derivation runs after both flags, never instead of them: %r"
+              % ((tg_gate("P1.7"), codetg),),
+              codetg == 0 and tg_gate("P1.7") == []
+              and "gate: none (from --gate-clear)" in txttg)
+
+        codetg, txttg = run(
+            ["add", "As data", "--phase", "P1", "--project-dir", tg_proj,
+             "--json", "--tests-add", "src/search/c.test.ts: three"])
+        _tg_json = json.loads(txttg)
+        check("tg10 the machine surface carries the basis under the key "
+              "`add-phase` already spells it with, so a reader comparing a "
+              "phase's answer with a task's is comparing one kind of answer: %r"
+              % (_tg_json.get("testGateBasis"),),
+              codetg == 0
+              and _tg_json.get("testGateBasis")
+              == "narrowed to this task's tests.add paths, in P1.1's spelling"
+              and (_tg_json.get("task") or {}).get("tests", {}).get("gate")
+              == ["lint", "npm test -- src/search/c.test.ts"])
+
+        codetg, txttg = run(
+            ["add", "Rework the nav", "--phase", "P5",
+             "--project-dir", tg_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/web/nav.test.ts: collapses under 640px"])
+        check("tg12 a path-shaped KEY riding beside a real path-scoped entry is "
+              "carried through while only the entry beside it moves - the one "
+              "arrangement where copying a shared key through and repointing it "
+              "produce different gates: %r" % ((tg_gate("P5.2"), codetg),),
+              codetg == 0
+              and tg_gate("P5.2") == ["web.spec",
+                                      "npm test -- src/web/nav.test.ts"])
+
+        # THE UNIT-LEVEL BOUND, driven at the function rather than through a
+        # manifest: these are the tokens a path detector has to refuse, and a
+        # manifest case can only reach them one at a time.
+        check("tg11 `_gate_entry_paths` reads a runner's flags, selectors and "
+              "shard fractions as what they are and not as paths, and finds the "
+              "suite between them: %r"
+              % ([M._gate_entry_paths(e) for e in
+                  ("yarn test --selectProjects web", "yarn test --shard 1/4",
+                   "npm test -- src/a.test.ts", "npm test", "lint",
+                   "pytest tests/.coveragerc")],),
+              M._gate_entry_paths("yarn test --selectProjects web") == []
+              and M._gate_entry_paths("yarn test --shard 1/4") == []
+              and M._gate_entry_paths("npm test -- src/a.test.ts") \
+                  == ["src/a.test.ts"]
+              and M._gate_entry_paths("npm test") == []
+              and M._gate_entry_paths("lint") == []
+              and M._gate_entry_paths("pytest tests/.coveragerc") \
+                  == ["tests/.coveragerc"])
+
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \
                 contextlib.redirect_stderr(_null):

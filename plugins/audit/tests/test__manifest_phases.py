@@ -444,6 +444,69 @@ def _cases(check):
           any("names no file" in x for x in _ta_v_w) and _ta_v_f == [])
 
 
+    # --- the derived gate, read back ---
+    _TG_WIDE = ["npm test"]
+    _TG_NARROW = ["npm test -- src/a.test.ts"]
+
+    def _tg_walk(pgate, tgate, status="pending"):
+        ph = _phase(status="in_progress", testGate=pgate, tasks=[
+            _task("P0.1", status=status,
+                  tests={"mode": "gate-only", "add": [], "gate": tgate})])
+        _i, _f, _w = M._walk_phases([ph])
+        return _f, [x for x in _w if "testGate verbatim" in x]
+
+    _tg_f, _tg_w = _tg_walk(_TG_WIDE, list(_TG_WIDE))
+    check("tg1 a task whose tests.gate is its phase's testGate verbatim is "
+          "named: /audit:init step 5.3 narrows a task gate to the task's own "
+          "paths and reaches the wide one only as its last arm, and until this "
+          "line nothing looked at which arm it took: %r" % ((_tg_f, _tg_w),),
+          _tg_f == [] and len(_tg_w) == 1 and "task P0.1" in _tg_w[0])
+    _tg_nf, _tg_nw = _tg_walk(_TG_WIDE, _TG_NARROW)
+    check("tg2 ALLOW CASE: a task whose gate is genuinely narrower than its "
+          "phase's says nothing - that is the outcome the rule asks for, so a "
+          "line here would fire on the plans that got it right and teach the "
+          "reader to skip the class: %r" % ((_tg_nf, _tg_nw),),
+          _tg_nf == [] and _tg_nw == [])
+    _tg_ef, _tg_ew = _tg_walk([], [])
+    check("tg3 ALLOW CASE: a phase with no testGate at all raises nothing, "
+          "even though the two empty gates ARE equal - there is no wide gate "
+          "for a task to have copied, and a phase nothing can prove done is "
+          "`audit-task.py`'s subject rather than this rule's: %r"
+          % ((_tg_ef, _tg_ew),),
+          _tg_ef == [] and _tg_ew == [])
+    _tg_emptytask = _tg_walk(_TG_WIDE, [])[1]
+    check("tg4 ...and an EMPTY task gate under a wide phase gate is silent "
+          "too: that is a designed state with a report of its own on the two "
+          "verbs that write it, and it is the opposite of the defect here: %r"
+          % (_tg_emptytask,), _tg_emptytask == [])
+    _tg_done = _tg_walk(_TG_WIDE, list(_TG_WIDE), status="done")[1]
+    _tg_cancelled = _tg_walk(_TG_WIDE, list(_TG_WIDE), status="cancelled")[1]
+    check("tg5 a FINISHED task carrying the wide gate is exempt, on the "
+          "red-first rule's reasoning above: its gate has already run, so the "
+          "line would name nothing anybody can act on - and the settled tasks "
+          "are the bulk of a mature plan, which is how a class gets skipped: %r"
+          % ((_tg_done, _tg_cancelled),),
+          _tg_done == [] and _tg_cancelled == [])
+    _tg_blank = _tg_walk(_TG_WIDE, ["npm test", "  "])[1]
+    check("tg6 a blank entry beside the copy does not buy a task out of the "
+          "rule: both sides normalise to the entries that will actually run, "
+          "so the pair orders the same one command and is the same gate: %r"
+          % (_tg_blank,), len(_tg_blank) == 1)
+    _tg_vf, _tg_vw = _rules.validate(
+        {"meta": {"version": 2}, "phases": [
+            _phase(status="in_progress", testGate=_TG_WIDE, tasks=[
+                _task("P0.1", status="pending",
+                      tests={"mode": "gate-only", "add": [],
+                             "gate": list(_TG_WIDE)})])]})
+    check("tg7 ...and it reaches `validate()` through the walk as a WARNING "
+          "with the findings empty in the same breath: some tasks legitimately "
+          "want the wide gate, and a validator that refused a plan written "
+          "before this rule existed is one people stop running: %r"
+          % ([x[:70] for x in _tg_vw],),
+          _tg_vf == []
+          and len([x for x in _tg_vw if "testGate verbatim" in x]) == 1)
+
+
 def _selftest():
     return _harness.run(_cases)
 

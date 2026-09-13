@@ -2972,7 +2972,12 @@ def _cases(check):
     # `add` (F201) -- the check that exists BECAUSE of those two did not cover the
     # verb where it happened again. `_phase_gate` is listed as a writer because it
     # is where the flag is read, the way `_build_task` is for `add`.
-    _AT_WRITERS = {"add": ("cmd_add", "_locked_add", "_build_task"),
+    # `_task_gate` joined `add`'s row when the gate default stopped being a copy
+    # of `phase.testGate` and became a derivation: the two gate flags are read
+    # there now, and this case went red on exactly that move -- which is the
+    # table doing its job rather than the table being in the way.
+    _AT_WRITERS = {"add": ("cmd_add", "_locked_add", "_build_task",
+                           "_task_gate"),
                    # `_build_phase` is `add`'s `_build_task` one verb over, and
                    # it was MISSING here until F210 widened the hint that names
                    # its flags. Nothing was wrong with the code: the row was

@@ -1349,39 +1349,187 @@ def _waiting_on(assembled, node):
 
 
 # --- the add -------------------------------------------------------------------
-def _build_task(task_id, title, args, phase):
-    """`(task, unnamed)` -- the new task, fully template-initialized (every field
-    from the conventions' New task template, exactly once, in _TEMPLATE_KEYS
-    order), plus the `tests.add` entries that named no file.
+def _gate_entry_paths(entry):
+    """Every file path a gate entry NAMES, in the order they appear in it.
 
-    THE SECOND HALF IS RETURNED RATHER THAN PRINTED HERE, and rather than
-    re-derived by the caller. This function is the only place that turns
-    `--tests-add` into `files`, so it is the only place that knows which entries
-    the union could not carry; `_locked_add` is where a sentence reaches the
-    operator. Deriving it twice would be two chances for the scope written and
-    the scope explained to stop being the same one -- `_build_phase`'s note about
-    its `gate` argument, read the other way round.
+    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
+    token instead of the leading one. `_rules.tests_add_path` is the ONE answer
+    to "does this string name a file" (F294), and a gate entry is the other
+    place a path has to be recognized inside free text -- a second spelling of
+    the filename bound would be two opinions about the same token, and the one
+    that drifted would either miss a suite or read `--selectProjects` as a path.
+
+    A token has to carry an extension or be a dotfile to count, which is what
+    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
     """
-    risk = args.risk or "low"
-    # sonnet is the floor for all fix work; risk high escalates to opus unless
-    # the caller chose explicitly (commands/task.md's long-standing rule).
-    model = args.model or _model_floor(risk)
-    mode = args.tests_mode or "gate-only"
+    if not isinstance(entry, str):
+        return []
+    found = []
+    for token in entry.split():
+        path = _rules.tests_add_path(token)
+        if path:
+            found.append(path)
+    return found
+
+
+def _is_shared_key(entry, build):
+    """True when the entry is a `meta.buildCommands` KEY rather than a command.
+
+    Asked of the declaration and never of the shape. `commands/init.md` has
+    entries resolve through `meta.buildCommands` wherever the scope is SHARED
+    and be literal commands wherever it differs per task, so what makes an entry
+    wide is that the manifest declares it -- not that it looks short. A key
+    someone spelled `e2e.spec` would otherwise read as path-scoped on its
+    punctuation alone.
+    """
+    return isinstance(build, dict) and entry in build
+
+
+def _path_scoped_sibling(phase, build):
+    """`(entries, taskId)` for the first task in this phase whose `tests.gate`
+    carries a path-scoped entry, or `(None, None)`.
+
+    THE PLAN IS THE ONLY RECORD OF THE RUNNER'S SPELLING. `commands/init.md`
+    step 5.3 says it plainly: nothing persists how this project narrows a gate
+    except the gates themselves, so a task added later reads the shape off its
+    siblings rather than re-detecting it. Which makes the sibling EVIDENCE and
+    not a resemblance -- that entry was accepted by this project's runner once,
+    so the same entry with different paths in it is a command that can run.
+
+    Document order, and the id comes back with the entries because the operator
+    has to be able to go and read the gate the shape was taken from.
+    """
+    for task in (phase.get("tasks") or []):
+        if not isinstance(task, dict):
+            continue
+        tests = task.get("tests")
+        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
+        entries = [e for e in entries if isinstance(e, str) and e.strip()]
+        if any(not _is_shared_key(e, build) and _gate_entry_paths(e)
+               for e in entries):
+            return entries, task.get("id")
+    return None, None
+
+
+def _repointed(entries, build, paths):
+    """`entries` with every path-scoped entry re-pointed at `paths`.
+
+    THE FLAGS ARE KEPT AND ONLY THE PATHS MOVE: the sibling's tokens are rebuilt
+    in order, the paths it named are dropped, and this task's paths go in where
+    the first of them stood. That is what carries a source-to-test flag, a `--`
+    separator or a project selector through a substitution nobody wrote a parser
+    for.
+
+    A shared key and an entry naming no path are copied THROUGH rather than
+    dropped: a gate of `["lint", "npm test -- <a suite>"]` narrows the suite and
+    still lints, because only one of those two entries has a scope that differs
+    per task.
+    """
+    out = []
+    for entry in entries:
+        if _is_shared_key(entry, build) or not _gate_entry_paths(entry):
+            out.append(entry)
+            continue
+        rebuilt, placed = [], False
+        for token in entry.split():
+            if not _rules.tests_add_path(token):
+                rebuilt.append(token)
+            elif not placed:
+                rebuilt.extend(paths)
+                placed = True
+        out.append(" ".join(rebuilt))
+    return out
+
+
+def _task_gate(args, phase, assembled, add_paths, files):
+    """`(gate, basis)` -- the new task's `tests.gate`, and the sentence saying
+    which of the three defaults produced it.
+
+    THE BASIS IS THE POINT AND NOT DECORATION. A narrow gate and a wide one read
+    the same way once written, so an operator who is not told which default was
+    taken cannot tell them apart without opening the shard -- which is the hand
+    edit `commands/task.md` forbids, reached by a route that begins with this
+    command reporting nothing. It is returned rather than printed here for
+    `_build_phase`'s reason, read the other way round: the value written and the
+    value explained have to come out of one derivation.
+
+    THE THREE DEFAULTS, in order:
+
+      1. the task's own `tests.add` paths, in the sibling's spelling. First
+         because `commands/init.md`'s invariant is that a derived gate must run
+         every case the task promises to author -- a task whose gate never runs
+         the case it just wrote has bought a green with nothing behind it.
+      2. the task's `files`, in that same spelling, when it names no case.
+      3. the phase's `testGate`, which is the wide one.
+
+    THE WIDE ANSWER IS AN ANSWER. A phase whose tasks all carry the wide entry
+    has recorded no path-scoped spelling, and there is nothing to read one off:
+    narrowing there would be a guess, and `commands/init.md` weighs that trade
+    the only way it goes -- a false red is noticed the same day and a false green
+    is never noticed at all. So the third default is reached with a reason naming
+    what was missing, never with silence.
+    """
     if args.gate:
-        gate = list(args.gate)
-    elif args.gate_clear:
+        return list(args.gate), "from --gate"
+    if args.gate_clear:
         # F201. The flag is defined globally, so argparse ACCEPTED it here and
         # nothing read it: `add --gate-clear` reported success and wrote the
         # phase's `testGate` anyway. A flag accepted and ignored is the defect
         # F196 was one verb over -- the operator is told the call succeeded and
         # the value they asked for is not there. The empty gate is a designed
         # state (`_phase_gate`, and `scope --gate-clear` for a task that already
-        # exists); creation is where the COPY of the phase gate is made, so it is
-        # the one place a task could not be given the state without a rescope.
-        gate = []
-    else:
-        gate = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+        # exists); creation is where a gate is derived at all, so it is the one
+        # place a task could not be given the state without a rescope. It is
+        # asked BEFORE the derivation and not instead of a branch inside it: a
+        # caller saying nothing should grade this task is answering the question
+        # the three defaults below exist to answer, not choosing among them.
+        return [], "from --gate-clear"
+    wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+    meta = assembled.get("meta") if isinstance(assembled, dict) else None
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    shape, owner = _path_scoped_sibling(phase, build)
+    if shape is None:
+        return wide, ("the phase's testGate, wide -- no sibling task in %s "
+                      "declares a path-scoped gate entry to read this "
+                      "project's spelling off" % (phase.get("id"),))
+    if add_paths:
+        return (_repointed(shape, build, add_paths),
+                "narrowed to this task's tests.add paths, in %s's spelling"
+                % (owner,))
+    if files:
+        return (_repointed(shape, build, files),
+                "narrowed to this task's files, in %s's spelling" % (owner,))
+    return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
+                  "task names no file to point a gate at" % (owner,))
+
+
+def _build_task(task_id, title, args, phase, assembled):
+    """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
+    (every field from the conventions' New task template, exactly once, in
+    _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
+    sentence saying which default produced `tests.gate`.
+
+    THE TRAILING HALVES ARE RETURNED RATHER THAN PRINTED HERE, and rather than
+    re-derived by the caller. This function is the only place that turns
+    `--tests-add` into `files`, so it is the only place that knows which entries
+    the union could not carry and which paths the gate could be pointed at;
+    `_locked_add` is where a sentence reaches the operator. Deriving either
+    twice would be two chances for the scope written and the scope explained to
+    stop being the same one -- `_build_phase`'s note about its `gate` argument,
+    read the other way round.
+    """
+    risk = args.risk or "low"
+    # sonnet is the floor for all fix work; risk high escalates to opus unless
+    # the caller chose explicitly (commands/task.md's long-standing rule).
+    model = args.model or _model_floor(risk)
+    mode = args.tests_mode or "gate-only"
     add_paths, unnamed = _tests_add_paths(args.tests_add)
+    # `files` BEFORE the gate, because the gate is derived from it. These two
+    # were already adjacent and in the wrong order: the copy of `phase.testGate`
+    # sat immediately above the parse of `--tests-add`, so the input a narrow
+    # gate needs was produced one line too late and thrown away.
+    files = _union_paths(_split_csv(args.files), add_paths)
+    gate, gate_basis = _task_gate(args, phase, assembled, add_paths, files)
     task = {
         "id": task_id,
         "title": title,
@@ -1399,7 +1547,7 @@ def _build_task(task_id, title, args, phase):
         # the union copied was usually a sentence: `files` filled with assertions and
         # the permission this union exists to grant was never granted. An entry that
         # names nothing contributes nothing and is reported instead.
-        "files": _union_paths(_split_csv(args.files), add_paths),
+        "files": files,
         "tests": {
             "mode": mode,
             "add": list(args.tests_add or []),
@@ -1420,7 +1568,7 @@ def _build_task(task_id, title, args, phase):
         "completedAt": None,
         "verifiedBy": [],
     }
-    return task, unnamed
+    return task, unnamed, gate_basis
 
 
 def _locked_add(args, project, config, mpath, title, out):
@@ -1462,7 +1610,8 @@ def _locked_add(args, project, config, mpath, title, out):
         return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id)
-    task, unnamed_add = _build_task(task_id, title, args, phase)
+    task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
+                                                assembled)
     missing = [f for f in task["files"]
                if not os.path.exists(os.path.join(project, f))]
 
@@ -1512,6 +1661,11 @@ def _locked_add(args, project, config, mpath, title, out):
                   # resulting `files` would show a scope with nothing wrong
                   # with it and no way to tell that a case file is outside it.
                   "testsAddNamingNoFile": list(unnamed_add),
+                  # Which of the three defaults the gate came from. `add-phase`
+                  # spells the same fact with the same key, because a reader
+                  # comparing a phase's basis with a task's is comparing one
+                  # kind of answer.
+                  "testGateBasis": gate_basis,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -1521,6 +1675,13 @@ def _locked_add(args, project, config, mpath, title, out):
     out("  tests.mode %s  model %s  risk %s  skills %s"
         % (task["tests"]["mode"], task["model"], task["risk"],
            json.dumps(task["skills"])))
+    # The basis rides every gate line, narrow or wide, exactly as it does under
+    # `add-phase`: the entries alone cannot tell a scope this command derived
+    # from a scope it inherited, and an operator who cannot tell reads the shard
+    # to find out.
+    out("  gate: %s (%s)"
+        % (", ".join(task["tests"]["gate"]) if task["tests"]["gate"]
+           else "none", gate_basis))
     if task["tests"]["mode"] == "tdd" and not task["tests"]["add"]:
         # F254, said HERE as well as by the validator, and the reason is when. A
         # live run created two tdd tasks with no case named, and the operator only

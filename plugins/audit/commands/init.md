@@ -248,14 +248,29 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      it, on every task, because this line used to say only that gate entries resolve via
      `meta.buildCommands`.
 
-     **Derive it from the task, or say you could not.** The inputs are the task's `files`, the
-     `coveringTests` the finding reported, and the paths in `tests.add` — never a feel for what
-     the change touches. Which one you use is decided by the path-scoped spelling recon
-     recorded in step 3.3:
-     - a **source→test** mode → that mode over the task's `files`. Prefer it wherever it
-       exists: the runner maps sources to suites off the real import graph, which beats
-       anything you or the explorer could infer from a tree.
-     - **test paths only** → the `coveringTests` paths, plus every `tests.add` path.
+     **Derive it from the task, or say you could not.** The inputs are the paths in
+     `tests.add`, the `coveringTests` the finding reported, and the task's `files` — never a
+     feel for what the change touches. Step 3.3's recon says which of the spellings below the
+     runner will accept; this list says which to reach for FIRST when it accepts more than
+     one, which is the usual case:
+     - **the test paths this task already names** → every `tests.add` path, plus the
+       `coveringTests` paths. First because this is the only scope the task itself states:
+       the cases it promises to author and the cases that already drive the code it touches,
+       each one opened and read by a step above. Nothing infers it, so nothing can widen it
+       behind you, and it satisfies the `tests.add` invariant below by construction.
+     - a **source→test** mode (`jest --findRelatedTests <paths>`, `vitest related <paths>`)
+       → that mode over the task's `files`, and **only after you have seen the set it
+       selects**. It resolves by import graph, and an import graph is what makes a shared
+       module related to everything: on a real codebase, ordinary files with many importers
+       resolved to most of the suite and ran for minutes on every attempt — a gate that read
+       as targeted and behaved like the wide one. So list it before you write it (the mode's
+       own listing flag, `--listTests` and friends) and compare what comes back with what the
+       phase gate runs; if it is not visibly smaller, this arm has narrowed nothing and you
+       fall through to the next one. **Nothing checks that bound afterwards** —
+       `validate-manifest.py` names a task whose `tests.gate` is its phase's `testGate`
+       verbatim (the last arm below) and cannot see a path-scoped entry that resolves to
+       the whole suite — so the listing is the only evidence there will ever be, and a task
+       taking this arm records in its `description` what the listing showed.
      - a **project/package selector** → the one project the task's files sit in, resolved
        against a REGISTERED boundary (`meta.areas[tag].root`, a workspace member, a package
        directory) and never against a directory name that merely looks like one.
@@ -284,6 +299,13 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      the task's `description`, naming what was missing. Do not narrow on a resemblance: a false
      red is noticed the same day and a false green is never noticed at all, so a guess here is
      the strictly worse trade even when it would usually be right.
+
+     **And the wide entry is the one the validator says out loud.**
+     `scripts/manifest/validate-manifest.py` warns for every unfinished task whose `tests.gate`
+     is its phase's `testGate` verbatim — which is what a derivation that fell through to the
+     last arm writes. It is a WARNING and never a finding, because the wide gate is sometimes
+     the right answer and an existing plan must not go red on upgrade; what it asks is whether
+     the `description` records the reason, so write that reason and the line has been answered.
    - `model`: `sonnet` is the floor for ALL fix work (low/med risk, mechanical included);
      escalate to your strongest tier (`opus`) for `risk: "high"`. Do NOT route audit-fix tasks to
      `haiku` — a botched cheap attempt burns retries (`maxAttempts`) plus a reviewer round, costing

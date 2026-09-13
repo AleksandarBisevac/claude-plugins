@@ -95,8 +95,10 @@ per add is the class of error the script exists to delete.
      out of a sentence. On a `tdd` task that is neither `done` nor `cancelled`
      the validator **warns** when an entry names no file, and that becomes a
      **finding at 3.0.0** — `COMPATIBILITY.md` → *Validation stays additive* is
-     where the window is recorded), `--gate "<entry>"` (repeatable; default: the phase's
-     `testGate`), `--gate-clear` for the **empty** gate — the state a phase can
+     where the window is recorded), `--gate "<entry>"` (repeatable; pass it only to
+     OVERRIDE — with no `--gate` the script DERIVES the gate from this task and
+     reports which of three defaults it took, see *The task gate is derived* below),
+     `--gate-clear` for the **empty** gate — the state a phase can
      be created in and `scope --gate-clear` can move a task to, which `add`
      accepted and silently ignored until it read the flag, so a new task whose
      work nothing here can grade inherited the phase's gate and had to be
@@ -156,6 +158,35 @@ per add is the class of error the script exists to delete.
    not resolve) and re-run. `3` the index lock is held by a live run — stop; do not
    take it over. `4` the lock looks abandoned — confirm with the human
    (AskUserQuestion), then re-run the same add with `--takeover`.
+
+### The task gate is derived, and the report says from what
+
+**With no `--gate`, `tests.gate` is derived from the task being added** — it is not a
+copy of `phase.testGate` any more. `commands/init.md` → step 5.3 carries the reasoning
+and this is the same rule at the other door: the phase gate is wide because its question
+is wide, and a task gate is narrowed to the task's own files — a wider one does not
+answer its question any better, it answers the PHASE's question again, once per attempt,
+per task, per phase running in parallel.
+
+Three defaults, taken in order, and **the script prints which one it took** on the
+`gate:` line (and as `testGateBasis` under `--json`):
+
+1. **the task's own `tests.add` paths**, written into the path-scoped spelling a
+   sibling task in the phase already carries. First, because a task whose gate never
+   runs the case it just wrote has bought a green with nothing behind it.
+2. **the task's `files`**, in that same sibling spelling, when no case is named.
+3. **the phase's `testGate`** — the wide one — when no sibling carries a path-scoped
+   entry, or when this task names no file at all. The two reasons print differently
+   because they are repaired differently: the first wants a narrow `--gate` typed once
+   (every later add in that phase then reads the spelling off it), the second wants
+   `--files` or `--tests-add`.
+
+**A wide gate the plan chose stays wide, and that is the load-bearing half.** Nothing
+outside the gates themselves records how a project narrows one, so a phase whose tasks
+all carry the wide entry has recorded no spelling — and narrowing on a resemblance
+there would be a guess in the direction that never gets noticed. Read the printed basis
+rather than the entries: a narrow gate and a wide one look alike once written, and the
+sentence is what tells them apart without opening the shard.
 
 ### A brief the shell has eaten is refused
 

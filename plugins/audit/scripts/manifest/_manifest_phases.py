@@ -110,6 +110,21 @@ def _check_claim(phase, pwhere, findings, warnings):
                         "release its claim (stale claim)" % (pwhere, phase.get("status")))
 
 
+def _gate_entries(value):
+    """A `testGate` / `tests.gate` value as the entries that will actually run.
+
+    ONE NORMALISATION FOR BOTH SIDES, because the only question asked of it is
+    whether two gates are the same gate. A non-list is [], a non-string entry is
+    dropped (nothing resolves it and nothing runs it), and a blank string is
+    dropped too — `["lint", ""]` and `["lint"]` order the same commands, so a
+    comparison that told them apart would be reading whitespace rather than
+    scope. Order is KEPT: gate entries run in the order they are written, and
+    two lists holding the same commands in a different order are two different
+    runs.
+    """
+    return [e for e in _safe_list(value) if isinstance(e, str) and e.strip()]
+
+
 def _check_area_tag(phase, pwhere, findings):
     """A phase's `area` must be a tag or a list of them (v0.16 shape, v0.28 meaning).
 
@@ -467,6 +482,45 @@ def _walk_phases(phases):
                              "asserts>\" - THIS BECOMES A FINDING AT 3.0.0 "
                              "(COMPATIBILITY.md -> Validation stays additive): "
                              "%r" % (twhere, entry))
+            # THE DERIVED GATE, READ BACK. `/audit:init` step 5.3 narrows a
+            # task's `tests.gate` to the paths that task names and reaches the
+            # phase's wide gate only as its last arm, with a reason in the
+            # description; nothing here had ever looked at the result, so a plan
+            # that took the last arm on task after task validated in silence. A
+            # task carrying the phase gate re-asks the PHASE's question - is the
+            # repository still whole - inside the executor's retry loop, on every
+            # attempt, per task, per phase running in parallel, which is the cost
+            # the derivation exists to avoid.
+            #
+            # A WARNING, NEVER A FINDING, for two independent reasons: the wide
+            # gate is the RIGHT answer for a runner with no path-scoped spelling,
+            # and a validator that refused a plan written before this line
+            # existed is a validator people stop running.
+            #
+            # TERMINAL IS EXEMPT, on the reasoning the red-first rule above uses:
+            # the gate of a settled task has already run, so a line about it
+            # names nothing anybody can still act on, and the settled tasks are
+            # the bulk of a mature plan - which is the difference between a line
+            # an operator reads and a class they learn to skip. Re-derive the
+            # split on any plan with `validate-manifest.py <plan> --verbose`.
+            #
+            # AN EMPTY PHASE GATE RAISES NOTHING. A phase that grades itself with
+            # no command has no wide gate for a task to have copied, and a task
+            # with an empty gate is a designed state `audit-task.py` reports on
+            # its own terms; neither is this rule's subject.
+            phase_gate = _gate_entries(phase.get("testGate"))
+            task_gate = _gate_entries(tests.get("gate")
+                                      if isinstance(tests, dict) else None)
+            if phase_gate and task_gate == phase_gate \
+                    and task.get("status") not in TERMINAL:
+                w.append("%s: tests.gate is its phase's testGate verbatim - the "
+                         "wide gate, re-run on every attempt of this task "
+                         "instead of once at sign-off. Narrow it to the paths "
+                         "this task names (`/audit:task scope <id> --gate "
+                         "\"<command>\"`), or say in the task's description why "
+                         "the wide gate is the answer here - /audit:init step "
+                         "5.3 writes that reason when it cannot derive a "
+                         "narrower one" % (twhere,))
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             _check_ado(task, twhere, f)
