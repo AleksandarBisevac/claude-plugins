@@ -1423,7 +1423,35 @@ def _test_name_for(rel):
     and the guide both need the same answer and a rule spelled twice is a rule with a
     disagreement waiting in it.
     """
-    return "%s%s.py" % (_TEST_PREFIX, os.path.basename(rel)[:-3].replace("-", "_"))
+    return "%s%s.py" % (_TEST_PREFIX,
+                        os.path.splitext(os.path.basename(rel))[0]
+                        .replace("-", "_"))
+
+
+def _coverable_test_names(directory):
+    """Every `tests/` filename some file under `directory` could be covered by.
+
+    EXTENSION-AGNOSTIC, and that is the whole difference from the `.py` walk its
+    caller uses everywhere else. Classifying a production file - does it carry an
+    inline suite, is it unreadable, do two of them want one test name - is a
+    question only Python source can be asked, so those arms read `.py` and
+    nothing else. Whether a `tests/test_*.py` is an ORPHAN is not that question:
+    it asks whether the test names anything this plugin ships. `py-launch.sh` is
+    shipped, runs ahead of every hook on every tool call, and has cases; reading
+    `.py` here as well would have called those cases dead weight and the rule
+    would have been routed around rather than believed.
+
+    A file here is therefore ALLOWED a suite and never REQUIRED one - the
+    `neither` class stays a question about Python files, because an inline
+    `--selftest` is the only shape this module can look for.
+    """
+    names = set()
+    for root, dirnames, filenames in os.walk(directory):
+        dirnames.sort()
+        for fname in filenames:
+            names.add(_test_name_for(posix_rel(os.path.join(root, fname),
+                                               directory)))
+    return names
 
 
 def _carries_inline_selftest(path):
@@ -1487,7 +1515,10 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
                   complete with one module's cases living somewhere else
       both        DEFECT: an inline suite AND a test file. Which one is the test?
       neither     DEFECT: no suite anywhere. The file the OR-shaped rule would hide
-      orphans     DEFECT: a `tests/test_*.py` naming no production file that exists
+      orphans     DEFECT: a `tests/test_*.py` naming no production file that exists.
+                  Asked of every file under `scripts/` and `hooks/` WHATEVER its
+                  extension, unlike every other class here — `_coverable_test_names`
+                  says why a shell launcher with cases is not dead weight
       collisions  DEFECT: two production files mapping to one test name (`a-b.py`
                   and `a_b.py` both want `test_a_b.py`). `_deps` forbids two files
                   sharing a BASENAME; this is the same hazard one transform later
@@ -1540,7 +1571,11 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
             else:
                 out["neither"].append(named)
 
-    for name in sorted(test_files - set(claimed)):
+    coverable = set(claimed)
+    for directory in (script_dir, hooks_dir):
+        if os.path.isdir(directory):
+            coverable |= _coverable_test_names(directory)
+    for name in sorted(test_files - coverable):
         out["orphans"].append("tests/%s" % name)
     for expected in sorted(claimed):
         if len(claimed[expected]) > 1:

@@ -448,11 +448,35 @@ Maps events → scripts, every entry running through
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
-`exec`s the script (stdin passes through once, exit code propagates). With NO
-interpreter, `ask` mode emits `permissionDecision: "ask"` JSON — the guarded tool
-call surfaces a manual prompt instead of silently proceeding (fail-LOUD); `open`
-mode exits silently (advisory hooks must never block). Fail modes are hardcoded
-here because reading config requires Python (chicken-and-egg).
+runs the script (stdin passes through once, exit code propagates). It does not
+`exec`: after an `exec` nothing is left to notice that the interpreter never
+started, which is the failure the loud path exists for. A nonzero status is
+therefore followed by one `-c ''` question to the same interpreter, and only an
+interpreter that cannot answer it is treated as one that never ran the hook — so
+the probe costs a process on the failing path and none on the path taken before
+every tool call. A candidate that fails it is skipped rather than accepted, which
+is what makes the `python3` → `python` → `py` chain reachable past a broken first
+name.
+
+Three ways the hook can fail to run at all, each with its own sentence because
+each has its own repair: no interpreter resolves, one resolves and cannot run, or
+the named script is not beside the launcher (a plugin root pointing at a tree
+without it). In `ask` mode each emits `permissionDecision: "ask"` JSON — the
+guarded tool call surfaces a manual prompt instead of silently proceeding
+(fail-LOUD); `open` mode exits silently (advisory hooks must never block). Fail
+modes are hardcoded here because reading config requires Python
+(chicken-and-egg).
+
+**One failure is outside this file and the launcher says so rather than implying
+it is covered.** `${CLAUDE_PLUGIN_ROOT}` is interpolated into the command string
+and never exported, so a root that expands to nothing leaves `sh` opening
+`/hooks/py-launch.sh` and exiting 127 before the launcher's first line runs. A
+branch keyed on that variable would not recover it and would prompt on every
+healthy tool call, since a healthy hook has no such variable in its environment
+either; the observable half is the not-beside-the-launcher case above, and the
+reader for the other half is `/audit:doctor`, which reports hooks that have never
+fired. `plugins/audit/tests/test_py_launch.py` drives all of this against real
+shims on `PATH`.
 
 ### `plugins/audit/hooks/_config.py`
 Shared, dependency-free config loader. `repo_root(data)` resolves the consuming repo

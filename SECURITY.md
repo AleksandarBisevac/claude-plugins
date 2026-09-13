@@ -79,6 +79,19 @@ hardcoded per hook in `hooks/hooks.json` — it cannot live in
 `.claude/audit.config.json` because reading that config requires Python
 (chicken-and-egg).
 
+**The column below says "No interpreter" and the fail mode it names is wider than
+that.** A found-but-broken interpreter — a `python3` that resolves and then exits
+nonzero without reading stdin — and a hook script that is not beside the launcher
+reach the same cell by the same route, each with its own sentence saying which it
+is. Both used to end in an unhandled hook error, which the *On internal error*
+column grades as **allow**: a blocking guard disarmed with nothing said, which is
+worse than one that is missing. `plugins/audit/tests/test_py_launch.py` drives
+every shape against real shims on `PATH`, including the allow direction — a
+working interpreter must reach the hook with the launcher adding nothing, or this
+runs ahead of every tool call and prompts on all of them. What the launcher cannot
+turn into a prompt is an empty `${CLAUDE_PLUGIN_ROOT}`: `sh` then exits 127 with
+the launcher never running, and `/audit:doctor` is the reader for that one.
+
 The table below is **per hook and event**, not per script and not per
 registration: a script registered on several matchers of one event fails the same
 way on each, while `require-plan` on `PreToolUse` (decide) and on `PostToolUse`

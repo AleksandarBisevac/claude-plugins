@@ -247,8 +247,9 @@ page behind it, read against the form rather than instead of it. All of it is
   from the plugin's own documents, with a citation per claim. See
   [Asking it how it works](#asking-it-how-it-works).
 - **Hooks** (all launched via `py-launch.sh`, which resolves `python3` → `python` → `py`;
-  the blocking guards fail **loud** — a manual-approval prompt — if no interpreter exists;
-  every hook has a 10 s timeout):
+  the blocking guards fail **loud** — a manual-approval prompt naming which of the causes
+  it hit — if no interpreter exists, if one exists and cannot run, or if the hook script is
+  not beside the launcher; every hook has a 10 s timeout):
   - `require-plan.py` (PreToolUse + PostToolUse: Edit/Write/MultiEdit/NotebookEdit) —
     non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
     **once there is a plan to check against**: with no manifest it observes and reports once

@@ -567,6 +567,21 @@ def _cases(check):
         check("sc5 a test file naming no production file is an orphan - dead weight "
               "that survives a deletion and looks like coverage: %r" % (cov["orphans"],),
               cov["orphans"] == ["tests/test_ghost.py"])
+        _w2(cov_h, "sh-launcher.sh", "#!/bin/sh\nexit 0\n")
+        _w2(cov_t, "test_sh_launcher.py", suite)
+        shell_cov = M.selftest_coverage(cov_s, cov_h, cov_t)
+        check("sc5b a test file naming a production file that is NOT Python is "
+              "not an orphan. The orphan question is whether the test names "
+              "something this plugin ships, and a launcher that runs ahead of "
+              "every hook ships: %r" % (shell_cov["orphans"],),
+              shell_cov["orphans"] == ["tests/test_ghost.py"])
+        check("sc5c ...and that file is not pulled into the classified set "
+              "either - `total` and `neither` stay questions about Python "
+              "source, because an inline `--selftest` is the only shape this "
+              "module can look for. Allowed a suite, never required one: %r"
+              % (shell_cov["total"],),
+              shell_cov["total"] == cov["total"]
+              and shell_cov["neither"] == cov["neither"])
         check("sc6 ...and `_harness.py` is not an orphan. Reads vacuous, and is the "
               "only case that fails if the orphan rule stops looking at `test_` and "
               "starts flagging every file in the directory",
