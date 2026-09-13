@@ -995,6 +995,84 @@ def repo_relative_or_token(project, path):
     return full[len(root) + 1:].replace(os.sep, "/")
 
 
+# A path token INSIDE a line of free-form program output, and deliberately WIDER
+# than `run-test-gate._PATHISH`, which harvests paths out of the same text for a
+# different purpose. That one may under-match harmlessly - a path it misses only
+# costs an overlap nobody counted - and this one may not: a token it misses is a
+# home directory published permanently in a committed, hash-chained row. So it
+# fires on any run of path characters carrying a separator in EITHER spelling,
+# which is what reaches a drive-letter path and a `~/work/...` one; `_PATHISH`
+# can see neither, because it requires a literal `/` and excludes both `~` and
+# `:`.
+#
+# A LONE SEPARATOR IS NOT A PATH. One side of the separator must carry at least
+# one path character, so the `/` in `1 / 2` is left alone - an arithmetic slash
+# rewritten to the outside token is the kind of over-firing that gets a redactor
+# read as broken rather than as careful.
+_TEXT_PATH = re.compile(r"[~A-Za-z0-9_.@$:+-]+[/\\][~A-Za-z0-9_.@$:+\\/-]*"
+                        r"|[/\\][~A-Za-z0-9_.@$:+\\/-]+")
+# Spellings a repo-relative path never has, and which `repo_relative_or_token`
+# would resolve as one anyway. It asks `os.path.isabs`, which on posix answers
+# False for a drive-letter path, for a `~`-prefixed one and for a UNC share - so
+# each would be JOINED onto the repo root and handed back looking local with the
+# machine name still inside it. Measured, not argued: before this line a
+# `C:\\Users\\...` token came back as `C:/Users/...` and a `~/work/...` token came
+# back unchanged, and both are what `tools/check-committed-pii.py` detects.
+#
+# JUDGED HERE AND NOT THERE, because the two functions take input from different
+# places: `repo_relative_or_token`'s callers hand it paths git and this plugin
+# produced, and this one's arrive from a runner's stdout, where every spelling on
+# every platform is reachable.
+_NOT_RELATIVE = re.compile(r"^(?:~|[A-Za-z]:[/\\]|[/\\]{2})")
+
+
+def redacted_text(project, text):
+    """One line of program output, every path token in it redacted, then bounded.
+
+    THE FREE-TEXT COUNTERPART TO `repo_relative_or_token`, and it is that function
+    under every token rather than a second rule: a path either is inside this repo
+    or it is not, and the answer for a token sitting in a sentence cannot differ
+    from the answer for the same token standing alone.
+
+    REDACT, THEN BOUND - AND NOT FOR `normalise_details`' REASON, which was tried
+    here first and does not hold. That field's argument is that a clip landing
+    mid-path leaves a prefix of a home directory; `_clip_marked` cuts the TAIL, so
+    the head that makes a token recognisable - the leading `/`, `~` or drive
+    letter - always survives the cut and the redactor still fires on what is left.
+    The mutation battery is what said so: swapping the two lines changed no
+    leakage assertion at all.
+
+    WHAT THE ORDERING REALLY BUYS IS THE BUDGET. A long outside path collapses to
+    a short token, so redacting first spends `MAX_VALUE_CHARS` on what the line
+    MEANS; bounding first spends it on bytes that are about to become a token and
+    throws away the sentence after the path - which, on a stack frame, is the part
+    naming what actually went wrong. `rt3` is that difference, and it is the case
+    that goes red when the two lines are swapped.
+
+    A URL PAYS FOR THAT DIRECTION. A `scheme://host/x` is path-shaped to the
+    grammar above and comes back spelled as a repo-relative path, and that is the
+    trade taken deliberately: the alternative is a grammar that must recognise
+    every non-path a runner can print, and the cost of getting THAT wrong is a
+    permanent leak in a committed file rather than a mangled link.
+
+    IT REWRITES ONLY TOKENS CARRYING A SEPARATOR, which is said here because the
+    gap is real: a bare directory NAME that happens to be a session slug is not
+    path-shaped to the grammar above and survives. `tools/check-committed-pii.py`
+    is the backstop that reads the committed bytes for exactly that vocabulary,
+    and a limit nothing names is indistinguishable from coverage.
+    """
+    body = text if isinstance(text, str) else str(text or "")
+
+    def _token(match):
+        raw = match.group(0)
+        if _NOT_RELATIVE.match(raw):
+            return OUTSIDE_TOKEN
+        return repo_relative_or_token(project, raw)
+
+    return _clip_marked(_TEXT_PATH.sub(_token, body),
+                        MAX_VALUE_CHARS, VALUE_TRUNCATED)
+
+
 # --- details (row v2) ---------------------------------------------------------
 def _clip_marked(text, limit, marker):
     """`text` bounded to `limit`, SAYING SO when it had to be cut.

@@ -147,9 +147,11 @@ def _cases(check):
                         {"taskId": "P1.2", "phaseId": "P1"}, IDENT,
                         published=["pytest -q"])
         check("ev10 an unknown key a caller invents is DROPPED, not carried. "
-              "The row is assembled from named fields, which is what makes "
-              "'no runner output is ever written here' a property of the WRITER "
-              "rather than a habit every call site has to remember: %r"
+              "The row is assembled from named fields, which is what makes the "
+              "SHAPE of a row a property of the WRITER rather than a habit "
+              "every call site has to remember. Runner output has exactly one "
+              "route in and it is `failing`, which `ef1`-`ef3` hold to the two "
+              "rules that route is allowed on: %r"
               % (sorted(row),),
               "rawOutput" not in row
               and "SENTINEL" not in _journal_io.canonical(row))
@@ -262,6 +264,66 @@ def _cases(check):
               ru["observations"]["treeMutated"] is None
               and ru["observations"]["coverage"] is None
               and ru["treeMutated"] is None)
+
+        # --- ef: the one field whose content a RUNNER wrote -------------------
+        # A red row used to carry the status, the failing gate ENTRY names and a
+        # check count, and nothing about which TESTS failed - so the operator
+        # re-ran the gate to find out, which is the one action that destroys the
+        # output they were after. `failing` is that text carried. It is also the
+        # only value on a row this plugin did not compose, so the two rules that
+        # keep a committed row safe both land here.
+        _leak_user = "somebody"
+        _fail_step = dict(RESULT["steps"][0])
+        _fail_step["failing"] = [
+            "totals > applies the bulk discount",
+            "    at Object.<anonymous> (/Users/%s/work/shop/a.test.ts:12:5)"
+            % (_leak_user,)]
+        _fail_step["failingBasis"] = ("the 2 check(s) jest named as failing, "
+                                      "read from its own failure lines")
+        _with_fail = dict(RESULT)
+        _with_fail["steps"] = [_fail_step]
+        _rf = M.row_for(plain, _with_fail, "task", {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"])
+        check("ef1 the names CROSS INTO THE ROW, which is the half `STEP_KEYS` "
+              "decides: a key the allow-list does not name is dropped in "
+              "silence, so the answer would exist in memory for the length of "
+              "the run and be absent from the only copy anybody reads "
+              "afterwards - which is the defect itself, one layer down: %r"
+              % (_rf["steps"][0].get("failing"),),
+              "failing" in M.STEP_KEYS and "failingBasis" in M.STEP_KEYS
+              and _rf["steps"][0]["failing"][0]
+              == "totals > applies the bulk discount"
+              # ...and the sentence travels with them, because a list a reader
+              # cannot tell from a tail of arbitrary output is not evidence.
+              and "jest" in _rf["steps"][0]["failingBasis"])
+
+        check("ef2 ...REDACTED on the way in, by the trail's own redactor and "
+              "not a second rule. This row is committed, and a stack frame "
+              "naming a home directory is the CWE-532 leak the journal was "
+              "repaired for arriving through a new door: %r"
+              % (_rf["steps"][0]["failing"][1],),
+              _journal_io.OUTSIDE_TOKEN in _rf["steps"][0]["failing"][1]
+              and _journal_io.canonical(_rf).count(_leak_user) == 0
+              and _journal_io.canonical(_rf).count("/Users/") == 0
+              # The caller's own copy is untouched: the terminal prints the
+              # operator's real path, and only the committed file may not.
+              and _fail_step["failing"][1].count(_leak_user) == 1)
+
+        _over = dict(RESULT)
+        _over["steps"] = [dict(RESULT["steps"][0], failing=[
+            "case %d" % (n,) for n in range(M.MAX_FAILING + 5)],
+            failingBasis="a caller that did not cut its own list")]
+        _ro = M.row_for(plain, _over, "task", {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"])
+        check("ef3 ...and CUT BY THE WRITER, never trusted from the caller. A "
+              "row is hash-chained, so a field with unbounded content is a row "
+              "with unbounded size - and this file's rule is that an inventive "
+              "caller cannot widen a row, which a bound living only in "
+              "`run-test-gate` would leave as a habit: %r"
+              % (len(_ro["steps"][0]["failing"]),),
+              len(_ro["steps"][0]["failing"]) == M.MAX_FAILING
+              and _ro["steps"][0]["failing"][-1]
+              == "case %d" % (M.MAX_FAILING - 1,))
 
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,

@@ -487,6 +487,78 @@ def _cases(check):
               _d9b["cwd"] == M.OUTSIDE_TOKEN
               and M.canonical(_d9b).count(_user) == 0)
 
+        # --- rt: the same question asked of a SENTENCE ------------------------
+        # `redacted_text` is what admits a runner's own output into a committed
+        # row, so every case above has a counterpart here: the field it guards is
+        # the only one on an evidence row whose content this plugin did not
+        # compose, and it is hash-chained like the rest.
+        _frame = ("    at Object.<anonymous> (/Users/%s/work/shop/src/a.test.ts"
+                  ":12:5)" % _user)
+        _rt1 = M.redacted_text(proj, _frame)
+        check("rt1 a path token inside a sentence is answered by the same map "
+              "that answers one standing alone - the outside path becomes the "
+              "token, the words around it survive, and the user name is gone "
+              "from the whole line: %r" % (_rt1,),
+              M.OUTSIDE_TOKEN in _rt1 and _rt1.count(_user) == 0
+              and _rt1.startswith("    at Object.")
+              # ...and the allow arm, which is the half that decides whether
+              # anybody can read a redacted row: a repo-relative path a runner
+              # printed is information, and a redactor that swallowed it too
+              # would leave the field as useless as the silence it replaces.
+              and M.redacted_text(proj, "FAILED tests/a_test.py::t - boom")
+              == "FAILED tests/a_test.py::t - boom")
+
+        _rt2 = [M.redacted_text(proj, t) for t in
+                ("~/work/shop/src/a.ts blew up",
+                 "C:\\Users\\%s\\shop\\a.ts blew up" % _user,
+                 "\\\\build01\\share\\a.ts blew up")]
+        check("rt2 the three spellings `repo_relative_or_token` would have taken "
+              "for RELATIVE land on the token instead. It asks `os.path.isabs`, "
+              "which is False on posix for a `~` path, a drive-letter path and a "
+              "UNC share - so each would have been joined onto the repo root and "
+              "handed back looking local with the machine still inside it. "
+              "Measured: before that arm existed the first came back unchanged "
+              "and the second came back as `C:/Users/...`: %r" % (_rt2,),
+              [t.split(" ", 1)[0] for t in _rt2]
+              == [M.OUTSIDE_TOKEN] * 3
+              and sum(t.count(_user) for t in _rt2) == 0
+              and all(t.endswith("blew up") for t in _rt2))
+
+        # REDACT, THEN BOUND. The first fixture written for this asserted the
+        # LEAK - that bounding first would keep a prefix of a home directory -
+        # and the mutation battery reported it SURVIVED, because the claim is
+        # false of a tail clip: the head of a token is what makes it
+        # recognisable, and a tail cut never removes it. What the order really
+        # decides is what the budget is SPENT on, so that is what this asserts.
+        _far = ("at fn (/Users/%s/work/%s/a.ts) expected 90 received 100"
+                % (_user, "d" * M.MAX_VALUE_CHARS))
+        _rt3 = M.redacted_text(proj, _far)
+        check("rt3 a long outside path collapses BEFORE the bound is spent, so "
+              "the sentence after it - the part naming what actually went wrong "
+              "- survives and the line is never cut at all. Bounding first would "
+              "spend `MAX_VALUE_CHARS` on bytes that are about to become a "
+              "token, and hand the reader a truncated frame with the finding "
+              "missing off the end: %r" % (_rt3,),
+              _rt3 == "at fn (%s) expected 90 received 100" % (M.OUTSIDE_TOKEN,)
+              and not _rt3.endswith(M.VALUE_TRUNCATED)
+              and len(_far) > M.MAX_VALUE_CHARS
+              # ...and the leak is gone in EITHER order, which is why it is
+              # asserted here and not claimed as this ordering's doing.
+              and _rt3.count(_user) == 0)
+
+        check("rt4 a lone separator is not a path, so ordinary prose survives - "
+              "the over-firing direction, which is how a redactor stops being "
+              "read as careful and starts being read as broken. And a value that "
+              "is not a string is spelled before it is judged rather than "
+              "reaching the regex as an object: %r"
+              % (M.redacted_text(proj, "1 / 2 is not a path"),),
+              M.redacted_text(proj, "1 / 2 is not a path")
+              == "1 / 2 is not a path"
+              and M.redacted_text(proj, "suite > renders a/b split")
+              == "suite > renders a/b split"
+              and M.redacted_text(proj, None) == ""
+              and M.redacted_text(proj, 12) == "12")
+
         # The environment is pinned ABSENT so this asserts the actor's key set
         # exactly, on a machine inside a session and on one that is not. `sa2`
         # next door is the other direction, with it set.

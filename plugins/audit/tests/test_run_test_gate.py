@@ -1041,6 +1041,155 @@ def _cases(check):
           # would be a claim whose evidence stayed behind.
           and [r["steps"][0].get("ran") for r in _rows] == [4, 0, None])
 
+    # --- fl: a red gate says WHICH checks failed ---------------------------
+    # THE COST, reported three times by two projects: a red row carried the
+    # status, the failing gate ENTRY names and a check count, and nothing about
+    # which TESTS failed. Both operators built their own failing-test reporter
+    # around the gate, and one recovered the names twice out of a project
+    # artefact the next run overwrites - so the obvious reflex, re-run and read
+    # the output, destroys the evidence. The text was in hand the whole time and
+    # was thrown away, which is why this is a carrying problem and not a parsing
+    # one.
+    check("fl0 the two tables are ONE table's worth of runners. A failure "
+          "reader for a runner whose summary cannot be counted would name "
+          "failures beside `check count not knowable from this runner` - a "
+          "claim with no measurement under it - and a counting reader with no "
+          "failure reader falls silently through to a tail: %r"
+          % (sorted(M._FAILURE_READERS),),
+          set(M._FAILURE_READERS)
+          == set(name for name, _re, _words in M._SUMMARY_READERS))
+
+    _jest_red = (
+        " FAIL  src/checkout/total.test.ts\n"
+        "  ● totals > applies the bulk discount\n\n"
+        "    expected 90 received 100\n"
+        "  ● Console\n\n"
+        "    console.log debug noise\n"
+        "  ● cart > rejects a negative quantity\n\n"
+        "Tests:       2 failed, 7 passed, 9 total\n")
+    _named, _basis = M.failing_lines(_jest_red, _ev_io.MAX_FAILING)
+    check("fl1 a jest run names the CHECKS that failed, and the basis says the "
+          "names were read from jest's own failure lines rather than guessed. "
+          "`● Console` is a console dump under the same bullet and is not "
+          "one of them: %r" % ((_named, _basis),),
+          _named == ["totals > applies the bulk discount",
+                     "cart > rejects a negative quantity"]
+          and "jest" in _basis and "failure lines" in _basis)
+
+    _others = {
+        "vitest": ("❯ src/cart.test.ts (5)\n"
+                   "   × cart > rejects a negative quantity\n"
+                   "FAIL  src/cart.test.ts > cart > rejects a negative "
+                   "quantity\n"
+                   " Tests  1 failed | 4 passed (5)\n"),
+        "mocha": ("  5 passing (23ms)\n"
+                  "  1 failing\n\n"
+                  "  1) cart rejects a negative quantity:\n"
+                  "     AssertionError\n"),
+        "pytest": ("FAILED tests/test_cart.py::test_negative - AssertionError\n"
+                   "ERROR tests/test_boot.py\n"
+                   "=== 1 failed, 2 passed in 0.12s ===\n"),
+    }
+    _read = dict((k, M.failing_lines(v, _ev_io.MAX_FAILING))
+                 for k, v in _others.items())
+    check("fl2 ...and so does every other runner the summary table counts, each "
+          "off the mark that runner actually prints - a cross and a `FAIL` line "
+          "for vitest, a NUMBERED failure for mocha, the short summary for "
+          "pytest. `ERROR` is read for pytest although `error` is deliberately "
+          "absent from its COUNTING words: a collection error is not a check "
+          "that ran and is still the thing to fix: %r"
+          % (dict((k, v[0]) for k, v in _read.items()),),
+          _read["vitest"][0] == ["cart > rejects a negative quantity",
+                                 "src/cart.test.ts > cart > rejects a negative "
+                                 "quantity"]
+          and _read["mocha"][0] == ["cart rejects a negative quantity:"]
+          and _read["pytest"][0] == ["tests/test_cart.py::test_negative - "
+                                     "AssertionError", "tests/test_boot.py"]
+          and all("tail" not in v[1] for v in _read.values()))
+
+    _make_red = ("building object files\n"
+                 "src/parse.c:44:9: error: implicit declaration\n"
+                 "make: *** [build/parse.o] Error 1\n")
+    _tail, _tail_basis = M.failing_lines(_make_red, _ev_io.MAX_FAILING)
+    check("fl3 a runner NONE of the readers recognises gets a capped tail of its "
+          "output instead of silence, and the basis says so IN SO MANY WORDS - a "
+          "reader who could not tell a tail from a list of names would read a "
+          "stack frame as a test name: %r" % ((_tail[-1:], _tail_basis),),
+          _tail == _make_red.strip().split("\n")
+          and "NOT a list of failing checks" in _tail_basis
+          and "no runner this gate can count" in _tail_basis)
+
+    _quiet_jest = "Tests:       1 failed, 8 passed, 9 total\n"
+    _q_lines, _q_basis = M.failing_lines(_quiet_jest, _ev_io.MAX_FAILING)
+    check("fl4 A RECOGNISED RUNNER THAT NAMED NOTHING FALLS TO THE TAIL TOO, "
+          "which is the arm that keeps this from being the same defect one "
+          "branch in: an empty list because jest was recognised and printed no "
+          "bullet hands the operator a red verdict and no text, which is exactly "
+          "what they already had. The basis names the runner AND says the lines "
+          "are not failing checks: %r" % ((_q_lines, _q_basis),),
+          _q_lines == [_quiet_jest.strip()]
+          and "jest" in _q_basis
+          and "NOT a list of failing checks" in _q_basis)
+
+    _many = "".join("  ● suite > case %d\n" % (n,)
+                    for n in range(_ev_io.MAX_FAILING + 3))
+    _cut, _cut_basis = M.failing_lines(
+        _many + "Tests:  13 failed, 13 total\n", _ev_io.MAX_FAILING)
+    check("fl5 THE CAP IS REAL AND THE ROW SAYS SO. A row is hash-chained, so a "
+          "field with unbounded content is a row with unbounded size; the list "
+          "is cut to `_evidence_io.MAX_FAILING` and the basis carries both "
+          "counts, because a truncation nobody announced reads as 'that is all "
+          "there was': %r" % ((len(_cut), _cut_basis),),
+          len(_cut) == _ev_io.MAX_FAILING
+          and _cut[0] == "suite > case 0"
+          and ("%d of the %d" % (_ev_io.MAX_FAILING,
+                                 _ev_io.MAX_FAILING + 3)) in _cut_basis
+          and "not carried" in _cut_basis)
+
+    def _mixed_gate(_project, command, _timeout=None):
+        # The green step's runner is RECOGNISED too, so the case turns on the
+        # exit code and not on whether anything could have been parsed.
+        if "vitest" in command:
+            return 0, " Tests  3 passed (3)\n", {}
+        return 1, _jest_red, {}
+
+    res_fl = M.run_gate(tmp,
+                        [("test", "npx jest"), ("green", "npx vitest run")],
+                        runner=_mixed_gate)
+    _by_name = dict((s["name"], s) for s in res_fl["steps"])
+    check("fl6 ALLOW, AND THE DIRECTION AN OVER-FIRING VERSION BREAKS IN: the "
+          "step that came back ZERO carries neither key. The claim is 'here is "
+          "what went wrong in this step', and a green step has nothing to say "
+          "under it - so a version that carried a tail there would put an "
+          "arbitrary slice of a passing runner's output into a committed row on "
+          "every run this plugin ever records: %r"
+          % (sorted(k for k in _by_name["green"] if k.startswith("failing")),),
+          "failing" not in _by_name["green"]
+          and "failingBasis" not in _by_name["green"]
+          and _by_name["test"]["failing"]
+          == ["totals > applies the bulk discount",
+              "cart > rejects a negative quantity"]
+          # ...and it is an OBSERVATION beside the verdict, never a second
+          # verdict: the status word and the failing ENTRY list are what they
+          # were before the names existed.
+          and res_fl["status"] == "failed" and res_fl["failed"] == ["test"])
+
+    lines = []
+    code_fl = M.render(res_fl, out=lines.append)
+    text_fl = "\n".join(lines)
+    check("fl7 ...and `render` prints them UNDER THE STEP, which is the only "
+          "place a per-step fact needs no attribution written beside it - and "
+          "RAW, where the row's copy is redacted: a terminal belongs to the "
+          "operator whose machine the paths name, and a path rewritten to the "
+          "outside token is one they cannot open: %r" % (text_fl[:90],),
+          code_fl == M.E_FAIL
+          and "      totals > applies the bulk discount" in text_fl
+          and "      basis: the 2 check(s) jest named as failing" in text_fl
+          # ...above the verdict banners rather than among them:
+          # `reference/orchestrator.md` keys its arms on those literal lines.
+          and text_fl.index("basis: the 2 check(s)")
+          < text_fl.index("GATE RED"))
+
     # --- and when that zero moves the verdict ------------------------------
     # THE ROW THAT SURVIVED. Of the three "false reds" the operator brought, two
     # were withdrawn on the raw evidence - real failures with counts in the

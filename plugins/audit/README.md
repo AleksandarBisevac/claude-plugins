@@ -1364,6 +1364,14 @@ work under test declares, coverage or the check count was not knowable from this
 output. Every one of those is three-valued on purpose — "nobody could look" is not "nothing
 was found".
 
+**And a step that did not come back zero says which checks failed.** `steps[].failing` carries
+the names the runner gave them where the summary reader recognises the runner, and a capped tail
+of that step's output where it does not; `steps[].failingBasis` is what tells those two apart, so
+a reader never mistakes a stack frame for a test name. It is bounded — a fixed number of lines,
+each held to the trail's value length, on non-zero steps only — and every line is put through the
+same path redaction as the rest of the record before it is written, because the ledger is
+committed and a stack frame names the machine that produced it.
+
 **Where you see it**
 
 - `/audit:status` — a `tests` column on tasks that have a verdict, and a `tests <word>`

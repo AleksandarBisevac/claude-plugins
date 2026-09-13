@@ -2981,6 +2981,26 @@ existed, while nothing ever set it — a three-valued count shipping without the
 explains its unknown arm. It says which steps were counted, which printed no summary this reader
 can parse, and, on a mixed gate, that the total is a floor and not a size.
 
+**A step that did not come back zero now says WHICH checks failed**, in `steps[].failing` with
+`steps[].failingBasis` beside it. The text was in hand all along and was thrown away: `_shell`
+merges stderr into stdout, `ran_count` reads it and `files_named` scrapes it, and then it reached
+neither the result nor the row — so a red row named the failing gate **entry** and never a failing
+**test**, and two projects answered that by writing their own failing-test reporter around the
+gate. One of them recovered the names twice out of an artefact the next run overwrites, which
+makes the obvious reflex — re-run and read the output — the one action that destroys the evidence.
+Where `summary_count` recognises the runner, `_FAILURE_READERS` parses the names it gave the
+failing checks; where it does not, the row keeps a capped tail of the output instead of silence.
+The basis is what tells those two apart, and neither travels without the other. Three things bound
+it: the list is cut to `_evidence_io.MAX_FAILING` **by the writer**, each line is held to
+`_journal_io.MAX_VALUE_CHARS`, and only steps with a non-zero exit carry it at all — a row is
+hash-chained, so a field with unbounded content is a row with unbounded size. Every line goes
+through `_journal_io.redacted_text` on the way in, which is `repo_relative_or_token` under each
+path token: a stack frame naming a home directory is the CWE-532 leak the journal was repaired for
+arriving through a new door. The terminal prints the same lines **raw**, because a path rewritten
+to the outside token is one the operator cannot open, and only the committed file may never carry
+it. It is an observation beside the verdict and not a second verdict — the status word, the exit
+code and the `failed` entry list are exactly what they were before the names existed.
+
 Exit 0 passed / 1 a command failed, or the gate rewrote a file the work under test declares,
 or nothing ran, or a step reached no verdict — a runner that never started, one the OS ended,
 one stopped at its bound — or a stop signal cut the run short before every step had reported /

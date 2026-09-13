@@ -659,6 +659,26 @@ def _elapsed_ms(started):
     return int((time.monotonic() - started) * 1000)
 
 
+def summary_reader(text):
+    """`(name, joined, words)` of the reader whose summary this output carries.
+
+    `(None, "", ())` FOR A RUNNER NONE OF THEM RECOGNISES, which is the same
+    answer `summary_count` has always returned as `None` - this is that decision
+    lifted out of it, unchanged, so that "which runner is this" is asked once and
+    answered in one place. It was already asked twice the moment a second reader
+    wanted the names of the checks that failed, and two spellings of one
+    recognition rule drift the first time either table grows a row.
+    """
+    for name, line_re, words in _SUMMARY_READERS:
+        found = line_re.findall(text or "")
+        if not found:
+            continue
+        joined = " ".join(found)
+        if _SUMMARY_PAIR.findall(joined) or _NO_TESTS.search(joined):
+            return name, joined, words
+    return None, "", ()
+
+
 def summary_count(text):
     """How many checks a runner's own SUMMARY line says executed, or None (F276).
 
@@ -672,15 +692,11 @@ def summary_count(text):
     that returned 0 for "I did not recognise this output" would refuse every
     passing gate whose runner is not in the table above.
     """
-    for _name, line_re, words in _SUMMARY_READERS:
-        found = line_re.findall(text)
-        if not found:
-            continue
-        joined = " ".join(found)
-        pairs = _SUMMARY_PAIR.findall(joined)
-        if pairs or _NO_TESTS.search(joined):
-            return sum(int(n) for n, word in pairs if word in words)
-    return None
+    name, joined, words = summary_reader(text)
+    if name is None:
+        return None
+    return sum(int(n) for n, word in _SUMMARY_PAIR.findall(joined)
+               if word in words)
 
 
 def wrapper_words(command):
@@ -770,6 +786,112 @@ def measured_state(ran):
     if ran is None:
         return MEASURED_UNKNOWN
     return MEASURED_NOTHING if ran == 0 else MEASURED_CHECKS
+
+
+# --- which checks failed, or the tail that stands in for their names ----------
+# WHAT THIS IS FOR, reported three times by two projects: a red row carried the
+# status, the failing gate ENTRY names and how many checks ran, and nothing about
+# WHICH tests failed. Both operators wrote their own failing-test reporter around
+# the gate, and one of them recovered the names twice out of a project artefact
+# the next run overwrites - so the obvious reflex, re-run and read the output,
+# destroys the evidence. The text was in hand the whole time: `_shell` merges
+# stderr into stdout, `ran_count` reads it and `files_named` scrapes it, and then
+# it reached neither the result nor the row.
+#
+# ONE ROW PER RUNNER `_SUMMARY_READERS` ALREADY COUNTS, AND NO OTHER. A parser
+# for a runner whose summary this file cannot read would be naming failures
+# beside a check count that says "not knowable from this runner" - a claim with
+# no measurement under it, which is the shape this file exists to refuse. `fr0`
+# is the case that reads the two tables against each other, so a reader added to
+# one and not the other fails rather than silently falling through to a tail.
+#
+# MATCHED ON THE OUTPUT, NOT ON THE COMMAND, for the reason `_SUMMARY_READERS`
+# states: a gate entry is as often `npm test` or `make check` as it is the
+# runner's own name, and the failure lines are the runner's signature either way.
+_FAILURE_READERS = {
+    # jest heads each failure block with a bullet. `Console` is a console dump
+    # under the same bullet and not a failing check; `Test suite failed to run`
+    # is one and is deliberately kept.
+    "jest": re.compile("^[ \t]*●[ \t]+(?!Console[ \t]*$)(.+?)[ \t]*$",
+                       re.M),
+    # vitest marks a failure beside a cross in the file tree and again as
+    # `FAIL  <file> > <suite> > <name>` under `Failed Tests`. Both are read
+    # because which of them a reporter prints depends on how it was configured;
+    # the two spell the test differently, so this collapses only EXACT repeats
+    # and a run printing both carries both spellings of the same failure.
+    "vitest": re.compile("^[ \t]*(?:×|FAIL)[ \t]+(.+?)[ \t]*$", re.M),
+    # mocha NUMBERS its failures, and the number is the only mark on the line.
+    "mocha": re.compile(r"^[ \t]*\d+\)[ \t]*(.+?)[ \t]*$", re.M),
+    # pytest's short summary. `ERROR` is here and is NOT the same claim as
+    # `error` being absent from the counting words above: a collection error is
+    # not a check that ran, and it is still the thing the operator has to fix.
+    "pytest": re.compile(r"^(?:FAILED|ERROR)[ \t]+(.+?)[ \t]*$", re.M),
+}
+
+
+def _distinct(items):
+    """`items` with repeats dropped, first occurrence order kept."""
+    seen, out = set(), []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def failing_lines(text, limit):
+    """`(lines, basis)` - the names of the checks that failed, or a capped tail.
+
+    TWO ANSWERS AND THE ROW SAYS WHICH, which is the whole contract: where the
+    summary reader recognises the runner these are the names it gave the checks
+    that failed, and where it does not they are the last lines of the output,
+    standing in for names nobody can parse. A reader who cannot tell those apart
+    would read a stack frame as a test name, so the basis names the runner when
+    there is one and says "tail" when there is not.
+
+    A RECOGNISED RUNNER THAT NAMED NOTHING FALLS TO THE TAIL TOO, and that arm is
+    the point rather than a leftover. Returning an empty list because jest was
+    recognised and printed no bullet would be this whole defect back again, one
+    branch in: the operator gets a red verdict and no text, which is what they
+    already had. `limit` bounds both arms identically - the row is hash-chained,
+    so a field with unbounded content is a row with unbounded size - and the
+    basis carries the count, so a cut announces itself rather than reading as
+    all there was.
+
+    Nothing here redacts. That is `_evidence_io`'s job, done at the moment the
+    row is assembled, because the TERMINAL wants the operator's own absolute
+    paths and the committed file may never carry them.
+    """
+    body = text or ""
+    name, _joined, _words = summary_reader(body)
+    # `.get`, NEVER `[name]`. The two tables are held together by a case rather
+    # than by this line, and the case is the right mechanism - but a KeyError
+    # here would abort `run_gate` mid-gate and lose the run, which is a far worse
+    # answer to a drifted table than the tail this falls through to. `fl0` is
+    # what reports the drift; this is only what survives it.
+    reader = _FAILURE_READERS.get(name)
+    if reader is not None:
+        named = _distinct(reader.findall(body))
+        if named:
+            kept = named[:limit]
+            if len(named) > len(kept):
+                return kept, ("%d of the %d check(s) %s named as failing; the "
+                              "rest are not carried"
+                              % (len(kept), len(named), name))
+            return kept, ("the %d check(s) %s named as failing, read from its "
+                          "own failure lines" % (len(kept), name))
+    lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
+    tail = lines[-limit:] if limit > 0 else []
+    if not tail:
+        return [], ("the step printed nothing, so its own output names neither "
+                    "a failing check nor anything else")
+    if name is None:
+        return tail, ("no runner this gate can count wrote a summary line, so "
+                      "these are the last %d line(s) of the step's output and "
+                      "NOT a list of failing checks" % (len(tail),))
+    return tail, ("%s's summary was read for the check count and its output "
+                  "named no failing check, so these are the last %d line(s) of "
+                  "it and NOT a list of failing checks" % (name, len(tail)))
 
 
 # --- did the runner get to the end of its run ---------------------------------
@@ -1732,6 +1854,23 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             # with them.
             if never_started(step["exit"], step["ran"], step.get("outcome")):
                 step["outcome"] = CANNOT_RUN
+            # ON A STEP THAT DID NOT COME BACK ZERO, AND ON NO OTHER. The claim
+            # is "here is what went wrong in this step", and a green step has
+            # nothing to say under it - so carrying a tail there would put an
+            # arbitrary slice of a passing runner's output into a committed row
+            # on every run this plugin ever records. `fl6` is the allow case
+            # that holds that line, and it is the direction an over-firing
+            # version of this breaks in.
+            #
+            # `exit` AND NOT `failed_steps`, deliberately wider by two members: a
+            # step the OS killed and a step stopped at its bound both printed
+            # whatever they got to, and that text is the only thing on the row
+            # that says how far they got. They are not failures and nothing here
+            # calls them one - the word stays `outcome`'s, and this is an
+            # observation beside it.
+            if step["exit"] != 0:
+                step["failing"], step["failingBasis"] = failing_lines(
+                    text, _ev.MAX_FAILING)
             steps.append(step)
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
@@ -1836,6 +1975,20 @@ def render(res, out=print):
             % (step["name"], step["exit"],
                "%d check(s) ran" % ran if ran is not None
                else "check count not knowable from this runner"))
+        # UNDER THE STEP AND NOT UNDER THE VERDICT, because this is a per-step
+        # fact and the step's own line is the only place it needs no attribution
+        # written beside it. It also leaves the verdict banners below unbroken:
+        # `reference/orchestrator.md` keys its arms on those literal lines, so a
+        # dump interleaved among them changes a surface another document reads.
+        #
+        # RAW, where the row's copy is redacted. A terminal belongs to the
+        # operator whose machine the paths name, and a path rewritten to the
+        # outside token is one they cannot open; the committed file is the
+        # surface where the opposite holds.
+        if step.get("failing") is not None:
+            for line in step["failing"]:
+                out("      %s" % (line,))
+            out("      basis: %s" % (step["failingBasis"],))
     code = E_OK
     # THE SAME LIST THE STATUS WORD READS, for F280's reason: the verdict line and
     # the record disagreeing about one run is the fault this file keeps being

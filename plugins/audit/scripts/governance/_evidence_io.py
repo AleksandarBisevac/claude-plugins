@@ -80,7 +80,8 @@ _output.install_path()
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
 import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
-from _journal_io import command_facts, repo_relative_or_token  # noqa: E402
+from _journal_io import (command_facts, redacted_text,  # noqa: E402
+                         repo_relative_or_token)
 
 DEFAULT_DIRNAME = "evidence"
 
@@ -126,10 +127,19 @@ def in_evidence(project, path, config=None):
 
 # --- what a row may carry -----------------------------------------------------
 # ASSEMBLED FROM NAMED FIELDS, NEVER COPIED. `row_for` reads the keys below out of
-# whatever it is handed and nothing else, which is what makes "no runner output is
-# ever written here" a property of the WRITER rather than a habit each call site
-# has to remember. The gate runner holds full merged stdout in memory while it
-# counts checks and scrapes paths; none of it has a route into this file.
+# whatever it is handed and nothing else, which is what makes the shape of a row a
+# property of the WRITER rather than a habit each call site has to remember.
+#
+# RUNNER OUTPUT HAS EXACTLY ONE ROUTE IN, AND IT IS `failing`. It used to have
+# none, and that was the defect rather than the safeguard: the gate runner holds
+# full merged stdout while it counts checks and scrapes paths, and then dropped
+# it, so a red row named the failing gate ENTRY and never a failing TEST. Two
+# projects reported the same cost, and one of them recovered the names twice out
+# of an artefact the next run overwrites. What the old sentence was protecting is
+# kept by construction instead of by absence: that one field is cut to
+# `MAX_FAILING` lines by `_step` rather than by its caller, and every line goes
+# through the trail's redactor on the way in, so no path a runner printed reaches
+# a committed file raw.
 ROW_VERSION = 1
 ACTION_RECORDED = "test.evidence.recorded"
 
@@ -138,6 +148,20 @@ ACTION_RECORDED = "test.evidence.recorded"
 # truncation nobody announced reads as "that is all there was".
 MAX_STEPS = 24
 MAX_PATHS = 40
+# How many lines of a non-zero step's own output a row may carry, and it is a
+# REAL bound rather than a hope: a row is hash-chained, so a field with unbounded
+# content is a row with unbounded size and a chain whose cost nobody can state.
+# The whole field is therefore at most this many lines of
+# `_journal_io.MAX_VALUE_CHARS`, on steps that came back non-zero, of which a row
+# keeps at most `MAX_STEPS` - three bounds a reader can multiply rather than a
+# number written here that would rot the first time one of them moved.
+#
+# ONE CONSTANT, TWO READERS. `run-test-gate.run_gate` shapes the observation with
+# this same name rather than a second one of its own, so the list the terminal
+# prints and the list the row keeps cannot disagree about where the cut is; the
+# slice below is still taken here, because this file's rule is that an inventive
+# caller cannot widen a row.
+MAX_FAILING = 10
 
 # `measured` IS THE ONE DERIVED FIELD THIS ROW KEEPS, and the exception is
 # deliberate rather than an oversight of the rule beside it. `signal` stays off
@@ -151,8 +175,15 @@ MAX_PATHS = 40
 # them. A row that carries no `measured` at all is a run from before the field or
 # a caller that computed none; it is emphatically not a step that measured
 # nothing, which is why a `None` here is dropped rather than stored.
+#
+# `failing` AND `failingBasis` ARE AN OBSERVATION AND NOT A SECOND VERDICT. The
+# row already says whether the step failed - `exit`, `outcome` and the run's
+# `status` - and these say what the runner wrote about it: the names of the
+# checks it reported as failing where the summary reader recognises the runner,
+# and a capped tail of its output where it does not. The basis is what tells
+# those two apart, which is why neither travels without the other.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
-             "timeoutSeconds", "teardown")
+             "timeoutSeconds", "teardown", "failing", "failingBasis")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis", "dirtyDigest",
               "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
@@ -256,6 +287,16 @@ def _step(project, step, published):
         # "not knowable from this runner"; dropping the key would turn that into
         # "absent", which is the one reading a reader could mistake for zero.
         if step[key] is None and key not in ("exit", "ran"):
+            continue
+        if key == "failing":
+            # THE ONE FIELD WHOSE CONTENT A RUNNER WROTE, so both rules that keep
+            # a committed row safe land here and nowhere else in this loop. The
+            # cut is taken by the WRITER rather than trusted from the caller,
+            # exactly as `_paths` takes `MAX_PATHS`; `redacted_text` is the
+            # journal's own redactor, so an absolute path in a stack frame is
+            # answered by the same map that answers one in `cwd`.
+            out[key] = [redacted_text(project, line)
+                        for line in step[key][:MAX_FAILING]]
             continue
         out[key] = step[key]
     command = step.get("command")
