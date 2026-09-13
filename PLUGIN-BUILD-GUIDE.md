@@ -442,8 +442,10 @@ Maps events → scripts, every entry running through
 - PreToolUse `Read|Grep|Bash|mcp__.*` → `guard-secrets-read.py` (fail mode **ask**)
 - PreToolUse `Bash` → `guard-history-rewrite.py` (fail mode **ask**)
 - PreToolUse `Edit|Write|MultiEdit|NotebookEdit` → `guard-edits.py`, then `require-plan.py` (both **ask**)
+- PreToolUse `mcp__.*` → `guard-edits.py`, `require-plan.py` (both **ask**), `journal-writes.py` (**open**) — an MCP server's write tool reaches no edit-tool matcher, so without this row it escaped the plan gate, the self-edit rule and the audit trail alike. Each hook decides what an MCP call can reach on its own terms; `_config.mcp_payload` holds the one write test the two guards share, and says which way it is allowed to be wrong
 - PreToolUse `Skill|Task|Agent|mcp__.*` → `guard-capabilities.py` (fail mode **ask**)
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
+- PostToolUse `mcp__.*` → `require-plan.py` (state commit), `journal-writes.py` (the digest sweep, which needs no write test because it asks the FILE; both **open**). `guard-bash-writes.py` and `remind-tdd.py` are deliberately absent — each says why in its own docstring
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (the `dangerouslyDisableSandbox` row **and** the digest sweep that catches a manifest written by a shell command; both **open**)
 - UserPromptSubmit → `detect-plan-skip.py` (**open**)
 
@@ -527,8 +529,14 @@ installed", so a wrong path silently switches off the capability policy, the jou
 ledger and the sharded-manifest read with every gate still green.
 
 ### `plugins/audit/hooks/require-plan.py`
-Plan-first gate on Edit/Write/MultiEdit/NotebookEdit, registered under BOTH PreToolUse and
-PostToolUse. ALLOW/BLOCK order: unknown tool/no path → allow; exempt glob (config) → allow;
+Plan-first gate on Edit/Write/MultiEdit/NotebookEdit **and on `mcp__.*`**, registered under
+BOTH PreToolUse and PostToolUse. An MCP call is decided on a path `_mcp_plan_target` resolves
+— the plan first (manifest, lockfile, phase shard, via `governing_lock`), then a source file
+(via `source_exts`), which are the two questions `guard-secrets-read` asks of a `sed -i`
+target, in its order, so one file gets one verdict however it is written. It resolves nothing
+without a write basis in the payload; `_config.mcp_payload` holds that test and the direction
+it is allowed to be wrong in.
+ALLOW/BLOCK order: unknown tool/no path → allow; exempt glob (config) → allow;
 file covered by an `in_progress` manifest task → allow; single-use bypass armed → allow;
 else first small (change **magnitude** = max(added lines, chars/200, removed lines)
 `<= trivialLineThreshold`) non-exempt file per session → allow.
@@ -669,6 +677,13 @@ template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` �
 `console.*`/`Sentry.*`/`remoteLog(… token …)` and `Bearer ${token}`, allowing `.slice` prefix
 debug. `--selftest` builds its token test-input at runtime (`"access"+"Token"`) so this source
 file itself never trips a token-logging guard .
+**On `mcp__.*` it is not all of that**, and the module docstring argues it rule by rule: the
+self-edit refusal is reached on the TARGET alone (the installed plugin's directory sits outside
+the consuming repo, so refusing a read there costs nothing), bypass forgery and the append-only
+journal are reached only with a write basis (both live inside the repo, where refusing a read
+would be friction on honest work), and the custom rules and the token-logging ban are **not
+reached at all** — they grade the text that will become file bytes, and only an edit tool's
+fixed schema can name that text.
 
 ### `plugins/audit/hooks/remind-tdd.py`
 PostToolUse (Edit|Write|MultiEdit|NotebookEdit) **non-blocking** TDD nudge: when a SOURCE file changes and
@@ -681,9 +696,12 @@ stream — that ordering is the whole mechanism). Throttled (once per file + glo
 All tunables under config `tddReminder`. `--selftest`.
 
 ### `plugins/audit/hooks/journal-writes.py` (v0.29.0)
-PostToolUse (Edit|Write|MultiEdit|NotebookEdit **and Bash**) recorder: every write to the
-manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
-audit trail via `scripts/governance/audit-journal.py`. NO stdout at all — a recorder that talks turns
+PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder: every write
+to the manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
+audit trail via `scripts/governance/audit-journal.py`. Bash and MCP share the **sweep lane**
+(`swept_entries`), which needs no rule about which operations write: it compares each recorded
+path's digest against the slot the Pre pass seeded, so a read moves nothing and says nothing
+while a write gets the row an `Edit` gets. NO stdout at all — a recorder that talks turns
 every manifest edit into transcript — and every failure is silent, because a journal that
 cannot be written must not break the write it was recording. A hook rather than an
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly

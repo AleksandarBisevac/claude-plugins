@@ -769,9 +769,11 @@ def _mcp_operation(tool):
     person who made it. No verdict is taken from its spelling, which is the point:
     a list of read verbs here would be `_READ_VERB` again, and that list is only
     ever as complete as the servers whose spellings someone happened to think of.
+
+    A name in this file for `_config.mcp_operation`: the plan gate and the edit
+    guard name an MCP call back to its caller too, and a hook may not import a hook.
     """
-    parts = [p for p in str(tool or "").split("__") if p]
-    return parts[-1] if len(parts) > 1 else ""
+    return _config.mcp_operation(tool)
 
 
 def _locators(node, limit=2000):
@@ -789,30 +791,16 @@ def _locators(node, limit=2000):
     NEWLINE is a body, not a locator — that is what keeps the `content` of a
     write from being graded as a filename, without this function having to know
     that a key called `content` exists.
+
+    A name in this file for the `locators` half of `_config.mcp_payload`. The
+    walk moved there when require-plan and guard-edits began asking the same
+    question of a WRITE payload: a hook may not import a hook, `_config` is the
+    one module all three already load, and two copies of a path walk is one copy
+    and one lie. This file reads no other half of that answer — a write basis
+    is not a thing this guard's verdict may depend on, which is what its own
+    `_decide_core` branch is careful to say.
     """
-    out = []
-    queue = [node]
-    i = 0
-    while i < len(queue) and i < limit:
-        item = queue[i]
-        i += 1
-        if isinstance(item, dict):
-            queue.extend([item[key] for key in item])
-        elif isinstance(item, (list, tuple)):
-            queue.extend(list(item))
-        elif isinstance(item, str):
-            text = item.strip()
-            if not text or "\n" in text:
-                continue
-            low = text.lower()
-            if low.startswith("file://"):
-                text = text[len("file://"):]
-            elif low.startswith("file:"):
-                text = text[len("file:"):]
-            text = _config.slashed(text)
-            if text and text not in out:
-                out.append(text)
-    return out
+    return _config.mcp_payload(node, limit)["locators"]
 
 
 def _mcp_secret_target(ti, extras):

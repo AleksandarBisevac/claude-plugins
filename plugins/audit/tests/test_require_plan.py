@@ -1184,6 +1184,107 @@ def _cases(check):
     finally:
         shutil.rmtree(scope_out, ignore_errors=True)
 
+    # (m) AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool
+    # matcher, so a filesystem server's `write_file` used to walk past this gate
+    # while `Edit` of the same path was refused - the disagreement `sed -i` had,
+    # in the other direction.
+    #
+    # THE PARITY IS THE CASE, not a second expectation written beside it: m1 runs
+    # BOTH payloads and compares the two verdicts to each other, so a change that
+    # moved the edit lane without the MCP lane goes red even if it moved both to
+    # "allow". And every case here spells a DIFFERENT server segment, because a
+    # verdict that moved with `mcp__fs__` vs `mcp__filesystem__` is the defect the
+    # design rule exists to prevent.
+    clear_manifest()
+    write_manifest({"phases": []})
+    _mcp_src = "src/mcp-uncovered.ts"
+
+    def _mcp_payload(tool, ti, sid):
+        return {"tool_name": tool, "tool_input": ti, "session_id": sid,
+                "cwd": str(tmp)}
+
+    _m_edit = _verdict(payload("Edit", _mcp_src, new_string=big,
+                               sid="selftest-m1"), cfg)
+    _m_mcp = _verdict(_mcp_payload("mcp__filesystem__write_file",
+                                   {"path": _mcp_src, "content": big},
+                                   "selftest-m1b"), cfg)
+    check("m1 an MCP write of an uncovered source file gets the verdict the "
+          "same path gets through Edit - the two are compared to each OTHER, so "
+          "a lane that stops gating cannot be green by matching a literal",
+          _m_mcp == _m_edit == "block",
+          repr((_m_edit, _m_mcp)))
+    # THE ALLOW CASES SHARE A SESSION WHOSE FREE SLOT IS ALREADY SPENT, and that
+    # is not tidiness. Driven first with the slot still free, m2, m3 and m5 were
+    # green under a mutation that deleted the write-basis guard outright: the gate
+    # HAD seen those reads and allowed them as "the session's first small file",
+    # which is a different verdict wearing the same word. An allow that can be
+    # produced two ways proves neither. Spending the slot first is what makes
+    # these mean "this gate never saw the call".
+    _mread = "selftest-m-reads"
+    _verdict(payload("Edit", "src/mcp-slot.ts", new_string="x", sid=_mread),
+             cfg, "PostToolUse")
+    _expect("m2a THE PRECONDITION, checked rather than assumed: with the free "
+            "slot spent, a second small file in that session is refused - so an "
+            "allow below can only come from the gate not being reached",
+            "block",
+            payload("Edit", "src/mcp-other.ts", new_string="x", sid=_mread))
+    # A read names the same path and carries no body, so nothing here fires. This
+    # is the whole reason the write test is sufficient-rather-than-necessary: a
+    # refused read is the failure this side is not allowed to have.
+    _expect("m2 ...and a READ of that same path is not gated at all", "allow",
+            _mcp_payload("mcp__fs__read_text_file", {"path": _mcp_src}, _mread))
+    _expect("m3 a batch read of it is no different - a list of SCALARS is how a "
+            "read selects a view", "allow",
+            _mcp_payload("mcp__fs__read_multiple_files",
+                         {"paths": [_mcp_src, "README.md"]}, _mread))
+    # The record shape: `edits=[{...}]` carries no newline anywhere, so the body
+    # arm alone would have missed the commonest write a filesystem server offers.
+    _expect("m4 a record inside a list is a write basis too, which is what "
+            "reaches an `edit_file` whose fragments are single lines", "block",
+            _mcp_payload("mcp__fs__edit_file",
+                         {"path": _mcp_src,
+                          "edits": [{"oldText": "a", "newText": big}]},
+                         "selftest-m4"))
+    # THE UNDER-COVERAGE, pinned as a decision rather than left to be discovered.
+    # A rename carries short single-line scalars and nothing else, so no basis is
+    # found and the gate never sees it. If somebody widens the test until this
+    # goes red, they have widened it into reads as well.
+    _expect("m5 a rename carries no write basis, so it reaches this gate "
+            "through nothing - the direction the test is chosen to fail in",
+            "allow",
+            _mcp_payload("mcp__fs__move_file",
+                         {"source": _mcp_src, "destination": "src/moved.ts"},
+                         _mread))
+    _expect("m6 a payload naming no source file and no plan file is nobody's "
+            "business here, however much body text it carries", "allow",
+            _mcp_payload("mcp__github__create_issue",
+                         {"title": "fix the thing", "repo": "acme/store",
+                          "body": big}, "selftest-m6"))
+    # The PLAN half of `_mcp_plan_target`: resolved through `governing_lock`, not
+    # through an extension, because `.json` is deliberately not a source ext.
+    _m_sub = _mcp_payload("mcp__fs__write_file",
+                          {"path": "docs/audit/phases/P1.json",
+                           "content": '{"id":"P1"}\n'}, "selftest-m7")
+    _m_sub["agent_id"] = "exec-91c2"
+    _expect("m7 a subagent writing a phase shard through an MCP server is "
+            "refused as its Edit and its `sed -i` are - the plan belongs to the "
+            "orchestrator whatever spells the write", "block", _m_sub)
+    _m_sub_read = _mcp_payload("mcp__fs__read_text_file",
+                               {"path": "docs/audit/phases/P1.json"},
+                               "selftest-m7b")
+    _m_sub_read["agent_id"] = "exec-91c2"
+    _expect("m8 ...while the same subagent READING its own shard is untouched, "
+            "which is the whole point of asking for a write basis first",
+            "allow", _m_sub_read)
+    check("m9 an MCP change is measured off the longest string the payload "
+          "carries, so it lands on the same magnitude a Write of that content "
+          "does - the key holding the bytes is the server author's vocabulary",
+          M._change_magnitude("mcp__fs__write_file",
+                              {"path": _mcp_src, "content": big})
+          == M._change_magnitude("Write", {"content": big}) > 0,
+          repr(M._change_magnitude("mcp__fs__write_file", {"content": big})))
+    clear_manifest()
+
     if _prev_project_dir is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:

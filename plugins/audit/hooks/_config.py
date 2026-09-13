@@ -994,6 +994,112 @@ def bash_write_check_enabled(cfg):
     return True
 
 
+# --- MCP tool calls: the payload, never the server it was installed under ------
+# An MCP tool is `mcp__<server>__<operation>`, and the server segment is a name the
+# OPERATOR typed into their own config: one npm filesystem server is
+# `mcp__filesystem__write_file` in one setup and `mcp__fs__write_file` in the next.
+# So no verdict in this plugin is taken from it - and none is taken from an argument
+# KEY either, which is the same problem one level down (`path`, `paths`, `file_path`,
+# `uri`, `content`, `edits`). Both halves are the rule guard-secrets-read states in
+# its own header; this is where the walk that keeps them lives.
+#
+# THREE HOOKS ASK IT NOW - guard-secrets-read on the read side, require-plan and
+# guard-edits on the write side - and a hook may not import another hook. So the
+# classification has one home here, for the reason `split_heredocs` does.
+
+
+def mcp_operation(tool):
+    """The last `__`-separated segment of an MCP tool name, or "".
+
+    FOR THE REFUSAL SENTENCE ALONE: it names the call back to the person who made
+    it. No verdict is taken from its spelling, which is the point - a list of write
+    verbs here would only ever be as complete as the servers whose spellings
+    somebody happened to think of.
+    """
+    parts = [p for p in str(tool or "").split("__") if p]
+    return parts[-1] if len(parts) > 1 else ""
+
+
+# The two shapes `writeBasis` reports. Both are SUFFICIENT evidence of a write and
+# neither is necessary evidence - see `mcp_payload`.
+MCP_BASIS_BODY = "the payload carries body text (a string with a newline in it)"
+MCP_BASIS_RECORD = "the payload carries a record (an object inside a list)"
+
+
+def mcp_payload(node, limit=2000):
+    """{"locators", "writeBasis", "body"} - one walk of a tool payload, three answers.
+
+    `locators` is every path-shaped VALUE the payload names, at any depth, in
+    payload order and deduplicated. Two narrowings, both structural rather than a
+    list of names: a `file:` URI is reduced to the path inside it, so a locator
+    reaches a path rule spelled the way that rule matches; and a string carrying a
+    NEWLINE is a body, not a filename, which is what keeps the content of a write
+    from being graded as a path without this function knowing that a key called
+    `content` exists.
+
+    `writeBasis` is the thing in this payload that a READ could not have asked for,
+    or None. Two shapes qualify: BODY TEXT (a string with a newline in it - a file
+    the call is carrying) and a RECORD (an object inside a list - `edits`, `files`,
+    `changes`; a read's parameters select a view, and a view is selected with
+    scalars and lists of scalars). Read off the RAW string, before the strip
+    `locators` does, so a one-line body ending in a newline still counts.
+
+    THE TEST IS SUFFICIENT, NEVER NECESSARY, AND THAT DIRECTION IS THE DESIGN. A
+    PreToolUse payload cannot be made to say whether a call reads or writes -
+    guard-secrets-read refuses to guess for exactly that reason, and refuses a
+    secret file whatever the operation, because on its side a wrong guess costs the
+    file. On this side a wrong guess costs ordinary traffic: a read graded as a
+    write is a refused read, and a guard that refuses reads is a guard the operator
+    turns off. So the failure direction is chosen to be UNDER-coverage. A write
+    whose whole payload is short single-line scalars - a rename, a delete, a
+    one-line `edit_file` - produces no basis and reaches the same nothing it
+    reached before this existed. What it cannot do is fire on a read, because a
+    read payload has nowhere to put a body or a record.
+
+    THE RESIDUAL, stated rather than left to be met: a server whose READ took an
+    object inside a list would be graded a write, and would then get the plan
+    gate's verdict for whatever repo path it also named. That is friction on one
+    call, not a leak, and it is the direction this function is allowed to be wrong
+    in.
+
+    `body` is the LONGEST string the payload carries - what the plan gate measures a
+    change magnitude from, the same quantity it takes off an Edit's `new_string`.
+    The longest string rather than a named field, because a field name is the server
+    author's vocabulary again.
+    """
+    locators = []
+    basis = None
+    body = ""
+    queue = [node]
+    i = 0
+    while i < len(queue) and i < limit:
+        item = queue[i]
+        i += 1
+        if isinstance(item, dict):
+            queue.extend([item[key] for key in item])
+        elif isinstance(item, (list, tuple)):
+            if basis is None and any(isinstance(el, dict) for el in item):
+                basis = MCP_BASIS_RECORD
+            queue.extend(list(item))
+        elif isinstance(item, str):
+            if len(item) > len(body):
+                body = item
+            if basis is None and "\n" in item:
+                basis = MCP_BASIS_BODY
+            text = item.strip()
+            if not text or "\n" in text:
+                continue
+            low = text.lower()
+            if low.startswith("file://"):
+                text = text[len("file://"):]
+            elif low.startswith("file:"):
+                text = text[len("file:"):]
+            text = slashed(text)
+            if text and text not in locators:
+                locators.append(text)
+    return {"locators": locators, "writeBasis": basis, "body": body}
+
+
 def source_exts(cfg):
     """Source-file extensions derived from tddReminder.sourceGlobs
     (`**/*.ts` → `.ts`) — ONE place defines what 'source' means for the

@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
 Plan-first enforcement — registered under BOTH PreToolUse and PostToolUse
-(matcher: Edit|Write|MultiEdit|NotebookEdit).
+(matcher: Edit|Write|MultiEdit|NotebookEdit, and mcp__.*).
+
+AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool matcher, so
+until it was wired here a filesystem server's `write_file` walked past this gate
+while `Edit` of the same path was refused — the same disagreement `sed -i` had, in
+the other direction. `_mcp_plan_target` resolves WHICH path such a call is decided
+on and hands it to the ordinary decision below, so the verdict is not a second
+implementation that can drift: an MCP write to a phase shard meets the subagent
+refusal and the lock, an MCP write to a source file meets the gate's tier.
+`_config.mcp_payload` says what counts as a write and states the direction it is
+allowed to be wrong in (under-coverage, never a refused read).
 
 Enforces a "Plan-first development" workflow: a non-trivial code change must be
 planned via a task in the audit manifest and executed through /audit, OR opted out
@@ -81,6 +91,11 @@ def _change_magnitude(tool, ti):
     max(added lines, added chars / 200, removed lines): line count alone lets a
     20k-char single-line blob or a 2000-line deletion pass as 'trivial'. The
     old content of a Write is unknowable from tool_input — documented residual.
+
+    An MCP payload is measured off the longest string it carries
+    (`_config.mcp_payload`'s `body`), because which key holds the bytes is the
+    server author's vocabulary and not a contract. Same residual, one server over:
+    what the target held BEFORE the call is not in the payload.
     """
     def lines(text):
         s = str(text)
@@ -89,6 +104,9 @@ def _change_magnitude(tool, ti):
     def char_lines(text):
         return (len(str(text)) + 199) // 200
 
+    if str(tool).startswith("mcp__"):
+        body = _config.mcp_payload(ti).get("body") or ""
+        return max(lines(body), char_lines(body))
     if tool == "Write":
         t = ti.get("content", "")
         return max(lines(t), char_lines(t))
@@ -417,6 +435,58 @@ def _record_warned(state_dir, session_id, files):
         pass
 
 
+# --- which path an MCP write is decided on ------------------------------------
+def _mcp_plan_target(ti, root, cfg):
+    """(the path this gate decides on, why) for an MCP call — (None, reason) when
+    it decides on nothing.
+
+    THE TWO QUESTIONS THE SHELL HALF ASKS, IN ITS ORDER, because one file is
+    promised one verdict however it is written. guard-secrets-read resolves a
+    `sed -i` target by asking first whether it is the PLAN — the manifest, its
+    lockfile, a phase shard, via `governing_lock` and never via an extension — and
+    then whether it is a SOURCE file, via `source_exts`, which deliberately excludes
+    `.json` so that no consumer's package.json is gated. An MCP payload names its
+    paths in VALUES instead of in shell grammar; the two questions are unchanged,
+    and asking them here is what keeps this from being a second gate that can drift
+    from the first.
+
+    NOTHING IS DECIDED WITHOUT A WRITE BASIS. `_config.mcp_payload` says what counts
+    as one and why the test is sufficient rather than necessary; the consequence
+    here is that a read naming a source file returns (None, ...) and this gate never
+    sees it.
+
+    A payload naming SEVERAL writable paths is decided on the first that is not
+    already exempt, and the others reach this gate through nothing — under-coverage,
+    named, and the same residual `_source_write_hit` carries for a command that
+    writes two files.
+    """
+    payload = _config.mcp_payload(ti)
+    if payload["writeBasis"] is None:
+        return (None, "mcp: nothing in the payload is evidence of a write")
+    manifest_rel = str(cfg.get("manifestPath")
+                       or _config.DEFAULTS["manifestPath"])
+    exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
+    exts = _config.source_exts(cfg)
+    fallback = None
+    for loc in payload["locators"]:
+        rel = _rel_path(root, loc)
+        if (rel == manifest_rel or rel == manifest_rel + ".lock"
+                or _config.governing_lock(manifest_rel, rel)):
+            return (loc, "mcp write of the plan: %s" % rel)
+        low = loc.lower()
+        if not any(low.endswith(e) for e in exts):
+            continue
+        if not _config.within_root(root, loc):
+            continue
+        if _matches_exempt(rel, exempt):
+            fallback = fallback if fallback is not None else loc
+            continue
+        return (loc, "mcp write of a source file: %s" % rel)
+    if fallback is not None:
+        return (fallback, "mcp write of an exempt source file")
+    return (None, "mcp: names no plan file and no source file in this repository")
+
+
 # --- core decision ------------------------------------------------------------
 def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
            event=None):
@@ -428,7 +498,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     (used by --selftest).
     """
     tool = data.get("tool_name", "")
-    if tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+    is_mcp = str(tool).startswith("mcp__")
+    if not is_mcp and tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         return ("allow", "unknown tool")
 
     if event is None:
@@ -436,12 +507,19 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     commit_state = event == "PostToolUse"
 
     ti = data.get("tool_input", {}) or {}
-    file_path = ti.get("file_path", "") or ti.get("notebook_path", "")
-    if not file_path:
-        return ("allow", "no file_path")
-
     root = _config.repo_root(data)
     cfg = cfg if cfg is not None else _config.load(root)
+    if is_mcp:
+        # The config has to be loaded before the target can be resolved: which
+        # paths are the plan and which extensions are source both come out of it.
+        # An edit tool keeps its cheaper order below.
+        file_path, why = _mcp_plan_target(ti, root, cfg)
+        if file_path is None:
+            return ("allow", why)
+    else:
+        file_path = ti.get("file_path", "") or ti.get("notebook_path", "")
+        if not file_path:
+            return ("allow", "no file_path")
     threshold = int(cfg.get("trivialLineThreshold") or 80)
     manifest_rel = cfg.get("manifestPath") or "docs/audit/audit-plan.json"
     exempt = cfg.get("exemptGlobs") or []

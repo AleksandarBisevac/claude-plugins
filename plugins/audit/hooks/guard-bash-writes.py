@@ -23,6 +23,25 @@ Two branches by tool_name:
       session). PostToolUse cannot undo the write — but the model gets told,
       in-band, that it just sidestepped the plan gate.
 
+AN MCP SERVER'S WRITE TOOL IS DELIBERATELY NOT ON THIS HOOK, and the reason is
+this hook's own fault history rather than an oversight. The mechanism would fit —
+`git status` sees a write whatever made it, which is exactly the tool-agnostic
+observation the Bash branch exists for. What does not fit is everything that keeps
+the observation from becoming a FALSE ACCUSATION. The Bash branch absorbs whatever
+appeared when the command is PROVABLY READ-ONLY (F-P-24, a `git ls-files | grep`
+blamed twice in one session for another session's file); an MCP call cannot be
+proven read-only without a list of read verbs, which is the one thing this plugin
+does not read. And `_config.command_tree` asks git from the directory the payload
+names, while an MCP payload names no working directory and its server may not even
+run on this machine. So the branch would report findings it could not attribute and
+could not absorb — F-P-24 reinstated, with the repair unavailable.
+
+WHAT THAT LEAVES UNCOVERED, said plainly: an MCP write with no write basis in its
+payload (a rename, a delete, a one-line edit — `_config.mcp_payload`) reaches
+require-plan's gate through nothing and reaches this hook through nothing either.
+It still moves the working tree, so `git status`, a review and
+`verify-invariants.py` all see it after the fact; no hook refuses it in advance.
+
 Attribution is PER TREE, and the tree is git's own answer rather than an env var.
 `_config.repo_root` (CLAUDE_PROJECT_DIR, else the payload cwd) says where the CONFIG
 lives; it does not say which tree a command touched, and it stays pinned to the

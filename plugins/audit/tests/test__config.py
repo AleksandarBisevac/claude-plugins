@@ -1377,6 +1377,71 @@ def _cases(check):
           and M.slashed("a/b/c") == "a/b/c"
           and M.slashed(7) == "7")
 
+    # --- an MCP payload: locators, a write basis, a body ------------------------
+    # Three hooks read this one walk - guard-secrets-read on the read side,
+    # require-plan and guard-edits on the write side - and each of them is
+    # forbidden from reading the server segment or an argument KEY. So the cases
+    # below never name a key that means anything: `path`, `blob`, `stuff` are the
+    # same to this function, which is the property, not an accident of fixtures.
+    _mp = M.mcp_payload({"path": "src/app.ts",
+                         "content": "one line\ntwo line\nthree line\n"})
+    check("mp1 body text is a write basis, and it is NOT a locator - the content "
+          "of a write must not be graded as a filename, and `body` is the string "
+          "a magnitude is measured off: %r" % (_mp,),
+          _mp["writeBasis"] == M.MCP_BASIS_BODY
+          and _mp["locators"] == ["src/app.ts"]
+          and _mp["body"] == "one line\ntwo line\nthree line\n")
+    # ONE-LINE CONTENT ENDING IN A NEWLINE is the shape that made the basis read
+    # the RAW string rather than the stripped one: strip it first and "hello\n"
+    # becomes an ordinary locator with no basis anywhere in the payload.
+    _mp1 = M.mcp_payload({"p": "src/app.ts", "blob": "hello\n"})
+    check("mp2 a one-line body ending in a newline still carries a basis - the "
+          "test reads the raw string, because the strip that finds locators "
+          "would have eaten exactly this shape: %r" % (_mp1["writeBasis"],),
+          _mp1["writeBasis"] == M.MCP_BASIS_BODY)
+    _mp2 = M.mcp_payload({"path": "src/app.ts",
+                          "edits": [{"oldText": "a", "newText": "b"}]})
+    check("mp3 a record inside a list is the other basis - it is what reaches an "
+          "`edit_file` whose fragments are single lines, which the body arm "
+          "alone would miss: %r" % (_mp2["writeBasis"],),
+          _mp2["writeBasis"] == M.MCP_BASIS_RECORD)
+    # THE ALLOW SIDE, and the property the whole design rests on: a read payload
+    # has nowhere to put a body or a record, so it can never produce a basis.
+    # Every shape here is a real read - one path, a batch of paths, a path with a
+    # view selector, a ref - and each names a source file, so a basis found in any
+    # of them would become a refused read in require-plan.
+    _reads = [{"path": "src/app.ts"},
+              {"paths": ["src/app.ts", "src/b.ts"]},
+              {"file_path": "src/app.ts", "offset": 1, "limit": 40},
+              {"owner": "acme", "repo": "store", "path": "src/app.ts",
+               "ref": "main"},
+              {"uri": "file:///tmp/x/src/app.ts"}]
+    check("mp4 no READ payload produces a write basis - a read selects a view, "
+          "and a view is selected with scalars and lists of scalars: %r"
+          % ([M.mcp_payload(r)["writeBasis"] for r in _reads],),
+          all(M.mcp_payload(r)["writeBasis"] is None for r in _reads))
+    check("mp5 ...and the locators come back from every one of them all the "
+          "same, whatever key carried them, because refusing to grade the "
+          "OPERATION is not refusing to resolve the TARGET: %r"
+          % ([M.mcp_payload(r)["locators"] for r in _reads],),
+          all(any(loc.endswith("src/app.ts")
+                  for loc in M.mcp_payload(r)["locators"]) for r in _reads))
+    check("mp5b ...and a `file:` URI is reduced to the path inside it, so the "
+          "locator reaches a path rule spelled the way that rule matches: %r"
+          % (M.mcp_payload({"uri": "file:///tmp/x/src/app.ts"})["locators"],),
+          M.mcp_payload({"uri": "file:///tmp/x/src/app.ts"})["locators"]
+          == ["/tmp/x/src/app.ts"])
+    check("mp6 the walk is bounded, so a payload cannot cost the hook an "
+          "unbounded traversal on the critical path of every tool call",
+          len(M.mcp_payload({"p": [str(i) for i in range(5000)]},
+                            limit=10)["locators"]) < 20)
+    check("mp7 mcp_operation names the call back to its caller and nothing "
+          "else - the same operation under two server aliases is one name: %r"
+          % (M.mcp_operation("mcp__filesystem__write_file"),),
+          M.mcp_operation("mcp__filesystem__write_file")
+          == M.mcp_operation("mcp__fs__write_file") == "write_file"
+          and M.mcp_operation("Edit") == "" and M.mcp_operation(None) == "")
+
     # --- which plugin copy is running (F228) ------------------------------------
     # `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
     # before an upgrade keeps executing the copy it started with. A hook is the

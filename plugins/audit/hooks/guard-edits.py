@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse guard (matcher: Edit|Write|MultiEdit|NotebookEdit).
+PreToolUse guard (matcher: Edit|Write|MultiEdit|NotebookEdit, and mcp__.*).
 
 Inspects the *incoming* text (new content) and the target path, and blocks:
 
@@ -37,6 +37,36 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
      there is either the accident this catches or the tamper `audit-journal.py
      verify` is built to name; refusing it costs nothing, because nothing
      legitimate writes those files with an edit tool.
+
+WHICH OF THOSE AN MCP SERVER'S WRITE TOOL REACHES, AND WHICH IT CANNOT. An MCP
+call reaches no edit-tool matcher, so before it was wired here a filesystem
+server's `write_file` was outside every rule above. `_decide_mcp` is the branch,
+and it is deliberately not all five:
+
+  - 3 (self-edit) is reached on the TARGET ALONE, whatever the operation, which
+    is guard-secrets-read's argument for a secret file one guard over. The target
+    set is the installed plugin's own directory *while it lives outside the
+    consuming repo* — nothing an ordinary task does reads or writes there, so a
+    refusal costs a retry on a call nobody makes, and it closes the shapes a write
+    test cannot see (a rename, a delete).
+  - 4 (bypass forgery) and 5 (the append-only journal) are reached only with a
+    WRITE BASIS in the payload (`_config.mcp_payload`), because unlike the plugin's
+    own directory both of those live INSIDE the repo and are ordinary things to
+    read. Refusing a read there would be friction on honest traffic, which is the
+    failure direction this side is not allowed to have.
+  - 1 (project custom rules) and 2 (the token-logging ban) are NOT reached, and
+    nothing replaces them. Both grade the TEXT THAT WILL BECOME FILE BYTES, and
+    `collect()` can name that text only because an edit tool's schema is fixed. An
+    MCP payload has no such field, reading argument keys is the thing this plugin
+    does not do, and grading every string instead would refuse an issue body or a
+    commit message that QUOTES the banned pattern — F116's defect, one tool over.
+    So an auth token logged by a source file written through an MCP server is not
+    caught here: stated, because a gap a reader can see is worth more than a rule
+    that fires on prose.
+  - 6 (strict manifest state) is not reached either: it reads an old/new fragment
+    pair off the edit tool's own schema, and an MCP payload carries no such pair.
+    The write itself still reaches the journal, which is where that opt-in points
+    its reader anyway.
 
 Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 — the canonical
@@ -230,10 +260,80 @@ def _touches_state(tool, ti, path, root):
         return False
 
 
+# --- the MCP branch -----------------------------------------------------------
+_MCP_SELF_EDIT = (
+    "The audit plugin's own files are read-only at runtime (self-edit "
+    "protection): %s\n"
+    "A model must not modify the hooks that govern it, and this server calls the "
+    "operation `%s` — a PreToolUse payload cannot tell a read of that file from a "
+    "write to it, so the plugin's own directory is refused either way. To change "
+    "the plugin, edit it in its own repository checkout."
+)
+
+_MCP_BYPASS = (
+    "Writing the plan-first bypass state directly is not allowed (bypass "
+    "forgery): %s\n"
+    "A bypass may only be armed by the USER including the bypass keyword in their "
+    "prompt. This call carries %s, which is what makes it a write; `%s` is the "
+    "operation it asked for."
+)
+
+_MCP_JOURNAL = (
+    "The audit journal is append-only: %s\n"
+    "It is written by the plugin (panel saves, the journal-writes hook, "
+    "audit-journal.py append) and never by hand — an edit here is what "
+    "`audit-journal.py verify` exists to detect. This call carries %s, which is "
+    "what makes it a write; `%s` is the operation it asked for. To record "
+    "something, append a row; to stop recording, set journal.enabled false."
+)
+
+
+def _decide_mcp(data, cfg):
+    """The rules an MCP call can reach. Returns ("allow", reason) / ("block", msg).
+
+    THE SPLIT BETWEEN THE TWO HALVES IS WHERE THE TARGET LIVES, and the module
+    docstring argues it rule by rule. Self-edit is decided on the target alone
+    because its target set sits OUTSIDE the consuming repo; the bypass state and
+    the journal sit inside it, where refusing a read would be friction on honest
+    work, so those two wait for a write basis.
+
+    NO VERDICT READS THE SERVER'S NAME OR AN ARGUMENT KEY. The locators are values
+    resolved by `_config.mcp_payload`; the operation is used in the sentence only,
+    to name the call back to whoever made it.
+    """
+    root = _config.repo_root(data)
+    cfg = cfg if cfg is not None else _config.load(root)
+    payload = _config.mcp_payload(data.get("tool_input", {}) or {})
+    op = _config.mcp_operation(data.get("tool_name", "")) or "?"
+
+    for loc in payload["locators"]:
+        if _self_edit_target(loc, root):
+            return ("block", _MCP_SELF_EDIT % (loc, op))
+
+    basis = payload["writeBasis"]
+    if basis is None:
+        return ("allow", "mcp: nothing in the payload is evidence of a write")
+
+    state_rel = str(cfg.get("stateDir")
+                    or _config.DEFAULTS["stateDir"]).strip("/")
+    for loc in payload["locators"]:
+        if not _config.within_root(root, loc):
+            continue
+        rel = _config.rel_path(root, loc)
+        base = rel.rsplit("/", 1)[-1]
+        if rel.startswith(state_rel + "/") and base.startswith("plan-bypass-"):
+            return ("block", _MCP_BYPASS % (rel, basis, op))
+        if _config.in_journal(root, cfg, loc):
+            return ("block", _MCP_JOURNAL % (rel, basis, op))
+    return ("allow", "mcp: names no path this guard holds")
+
+
 # --- decision -----------------------------------------------------------------
 def decide(data, *, cfg=None):
     """Pure decision core. Returns ("allow", reason) or ("block", message)."""
     tool = data.get("tool_name", "")
+    if str(tool).startswith("mcp__"):
+        return _decide_mcp(data, cfg)
     if tool not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         return ("allow", "unknown tool")
 

@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
-Journal recorder -- registered at PreToolUse on the edit tools and at
-PostToolUse on the edit tools AND on Bash, branching on `hook_event_name` the way
-require-plan.py does.
+Journal recorder -- registered at PreToolUse and PostToolUse on the edit tools,
+on Bash AND on `mcp__.*`, branching on `hook_event_name` the way require-plan.py
+does.
+
+AND THE MCP LANE NEEDED NO WRITE TEST AT ALL, which is why it is the sweep lane
+rather than a third branch. The two PreToolUse guards beside this hook have to
+decide IN ADVANCE whether an MCP call is a write, and `_config.mcp_payload` says
+what that costs them. This hook runs after the fact and can ask the FILE: a path
+whose digest still matches its slot did not move, whoever called and whatever they
+called it. So a read produces no row because nothing moved, and a write produces
+the row an Edit produces because something did. The server's name, the operation's
+spelling and the argument keys are all absent from that question, which is the
+same reason the Bash lane exists.
 
 Appends one row to the tamper-evident journal for every write to the MANIFEST
 (index or phase shard) or to `.claude/audit.config.json`, whatever made it.
@@ -321,8 +331,8 @@ def pre_cache(data, *, cfg=None, root=None):
         cfg = cfg if cfg is not None else _config.load(root)
         if not _config.journal_enabled(cfg):
             return None            # on Pre, the config on disk IS the pre-image
-        if str(data.get("tool_name") or "") == "Bash":
-            return _pre_seed_bash(root, cfg, data)
+        if _swept_tool(data.get("tool_name")):
+            return _pre_seed_sweep(root, cfg, data)
         action, rel, _tool, _ti = classify(data, cfg=cfg, root=root)
         if action is None:
             return None
@@ -331,8 +341,24 @@ def pre_cache(data, *, cfg=None, root=None):
         return None
 
 
-def _pre_seed_bash(root, cfg, data):
-    """Seed a baseline for the swept paths, for the Bash lane's FIRST call (F261).
+def _swept_tool(tool):
+    """Does this tool go down the sweep lane -- the one that asks the FILE?
+
+    Bash and any MCP tool, and for ONE reason rather than two: neither payload
+    can be made to name what it wrote. A Bash payload carries a command; an MCP
+    payload names its target wherever its server likes and cannot be made to say
+    whether the call even writes. The sweep needs neither answer, so both lanes
+    ask the same question of the same paths.
+
+    `mcp__` by prefix, never by server: `mcp__filesystem__` on one machine is
+    `mcp__fs__` on the next, and the prefix is the harness's own, not a name any
+    operator chose."""
+    name = str(tool or "")
+    return name == "Bash" or name.startswith("mcp__")
+
+
+def _pre_seed_sweep(root, cfg, data):
+    """Seed a baseline for the swept paths, for the sweep lane's FIRST call (F261).
 
     THE EDIT LANE'S OWN REASONING, one lane over. `pre_cache`'s docstring already
     says why the Pre pass stays: with no baseline the FIRST write of every session
@@ -343,14 +369,16 @@ def _pre_seed_bash(root, cfg, data):
     saw`. That warning was telling the truth; the window was the defect.
 
     NOT A HASH PER CALL. A slot that already exists is left alone, so the cost
-    after the session's first Bash call is one `exists` per watched path — and
-    only the paths this hook already sweeps on Post are touched, so the Pre and
-    Post passes cannot disagree about what is watched.
+    after the session's first call on this lane is one `exists` per watched path —
+    and only the paths this hook already sweeps on Post are touched, so the Pre and
+    Post passes cannot disagree about what is watched. That bound is what lets the
+    MCP matcher share the lane: an MCP call pays the same `exists` per watched path
+    that a Bash call does, and every call after the first pays nothing else.
 
     Returns the last slot written, or None, matching `pre_cache`'s contract.
     """
     last = None
-    for rel in _bash_targets(root, cfg):
+    for rel in _swept_targets(root, cfg):
         if _config.in_journal(root, cfg, rel):
             continue
         slot = _slot_path(root, cfg, data, rel)
@@ -620,7 +648,7 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
     THE FLAG IS STILL READ BEFORE ANYTHING ELSE IN HERE, and the reason it used to
     give is no longer the reason. It said that resolving the repo root and loading
     the config on every Bash call would charge every command in the session for a
-    rare event -- true then, and F194 spent exactly that: `bash_entries` resolves
+    rare event -- true then, and F194 spent exactly that: `swept_entries` resolves
     both before this function is reached, because deciding whether the manifest
     moved needs the config that says where the manifest IS. What survives is the
     narrower guarantee: a sandboxed call still builds no row and reads no command
@@ -690,7 +718,7 @@ def _manifest_rows(entry, rel, old_obj, new_obj):
 def _config_rows(entry, old_obj, new_obj):
     """(primary, chained) for a write to the config. Never chains -- the config's
     news is the flip itself, folded into the one row, and there is no derived row
-    to lose. Shaped like `_manifest_rows` so `post_entries` and `bash_entries`
+    to lose. Shaped like `_manifest_rows` so `post_entries` and `swept_entries`
     read one way for both targets."""
     row = dict(entry)
     flip = (_journal_flip(old_obj, new_obj)
@@ -702,17 +730,17 @@ def _config_rows(entry, old_obj, new_obj):
     return row, []
 
 
-def _bash_targets(root, cfg):
-    """The paths a Bash call could have written that this hook records, in a
+def _swept_targets(root, cfg):
+    """The paths a sweep-lane call could have written that this hook records, in a
     stable order: the manifest index, the phase shards beside it, the config.
 
     A CLOSED LIST ON PURPOSE. A Bash payload carries a command and no `file_path`,
-    so the pass cannot ask "what did this write" and has to ask "which of the
-    paths I record moved". Widening the list to the repository is precisely how the
-    journal would decay into a shell log, which THE ONE EXCEPTION above is careful
-    not to do. A shard that does not exist is not listed and a directory that
-    cannot be read contributes nothing -- both cost the sweep a path, never a
-    crash."""
+    and an MCP payload names its target wherever its server likes, so the pass
+    cannot ask "what did this write" and has to ask "which of the paths I record
+    moved". Widening the list to the repository is precisely how the journal would
+    decay into a shell log, which THE ONE EXCEPTION above is careful not to do. A
+    shard that does not exist is not listed and a directory that cannot be read
+    contributes nothing -- both cost the sweep a path, never a crash."""
     manifest_rel = (cfg.get("manifestPath")
                     or _config.DEFAULTS["manifestPath"])
     out = [manifest_rel]
@@ -728,9 +756,10 @@ def _bash_targets(root, cfg):
     return out
 
 
-def bash_entries(data, *, cfg=None, root=None):
-    """The PostToolUse pass for Bash: the unsandboxed row, plus whatever the paths
-    this hook records did while the shell ran. F194.
+def swept_entries(data, *, cfg=None, root=None):
+    """The PostToolUse pass for a sweep-lane call -- Bash or an MCP tool: the
+    unsandboxed row, plus whatever the paths this hook records did while it ran.
+    F194.
 
     THE QUESTION IS ASKED OF THE FILE, NOT OF THE PAYLOAD. `classify()` reads
     `file_path` and returns None for anything that is not an edit tool, which was
@@ -739,9 +768,16 @@ def bash_entries(data, *, cfg=None, root=None):
     recorded path's digest is compared against its slot, so the tool that made the
     write stops being part of the answer.
 
+    THAT IS ALSO THE WHOLE OF THE MCP WIDENING, and why this lane needs no rule
+    about which MCP operations write. An `mcp__filesystem__write_file` of the
+    manifest moved the digest and gets the row an `Edit` gets; an
+    `mcp__filesystem__read_text_file` of the same path moved nothing and gets
+    silence. Neither verdict reads the server's name, the operation's spelling or
+    an argument key, because neither is asked.
+
     NO SLOT IS NOT A CHANGE. A path with no slot has no baseline, so the pass seeds
     one and claims nothing -- a row asserting a move it cannot see would be a claim
-    with no basis, and the first Bash call of every session would file one. The
+    with no basis, and the first call of every session would file one. The
     seeding is what makes the session's NEXT write diffable whatever writes it.
 
     A MOVE WITH NO PARSEABLE PRE-IMAGE IS THE OTHER HALF, and there the write is
@@ -753,13 +789,19 @@ def bash_entries(data, *, cfg=None, root=None):
     a shell that flips the switch off is journalled by its own last row."""
     root = root if root is not None else _config.repo_root(data)
     cfg = cfg if cfg is not None else _config.load(root)
+    # The row says which tool wrote, and on this lane that is the ONE place the
+    # tool's name appears: `unsandboxed_entries` reads the sandbox flag and the
+    # sweep reads digests, so the name below is reportage and never a verdict. An
+    # MCP call is named in full, server segment included, because the row is read
+    # by a person deciding whether they recognise the write.
+    tool = str(data.get("tool_name") or "Bash")
     rows = unsandboxed_entries(data, cfg=cfg, root=root)
     enabled = _config.journal_enabled(cfg)
     # With the switch off the ONLY path that can still owe a row is the config, and
     # only because of the flip that turned it off - judged against the pre-image, as
     # on the edit lane. Sweeping the manifest here would be the plugin doing work
     # after being told to stop, and stating a shard directory it must not read.
-    for rel in (_bash_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
+    for rel in (_swept_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
         # The journal is never its own subject, on this lane too. guard-edits
         # refuses that write and no default layout puts a journal file behind one
         # of these names, so this is the structural half of a property that would
@@ -782,7 +824,7 @@ def bash_entries(data, *, cfg=None, root=None):
         if not allowed:
             continue
         entry = _entry("config.edit" if is_cfg else "manifest.edit",
-                       rel, "Bash", {}, data, root, cfg)
+                       rel, tool, {}, data, root, cfg)
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
@@ -799,17 +841,18 @@ def post_entries(data, *, cfg=None, root=None):
     row (semantic when the pre-image allows, generic otherwise) followed by any
     completion-event rows. Empty list = nothing to record. Never raises.
 
-    Bash is handed to `bash_entries`, which asks the FILE what moved because the
-    payload names no path; everything else goes through `classify()` as before. The
-    outer `except` is the fail-open net for BOTH lanes -- it runs at PostToolUse, so
-    anything that escapes here breaks the write it was recording.
+    Bash and any MCP tool are handed to `swept_entries`, which asks the FILE what
+    moved because neither payload can be made to name what it wrote; everything
+    else goes through `classify()` as before. The outer `except` is the fail-open
+    net for BOTH lanes -- it runs at PostToolUse, so anything that escapes here
+    breaks the write it was recording.
 
     The disable loophole is closed HERE: when the config itself is the target,
     `journal.enabled` is judged against the pre-image, so a true->false flip is
     journalled as a final config.edit row instead of silencing its own record."""
     try:
-        if data.get("tool_name") == "Bash":
-            return bash_entries(data, cfg=cfg, root=root)
+        if _swept_tool(data.get("tool_name")):
+            return swept_entries(data, cfg=cfg, root=root)
         root = root if root is not None else _config.repo_root(data)
         cfg = cfg if cfg is not None else _config.load(root)
         action, rel, tool, ti = classify(data, cfg=cfg, root=root)

@@ -248,6 +248,73 @@ def _cases(check):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = _prev_pd
 
+    # --- mc: an MCP server's write tool ---------------------------------------
+    # It reaches no edit-tool matcher, so before `_decide_mcp` it was outside
+    # every rule this file holds. The cases below pin WHICH rules it reaches and
+    # which it does not, because "widened" with no line between the two is the
+    # shape that lets a gap be read as coverage.
+    #
+    # THE SERVER SEGMENT IS DELIBERATELY DIFFERENT IN EVERY CASE. `mcp__fs__`,
+    # `mcp__filesystem__` and `mcp__github__` are one server under three
+    # operator spellings, and a verdict that moved with the spelling would go red
+    # here rather than in somebody's repository.
+    def _mcp(name, expected, tool, ti, cwd=tmp, use_cfg=None):
+        data = {"tool_name": tool, "tool_input": ti, "cwd": cwd}
+        ok, got = _harness.attempt(M.decide, data,
+                                   cfg=cfg if use_cfg is None else use_cfg)
+        verdict = got[0] if ok else got
+        check(name, verdict == expected,
+              "expected %s, got %s" % (expected, verdict))
+
+    _plugin_file = os.path.join(M._HOOKS_DIR, "guard-edits.py")
+    _mcp("mc1 an MCP write into the installed plugin is refused, as the Edit "
+         "of the same path is", "block", "mcp__fs__write_file",
+         {"path": _plugin_file, "content": "tampered\n"})
+    # The TARGET alone, whatever the operation - the one rule here that does not
+    # wait for a write basis, and the sentence in the module docstring says why.
+    # A read payload: one short single-line scalar, nothing a write test can see.
+    _mcp("mc2 ...and so is a READ of it, because a PreToolUse payload cannot "
+         "tell the two apart and nothing ordinary reads that directory",
+         "block", "mcp__filesystem__read_text_file", {"path": _plugin_file})
+    _mcp("mc3 dev mode still exempts the plugin's own checkout on this lane too",
+         "allow", "mcp__fs__write_file",
+         {"path": _plugin_file, "content": "dev change\n"},
+         cwd=os.path.dirname(os.path.dirname(M._PLUGIN_ROOT)))
+
+    _mcp("mc4 an MCP write of the bypass state is forgery here as well", "block",
+         "mcp__fs__write_file",
+         {"path": ".claude/state/plan-bypass-abc.json", "content": "{}\n"})
+    _mcp("mc5 an MCP write into the journal is refused - the trail is "
+         "append-only whatever wrote it", "block", "mcp__github__push_files",
+         {"files": [{"path": "docs/audit/journal/2026-08.abc.jsonl",
+                     "content": "{}"}]})
+    # THE ALLOW CASE FOR THE INSIDE-THE-REPO HALF, and the reason those two rules
+    # wait for a write basis while self-edit does not: the journal is committed
+    # and meant to be read, so a guard that refused this would be friction on
+    # honest work and would be routed around within a day.
+    _mcp("mc6 a READ of a journal file is not refused - no write basis in the "
+         "payload, and the trail is committed to be read", "allow",
+         "mcp__filesystem__read_text_file",
+         {"path": "docs/audit/journal/2026-08.abc.jsonl"})
+    _mcp("mc7 ...nor is a rename of one, which is the UNDER-coverage the write "
+         "test is chosen to have: short single-line scalars carry no basis",
+         "allow", "mcp__fs__move_file",
+         {"source": "docs/audit/journal/2026-08.abc.jsonl",
+          "destination": "docs/audit/journal/2026-09.abc.jsonl"})
+    _mcp("mc8 an ordinary MCP write elsewhere in the repo is this guard's "
+         "business in no rule at all", "allow", "mcp__fs__write_file",
+         {"path": "src/api.ts", "content": "const x = 1;\n"})
+    # THE RULE THAT IS NOT REACHED, pinned as a rule and not as an accident. The
+    # module docstring says the token-logging ban stays on the edit tools because
+    # only their schema can name the text that will become file bytes; if somebody
+    # later runs the regex over every string in an MCP payload, this goes red and
+    # they have to come and read that paragraph.
+    _mcp("mc9 the token-logging ban is NOT reached through an MCP payload - "
+         "stated in the docstring, pinned here, and the cost of the other "
+         "choice is refusing a commit message that quotes the pattern",
+         "allow", "mcp__fs__write_file",
+         {"path": "src/api.ts", "content": "console.log(%s)\n" % tok})
+
 
 def _selftest():
     return _harness.run(_cases)

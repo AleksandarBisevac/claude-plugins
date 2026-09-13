@@ -32,6 +32,16 @@ Decision order (see `decide`):
   exempt / non-source / covered-by-task / test-already-touched / throttled →
   SILENT; otherwise → WARN (once per file, throttled per session).
 
+AN MCP SERVER'S WRITE TOOL IS DELIBERATELY NOT ON THIS MATCHER. The mechanism
+above is "the hook watches its own Edit stream", and both halves of that stream
+would be wrong from an MCP payload: a read of a test file would be RECORDED as a
+test touched (silencing the nudge for the rest of the session on no evidence), and
+a write with no write basis in its payload names nothing this hook could warn
+about. `_config.mcp_payload` says what a write basis is and why it is deliberately
+incomplete. The cost of leaving it out is one reminder, not one guard — this hook
+refuses nothing and never has — so the incomplete signal is worth less here than
+the false silence would cost.
+
 State: <stateDir>/tdd-reminder-<session_id>.json
   {"testTouched": bool, "testFiles": [rel...], "warned": {rel: epoch}, "lastWarnAt": epoch}
 

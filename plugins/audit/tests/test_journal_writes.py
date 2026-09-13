@@ -822,7 +822,7 @@ def _cases(check):
               and "status in_progress->done" in (_f6b[0]["summary"] if _f6b else ""),
               repr([e.get("summary") for e in _f6a + _f6b]))
         # f7: the journal is never its own subject, on this lane too. DRIVEN
-        # THROUGH THE HOOK and not through `_bash_targets` plus a filter spelled
+        # THROUGH THE HOOK and not through `_swept_targets` plus a filter spelled
         # again in the case - the first draft did the latter, and it would have
         # passed with the hook's own filter deleted, which is the whole shape this
         # repo's guide calls a check that asserts nothing. `journal.dir` aimed at
@@ -847,7 +847,7 @@ def _cases(check):
               "manifest index beside it still gets one, so the filter is narrowing "
               "and not merely emptying the sweep",
               _f7_targets == [man_rel]
-              and _f7_rel in M._bash_targets(fproj, _f7_cfg)
+              and _f7_rel in M._swept_targets(fproj, _f7_cfg)
               and not [e for e in _f7_rows if e.get("target") == _f7_rel],
               repr([(e.get("action"), e.get("target")) for e in _f7_rows]))
         # f8: a shard, which under the sharded layout is what almost every real
@@ -1142,6 +1142,112 @@ def _cases(check):
               "cost really is an `exists` per watched path and not a re-read of "
               "the manifest on every shell command",
               _fp_calls == [], repr(_fp_calls))
+
+        # --- mcp: an MCP server's write tool shares the sweep lane -------------
+        # An MCP call reaches no edit-tool matcher, so `classify()` returned None
+        # for it and a manifest written through a filesystem server left the chain
+        # verifying over a history missing the event - F194's fault, one transport
+        # further on. The lane needs no rule about which MCP operations write: it
+        # compares digests, so the question is whether the FILE moved.
+        def _mcp_lane(proj_name, pre_payload_of, post_payload_of, *, move=True):
+            """Run one manifest move through one lane. Returns the Post rows."""
+            proj = os.path.join(tmp, proj_name)
+            os.makedirs(os.path.join(proj, "docs", "audit"))
+
+            def _w(obj):
+                with open(os.path.join(proj, man_rel), "w",
+                          encoding="utf-8") as fh:
+                    json.dump(obj, fh)
+
+            _w(manifest_doc(status="in_progress"))
+            M.pre_cache(pre_payload_of(proj), cfg=cfg, root=proj)
+            if move:
+                _w(manifest_doc(status="done",
+                                completed="2026-08-25T09:00:00Z",
+                                commit="a" * 40))
+            return M.post_entries(post_payload_of(proj), cfg=cfg, root=proj)
+
+        def _mcp_pay(tool, ti):
+            def _build(proj):
+                return lambda event: {
+                    "tool_name": tool, "session_id": "mc-lane", "cwd": proj,
+                    "hook_event_name": event, "tool_input": ti}
+            return _build
+
+        def _pre(tool, ti):
+            return lambda proj: _mcp_pay(tool, ti)(proj)("PreToolUse")
+
+        def _post(tool, ti):
+            return lambda proj: _mcp_pay(tool, ti)(proj)("PostToolUse")
+
+        _edit_ti = {"file_path": man_rel, "new_string": "x"}
+        _mcpw = "mcp__filesystem__write_file"
+        _mcpw_ti = {"path": man_rel, "content": '{"phases": []}\n'}
+        # DRIVEN AS A PAIR, because the claim is "the row an Edit produces". Two
+        # identical projects take the same manifest move, one through an edit tool
+        # and one through an MCP write, and the two results are compared to EACH
+        # OTHER - a lane that stopped recording would have to stop on both sides
+        # to stay green, which is what a literal expectation cannot ask for.
+        _rows_edit = _mcp_lane("mcp-twin-edit", _pre("Edit", _edit_ti),
+                               _post("Edit", _edit_ti))
+        _rows_mcp = _mcp_lane("mcp-twin-mcp", _pre(_mcpw, _mcpw_ti),
+                              _post(_mcpw, _mcpw_ti))
+        check("mcp1 a manifest written through an MCP server records the same "
+              "rows the same write through Edit records - compared to each "
+              "other, and the derived completion rows included",
+              [(e.get("action"), e.get("target")) for e in _rows_mcp]
+              == [(e.get("action"), e.get("target")) for e in _rows_edit]
+              == [("manifest.edit", man_rel), ("task.complete", man_rel),
+                  ("task.commit", man_rel)],
+              repr([(e.get("action"), e.get("target")) for e in _rows_mcp]))
+        # WHERE THE TOOL'S NAME SURVIVES is the GENERIC summary - a diffable write
+        # replaces it with what moved, which is the better row and the reason mcp1
+        # above cannot ask this. So this case builds the undiffable case on
+        # purpose: a pre-image that is not JSON, which is the fallback the hook
+        # states rather than hides.
+        _gproj = os.path.join(tmp, "mcp-generic")
+        os.makedirs(os.path.join(_gproj, "docs", "audit"))
+        with open(os.path.join(_gproj, man_rel), "w", encoding="utf-8") as _fh:
+            _fh.write("not json at all")
+        M.pre_cache(_pre(_mcpw, _mcpw_ti)(_gproj), cfg=cfg, root=_gproj)
+        with open(os.path.join(_gproj, man_rel), "w", encoding="utf-8") as _fh:
+            json.dump(manifest_doc(status="done"), _fh)
+        _grows = M.post_entries(_post(_mcpw, _mcpw_ti)(_gproj), cfg=cfg,
+                                root=_gproj)
+        check("mcp2 where the summary is generic, it names the tool in FULL - "
+              "server segment included, because a person reading the trail is "
+              "deciding whether they recognise the write. Reportage, never a "
+              "verdict: nothing on this lane is decided from that string",
+              len(_grows) == 1
+              and (_grows[0].get("summary") or "").startswith(_mcpw + " wrote ")
+              and M.DERIVATION_MISSED
+              in (_grows[0].get("details") or {}).get("reason", ""),
+              repr([(e.get("summary"), e.get("details")) for e in _grows]))
+        # THE QUIET CASE, and it is quiet for the lane's own reason rather than by
+        # a read/write rule: the file did not move. Same payload, same session.
+        _mcpr = "mcp__fs__read_text_file"
+        _mcpr_ti = {"path": man_rel}
+        _rows_still = _mcp_lane("mcp-unmoved", _pre(_mcpr, _mcpr_ti),
+                                _post(_mcpr, _mcpr_ti), move=False)
+        _rows_moved = _mcp_lane("mcp-moved", _pre(_mcpr, _mcpr_ti),
+                                _post(_mcpr, _mcpr_ti))
+        check("mcp3 an MCP call that moved nothing records nothing, while the "
+              "SAME payload over a manifest that did move records the write - "
+              "which is the whole design: this lane asks the file, so the "
+              "operation's spelling is never consulted and never has to be",
+              _rows_still == []
+              and [e.get("action") for e in _rows_moved]
+              == ["manifest.edit", "task.complete", "task.commit"],
+              repr((_rows_still, [e.get("action") for e in _rows_moved])))
+        check("mcp4 `_swept_tool` is the one predicate both passes read, and it "
+              "takes `mcp__` by PREFIX - the server segment is an alias the "
+              "operator typed, so no lane may be selected by it",
+              M._swept_tool("Bash") and M._swept_tool("mcp__fs__write_file")
+              and M._swept_tool("mcp__filesystem__anything_at_all")
+              and not M._swept_tool("Edit") and not M._swept_tool("")
+              and not M._swept_tool(None),
+              repr([M._swept_tool(x) for x in
+                    ("Bash", "mcp__fs__write_file", "Edit", None)]))
 
         # --- w: the wiring - main() routes by hook_event_name ------------------
         wproj = os.path.join(tmp, "wire")
