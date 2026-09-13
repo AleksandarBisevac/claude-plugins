@@ -63,7 +63,7 @@ claude-plugins/                           # this repo (personal, public)
       agents/
         audit-explorer.md                 # mechanically read-only auditor (no Edit/Write/Bash)
         audit-executor.md                 # task executor (no web tools, no nested agents)
-        audit-reviewer.md                 # sign-off reviewer (no edit tools)
+        audit-reviewer.md                 # per-task intent check + sign-off review (no edit tools)
         guide.md                          # answers questions about the plugin (Read/Grep/Glob, haiku)
       hooks/
         hooks.json                        # wires the 9 hooks to events (${CLAUDE_PLUGIN_ROOT})
@@ -597,8 +597,10 @@ general-subagent
 fallback for older Claude Code): `audit-explorer` (Glob/Grep/Read — mechanically read-only;
 /audit:init fan-out), `audit-executor` (Read/Edit/Write/Glob/Grep/Bash/Skill — no web tools,
 no nested agents; task execution and review fixes), `audit-reviewer`
-(Read/Glob/Grep/Bash/Skill — no edit tools; sign-off review runs the project review skill
-inside the agent so the diff stays out of the orchestrator's context). Tool lists are a hard
+(Read/Glob/Grep/Bash/Skill — no edit tools; spawned per task to ask whether the diff does what
+the task's description asked and whether the executor's returned claim describes it, and again
+at sign-off, where it runs the project review skill inside the agent so the diff stays out of
+the orchestrator's context). Tool lists are a hard
 boundary that does not depend on subagent hook inheritance (#43772); the agent system
 prompts carry the invariants (no commits, no stash, red-first discipline, JSON return
 shapes) while spawn prompts add the per-task specifics.

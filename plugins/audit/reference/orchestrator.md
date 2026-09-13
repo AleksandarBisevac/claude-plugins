@@ -408,6 +408,49 @@ report, because `git switch -c` is about to fail anyway.
      session may hold the phase lock — and that is a designed state, not an error: the run is
      recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
      chase a refused pointer.
+   - **Then ask the reviewer the intent question — one call per task, and only when the gate
+     you just ran came back green.** A red gate already has its answer and the task goes back
+     through step 2; there is nothing to bind a claim to yet. Spawn
+     `subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`, `description`
+     starting with the task id, and **`mode: task`** in the prompt. Pass each of these, naming
+     it, so the reviewer can report which input it did NOT get instead of assuming one:
+     - the diff you are about to commit (`git diff -- <task.files>`), and `task.description`
+       **verbatim** — what the task asked for, not your paraphrase of it;
+     - the phase's `desiredOutcome`;
+     - the executor's returned `outcome`, `technical` and `descriptive`, unedited. **This is
+       the CLAIM, and it is the input sign-off cannot supply**: the phase diff has no way back
+       to the task that produced each line, so a claim is bindable to its task only here;
+     - its test evidence — the per-gate results it reported, `testsAdded`, and its `redFirst`
+       word if it returned one. If it returned none, say that it returned none rather than
+       leaving the input unmentioned.
+     - the gate run you just recorded (`evidence: recorded <runId>`), so the reviewer reads
+       your measurement instead of making a second one. Do **not** pass a review skill and do
+       not ask it to invoke one — that is sign-off's call, and leaving it out is what keeps
+       this one cheap.
+
+     It returns `intent.answer` — `matches` / `diverges` / `cannot-tell` — beside its ordinary
+     `findings`, and the two are **routed apart** because they are different classes of
+     problem: a finding names a file:line an executor can fix, a divergence names a
+     disagreement between the diff, the description and the claim that only a human can
+     settle. Read one as the other and one of them is lost.
+     - `findings` → record them in `phase.review.findings` and handle them at sign-off the
+       ordinary way (a finding in a file no task declares gets a NEW TASK there). Do not open
+       a fix loop here; the per-task call is a check, not the review.
+     - `diverges` → write it into `task.outcome.technical` so the commit carries it, and
+       surface it as a **human action item**. Do not spawn a fix run from it: the wrong half
+       may be the code, the description or the claim, and a fix run would edit code to match
+       a description nobody checked.
+     - `cannot-tell` → record it WITH the reviewer's `missing` list, and read it as neither of
+       the other two. A missing input is a gap in what YOU passed — repair the spawn prompt,
+       not the code.
+     - `redFirst` of `not-proved` on a `tdd` task → a human action item too. A test seen only
+       passing may assert nothing, and the task's own gate cannot tell you that.
+
+     None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
+     measurement that decides whether a task is done, and a cheap per-task reviewer that could
+     hold up a commit would be a second gate with none of the first one's bracketing. Nothing
+     enforces this routing either — no hook reads a subagent's return — so the run's own
+     recorded outcome is the verdict either way.
    - **A widened scope CONTINUES the executor; it does not replace it.** When the plan gate refuses
      a file the task genuinely needs, you widen `task.files` (`/audit:task scope`) and then send the
      running executor a message telling it to carry on — you do **not** spawn a fresh one. A
@@ -563,9 +606,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    value and its basis; do not re-derive it from the file if the output is in front of you.
    **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
-   (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, and the resolved skill name — it invokes the
+   (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, the resolved skill name, and
+   **`mode: phase`** — it invokes the
    skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
-   context). Record results in `phase.review.findings`; for each actionable finding spawn an
+   context). The mode is what tells it there is no single task description or executor claim to bind
+   here: the intent question was already asked per task, against each task's own description and its own
+   executor's `outcome`, and this diff cannot say which task produced which line. What sign-off adds is the
+   review skill over the whole phase. Record results in `phase.review.findings`; for each actionable finding spawn an
    `audit:audit-executor` fix run (`model = phase.review.model`) that may edit implementation AND tests; loop until
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
    general-purpose subagent with the same rules if the agent type is unavailable. **If the resolved review skill is

@@ -231,6 +231,54 @@ def _frontmatter(text, key):
     return val
 
 
+def _squash(text):
+    """One line, single-spaced - so a substring pin survives a re-wrap of the prose
+    it is pinning. A rule that has to keep its line breaks is a rule the next editor
+    breaks by tidying it."""
+    return " ".join(text.split())
+
+
+def _question_lines(text, *tokens):
+    """Every QUESTION a document asks that names all of `tokens`, squashed to one line.
+
+    A question and not a sentence, which is the whole narrowing: a brief that MENTIONS
+    a description and an outcome somewhere in its prose has ASKED its reader nothing,
+    and being asked is the entire mechanism of an intent check.
+
+    BLANK-LINE BLOCKS RATHER THAN LINES, because a question long enough to name both
+    halves is a question that wraps - the first version of this read physical lines and
+    reported the brief as asking nothing while the question sat in front of it, across
+    two of them. Blockquote, emphasis and heading markers are stripped as formatting.
+    """
+    out = []
+    for block in re.split(r"\n\s*\n", text):
+        line = _squash(block.replace(">", " ")).strip("#* ").strip()
+        if not line.endswith("?"):
+            continue
+        if all(tok in line for tok in tokens):
+            out.append(line)
+    return out
+
+
+def _return_top_keys(text):
+    """The TOP-LEVEL keys of the last JSON-shaped return block in an agent brief.
+
+    Read by INDENTATION rather than by parsing, because the block is a template with
+    `...` in it and parses as nothing - and indentation is the only thing that
+    separates a sibling key from a field inside one, which is the distinction the
+    block exists to record. `[]` when no block is found, which every case reading
+    this fails on.
+    """
+    start = text.rfind("\n{\n")
+    if start < 0:
+        return []
+    block = text[start + 1:]
+    end = block.find("\n}")
+    if end < 0:
+        return []
+    return re.findall(r'^ "([A-Za-z]+)":', block[:end], re.M)
+
+
 def _md_section(text, heading_prefix):
     """The lines from the first `## ` heading starting with `heading_prefix` up to
     the next `## `. `""` when nothing matches, for `_product_doc`'s reason."""
@@ -2960,6 +3008,118 @@ def _cases(check):
                   for v in _AT_WRITERS)
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")
+    # --- the intent check: the reviewer is handed the CLAIM -----------------------
+    # WHAT WAS WRONG. The reviewer received the diff, the phase's `desiredOutcome` and
+    # a skill name - never what the TASK asked for, never what the executor CLAIMED it
+    # had done. So it could grade the code and could not grade the code AGAINST the
+    # claim, which is the one question a phase-wide sign-off diff can never answer: a
+    # phase diff has no way back to the task that produced any given line, so a claim
+    # is bindable to its task only while that task is the unit being reviewed.
+    #
+    # THE PINS COME IN PAIRS on purpose. Each rule is asked of the document that must
+    # carry it AND of a document that legitimately must not, because the cheap way to
+    # write any of these - a substring over the whole file - passes on both and
+    # therefore says nothing about either. `iq2` and `iq8` are those allow cases and
+    # they are what goes red when a pin here is widened.
+    _REV = _product_doc("agents/audit-reviewer.md")
+    _EXE = _product_doc("agents/audit-executor.md")
+    _EXP = _product_doc("agents/audit-explorer.md")
+    _ORC = _product_doc("reference/orchestrator.md")
+    _iq_asked = _question_lines(_REV, "description", "outcome")
+    check("iq1 the reviewer's brief ASKS the intent question - one question naming "
+          "both halves, what was asked (the task's description) and what was "
+          "claimed (the executor's outcome). A brief carrying one of the two asks "
+          "the half sign-off already covers: %r" % (_iq_asked,),
+          _iq_asked != [])
+    _iq_elsewhere = dict((rel, _question_lines(_product_doc(rel),
+                                               "description", "outcome"))
+                         for rel in ("agents/audit-executor.md",
+                                     "agents/audit-explorer.md"))
+    check("iq2 ...and the briefs that legitimately do NOT ask it stay quiet. The "
+          "executor is HANDED a description and WRITES an outcome - it names both "
+          "in ordinary prose and grades neither - and the explorer never sees a "
+          "task at all. THE ALLOW CASE: weaken iq1's test to a document-wide "
+          "substring and both of these go red while iq1 stays green: %r"
+          % (_iq_elsewhere,),
+          all(v == [] for v in _iq_elsewhere.values()))
+    _iq_inputs = dict((tok, tok in _REV)
+                      for tok in ("`description`", "`outcome`", "`desiredOutcome`",
+                                  "`testsAdded`", "`redFirst`", "`intent.missing`"))
+    check("iq3 ...and the brief NAMES every input it is handed, which is what lets "
+          "a reviewer report the one it did not get instead of reviewing around "
+          "the hole: %r" % (_iq_inputs,),
+          all(_iq_inputs.values()))
+    check("iq4 ...and says what a missing input costs, in the rule's own sentence: "
+          "`cannot-tell`, never `matches`. A reviewer that defaults to agreement "
+          "on an input it never received reports a check it did not make, which is "
+          "the one answer worse than no answer",
+          "`cannot-tell`, never `matches`" in _squash(_REV))
+    _iq_red = _question_lines(_REV, "RED")
+    _iq_words = dict((w, w in _REV) for w in ("`proved`", "`not-proved`",
+                                              "`could-not-prove`",
+                                              "`not-applicable`"))
+    check("iq5 the brief asks the question this register records more than any "
+          "other - was the test ever seen RED - as a QUESTION, and carries the "
+          "whole three-valued vocabulary plus the gate-only case, so a reviewer "
+          "READS the executor's word instead of re-deriving it: %r"
+          % ((_iq_red, _iq_words),),
+          _iq_red != [] and all(_iq_words.values())
+          and "green run alone is `not-proved`" in _squash(_REV))
+    _iq_keys = _return_top_keys(_REV)
+    check("iq6 `intent` is a TOP-LEVEL key of the reviewer's return, a sibling of "
+          "`findings` and not a field inside one. A discrepancy filed as a finding "
+          "becomes a fix run editing code to match a description nobody checked; "
+          "one left out of the return is simply lost - so the shape is what keeps "
+          "the two classes apart: %r" % (_iq_keys,),
+          _iq_keys == ["findings", "preExisting", "intent", "verdict"])
+    check("iq6b ...and the brief SAYS that, where the reviewer reads it - a key "
+          "order nobody explains is a key order the next author collapses",
+          "`intent` is not a finding" in _squash(_REV))
+    _iq_exec = _md_section(_ORC, "## Execute the task")
+    _iq_signoff = _md_section(_ORC, "## Phase sign-off")
+    _iq_passed = dict((tok, tok in _iq_exec)
+                      for tok in ('"audit:audit-reviewer"', "`mode: task`",
+                                  "`task.description`", "`outcome`",
+                                  "`testsAdded`", "`redFirst`"))
+    check("iq7 the PER-TASK reviewer spawn hands over what the check needs - the "
+          "reviewer agent, the task mode, the task's own description, the "
+          "executor's returned outcome and its test evidence - and it is read out "
+          "of the task section, not off the whole document: %r" % (_iq_passed,),
+          all(_iq_passed.values()))
+    # The needle is the FIELD NAME, and the sign-off section is a spawn instruction -
+    # so naming the field there reads as passing it, whatever the sentence around it
+    # meant. That is a real cost and the repair is a sentence away: say "task
+    # description" in words if the section has to discuss one.
+    check("iq8 ...while the SIGN-OFF spawn passes none of it and is right not to: "
+          "there is no single task at sign-off, which is the whole reason the "
+          "intent check is per task. THE ALLOW CASE: point iq7's reads at the "
+          "whole document instead of at the section and this goes red while iq7 "
+          "stays green: %r" % (("task.description" in _iq_signoff,
+                                "`mode: phase`" in _iq_signoff),),
+          "task.description" not in _iq_signoff and "`mode: phase`" in _iq_signoff)
+    _iq_run = _md_section(_REV, "## What you may run")
+    check("iq9 the brief bounds what the reviewer may RUN, in its own section: it "
+          "may re-run the single test the executor named and it may not run the "
+          "gate. The orchestrator measures the gate once, on a quiet tree, and a "
+          "reviewer that re-measures is a second gate with none of the first's "
+          "bracketing: %r" % ((len(_iq_run), "Must not:" in _iq_run),),
+          "run-test-gate.py" in _iq_run and "Must not:" in _iq_run
+          and "`testsAdded`" in _iq_run)
+    check("iq10 ...and that pin is scoped to the SECTION rather than to the "
+          "document, because the executor brief names the same script and is "
+          "right to - it RUNS it. THE ALLOW CASE for iq9: a pin asking whether a "
+          "brief mentions the gate script passes on the executor and so says "
+          "nothing about either brief",
+          "run-test-gate.py" in _EXE
+          and _md_section(_EXE, "## What you may run") == "")
+    check("iq11 ...over documents that were actually READ and sections that "
+          "actually resolved: `_product_doc` returns empty for an unreadable file "
+          "and `_md_section` returns empty for a heading that moved, and either "
+          "would leave iq8's and iq10's `not in` halves green over nothing: %r"
+          % ((len(_REV), len(_EXE), len(_EXP), len(_iq_exec), len(_iq_signoff),
+              len(_iq_run)),),
+          min(len(_REV), len(_EXE), len(_EXP), len(_iq_exec), len(_iq_signoff),
+              len(_iq_run)) > 400)
 
 
 def _selftest():
