@@ -182,8 +182,20 @@ MAX_FAILING = 10
 # checks it reported as failing where the summary reader recognises the runner,
 # and a capped tail of its output where it does not. The basis is what tells
 # those two apart, which is why neither travels without the other.
+# `retriedAfterSignal` AND `retryBasis` ARE ON THE ROW FOR THE REASON `signal`
+# IS NOT. The rule beside `measured` is that a claim the row can already be read
+# for is not cached a second time, and `signal` obeys it: `exit` and `outcome`
+# hold the evidence, so a reader a week later can name the signal without being
+# told it. That does not hold here. Every other field of a retried step - its
+# exit, its count, its duration, its outcome - describes the attempt that
+# ANSWERED, and nothing in the row says an earlier attempt was ended by the OS
+# and thrown away, which means a green row would read as a gate that answered on
+# the terms the plan declared. The basis travels with the word because the second
+# attempt may have run under a lowered worker bound or under the same one, and
+# those are different claims about what was measured.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
-             "timeoutSeconds", "teardown", "failing", "failingBasis")
+             "timeoutSeconds", "teardown", "failing", "failingBasis",
+             "retriedAfterSignal", "retryBasis")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis", "dirtyDigest",
               "dirtyBasis")
 _PORCELAIN_RENAME = " -> "

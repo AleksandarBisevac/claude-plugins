@@ -864,6 +864,26 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    **not** record it as a red suite. `GATE TIMED OUT` is the same shape one cause over — the step
    was stopped at its bound and reached no verdict, so read nothing about the work into it.
 
+   **`RETRIED AFTER A SIGNAL` means the verdict under it is a SECOND attempt's, at a bound the
+   first attempt did not have.** A step the OS ended reached no verdict, so the runner runs that
+   step once more before answering — at a lowered worker bound where the command declares one it
+   can read, and unchanged where it does not, and the line says which of those happened. **Read
+   it as a different measurement, never as the first one confirmed**: the step's exit code, check
+   count and duration all describe the attempt that answered, and nothing else on the row or in
+   the output says an earlier attempt was ended and thrown away — which is why a green gate
+   carrying this line is still a green gate, and still not the gate the plan declared. Put the
+   line in `task.outcome.technical` when you report the run, because the recorded row keeps it
+   (`steps[].retriedAfterSignal` and `steps[].retryBasis`) and your summary is where a reader
+   meets it first.
+
+   **Two things this never does, and the cases that hold them are in
+   `plugins/audit/tests/test_run_test_gate.py` — run it with `--selftest`.** It never retries a
+   step that exited non-zero **having printed its own end-of-run report**, whatever the exit code:
+   a suite that reported has measured, and re-running a measurement until it comes back green is
+   how a real failure becomes an infrastructure excuse. And a step ended by a signal on **both**
+   attempts is not a third attempt — it is a `GATE COULD NOT RUN` naming both attempts and both
+   signals, which is the arm above: fix the host, spend no retry.
+
    **`NO CHECK RAN` is not green.** A gate that skipped everything and a gate that verified
    everything are the same exit code; only the count separates them. jest, vitest, mocha and
    pytest are read from their own summary lines, and only the words that mean a check EXECUTED

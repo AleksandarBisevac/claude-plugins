@@ -1229,6 +1229,173 @@ def ended_by_signal(exit_code, text, command=None):
                   "own for the code to be an answer to" % (code, name))
 
 
+# --- what a SECOND attempt may change, and what it may not --------------------
+# THE CLASSIFICATION ABOVE IS THE PRECONDITION AND THIS IS WHAT IT BUYS. A step
+# the OS ended reached no verdict, so the run refuses and an operator re-runs it
+# by hand - which is where a whole session of them went, one command at a time,
+# for a cause the command itself declares.
+#
+# THE KNOB IS IN THE COMMAND. A parallel suite whose workers each start their own
+# in-memory database is bounded by memory PER WORKER, and the same gate was
+# answered at a lower worker count and killed at a higher one, run for run. So a
+# second attempt at a lower bound asks a question the first attempt could not
+# answer, rather than rolling the same dice again.
+#
+# AND IT MAY NEVER REACH A STEP THAT REPORTED. A non-zero exit BESIDE an
+# end-of-run report is a measurement, and re-running a measurement until it comes
+# back green is the fault the whole no-verdict vocabulary exists to prevent, one
+# door along. `ended_by_signal` is the separation and nothing here re-decides it:
+# the retry is keyed on the signal that function reports, never on an exit code,
+# so a suite that spoke for its own status cannot be reached from here at all.
+#
+# The flags a runner is told its worker count through, and the runner name a
+# SHORT spelling has to appear beside. A long flag names its own subject; one
+# letter does not - `-n` is the worker count for pytest-xdist and the LINE COUNT
+# for a pager, and a gate entry is as often a pipeline as it is one command. So a
+# short spelling is read only where the command also names the runner that spells
+# it that way, which is the narrowing `_STEP_WORDS` already makes for a different
+# question. The direction that costs is stated where it is taken: a bound this
+# reader cannot see is reported as one it cannot lower, never as a reduction it
+# did not make.
+_PARALLEL_FLAGS = (
+    ("--jobs", None),
+    ("-j", None),
+    ("--numprocesses", None),
+    ("-n", "pytest"),
+    ("--maxWorkers", None),
+    ("--max-workers", None),
+    ("--workers", None),
+)
+
+# Where one program in a gate entry ends and the next begins. A gate entry is a
+# SHELL STRING - `meta.nodePreamble` is joined onto the front of one with `&&`,
+# and piping a runner into a pager is ordinary - so "the command names pytest"
+# is not the same question as "THIS program is pytest", and only the second one
+# licenses reading a one-letter flag as a worker count.
+_SHELL_BREAK = re.compile(r"[|&;]+")
+
+
+def _program_at(command, index):
+    """The one program's worth of `command` that position `index` falls inside.
+
+    NOT A SHELL PARSER AND IT DOES NOT NEED TO BE. A break character inside a
+    quoted argument splits a segment that should not have been split, which can
+    only make a flag fail to be attributed to its runner - the direction this
+    whole reader is allowed to be wrong in, since the answer there is "no bound
+    this reader can lower" and the command runs again unchanged.
+    """
+    text = command or ""
+    start = 0
+    for match in _SHELL_BREAK.finditer(text):
+        if match.start() > index:
+            return text[start:match.start()]
+        start = match.end()
+    return text[start:]
+
+
+def parallelism_flags(command):
+    """Every worker bound `command` declares: `(flag, value, start, end)`, in order.
+
+    `value` IS THE RAW TOKEN and the span is where it sits in the string, so a
+    caller lowers a number by splicing rather than by rebuilding the command.
+    Splitting a shell command on whitespace and joining it back collapses the
+    spacing inside a quoted argument, which would make the second attempt a
+    differently-spelled command for a reason nobody asked for.
+
+    EVERY HIT COMES BACK AND NONE IS PREFERRED. Which of two parallelism-shaped
+    flags bounds the workers is not a question a string can answer, and the
+    caller's answer to more than one is to lower neither and say so - a guess
+    there rewrites a flag that may belong to a different program in the pipeline.
+    """
+    hits = []
+    for flag, runner_name in _PARALLEL_FLAGS:
+        # A long flag takes its value after a separator; a short one may carry it
+        # with none at all (`-j4`). The lookbehind is what keeps `-j` from
+        # matching inside `--jobs` and `-n` from matching inside
+        # `--numprocesses`, so one spelling is never counted as two.
+        gap = "[= \t]*" if len(flag) == 2 else "[= \t]+"
+        pattern = "(?<![\\w=/.-])%s%s([^\\s]*)" % (re.escape(flag), gap)
+        for match in re.finditer(pattern, command or ""):
+            # THE RUNNER MUST BE THIS PROGRAM AND NOT MERELY SOMEWHERE IN THE
+            # LINE. `pytest -q | head -n 20` names pytest and the `-n` belongs
+            # to the pager; asking the whole string would have lowered the
+            # pager's line count and called the result a smaller measurement.
+            program = _program_at(command, match.start())
+            if runner_name and runner_name not in program:
+                continue
+            hits.append((flag, match.group(1), match.start(1), match.end(1)))
+    return sorted(hits, key=lambda hit: hit[2])
+
+
+def lowered_parallelism(command):
+    """`(command, basis)` - the same gate under a smaller bound, or None and why not.
+
+    THE NUMBER IS DERIVED FROM WHAT THE COMMAND DECLARED, never chosen here. A
+    figure written into this file would be a claim about somebody else's host -
+    the ceiling is memory per worker, so it moves with the machine and with the
+    suite - and it would stop being derived the moment either changed. Halving is
+    the largest single step that still leaves the gate running in parallel, and a
+    step down BY ONE from a large bound barely moves the memory it is the bound
+    on.
+
+    None IS A REAL ANSWER AND IT IS THE MAJORITY ONE. Four separate states reach
+    it - no flag this reader knows, more than one candidate, a value that is not
+    a number, and a bound with nothing below it that is still a run - and each
+    says which it was, because "the second attempt ran the same command" and "the
+    second attempt ran a smaller one" are different claims about what was
+    measured and the caller has to be able to say which happened.
+    """
+    hits = parallelism_flags(command)
+    if not hits:
+        return None, ("this command declares no worker bound this reader can "
+                      "see, so the second attempt ran it UNCHANGED - nothing "
+                      "about the work was made smaller, only the moment it ran")
+    if len(hits) > 1:
+        # THE SPELLINGS ARE PRINTED AS WRITTEN AND NOT DE-DUPLICATED: one flag
+        # appearing twice is the shape this arm exists for - a runner and a pager
+        # in one pipeline agreeing on a letter - and collapsing the two would
+        # print a sentence about "more than one" beside a single name.
+        return None, ("this command carries %d parallelism-shaped flag(s) (%s), "
+                      "so which of them bounds the workers is not knowable from "
+                      "the string - the second attempt ran it UNCHANGED rather "
+                      "than lowering one that may belong to another program in "
+                      "the pipeline"
+                      % (len(hits),
+                         ", ".join("%s %s" % (hit[0], hit[1]) for hit in hits)))
+    flag, value, start, end = hits[0]
+    try:
+        workers = int(value)
+    except ValueError:
+        return None, ("this command declares its parallelism as `%s`, whose "
+                      "value is not a number this reader can lower, so the "
+                      "second attempt ran it UNCHANGED" % (flag,))
+    if workers <= 1:
+        return None, ("`%s` is already %d here, and there is no bound below it "
+                      "that is still a run - so the second attempt ran the "
+                      "command UNCHANGED" % (flag, workers))
+    lowered = workers // 2
+    return (command[:start] + "%d" % (lowered,) + command[end:],
+            "`%s` was lowered from %d to %d for the second attempt, so it "
+            "measured the same gate under a smaller bound"
+            % (flag, workers, lowered))
+
+
+def retry_note(signal_name, change):
+    """The sentence a retried step carries on every surface that shows its verdict.
+
+    IT SAYS WHICH ATTEMPT THE VERDICT BESIDE IT IS, and that is the one fact a
+    reader cannot recover from anything else on the row. `exit`, `ran`,
+    `durationMs` and `outcome` all describe the attempt that produced them, and
+    none of them says an earlier attempt was ended and thrown away - so a green
+    line with nothing beside it reads as a gate that answered, when what happened
+    is that a gate was killed and a different question was then asked.
+    """
+    return ("the OS ended the FIRST attempt of this step (%s), so it was run "
+            "once more and the verdict beside this note is the SECOND "
+            "attempt's: %s. A second attempt is a different measurement and not "
+            "a confirmation of the first." % (signal_name, change))
+
+
 # --- did it touch what the task owns ------------------------------------------
 # Paths as a runner prints them. Deliberately not a general path grammar: a token
 # is a candidate only if it carries a `/` or a dot-extension, which is what keeps
@@ -1837,6 +2004,80 @@ def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
     return "passed"
 
 
+def observed_step(name, command, code, text, facts, duration_ms):
+    """One step's row, from what the runner returned and from nothing else.
+
+    A FUNCTION BECAUSE A STEP IS RUN MORE THAN ONCE. A step the OS ended is run a
+    second time, and the second attempt has to be read by exactly the rules the
+    first was: a copy of this arithmetic beside the retry would be a second
+    answer to "what did this step do", and the first thing to drift would be the
+    signal classification the retry is keyed on.
+
+    `command` IS THE GATE'S OWN DECLARATION AND STAYS IT on both attempts. Where
+    a second attempt lowered a worker bound, what changed is a number inside that
+    string, and `retryBasis` names the flag and both values - so the row keeps
+    the command the manifest published, which is the only spelling
+    `_evidence_io` may store verbatim, and the change is stated beside it rather
+    than substituted for it.
+    """
+    step = {"name": name, "command": command, "exit": code,
+            "ran": ran_count(command, text),
+            "durationMs": duration_ms}
+    step.update(facts or {})
+    # READ OFF THE `ran` THE ROW WILL CARRY, never off a copy taken before the
+    # wrapper's facts landed: this word is a reading of that number, and a
+    # reading taken from a different value than the one recorded beside it is
+    # exactly the disagreement `measured_state` exists to make impossible. Above
+    # the outcome arms below, and not among them, because it takes part in none
+    # of them - it says what was measured, never what the run is worth.
+    step["measured"] = measured_state(step["ran"])
+    # F302, AND IT SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
+    # outrank it: a timed-out step was killed by OUR teardown, so its `-15` is
+    # this process's signal and not the OS ending the run, and reading it here
+    # would relabel every timeout as infrastructure. `never_started` below is an
+    # inference off two numbers, so it comes after something the OS reported. The
+    # signal and its basis ride on the step because that is where a per-step
+    # observation belongs; the LEDGER needs no copy of either, since it already
+    # records `exit` and `outcome` and a claim a row can be read for is not
+    # cached twice (`_evidence_io.row_for` makes that argument for
+    # `treeMutatedOwned`).
+    if not step.get("outcome"):
+        # THE STEP'S TEXT AND NOT ITS `ran` (F323). What the arm has to know is
+        # whether the runner reached its own last line, and `step["ran"]` answers
+        # a different question one of whose two provenances is a line tally this
+        # reader did. The COMMAND goes with it (F352): a marker in the output of
+        # a step that wraps other runners belongs to one of them, not to the
+        # step.
+        sig_name, sig_basis = ended_by_signal(step["exit"], text, command)
+        if sig_name:
+            step["outcome"] = CANNOT_RUN
+            step["signal"] = sig_name
+            step["signalBasis"] = sig_basis
+    # AFTER the wrapper's own facts, never instead of them: `_shell` observed the
+    # failure to spawn directly, and an inference must not overwrite an
+    # observation. No basis key is written beside this because the step already
+    # carries both halves of it - `exit` and a `ran` of zero ARE the evidence,
+    # and a second copy could disagree with them.
+    if never_started(step["exit"], step["ran"], step.get("outcome")):
+        step["outcome"] = CANNOT_RUN
+    # ON A STEP THAT DID NOT COME BACK ZERO, AND ON NO OTHER. The claim is "here
+    # is what went wrong in this step", and a green step has nothing to say under
+    # it - so carrying a tail there would put an arbitrary slice of a passing
+    # runner's output into a committed row on every run this plugin ever records.
+    # `fl6` is the allow case that holds that line, and it is the direction an
+    # over-firing version of this breaks in.
+    #
+    # `exit` AND NOT `failed_steps`, deliberately wider by two members: a step
+    # the OS killed and a step stopped at its bound both printed whatever they
+    # got to, and that text is the only thing on the row that says how far they
+    # got. They are not failures and nothing here calls them one - the word stays
+    # `outcome`'s, and this is an observation beside it.
+    if step["exit"] != 0:
+        step["failing"], step["failingBasis"] = failing_lines(text,
+                                                              _ev.MAX_FAILING)
+    return step
+
+
 def run_gate(project, commands, runner=None, owns=None, timeout=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
@@ -1870,67 +2111,37 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             step_started = time.monotonic()
             code, text, facts = runner(project, command, timeout)
             texts.append(text or "")
-            step = {"name": name, "command": command, "exit": code,
-                    "ran": ran_count(command, text),
-                    "durationMs": _elapsed_ms(step_started)}
-            step.update(facts or {})
-            # READ OFF THE `ran` THE ROW WILL CARRY, never off a copy taken
-            # before the wrapper's facts landed: this word is a reading of that
-            # number, and a reading taken from a different value than the one
-            # recorded beside it is exactly the disagreement `measured_state`
-            # exists to make impossible. Above the outcome arms below, and not
-            # among them, because it takes part in none of them - it says what
-            # was measured, never what the run is worth.
-            step["measured"] = measured_state(step["ran"])
-            # F302, AND IT SITS BETWEEN THE TWO FOR A REASON. The wrapper's own
-            # facts outrank it: a timed-out step was killed by OUR teardown, so
-            # its `-15` is this process's signal and not the OS ending the run,
-            # and reading it here would relabel every timeout as infrastructure.
-            # `never_started` below is an inference off two numbers, so it comes
-            # after something the OS reported. The signal and its basis ride on
-            # the step because that is where a per-step observation belongs; the
-            # LEDGER needs no copy of either, since it already records `exit`
-            # and `outcome` and a claim a row can be read for is not cached
-            # twice (`_evidence_io.row_for` makes that argument for
-            # `treeMutatedOwned`).
-            if not step.get("outcome"):
-                # THE STEP'S TEXT AND NOT ITS `ran` (F323). What the arm has to
-                # know is whether the runner reached its own last line, and
-                # `step["ran"]` answers a different question one of whose two
-                # provenances is a line tally this reader did. The COMMAND goes
-                # with it (F352): a marker in the output of a step that wraps
-                # other runners belongs to one of them, not to the step.
-                sig_name, sig_basis = ended_by_signal(step["exit"], text,
-                                                      command)
-                if sig_name:
-                    step["outcome"] = CANNOT_RUN
-                    step["signal"] = sig_name
-                    step["signalBasis"] = sig_basis
-            # AFTER the wrapper's own facts, never instead of them: `_shell`
-            # observed the failure to spawn directly, and an inference must not
-            # overwrite an observation. No basis key is written beside this
-            # because the step already carries both halves of it - `exit` and a
-            # `ran` of zero ARE the evidence, and a second copy could disagree
-            # with them.
-            if never_started(step["exit"], step["ran"], step.get("outcome")):
-                step["outcome"] = CANNOT_RUN
-            # ON A STEP THAT DID NOT COME BACK ZERO, AND ON NO OTHER. The claim
-            # is "here is what went wrong in this step", and a green step has
-            # nothing to say under it - so carrying a tail there would put an
-            # arbitrary slice of a passing runner's output into a committed row
-            # on every run this plugin ever records. `fl6` is the allow case
-            # that holds that line, and it is the direction an over-firing
-            # version of this breaks in.
+            step = observed_step(name, command, code, text, facts,
+                                 _elapsed_ms(step_started))
+            # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
+            # here is the one `ended_by_signal` wrote, never the exit code: a
+            # non-zero exit beside an end-of-run report is a measurement, and a
+            # re-run of a measurement is a red rolled again until it comes back
+            # green. Nor does a timeout or a runner that never started reach
+            # this - our own teardown is not the OS ending the run, and a
+            # missing interpreter answers the same way however many workers it
+            # is asked for. What a kill has that neither of those has is a cause
+            # the command declares a bound for.
             #
-            # `exit` AND NOT `failed_steps`, deliberately wider by two members: a
-            # step the OS killed and a step stopped at its bound both printed
-            # whatever they got to, and that text is the only thing on the row
-            # that says how far they got. They are not failures and nothing here
-            # calls them one - the word stays `outcome`'s, and this is an
-            # observation beside it.
-            if step["exit"] != 0:
-                step["failing"], step["failingBasis"] = failing_lines(
-                    text, _ev.MAX_FAILING)
+            # THE SECOND ATTEMPT REPLACES THE ROW AND CARRIES THE FIRST ON IT.
+            # Its exit, its count and its duration are the ones a reader acts
+            # on, and they are the SECOND attempt's - so the thing that cannot
+            # be recovered from any of them is that there was a first, which
+            # signal ended it, and whether the bound moved between the two.
+            if step.get("signal"):
+                retry_started = time.monotonic()
+                lowered, change = lowered_parallelism(command)
+                code, text, facts = runner(project, lowered or command, timeout)
+                # APPENDED FOR ITS OWN ATTEMPT. `texts` is joined for the
+                # coverage question alone, and both attempts really did print -
+                # so a retried step contributes two entries here and still one
+                # to each of the two lists that must stay parallel.
+                texts.append(text or "")
+                first = step
+                step = observed_step(name, command, code, text, facts,
+                                     _elapsed_ms(retry_started))
+                step["retriedAfterSignal"] = first["signal"]
+                step["retryBasis"] = retry_note(first["signal"], change)
             steps.append(step)
             # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
             # come apart. Scraped per step rather than sliced out of the joined
@@ -2099,6 +2310,18 @@ def render(res, out=print):
                 "somebody looks."
                 % (", ".join(grp["names"]), grp["ran"],
                    _output.some_of(grp["silent"], budget=SAMPLE_BUDGET)))
+    # ABOVE THE VERDICT AND NOT BESIDE THE STEP, because the reader this is for
+    # is the one who scrolls to the banner. A retried step's own line carries the
+    # exit, the count and the duration of the attempt that answered, and every
+    # one of those reads as an ordinary measurement - so a run that comes back
+    # `GATE GREEN` with nothing here would tell a reader the gate answered, when
+    # what happened is that it was killed and then asked under a different bound.
+    # The banner literals `reference/orchestrator.md` keys its arms on are left
+    # unbroken, which is why this sits here rather than among them.
+    for st in res["steps"]:
+        if st.get("retryBasis"):
+            out("RETRIED AFTER A SIGNAL: %s - %s" % (st["name"],
+                                                     st["retryBasis"]))
     code = E_OK
     # THE SAME LIST THE STATUS WORD READS, for F280's reason: the verdict line and
     # the record disagreeing about one run is the fault this file keeps being
@@ -2185,6 +2408,18 @@ def render(res, out=print):
                 "of CPU." % (st["name"], st["signal"]))
             if st.get("signalBasis"):
                 out("  basis: %s" % (st["signalBasis"],))
+            if st.get("retriedAfterSignal"):
+                # THE HONEST END OF A RETRY, and the sentence that says there is
+                # no next one. A step ended by a signal twice - once under the
+                # bound the gate declared and once under a smaller one - is a
+                # host that cannot run this gate, which is a thing to repair and
+                # not a thing to keep rolling for. Both attempts are named
+                # because they are two observations and a reader deciding what
+                # to fix needs both.
+                out("  and the FIRST attempt was ended by %s, so this step has "
+                    "been ended by a signal on BOTH attempts and there is no "
+                    "third: re-running it again measures the host, not the "
+                    "work." % (st["retriedAfterSignal"],))
         code = E_FAIL
     if stalled:
         out("GATE TIMED OUT: %s was stopped at its bound rather than answering. "

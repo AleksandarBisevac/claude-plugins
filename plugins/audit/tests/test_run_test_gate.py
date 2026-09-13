@@ -2714,6 +2714,285 @@ def _cases(check):
           and "signal" not in _ev_io.STEP_KEYS
           and "signalBasis" not in _ev_io.STEP_KEYS)
 
+    # --- rk: a step the OS ended is run once more, and says so -------------
+    # THE ORDER OF THIS BLOCK IS THE ARGUMENT IT MAKES. The inverse risk is the
+    # one that has actually cost this project - a real failure excused as
+    # infrastructure, re-run, and passed on a later roll - so the case that pins
+    # a genuine red as neither retried nor reclassified is written FIRST, before
+    # any case that asserts a retry happens at all. It asserts the thing a
+    # loosened guard breaks: the runner seam is asked once.
+    #
+    # EVERY CASE HERE IS WRITTEN ON A NEGATIVE EXIT CODE, which is the channel
+    # the OS reports rather than the one a shell converts, so none of them needs
+    # a platform skip: `SIGSEGV` and `SIGABRT` are defined wherever
+    # `signal.Signals` is, while `SIGKILL` is not.
+    def _answers(replies):
+        """A runner that answers from a list and RECORDS what it was asked.
+
+        The COMMAND each call received is the evidence, not only the number of
+        calls: a retry that fired and changed nothing and a retry that never
+        fired are different defects, and a tally cannot tell them apart.
+        """
+        asked = []
+
+        def _run(_project, command, _timeout=None):
+            asked.append(command)
+            return replies[min(len(asked) - 1, len(replies) - 1)]
+
+        return asked, _run
+
+    rk_gate = "npx mocha --parallel --jobs 4"
+    rk_red_asked, rk_red_runner = _answers([(139, MOCHA_JSON, {})])
+    res_rk_red = M.run_gate(tmp, [("test", rk_gate)], runner=rk_red_runner)
+    check("rk0 A GENUINE RED IS NEITHER RE-ROLLED NOR RECLASSIFIED, and this is "
+          "the case that had to exist before the retry did. `mocha --reporter "
+          "json` at exit 139 carries an END-OF-RUN REPORT, so the step measured "
+          "and spoke for its own status - it is asked ONCE, it stays `failed`, "
+          "and it carries no retry field. A retry keyed on the exit code rather "
+          "than on the signal passes every case below and fails here: %r"
+          % ((rk_red_asked, res_rk_red["status"], res_rk_red["failed"]),),
+          rk_red_asked == [rk_gate]
+          and res_rk_red["status"] == "failed"
+          and res_rk_red["failed"] == ["test"]
+          and res_rk_red["steps"][0].get("outcome") is None
+          and res_rk_red["steps"][0].get("retriedAfterSignal") is None
+          and res_rk_red["steps"][0].get("retryBasis") is None
+          # ...and this gate DOES declare a bound the retry could have lowered,
+          # so the case cannot pass by the retry having nothing to act on - the
+          # only thing stopping it is the report the step printed.
+          and M.lowered_parallelism(rk_gate)[0]
+          == "npx mocha --parallel --jobs 2")
+
+    rk_ok_asked, rk_ok_runner = _answers([(-11, "", {}),
+                                          (0, "Tests  4 passed (4)\n", {})])
+    res_rk_ok = M.run_gate(tmp, [("test", "npx vitest run --maxWorkers=4")],
+                           runner=rk_ok_runner)
+    rk_ok_lines = []
+    rk_ok_code = M.render(res_rk_ok, out=rk_ok_lines.append)
+    rk_ok_text = "\n".join(rk_ok_lines)
+    check("rk1 ...AND A STEP THE OS ENDED IS RUN ONCE MORE, AT A BOUND THE "
+          "FIRST ATTEMPT DID NOT HAVE. Before this the run stopped at "
+          "`could-not-run` and an operator re-ran it by hand, which is where a "
+          "session of them went. The second command is the first with its "
+          "worker bound lowered, and the verdict on the row is the SECOND "
+          "attempt's - its exit, its count and its duration: %r"
+          % ((rk_ok_asked, res_rk_ok["status"],
+              res_rk_ok["steps"][0]["exit"], res_rk_ok["steps"][0]["ran"]),),
+          rk_ok_asked == ["npx vitest run --maxWorkers=4",
+                          "npx vitest run --maxWorkers=2"]
+          and res_rk_ok["status"] == "passed"
+          and res_rk_ok["steps"][0]["exit"] == 0
+          and res_rk_ok["steps"][0]["ran"] == 4
+          and res_rk_ok["steps"][0].get("outcome") is None
+          and res_rk_ok["steps"][0].get("signal") is None
+          # ...while the row still names what ended the first attempt. That is
+          # the one fact no other field on the row can be read for, which is why
+          # it is the one the retry has to write down.
+          and res_rk_ok["steps"][0].get("retriedAfterSignal") == "SIGSEGV"
+          and rk_ok_code == M.E_OK
+          # A READER WHO SEES ONLY THE GREEN LINE HAS BEEN MISLED, so the note
+          # sits ABOVE the banner and names the signal, the flag and both
+          # values. The banner literal another document keys its arms on is
+          # left unbroken.
+          and "RETRIED AFTER A SIGNAL: test" in rk_ok_text
+          and "SIGSEGV" in rk_ok_text
+          and "`--maxWorkers` was lowered from 4 to 2" in rk_ok_text
+          and "different measurement" in rk_ok_text
+          # `find`, NEVER `index`. Both are None-free, but `index` RAISES on the
+          # version where the note is gone - and an escape here leaves every
+          # case after this one out of the run and names none of them, which is
+          # the same silence as a case that cannot go red at all.
+          and 0 <= rk_ok_text.find("RETRIED AFTER A SIGNAL")
+          < rk_ok_text.find("GATE GREEN"))
+
+    _lowered = [(cmd, M.lowered_parallelism(cmd)[0])
+                for cmd in ("make -j8 check", "pytest -n 4 -q",
+                            "npx jest --maxWorkers=3",
+                            "npx playwright test --workers 2",
+                            "nvm use 20 && npx jest --maxWorkers=4")]
+    check("rk2 THE NEW BOUND IS DERIVED FROM THE COMMAND AND IS NOWHERE "
+          "WRITTEN DOWN. A worker count pasted into the script would be a claim "
+          "about somebody else's host - the ceiling is memory per worker, so it "
+          "moves with the machine and with the suite. Every spelling is read "
+          "where it sits and spliced in place, so the rest of the command comes "
+          "through byte for byte, preamble and all: %r" % (_lowered,),
+          [new for _cmd, new in _lowered]
+          == ["make -j4 check", "pytest -n 2 -q", "npx jest --maxWorkers=1",
+              "npx playwright test --workers 1",
+              "nvm use 20 && npx jest --maxWorkers=2"]
+          # SECOND DIRECTION, and it is what makes the short spelling a
+          # NARROWING rather than a guess: one letter is the worker count for
+          # one runner and the LINE COUNT for a pager, and a gate entry is as
+          # often a pipeline as it is one command. So the short flag is read
+          # only where the program it sits beside is the runner that spells it
+          # that way - asking whether the whole STRING names that runner is the
+          # version that lowers a pager's line count and calls the result a
+          # smaller measurement.
+          and M.lowered_parallelism("npm test | head -n 20")[0] is None
+          and M.lowered_parallelism("pytest -q | head -n 20")[0] is None
+          # ...and the pager is left alone in the run that really does declare
+          # a bound, which is what stops the narrowing above being a mute.
+          and M.lowered_parallelism("pytest -n 4 | tail -n 20")[0]
+          == "pytest -n 2 | tail -n 20")
+
+    _cannot_cmds = ("npx vitest run", "pytest -n auto", "pytest -n 1",
+                    "make -j8 check && pytest -n 4")
+    _cannot = [M.lowered_parallelism(cmd)[1] for cmd in _cannot_cmds]
+    check("rk3 ...AND WHERE NOTHING CAN BE LOWERED IT SAYS SO RATHER THAN "
+          "PRETENDING IT DID. Four states reach that answer and each names "
+          "itself: no bound this reader can see, a bound whose value is not a "
+          "number, a bound with nothing below it that is still a run, and a "
+          "gate entry chaining two runners that each declare one. Asserted as "
+          "MUTUALLY DISTINCT, which is what fails a version that collapsed them "
+          "into one sentence - and the second attempt then claims only the "
+          "moment it ran, never a smaller measurement: %r"
+          % ([(b or "")[:44] for b in _cannot],),
+          all(M.lowered_parallelism(cmd)[0] is None for cmd in _cannot_cmds)
+          and len(set(_cannot)) == len(_cannot)
+          and "no worker bound this reader can see" in _cannot[0]
+          and "not a number this reader can lower" in _cannot[1]
+          and "no bound below it that is still a run" in _cannot[2]
+          and "not knowable from the string" in _cannot[3]
+          # ...and none of the four claims a reduction. The word the note is
+          # built on is what a reader acts on, so a basis that said "lowered"
+          # with nothing lowered would be the false half of this whole change.
+          and not any("was lowered" in b for b in _cannot))
+
+    rk_run_asked, rk_run_runner = _answers([(-11, "", {}), (0, "", {})])
+    res_rk_run = M.run_gate(tmp, [("test", "npx vitest run")],
+                            runner=rk_run_runner)
+    check("rk3b ...and a gate with no bound to lower is STILL run a second "
+          "time, because the first attempt measured nothing at all and a host "
+          "that was starving one measurement of CPU may not be starving the "
+          "next. What must not happen is the claim: the same command ran twice, "
+          "so the note says the moment changed and refuses to say the work "
+          # READ THROUGH `.get(..., "")`, for the reason sk8 states: the key is
+          # absent on a version where the retry does not happen, and a subscript
+          # in the label escapes before `check()` is ever entered.
+          "did: %r"
+          % ((rk_run_asked,
+              res_rk_run["steps"][0].get("retryBasis", "")[-60:]),),
+          rk_run_asked == ["npx vitest run", "npx vitest run"]
+          and res_rk_run["steps"][0].get("retriedAfterSignal") == "SIGSEGV"
+          and "only the moment it ran" in res_rk_run["steps"][0].get(
+              "retryBasis", "")
+          and "was lowered" not in res_rk_run["steps"][0].get("retryBasis", ""))
+
+    rk_red2_asked, rk_red2_runner = _answers(
+        [(-11, "", {}), (1, "Tests  1 failed | 3 passed (4)\n", {})])
+    res_rk_red2 = M.run_gate(tmp, [("test", "npx vitest run --maxWorkers=4")],
+                             runner=rk_red2_runner)
+    rk_red2_lines = []
+    M.render(res_rk_red2, out=rk_red2_lines.append)
+    rk_red2_text = "\n".join(rk_red2_lines)
+    check("rk4 A RETRY MAY NOT TURN A RED INTO A RUN THAT REACHED NO VERDICT, "
+          "which is the same fault as rk0 with the attempts the other way "
+          "round. The second attempt came back red HAVING MEASURED, so the "
+          "verdict is `failed` and the banner is `GATE RED` - the kill that "
+          "ended the first attempt is an observation beside it and not a word "
+          "that outranks it. A version that carried the first attempt's outcome "
+          "forward would print an infrastructure banner over a measured red: %r"
+          % ((res_rk_red2["status"], res_rk_red2["failed"],
+              res_rk_red2["steps"][0].get("outcome")),),
+          res_rk_red2["status"] == "failed"
+          and res_rk_red2["failed"] == ["test"]
+          and res_rk_red2["steps"][0].get("outcome") is None
+          and "GATE RED: test" in rk_red2_text
+          and "GATE COULD NOT RUN" not in rk_red2_text
+          # ...and the run is STILL legible as a second attempt, which is the
+          # half that separates this from simply forgetting the first one.
+          and res_rk_red2["steps"][0].get("retriedAfterSignal") == "SIGSEGV"
+          and "RETRIED AFTER A SIGNAL: test" in rk_red2_text)
+
+    # THE THIRD REPLY EXISTS SO A THIRD ATTEMPT IS OBSERVABLE RATHER THAN
+    # ENDLESS, and it is GREEN on purpose: a version that kept retrying while
+    # the step came back killed would reach it, print `GATE GREEN` over a run
+    # that was ended by a signal twice, and hang instead of failing if the only
+    # reply left were another kill. The correct runner never asks for it.
+    rk_twice_asked, rk_twice_runner = _answers(
+        [(-11, "", {}), (-6, "", {}), (0, "Tests  1 passed (1)\n", {})])
+    res_rk_twice = M.run_gate(tmp, [("test", "make -j8 check")],
+                              runner=rk_twice_runner)
+    rk_twice_lines = []
+    rk_twice_code = M.render(res_rk_twice, out=rk_twice_lines.append)
+    rk_twice_text = "\n".join(rk_twice_lines)
+    check("rk5 A SECOND SIGNAL DEATH IS NOT A THIRD ATTEMPT. The seam is asked "
+          "exactly twice and the run is an honest `could-not-run` naming BOTH "
+          "attempts and both signals - a step ended by a signal under the bound "
+          "it declared and again under a smaller one is a host that cannot run "
+          "this gate, which is a thing to repair rather than to keep rolling "
+          "for. A loop, a budget or a configurable count fails here: %r"
+          % ((len(rk_twice_asked), res_rk_twice["status"],
+              res_rk_twice["steps"][0].get("signal"),
+              res_rk_twice["steps"][0].get("retriedAfterSignal")),),
+          rk_twice_asked == ["make -j8 check", "make -j4 check"]
+          and res_rk_twice["status"] == M.CANNOT_RUN
+          and res_rk_twice["failed"] == []
+          and res_rk_twice["steps"][0].get("signal") == "SIGABRT"
+          and res_rk_twice["steps"][0].get("retriedAfterSignal") == "SIGSEGV"
+          and rk_twice_code == M.E_FAIL
+          # THE BANNER IS THE ONE ANOTHER DOCUMENT ALREADY KEYS ITS
+          # INFRASTRUCTURE ARM ON, so a second kill costs no retry of the
+          # orchestrator's either - and the two signals are printed apart,
+          # because they are two observations and a reader deciding what to fix
+          # needs both.
+          and "GATE COULD NOT RUN" in rk_twice_text
+          and "THE OS ENDED test (SIGABRT)" in rk_twice_text
+          and "ended by SIGSEGV" in rk_twice_text
+          and "there is no third" in rk_twice_text
+          and "GATE RED" not in rk_twice_text)
+
+    _ident_rk = {"runId": "run-retried", "ts": "2026-09-12T00:00:00Z"}
+    row_rk = _ev_io.row_for(tmp, res_rk_ok, "phase", {"phaseId": "P1"},
+                            _ident_rk)
+    check("rk6 AND ALL THREE SURFACES CARRY IT, because the row is the one read "
+          "a week later. `_evidence_io.STEP_KEYS` is what decides: a key the "
+          "allow-list does not name is dropped in silence, so the fact would "
+          "live in memory for the length of the run and be absent from the only "
+          "copy anybody keeps - and unlike the signal it can be re-derived from "
+          "NOTHING else on the row, since exit, count, duration and outcome all "
+          "describe the attempt that answered: %r"
+          % ((row_rk["steps"][0].get("retriedAfterSignal"),
+              row_rk["steps"][0].get("retryBasis", "")[:40]),),
+          "retriedAfterSignal" in _ev_io.STEP_KEYS
+          and "retryBasis" in _ev_io.STEP_KEYS
+          and row_rk["steps"][0].get("retriedAfterSignal") == "SIGSEGV"
+          and "lowered from 4 to 2" in row_rk["steps"][0].get("retryBasis", "")
+          # ...and the MACHINE-READABLE half is the same dict `main`'s `--json`
+          # arm dumps, so it is asserted through a real round trip rather than
+          # by reading the key off the object that produced it.
+          and json.loads(json.dumps(res_rk_ok))["steps"][0]["retriedAfterSignal"]
+          == "SIGSEGV"
+          # ...while a step nothing happened to carries NEITHER key, so an
+          # ordinary row does not grow two fields to say so.
+          and _ev_io.row_for(tmp, res_rk_red, "phase", {"phaseId": "P1"},
+                             _ident_rk)["steps"][0].get("retryBasis") is None
+          and _ev_io.row_for(tmp, res_rk_red, "phase", {"phaseId": "P1"},
+                             _ident_rk)["steps"][0]
+          .get("retriedAfterSignal") is None)
+
+    rk_to_asked, rk_to_runner = _answers(
+        [(-9, "", {"outcome": M.TIMED_OUT, "timeoutSeconds": 3})])
+    res_rk_to = M.run_gate(tmp, [("test", "pytest -n 8")], runner=rk_to_runner,
+                           timeout=3)
+    rk_ns_asked, rk_ns_runner = _answers(
+        [(127, "could not run: no such file", {"outcome": M.CANNOT_RUN})])
+    res_rk_ns = M.run_gate(tmp, [("test", "pytest -n 8")], runner=rk_ns_runner)
+    check("rk7 THE OTHER TWO NO-VERDICT MEMBERS ARE NOT RETRIED, and each is "
+          "declined for its own reason. A timed-out step arrives at a negative "
+          "code because OUR teardown killed it, so re-running it buys a second "
+          "wait at the same bound; a runner that never started answers the same "
+          "way however many workers it is asked for. Both commands declare a "
+          "bound this reader CAN lower, so neither passes by having nothing to "
+          "act on: %r"
+          % ((rk_to_asked, res_rk_to["status"], rk_ns_asked,
+              res_rk_ns["status"]),),
+          len(rk_to_asked) == 1 and len(rk_ns_asked) == 1
+          and res_rk_to["status"] == M.TIMED_OUT
+          and res_rk_ns["status"] == M.CANNOT_RUN
+          and res_rk_to["steps"][0].get("retriedAfterSignal") is None
+          and res_rk_ns["steps"][0].get("retriedAfterSignal") is None
+          and M.lowered_parallelism("pytest -n 8")[0] == "pytest -n 4")
 
     # --- what state was actually tested ------------------------------------
     # `head` alone cannot answer this and never could: a TASK gate runs BEFORE the
