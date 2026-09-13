@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] | add "<title>" --outcome "<what success is>" [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -30,9 +30,9 @@ then follow the answer. Never resolve it silently and never refuse outright — 
 readings stay reachable, one question apart. There is no arity exception either: three
 tokens are no more decidable than one when a rule has a carve-out nobody remembers.
 
-## Run a phase — `<phaseId> [--dry-run]`
+## Run a phase — `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"]`
 
-`$ARGUMENTS` = the phase id (plus optional `--dry-run`).
+`$ARGUMENTS` = the phase id (plus optional `--dry-run`, `--confirm-high-risk`).
 
 **If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section instead —
 read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target, and **what
@@ -53,6 +53,40 @@ the landing to a human, which the preview must say rather than let the reader as
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
     --project <projectDir> --dry-run
 ```
+
+**If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate
+**before** the run instead of during it. Run this FIRST, before the preflight, and print its output
+verbatim — in your own reply, inside a fenced block:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/record-risk-confirmation.py" \
+    <manifestPath> <phaseId> --confirm-high-risk "<your words>"
+```
+
+**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
+
+**Why the flag exists.** The orchestrator's risk gate stops and asks a human before a
+`risk: "high"` task's commit, always. An operator running the pipeline unattended has nobody to
+ask — asking parks the run for hours — so the run instruction itself gets treated as the
+confirmation and the report says so afterwards. That is a safety rule overridden quietly, which is
+worse than a stall. This is the third option: the answer is given early and recorded. *Always ask*
+stays true; the asking happened earlier, and the trail says who answered and in what words.
+
+**What it covers is a LIST OF TASK IDS, and the command prints it.** The covered set is computed
+from the manifest as it stands at that moment — this phase, `risk: "high"`, open work only — and
+written into a `risk.confirmed` journal row. **A high-risk task that is not on that list still
+stops and asks**, including one whose `risk` became high after the row was written. That is the
+whole safety property: an answer that covered any future high-risk task would not be an answer,
+it would be the gate deleted with a flag left where it used to be. Say this back to the operator
+when you relay the covered list, because a flag named *confirm* reads like a blanket permission
+and is not one.
+
+**Refused rather than recorded:** a blank value; a phase with no open high-risk task (a
+confirmation with no subject is a standing permission — exit 2, and the message says whether the
+phase is genuinely clear or the risk is simply not on the tasks yet); and, exit 1, a journal that
+is off or an append that did not land, which means there is **no** pre-given answer and every
+high-risk task in the phase goes back to asking. Relay the refusal and ask per task; do not
+re-run the run command without the flag and treat that as the same thing.
 
 Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
 

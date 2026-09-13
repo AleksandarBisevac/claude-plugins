@@ -12,8 +12,8 @@ readiness, the lock, branch-per-phase, Execute-the-task, Phase sign-off, resume 
 - **Invariants (never violate):** never `git push`/force-push/`stash`; commit only a task's own
   `files` + the phase's manifest file (the single file, or its `phases/<id>.json` shard); git runs
   via `git -C <gitRoot>`, gates run from the project dir verbatim; `risk:"high"` → human confirm
-  before commit and never on `haiku`; every manifest write is re-validated; the manifest is the
-  single source of truth.
+  before commit (asked then, or pre-given per phase for named task ids) and never on `haiku`;
+  every manifest write is re-validated; the manifest is the single source of truth.
 - **A phase run:** preflight → phase branch off `developmentBranch` → Execute each ready task
   (parallel where `files` disjoint) → Phase sign-off (review? → test gate → runtime boot?) → merge
   back (ff, else confirmed `--no-ff`) → release lock.
@@ -179,7 +179,8 @@ never hardcode branch names, package ids, skills, or build tools here:
   execution), `startedAt`/`completedAt` (ISO), `risk` (`low`|`med`|`high`|null), `verifiedBy` (test names added),
   `maxAttempts` (int, default 3). Phase fields: `branch`, `mergedAt`, `desiredOutcome`. Treat missing fields as null/0.
 - **`risk: "high"` tasks**: ALWAYS require explicit human confirmation (AskUserQuestion) before their
-  commit, and must **never** run on `haiku` regardless of `task.model`.
+  commit — asked at the moment, or pre-given for a named set of task ids and recorded in the trail
+  (Execute the task, step 4a) — and must **never** run on `haiku` regardless of `task.model`.
 - **`attempts >= maxAttempts`**: stop retrying, set `task.status = "blocked"`, and surface to the human.
 
 ## Readiness rule
@@ -519,6 +520,30 @@ report, because `git switch -c` is about to fail anyway.
    - **success** (all gates green):
      a. **Risk gate first:** if `task.risk == "high"`, **stop and ask the human to confirm**
         (AskUserQuestion) before committing — always, no exceptions.
+
+        **The answer may have been given before the run rather than during it, and then it is
+        already an answer.** `/audit:phase <phaseId> --confirm-high-risk "<their words>"` runs
+        `scripts/governance/record-risk-confirmation.py`, which prints **the task ids the answer
+        covers** and writes them into a `risk.confirmed` journal row in the operator's own words.
+        A task on that printed list is confirmed: commit it, and say in the run report that the
+        confirmation was pre-given, naming the row. This is why the rule above still reads
+        *always* — the asking happened, earlier.
+
+        **A high-risk task that is not on the list stops and asks, and that includes one whose
+        `risk` became `high` after the row was written** — retargeted, or added mid-run. The list
+        is the task ids that existed and were high-risk **at the moment the human answered**,
+        which is what makes it an answer rather than a rule: a confirmation covering whatever
+        appears next has deleted the gate and left a flag where it used to be. The scope is
+        bounded by `record-risk-confirmation.py`'s `covered_tasks()` — one phase, `risk: "high"`,
+        open work only — so an answer given about one phase cannot discharge the gate in another,
+        and the command refuses outright when the phase has no open high-risk task.
+
+        **Nothing mechanically stops you committing a task the list does not name.** The script
+        bounds what may be *claimed* and the row is what a reader checks the claim against
+        afterwards (`audit-journal.py show --target <phaseId>`); obeying the list is yours, exactly
+        as obeying the ask is. And there is no pre-given answer without a trail: with
+        `journal.enabled` false, or an append that does not land, the command exits 1 saying the
+        confirmation was NOT recorded — go back to asking per task.
      b. Set `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and `task.verifiedBy`.
         (The **orchestrator**, not the subagent, writes `outcome`.)
      c. **Commit the task's work** on the phase branch (all git via `git -C <gitRoot>`):
@@ -569,6 +594,17 @@ report, because `git switch -c` is about to fail anyway.
           feature while the manifest recorded the opposite.
         - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
           type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
+        - **Write the subject to fit a commit linter's header cap, and hard-wrap the body** —
+          this applies to every commit this run writes, the sign-off commit below included. The
+          prefix plus `audit - ` already spends part of that budget before your words start, so
+          the task's **title pasted in whole** is what pushes a subject over; write a short
+          subject instead of restating the title, and wrap body lines rather than leaving one
+          long line. Measured on a live run: the first task commit of a session was refused on
+          header length, and an unwrapped body line was refused later in the same session. **The
+          limits are the PROJECT's, not this plugin's** — the plugin adds no linter, reads no
+          config for one, and cannot know whether the repository runs `commitlint` or anything
+          else; what it ships is the template, which is why the guidance sits here. If the
+          project's own rules are stricter than a short subject and a wrapped body, they win.
         - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
           **Do NOT write `bugs[]`.** A bug materialized into this task (`bug.taskId` ↔ `task.bugId`)
           reads as **fixed** automatically once the task is `done` — the rollup derives it (with
@@ -805,7 +841,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       and `phase.summary` (short paragraph: what was done + impact; when `phase.desiredOutcome` is set,
       the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —
       the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
-   b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor).
+   b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor;
+      the subject and body rule is step 4c's, and a phase TITLE pasted in whole is what overruns it here).
       Stage the journal directory **and the evidence directory** here too, for the same reason as
       the task commits: the sign-off gate's own run was recorded a moment ago, and its row has to
       reach the same clone as the pointer that names it.

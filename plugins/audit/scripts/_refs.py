@@ -748,7 +748,11 @@ _FLAG = re.compile(r"--[a-z][a-z0-9-]*")
 # fourth: `/audit:bug close` records "a one-line `notes` justification" and names
 # no flag at all, so a flag-only needle checked three docs and read the fourth as
 # having nothing to discharge.
-VERBATIM_FLAGS = ("--reason", "justification")
+# `--confirm-high-risk` joined them the day it was written rather than the day
+# somebody remembered this rule, which is what matching on the FLAG buys: its value
+# is the human's answer to the orchestrator's high-risk gate and it reaches the same
+# chain a cancel reason does, so a doc gathering it owes the same sentence.
+VERBATIM_FLAGS = ("--reason", "justification", "--confirm-high-risk")
 
 # The sentence that discharges it, and it is the BOLDED DIRECTIVE rather than the
 # words. One spelling, because the rule itself lives in

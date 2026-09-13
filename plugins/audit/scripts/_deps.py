@@ -635,6 +635,16 @@ LAYERS = (
      # path asks `_priority.tier_one_holder()` for - two places deciding what is
      # legal are two rules that will disagree.
      "set-priority",
+     # `record-risk-confirmation` is the writer behind `/audit:phase
+     # --confirm-high-risk`: the human's answer to step 4a's gate, given before the
+     # run and bounded HERE to the task ids it can honestly cover. An entry point for
+     # this layer's usual reason - the caller is orchestrator PROSE reaching Python
+     # through Bash - and here the bounding is the load-bearing half: an answer phrased
+     # as a condition rather than as a list of ids would go on answering for work that
+     # did not exist when it was given, which is the rule deleted rather than answered.
+     # It reaches `_manifest_io` (L1) for the loader, the phase resolver and `TERMINAL`,
+     # and `_journal_io` (L1) for the row.
+     "record-risk-confirmation",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 

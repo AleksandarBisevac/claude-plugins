@@ -1264,7 +1264,7 @@ ALLOW = (
  # treated the fourth as having nothing to discharge, which is a clean sheet over
  # the one thing it could not see.
  ("verbatim_rule_drift", S + "_refs.py", "replace",
-  'VERBATIM_FLAGS = ("--reason", "justification")',
+  'VERBATIM_FLAGS = ("--reason", "justification", "--confirm-high-risk")',
   'VERBATIM_FLAGS = ("--reason",)', REF, "vb3"),
  # The published vocabulary, minus one key the plugin really does publish. `cv1`
  # is the live-tree assertion over three surfaces written for three readers, and

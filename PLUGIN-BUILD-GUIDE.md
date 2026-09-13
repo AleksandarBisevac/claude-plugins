@@ -139,6 +139,7 @@ claude-plugins/                           # this repo (personal, public)
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
           commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
+          record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -360,6 +361,7 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
+  record-risk-confirmation -> _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
@@ -3061,6 +3063,42 @@ files, so a digest read afterwards would answer a different question than the on
 stated and pinned: `dirtyDigest` records *which* paths were dirty, not their contents, so editing an
 already-dirty file outside the declared scope moves neither digest. It discriminates retries; it is
 not a reproducible snapshot of the repository.
+
+### `plugins/audit/scripts/governance/record-risk-confirmation.py`
+`record-risk-confirmation.py <manifest> <phaseId> --confirm-high-risk "<their words>"` —
+**the human's answer to `orchestrator.md` step 4a, given before the run instead of during it.**
+`--project` names the directory holding `.claude/` and the journal, `--json` prints the answer.
+Exit 0 recorded, 1 NOT recorded (the journal is off, or the append did not land), 2 usage —
+including a phase with no open high-risk task.
+
+**The gap it closes, and it is a reported one.** Step 4a stops and asks a human before a
+`risk: "high"` task's commit, always. An operator running the pipeline unattended has nobody to
+ask: asking parks the run for hours, so the run instruction itself gets treated as the
+confirmation and the report says so afterwards. The rule as written offers a stall or a quiet
+override, and a quiet override of a safety rule is the worse of the two. The third option is to
+let the answer be given **early and recorded** — `always ask` stays true, and the trail says who
+answered and in what words.
+
+**What makes it safe rather than merely convenient is the bounding, and the bounding is here.**
+`covered_tasks()` computes the set the answer may cover — *the phase the operator named*, *risk
+`high`*, *open work only* — from the manifest as it stands at that moment, and the `risk.confirmed`
+row records those ids. A confirmation phrased as a condition ("any high-risk task in this phase")
+would go on answering for work that did not exist when it was given, which is not an answer: it is
+the rule deleted with a flag left where the rule used to be. So a task that becomes high-risk
+afterwards — retargeted, or added mid-run — is absent from the list and is unanswered, and step 4a
+stops and asks for it exactly as before. A phase with no open high-risk task is **refused**, not
+recorded as an empty row, because a confirmation with no subject is a standing permission.
+
+**It fails loud, which is the opposite of `close-phase.record_row`'s contract and deliberately
+so.** There the merge had already happened and a failed append must not report it as not having
+happened; here the row *is* the whole deliverable, so `journal.enabled: false` and a failed append
+are both exit 1 saying the confirmation was NOT recorded — the run then has no pre-given answer and
+goes back to asking per task.
+
+**What no mechanism here does:** gate the commit. Nothing refuses a commit of a high-risk task
+missing from the list; the orchestrator obeying step 4a is what does that, and step 4a says so in
+its own sentence. This command bounds what may be **claimed** and leaves a row a reader holds the
+claim against afterwards (`audit-journal.py show --target <phaseId>`).
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
