@@ -55,6 +55,7 @@ _ANCHOR_LITERAL = "${CLAUDE_PLUGIN_ROOT}/"
 _FX_SCRIPTS = M.PLUGIN_REL + "/scripts/"
 _FX_HOOKS = M.PLUGIN_REL + "/hooks/"
 _FX_COMMANDS = M.PLUGIN_REL + "/commands/"
+_FX_AGENTS = M.PLUGIN_REL + "/agents/"
 _FX_TESTS = M.PLUGIN_REL + "/tests/"
 
 
@@ -2356,6 +2357,108 @@ def _cases(check):
               M.command_flag_drift(_tmp_ref)["checked"] == 1)
     finally:
         shutil.rmtree(_tmp_ref, ignore_errors=True)
+
+    # --- (rf) P42: the third word, for a proof that could not be MADE ----------
+    # An executor fixed a security defect, wrote the assertion for it, and could
+    # not watch it fail: watching it fail meant undoing the fix for as long as the
+    # run takes, and the HOST's permission classifier refused that edit as a
+    # security-test removal. What it wrote was "treat that as an inference from the
+    # code, not as an observed red" - the most honest sentence available to it, and
+    # still a claim with no observation under it. The brief's rule (a verification
+    # claim carries its evidence; a bare "verified" is reported as UNVERIFIED) was
+    # followed to the letter. There was simply no word: a proof MADE and a proof
+    # NOT ATTEMPTED were the whole vocabulary, and a refusal is neither.
+    _rf = M.red_first_drift()
+    check("rf1 every document that names a red-first proof offers the word for one "
+          "that could not be MADE. Matched on the CONCEPT rather than on a list of "
+          "documents, so the optional gate entry this repo intends to offer users "
+          "- 'prove this test can fail', which ships the mutate-the-fix instruction "
+          "to anybody's host - is covered by whatever document states it, the day "
+          "it is written: %r" % (_rf,),
+          not _rf["missing"] and _rf["checked"] >= 3)
+    check("rf2 ...and the word is DECLARED where the record has to hold it. The "
+          "other half, and the same argument one level down: every document can "
+          "point at `could-not-prove` while the schema declares nothing, and then "
+          "each of them passes and the observation still dies with the session: %r"
+          % (_rf["schema"],),
+          _rf["schema"] == [])
+
+    with open(os.path.join(M.REPO_ROOT, M.PLUGIN_REL,
+                           *M.RED_FIRST_SCHEMA.split("/")),
+              "r", encoding="utf-8") as fh:
+        _rf_schema = json.load(fh)
+    _rf_defs = _rf_schema.get("$defs") or {}
+    _rf_te = (((_rf_defs.get("testEvidence") or {}).get("properties") or {})
+              .get("status") or {}).get("enum") or []
+    check("rf3 `could-not-prove` is `could-not-run`'s SISTER and not a second "
+          "vocabulary - the same prefix, the same doctrine (no verdict, for a "
+          "reason that is not the work's; never rendered as a failure; never spends "
+          "a retry), declared in the same document as the gate word it is modelled "
+          "on. Two coined spellings for one idea is two words a reader has to learn "
+          "apart, and they sit at different levels here rather than competing: "
+          "%r" % ((M.RED_FIRST_CANNOT, sorted(_rf_te)),),
+          "could-not-run" in _rf_te
+          and M.RED_FIRST_CANNOT.startswith("could-not-")
+          and M.RED_FIRST_CANNOT not in _rf_te)
+
+    _rf_brief = _product_doc("agents/audit-executor.md")
+    check("rf4 the executor's RETURN SHAPE carries the vocabulary and not only the "
+          "prose above it. A rule an agent reads and a block it fills in are two "
+          "different asks, and the field case was an agent that had read the rule: "
+          "missing from the shape %r"
+          % ([w for w in M.RED_FIRST_WORDS if w not in _rf_brief],),
+          all(w in _rf_brief for w in M.RED_FIRST_WORDS)
+          and '"redFirst"' in _rf_brief
+          and "|".join(M.RED_FIRST_WORDS) in _rf_brief)
+
+    _rf_orch = _product_doc("reference/orchestrator.md")
+    check("rf5 ...and the orchestrator has an ARM for it rather than only the word. "
+          "It records and carries on - no block, no retry - and it says out loud "
+          "that nothing grades what it recorded, which is the half a rule addressed "
+          "to an agent owes its reader when no mechanism stands behind it",
+          M.RED_FIRST_POINTER in _rf_orch
+          and "record it and carry on" in _rf_orch
+          and "neither blocks nor retries" in _rf_orch
+          and "no gate reads `task.redFirst` today" in _rf_orch)
+
+    _tmp_rf = tempfile.mkdtemp(prefix="qg-rf-")
+    try:
+        _write(_tmp_rf, _FX_AGENTS + "quiet.md",
+               "This agent reads the codebase and reports what it finds.\n")
+        _write(_tmp_rf, _FX_AGENTS + "orders.md",
+               "Write the test, confirm it fails red-first, then implement.\n")
+        _d = M.red_first_drift(_tmp_rf)
+        check("rf6 THE DENY CASE: a document that names a red-first proof and "
+              "offers no word for one that could not be made is reported, by path: "
+              "%r" % (_d["missing"],),
+              _d["missing"] == ["agents/orders.md"])
+        # THE ALLOW CASE, and it is the one that decides whether this check
+        # survives contact with the repository. Drop the trigger and every brief,
+        # reference and command document in the plugin is convicted for a rule it
+        # has no part in - which is how a check gets routed around inside a day.
+        check("rf7 THE ALLOW CASE: a document that never names a red-first proof "
+              "owes nothing here and is not read for the word - checked=%d, and "
+              "the quiet document is absent from %r"
+              % (_d["checked"], _d["missing"]),
+              _d["checked"] == 1 and "agents/quiet.md" not in _d["missing"])
+        check("rf8 a schema the check cannot READ is a gap and not a skip: a scan "
+              "that quietly stopped reading the document it names would report a "
+              "clean sheet over the one thing it could no longer see, which is "
+              "this repository's oldest defect: %r" % (_d["schema"],),
+              len(_d["schema"]) == 1
+              and _d["schema"][0].startswith("<unreadable:"))
+        _write(_tmp_rf, _FX_AGENTS + "prose.md",
+               "Confirm it fails red-first. If you could not prove it, say so.\n")
+        _d2 = M.red_first_drift(_tmp_rf)
+        check("rf9 the pointer is the WORD AS WRITTEN ON THE RECORD, never the "
+              "English phrase. 'could not prove' in a sentence is a report about a "
+              "session; `could-not-prove` in backticks is the value that goes into "
+              "`task.redFirst`, and counting the first as the second is the "
+              "mention-is-not-a-statement trap `vb4` was rewritten for: %r"
+              % (sorted(_d2["missing"]),),
+              _d2["checked"] == 2 and "agents/prose.md" in _d2["missing"])
+    finally:
+        shutil.rmtree(_tmp_rf, ignore_errors=True)
 
     # --- the phase verbs: two spellings, one writer ----------------------------
     # WHY HERE. `tools/affected.py` routes an edit under `plugins/audit/commands/`

@@ -66,6 +66,12 @@ Default filter: everything NOT `fixed`/`wontfix`. `list all` shows everything;
 6. **Report + handoff**: `Materialized <taskId> for <bugId> — run /audit:run <taskId>`.
    Do NOT execute the fix here — execution, commits, and the red-first check are the
    `/audit:run`/`/audit:phase` job (it also flips the bug to `fixed` + `fixedIn` on the task commit).
+   That run records what happened to the proof on `task.redFirst`: `proved` when the repro
+   was watched failing, `not-attempted` when none was owed, and `could-not-prove` — with the
+   refusal verbatim — when something that is not the work stopped it, such as a host
+   refusing the edit that temporarily undoes the fix. The third word is not a failed proof
+   and costs the task no retry; it is there so a closed bug cannot quietly rest on a repro
+   nobody ever saw fail.
 
 ## Subcommand: `close <bugId> [wontfix]`
 

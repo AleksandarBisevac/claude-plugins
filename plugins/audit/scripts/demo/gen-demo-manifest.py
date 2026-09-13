@@ -856,6 +856,35 @@ SCHEMA_EXEMPTIONS = {
     # carried or exempted, and never asks whether a row's own stated trigger has
     # come true. That is F232 one register over, and it is recorded rather than
     # papered over by this deletion.
+    # `task.redFirst` AND ITS THREE FIELDS. The block records what happened to a
+    # task's red-first proof - `proved`, `could-not-prove` with the refusal
+    # verbatim, or `not-attempted`. No exemption here carries a REVISIT trigger,
+    # deliberately: this follows `phase.priority` above, whose row was re-armed
+    # once and then dropped because the reason never depended on the trigger.
+    "task.redFirst":
+        "what happened to the task's RED-FIRST PROOF, which no rendered surface "
+        "reads: not the report, not the panel, not /audit:status. The fixture is "
+        "what those surfaces are built from, so a block here would be a key "
+        "nobody ever sees. The second half is about what carrying it would SAY: "
+        "the only value a healthy demo plan could hold is `proved` on every tdd "
+        "task, which a demo plan already implies, and the word worth showing is "
+        "`could-not-prove` - publishing a fixture whose proofs were refused would "
+        "advertise a refused proof as the normal state of a finished plan.",
+    "redFirst.status":
+        "one of the three words, and unreachable for the reason the block itself "
+        "is: a status inside an object the fixture does not carry has nowhere to "
+        "sit. Coverage for the vocabulary is the schema enum plus "
+        "_refs.red_first_drift(), which reads the documents that name it.",
+    "redFirst.basis":
+        "the observation under the status - the red that was watched, or the "
+        "refusal verbatim. Same reason as the block above; and a fabricated "
+        "refusal in a published fixture would be a quoted sentence nobody said, "
+        "which is the one thing a field carrying VERBATIM text may not show.",
+    "redFirst.at":
+        "when the proof was attempted. Same reason as the block above, with one "
+        "of its own: every other timestamp this generator stamps is derived from "
+        "the plan's own dates, and an attempt has no date in a fixture where no "
+        "attempt happened.",
     "phase.parentBranch":
         "which branch THIS phase forks from and merges into. Absent means "
         "`meta.developmentBranch`, which is the answer for every phase in this "

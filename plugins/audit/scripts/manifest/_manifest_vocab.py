@@ -346,6 +346,15 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # same pointer-not-truth rule, and the same reason no vocabulary
               # for its contents lives here. See the comment on KNOWN_PHASE.
               "testEvidence",
+              # What happened to the red-first proof, which `testEvidence` cannot
+              # say: that block records whether the gate passed, this one whether
+              # the assertion it ran was ever watched failing. Task-level only -
+              # a proof is made for one assertion by one executor, and a phase has
+              # no attempt of its own to record. Its three words live in the
+              # schema's `redFirst` enum for the same reason `testEvidence.status`
+              # does: a set here would be anchored, drift-checked and green while
+              # a wrong word stayed exactly as accepted.
+              "redFirst",
               # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",

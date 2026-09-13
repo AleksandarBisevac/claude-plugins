@@ -476,6 +476,20 @@ TABLE = (
  ("verbatim_rule_drift", "plugins/audit/reference/manifest-conventions.md",
   "replace", "## The operator's words go in unchanged",
   "## Operator text", REF, "vb2"),
+ # P42. The word for a red-first proof that could not be MADE, removed from the
+ # document the CHECK reached rather than the one a person remembered: `bug.md`
+ # orders a red-first repro test and owes the word for exactly that reason. The
+ # mutation is the state every document was in before this entry - the proof is
+ # ordered, and an executor refused permission to make it has no word for what
+ # happened and writes an inference instead.
+ ("red_first_drift", "plugins/audit/commands/bug.md", "replace",
+  "and `could-not-prove` — with the", "and nothing in particular — with the",
+  REF, "rf1"),
+ # ...and the DECLARATION those pointers rest on. Drop the word from the enum and
+ # every document still points at it, every document still passes, and the record
+ # has nowhere to put what the documents just promised.
+ ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
+  '            "could-not-prove",\n', "", REF, "rf2"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -1482,6 +1496,16 @@ ALLOW = (
   'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md", "next.md",',
   'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md",',
   REF, "rt2"),
+ # P42. The trigger dropped, which turns "a document that NAMES a red-first proof"
+ # into "every document in three directories" - the explorer brief, the reviewer
+ # brief and every command doc convicted for a rule they have no part in. That is
+ # how a check like this gets routed around inside a day, and it is the direction
+ # the narrowing was chosen against: the scan is deliberately WIDE (whole
+ # directories, so a new document arriving without the word is reported) and the
+ # trigger is the only thing keeping the width from becoming noise.
+ ("red_first_drift", S + "_refs.py", "replace",
+  "            if RED_FIRST_TRIGGER not in text:",
+  '            if "" not in text:', REF, "rf7"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -

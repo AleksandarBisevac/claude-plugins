@@ -527,7 +527,17 @@ def _cases(check):
                    "manifest/_manifest_vocab.py": "no walk - prose that names the "
                                                   "keyword: the SCHEMA_ANCHORS "
                                                   "comment, and the pointer at "
-                                                  "STATUS"}
+                                                  "STATUS",
+                   # NO WALK EITHER, AND NAMED HERE RATHER THAN SPELLED AROUND.
+                   # `_refs._red_first_schema_gaps` reads ONE $def by name to ask
+                   # whether the word its documents point at is declared - it
+                   # enumerates nothing and answers neither question above. A
+                   # substring search over the schema text would have kept it out
+                   # of this count while doing the same reading, which is the
+                   # "invisible rather than absent" repair this table refuses.
+                   "_refs.py": "no walk - one $def read by name, to ask whether "
+                               "the red-first vocabulary the documents point at "
+                               "is declared"}
     _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
     check("mv36 ...and the claim both of those rest on - that this is NOT the "
           "tree's only schema walk - is COUNTED rather than written down: every one "

@@ -1080,6 +1080,10 @@
           "$ref": "#/$defs/testEvidence",
           "description": "The last recorded run of THIS task's tests, as a pointer into the evidence ledger plus the verdict it reached. Optional and absent by default: a task nobody has run carries nothing here, which is not the same as a task whose tests failed, and `tests` above stays the CONTRACT the run was held to while this is the evidence that a run happened."
         },
+        "redFirst": {
+          "$ref": "#/$defs/redFirst",
+          "description": "What happened to this task's red-first proof, which `testEvidence` beside it cannot say: that block records whether the gate passed, and this records whether the assertion the gate ran was ever watched failing. A task whose proof could not be made carries 'could-not-prove' here with the refusal verbatim, and still commits — the fix and its assertion exist and the gate answered, so the missing thing is the proof and not the work."
+        },
         "outcome": {
           "$ref": "#/$defs/outcome"
         },
@@ -1354,6 +1358,33 @@
         "at": {
           "type": "string",
           "description": "ISO timestamp of the run this block points at, so a reader can tell a fresh verdict from a stale one without opening the ledger. It dates the RUN, not the moment the cache was written; the two are the same today and would stop being so the first time this block is rebuilt from the ledger."
+        }
+      }
+    },
+    "redFirst": {
+      "type": "object",
+      "required": [
+        "status",
+        "basis"
+      ],
+      "additionalProperties": true,
+      "description": "WHAT HAPPENED TO THE RED-FIRST PROOF — the separate question from whether the gate passed. A test that has never been watched failing may be asserting nothing, so a run that writes one owes a word about whether the proof behind it was actually made. Optional and absent by default, and absent means 'nothing recorded about the proof', never 'no proof was made': a manifest written before this block existed, a task nobody has run, and a block somebody deleted are one state. Dropping the whole block is always safe, which is why `status` and `basis` are required together — a status with no basis under it is exactly the inference this block exists to replace. Written by the ORCHESTRATOR from the executor's returned outcome, the way `outcome` is. additionalProperties stays permissive, this document's policy at every object level: the schema ships with the plugin, so an older copy must keep accepting a manifest a newer one wrote.",
+      "properties": {
+        "status": {
+          "description": "'proved' means the assertion was WATCHED failing on code without the fix, and `basis` carries the observation — the command, its exit code, what failed. 'not-attempted' means no proof was owed or none was tried (mode 'regression' or 'gate-only', a gate-only task), and `basis` says which. 'could-not-prove' means the proof was ATTEMPTED and something that is not the work refused it — most often the host's own permission classifier declining the edit that would temporarily undo the fix, which is ordinary mutation testing and reads to a classifier as removing a test. It is the sister of `testEvidence.status`'s 'could-not-run' and carries that word's doctrine unchanged: it produced NO VERDICT for a reason that is not the work's, it is emphatically not a failed proof, it must never be rendered as one, and it must not spend a retry — a retry re-runs the same refusal. What it must never become is a sentence inferred from reading the code; `basis` carries the refusal VERBATIM, because a paraphrase of a refusal is itself an inference. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'proved'.",
+          "enum": [
+            "proved",
+            "could-not-prove",
+            "not-attempted"
+          ]
+        },
+        "basis": {
+          "type": "string",
+          "description": "The observation that makes the `status` true, and for 'could-not-prove' it is the refusal VERBATIM — the classifier's own words, not a report of them. Verbatim is the whole point rather than a nicety: a paraphrased refusal is a sentence the executor wrote about a sentence it read, which is the inference the third word replaces, and a reader deciding whether to re-run under a different host needs the words that were actually said."
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO timestamp of the attempt this block records, so a reader can tell a fresh observation from one left behind by an earlier run of the same task."
         }
       }
     },

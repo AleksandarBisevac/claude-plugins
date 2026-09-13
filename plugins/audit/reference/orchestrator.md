@@ -347,6 +347,24 @@ report, because `git switch -c` is about to fail anyway.
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)
      - `regression` → implement the fix and add a test locking the corrected behavior (`task.tests.add`).
      - `gate-only` → no new test; only ensure `task.tests.gate` stays green.
+
+     **Ask what happened to the PROOF, not only to the gate.** A gate verdict says the
+     suite is green; it cannot say whether the new assertion was ever watched failing, and
+     an assertion nobody has seen fail may be asserting nothing. So the outcome carries
+     `redFirst` = `{status, basis}` beside the gates, in one of three words: `proved` (it
+     was watched going red, and the basis is the command and its exit code),
+     `could-not-prove` (the proof was attempted and something that is not the work refused
+     it — typically the host's own permission classifier declining the edit that
+     temporarily undoes the fix, which from outside looks like removing a test; the basis
+     is that refusal **verbatim**), or `not-attempted` (none was owed, and the basis says
+     why). `agents/audit-executor.md` states the rule for the executor and
+     `schema/audit-plan.schema.json`'s `redFirst` block declares the words. **Nothing
+     checks that a returned outcome carries the block** — `red_first_drift()` in
+     `plugins/audit/scripts/_refs.py` holds only that every document naming a red-first
+     proof offers the third word, and the `redFirst` enum refuses a fourth spelling only
+     once one is written down and only under the `ajv` step CI and `tools/verify.sh` run;
+     nothing under `scripts/` reads this vocabulary. So asking for the block is yours, and
+     one that did not come back is recorded as absent rather than filled in.
    - It must run `task.tests.gate` (through `run-test-gate.py`, which applies `meta.nodePreamble`
      itself) and report pass/fail per
      gate plus a structured **outcome** = `{ technical, descriptive }`. It must distinguish
@@ -472,6 +490,23 @@ report, because `git switch -c` is about to fail anyway.
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition (section below;
         an `onComplete` comment carries this `task.commit`).
+   - **a proof that could not be made** (the returned `redFirst.status` is
+     `could-not-prove`) → **record it and carry on.** Copy the block onto `task.redFirst`
+     before the commit in step 4c — the refusal in `basis` verbatim, the classifier's own
+     words rather than your summary of them — so it lands with the work instead of in a
+     session note. Then take whichever arm the gates ask for; this arm changes none of them.
+
+     **It neither blocks nor retries, and both halves are decisions rather than
+     omissions.** A retry spends an attempt on a re-spawn that meets the same classifier
+     and is refused the same way, which is the same reason `could-not-run` costs no retry
+     below; `attempts` is untouched here for the same reason. Blocking would stop a task
+     whose deliverable is present — the fix is in, the assertion is in, and the gate
+     ANSWERED — when what is missing is the weaker claim that the assertion can fail. And
+     there is no human action item to raise, which is where this parts company with the
+     infrastructure arm: a missing interpreter is fixed before the next run, while a host
+     that refuses the edit refuses it again. So the record is the whole remedy, and
+     **nothing grades it** — no gate reads `task.redFirst` today — which is exactly why the
+     word and its verbatim basis have to be on the record rather than in your report.
    - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or `"blocked"` if attempts
      exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
      A transition to `blocked` gets the **ADO echo** (section below).

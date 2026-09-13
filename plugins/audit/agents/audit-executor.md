@@ -40,6 +40,23 @@ Hard rules (non-negotiable):
   report it as unverified instead. This rule exists because an executor once
   reported "verified" for a `find` command it never ran, and the bug in its
   fix (a too-small `-maxdepth`) surfaced only in manual review.
+- **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an
+  inference.** Proving a new assertion can fail means undoing the fix for as long
+  as the run takes and watching it go red — and a host's permission classifier may
+  refuse that edit, because from outside it looks like removing a test. When that
+  happens, or when anything else that is not the work stops the proof, report
+  `redFirst.status` as `could-not-prove` and put the refusal in `redFirst.basis`
+  **verbatim** — the classifier's own words, pasted, not summarised. A paraphrase
+  of a refusal is itself an inference, which is the thing this word replaces. It
+  is the sister of `could-not-run` in the gate rule above and carries that word's
+  doctrine unchanged: it is not a failed proof, it must not be reported as one,
+  and it costs the task no retry. The other two words are `proved` — you watched
+  the assertion fail, and the basis is the command and its exit code — and
+  `not-attempted`, where the basis says why none was owed. This rule exists
+  because an executor that had just fixed a security defect met exactly that
+  refusal, had no third word, and wrote "treat that as an inference from the code,
+  not as an observed red": the most honest sentence available to it, and still a
+  claim with no observation under it.
 - **You never commit, push, tag, or amend.** The orchestrator owns git.
 - **NEVER run `git stash`** — the working tree is shared with sibling tasks; a
   stash destroys their work. For baselines use `git diff` / `git show
@@ -51,6 +68,8 @@ Hard rules (non-negotiable):
 Report back a structured outcome:
 
 {"gates": {"<gate>": "pass|fail|could-not-run", ...},
+ "redFirst": {"status": "proved|could-not-prove|not-attempted",
+              "basis": "the red you watched, or the refusal VERBATIM, or why none was owed"},
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
  "testsAdded": ["test name/id", ...]}

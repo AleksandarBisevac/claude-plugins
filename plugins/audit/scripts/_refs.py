@@ -874,6 +874,137 @@ def verbatim_rule_drift(repo_root=None):
     return {"missing": out, "checked": checked, "ruleDoc": rule_ok}
 
 
+# --- the third word, for a proof that could not be made -------------------------
+# P42. AN EXECUTOR FIXED A SECURITY DEFECT, WROTE THE ASSERTION FOR IT, AND COULD
+# NOT WATCH IT FAIL. Watching it fail meant undoing the fix for as long as one run
+# takes - ordinary mutation testing - and the HOST's permission classifier refused
+# that edit as a security-test removal. What came back was "treat that as an
+# inference from the code, not as an observed red".
+#
+# The refusal is the host's and is not a defect. The INFERENCE is this plugin's.
+# `agents/audit-executor.md` already says a verification claim carries its
+# evidence and that a bare "verified" is reported as UNVERIFIED instead, so the
+# rule was followed to the letter and still produced a sentence with no
+# observation under it: a proof MADE and a proof NOT ATTEMPTED were the whole
+# vocabulary, and a refusal is neither of them.
+#
+# THE WORD IS `could-not-run`'S SISTER AND NOT A SECOND CONVENTION.
+# `run-test-gate.py` names the class "this produced NO VERDICT, for a reason that
+# is not the work's" and `schema/audit-plan.schema.json` carries its doctrine -
+# never rendered as a failure, never spends a retry. `could-not-prove` is that
+# same sentence about the red-first proof instead of about the gate, and it is
+# spelled to match rather than beside it.
+RED_FIRST_PROVED = "proved"
+RED_FIRST_CANNOT = "could-not-prove"
+RED_FIRST_NOT_ATTEMPTED = "not-attempted"
+RED_FIRST_WORDS = (RED_FIRST_PROVED, RED_FIRST_CANNOT, RED_FIRST_NOT_ATTEMPTED)
+
+# What makes a document owe the word: it NAMES a red-first proof. Deliberately
+# WIDER than "orders one", and the widening is measured rather than assumed - the
+# order is spelled three ways in this plugin ("confirm red", "FAIL on current
+# code", "red-first repro test"), so a needle per spelling is three needles each
+# free to go stale on its own, while the concept has one spelling in this tree.
+# What the widening costs is a clause in a document that only mentions a red-first
+# proof in passing, and a document whose reader may be about to make one is not
+# the wrong place for it.
+RED_FIRST_TRIGGER = "red-first"
+
+# ...and the word it then owes, written as the VALUE rather than as English. The
+# same argument `VERBATIM_POINTER` makes for its bold: "could not prove" in a
+# sentence is a report about a session, `could-not-prove` in backticks is the word
+# that goes on the record, and only the second is what an executor writes down.
+RED_FIRST_POINTER = "`" + RED_FIRST_CANNOT + "`"
+
+# The directories read for the trigger - WHOLE DIRECTORIES rather than the
+# documents carrying it today, because a check pointed only where a rule already
+# holds can never report a new document arriving without it. That new document is
+# what this exists for: this repo intends to offer "prove this test can fail" as
+# an optional gate entry, which ships the mutate-the-fix instruction to users and
+# puts the refusal in reach of any host's classifier. Whatever document states it
+# is covered the day it is written, and not the day somebody remembers this rule.
+#
+# Each file is read WHOLE, frontmatter included, which is the opposite of
+# `verbatim_rule_drift` above and for the reason that check gives: there,
+# `argument-hint` is a DECLARATION and a command merely accepting a flag asks the
+# operator for nothing. Here the frontmatter `description` is product prose - the
+# line a user reads in the command list - so a proof ordered there is ordered in
+# public.
+RED_FIRST_DIRS = ("agents", "reference", "commands")
+
+# Where the vocabulary is DEFINED rather than pointed at. The plan schema is where
+# `could-not-run` keeps its own doctrine, and a pointer at a word nothing declares
+# is a pointer at nothing - the half `verbatim_rule_drift` checks as `ruleDoc`.
+RED_FIRST_SCHEMA = "schema/audit-plan.schema.json"
+RED_FIRST_DEF = "redFirst"
+
+
+def _red_first_schema_gaps(root):
+    """[gap, ...] -- what the plan schema does not declare about the proof record.
+
+    Empty is the healthy answer. An unreadable schema is a gap and not a skip: a
+    check that quietly stopped reading the document it names would report a clean
+    sheet over the one thing it could no longer see.
+    """
+    path = os.path.join(root, PLUGIN_REL, *RED_FIRST_SCHEMA.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return ["<unreadable: %s>" % (exc,)]
+    defs = doc.get("$defs") or {}
+    props = (defs.get(RED_FIRST_DEF) or {}).get("properties") or {}
+    enum = (props.get("status") or {}).get("enum") or []
+    gaps = ["%s.status is missing %r" % (RED_FIRST_DEF, word)
+            for word in RED_FIRST_WORDS if word not in enum]
+    if "basis" not in props:
+        gaps.append("%s.basis: a status with no basis under it is the inference "
+                    "this word exists to replace" % RED_FIRST_DEF)
+    ref = ((defs.get("task") or {}).get("properties")
+           or {}).get(RED_FIRST_DEF) or {}
+    if not str(ref.get("$ref") or "").endswith("/" + RED_FIRST_DEF):
+        gaps.append("task.%s: the block is declared and the task does not carry "
+                    "it, so the observation dies with the session" % RED_FIRST_DEF)
+    return gaps
+
+
+def red_first_drift(repo_root=None):
+    """{"missing": [doc, ...], "checked": n, "schema": [gap, ...]} -- documents
+    that name a red-first proof and offer no word for one that could not be made.
+
+    Subset, like `verbatim_rule_drift` above: the pointer has to be present, and
+    where it sits inside the file is the author's business. `schema` is the other
+    half and it is the same argument one level down - every document can point at
+    `could-not-prove` while nothing declares it, and the record then has nowhere
+    to put the word the documents just promised.
+    """
+    root = repo_root or REPO_ROOT
+    out, checked = [], 0
+    for sub in RED_FIRST_DIRS:
+        ddir = os.path.join(root, PLUGIN_REL, sub)
+        try:
+            names = sorted(os.listdir(ddir))
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith(".md"):
+                continue
+            rel = "%s/%s" % (sub, name)
+            try:
+                with open(os.path.join(ddir, name), "r",
+                          encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError as exc:
+                out.append("%s <unreadable: %s>" % (rel, exc))
+                continue
+            if RED_FIRST_TRIGGER not in text:
+                continue
+            checked += 1
+            if RED_FIRST_POINTER not in text:
+                out.append(rel)
+    return {"missing": out, "checked": checked,
+            "schema": _red_first_schema_gaps(root)}
+
+
 def command_flag_drift(repo_root=None):
     """{"missing": [(command, flag), ...], "checked": n} -- flags the README omits.
 
