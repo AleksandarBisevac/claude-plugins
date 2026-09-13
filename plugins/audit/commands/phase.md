@@ -111,6 +111,17 @@ Otherwise run the full preflight (steps 1–5, including the lock) and emit **Pr
 
 Then follow **Reporting** and release the lock.
 
+**Sign-off measures the phase ONCE, and the order is what buys that: review first, then the fix
+tasks its findings become, then the gate.** Carry the reason with the order, because without it
+the order reads as arbitrary and gets reordered by whoever is optimising something else — a
+reviewer's findings become fix tasks, and a fix task's edits invalidate a gate taken before them,
+so a gate run before the review graded a tree that no longer exists and has to be run again.
+Gating first is this phase measured twice. **Nothing measures whether you held the order**: the
+second run supersedes the first in the evidence ledger and no reader counts the rows a phase left
+behind, so this sentence is the whole of it. The steps themselves — what each one checks, the exit
+codes, what each gate banner means — are the orchestrator's **Phase sign-off** section and are not
+repeated here, because two copies of a procedure is one copy and one lie.
+
 **What a phase run records, and where those records have to end up.** Every task's gate run
 is recorded against that task; **Phase sign-off's own gate run is recorded against the
 phase**, kept apart from its tasks' so a reader can follow either — the phase's gate and its

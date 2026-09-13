@@ -777,6 +777,15 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    (the script applies `meta.nodePreamble` itself). All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
 
+   **Why the gate is step 2 and not step 1 — it measures the phase ONCE.** A reviewer's findings
+   become fix tasks, and a fix task's edits invalidate a gate taken before them: a gate run ahead
+   of the review graded a tree that no longer exists by the time the phase is signed off, so it
+   has to be run again. Review, then the fixes, then the gate measures this phase a single time;
+   gating first measures it twice and signs off on the second measurement anyway. **Nothing
+   measures whether you held the order.** A second phase-scope run simply supersedes the first in
+   the evidence ledger — `_evidence_io.latest_by_subject` keeps the newest row per subject, and no
+   reader counts the rows a phase left behind — so the order is held here or nowhere.
+
    `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the
    phase's own gate run, kept apart from its tasks' so a reader can follow either. As at task
    level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan

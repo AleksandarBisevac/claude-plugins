@@ -275,6 +275,23 @@ def _question_lines(text, *tokens):
     return out
 
 
+def _reason_blocks(text, *tokens):
+    """Every blank-line block of a document naming all of `tokens`, squashed to one line.
+
+    A BLOCK and not a line, for `_question_lines`' reason: a reason long enough to
+    state a cause and its consequence wraps, and a physical-line read reports it
+    absent while it sits in front of the reader. ALL tokens in ONE block is the
+    narrowing - a document that happens to use the same words in separate paragraphs
+    has given its reader no reason at all.
+    """
+    out = []
+    for block in re.split(r"\n\s*\n", text):
+        line = _squash(block.replace(">", " ")).strip("#* ").strip()
+        if all(tok in line for tok in tokens):
+            out.append(line)
+    return out
+
+
 def _return_top_keys(text):
     """The TOP-LEVEL keys of the last JSON-shaped return block in an agent brief.
 
@@ -3372,6 +3389,80 @@ def _cases(check):
           "false while every `not in` stayed green over nothing at all: %r"
           % (len(_ih_sec),),
           len(_ih_sec) > 400)
+
+    # --- the sign-off order, and the reason that has to travel with it ------------
+    # WHAT WAS WRONG, AND NOTHING WAS MISSING FROM THE PROCEDURE. The sign-off
+    # section has stated the order - review, then the fix runs its findings become,
+    # then the gate - for several releases. Operators on separate projects ran the
+    # gate twice per phase anyway, and one of them proposed the correct order as if
+    # it were new. Neither had reached the paragraph. What was missing was not a
+    # step. It was the REASON, without which the order reads as arbitrary and gets
+    # reordered by whoever is optimising something else; and a surface reached
+    # BEFORE the run, since the reference is what the orchestrator reads mid-run
+    # while the person deciding to run a phase opens `commands/phase.md`.
+    #
+    # ONE PREDICATE OVER FIVE DOCUMENTS, which is what makes the allow case real:
+    # widen `_SO_TOKENS` towards ordinary gate prose and `so4` goes red on documents
+    # that have no sign-off order to give a reason for, while so1 and so2 stay green.
+    _SO_TOKENS = ("fix task", "invalidate", "gate")
+    _SO_UNENFORCED = "Nothing measures whether you held the order"
+    _SO_QUIET = ("commands/review.md", "commands/run.md", "agents/audit-executor.md")
+    _so_signoff = _md_section(_ORC, "## Phase sign-off")
+    _so_phase = _product_doc("commands/phase.md")
+    _so_ref = _reason_blocks(_so_signoff, *_SO_TOKENS)
+    check("so1 the sign-off section gives the REASON beside the order, in one block: "
+          "a reviewer's findings become fix tasks, and a fix task's edits invalidate "
+          "a gate taken before them. The order on its own had been stated for "
+          "releases and was reordered anyway - an order with no reason is a "
+          "preference, and the next reader optimising something else overrides it: %r"
+          % (_so_ref,),
+          _so_ref != [])
+    _so_op = _reason_blocks(_so_phase, *_SO_TOKENS)
+    check("so2 ...and the OPERATOR meets it before the run. `commands/phase.md` is "
+          "what a person opens when about to run a phase; the reference is what the "
+          "orchestrator reads once the run is under way, which is after the decision "
+          "this reason is for: %r" % (_so_op,),
+          _so_op != [])
+    _so_unenforced = (_SO_UNENFORCED in _squash(_so_signoff),
+                      _SO_UNENFORCED in _squash(_so_phase))
+    check("so3 ...and both say, in the rule's own sentence, that NOTHING checks it. "
+          "A phase that gated twice leaves a second phase-scope row in the evidence "
+          "ledger and no reader counts the rows a phase left behind - "
+          "`_evidence_io.latest_by_subject` keeps the newest per subject, so the "
+          "earlier run is superseded silently. A rule that stayed quiet about that "
+          "would read as enforced: %r" % (_so_unenforced,),
+          all(_so_unenforced))
+    _so_quiet = dict((rel, _reason_blocks(_product_doc(rel), *_SO_TOKENS))
+                     for rel in _SO_QUIET)
+    check("so4 ...while the documents with no sign-off order to explain stay quiet. "
+          "`/audit:review` re-runs sign-off and is a POINTER at the section, which "
+          "is where a second copy would land first; `/audit:run` executes one task "
+          "and never signs off; the executor is what a fix run spawns and never "
+          "orders one. THE ALLOW CASE: widen the predicate towards ordinary gate "
+          "prose and these go red while so1 and so2 stay green: %r" % (_so_quiet,),
+          all(v == [] for v in _so_quiet.values()))
+    _so_steps = dict((tok, tok in _so_phase)
+                     for tok in ("`reviewResolved`", "`testGateGreen`",
+                                 "`invariantsChecked`", "`runtimeBootGreen`",
+                                 "run-test-gate.py"))
+    check("so5 ...and the operator surface POINTS at the procedure rather than "
+          "restating it: it names the sign-off section and carries none of that "
+          "section's step names nor its gate command. The order and its reason are "
+          "what phase.md adds; a second set of steps would be one copy and one lie, "
+          "which is the rule this document states about its own cancel verb: %r"
+          % (_so_steps,),
+          not any(_so_steps.values())
+          and "**Phase sign-off** (orchestrator)" in _so_phase)
+    check("so6 ...over documents and a section that actually resolved, and over a "
+          "predicate that can still come back EMPTY: `_product_doc` returns empty "
+          "for an unreadable file and `_md_section` for a heading that moved, and a "
+          "`_reason_blocks` that matched everything would leave so4 green over "
+          "nothing at all: %r"
+          % ((len(_so_signoff), len(_so_phase),
+              sorted((r, len(_product_doc(r))) for r in _SO_QUIET)),),
+          min(len(_so_signoff), len(_so_phase)) > 400
+          and min(len(_product_doc(r)) for r in _SO_QUIET) > 400
+          and _reason_blocks(_so_phase, "no token any document carries") == [])
 
 
 def _selftest():
