@@ -9,10 +9,12 @@ Every defect class below was written by an agent that had read the rules and was
 them; the moment of writing had no question. This skill is the question — seven of them, each
 answered with something that can be *shown*. It holds no rule of its own: `no-silent-pass`,
 `writing-python` and `CLAUDE.md` say how; this asks *did you, on this change, and where is the
-evidence?* Measured on this repo, a careful agent already does most of it unasked; what it does
-not do without being asked is write the evidence down where a reviewer reads it (the block),
-sweep the bare shape before narrowing (question 3), and say in a rule's own sentence whether
-anything enforces it (question 4). Those three are where this skill earns its cost.
+evidence?*
+
+**Questions 1, 2, 5 and 7 are one line each because the evals said so.** Run against a baseline
+with no skill on 2026-09-12, twice and on two models, the arms tied on those four at full marks
+and separated on question 4 both times. They still get asked; they no longer get a paragraph.
+The runs and their grading are in `../before-you-claim-workspace/iteration-4/benchmark.json`.
 
 ## Two touches
 
@@ -26,47 +28,58 @@ commit message when you commit; otherwise your notes, the PR description, or the
 to the orchestrator. There is no "done except the block". A line that asserts where evidence
 should be ("yes, it fails", no red output shown) is the skill not being used.
 
+The hook that asks for the block sees `git commit` only after `&&`, after `;`, or at the start
+of the command — not one that begins its own line under a heredoc, and not `-F -`. Its silence
+is not a verdict.
+
 ## The seven questions
 
-1. **What does this sentence claim the code does — and where is the line that does it?**
-   For every comment, docstring, `.md` sentence, `--help` text or brief instruction that
-   describes behaviour: the `file:line`, or the sentence rewritten to say only what the code
-   does. `scripts/claim-lines.py <diff> --tree <checkout>` lists every added prose block with a
-   verb of behaviour, read off the file, so a paragraph added inside a docstring counts.
+**1. What does this sentence claim the code does — and where is the line that does it?** The
+`file:line`, or the sentence rewritten to say only what the code does.
+`scripts/claim-lines.py <diff> --tree <checkout>` lists the added prose that claims behaviour.
 
-2. **What breaks this check, and did I watch it break?** For every case, guard, lint, hook
-   branch: the mutation applied, the red output, the restore; for a guard, the over-fire
-   mutation too, with the allow case going red. Purge `__pycache__` between cycles. "The suite
-   is green" is not an answer — it was green before the case existed.
+**2. What breaks this check, and did I watch it break?** The mutation, the red output, the
+restore; for a guard, the over-fire mutation too, with the allow case going red. Purge
+`__pycache__` between cycles. "The suite is green" is not an answer — it was green before the
+case existed. `no-silent-pass` is the long form.
 
-3. **Is this the fix for the instance, or for the class — and where else does the class live?**
-   For every fix of a reported defect: before editing, grep the **bare** shape — the word, the
-   number, the token — in the same file first, then the tree, and narrow only after you have
-   seen every hit; a grep narrowed by the words you expect beside it (`seventeen` filtered by
-   `edge|debt`) never shows the sentence about something else carrying the same rot. Paste the
-   grep and its hits verbatim; then account for **every hit**: fixed, or *left, because …*.
-   A sweep that names none of what it left is half a sweep — the next reader cannot tell a site
-   you judged from one you missed.
+**3. Is this the fix for the instance, or for the class — and where else does the class live?**
+Grep the **bare** shape — the word, the number, the token — in the same file first, then the
+tree, and narrow only after you have seen every hit: a grep narrowed by the words you expect
+beside it (`seventeen` filtered by `edge|debt`) never shows the sentence about something else
+carrying the same rot. Paste the grep and its hits verbatim, then account for **every hit**:
+fixed, or *left, because …*. A sweep that names none of what it left is half a sweep — the next
+reader cannot tell a site you judged from one you missed.
 
-4. **Does this rule live in prose, or in a mechanism?** For every `must`/`never`/`always`
-   addressed to an agent — in `orchestrator.md`, a brief, a comment: the hook, script, schema
-   or lint that enforces it, named **in the rule's own sentence**; and if nothing does, the rule
-   says so about itself, where its reader will see it — *"Nothing enforces this today; the
-   orchestrator's own recorded run is the verdict either way."* Saying it only in your notes is
-   not enough: the notes are read once by one person, the brief by every agent it is handed to.
+**4. Does this rule live in prose, or in a mechanism?** For every `must`/`never`/`always`
+addressed to an agent: the hook, script, schema or lint that enforces it, named **in the rule's
+own sentence** — and if nothing does, the rule says so about itself, where its reader will see
+it: *"Nothing enforces this today; the orchestrator's own recorded run is the verdict either
+way."*
 
-5. **Did I measure this once, and could the window have lied?** For every timing, "idempotent",
-   "does not reproduce", saving: two runs with a deliberate gap, on the tree the claim is about,
-   the spread written — or *measured once* beside the number, in the document.
+The failure has one shape, and it is the shape that costs marks: the author builds the
+mechanism, puts it somewhere real — a drift lint, a README row, a test anchor — and never puts
+the sentence where the rule's reader is, so the brief handed to the executor still says only
+*never do this*. **The mechanism is not the answer; the sentence naming it, in the rule's own
+text, is.** Your notes are read once by one person; the brief is read by every agent it is
+handed to.
 
-6. **Does this guard read what the command will *do*, or what it *says*?** For every guard,
-   matcher, allow/deny rule: the decision from the operation — the file set, the tool's
-   semantics, the resolved path — never a pattern over the text or one tool's name; and the
-   allow case proven quiet *before* the deny widens.
+**5. Did I measure this once, and could the window have lied?** Two runs with a deliberate gap,
+on the tree the claim is about, the spread written — or *measured once* beside the number, in
+the document. Readings that agree inside one quiet window are still one window.
 
-7. **Is this number derived by something, or written by me?** For every digit or spelled-out
-   number in prose: the command that re-derives it beside it, or the number deleted and the
-   pointer kept. History with a date stays legal.
+**6. Does this guard read what the command will *do*, or what it *says*?** The decision from the
+operation — the file set, the tool's semantics, the resolved path — never a pattern over the
+text or one tool's name; and the allow case proven quiet *before* the deny widens. This is the
+register's longest-running class, and it recurs because a pattern over text always looks
+finished: a commit guard that reads `&&` but not a newline, a history guard that refuses a
+heredoc whose only act is to write a file. Both were widenings of an earlier text pattern. The
+test is whether you can name the operation the decision reads.
+
+**7. Is this number derived by something, or written by me?** The command that re-derives it
+beside it, or the number deleted and the pointer kept. History with a date stays legal;
+`CONTRIBUTING.md`'s *Writing a count that is allowed* is the long form. A green build is not
+evidence — the lints cannot see a decimal, or tell a past-tense count from a present-tense one.
 
 Two rules about the register: a finding goes into it *before* the fix, never inline in an
 unrelated change, and the fix cites the constraint in the code, never the fault id; a wrong
@@ -82,7 +95,7 @@ claims:
 1 <file:line that does what the sentence says | rewritten to say only what the code does | n/a — no behaviour claimed>
 2 <mutation → red output → restored; allow case → red under over-fire | n/a — no check touched>
 3 <grep for the bare shape: N hits — each fixed, or left because … | n/a — not a fix of a reported defect>
-4 <enforced by <hook/script>, named in the rule | rule says "unenforced because …" about itself | n/a — no rule to an agent>
+4 <enforced by <hook/script>, named in the rule's own sentence | rule says "unenforced because …" about itself | n/a — no rule to an agent>
 5 <two runs, gap, spread | "measured once" beside the number in the document | n/a — no property recorded>
 6 <decision reads the operation, not the text; allow case proven quiet first | n/a — no guard>
 7 <command beside the number | number deleted, pointer kept | n/a — no number written>
