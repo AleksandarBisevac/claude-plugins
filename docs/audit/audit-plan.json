@@ -813,10 +813,10 @@
       "P36.15",
       "P42.6",
       "P43.4",
-      "P47.3",
       "P50.5",
       "P51.2",
-      "P53.4"
+      "P53.4",
+      "P47.3"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -877,8 +877,8 @@
       "P18.9",
       "P21.2",
       "P22.11",
-      "P47.3",
-      "P51.6"
+      "P51.6",
+      "P47.3"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -1062,7 +1062,8 @@
       "P21.3",
       "P22.8",
       "P31.6",
-      "P34.5"
+      "P34.5",
+      "P47.3"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1661,9 +1662,9 @@
       "P32.6",
       "P35.1",
       "P36.15",
-      "P47.3",
       "P51.2",
-      "P53.4"
+      "P53.4",
+      "P47.3"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
@@ -1878,12 +1879,6 @@
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
     ],
-    "plugins/audit/scripts/panel/_panel_page.py": [
-      "P47.3"
-    ],
-    "plugins/audit/scripts/governance/close-phase.py": [
-      "P47.3"
-    ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6"
     ],
@@ -1943,6 +1938,9 @@
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3"
+    ],
+    "plugins/audit/scripts/panel/_panel_page.py": [
+      "P47.3"
     ]
   },
   "bugs": [
