@@ -28,24 +28,43 @@ does.
 
 ## Taking work out of a worktree
 
-**Diff against the base the worktree actually had, which is its own HEAD** — never against
-a branch name, because the branch has moved since the agent started:
+**Use `tools/harvest-worktree.py <worktree>`, which is what enforces every rule in this
+section** — it derives the base, refuses when the base is not derivable, and prints the
+report the rest of this section asks you to read:
 
 ```bash
-git -C <worktree> diff "$(git -C <worktree> rev-parse HEAD)"
+python3 tools/harvest-worktree.py <worktree> --out <patch>   # 0 harvested, 3 no work,
+                                                             # 1 refused, 2 usage
 ```
 
-An orchestrator here took `git diff main` from a worktree whose `main` had advanced by
-three commits, and applying that patch silently reverted a sibling task's test cases.
-Nothing failed. It was caught because a case count dropped by five, and only because
-someone looked.
+**Never a branch name**, because the branch has moved since the agent started. An
+orchestrator here took `git diff main` from a worktree whose `main` had advanced, and
+applying that patch silently reverted a sibling task's test cases. Nothing failed. It was
+caught because a case count dropped, and only because someone looked.
+
+**And not its own HEAD either, whenever the agent committed** — this section used to say
+HEAD and that is right only for a worktree that left everything uncommitted. An agent that
+committed has moved HEAD past its own base, so `git diff HEAD` shows the dirty tree alone
+and silently drops every committed change. The base is the commit the worktree *started*
+at, which the tool reads out of that worktree's own HEAD reflog; hand-composing it is where
+both mistakes live.
+
+**Read the whole report, never its last line.** The same orchestrator read the last line of
+a multi-file `git apply` and concluded the patch had landed when most of it had not. The
+report names every file with its own counts, every commit on top of the base, and whether
+the tree is dirty — which is what tells "the agent wrote nothing" from "the agent committed
+and the tree is clean", two states a `git status` renders identically.
+
+**A refusal is a finding, not an obstacle.** Exit 1 means the base is not knowable — the
+worktree was rebased off its base, its reflog was expired, or you pointed at the main
+worktree — and the fix is to establish which commit the work sits on and pass `--base
+<rev>`, never to fall back to a branch name.
 
 **After applying, run the suites the patch touched and compare the case counts with what
 the agent reported.** A count that dropped means the patch reverted something. That
-comparison is the whole check; a clean `git apply` proves only that the hunks matched.
-
-When a repo ships a tool for this, use the tool — composing the git yourself is where the
-mistake lives.
+comparison is the whole check; a clean `git apply` proves only that the hunks matched, and
+the tool deliberately does not apply so that this step belongs to the process that can
+watch it.
 
 ## When an apply goes wrong
 
@@ -134,6 +153,6 @@ time nothing is being built.
 ## The shape of a good hand-off
 
 One task, one worktree, one brief that carries the driven evidence, the allow case named,
-and the verification commands stated with the exit codes you expect. Then: take the diff
-against the worktree's own HEAD, apply, run the suites, compare the counts, drive the
-behaviour yourself, commit while it is fresh.
+and the verification commands stated with the exit codes you expect. Then: harvest with
+`tools/harvest-worktree.py`, read the report rather than a line of it, apply, run the
+suites, compare the counts, drive the behaviour yourself, commit while it is fresh.

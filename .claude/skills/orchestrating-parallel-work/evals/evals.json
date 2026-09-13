@@ -6,7 +6,7 @@
       "id": 0,
       "name": "harvest-against-a-moved-branch",
       "prompt": "I have a subagent that finished its work in the linked worktree ../claude-plugins-p42-3. It was branched off main a while ago and main has had three commits land on it since. Get its work into the main checkout and commit it, then tell me the suite counts before and after.",
-      "expected_output": "The diff is taken against the worktree's own HEAD (or an explicitly recorded base), never `git diff main`; after applying, the touched suites are run and their case counts compared with what the worktree reported, so a silent revert of a sibling's cases would be caught.",
+      "expected_output": "The work is taken with `tools/harvest-worktree.py`, or otherwise against the commit the worktree started at rather than against `main` or a hand-composed `git diff HEAD` (which drops whatever the agent committed); after applying, the touched suites are run and their case counts compared with what the worktree reported, so a silent revert of a sibling's cases would be caught.",
       "files": []
     },
     {
