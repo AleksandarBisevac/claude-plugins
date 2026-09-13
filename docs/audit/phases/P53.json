@@ -1,0 +1,294 @@
+{
+  "id": "P53",
+  "title": "Checks and documents that assert less than they claim",
+  "status": "pending",
+  "description": "The accumulated residue of four review rounds: a table maintained by hand beside the derivation that replaced it, an anchor whose reason is false, a case that raises instead of failing so one mutation takes its neighbours down, a git anchor that fails open so a bug inside it reads as no tampering, a document behind by a whole feature, a widening that blinds the prose scanners further than its comment admits, a repair that spends nearly all of the subject-length budget with nothing clamping a caller, and an advice table that swallows a branch and drops an unrecognised warning. None of these is a user-visible defect today. Every one of them is a check or a sentence that will be trusted the next time somebody needs it.",
+  "desiredOutcome": "Every check named in this phase goes red when the thing it guards breaks, every document named describes the mechanism the code has, and each deliberate gap is a stated decision rather than an unnoticed hole.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P53.1",
+      "title": "One writer map, derived from the dispatch it describes",
+      "status": "pending",
+      "description": "DONE MEANS: which functions write for a verb is stated once, derived from the dispatch, and the hand-maintained copy is gone. The derivation exists and was the whole point of the repair that introduced it: a flag added tomorrow is inside the check by existing. A hand-kept map of the same fact survived beside it in the suite, and its own comments record the cost twice - a row that was incomplete so the check went quiet over the gap, and a row added for a verb that stayed green with the flag's read deleted. That second one is the shape that matters: a table maintained by hand is a check that asserts whatever the last editor remembered.",
+      "files": [
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/scripts/manifest/audit-task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the writer set a verb is checked against is the one the dispatch walk produces, and a verb whose writers change is reported without anybody editing a table"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P53.2",
+      "title": "An anchor that could not look says so, and names what it landed on",
+      "status": "pending",
+      "description": "DONE MEANS: an anchor that could not ask its question reports that it could not ask, and a pointer's message names the thing the pointer found. The git anchor fails open, so a bug inside the anchor and a clean tree produce the same answer - which makes the anchor useless exactly when it matters, because the case it exists for is the one where something has been tampered with. This repository already has the vocabulary for the honest third answer and uses it elsewhere; the anchor predates it. The pointer half is the same defect one step along: the message names a subject the pointer did not land on, so a reader chases the wrong file. Both are high risk because both are the checks somebody would rely on while investigating.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: an anchor whose subject cannot be read reports that it could not be read rather than reporting no finding, and a pointer names the subject it actually landed on"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P53.3",
+      "title": "A failing case fails, and takes nothing else down with it",
+      "status": "pending",
+      "description": "DONE MEANS: no case in this suite reports a failure by raising, and the two widenings that quietly narrowed the prose scanners are bounded and stated. A gate case raises instead of failing, so one mutation takes the whole suite down and the mutation harness reads that as several checks catching the change when it was one crash. The quoted-span widening blinds the scanners considerably further than its own comment admits, and the ratio arm carries a narrowing nothing proves, attributed to a rule that is not the one doing the narrowing. Each of these makes a green build mean less than a reader thinks, and the repair is the same in all three: say what is given up, at the site, in a form a case can hold.",
+      "files": [
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/_output.py",
+        "tools/prove-gates.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: a case that raises is reported as the case that raised and its neighbours still run, and a widening that blinds a scanner is reported with what it gave up"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P53.4",
+      "title": "The documents describe the mechanism the code has",
+      "status": "pending",
+      "description": "DONE MEANS: the architecture document is not behind by a feature, the documents describing the newest lock tier agree with it, the one recorded reason that is false is corrected, and the script that writes the manifest gets the repair its own instruction document already received. That last one is the instructive case: a fix landed in the document telling the orchestrator what to do and never reached the script that does it, so the plan is generated wrongly and the instructions are right about a behaviour nothing has. A document and a script describing one mechanism is the repository's oldest defect shape, and the answer here is the same as everywhere else - the enumeration is checked, so a feature added without a section fails the build by name.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a feature the tree has and the build guide does not enumerate is reported, and a recorded reason contradicted by the code it explains is reported against the document"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P53.5",
+      "title": "The doctor's advice loses no branch and no warning",
+      "status": "pending",
+      "description": "DONE MEANS: the doctor's advice table reaches every branch it declares, an unrecognised warning survives to the operator, and the README stops promising something the doctor does not do. A table that swallows a branch is a branch nobody will ever see fire, and a warning dropped for being unrecognised is precisely the warning worth reading, because a recognised one is one somebody already thought about. The document half is small and of a piece: it promises the doctor names which rows are extra, and the doctor names a count. A count is not a name, and the difference is the whole value of the sentence.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_report.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__doctor_report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_report.py: an unrecognised warning is carried through rather than dropped, every branch of the advice table is reachable, and the document's promise about what the doctor names is what the doctor names"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P53.6",
+      "title": "The merge's remaining doors, and the deliberate gaps written as decisions",
+      "status": "pending",
+      "description": "DONE MEANS: the escape hatch the document prescribes works on the file it is prescribed for, a linked journal file is not replaced while something writes through it, the commit subject repair leaves room for a caller, and the gaps this project has decided to live with are written as decisions rather than left as silence. The escape dead-ends today: taking one side against a target that is still conflicted refuses, and the refusal names a cause that is not the one it found - so the documented route out of a conflict ends in a message that sends the reader somewhere else. The link case is data loss of the quiet kind: the merge replaces the path while the append writes through it, so rows land in a file nothing will read again. And this repository's own plan gives most tasks a gate that takes the machine-wide capture lock, which is a decision it should make out loud rather than discover under parallelism.",
+      "files": [
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "docs/audit/audit-plan.json",
+        "plugins/audit/tests/test_audit_journal.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_journal.py: the documented escape reaches a still-conflicted target and its refusal names the cause it found, and a journal file reached through a symbolic link is not replaced out from under a writer"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

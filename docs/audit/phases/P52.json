@@ -1,0 +1,247 @@
+{
+  "id": "P52",
+  "title": "The gate lock is safe to take, safe to lose, and proven",
+  "status": "pending",
+  "description": "A code review of the locking work left ten findings and the two tasks that would have answered them were cancelled. Two are labelled release blockers: the acquire path catches only the already-exists error, so a lock directory that cannot be written kills the gate with a traceback and spends a retry, and a taker killed between creating its claim and writing it strands an empty file that reads as held and cannot be cleared by the documented escape. The rest are the same surface: a recorded identity that outlives the run it names, a takeover two waiters can both win, a row recording a distinction the file says it refuses to collapse, a wait bound that turns ordinary parallelism into a refusal with no answer for re-entry, and a branch whose defining properties survive every mutation - which is the only one of the ten that says the others could come back unnoticed.",
+  "desiredOutcome": "No single killed run stalls the machine, no two runs both believe they hold one lock, and every property the lock claims has a case that goes red when it is removed.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P52.1",
+      "title": "A lock that cannot be created fails open, not with a traceback",
+      "status": "pending",
+      "description": "DONE MEANS: a lock the process cannot create degrades to an advisory notice and the gate still runs, instead of dying with a traceback that costs the orchestrator a retry. The acquire path catches only the already-exists error around the create. The directory creation above it is guarded and the create is not, so a lock directory that exists and is not writable - a shared checkout, a mounted volume, a machine where a different user ran the last gate - raises straight out of the function. This is the fail-open half of the repository's own table: the lock is a coordination advisory, not a guard, and an advisory that cannot be taken must not stop the work it was advising about. The distinction that must survive is the one the table draws: a lock that cannot be TAKEN is different from a lock that is HELD, and the message must never say the second when it found the first.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_lock.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lock.py: a lock directory that cannot be written yields an advisory refusal and a run that continues, and the message names what could not be done rather than the lock being held"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P52.2",
+      "title": "An empty claim is not a held lock, and a claim is written in one step",
+      "status": "pending",
+      "description": "DONE MEANS: a taker killed between creating its claim and describing it leaves nothing that reads as a live lock, and the documented escape clears whatever it does leave. Today the take creates the file exclusively and writes the record in a second statement, so a kill in between strands an empty file. The reader returns nothing, the judge finds no identity, and the age rule then holds the lock for the better part of an hour - on every gate on the machine, because this lock is machine-wide. Worse, the takeover flag is the documented way out and it cannot clear this case, so the operator's only route is deleting a file by hand, which is the class of repair this plugin exists to remove. The write becomes one step - the record lands with the create or the file does not exist - and an empty claim is judged for what it is rather than for what it resembles.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a zero-byte claim file is judged as an interrupted take and cleared by the documented escape, and a claim is either fully present or absent after any interruption"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P52.3",
+      "title": "One stale lock has exactly one taker, and a refused release is not discarded",
+      "status": "pending",
+      "description": "DONE MEANS: two runs cannot both believe they took over one stale lock, and a release the lock declines is reported to the caller instead of being thrown away. The takeover path reads, judges and then writes, so two waiters that pass the judge together both proceed, and the second silently replaces the first - which is the exact state the lock exists to make impossible, reached through the door built for recovery. The second half is what makes it invisible: the loser's release is discarded, so nothing anywhere says that a holder was displaced. The repair for the first is the one the acquire path already uses, an exclusive create as the test with no window. The repair for the second is that a refused release is a return value somebody reads. And the call site of the earlier attempt at this is pinned by no case, which is why the earlier attempt did not hold.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: two takers racing one stale lock leave exactly one holder, the loser is told it lost, and a release the lock refuses is reported rather than swallowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P52.4",
+      "title": "The recorded identity does not outlive the run it names",
+      "status": "pending",
+      "description": "DONE MEANS: the identity the lock records is one that stops being true when the run stops, and the row it writes records only what happened. The lock records a process identity that outlives the gate it was taken for, so one killed run holds every gate on the machine until the age rule expires - the same stall as the empty claim, reached by a different door, which is why they are separate tasks and not one. The second half is a row that records a distinction the file it lives in says in its own words that it refuses to collapse, and a basis asserting an event that did not happen. A basis is the thing that makes a claim checkable; a basis for an event nobody observed is worse than no basis, because it survives review.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: an identity belonging to a process that has ended is judged as ended rather than as live, and an identity that cannot be checked says so instead of being assumed either way"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P52.5",
+      "title": "The wait answers re-entry, and the lock's own properties have cases",
+      "status": "pending",
+      "description": "DONE MEANS: ordinary parallelism does not turn into a refused gate, a caller that already holds a lock gets an answer rather than a wait, and every property this branch claims has a case that fails when the property is taken away. The wait bound was set for a serial machine and the product invites several executors at once, so the bound that protects a shared resource now converts normal concurrency into refusals. Re-entry has no answer at all, which means a command that takes a lock and calls another command that takes the same one deadlocks by design. And the branch has no case in its own suite: both of its defining properties survive mutation, so nothing here would notice any of the repairs regressing. That last part ships first, because a repair to an unguarded branch is a repair that lasts until the next change.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a holder asking again for a lock it already holds is answered without waiting, a wait that expires says what it waited for, and each of the branch's defining properties goes red when it is removed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

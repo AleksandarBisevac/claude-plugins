@@ -1,0 +1,343 @@
+{
+  "id": "P54",
+  "title": "The guards' last read shapes, and the work the plan has no place for",
+  "status": "pending",
+  "description": "Two halves that share a cause: the product knows about the work it was designed for and is silent about the rest. On the guard side, several read shapes still reach a secret file's contents with no refusal and no event, two of them the everyday way an agent reads a file; an interpreter heredoc is judged inconsistently; a write is attributed to a background job when it could be attributed with certainty; nothing verifies the plugin's own installed files, and the control the security document calls load-bearing is opt-in that nothing mentions at first contact. On the plan side, a decision has no home so approvals travel second-hand, a bug that turned out to be wrong has no status, requested work and documentation output are uncovered on every write, the successful task commit is the one git operation nothing scripts, and a push is a suite run the plugin cannot see.",
+  "desiredOutcome": "No documented-secret read reaches a file's contents without a refusal and an event, and every kind of work an operator actually does has somewhere in the plan to live.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P54.1",
+      "title": "Every documented read shape reaches the secrets guard",
+      "status": "pending",
+      "description": "DONE MEANS: no read shape the security document claims to cover reaches a secret file's contents without a refusal and an event. Several still do, in every copy of the guard, and two of them are the everyday way an agent reads a file - which is the worst possible distribution, because the guard looks effective against the shapes nobody uses. The interpreter heredoc is right in principle and inconsistent in practice: the same read is refused or allowed depending on the spelling that carried it, which is the guard-by-spelling class this register has recorded longer than any other. A shape the guard cannot classify is refused, because this is a guard and the table says guards fail loud. The event matters as much as the refusal: a read that is refused and not recorded leaves nothing for the doctor to count and nothing for an operator to find afterwards.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "SECURITY.md",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: each read shape the security document names is refused and recorded, an interpreter heredoc is judged the same way whichever spelling reached it, and a shape the guard cannot classify is refused rather than allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.2",
+      "title": "A write is attributed to what wrote it, and the events file is not empty for the wrong reason",
+      "status": "pending",
+      "description": "DONE MEANS: the write guard names the statement that wrote, not a background job it happened to see, and an empty events file is distinguished from a guard that never ran. The attribution defect is small and corrosive: naming an innocent suspect when the guilty one is in hand teaches the reader that the guard guesses. The second half was measured in the field, where the plan-gate events file and the bypass log both stayed at zero lines for a whole program - a result that reads as a clean run and is indistinguishable from the guard never having fired at all. This repository has the word for that difference and the doctor is where it belongs: a file that is empty because nothing was configured is a finding, and a file that is empty because nothing happened is good news.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: a write whose author is knowable names that author and not a background job, and an events file that is empty because nothing was configured is reported differently from one empty because nothing happened"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.3",
+      "title": "The plugin verifies its own files, and says so at first contact",
+      "status": "pending",
+      "description": "DONE MEANS: an operator can ask whether the plugin's own files are the ones that were published, the answer distinguishes modified from unverifiable, and the document a new user actually reads mentions the control. Nothing verifies the installed files today. The security document names one control as load-bearing and that control is opt-in and is not mentioned where a first-time user would meet it, which makes it a control that exists for readers of the security document alone. This matters more for this product than for most: it installs hooks that run on every tool call, so the question of whether those files are what they should be is the first one a careful user asks and currently has no way to answer.",
+      "files": [
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "SECURITY.md",
+        "QUICKSTART.md",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_setup.py: a modified plugin file is reported by name, an unverifiable installation says the question could not be asked, and the first-contact document names the control the security document calls load-bearing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.4",
+      "title": "A decision is something the plan can hold, and a wrong bug has a status",
+      "status": "pending",
+      "description": "DONE MEANS: an approval is recorded where the work is planned instead of travelling second-hand, and a bug that turned out not to be a bug has a status that says so. Every decision this product makes about itself currently lives in a conversation, a note or a commit message, so the refusal that protects against unrecorded approval has to be expensive - it stops and asks a human, because there is nowhere for a prior answer to live. Give a decision a home and the refusal becomes cheap: it reads the record. The bug half is the same shape from the other end - a verified negative has no row, so investigating something and finding nothing leaves no trace and the next person investigates it again. The blocker resolver already spans phases, tasks and bugs; a decision is a fourth kind of the same thing and a dependency on another session is a fifth, so they share one design pass rather than three schemas.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_crossrefs.py: a decision is referenced by the same resolver every other kind is, a bug closed as wrong is distinguishable from one closed as fixed, and a blocker naming something outside the plan is reported rather than resolved to nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.5",
+      "title": "Requested work and documentation output have a home in the plan",
+      "status": "pending",
+      "description": "DONE MEANS: a sanity pass, an operator-requested fix wave, a product plan and the documents a run produces all have somewhere in the plan to live, so the plan gate stops warning about writes it has no way to sanction. Measured in the field: documentation and evidence directories were treated as uncovered on every write, which trains the operator to read the gate's warnings as noise - and a gate whose warnings are noise is a gate that is off. The warning is right and the plan has no place to put the thing it is warning about, so the repair is a place rather than an exception. The bound is the part that needs care: a pattern that covers the whole tree turns the gate off through the door built to keep it on, and must be refused by name.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: a task declaring an output pattern covers the files it produces, and a pattern that would cover the whole tree is refused rather than accepted quietly"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.6",
+      "title": "The task commit is a verb, and a push is a run the plugin can see",
+      "status": "pending",
+      "description": "DONE MEANS: the successful task commit is scripted rather than prescribed in prose, and a suite that ran outside the plugin is recorded as such rather than colliding with a run the plugin did. The commit is the one git operation the plugin does not script, and four scope breaches came from an agent generalising two words of the instruction - which is what prose gets for a step performed under time pressure at the end of every task. The push half is the same class at the other end: a push runs a suite the plugin cannot see, and one that overlapped a recorded gate produced a red the plugin attributed to its own run. Both are high risk because both touch the record that everything else is graded against.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: the commit a task closes with stages exactly the task's declared files and refuses a path outside them, naming it",
+          "plugins/audit/tests/test__evidence_io.py: a run recorded outside the gate is distinguishable from one the gate ran, and a red that overlapped a recorded gate is not attributed to that gate"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P54.7",
+      "title": "The gates schedule themselves for one machine, and say what they never measure",
+      "status": "pending",
+      "description": "DONE MEANS: the procedure that invites several executors at once also says what happens when each of them runs a full suite on one machine, a comparison whose two sides are both in hand is answered before the expensive step rather than after it, and the gate set is honest about the class it never measures. The parallel-safety rule was written for the file system and says nothing about the machine, which is the largest source of false failures on record here. The overlap answer arrives after a five-minute run for a comparison that needed nothing from that run, so the cost is entirely ordering. And the gates measure what is easy to measure - they never open a browser and never start a server - which is a reasonable boundary and an unstated one, so a green gate set reads as broader coverage than it is.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a comparison whose inputs are both in hand is answered before the long step rather than after it, and a gate set that measures nothing at runtime says so rather than implying coverage"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

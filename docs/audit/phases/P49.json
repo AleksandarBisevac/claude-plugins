@@ -158,6 +158,51 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P49.4",
+      "title": "A task's done asks whether the change is what was asked for",
+      "status": "pending",
+      "description": "DONE MEANS: closing a task records an answer to one question - does this change do what the task asked for - and the answer is on the record beside the gate verdict. The operator chose this at that cost, per task, rather than at sign-off alone, and the reasoning is that the claim is made per task: a gate proves the suite is green and proves nothing about whether the green change is the change somebody wanted. It is one cheap call handed the task description, the diff and the executor's claim. The failure mode to design against is the one every cheap reviewer has: an answer that is yes by default. A close that received no answer must read differently from a close that received a negative, because those are opposite facts and a missing field renders as neither. This also closes the gap where the plugin holds itself to a bar it does not offer the user, which the neighbouring task in this phase offers from the other side.",
+      "files": [
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a close records the intent answer it received, a close with no such answer is distinguishable from one that received a negative, and the answer names the diff it was given"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
