@@ -518,11 +518,17 @@ def _cases(check):
     # script that turns the table's own `post-hoc` rows into checked ones — and a
     # README that names a script path is exactly what this scanner is FOR, so the
     # recorded fact moved rather than the rule.
-    check("c3 agents/ names no script path today, and that is recorded rather "
-          "than passed over; the root README names at least one and every one of "
-          "them is stat'd like any other",
-          counts["plugins/audit/agents"] == 0 and counts["README.md"] > 0,
-          repr((counts["plugins/audit/agents"], counts["README.md"])))
+    # `agents/` was the second recorded zero, and it has moved for the same
+    # reason: `audit-executor.md` now cites `hooks/require-plan.py` as the holder
+    # of the one definition of a trivial edit, instead of restating a second
+    # definition of its own that the gate then refused. A brief naming the thing
+    # that enforces it is what this scanner is FOR, so the fact moved and the
+    # rule did not - every path an agent brief names is stat'd like any other.
+    check("c3 agents/ names a script path now, and that is recorded rather than "
+          "passed over; the root README still names at least one, and both "
+          "surfaces are stat'd like any other: %r"
+          % (dict((s, counts[s]) for s in ("plugins/audit/agents", "README.md")),),
+          counts["plugins/audit/agents"] > 0 and counts["README.md"] > 0)
     check("c4 counts_by_surface is seeded from SURFACES, so every surface appears "
           "including the empty ones",
           sorted(counts) == sorted(surfaces))

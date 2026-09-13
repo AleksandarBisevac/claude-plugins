@@ -494,6 +494,17 @@ def _cases(check):
           _ok_sm and _got_sm[0] == "block"
           and "docs/audit/phases/P1.json" in _m_sm
           and "tell the orchestrator" in _m_sm, repr(_m_sm))
+    # ...and the channel carries a VERB. This refusal is `require-plan`'s
+    # `_SUBAGENT_MANIFEST` one channel over, and it had the same gap: it named
+    # three writes the orchestrator could make and no command for any of them,
+    # so the report the subagent stops to write needed a human to translate it.
+    check("sm18b ...naming each write as a command, so the report a stopped "
+          "subagent hands back is already actionable - and marking them the "
+          "ORCHESTRATOR's, since this hook exists to stop this agent making "
+          "them itself",
+          "/audit:task scope" in _m_sm and "/audit:task start" in _m_sm
+          and "/audit:task add" in _m_sm and "not yours to run" in _m_sm,
+          repr(_m_sm))
 
     # sm19-sm22: the OTHER half of require-plan's manifest refusal. Two sessions
     # writing one shard in one working tree produce no git conflict, so the

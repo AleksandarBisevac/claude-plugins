@@ -23,6 +23,30 @@ Config: `.claude/audit.config.json` → `tddReminder` (see _config.DEFAULTS):
         "skip-all"    — silent when covered by ANY in_progress task
         "warn-always" — ignore manifest coverage
 
+THE NUDGE IS WORDED IN THE MODE THE TASK WAS GIVEN (`_warn_text`). Three test
+disciplines are ordered by `agents/audit-executor.md`, and this hook knew one of
+them: it exempted "gate-only" and said "write or update a test first (red, then
+green)" to everything else — including a "regression" task, whose brief orders the
+opposite order (implement the change, THEN add the tests locking the corrected
+behaviour). So an executor's first source edit under a regression task drew advice
+contradicting its own work order, and an agent told two things by one system does
+one of them for the wrong reason. A regression task still owes tests, so silence
+would be the wrong repair; REGRESSION_TEMPLATE says which order instead, and names
+the task the mode came from.
+
+Only the two policies that read the manifest can word it that way: under
+"warn-always" the operator has asked for manifest coverage to be ignored, so no
+task is consulted and the generic wording stands.
+
+THIS HOOK ASKS NOTHING ABOUT WHO IS EDITING, and that is a decision rather than a
+gap. `require-plan.py` branches on `_config.is_subagent` because its two audiences
+have different REMEDIES - a subagent may not edit the manifest, so the line telling
+it to sent it into a forbidden action. Here both audiences get the same remedy,
+write the test, and the only thing that varies is the ORDER - which is a property
+of the covering task, not of the writer, and is already read above. The one thing a
+subagent branch could do, stay silent because the executor's brief carries its mode,
+would remove the reminder from the only agent editing source under a task.
+
 Decision order (see `decide`):
   a path OUTSIDE the consuming repository → SILENT, before anything else: the
   nudge is a claim about a file, and a scratch file in another tree is not one
@@ -30,7 +54,8 @@ Decision order (see `decide`):
   test file → RECORD it (BEFORE any warn logic — this ordering is the whole
   mechanism: the hook watches its own Edit stream to learn that tests exist);
   exempt / non-source / covered-by-task / test-already-touched / throttled →
-  SILENT; otherwise → WARN (once per file, throttled per session).
+  SILENT; otherwise → WARN (once per file, throttled per session), worded in the
+  covering task's test mode.
 
 AN MCP SERVER'S WRITE TOOL IS DELIBERATELY NOT ON THIS MATCHER. The mechanism
 above is "the hook watches its own Edit stream", and both halves of that stream
@@ -70,6 +95,18 @@ WARN_TEMPLATE = (
     ".claude/audit.config.json -> tddReminder."
 )
 
+# The same reminder, in the order a `regression` task was actually ordered to work
+# in. Both templates open with the same `[tdd-reminder]` tag, which is what main()
+# hands to additionalContext and what a reader filters a transcript on.
+REGRESSION_TEMPLATE = (
+    "[tdd-reminder] %s was modified, but no test file has been touched in this "
+    "session. Task %s is mode \"regression\", so the order is implement first, "
+    "then add the test(s) locking the corrected behavior - do NOT write them "
+    "red first. Adding none is what this is reminding you about. This is a "
+    "non-blocking reminder; tune or disable it via .claude/audit.config.json "
+    "-> tddReminder."
+)
+
 
 # --- state ----------------------------------------------------------------------
 def _state_file(state_dir, session_id):
@@ -99,6 +136,40 @@ def _save_state(state_dir, session_id, state):
             json.dump(state, fh)
     except Exception:
         pass
+
+
+# --- the nudge's wording ----------------------------------------------------------
+def regression_task(covering):
+    """The id of an in_progress task covering this file whose ordered test mode is
+    "regression", or None when none of them is.
+
+    -> "P2.5" | None
+
+    A file can be covered by more than one in_progress task, and the modes may
+    differ. The FIRST regression decides, and a mixed set is deliberately not an
+    error: the generic wording is the one that is wrong for a regression task, so
+    when any covering task orders that mode the nudge says so.
+    """
+    for entry in covering or []:
+        if entry.get("testsMode") == "regression":
+            return entry.get("taskId") or "?"
+    return None
+
+
+def _warn_text(rel, covering):
+    """The reminder for `rel`, worded in the mode its covering task was given.
+
+    `covering` is the in_progress-task list for this file - EMPTY when no task
+    covers it and empty as well under inProgressPolicy "warn-always", which asks
+    for the manifest to be ignored. Both produce the generic wording, which is the
+    right one: with no task there is no ordered mode, and with the manifest
+    deliberately ignored there is nothing this hook is entitled to read a mode out
+    of.
+    """
+    task_id = regression_task(covering)
+    if task_id is not None:
+        return REGRESSION_TEMPLATE % (rel, task_id)
+    return WARN_TEMPLATE % rel
 
 
 # --- core decision ----------------------------------------------------------------
@@ -158,7 +229,13 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     if not _config.matches_exempt(rel, tr.get("sourceGlobs")):
         return ("silent", "not a source file: %s" % rel)
 
-    # 4. Interplay with the audit pipeline (in_progress task coverage).
+    # 4. Interplay with the audit pipeline (in_progress task coverage). The list
+    #    outlives this step: step 7 words the nudge in the covering task's mode
+    #    (_warn_text), so the same read answers both "say nothing?" and "say it
+    #    how?". It stays EMPTY under "warn-always" - that policy asks for the
+    #    manifest to be ignored, and reading it anyway to pick a wording would be
+    #    the setting half-honoured.
+    covering = []
     policy = tr.get("inProgressPolicy") or "skip-gate-only"
     if policy != "warn-always":
         manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
@@ -189,7 +266,7 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     state.setdefault("warned", {})[rel] = ts
     state["lastWarnAt"] = ts
     _save_state(sd, session_id, state)
-    return ("warn", WARN_TEMPLATE % rel)
+    return ("warn", _warn_text(rel, covering))
 
 
 def main():

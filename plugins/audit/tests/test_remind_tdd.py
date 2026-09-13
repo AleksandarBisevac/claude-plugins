@@ -107,6 +107,12 @@ def _cases(check):
             "phases": [{"id": "P0", "title": "p", "status": "in_progress", "tasks": [
                 {"id": "P0.1", "title": "t", "status": "in_progress",
                  "files": ["src/covered/mod.ts"], "tests": {"mode": "gate-only"}},
+                {"id": "P0.2", "title": "r", "status": "in_progress",
+                 "files": ["src/regress/mod.ts"], "tests": {"mode": "regression"}},
+                {"id": "P0.3", "title": "d", "status": "in_progress",
+                 "files": ["src/tdd/mod.ts"], "tests": {"mode": "tdd"}},
+                {"id": "P0.4", "title": "n", "status": "in_progress",
+                 "files": ["src/nomode/mod.ts"]},
             ]}],
         }), encoding="utf-8")
         _expect("d1 gate-only in_progress coverage", "silent",
@@ -117,6 +123,68 @@ def _cases(check):
                                      inProgressPolicy="warn-always")
         _expect("d2 warn-always ignores coverage", "warn",
                 payload("src/covered/mod.ts", "tdd-session-d2"), use_cfg=cfg_wa)
+
+        # (j) THE NUDGE IS WORDED IN THE MODE THE TASK WAS GIVEN. The hook knew
+        # one of the three disciplines `agents/audit-executor.md` orders: it
+        # exempted `gate-only` (d1) and said "write or update a test first (red,
+        # then green)" to everything else - including a `regression` task, whose
+        # brief orders the opposite order. So the first source edit of a
+        # regression task drew advice contradicting its own work order. These
+        # cases read the TEXT and not just the verdict, because the verdict was
+        # never the defect: it warned, and what it said was wrong.
+        def _nudge(rel, sid, use_cfg=None):
+            """(verdict, detail) for one source edit, on its own session."""
+            ok, got = _harness.attempt(M.decide, payload(rel, sid),
+                                       cfg=use_cfg or cfg, state_dir=sd, now=t0)
+            return got if ok else ("EXC", str(got))
+
+        _v_j1, _m_j1 = _nudge("src/regress/mod.ts", "tdd-session-j1")
+        check("j1 a file covered by a REGRESSION task is still reminded - it "
+              "owes tests, just afterwards - and is told THAT order, naming "
+              "the task the mode came from",
+              _v_j1 == "warn" and "P0.2" in _m_j1
+              and "implement first" in _m_j1
+              and "write or update a test first" not in _m_j1, repr(_m_j1))
+        _v_j2, _m_j2 = _nudge("src/tdd/mod.ts", "tdd-session-j2")
+        check("j2 a file covered by a TDD task keeps the red-then-green "
+              "wording, and keeps WARNING - this is the discipline the plugin "
+              "exists to protect, so silencing it here has to be visible",
+              _v_j2 == "warn" and "write or update a test first" in _m_j2
+              and "(red, then green)" in _m_j2
+              and "implement first" not in _m_j2, repr(_m_j2))
+        _v_j3, _m_j3 = _nudge("src/uncovered/mod.ts", "tdd-session-j3")
+        check("j3 ...and a file NO task covers keeps the generic wording with "
+              "no task id invented for it - the mode comes from the manifest "
+              "or not at all",
+              _v_j3 == "warn" and "write or update a test first" in _m_j3
+              and "regression" not in _m_j3 and "P0." not in _m_j3,
+              repr(_m_j3))
+        _v_j4, _m_j4 = _nudge("src/nomode/mod.ts", "tdd-session-j4")
+        check("j4 a covering task with no `tests` block at all is not a "
+              "regression task - an absent mode reads as absent, never as one "
+              "of the three",
+              _v_j4 == "warn" and "write or update a test first" in _m_j4
+              and "P0.4" not in _m_j4, repr(_m_j4))
+        _v_j5, _m_j5 = _nudge("src/regress/mod.ts", "tdd-session-j5",
+                              use_cfg=cfg_wa)
+        check("j5 warn-always is honoured WHOLE: it ignores manifest coverage, "
+              "so it reads no mode out of the manifest either, and the "
+              "regression file gets the generic wording under it",
+              _v_j5 == "warn" and "write or update a test first" in _m_j5
+              and "P0.2" not in _m_j5, repr(_m_j5))
+        check("j6 the two templates are one tag apart, so a transcript filter "
+              "on `[tdd-reminder]` still finds both",
+              _m_j1.startswith("[tdd-reminder]")
+              and _m_j2.startswith("[tdd-reminder]"), repr(_m_j1[:40]))
+        check("j7 regression_task reads the covering list directly: the first "
+              "regression entry decides, and no entry at all is None",
+              M.regression_task([{"taskId": "P1.1", "testsMode": "tdd"},
+                                 {"taskId": "P1.2", "testsMode": "regression"}])
+              == "P1.2"
+              and M.regression_task([]) is None
+              and M.regression_task(None) is None
+              and M.regression_task([{"taskId": "P1.3",
+                                      "testsMode": "gate-only"}]) is None)
 
         # (e) disabled -> silent
         cfg_off = dict(cfg)

@@ -1070,8 +1070,16 @@ _SHELL_SUBAGENT_MANIFEST = (
     "is being judged by is a task nobody can review. The Edit tool already refuses "
     "you this file; `sed -i`, `tee` and a redirect are the same act spelled "
     "differently, so they are refused here too.\n"
-    "Do this: STOP, and tell the orchestrator what you need - a wider `files` "
-    "scope, a status change, a new task. It owns those writes and will make them, "
+    # AND IT NAMES THE COMMAND, as `require-plan`'s twin of this text does. "Tell
+    # the orchestrator what you need" named three writes and no verb, so the
+    # report a stopped subagent writes had to be turned into a command by somebody
+    # else - a refusal nobody downstream can act on alone. The verbs are the
+    # orchestrator's; the subagent quotes one.
+    "Do this: STOP, and tell the orchestrator what you need, naming the command "
+    "it has to run - a wider scope is `/audit:task scope <taskId> --files ...`, "
+    "an unstarted task is `/audit:task start <taskId>`, new work is "
+    "`/audit:task add \"<title>\" --phase <phaseId>`. Those are ITS commands, not "
+    "yours to run: they write the plan. It owns those writes and will make them, "
     "then tell you to carry on.\n"
     "If you reached for a shell write to get past a plan-gate refusal on a source "
     "file, that is the case this rule exists for: report the refusal instead."

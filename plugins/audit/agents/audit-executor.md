@@ -62,8 +62,18 @@ Hard rules (non-negotiable):
   stash destroys their work. For baselines use `git diff` / `git show
   HEAD:<file>`.
 - Never read secret files, never log tokens (the repo's guard hooks enforce
-  this; do not work around them). Stay inside the task's `files` scope unless
-  a trivial adjacent fix is unavoidable — then say so in the outcome.
+  this; do not work around them).
+- **Stay inside the task's `files` scope, and do not decide for yourself that an
+  adjacent file is small enough to be an exception.** The plan gate
+  (`hooks/require-plan.py`) holds the one definition of a trivial edit and
+  enforces it on every write you make; that definition is about change magnitude
+  and a per-session budget, not about how necessary the adjacent fix felt to
+  you. This brief used to license that exception in its own words, so an
+  adjacent edit it had told you was fine could be, and was, refused. So: if
+  you need the adjacent file, edit it. If the gate allows it, say so in your
+  outcome. If the gate refuses it, its refusal text is your instruction — stop
+  and report to the orchestrator, which owns the widening. Do not put the change
+  somewhere else to get around the refusal.
 
 Report back a structured outcome:
 

@@ -154,13 +154,24 @@ def _now_iso():
 # constant rather than a branch inside the refusal below, because this is a
 # different refusal: the file is not out of scope, it is out of AUTHORITY, and the
 # remedy is not a wider scope but a message to the orchestrator.
+#
+# AND IT NAMES THE COMMAND. "Tell the orchestrator what you need" left the reader
+# to invent the request, and a refusal a subagent cannot act on without a human is
+# the shape `_declaration_note` already paid for twice. The three writes it may ask
+# for each have one verb, so the report can carry it: the orchestrator runs the
+# command, the subagent quotes it. Named as the ROUTE to a state, the way
+# `_declaration_note` names `/audit:task start` - a respelt verb leaves the
+# sentence around it true.
 _SUBAGENT_MANIFEST = (
     "%s is the audit plan, and the plan belongs to the orchestrator.\n"
     "You are a subagent: your job is one task, and a task that edits the plan it "
     "is being judged by is a task nobody can review. This is why the exemption "
     "that lets the ORCHESTRATOR write here does not extend to you.\n"
-    "Do this: STOP, and tell the orchestrator what you need - a wider `files` "
-    "scope, a status change, a new task. It owns those writes and will make them, "
+    "Do this: STOP, and tell the orchestrator what you need, naming the command "
+    "it has to run - a wider scope is `/audit:task scope <taskId> --files ...`, "
+    "an unstarted task is `/audit:task start <taskId>`, new work is "
+    "`/audit:task add \"<title>\" --phase <phaseId>`. Those are ITS commands, not "
+    "yours to run: they write the plan. It owns those writes and will make them, "
     "then tell you to carry on.\n"
     "If you reached for %s to get past a plan-gate refusal on a source file, that "
     "is the case this rule exists for: report the refusal instead."
@@ -362,6 +373,14 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
     state cannot be — a refusal naming a remedy its reader cannot reach is the
     fault this repo has already paid for twice.
 
+    BOTH SUBAGENT CLAUSES NAME A COMMAND, on those same terms. The unstarted one
+    always did; the undeclared one said "it will either widen the scope … or add a
+    task" and left the reader to invent the request, which is a refusal a subagent
+    cannot act on without a human standing over it. The verbs are the
+    orchestrator's and the clause says so — a subagent quoting `/audit:task scope`
+    into its report is the point; running it is what the manifest refusal above
+    exists to stop.
+
     `stated` is None when there is no manifest at all: "no task declares this"
     would be true of an empty file, a missing one and a plan that never mentions
     the path, and only one of those is worth a reader's line. That branch is
@@ -375,9 +394,12 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
                        "and in no `fileIndex` row." % (manifest_rel, rel)
                        if manifest_exists else None),
             "subagent": ("report to the orchestrator that %s is outside your "
-                         "task's `files` and why you need it. It will either "
-                         "widen the scope and tell you to carry on, or add a "
-                         "task for the work" % rel),
+                         "task's `files` and why you need it, naming the "
+                         "command it has to run. It will either widen the scope "
+                         "(`/audit:task scope <taskId> --files ...`) and tell "
+                         "you to carry on, or add a task for the work "
+                         "(`/audit:task add \"<title>\" --phase <phaseId>`) - "
+                         "its commands, not yours" % rel),
             "orchestrator": ("add a task covering this file to %s (status "
                              "\"in_progress\")" % manifest_rel),
         }

@@ -44,6 +44,7 @@ import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT, to read the executor brief)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
@@ -185,6 +186,21 @@ def _cases(check):
           "itself, and names the case it exists for",
           "tell the orchestrator" in _m_sub
           and "plan-gate refusal on a source file" in _m_sub, repr(_m_sub))
+    # A REFUSAL A SUBAGENT CANNOT ACT ON WITHOUT A HUMAN. "Tell the orchestrator
+    # what you need - a wider `files` scope, a status change, a new task" named
+    # three writes and no verb, so the report back had to be turned into a command
+    # by somebody else. `_declaration_note` had already paid for this on its
+    # unstarted branch and names `/audit:task start`; this is the same repair on
+    # the two clauses that still had it.
+    check("a4e ...and each of the three writes it may ask for is named as a "
+          "COMMAND, so the report the subagent stops to write is already "
+          "actionable",
+          "/audit:task scope" in _m_sub and "/audit:task start" in _m_sub
+          and "/audit:task add" in _m_sub, repr(_m_sub))
+    check("a4f ...marked as the ORCHESTRATOR's commands, because naming a verb "
+          "to an agent forbidden to run it is how the manifest got edited from "
+          "inside a task in the first place",
+          "not yours to run" in _m_sub, repr(_m_sub))
     _sub_shard = dict(payload("Edit", "planning/phases/P1.json", new_string=big,
                               sid="selftest-a4sub2"))
     _sub_shard["agent_id"] = "exec-91c2"
@@ -769,11 +785,21 @@ def _cases(check):
           v_u == "block" and "outside your task's `files`" in m_u
           and "declares src/search/new.ts" in m_u
           and "P2.5" not in m_u, repr(m_u))
+    check("s4b ...and that remedy names the COMMANDS the orchestrator runs for "
+          "it, because a subagent's only move is to stop and report, and a "
+          "report naming no verb is one a human has to translate",
+          "/audit:task scope" in m_u and "/audit:task add" in m_u
+          and "its commands, not yours" in m_u, repr(m_u))
     v_uo, m_uo = refuse("selftest-s4", file_path="src/search/new.ts")
     check("s5 ...and the orchestrator's undeclared remedy is the one it always "
           "was - add a task, with no task to start named beside it",
           v_uo == "block" and "add a task covering this file" in m_uo
           and "/audit:task start" not in m_uo, repr(m_uo))
+    check("s5b ...and it does NOT pick up the subagent clause's framing: the "
+          "orchestrator owns those verbs, so telling it they are not its own "
+          "would be the branch collapsed into one text again",
+          "its commands, not yours" not in m_uo
+          and "not yours to run" not in m_uo, repr(m_uo))
 
     write_manifest(plan_with("in_progress"))
     v_ok, m_ok = refuse("selftest-s5")
@@ -794,6 +820,56 @@ def _cases(check):
           and [d["taskId"] for d in
                _config.declaring_tasks(str(tmp), MAN, SAN)] == ["P2.5"],
           repr(_config.declaring_tasks(str(tmp), MAN, SAN)))
+
+    # (t) ONE DEFINITION OF "TRIVIAL", AND IT IS THIS GATE'S. `audit-executor.md`
+    # told the executor to stay in its `files` scope "unless a trivial adjacent
+    # fix is unavoidable"; this hook defines trivial by MAGNITUDE and a
+    # one-file-per-session budget and knows nothing about unavoidability. Same
+    # word, two rules, and the one the executor read is the one that does not
+    # decide - so a brief promised an edit the gate refused. The gate keeps the
+    # definition because the gate is what enforces it; the brief cites it.
+    #
+    # READ, NOT CAUGHT: a suite that cannot open the document it compares must
+    # fail rather than assert over an empty string.
+    _brief_path = os.path.join(_output.PLUGIN_ROOT, "agents",
+                               "audit-executor.md")
+    with open(_brief_path, "r", encoding="utf-8") as _fh:
+        _brief = _fh.read()
+
+    def _own_exception(text):
+        """The words with which the brief would be DEFINING trivial itself
+        rather than pointing at the gate that does.
+
+        Deliberately not the word `trivial`: the repair is one definition cited,
+        not a banned vocabulary, and the brief has to be able to name the thing
+        it is pointing at. t3 drives this predicate against the sentence that was
+        actually there, so the empty result in t2 is a measurement."""
+        return [w for w in ("unavoidable", "trivialLineThreshold",
+                            "lines or fewer", "small enough to skip")
+                if w in text]
+
+    check("t1 the executor brief points at the gate by name, so a reader "
+          "meeting the word can reach the definition that decides",
+          "require-plan.py" in _brief
+          and "Stay inside the task's `files` scope" in _brief,
+          repr(_brief_path))
+    check("t2 ...and states no criterion of its own for when an adjacent file "
+          "is allowed: %r" % (_own_exception(_brief),),
+          _own_exception(_brief) == [])
+    check("t3 ...and that check can fail - the sentence that used to be there "
+          "is caught by the same predicate",
+          _own_exception("Stay inside the task's `files` scope unless a "
+                         "trivial adjacent fix is unavoidable - then say so in "
+                         "the outcome.") == ["unavoidable"])
+    check("t4 ...while the word itself stays legal beside the pointer, because "
+          "a brief that may not name what it cites cannot cite it",
+          "trivial" in _brief)
+    _v_t, _m_t = refuse("selftest-t5", file_path="src/search/new.ts")
+    check("t5 and the ONE definition is still here, spelled out where the "
+          "refusal is read: magnitude, and the per-session budget",
+          _v_t == "block" and "magnitude <= " in _m_t
+          and "non-exempt file per session" in _m_t
+          and "lines added, chars/200, or lines removed" in _m_t, repr(_m_t))
 
     write_manifest({"meta": {"version": 2},
                     "phases": [{"id": "P2", "title": "search",
