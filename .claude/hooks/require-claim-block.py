@@ -526,10 +526,14 @@ def _selftest():
         # author produced when giving three file:lines for one question. The first
         # version of this parser stopped at the first non-numbered line and would
         # have refused a block that was MORE complete than the minimum.
+        # THE FILE:LINES ARE FICTION AND STAY FICTION. An earlier version quoted
+        # real coordinates in a real module, which read as a claim about that
+        # module and went stale the day it changed - this parser cares about the
+        # SHAPE of a continued answer and nothing about what the answer names.
         multi = ("subject\n\nclaims:\n"
-                 "1 _evidence_io.py:355 - the docstring; each sentence backed by\n"
-                 "  _evidence_io.py:266-343 (no hash key set) and\n"
-                 "  _evidence_io.py:441 (record()'s anchor names runId)\n"
+                 "1 some_module.py:355 - the docstring; each sentence backed by\n"
+                 "  some_module.py:266-343 and\n"
+                 "  some_module.py:441 (the caller that names it)\n"
                  + "\n".join("%d n/a - not touched" % n for n in range(2, 8)))
         subprocess.run(["git", "add", "tools/x.py"], cwd=tmp)
         v, r = decide(payload('git commit -m %s' % shlex.quote(multi)), tmp)
