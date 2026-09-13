@@ -79,7 +79,7 @@
     {
       "id": "P47.2",
       "title": "A generated plan names a file in tests.add, and the plans already written are migrated",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The command that generates a plan tells its author that a test entry comes from suggested tests, which are sentences, while the schema requires a path followed by what it asserts and says a prose entry leaves the case file outside the task's files. Neither side is wrong alone. Together they put sentences where paths belong, and three symptoms follow from that one mismatch: the add and scope verbs fold the sentences into the task's files and the file index, so a repair is a hand edit under the index lock; the commit-scope invariant breaches by construction for every task that writes a new test file, discovered at sign-off after the commits; and the validator prints the same warning per entry, most of a page of them, each saying the entry names no file and that this becomes a finding at the next major. Making it a finding without a migration strands every plan generated before it, so both halves are owed together: the generator corrected at the source so no new plan is born with prose there, and a one-shot repair that turns a sentence into a path and a sentence where the path is derivable and names the rest for a human.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -112,14 +112,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-13T17:35:44Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -132,7 +132,7 @@
         "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/scripts/panel/_panel_write.py",
         "plugins/audit/scripts/panel/_panel_page.py",
-        "plugins/audit/scripts/governance/close-phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/tests/test__deps.py",
         "plugins/audit/tests/test__manifest_io.py"

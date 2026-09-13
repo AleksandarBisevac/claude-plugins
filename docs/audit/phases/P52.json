@@ -132,7 +132,7 @@
     {
       "id": "P52.3",
       "title": "One stale lock has exactly one taker, and a refused release is not discarded",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: two runs cannot both believe they took over one stale lock, and a release the lock declines is reported to the caller instead of being thrown away. The takeover path reads, judges and then writes, so two waiters that pass the judge together both proceed, and the second silently replaces the first - which is the exact state the lock exists to make impossible, reached through the door built for recovery. The second half is what makes it invisible: the loser's release is discarded, so nothing anywhere says that a holder was displaced. The repair for the first is the one the acquire path already uses, an exclusive create as the test with no window. The repair for the second is that a refused release is a return value somebody reads. And the call site of the earlier attempt at this is pinned by no case, which is why the earlier attempt did not hold.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -161,21 +161,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-13T18:24:47Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P52.4",
       "title": "The recorded identity does not outlive the run it names",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the identity the lock records is one that stops being true when the run stops, and the row it writes records only what happened. The lock records a process identity that outlives the gate it was taken for, so one killed run holds every gate on the machine until the age rule expires - the same stall as the empty claim, reached by a different door, which is why they are separate tasks and not one. The second half is a row that records a distinction the file it lives in says in its own words that it refuses to collapse, and a basis asserting an event that did not happen. A basis is the thing that makes a claim checkable; a basis for an event nobody observed is worse than no basis, because it survives review.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -205,21 +205,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-13T18:24:48Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P52.5",
       "title": "The wait answers re-entry, and the lock's own properties have cases",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: ordinary parallelism does not turn into a refused gate, a caller that already holds a lock gets an answer rather than a wait, and every property this branch claims has a case that fails when the property is taken away. The wait bound was set for a serial machine and the product invites several executors at once, so the bound that protects a shared resource now converts normal concurrency into refusals. Re-entry has no answer at all, which means a command that takes a lock and calls another command that takes the same one deadlocks by design. And the branch has no case in its own suite: both of its defining properties survive mutation, so nothing here would notice any of the repairs regressing. That last part ships first, because a repair to an unguarded branch is a repair that lasts until the next change.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -249,14 +249,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-13T18:24:48Z",
       "completedAt": null,
       "verifiedBy": []
     }
