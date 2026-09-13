@@ -244,7 +244,11 @@ DETAILS_VERSION = 2
 # FOR is `/audit:task scope`, which since F271 accepts a WIDENING of `files` on a
 # task that is already running: without the attempt on the row, a trail cannot
 # tell a scope written before the work from one that grew during it, and every
-# reader would take the second for the first. The spelling is `_evidence_io`'s
+# reader would take the second for the first. It dates a mid-run `tests.gate`
+# change on its own row too, and for the sharper version of that question: the
+# gate is what the NEXT run measures, so a reader of an attempt's evidence needs
+# the row to say whether the gate moved before that attempt or during it.
+# The spelling is `_evidence_io`'s
 # singular `attempt` rather than the manifest's plural `attempts`, so the two
 # records join on one field name instead of on two that differ by a letter.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",

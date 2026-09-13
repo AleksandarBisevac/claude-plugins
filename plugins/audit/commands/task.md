@@ -472,15 +472,30 @@ forbids for adds — for the reason that applies here too.
 `fileIndex` is what the plan gate matches an edit against. An unscoped phase ran with
 its central guard **inert** — not failing, because it had nothing to match.
 
-**Settled work is refused outright, and a started task may only be WIDENED.** A `done`
-or `cancelled` task has a scope its commit was graded against and its sign-off accepted,
-so nothing written here would describe the run that happened — the refusal says that and
-points at a new task. Everything short of that is reachable, but once a task has started
-— `in_progress`, or put back to `pending` still carrying `attempts` — the only change it
-will take is one that **adds**: `files` and `tests.add` may gain entries, never lose them,
-and no other field may move at all. `--risk`, `--description`, `--tests-mode`, `--gate`,
+**Settled work is refused outright, and a started task takes a WIDENING or a new gate.**
+A `done` or `cancelled` task has a scope its commit was graded against and its sign-off
+accepted, so nothing written here would describe the run that happened — the refusal says
+that and points at a new task. Everything short of that is reachable, but once a task has
+started — `in_progress`, or put back to `pending` still carrying `attempts` — the changes
+it will take are the one that **adds** and the one that points **forwards**: `files` and
+`tests.add` may gain entries and never lose them, `tests.gate` may be replaced outright,
+and no other field may move at all. `--risk`, `--description`, `--tests-mode`,
 `--blocked-by` and `--depends-on` all keep the old refusal, which still points at `cancel`
 plus a fresh `add`.
+
+**`--gate` and `--gate-clear` cross that line because a gate is not a scope claim.**
+Every other field above is graded **backwards** against work already recorded, which is
+what makes only growth safe there. `tests.gate` is read **forwards** and nowhere else —
+the gate runner builds the next run's steps from it, an evidence row carries the commands
+that **actually ran**, and the pointer cached on the task holds that run's id, verdict and
+time — so replacing it moves no recorded row and no cached verdict, in either direction.
+Measured live: the field was hand-edited inside a phase shard with a Python one-liner,
+three times, because the verb refused and this file forbids that edit. It is **not**
+narrowed to a started task with no green run recorded: a task holding a green pointer over
+a gate too wide to be worth re-running is the case that costs the most, and that green row
+measured the gate that was there rather than the one being written. The change gets its own
+report line and its **own journal row**, dated by attempt, beside the widening's — one
+summary carries one event, and `audit-journal list` prints summaries alone.
 
 **Append-only is the exact operation that cannot re-judge what already happened**, which
 is why it is the one thing on offer. The invariant check grades a task's **recorded**
@@ -503,9 +518,9 @@ as adding them, and an index that only grew would keep matching edits to a scope
 no longer claims.
 
 Refuses, each naming the reason: a phase id (it takes a task), an id that is not in the
-manifest, a task whose work is settled, a change that is not a widening on a task that has
-started, and a call that would change nothing — a lock taken for no reason is worth saying
-out loud.
+manifest, a task whose work is settled, a change on a task that has started which is
+neither a widening nor a gate, and a call that would change nothing — a lock taken for no
+reason is worth saying out loud.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

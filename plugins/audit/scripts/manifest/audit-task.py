@@ -763,6 +763,45 @@ def _readiness_lines(waiting, tid):
 # narrows it to the changes its reason actually covers.
 _WIDENABLE = ("files", "tests.add")
 
+# ...AND `tests.gate` IS NOT ONE OF THEM, BECAUSE IT IS NOT A SCOPE CLAIM.
+# Every field above is graded BACKWARDS against work already recorded, which is
+# why only growth is safe there. `tests.gate` is read FORWARDS and nowhere else:
+# `run-test-gate` builds the NEXT run's steps from it, and nothing already
+# written is re-read through it -- `_evidence_io.row_for` puts the commands a run
+# ACTUALLY executed on its row, and `_evidence_io.pointer_for` caches identity,
+# verdict and time. So a gate that moves in either direction, `--gate-clear`
+# included, leaves every recorded row and every cached verdict saying exactly
+# what it said before. The hand edit this verb exists to replace was measured
+# live on this very field: a Python one-liner into a phase shard, three separate
+# times, because the verb refused.
+#
+# NOT NARROWED TO "A STARTED TASK WITH NO RECORDED GREEN RUN", and that narrower
+# spelling is refused rather than missed. A task holding a green pointer over a
+# gate too wide to be worth re-running is the case that costs the most -- the
+# next attempt pays for the wide gate, and the green pointer is the reason nobody
+# re-scopes it -- so a permission stopping at the green row would refuse exactly
+# the calls it exists for. A recorded green run is evidence about a measurement
+# that HAPPENED; it says nothing about the one that comes next.
+_FORWARD_ONLY = ("tests.gate",)
+
+
+def _gate_rows(changes):
+    """The rows in `changes` that move a forward-only field."""
+    return [row for row in changes if row["field"] in _FORWARD_ONLY]
+
+
+def _grown_rows(changes):
+    """The rows in `changes` that are NOT forward-only.
+
+    THE COMPLEMENT, not a second list of names. Read as `_WIDENABLE` membership
+    this would silently drop any field a future entry lets through, and the two
+    callers -- the report's `WIDENED` line and the journal's widening row -- would
+    then announce a set smaller than the one the guard accepted. Every row
+    reaching either caller has already passed `_narrowings`, so what is left here
+    is by construction a widening.
+    """
+    return [row for row in changes if row["field"] not in _FORWARD_ONLY]
+
 
 def _started(task):
     """True when this task's scope has already governed something.
@@ -817,15 +856,25 @@ def _narrowings(changes):
     reads the same list forward (`hooks/_config.in_progress_task_map`), so a
     widening only ever ALLOWS an edit that was being refused.
 
+    `_FORWARD_ONLY` IS NOT BLOCKED IN EITHER DIRECTION, and it is a different
+    permission rather than a wider one. Append-only is safe because a backwards
+    grading reads the field; `tests.gate` has no backwards reading at all, so
+    there is no direction to protect -- see its own note beside the constant.
+
     Every other field is refused because none of them has a safe direction:
     `risk` and `tests.mode` REPLACE a value the attempt ran under, `description`
     rewrites the question the outcome answered, and a ref list that GROWS blocks
     a task that has already started -- growth is not harmless there, which is why
     "append-only" is a rule about two named fields and not about the word.
+    `tests.mode` is the near neighbour to keep apart from `tests.gate`: the mode
+    is what an attempt was GRADED under and is quoted back by the review, while
+    the gate is only the list of commands the next run shells out to.
     """
     out = []
     for row in changes:
         was, now = row.get("from") or [], row.get("to") or []
+        if row["field"] in _FORWARD_ONLY:
+            continue
         if row["field"] in _WIDENABLE:
             dropped = [item for item in was if item not in now]
             if dropped:
@@ -854,6 +903,13 @@ def _rescope_refusal(tid, task, blockers):
     changed is the LAST sentence: cancel-and-re-add is no longer the only way
     out, so a refusal that still said it was would send an operator to the
     expensive route for a change the verb now takes.
+
+    THAT SENTENCE IS ALSO WHY `tests.gate` NO LONGER ARRIVES HERE. It grades a
+    change against a RECORD, and a gate is not in any record: an evidence row
+    holds the commands that ran and the pointer holds the run's id, verdict and
+    time, so this head would be claiming a harm that cannot happen. The tail is
+    written to match -- `_narrowings` drops the field before the blocker list is
+    built, so no call reaches this function naming only the gate.
     """
     attempt = _mio.recorded_attempt(task)
     status = (task or {}).get("status")
@@ -879,7 +935,10 @@ def _rescope_refusal(tid, task, blockers):
     return ("%s Refused: %s. WIDENING is the one change that cannot re-judge "
             "what already happened, so `files` and `tests.add` may still GAIN "
             "entries here -- pass the list the task holds plus the new ones. "
-            "For anything else, cancel the task and add the work again."
+            "`--gate` and `--gate-clear` are still taken too, whichever way they "
+            "move, because a gate is what the NEXT run measures and no record "
+            "was graded against it. For anything else, cancel the task and add "
+            "the work again."
             % (head, "; ".join(blockers)))
 
 
@@ -1241,6 +1300,26 @@ def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
                         {"taskId": task_id, "phaseId": phase_id})
 
 
+def _fields_of(rows):
+    """The field names a scope row's summary lists, in the order they moved."""
+    return ", ".join(row["field"] for row in rows)
+
+
+def _scope_details(task_id, phase_id, rows, attempt):
+    """The `details` block of a `task.scope` row, built where a case can read it.
+
+    `_start_details`' reason, one verb over: `_journal_io` drops a key that is not
+    on `DETAILS_KEYS` in SILENCE, so a row read back out of the trail looks the
+    same whether the writer handed over an allow-listed block or one carrying an
+    invented key beside it. Built here, the handover itself is what a case can
+    compare against the allow-list.
+    """
+    details = {"taskId": task_id, "phaseId": phase_id, "changes": rows}
+    if attempt is not None:
+        details["attempt"] = attempt
+    return details
+
+
 def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
     """The `task.scope` row: which fields moved, to what, and under which attempt.
 
@@ -1269,22 +1348,46 @@ def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
     only when `recorded_attempt` says the task records nothing. A key present
     solely on the mid-run rows could not be told from a key nobody wrote, which
     is the trap `_evidence_io` names one file over.
+
+    A GATE CHANGE MID-RUN GETS ITS OWN ROW, in this row's shape and not a second
+    invention: same action, same `details` keys, same `_attempt_phrase` dating,
+    one event word swapped. It is a row of its own because `audit-journal list`
+    prints the summary alone, and one summary can carry one event -- a gate
+    folded into the widening's field list would be announced by the word
+    `WIDENED`, which is exactly the claim a replaced gate does not support. The
+    two rows answer two different questions a reader brings to a started task:
+    which paths the scope gained, and which commands the next attempt will run.
     """
-    fields = ", ".join(row["field"] for row in changes)
     attempt = _mio.recorded_attempt(task)
-    if _started(task):
-        # A DIFFERENT EVENT DESERVES A DIFFERENT SENTENCE. `audit-journal list`
-        # prints the summary and nothing else, so a mid-run widening that read
-        # like every other scope row would need `details` opened to be seen at
-        # all -- and it is the row a reader is looking for.
-        summary = ("%s WIDENED in %s %s: %s"
-                   % (task_id, phase_id, _attempt_phrase(task), fields))
-    else:
-        summary = "%s scoped in %s: %s" % (task_id, phase_id, fields)
-    details = {"taskId": task_id, "phaseId": phase_id, "changes": changes}
-    if attempt is not None:
-        details["attempt"] = attempt
-    return _journal_row(project, config, mpath, "task.scope", summary, details)
+    if not _started(task):
+        return _journal_row(
+            project, config, mpath, "task.scope",
+            "%s scoped in %s: %s"
+            % (task_id, phase_id, _fields_of(changes)),
+            _scope_details(task_id, phase_id, changes, attempt))
+    # A DIFFERENT EVENT DESERVES A DIFFERENT SENTENCE. `audit-journal list`
+    # prints the summary and nothing else, so a mid-run widening that read like
+    # every other scope row would need `details` opened to be seen at all -- and
+    # it is the row a reader is looking for.
+    written = []
+    for event, rows in (("WIDENED", _grown_rows(changes)),
+                        ("GATE CHANGED", _gate_rows(changes))):
+        if not rows:
+            continue
+        written.append(_journal_row(
+            project, config, mpath, "task.scope",
+            "%s %s in %s %s: %s"
+            % (task_id, event, phase_id, _attempt_phrase(task),
+               _fields_of(rows)),
+            _scope_details(task_id, phase_id, rows, attempt)))
+    # THE WORST ANSWER WINS. Every row above records part of one write, so a call
+    # that got one row onto the trail and lost the other has NOT been journaled,
+    # and reporting `journaled: True` would leave the missing half invisible.
+    for res in written:
+        if not res.get("journaled"):
+            return res
+    return written[0] if written else {"journaled": False,
+                                       "journaledWhy": "nothing to record"}
 
 
 def _journal_retarget(project, config, mpath, phase_id, changes):
@@ -2920,8 +3023,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     nothing this verb could write to it would describe the run that happened.
     Everything short of that -- `pending`, `in_progress`, `blocked`, with or
     without attempts on it -- is reachable, but a task that has already STARTED
-    will take only a WIDENING: `files` and `tests.add` may gain entries, never
-    lose them, and no other field may move at all.
+    will take only a WIDENING or a new GATE: `files` and `tests.add` may gain
+    entries and never lose them, `tests.gate` may be replaced outright, and no
+    other field may move at all.
 
     THE OLD RULE WAS NOT WRONG, IT WAS TOO WIDE, and its own reason is what
     narrows it. F190 refused a started task because an `outcome` describes work
@@ -2933,6 +3037,17 @@ def _locked_scope(args, project, config, mpath, tid, out):
     Append-only is therefore the exact operation that leaves every past
     judgement standing -- see `_narrowings` for why no other field has a safe
     direction.
+
+    AND `tests.gate` MOVES FREELY, WHICH IS A SECOND PERMISSION AND NOT A WIDER
+    FIRST ONE. Append-only answers a field that is read BACKWARDS; the gate has
+    no backwards reading to protect. It is the measurement the NEXT run will
+    make: `run-test-gate` builds that run's steps from it, an evidence row
+    carries the commands that actually ran, and the pointer caches the run's id,
+    verdict and time -- so replacing it, `--gate-clear` included, moves no
+    recorded row and no cached verdict. The constant's own note says why this is
+    NOT narrowed to a started task with no green run recorded. What the change
+    does owe the reader is a date, so it gets a report line and a journal row of
+    its own rather than riding the widening's.
 
     AND THE CASE IT EXISTS FOR IS THE ONE IT USED TO REFUSE.
     `reference/orchestrator.md` prescribes `/audit:task scope` for the moment the
@@ -3222,6 +3337,16 @@ def _locked_scope(args, project, config, mpath, tid, out):
             out(_rescope_refusal(tid, node, blockers))
             return E_USAGE
 
+    # WHAT THE TWO SURFACES BELOW ANNOUNCE, split once here rather than twice
+    # apiece. `started` says the task has moved; it does NOT say a widening
+    # happened, and it stopped saying so the moment `tests.gate` became a change
+    # a started task takes. A `WIDENED` line or a `widened: true` derived from
+    # `started` alone would now claim a growth on a call whose only change was a
+    # gate replacement -- which is the one claim the permission does not carry.
+    grown = _grown_rows(changes)
+    gate_changed = started and bool(_gate_rows(changes))
+    widened = started and bool(grown)
+
     # THE WHOLE POINT, and it is a re-derivation rather than an append: the task
     # is losing files as well as gaining them, and an index that only ever grew
     # would keep matching edits to a scope the task no longer claims.
@@ -3277,12 +3402,19 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
                   "filesNotOnDisk": missing, "warnings": warnings,
-                  # The two facts the human report spends a paragraph on, as
-                  # data: WHICH call this was, and the attempt it landed under.
+                  # The facts the human report spends a paragraph on, as data:
+                  # WHICH call this was, and the attempt it landed under.
                   # `attempt` is null when the plan records none, never 0 -- a
                   # machine surface must not be the one place the three answers
                   # of `recorded_attempt` collapse into two.
-                  "widened": started,
+                  #
+                  # TWO FLAGS BECAUSE THERE ARE TWO EVENTS, and they are not
+                  # alternatives: a call may widen, change the gate, or do both.
+                  # `changes` alone cannot answer either question -- it says a
+                  # field moved and never whether the task had already started,
+                  # which is the whole of what makes these two worth naming.
+                  "widened": widened,
+                  "gateChanged": gate_changed,
                   "attempt": _mio.recorded_attempt(node),
                   # F294's basis, on this surface too: `changes` shows the
                   # `files` list that resulted, and nothing in it says a case
@@ -3297,7 +3429,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
-    if started:
+    if widened:
         # THE BASIS FOR AN ACCEPTANCE THAT USED TO BE A REFUSAL (F271). A reader
         # of this transcript has to be able to tell a scope written BEFORE the
         # work from one written DURING it, because the two say different things
@@ -3305,7 +3437,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # is where an operator meets that, not the journal. It names what was
         # gained and when, and then why the verb was willing.
         gained = []
-        for row in changes:
+        for row in grown:
             for item in (row["to"] or []):
                 if item not in (row["from"] or []):
                     gained.append("%s +%s" % (row["field"], item))
@@ -3328,6 +3460,21 @@ def _locked_scope(args, project, config, mpath, tid, out):
                 "take it: nothing was released, so no commit already graded "
                 "against this task's `files` can turn into a breach, and the "
                 "plan gate now matches the paths it was refusing")
+    if gate_changed:
+        # THE BASIS FOR THE OTHER ACCEPTANCE, and it is a different one rather
+        # than the same sentence about a second field. A widening is safe
+        # because it cannot move a past judgement; a gate is safe because it was
+        # never part of one. The report says so where the operator meets it: the
+        # question a mid-run gate change raises is "what happens to the run
+        # already recorded against this task", and the answer is nothing.
+        out("  GATE CHANGED %s -- a gate is not a claim about work already "
+            "graded, it is the measurement the NEXT run will make. The evidence "
+            "row of any run already recorded carries the commands that actually "
+            "ran, and the pointer on this task caches that run's id, verdict "
+            "and time, so neither says anything different after this write. A "
+            "green run already recorded is no reason to leave a wrong gate in "
+            "place -- it measured the gate that was there, not this one."
+            % (_attempt_phrase(node),))
     if (node.get("tests") or {}).get("gate") == [] \
             and any(row["field"] == "tests.gate" for row in changes):
         # `retarget`'s empty-gate line, and the MEANING differs so the sentence

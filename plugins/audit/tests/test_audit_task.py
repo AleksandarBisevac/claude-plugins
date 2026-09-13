@@ -54,7 +54,9 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # widening `scope` refused on the very task it exists for), pb (F275: the owning
 # phase's blockedBy, the readiness term this file's own copy never carried),
 # eb (F285: the brief a shell had already eaten, and the stdin route out),
-# pr (the `start` verb: the promotion the plan gate reads),
+# fg (the `tests.gate` a STARTED task could not change, and the two refusals
+# beside it that must stay), pr (the `start` verb: the promotion the plan gate
+# reads),
 # pd (P43.2, the `done` verb: the close, and the SHA that makes it a record).
 def _cases(check):
     import contextlib
@@ -2628,6 +2630,169 @@ def _cases(check):
               _names_scope and code == 0
               and (_mio.load_manifest(sti_mp).get("fileIndex") or {})
               .get("src/paired.ts") == ["P2.1"])
+
+        # ---- (fg) the gate a STARTED task could not change -------------------
+        # THE COST, measured live: `tests.gate` was hand-edited inside a phase
+        # shard with a Python one-liner, three separate times, because the verb
+        # refused - and that hand edit is the operation this verb exists to
+        # replace.
+        #
+        # THE REFUSAL WAS RIGHT FOR `files` AND WRONG FOR THIS FIELD, which is
+        # why these cases pin the FIELD's reading direction rather than the
+        # call. Everything `_narrowings` blocks is read BACKWARDS against work
+        # already recorded: `_invariants.commit_scope` grades a recorded commit
+        # against the CURRENT `files`, so dropping a path moves a judgement
+        # already made. A gate has no backwards reading at all - `run-test-gate`
+        # builds the NEXT run's steps from it, `_evidence_io.row_for` writes the
+        # commands that ACTUALLY ran onto the evidence row, and
+        # `_evidence_io.pointer_for` caches identity, verdict and time.
+        #
+        # THE FIXTURE CARRIES A GREEN POINTER ON PURPOSE. The narrower spelling
+        # on offer was "a started task with no recorded green run", and this is
+        # the task that spelling would refuse: a green verdict over a gate too
+        # wide to be worth re-running is the one nobody re-scopes, and it is the
+        # one that costs the most. The pointer is asserted UNCHANGED below, which
+        # is the claim about it stated as something a case can read.
+        fgm = base_manifest()
+        fgm["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 2, "maxAttempts": 3,
+            "description": "the running task", "risk": "low", "model": "sonnet",
+            "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": ["src/known.ts"],
+            "testEvidence": {"runId": "run-opaque-1", "status": "passed",
+                             "at": "2026-01-01T00:00:00Z"},
+            "tests": {"mode": "tdd", "expectRedFirst": True,
+                      "add": [], "gate": ["test", "typecheck"]}})
+        fgm["fileIndex"]["src/known.ts"] = ["P2.3"]
+        fg_proj, fg_mp = mk("fg-gate", fgm)
+        os.makedirs(os.path.join(fg_proj, "src"), exist_ok=True)
+        for _fgf in ("known.ts", "added.ts"):
+            with open(os.path.join(fg_proj, "src", _fgf), "w") as _fh:
+                _fh.write("x\n")
+        _fg_green = dict(fgm["phases"][1]["tasks"][1]["testEvidence"])
+        code, txt = run(["scope", "P2.3", "--gate",
+                         "npm test -- src/known.test.ts",
+                         "--project-dir", fg_proj])
+        _fgt = task_in(fg_mp, "P2.3") or {}
+        check("fg1 a STARTED task takes a new `tests.gate`, and the green "
+              "verdict already cached on it is untouched - that pair IS the "
+              "permission: the gate is what the next run will measure, and the "
+              "pointer holds a run's id, verdict and time, so the write moves "
+              "nothing that was already recorded: %r"
+              % ((code, (_fgt.get("tests") or {}).get("gate"),
+                  _fgt.get("testEvidence")),),
+              code == 0
+              and (_fgt.get("tests") or {}).get("gate")
+              == ["npm test -- src/known.test.ts"]
+              and _fgt.get("testEvidence") == _fg_green)
+        check("fg2 ...and the report DATES it and says on what basis, without "
+              "claiming a widening: nothing grew, so a line reading WIDENED "
+              "would name a growth this call did not make - the two acceptances "
+              "have two reasons and the operator meets them here: %r"
+              % (txt[-400:],),
+              "GATE CHANGED during attempt 2, while the task is in_progress"
+              in txt
+              and "the measurement the NEXT run will make" in txt
+              and "WIDENED" not in txt)
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/known.ts,src/added.ts", "--gate",
+                         "npm test -- src/known.test.ts --run",
+                         "--project-dir", fg_proj])
+        _fg_rows = [r for r in (_stmod.read_all(fg_proj) if _stmod else [])
+                    if r.get("action") == "task.scope"]
+        _fg_sum = [r.get("summary") or "" for r in _fg_rows]
+        _fg_flds = [sorted(set(c.get("field") for c
+                               in ((r.get("details") or {}).get("changes")
+                                   or [])))
+                    for r in _fg_rows]
+        check("fg3 the gate change is its OWN journal row, in the widening "
+              "row's shape rather than a second invention - same action, same "
+              "allow-listed details, same attempt dating, one event word "
+              "swapped. A call that both widens and re-gates writes BOTH, "
+              "because `audit-journal list` prints the summary alone and one "
+              "summary carries one event: %r" % (list(zip(_fg_sum, _fg_flds)),),
+              code == 0 and len(_fg_rows) == 3
+              and _fg_flds == [["tests.gate"], ["files"], ["tests.gate"]]
+              and "GATE CHANGED" in _fg_sum[0] and "WIDENED" in _fg_sum[1]
+              and "GATE CHANGED" in _fg_sum[2]
+              and all("during attempt 2" in s for s in _fg_sum)
+              and all((r.get("details") or {}).get("attempt") == 2
+                      for r in _fg_rows))
+        code, txt = run(["scope", "P2.3", "--gate-clear", "--json",
+                         "--project-dir", fg_proj])
+        try:
+            _fgj = json.loads(txt)
+        except ValueError:
+            # sf12's lesson: a refused call prints a sentence, and letting that
+            # reach `json.loads` bare stops the body dead instead of failing one
+            # case.
+            _fgj = {}
+        check("fg4 the machine surface carries the two events APART, and this "
+              "is the call that separates them: `widened` read off 'the task "
+              "has started' alone would say true here, on a call that dropped "
+              "the gate to empty and grew nothing at all: %r"
+              % ((_fgj.get("widened"), _fgj.get("gateChanged"),
+                  _fgj.get("attempt")),),
+              _fgj.get("widened") is False and _fgj.get("gateChanged") is True
+              and _fgj.get("attempt") == 2
+              and (task_in(fg_mp, "P2.3") or {}).get("tests", {})
+              .get("gate") == [])
+        check("fg5 ...which is `--gate-clear` reaching the EMPTY gate on a "
+              "RUNNING task - the direction that is not growth in any reading, "
+              "so a permission written as 'append-only, now with a third field' "
+              "would refuse it: %r" % (_fgj.get("changes"),),
+              any(c.get("field") == "tests.gate" and c.get("to") == []
+                  for c in (_fgj.get("changes") or [])))
+        with open(fg_mp, "rb") as _fh:
+            _fg_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--tests-mode", "regression",
+                         "--project-dir", fg_proj])
+        with open(fg_mp, "rb") as _fh:
+            _fg_after = _fh.read()
+        check("fg6 OVER-FIRE CASE, on the nearest neighbour there is: "
+              "`tests.mode` is still refused on that same started task and "
+              "writes no byte. The mode is what an attempt was GRADED under - "
+              "the gate is only the commands the next run shells out to - so a "
+              "permission widened from the field to its parent object would "
+              "let this through: %r" % (txt[:250],),
+              code == 2 and _fg_after == _fg_before
+              and "already been attempted (2)" in txt
+              and '`tests.mode` would move from "tdd" to "regression"' in txt)
+        code, txt = run(["scope", "P2.3", "--risk", "high",
+                         "--project-dir", fg_proj])
+        with open(fg_mp, "rb") as _fh:
+            _fg_after = _fh.read()
+        check("fg7 OVER-FIRE CASE, the second field that REPLACES a value the "
+              "attempt ran under: `risk` feeds the executor's model floor and "
+              "whether a commit needs confirming, and it is still refused here "
+              "whichever way it moves: %r" % (txt[:250],),
+              code == 2 and _fg_after == _fg_before
+              and '`risk` would move from "low" to "high"' in txt)
+        # THE DOCUMENT JOIN, read out of `commands/task.md` rather than restated
+        # here: that file listed `--gate` among the flags keeping the old
+        # refusal, and a document describing a refusal the verb no longer makes
+        # sends an operator back to the hand edit it forbids. READ, NOT CAUGHT -
+        # a suite that cannot open the document it compares must fail rather
+        # than assert on an empty string.
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "task.md"),
+                  "r", encoding="utf-8") as _fh:
+            _fg_doc = _fh.read()
+        _fg_at = _fg_doc.find("all keep the old refusal")
+        # The flag list is the RUN-UP to that clause, so the window ends where
+        # the clause begins - a window reaching past it would pick up the
+        # paragraph that licenses `--gate` and read the removal as still done.
+        _fg_sent = _fg_doc[max(0, _fg_at - 260):_fg_at] if _fg_at >= 0 else ""
+        check("fg8 `commands/task.md` no longer counts `--gate` among the flags "
+              "that keep the old refusal, and says which reading licenses it - "
+              "the verb and its own document have to describe one refusal, or "
+              "the reader is sent back to the hand edit this file forbids: %r"
+              % (_fg_sent[-200:],),
+              _fg_at >= 0 and "`--gate`" not in _fg_sent
+              and "`--tests-mode`" in _fg_sent
+              and "`--risk`" in _fg_sent
+              and "`tests.gate` may be replaced outright" in _fg_doc
+              and "narrowed to a started task with no green run recorded"
+              in _fg_doc)
 
         # ---- (pb) F275: readiness ignored the owning phase's blockedBy -------
         # `reference/orchestrator.md`'s readiness rule has FOUR terms and the
