@@ -1,0 +1,29 @@
+{
+  "id": "P51",
+  "title": "The small open ones",
+  "status": "pending",
+  "description": "What is left in the register and owed before the release: the example manifest names commits git does not have, the evidence helper nothing calls, the retired loader edge described as current, the shell-write gate resolving an unexpanded variable, the coverage basis carrying a home directory into a committed row, and three small frictions.",
+  "desiredOutcome": "Every remaining open fault outside the larger phases is either fixed with its allow case proven, or recorded as deliberately deferred with the reason and the trigger that would reopen it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

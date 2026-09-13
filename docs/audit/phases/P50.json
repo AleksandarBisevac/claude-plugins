@@ -1,0 +1,29 @@
+{
+  "id": "P50",
+  "title": "First contact, the orchestrator's weight, and the 2.x migration",
+  "status": "pending",
+  "description": "The packaging split was refused on a measurement, so the onboarding cost is repaired where it is paid: a one-command path to the smallest usable plan, a README that leads with what the baseline cannot do, a worked example that is not Node, orchestrator.md losing every rule a script now enforces, comments citing constraints rather than register ids, and a 2.x plan that opens under 3.0 with no manual step.",
+  "desiredOutcome": "A bare repository reaches a manifest that makes the silent hooks speak in one command; the pitch is on the first screen; a second worked example exists and its gates are derived rather than copied; deleting any remaining section of the orchestrator reference turns a named check red; no comment cites a private register id; and a 2.x manifest fixture opens untouched with the one-repo boundary written down.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

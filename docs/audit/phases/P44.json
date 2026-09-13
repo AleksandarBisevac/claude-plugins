@@ -29,12 +29,18 @@
     {
       "id": "P44.1",
       "title": "One file, one verdict, whichever writer wrote it",
-      "status": "pending",
+      "status": "done",
       "description": "`guard-secrets-read` runs two write rules and the stricter one ignores the plan tier entirely, while its message blames the plan-first gate. A `.ts` file written through `python3 -c` or a heredoc is refused even when an in_progress task declares it, and even with the gate turned off - while the same file written by `echo >`, `sed -i` or `tee` is allowed. The shell arm names the path, the cause, the remedy and the exempt classes; the interpreter arm names none of them. Parity was built deliberately for the shell arm and never extended, and the plugin's own help publishes the claim that the halves grade identically.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
         "plugins/audit/tests/test_guard_secrets_read.py",
-        "plugins/audit/scripts/config/_help.py"
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "tools/orchestrator-state.py"
       ],
       "tests": {
         "mode": "regression",
@@ -58,25 +64,29 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7c10847",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "All three write surfaces grade one file one way; every secret read stays ungraded."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T09:56:34Z",
+      "completedAt": "2026-09-13T09:56:34Z",
+      "verifiedBy": [
+        "test_guard_secrets_read.py pg1",
+        "we1-we12"
+      ]
     },
     {
       "id": "P44.2",
       "title": "The advisory notice speaks once per session, then counts",
-      "status": "pending",
+      "status": "done",
       "description": "The advisory plan-gate notice repeats its whole explanatory paragraph once per FILE, asks to be relayed \"verbatim before continuing\" after the write has already landed, and calls the twelfth uncovered file the second. Speak the paragraph once per session; every later file adds one line naming it and the running total, which is already computed in the session slot; and drop \"before continuing\" at a tier where there is nothing left to continue. The reporter's stronger proposal - stop entirely after N uncovered edits - silences the warn tier, which two field reports praised, and is refused.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
-        "plugins/audit/tests/test_require_plan.py"
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "regression",
@@ -100,21 +110,24 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "24e5023",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "The paragraph once per session; every later file one line with the real total."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T10:02:47Z",
+      "completedAt": "2026-09-13T10:02:48Z",
+      "verifiedBy": [
+        "test_require_plan.py i6",
+        "i6a-i6i"
+      ]
     },
     {
       "id": "P44.3",
       "title": "The can-this-test-fail question reaches an inherited test",
-      "status": "pending",
+      "status": "done",
       "description": "The reviewer now asks whether a test it was handed can fail, but its subject is the tests the EXECUTOR added, answered from the red-first word. All three field instances were INHERITED tests - a test that would still pass if the behaviour it names were deleted - and the brief routes those to a channel that no document and no script reads. Bound the question to the tests the task's own gate command selects, so the per-task review stays as cheap as it was measured to be; running it over the codebase would spend exactly that.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -143,21 +156,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d889706",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Bounded to the tests the task's own gate selects; the finding goes where something reads it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T10:08:44Z",
+      "completedAt": "2026-09-13T10:08:45Z",
+      "verifiedBy": [
+        "test__refs.py ih1-ih10"
+      ]
     },
     {
       "id": "P44.4",
       "title": "The sign-off order is met before a phase runs, not after",
-      "status": "pending",
+      "status": "done",
       "description": "Review then fix then gate once IS the documented sign-off order and has been for releases, and neither of two operators ever reached it - both ran the gate twice and one proposed the order as new. So nothing is missing from the procedure; what is missing is the REASON beside it and a surface an operator meets before running a phase rather than at sign-off. The paragraph that cost a hundred and seventy thousand tokens stays exactly where it is.",
       "files": [
         "plugins/audit/commands/phase.md",
@@ -186,16 +201,18 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0796ddd",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "The order is met at the decision point, and carries why it is the order."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T10:14:10Z",
+      "completedAt": "2026-09-13T10:17:05Z",
+      "verifiedBy": [
+        "test__refs.py so1-so6"
+      ]
     }
   ]
 }

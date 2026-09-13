@@ -1,0 +1,294 @@
+{
+  "id": "P46",
+  "title": "A gate costs what it measures, and no more",
+  "status": "pending",
+  "description": "Field report 11 and 12's remaining gate costs: a gate cannot be corrected once a task starts, a run is repeated on a tree already measured, a signal-killed run is handed back with no retry, a push is a suite the plugin cannot see, and a refusal is right and a screen long.",
+  "desiredOutcome": "A started task's gate can be corrected and the change is journaled; a run whose tree and command are already recorded reuses that verdict rather than re-measuring; a signal death is retried once at reduced parallelism and says so on the row; the doctor names a pre-push hook that runs the suite; and the backtick refusal keeps every fact in two lines.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P46.1",
+      "title": "A started task's gate can be corrected",
+      "status": "done",
+      "description": "`scope --gate` stops being refused on a started task. The refusal's reasoning is that a rescope would make a recorded outcome describe something else - true for `files`, because a commit is graded against the current list, and false for a gate: every evidence row carries the commands it actually ran, and the cached pointer holds identity, verdict and time. Changing the gate changes what the NEXT run measures and nothing about any row that exists. An operator hand-edited the shard three times because of this. Accept it, journal it as its own row in the WIDENED shape, and keep refusing risk, tests.mode and description, which do replace the question an attempt answered.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/governance/_journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: scope --gate on a started task is accepted and journaled; --risk on the same task is still refused"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ff69b91",
+      "outcome": {
+        "technical": null,
+        "descriptive": "A gate is the next measurement, not a claim about work already graded."
+      },
+      "startedAt": "2026-09-13T16:00:08Z",
+      "completedAt": "2026-09-13T16:00:08Z",
+      "verifiedBy": [
+        "test_audit_task.py fg1-fg8"
+      ]
+    },
+    {
+      "id": "P46.2",
+      "title": "A manifest write says which root it resolved",
+      "status": "done",
+      "description": "Every manifest-writing verb says which root it resolved and why. From a linked worktree with the project directory naming the other checkout, a scope call wrote the OTHER checkout's shard and said so only as \"not on disk\" - while the phase's branch, its files and the executor's edits are in the worktree. The plan gate then reads the in_progress task's files from whichever manifest it finds, so a widening written to the wrong tree does not unblock the edit it was made for, and the shard sign-off commits is the one that never changed. The words are already in the table the verb prints.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a write from a linked worktree whose project dir names another checkout names the root it wrote and the tree it did not"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a5e0e0b",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-13T16:46:46Z",
+      "completedAt": "2026-09-13T16:46:46Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P46.3",
+      "title": "A tree already measured is not measured again",
+      "status": "in_progress",
+      "description": "A gate run whose tree and resolved command are already recorded reuses that verdict instead of re-measuring. Twelve phase-gate runs over three phases took a hundred and two minutes; three were strictly necessary. The plugin has the information and does not ask: the one ledger read in the whole runner is the reconcile path, which runs no gate at all. But the identity the report proposes is NOT sound - the dirty digest records which paths were dirty and never their contents, so a cache on it skips a re-run after a real change to any undeclared file. A sound identity is a content digest over the gate's actual subject, and building it is most of this task. The resolved command IS already on the row, verbatim; compare the gate ENTRY rather than the executed string, because an operator's shell prelude differs.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__tree_stamp.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a second run on an identical subject reuses the recorded verdict and names the run it reused; a change to an undeclared source file re-measures"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-13T16:50:50Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P46.4",
+      "title": "A signal death is retried once, and says so",
+      "status": "in_progress",
+      "description": "A gate killed by a signal is retried once at reduced parallelism and says so on the row and in the output. The classification is already right - a signal death with no end-of-run report is an infrastructure failure, not a red suite, and spends no retry - and then it stops, and the operator re-runs by hand, which cost four runs in one session. The cause is knowable: each worker starts its own in-memory database, so the ceiling is memory per worker, and every run at three workers passed while every run at four or at the default crashed. The second attempt is a different measurement and must be legible as one. What must not move: a real failure excused as infrastructure is this register's F323, and the case that proves a genuine red stays red is the one that ships first.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a signal death retries once at reduced parallelism and the row names both attempts; a genuine red is never retried"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-13T16:50:50Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P46.5",
+      "title": "The gate summary says what each step cost, and stops summing what is not additive",
+      "status": "done",
+      "description": "The gate's summary prints what each step COST and stops summing counts that are not additive. A project ran the same suite twice - a plain runner invocation and the same runner with coverage - and the gate reported the total, which both the operator and the reviewer read as thoroughness. It was two times the suite. The number that should have exposed the duplication concealed it, because a bigger count reads as more assurance. Per-step duration is already on the row and is never printed; the total is printed and hides the doubling. And the counter-evidence decides the priority: on a later sign-off the plain step passed while coverage came back red on the identical checks, a flaky race - so the duplicated step added no assurance, doubled the exposure to nondeterminism, and cost a re-run.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: each step's wall clock is printed beside its count; two steps reporting the same count over the same file set are printed as parts and named as one suite, never summed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a5e0e0b",
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-13T16:41:41Z",
+      "completedAt": "2026-09-13T16:46:39Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P46.6",
+      "title": "A settled plan reads as settled",
+      "status": "pending",
+      "description": "The headline fraction stops counting cancelled work in its denominator. A reader resolves a fraction before reading the note after it: a done-count over a total says some number of things are outstanding, and only the parenthetical says that some of them are settled. Cancelled is TERMINAL - closed deliberately, with a reason and a journal row - so counting it against done puts settled work where unstarted work goes, which is the one distinction the headline exists to make. Cancelled must stay visible; the repair is where the number sits, never dropping it. Every surface that renders this arithmetic moves together, because two surfaces disagreeing about what a fraction means is worse than the confusion it replaces.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__status_facts.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_status.py: a plan whose only unfinished tasks are cancelled reads as complete; an open task still shows in the gap"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

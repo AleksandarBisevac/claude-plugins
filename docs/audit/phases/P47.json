@@ -1,0 +1,29 @@
+{
+  "id": "P47",
+  "title": "The agents' loop, the parts still in a handoff note",
+  "status": "pending",
+  "description": "The field-report items already agreed and not yet built: the executor's gate is a resolved config decision, init writes paths rather than prose into tests.add, one JSON encoding, review findings become a task by procedure, the CLI journal writer is keyed by session, and attribution follows a continued executor.",
+  "desiredOutcome": "Every rule the last two field reports agreed on is a mechanism rather than a sentence in a handoff note: the executor's gate is resolved at spawn from config, a generated tests.add entry names a path, one encoder writes every manifest, a review finding becomes a task before any fix executor, one session writes one journal file, and a continued executor's spend lands on the task that caused it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

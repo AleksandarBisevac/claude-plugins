@@ -1,0 +1,29 @@
+{
+  "id": "P48",
+  "title": "The plugin reads its own trail back",
+  "status": "pending",
+  "description": "The largest lever in the 3.0 analysis and the least defined, taken whole by the operator: an agent that needs one old task reads the whole plan; the doctor reports no pattern; init proposes gates from the tree alone; and a retry brief carries only the last attempt. Each of the four states its own done before it is started, because 'the plugin learns' is not a verifiable sentence.",
+  "desiredOutcome": "One query verb answers for a named task, bug or phase without loading the whole manifest, and the bytes it reads are the measurement; the doctor names a pattern this repo's own trail actually holds, and says nothing on a repo with no history; init's proposed gates differ measurably between a repo with history and the same repo without it; and a third attempt's brief carries what the two before it cost.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

@@ -1,0 +1,124 @@
+{
+  "id": "P45",
+  "title": "The task gate stops being the phase gate in disguise",
+  "status": "pending",
+  "description": "The highest-cost item two field reports agree on, and the only one from report 11 that never got a task. A generated plan gives every task the phase's whole gate, so nine tasks meant sixty-three minutes of full-suite runs to prove what one sign-off run proves; and the source-to-test derivation the documents prefer resolves, on a real codebase, to more than half the suite because a shared module is imported by everything. Nothing measures what a derived gate actually selects, and the rule the orchestrator would need is in a document it does not read.",
+  "desiredOutcome": "A task's gate is derived from the task's own test files and reports which of the three defaults it took; a generated task whose gate equals its phase's raises a warning naming it; the size a gate actually selects is visible as a ratio beside the count it ran, where the tax is paid; and the rule - the task gate measures the task's own tests, the full suite belongs to sign-off - is in the document the orchestrator reads, carrying what enforces it and what does not.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P45.1",
+      "title": "A task's gate is derived from its own tests, and says which default it took",
+      "status": "done",
+      "description": "`audit-task.py add` derives a task's gate from its own `tests.add` paths, falling back to the siblings' path-scoped spelling, then to the phase's - and reports which of the three it took. The input is already parsed at the write site and thrown away: the line after the one that copies the phase's gate parses the test paths the derivation needs. The template and the command document state the derived default and the one sentence about gate size that the init document already has. Red-first the other way: a phase whose siblings all carry the wide entry must still yield the wide entry, reported as such.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a task with tests.add paths gets a gate scoped to them and reports the basis; a phase whose siblings carry only the wide entry still yields it, reported as such"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "72a9b93",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Derived from the task's own tests, reporting which of three defaults it took."
+      },
+      "startedAt": "2026-09-13T10:56:38Z",
+      "completedAt": "2026-09-13T10:57:40Z",
+      "verifiedBy": [
+        "test_audit_task.py tg1-tg12"
+      ]
+    },
+    {
+      "id": "P45.2",
+      "title": "The derivation prefers test paths, and a wide task gate is a warning",
+      "status": "done",
+      "description": "The init document's derivation arms are inverted - test paths first, the source-to-test mode second and only where the runner's related set is bounded - and a validator warns when a generated task's gate equals its phase's. The preference measured going wrong is exactly the mechanism: the import graph is what makes a shared module related to everything, and the preference is stated with no bound on the result. Nothing checks the outcome today: the validator has no line about gates at all, so a generated plan starting every task at six minutes raises nothing.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test_validate_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_validate_manifest.py: a task whose gate equals its phase's raises a warning naming the task; a narrowed gate raises none"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "72a9b93",
+      "outcome": {
+        "technical": null,
+        "descriptive": "Arms inverted with a stated bound; a wide task gate is a named warning."
+      },
+      "startedAt": "2026-09-13T10:56:38Z",
+      "completedAt": "2026-09-13T10:57:41Z",
+      "verifiedBy": [
+        "test__manifest_phases.py tg1-tg7"
+      ]
+    }
+  ]
+}

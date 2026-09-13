@@ -1,0 +1,29 @@
+{
+  "id": "P49",
+  "title": "The plugin offers its own bar, and measures value not only cost",
+  "status": "pending",
+  "description": "The operator's answer to Part 6's fifth question, and P4/P5/P8: the checks this repo runs on itself are offered as optional gate entries; a number in the panel is about what the gate caught rather than what it spent; and the control surface the model rests on can say whether anyone opened it.",
+  "desiredOutcome": "The bar is available as opt-in gate entries that change nothing for a plan that does not ask for them, and their instruction carries the refusal path a host classifier can trigger; one derived row says what a red gate caught before a commit; and the doctor can say whether the panel was ever opened, saying never rather than staying silent.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
