@@ -1680,6 +1680,11 @@ NOT_AN_EXEMPTION = {
                     "when one is tracked - subjects of a check, not excuses from it",
     "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "
                             "each with the comment that explains it in the file",
+    "OWED_REASON": "what the tests.add migration prints about an entry it will "
+                   "NOT rewrite, one sentence per reason it refused - the "
+                   "opposite of an exemption: a row is why a repair was declined "
+                   "and what the human has to decide, so a verdict with no row "
+                   "would say less rather than escape a rule",
     "_JOURNAL_WARNING_CLASSES": "the repair text the doctor prints for each class "
                                 "of journal warning, and the opposite of an "
                                 "exemption: a class with no row gets a POINTER and "

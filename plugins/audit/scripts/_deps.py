@@ -587,6 +587,13 @@ LAYERS = (
      # truth afterwards - by nulling what is unreachable and journaling what was
      # lost, never by guessing a substitute.
      "repair-commits",
+     # `repair-tests-add` is the migration behind the `tests.add` shape rule: the
+     # validator warns that an entry naming no file becomes a refusal at the next
+     # major, and an announcement with no way through strands every plan written
+     # before it. An entry point rather than a rule because it WRITES, and it
+     # reaches `_manifest_rules` (L2) for both halves it needs - the shape rule it
+     # is repairing to, and the validation that has to pass before it saves.
+     "repair-tests-add",
      # `verify-invariants` is the door onto `_invariants` (L4): one phase, or
      # every phase that has started. A command for the reason `check-ado-item` is
      # one - the caller is orchestrator PROSE, which reaches Python only through

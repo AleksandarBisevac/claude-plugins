@@ -701,6 +701,7 @@ def _cases(check):
                                   "scripts/manifest/migrate-manifest.py",
                                   "scripts/manifest/read-ado-links.py",
                                   "scripts/manifest/repair-commits.py",
+                                  "scripts/manifest/repair-tests-add.py",
                                   "scripts/manifest/resolve-ado-parent.py",
                                   "scripts/manifest/resolve-ado-tracked.py",
                                   "scripts/manifest/resolve-branch.py",
@@ -830,6 +831,7 @@ def _cases(check):
                                      "plugins/audit/scripts/manifest/migrate-manifest.py",
                                      "plugins/audit/scripts/manifest/read-ado-links.py",
                                      "plugins/audit/scripts/manifest/repair-commits.py",
+                                     "plugins/audit/scripts/manifest/repair-tests-add.py",
           "plugins/audit/scripts/manifest/resolve-ado-parent.py",
                                      "plugins/audit/scripts/manifest/resolve-ado-tracked.py",
                                      "plugins/audit/scripts/manifest/resolve-branch.py",
@@ -2244,6 +2246,7 @@ def _cases(check):
     # returns a value, so nothing fails until a lock is contended.
     _lk_callers = ("../scripts/manifest/_proposals.py",
                    "../scripts/manifest/repair-commits.py",
+                   "../scripts/manifest/repair-tests-add.py",
                    "../scripts/panel/_panel_write.py")
     _lk_here = os.path.dirname(os.path.abspath(__file__))
     _lk_bad = {}
@@ -2261,7 +2264,7 @@ def _cases(check):
     check("lk4 no caller reads an acquire result as anything but the integer it "
           "is - the release and the refusal both hang off that value, and a "
           "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
-          not _lk_bad and len(_lk_callers) == 3)
+          not _lk_bad and len(_lk_callers) == 4)
 
 
 def _selftest():

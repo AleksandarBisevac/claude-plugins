@@ -140,6 +140,18 @@ _walk_phases = _phases._walk_phases
 # re-expressing `mode == "tdd" and status not in TERMINAL` next to F254's copy of
 # the same filter -- and the two had already drifted on `expectRedFirst`.
 tests_add_path = _phases.tests_add_path
+# The other half of the same rule: `tests_add_graded` is the filter the walk and
+# the one-shot migration must share, and `tests_add_repair` is what that migration
+# may do to an entry written before the shape was required. Re-exported for the
+# reason the line above is - a caller reaches the rules through this module, and
+# `repair-tests-add.py` needs `validate` from here in the same breath.
+tests_add_graded = _phases.tests_add_graded
+tests_add_mentions = _phases.tests_add_mentions
+tests_add_repair = _phases.tests_add_repair
+REPAIR_NAMED = _phases.REPAIR_NAMED
+REPAIR_REWRITE = _phases.REPAIR_REWRITE
+REPAIR_UNNAMED = _phases.REPAIR_UNNAMED
+REPAIR_AMBIGUOUS = _phases.REPAIR_AMBIGUOUS
 
 _check_identity_map = _ado._check_identity_map
 check_ado_meta = _ado.check_ado_meta

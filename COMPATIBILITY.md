@@ -84,6 +84,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   permanent with no remedy. The repair for a live one is to name the file:
   `/audit:task scope <id> --tests-add "<path>: …"`.
 
+  **And a plan written before the rule has a migration, which is what makes the
+  announcement fair.** `plugins/audit/scripts/manifest/repair-tests-add.py <manifest>`
+  reports every entry the warning reaches and, with `--apply`, rewrites the ones that
+  already spell their path inside the sentence — putting that path in front and keeping
+  the sentence whole. It will not guess one for an entry that names no file, or names
+  several; those are listed with the task that holds them, because a wrong path in
+  `files` is worse than a sentence. Announcing a refusal with no way through would
+  strand every plan generated before it, which is the half of *announce, then enforce*
+  that is easy to leave out.
+
   **It reached this plugin's own workflow, and that was found by review rather than
   by the corpus.** Three prescriptions produced entries the rule warns about:
   `commands/bug.md`'s materialized fix task, `commands/init.md`'s finding-to-task

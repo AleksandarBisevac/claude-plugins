@@ -20,16 +20,19 @@ odd one - it is called by `validate()` directly rather than from inside the
 loop, because two of its three questions are about the REGISTRY (`meta.areas`)
 rather than about any one phase.
 
-`tests_add_path` lives here for a DIFFERENT reason, and it is the only name in
-this module a caller outside validation reads: `audit-task.py` asks it which
-path a `tests.add` entry puts into a task's `files`, and the walk asks it to
+The `tests_add_*` group lives here for a DIFFERENT reason, and it is what a
+caller outside validation reads: `audit-task.py` asks `tests_add_path` which
+path a `tests.add` entry puts into a task's `files`, the walk asks it to
 require one of a `tdd` task that can still be committed against (F294, beside
-F254's rule about the same field). It is here because those two rules are what
-a reader has to compare - the first draft put the second one in
-`_manifest_rules` with a walk of its own, which was a third pass over the tasks
-and a second copy of `mode == "tdd" and status not in TERMINAL` that had
-already drifted from F254's on `expectRedFirst`. `_manifest_rules` re-exports
-the name, so no call site knows it moved.
+F254's rule about the same field), and `repair-tests-add.py` asks
+`tests_add_repair` what a one-shot migration may do to an entry written before
+that rule existed. They are here because those rules are what a reader has to
+compare - the first draft put the walk's one in `_manifest_rules` with a walk
+of its own, which was a third pass over the tasks and a second copy of
+`mode == "tdd" and status not in TERMINAL` that had already drifted from
+F254's on `expectRedFirst`. That filter is now `tests_add_graded`, so the walk
+and the migration cannot disagree about which entries the rule reaches.
+`_manifest_rules` re-exports the group, so no call site knows where it sits.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_phases.py` - see
@@ -297,6 +300,109 @@ def tests_add_path(entry):
     return None
 
 
+def tests_add_graded(task):
+    """Whether the `"<path>: <what it asserts>"` rule reaches this task's entries.
+
+    ONE FILTER, TWO CALLERS. The walk below warns about the entries this
+    accepts and `repair-tests-add.py` offers to rewrite exactly those, so a
+    second expression of it would be a migration repairing entries the
+    validator never complained about, or leaving ones it did. The neighbouring
+    rule about the same field was born as a second copy of this same filter and
+    had drifted before anybody read the two together, which is the argument for
+    naming it rather than repeating it.
+
+    TERMINAL IS EXEMPT, which is what the migration inherits for free: a
+    settled task's `tests.add` is a record of work already judged, and rewriting
+    one would edit the description of a commit that has already been graded.
+    """
+    if not isinstance(task, dict):
+        return False
+    tests = task.get("tests")
+    if not isinstance(tests, dict) or tests.get("mode") != "tdd":
+        return False
+    return task.get("status") not in TERMINAL
+
+
+# --- what a one-shot repair may do to an entry -----------------------------------
+# The rule above announces a refusal that arrives at a major, and an announcement
+# with no migration behind it strands every plan written before it. So this is the
+# other half: what can be repaired mechanically, and what has to be handed back.
+#
+# NOTHING HERE INVENTS A PATH. The only path a repair may write is one the entry
+# ITSELF already spells - moving an author's own token to the front is reading the
+# entry, while deriving one from the task's `files` or from a naming convention
+# would be writing a path nobody typed into the field that grants commit scope. A
+# sentence is visibly not a path; a wrong path is not, which is why the wrong one
+# is the worse of the two to leave behind.
+#
+# THE MENTION BOUND IS STRICTER THAN THE LEAD BOUND, and the asymmetry is the
+# whole design. The lead position is a DECLARATION, so a filename is enough there;
+# a token inside a sentence is a MENTION, and ordinary prose is full of tokens that
+# pass a filename test - `e.g.` is a dot followed by a letter and would read as an
+# extension. Requiring a separator refuses those, and refuses `Node.js` with them.
+# What it costs is a repo-root dotfile named mid-sentence, which is then handed to
+# a human rather than guessed at - the direction this errs in on purpose.
+_MENTION_WRAP = "`'\"()[]{}<>,.;:!?"
+
+# The verdicts, as words rather than as a tuple position, because three of the four
+# mean "leave this entry alone" for three different reasons and a caller that
+# collapsed them would print one remedy for all three.
+REPAIR_NAMED = "named"            # already opens with a path; nothing to do
+REPAIR_REWRITE = "rewrite"        # the entry names one path; move it to the front
+REPAIR_UNNAMED = "unnamed"        # nothing in it parses as a path
+REPAIR_AMBIGUOUS = "ambiguous"    # it names more than one, so which is the case?
+
+
+def tests_add_mentions(entry):
+    """Every DISTINCT path an entry MENTIONS, in the order it mentions them.
+
+    A token counts when it carries a separator AND would be the whole answer if
+    it stood at the lead - `tests_add_path` decides the filename half, so this
+    cannot disagree with the rule it is repairing about what a path looks like.
+    Wrapping punctuation is stripped because prose quotes, brackets and ends
+    sentences; a token carrying a line suffix (`a/b.py:12`) is NOT the whole
+    answer and falls out here, left for a human rather than truncated.
+    """
+    if not isinstance(entry, str):
+        return []
+    found = []
+    for token in entry.split():
+        bare = token.strip(_MENTION_WRAP)
+        if "/" not in bare and "\\" not in bare:
+            continue
+        if tests_add_path(bare) != bare:
+            continue
+        if bare not in found:
+            found.append(bare)
+    return found
+
+
+def tests_add_repair(entry):
+    """`(verdict, replacement)` - what a one-shot repair may do to this entry.
+
+    THE REWRITE ONLY EVER PREPENDS. The entry arrives back as the tail of its
+    own replacement, so no claim its author made is lost and the result can be
+    trusted by looking at it rather than by re-reading the sentence. That is
+    also what makes the rewrite safe on a task that has already run: what
+    append-only protects is a backwards grading, `_invariants.commit_scope`
+    grades against `files`, and a prefix can only ADD to the paths an entry
+    names.
+
+    AMBIGUITY IS A REFUSAL AND NOT A RANKING. An entry naming a test file and
+    the source file it drives names both in prose, and picking the first would
+    be a convention this field has never had. The author knows which one holds
+    the case; this does not.
+    """
+    if tests_add_path(entry) is not None:
+        return (REPAIR_NAMED, None)
+    mentioned = tests_add_mentions(entry)
+    if not mentioned:
+        return (REPAIR_UNNAMED, None)
+    if len(mentioned) > 1:
+        return (REPAIR_AMBIGUOUS, None)
+    return (REPAIR_REWRITE, "%s: %s" % (mentioned[0], entry.strip()))
+
+
 # --- the walk --------------------------------------------------------------------
 def _walk_phases(phases):
     """One pass over every phase and every task: (index, findings, warnings).
@@ -460,8 +566,7 @@ def _walk_phases(phases):
             # for a field the schema documents as prose - so the rule warns, its
             # text names the release the refusal arrives in, and 3.0.0 is where it
             # becomes a finding. The order is announce, then enforce.
-            if isinstance(tests, dict) and tests.get("mode") == "tdd" \
-                    and task.get("status") not in TERMINAL:
+            if tests_add_graded(task):
                 add_val = tests.get("add")
                 if add_val is not None and not isinstance(add_val, list):
                     # A FINDING, and a TYPE one, which is its neighbours' shape
@@ -480,7 +585,11 @@ def _walk_phases(phases):
                              "commit-scope will refuse the case this task says "
                              "it will create. Write it as \"<path>: <what it "
                              "asserts>\" - THIS BECOMES A FINDING AT 3.0.0 "
-                             "(COMPATIBILITY.md -> Validation stays additive): "
+                             "(COMPATIBILITY.md -> Validation stays additive). "
+                             "For a plan written before the rule, "
+                             "`scripts/manifest/repair-tests-add.py <manifest>` "
+                             "reports every entry like this one and rewrites "
+                             "the ones that already spell their path: "
                              "%r" % (twhere, entry))
             # THE DERIVED GATE, READ BACK. `/audit:init` step 5.3 narrows a
             # task's `tests.gate` to the paths that task names and reaches the

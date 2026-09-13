@@ -506,6 +506,161 @@ def _cases(check):
           _tg_vf == []
           and len([x for x in _tg_vw if "testGate verbatim" in x]) == 1)
 
+    # --- tr: what a ONE-SHOT REPAIR may do to an entry written before the rule --
+    # The warning above announces a refusal that arrives at a major, and an
+    # announcement with no migration behind it strands every plan written before
+    # it. `repair-tests-add.py` is that migration and this is the derivation under
+    # it: the ONLY path it may write is one the entry itself already spells, so
+    # the cases below are mostly about what it REFUSES to read as a path.
+    _tr_graded = [
+        # (task, graded?) - the filter the walk and the migration share, so a
+        # repair cannot be offered for an entry nothing warned about.
+        (_task("P0.1", status="pending",
+               tests={"mode": "tdd", "add": ["x"]}), True),
+        (_task("P0.2", status="in_progress",
+               tests={"mode": "tdd", "add": ["x"]}), True),
+        (_task("P0.3", status="blocked",
+               tests={"mode": "tdd", "add": ["x"]}), True),
+        (_task("P0.4", status="done",
+               tests={"mode": "tdd", "add": ["x"]}), False),
+        (_task("P0.5", status="cancelled",
+               tests={"mode": "tdd", "add": ["x"]}), False),
+        (_task("P0.6", status="pending",
+               tests={"mode": "regression", "add": ["x"]}), False),
+        (_task("P0.7", status="pending",
+               tests={"mode": "gate-only", "add": ["x"]}), False),
+        (_task("P0.8", status="pending"), False),
+        (_task("P0.9", status="pending", tests="nope"), False),
+        ("not a task", False),
+    ]
+    _tr_filter = [(t.get("id") if isinstance(t, dict) else t, want,
+                   M.tests_add_graded(t))
+                  for t, want in _tr_graded if M.tests_add_graded(t) != want]
+    check("tr1 `tests_add_graded` is the ONE filter the walk's warning and the "
+          "migration both read: tdd and not settled, in both directions - a "
+          "second expression of it would offer to repair entries nothing "
+          "complained about, or skip ones warned about every run, and the "
+          "neighbouring rule about this same field was born as exactly such a "
+          "copy and had drifted before anyone read the two together: %r"
+          % (_tr_filter,), _tr_filter == [])
+    _tr_walked = M._walk_phases([_phase(status="in_progress", tasks=[
+        t for t, _want in _tr_graded if isinstance(t, dict)])])[2]
+    _tr_warned = sorted(set(
+        _wg.locator(x)[1] for x in _tr_walked
+        if "tests.add entry names no file" in x and _wg.locator(x)))
+    check("tr2 ...and the WALK really reads it: the tasks warned about over one "
+          "phase are exactly the ones the filter accepts, so the migration's "
+          "offer and the validator's complaint cannot come apart: %r"
+          % (_tr_warned,),
+          _tr_warned == sorted(t["id"] for t, want in _tr_graded
+                               if want and isinstance(t, dict)))
+    _tr_mentions = [
+        ("a case in tests/cart.spec.ts for stacked discounts",
+         ["tests/cart.spec.ts"]),
+        ("covers `plugins/audit/tests/test__refs.py` end to end",
+         ["plugins/audit/tests/test__refs.py"]),
+        ("see (src/cart/total.ts), which rounds half-up",
+         ["src/cart/total.ts"]),
+        ("tests/a.spec.ts asserts what src/a.ts computes",
+         ["tests/a.spec.ts", "src/a.ts"]),
+        ("tests/a.spec.ts twice: tests/a.spec.ts again",
+         ["tests/a.spec.ts"]),
+    ]
+    _tr_read = [(e, want, M.tests_add_mentions(e))
+                for e, want in _tr_mentions if M.tests_add_mentions(e) != want]
+    check("tr3 a path an entry MENTIONS is read out of it, wrapping punctuation "
+          "and backticks stripped, deduped, in the order the entry names them - "
+          "moving an author's own token to the front is reading the entry, "
+          "which is the only derivation that is not an invention: %r"
+          % (_tr_read,), _tr_read == [])
+    _tr_prose = [
+        # ORDINARY PROSE, and every one of these passes the FILENAME test on its
+        # own: `e.g.` is a dot and a letter. The separator is what refuses them.
+        "e.g. the total is wrong", "i.e. rounding, not truncation",
+        "Node.js rounds this differently", "in the U.S. locale",
+        "flaky", "P29.3: the widening lands",
+        "ado shape cases in validate-manifest --selftest (a1-a4)",
+        "CI runs --gate on this manifest",
+        # A SEPARATOR with no filename after it, which the lead rule already
+        # refuses and this must refuse for the same reason.
+        "n/a", "the docs/ directory", "a//b is not a path",
+    ]
+    _tr_invented = [(e, M.tests_add_mentions(e))
+                    for e in _tr_prose if M.tests_add_mentions(e)]
+    check("tr4 SECOND-DIRECTION CASE: ordinary prose mentions NO path, and the "
+          "bound on a mention is stricter than the bound on a declaration for "
+          "exactly this reason - a lead token is a declaration and a filename "
+          "is enough, a token inside a sentence is a mention and must carry a "
+          "separator too, or `e.g.` becomes a path nobody typed: %r"
+          % (_tr_invented,), _tr_invented == [])
+    _tr_partial = ["the case at a/b.py:12 covers it",
+                   "documented at https://example.com/rounding.html"]
+    _tr_truncated = [(e, M.tests_add_mentions(e))
+                     for e in _tr_partial if M.tests_add_mentions(e)]
+    check("tr5 SECOND-DIRECTION CASE: a token that is not the WHOLE answer "
+          "names nothing - a line suffix and a URL scheme both parse to a "
+          "prefix of themselves, and writing that prefix would be this "
+          "migration inventing the path it exists not to invent: %r"
+          % (_tr_truncated,), _tr_truncated == [])
+    _tr_ok = ["src/cart/total.ts: two stacked percentage discounts",
+              "tests/q.test.ts", ".gitignore: the shard directory is ignored"]
+    _tr_touched = [(e, M.tests_add_repair(e)) for e in _tr_ok
+                   if M.tests_add_repair(e) != (M.REPAIR_NAMED, None)]
+    check("tr6 SECOND-DIRECTION CASE: an entry ALREADY in the documented shape "
+          "is left exactly alone - a migration that rewrites what it is "
+          "migrating to would churn every plan it is run on and would make the "
+          "second run differ from the first: %r" % (_tr_touched,),
+          _tr_touched == [])
+    _TR_LOOSE = "a case in tests/cart.spec.ts for stacked discounts"
+    _tr_verdict, _tr_new = M.tests_add_repair(_TR_LOOSE)
+    check("tr7 an entry that spells its path in prose is REWRITTEN to open with "
+          "it, and the entry comes back as the TAIL of its own replacement: "
+          "nothing its author wrote is lost, which is what lets a reader trust "
+          "the result by looking at it and what makes the rewrite safe on a "
+          "task already under way - a prefix can only ADD to the paths an "
+          "entry names: %r" % (_tr_new,),
+          _tr_verdict == M.REPAIR_REWRITE
+          and _tr_new == "tests/cart.spec.ts: " + _TR_LOOSE
+          and _tr_new.endswith(_TR_LOOSE))
+    check("tr8 ...and the replacement is a ROUND TRIP through the rule being "
+          "repaired to: `tests_add_path` reads back exactly the path the entry "
+          "mentioned, so the repair produces the shape the validator asks for "
+          "rather than one that merely looks like it: %r"
+          % (M.tests_add_path(_tr_new),),
+          M.tests_add_path(_tr_new) == "tests/cart.spec.ts")
+    _TR_NONE = "the cart total is right with two stacked percentage discounts"
+    check("tr9 SECOND-DIRECTION CASE: an entry naming no file is UNNAMED with "
+          "no replacement at all - never a path derived from the task's files, "
+          "from a naming convention or from the phase. A sentence is visibly "
+          "not a path; a wrong path is not, and it is the wrong one that "
+          "reaches `files` and the fileIndex: %r"
+          % (M.tests_add_repair(_TR_NONE),),
+          M.tests_add_repair(_TR_NONE) == (M.REPAIR_UNNAMED, None))
+    _TR_TWO = "tests/a.spec.ts asserts what src/a.ts computes"
+    check("tr10 SECOND-DIRECTION CASE: an entry naming more than one file is "
+          "AMBIGUOUS and is handed back, not resolved by taking the first - "
+          "picking one would be a convention this field has never had, and the "
+          "author is the only reader who knows which holds the case: %r"
+          % (M.tests_add_repair(_TR_TWO),),
+          M.tests_add_repair(_TR_TWO) == (M.REPAIR_AMBIGUOUS, None))
+    check("tr11 ...while the SAME path named twice is one path, so a sentence "
+          "that repeats its file is repairable rather than refused: %r"
+          % (M.tests_add_repair("tests/a.spec.ts twice: tests/a.spec.ts "
+                                "again"),),
+          M.tests_add_repair("tests/a.spec.ts twice: tests/a.spec.ts again")[0]
+          == M.REPAIR_REWRITE)
+    check("tr13 ...and the WARNING itself names the migration, which is what "
+          "makes announcing a refusal fair: a rule that says an entry becomes "
+          "illegal at the next major, over plans generated before the shape "
+          "was asked for, strands every one of them unless the line that "
+          "reports it also says what to run: %r" % (_ta_live_one[-170:],),
+          "repair-tests-add.py" in _ta_live_one)
+    _tr_junk = [M.tests_add_repair(v) for v in (None, 7, "", "   ", [])]
+    check("tr12 a non-string, an empty string and whitespace are UNNAMED "
+          "rather than a crash: the field is free prose and a migration reaches "
+          "a manifest before anything has graded it: %r" % (_tr_junk,),
+          _tr_junk == [(M.REPAIR_UNNAMED, None)] * 5)
+
 
 def _selftest():
     return _harness.run(_cases)

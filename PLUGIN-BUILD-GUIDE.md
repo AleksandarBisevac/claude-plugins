@@ -105,6 +105,7 @@ claude-plugins/                           # this repo (personal, public)
           read-ado-links.py               # the MANIFEST side of that: which items are linked, and what ADO state each one's status means
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
+          repair-tests-add.py             # move the path an old tests.add entry already spells to the front of it
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate, and the rows both surfaces list
           materialize-proposal.py         # the command door onto it: arguments, the list table, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
@@ -367,6 +368,7 @@ L7:
   record-risk-confirmation -> _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
+  repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
@@ -1029,6 +1031,35 @@ manifest says *this commit is no longer reachable* — which is true. Report mod
 and writes nothing; `--apply` takes the index lock, revalidates before saving, and refuses rather
 than leave a half-repaired manifest. Where a commit is merely unreachable, the report says so and
 points at **restoring a branch onto it** first — clearing is the fallback, not the first move.
+
+### `plugins/audit/scripts/manifest/repair-tests-add.py`
+The migration behind the `tests.add` shape rule. The schema asks for
+`"<path>: <what it asserts>"` because that leading path is what `/audit:task add` and `scope`
+carry into a task's `files` and the `fileIndex`, and `_invariants.commit_scope` grades a commit
+against that list; an entry written as a sentence therefore leaves the case file outside the
+scope the work is graded against. The validator says so on every unfinished `tdd` task and names
+the release the refusal arrives in — and **an announcement with no way through strands every plan
+written before it**, which is what this is.
+
+**The only path it writes is one the entry already spells.** An entry that mentions
+`tests/cart.spec.ts` in its prose is rewritten to open with it; an entry mentioning no path, or
+more than one, is reported with the task that holds it and the command that repairs it by hand.
+Nothing is derived from the task's `files`, from a naming convention or from the phase — a
+sentence is visibly not a path, a wrong path is not, and the wrong one is worse to leave in the
+field that grants commit scope. The bound on a **mention** is deliberately stricter than the
+bound on a **declaration**: a token inside a sentence must carry a separator as well as a
+filename, because ordinary prose is full of tokens that pass a filename test on their own.
+
+**The rewrite only ever prepends**, so the entry comes back as the tail of its own replacement
+and nothing its author wrote is lost — which is also why it is safe on a task already under way:
+what `/audit:task scope`'s append-only rule protects is a grading that reads `files` backwards,
+and a prefix can only add to the paths an entry names. `files` and the `fileIndex` are **not**
+touched; they are `audit-task.py`'s to derive, and a second writer of that index is how two
+writers come to disagree about it. Report mode is the default and writes nothing; `--apply` takes
+the index lock, revalidates before saving, refuses rather than leave a half-repaired manifest, and
+journals what moved. `tests_add_graded` in `_manifest_phases.py` is the filter both this and the
+validator's warning read, so the migration cannot offer to repair an entry nothing complained
+about.
 
 ### `plugins/audit/scripts/manifest/_areas.py`
 The `meta.areas` registry and everything that resolves against it. A phase's `area` tag (free
