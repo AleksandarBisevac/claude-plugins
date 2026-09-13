@@ -480,7 +480,8 @@ def _cases(check):
           "file that was ALREADY untracked keeps its one `?? newdir/"
           "already-here.txt` entry when the gate REWRITES it - identical before "
           "and after, with the flag exactly as without it. This bracket sees "
-          "paths appearing and disappearing; `dirty_digest` states the matching "
+          "paths appearing and disappearing; `_tree_stamp.DIRTY_LIMIT` states "
+          "the matching "
           "limit for an already-dirty TRACKED file. Asserted as the EMPTY LIST "
           "and not merely as falsy, because None here would be git having "
           "refused rather than this limit: %r" % (res["treeMutated"],),
@@ -501,7 +502,7 @@ def _cases(check):
           and res["treeBasis"].startswith("git described"))
 
     # --- F273: whose writes did the bracket catch? -------------------------
-    # `_porcelain` has no pathspec, so the bracket sees EVERY write that lands in
+    # `_tree_stamp.porcelain` has no pathspec, so the bracket sees EVERY write in
     # its window and not only the gate's -- and `orchestrator.md` encourages
     # running tasks with disjoint `files` in parallel, which puts a sibling
     # executor's writes in that window as a matter of course. Measured live on a
@@ -1308,16 +1309,16 @@ def _cases(check):
           "work's own - so there is nobody else to attribute the red to and the "
           "word stays `failed`: %r"
           % ((res_owndirt["status"], res_owndirt["notAttributable"],
-              M.dirty_outside(M._porcelain(attrib), ["src/mine.ts"])),),
+              M.dirty_outside(M._tree_stamp.porcelain(attrib), ["src/mine.ts"])),),
           res_owndirt["status"] == "failed"
           and res_owndirt["notAttributable"] is None
-          and M.dirty_outside(M._porcelain(attrib), ["src/mine.ts"])[0] == [])
+          and M.dirty_outside(M._tree_stamp.porcelain(attrib), ["src/mine.ts"])[0] == [])
     os.remove(os.path.join(attrib, "src", "mine.ts"))
 
     with open(_sibling_half, "w") as fh:
         fh.write("export const half = {\n")
     res_noscope = M.run_gate(attrib, _gate_cmds, runner=_reported_gate, owns=[])
-    _no_paths, _no_basis = M.dirty_outside(M._porcelain(attrib), [])
+    _no_paths, _no_basis = M.dirty_outside(M._tree_stamp.porcelain(attrib), [])
     check("ua6 THE OVER-FIRE DIRECTION: with NO declared files every dirty path "
           "is trivially 'outside the declared scope', so a reader taking the "
           "empty scope for foreign dirt would excuse every failing run on every "
@@ -1477,7 +1478,7 @@ def _cases(check):
         fh.write("{\"attempts\": 2}\n")
     res_ambient = M.run_gate(attrib, _gate_cmds, runner=_red_then_silent_zero,
                              owns=["src/mine.ts"])
-    _amb_paths, _amb_basis = M.dirty_outside(M._porcelain(attrib),
+    _amb_paths, _amb_basis = M.dirty_outside(M._tree_stamp.porcelain(attrib),
                                              ["src/mine.ts"])
     check("ua13 ...and dirt the run NEVER NAMED excuses nothing, which is what "
           "keeps ua4 reachable outside a fixture. The tree carries an "
@@ -1603,7 +1604,7 @@ def _cases(check):
     lines = []
     M.render(res, out=lines.append)
     check("cv4 a runner that prints NO paths yields not-knowable, never 'no "
-          "overlap' - `_porcelain`'s rule one question over, and the difference "
+          "overlap' - `porcelain`'s rule one question over, and the difference "
           "between a measurement and a claim: %r" % (res["coverageBasis"],),
           res["overlap"] is None
           and "not knowable from its output" in "\n".join(lines)
@@ -1873,7 +1874,7 @@ def _cases(check):
 
     check("lc5 ON A TIMEOUT THE TREE COMPARISON IS NOT MADE: `treeMutated` is "
           "None and the basis names the race, because a survivor of a torn-down "
-          "group keeps writing. `_porcelain` already refuses to call an "
+          "group keeps writing. `porcelain` already refuses to call an "
           "unanswerable tree clean; this is the same refusal one cause over: %r"
           % ((res_t.get("treeMutated"), res_t.get("treeBasis")),),
           res_t.get("treeMutated") is None

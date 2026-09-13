@@ -22,7 +22,8 @@ nobody was asking either:
     different question than the one asked, and a commit built on it carries work
     nobody reviewed. Any difference refuses the commit step regardless of the
     gate's own exit code. The flag is load-bearing and its limit is stated at
-    `_porcelain`: it expands a wholly untracked directory into its files, so a
+    `_tree_stamp.porcelain`: it expands a wholly untracked directory into its
+    files, so a
     file CREATED in one is seen; it does not make the bracket content-aware, so a
     REWRITE of a file that was already untracked is invisible to it. And the
     answer is a STATUS WORD and not only an exit code (F280, `GATE_MUTATED`): the
@@ -81,7 +82,6 @@ Exit codes:
   2  the gate could not be asked (no manifest, no such phase)
 """
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -112,7 +112,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _journal_io  # noqa: E402  (the ONE canonical spelling and file digest)
+import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 
@@ -253,45 +253,6 @@ _SUMMARY_READERS = (
 )
 
 
-def _porcelain(project):
-    """`git status --porcelain -uall` as a set of lines, or None when git cannot answer.
-
-    None is NOT an empty tree. A repository git refuses to describe is a basis
-    this script does not have, and reporting that as "nothing changed" would be
-    the false clean sheet the whole file exists to prevent.
-
-    `-uall` IS THAT SAME REFUSAL, ONE CAUSE OVER (F224). Git collapses a WHOLLY
-    UNTRACKED directory to a single `?? dir/` entry, so without the flag a
-    fix-in-place gate that CREATES a file inside one moves no line at all and the
-    bracket answers `treeMutated == []` -- the value that means KNOWN CLEAN. That
-    is not a corner: a subject tree nobody has committed yet, a first audit run,
-    a brand-new source directory are all exactly it. Every other porcelain reader
-    in this plugin already passes the flag and says why beside it
-    (`_journal_io._git_status_sets`, `commit-audit-state`, `guard-bash-writes`);
-    this was the reader that did not.
-
-    AND IT DOES NOT MAKE THE BRACKET CONTENT-AWARE, which is the reading the flag
-    invites and the one to refuse. Porcelain reports STATUS, never bytes: a file
-    that was ALREADY untracked keeps its one `?? path` entry when a gate REWRITES
-    it, with the flag exactly as without it. So a rewrite of an already-untracked
-    file is invisible to this comparison either way -- `dirty_digest` states the
-    matching limit for an already-dirty TRACKED file further down -- and the
-    limit is pinned by a case of its own, so nobody can read the flag as having
-    repaired what it did not touch.
-    """
-    try:
-        out = subprocess.run(["git", "-C", project, "status", "--porcelain",
-                              "-uall"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=60)
-    except Exception:
-        return None
-    if out.returncode != 0:
-        return None
-    return set(ln for ln in out.stdout.decode("utf-8", "replace").splitlines()
-               if ln.strip())
-
-
 # --- whose writes did the bracket catch ---------------------------------------
 # F280. THE REFUSAL LIVED ONLY IN THE EXIT CODE AND IN PROSE. `render` has printed
 # `GATE MUTATED THE TREE` and returned E_FAIL for as long as the bracket has
@@ -344,7 +305,8 @@ def _declared_by(line, declared):
 def classify_mutations(mutated, owns):
     """`(owned, foreign, basis)` - whose writes the tree bracket caught (F273).
 
-    `_porcelain` describes the WHOLE repository with no pathspec, so the bracket
+    `_tree_stamp.porcelain` describes the WHOLE repository with no pathspec, so
+    the bracket
     sees every write that lands between its two snapshots and not only the
     gate's. `reference/orchestrator.md` encourages running tasks with disjoint
     `files` in PARALLEL, which makes a sibling executor's writes land inside that
@@ -546,103 +508,12 @@ def unattributable_failure(failed, ran_total, before, owns, named):
 
 
 # --- what state was actually tested -------------------------------------------
-# `head` cannot answer this and never could. A TASK gate runs BEFORE the task
-# commit, so a run executes against HEAD plus staged edits plus unstaged ones plus
-# untracked files: two failed retries at one HEAD were indistinguishable, which
-# defeats the point of recording retries. So `head` is demoted to what it actually
-# is and a digest of the DECLARED work is recorded beside it.
-#
-# NOT A SECOND HASHING SUBSYSTEM. `_journal_io.canonical` is the one spelling this
-# tree hashes with and `_journal_io.file_hash` is the one file digest; both are
-# reused verbatim. What is new here is only WHICH bytes get fed to them.
-HEAD_BASIS = ("repository HEAD at execution time; it does not identify the "
-              "tested state, because a task gate runs before the task commit")
-
-
-def _head(project):
-    """The short HEAD sha, or None when git will not say.
-
-    None rather than a placeholder, for `_porcelain`'s reason: a repository git
-    cannot describe has not got a HEAD this run can name, and inventing one would
-    put a false anchor on a real row."""
-    try:
-        out = subprocess.run(["git", "-C", project, "rev-parse", "--short", "HEAD"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=60)
-    except Exception:
-        return None
-    if out.returncode != 0:
-        return None
-    return out.stdout.decode("utf-8", "replace").strip() or None
-
-
-def _digest(payload):
-    """`sha256:<hex>` over one canonical spelling of `payload`, or None.
-
-    The prefix is `file_hash`'s, so a reader meets one shape for every digest a
-    row carries rather than having to know which field wears one."""
-    try:
-        return "sha256:" + hashlib.sha256(
-            _journal_io.canonical(payload).encode("utf-8")).hexdigest()
-    except Exception:
-        return None
-
-
-def scope_digest(project, owns):
-    """`(digest, basis)` for the DECLARED work as it stands right now.
-
-    EXACT FOR THE DECLARED SCOPE and nothing wider, which is the whole claim: two
-    runs sharing this digest measured identical declared-file contents, and a
-    differing one means the declared work changed between them.
-
-    A MISSING FILE HASHES AS NULL RATHER THAN BEING DROPPED. Absent is itself
-    evidence about the state under test, and skipping it would let a scope of
-    three files and a scope of two share a digest.
-
-    None when nothing is declared, the shape `coverage()` already uses one
-    question over: a digest of an empty list is a real digest that would compare
-    equal across every such run and read as agreement.
-    """
-    declared = [f for f in (owns or []) if isinstance(f, str) and f.strip()]
-    if not declared:
-        return None, ("the work under test declares no files, so there is "
-                      "nothing to fingerprint")
-    entries, missing = [], 0
-    for rel in sorted(set(declared)):
-        digest = _journal_io.file_hash(os.path.join(project, rel))
-        if digest is None:
-            missing += 1
-        entries.append([rel, digest])
-    return _digest(entries), ("%d declared file(s); %d read, %d missing"
-                              % (len(entries), len(entries) - missing, missing))
-
-
-def dirty_digest(before):
-    """`(digest, basis)` over the porcelain lines taken BEFORE the run.
-
-    Reuses the snapshot the mutation bracket already takes, so this costs no
-    extra git call at all.
-
-    WHAT IT DOES AND DOES NOT SAY: it records WHICH paths were dirty, never their
-    contents. Editing an already-dirty file outside the declared scope moves
-    neither this nor `scope_digest`, and that limit is stated here and pinned by a
-    case rather than left for a reader to discover. This is a retry
-    discriminator, not a reproducible snapshot of the repository.
-    """
-    if before is None:
-        return None, "git could not describe the tree, so it has no fingerprint"
-    return (_digest(sorted(before)),
-            "git described the tree before the run; %d dirty path(s)"
-            % (len(before),))
-
-
-def tested_state(project, owns, before):
-    """The three identity fields, each with the basis that bounds it."""
-    scope, sbasis = scope_digest(project, owns)
-    dirty, dbasis = dirty_digest(before)
-    return {"head": _head(project), "headBasis": HEAD_BASIS,
-            "scopeDigest": scope, "scopeBasis": sbasis,
-            "dirtyDigest": dirty, "dirtyBasis": dbasis}
+# THE THREE IDENTITY FIELDS LIVE IN `_tree_stamp`, NOT HERE. They were written for
+# this file and they are still what this file records; what changed is that the
+# orchestrator needs the same fingerprint for a claim it carries in prose, and a
+# second expression of "which tree was this" would BE a second tree identity. The
+# module holds `porcelain()`, `HEAD_BASIS`, `scope_digest()`, `dirty_digest()` and
+# `tested_state()` unchanged, plus the comparison this file never needed.
 
 
 def _elapsed_ms(started):
@@ -1190,7 +1061,8 @@ _PATHISH = re.compile(r"[A-Za-z0-9_.@/\\-]*[/][A-Za-z0-9_.@/\\-]*"
 def files_named(text):
     """The paths a runner's output mentions, POSIX-spelled, or None if it names none.
 
-    None is NOT an empty set, for `_porcelain`'s reason one function over: a
+    None is NOT an empty set, for `_tree_stamp.porcelain`'s reason one module
+    over: a
     runner that prints no paths has told us nothing about coverage, and rendering
     that as "none of them names a file this task owns" would be the false claim
     this whole file exists to prevent.
@@ -1796,12 +1668,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     the very `git status --porcelain` it is being judged by.
     """
     runner = runner or _shell
-    before = _porcelain(project)
+    before = _tree_stamp.porcelain(project)
     # PRE-EXECUTION, and the placement is load-bearing: a fix-in-place gate
     # rewrites the very files it checks, so a fingerprint taken after the run
     # would describe what the gate PRODUCED rather than what it was asked to
     # judge. Both digests are spent from `before`, above the first command.
-    state = tested_state(project, owns, before)
+    state = _tree_stamp.tested_state(project, owns, before)
     started = time.monotonic()
     steps, texts = [], []
     cancelled_by = None
@@ -1894,13 +1766,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
         # "cancelled" would be the silent mislabel the rest of this file exists to
         # prevent. Anything else still escapes, loudly.
         cancelled_by = str(exc) or UNNAMED_SIGNAL
-    after = _porcelain(project)
+    after = _tree_stamp.porcelain(project)
     interrupted = (cancelled_by is not None
                    or any(st.get("outcome") == TIMED_OUT for st in steps))
     if interrupted:
         # A torn-down group is not a stopped one: a descendant that escaped the
         # kill keeps writing, so comparing the two snapshots would be a race whose
-        # answer changes with timing. `_porcelain` already refuses to call a tree
+        # answer changes with timing. `porcelain` already refuses to call a tree
         # it cannot describe clean; this is the same refusal, one cause over.
         mutated = None
         basis = "the run was interrupted, so a tree comparison would be a race"

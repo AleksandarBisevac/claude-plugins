@@ -140,6 +140,8 @@ claude-plugins/                           # this repo (personal, public)
           commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
+          _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
+          stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -292,6 +294,7 @@ L2:
   _report_html -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
+  _tree_stamp -> _journal_io, _output
   _usage_coverage -> _output, _usage_core
   _usage_economics -> _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
@@ -367,8 +370,9 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
-  run-test-gate -> _evidence_io, _journal_io, _manifest_io, _output
+  run-test-gate -> _evidence_io, _manifest_io, _output, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
+  stamp-verification -> _manifest_io, _output, _tree_stamp
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -3050,8 +3054,8 @@ period, then `SIGKILL`; `taskkill /T /F` where `killpg` does not exist. `shares_
 the one way that goes badly wrong: where the child shares this process's group, signalling it would
 kill the caller, so the narrow kill is taken and the teardown reports itself **unconfirmed** rather
 than implying a clean stop. Consequently **an interrupted run makes no tree comparison at all** —
-`treeMutated` is `None` with a basis naming the race, the same refusal `_porcelain` already makes
-for a tree git will not describe.
+`treeMutated` is `None` with a basis naming the race, the same refusal `_tree_stamp.porcelain`
+already makes for a tree git will not describe.
 
 **`head` no longer claims what it cannot.** A task gate runs *before* the task commit, so a run
 executes against HEAD plus staged edits plus unstaged ones plus untracked files — two failed
@@ -3099,6 +3103,76 @@ goes back to asking per task.
 missing from the list; the orchestrator obeying step 4a is what does that, and step 4a says so in
 its own sentence. This command bounds what may be **claimed** and leaves a row a reader holds the
 claim against afterwards (`audit-journal.py show --target <phaseId>`).
+**Those three fields now live in `_tree_stamp.py`, not here.** They were written for this file and
+are still what this file records; what moved them down is that the same fingerprint is needed for a
+claim carried in *prose*, and a second expression of "which tree was this" would **be** a second
+tree identity. The module holds `porcelain()`, `HEAD_BASIS`, `scope_digest()`, `dirty_digest()` and
+`tested_state()` unchanged. An entry point reaching another entry point is the `KNOWN_LAYER_DEBT`
+shape that table exists to keep rare, which is why the shared half came down to L2 rather than the
+new command reaching up.
+
+### `plugins/audit/scripts/governance/_tree_stamp.py`
+Which tree was this, and is it still that one.
+
+The first half is `run-test-gate.py`'s three identity fields, moved (above). The second half is the
+question that file never had to ask: **given a stamp taken earlier, is the tree still the one it
+names?** `take()` reads the tree once and returns both the machine token and the full basis, so the
+line a reader is shown and the line they paste cannot describe different moments. `compare()` grades
+a stamp against the tree now.
+
+**Three answers, not two.** `current`, `stale`, and `unestablished` — git could not answer, so
+nothing was graded. That third word is this tree's existing vocabulary (`porcelain()`'s `None`,
+`_doctor_trail.running_plugin_verdict`, `_evidence_io`'s null check count): a question that could
+not be asked must never be reported as the comfortable answer. The rule lives in `field_state()`,
+where a null on **either** side is `unanswerable` and never `agrees` — `None == None` is True in
+Python and false in English, and reading it the Python way is precisely how a directory git cannot
+describe comes back reported as a directory that had not changed. `not-declared` is kept apart from
+`unanswerable` because their causes differ and so do their repairs: a scope digest is null when the
+work declares no files, which the caller chose, and null when git could not read them, which it did
+not. **Moved outranks unanswerable** — a tree with one field moved and another unreadable *has*
+moved, and reporting that as ungradeable would hide a fact already in hand.
+
+**A stale answer names the field that moved**, with what it was and what it is now. Three fields are
+three repairs, and "stale" on its own sends a reader back to re-run everything.
+
+**The scope rides inside the token.** A comparison handed a second file list would silently answer
+about a different question, which is the held-model-of-state failure the whole design is against,
+reappearing inside the tool built to catch it.
+
+**What a stamp does not establish is printed beside it.** `FIELD_LIMIT` pairs each field with its
+basis key and its limit, and the limits are constants rather than docstring sentences *because they
+are rendered* — a docstring nobody prints is a second statement of the same limit, free to drift
+from the one a reader sees. `DIRTY_LIMIT` is inherited from `dirty_digest()` unsoftened: the digest
+records **which** paths were dirty, never their contents, so a rewrite of an already-dirty file
+outside the declared scope moves nothing here. `tsl2` exercises that rather than describing it.
+
+### `plugins/audit/scripts/governance/stamp-verification.py`
+The CLI over it: `take` a stamp, or `compare` one against the tree now.
+
+**Why a command and not a helper** — the caller is orchestrator and agent *prose*, which reaches
+Python only through Bash, the same reason `verify-invariants.py` and `check-ado-item.py` are
+commands. `take` prints every field with its basis and then the one line to carry;
+`compare` reads that line out of arbitrary text (a commit message, a report paragraph, an agent's
+reply) and grades it.
+
+**Three exit codes for three answers**: `0` current, `1` stale, `3` unestablished, `2` for every
+refusal. Sharing `0` would make an ungradeable comparison read as *unchanged*, which is the false
+clean sheet the design refuses; sharing `1` would send a reader to re-run work that may be perfectly
+current. `EXIT_FOR` is derived from `_tree_stamp`'s own verdict words, so a fourth verdict cannot be
+added and left sharing a neighbour's code.
+
+**A stamp that cannot be READ exits 2 and never 0.** Two stamps in one document is a refusal rather
+than a choice — picking the first or the last would be the tool guessing which verification the
+reader meant, and a wrong guess grades a claim against a tree it was never taken on.
+
+**`--task` takes the declared scope off the plan.** A hand-typed file list beside a manifest is the
+same held-model failure one step earlier, so `--manifest M --task T` reads `task.files`; passing
+both `--files` and `--task` is refused rather than resolved.
+
+**It is not `/audit:doctor` and does not repeat it.** The doctor already reports that the hooks in
+this session are an older installed copy, and what an abandoned worktree left behind — questions
+about the *installation*. This asks about the *tree*. A claim taken while the doctor was warning
+about a stale copy is a claim whose stamp belongs beside that warning, not instead of it.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'

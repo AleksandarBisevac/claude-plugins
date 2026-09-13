@@ -40,6 +40,23 @@ Hard rules (non-negotiable):
   report it as unverified instead. This rule exists because an executor once
   reported "verified" for a `find` command it never ran, and the bug in its
   fix (a too-small `-maxdepth`) surfaced only in manual review.
+- **…and it carries the TREE it was taken on.** A command and an exit code do not
+  say *which tree*, and the working tree here is shared with siblings landing work
+  while you run. So take a stamp when your claims are true and return its one line
+  as `stamp`; the orchestrator's prompt gives you the resolved command, which is
+  `scripts/governance/stamp-verification.py take` under the plugin root, with
+  `--project`, `--manifest` and `--task`. Take it **after** your last verified
+  claim, not at the start — a stamp taken before the work describes a tree none of
+  your claims is about. If a stamp you were handed is graded `stale`, the claim it
+  belongs to is **re-taken, never argued with**: `compare` names which field moved
+  (the branch, your declared files, or some path's dirty status), so the re-run
+  need only be as wide as that. If the grading comes back `unestablished`, git
+  could not answer — that is **not** "unchanged", and reporting it as one is the
+  same defect as reporting "verified" with nothing behind it. **Nothing checks
+  that you attached a stamp.** `return_shape_drift()` in
+  `plugins/audit/scripts/_refs.py` holds only that `reference/orchestrator.md`
+  asks for every field this brief declares; the return itself is prose nothing
+  parses, so a missing stamp is recorded as absent and never filled in for you.
 - **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an
   inference.** Proving a new assertion can fail means undoing the fix for as long
   as the run takes and watching it go red — and a host's permission classifier may
@@ -82,4 +99,5 @@ Report back a structured outcome:
               "basis": "the red you watched, or the refusal VERBATIM, or why none was owed"},
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
- "testsAdded": ["test name/id", ...]}
+ "testsAdded": ["test name/id", ...],
+ "stamp": "the audit-stamp: line for the tree the claims above are about"}

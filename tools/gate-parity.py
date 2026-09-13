@@ -1645,6 +1645,11 @@ NOT_AN_EXEMPTION = {
     "COMPOSITION_HELP": "panel help text: what each composition lever means, shown "
                         "in the drawer beside the control it describes",
     "FIELD_HELP": "panel help text for the config fields, same drawer",
+    "FIELD_LIMIT": "what each identity field of a tree stamp can and cannot "
+                   "establish, printed beside the field on the way in and on the "
+                   "way out - the opposite of an exemption: every row NARROWS "
+                   "what the stamp is allowed to claim rather than excusing "
+                   "anything from a rule",
     "PRESETS": "theme presets - a named palette per preset, not an excuse",
     "VERDICT_HELP": "what each invariant verdict means, printed beside it",
     "_EVAL_SHAPE": "the two spellings of an inline eval, used to name the form the "

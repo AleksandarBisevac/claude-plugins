@@ -369,10 +369,26 @@ report, because `git switch -c` is about to fail anyway.
      once one is written down and only under the `ajv` step CI and `tools/verify.sh` run;
      nothing under `scripts/` reads this vocabulary. So asking for the block is yours, and
      one that did not come back is recorded as absent rather than filled in.
+   - **A reported verification carries the tree it was taken on.** Evidence names a command and
+     an exit code; it does not say *which tree*, and a claim about a tree that has since moved
+     reads exactly like one that is still true. That is one structure behind five separate
+     failures in a single parallel run here — case counts quoted after the patch they described
+     had landed on a different tree, a patch taken against a branch that had moved and silently
+     reverting a sibling's work, a green gate still being cited after an edit landed. So tell the
+     executor to stamp what it verified and hand the line back in `stamp`:
+
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/stamp-verification.py" take \
+         --project <gitRoot> --manifest <manifestPath> --task <taskId>
+     ```
+
+     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself and put the finished command in the spawn prompt —
+     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted.
    - It must run `task.tests.gate` (through `run-test-gate.py`, which applies `meta.nodePreamble`
      itself) and return **the shape `agents/audit-executor.md` declares** — `gates` per gate
      command, `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that become
-     `task.verifiedBy`) and `redFirst` (above). The brief holds the wording of each, including
+     `task.verifiedBy`), `redFirst` (above) and `stamp` (the tree its claims are about). The
+     brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
      `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list
      falls behind the brief's, which is the only part of the return anything can check —
@@ -391,6 +407,26 @@ report, because `git switch -c` is about to fail anyway.
      the wrapper made. `--task` resolves that task's `tests.gate` when it declares one and falls
      back to the phase's otherwise, saying which — so a task with no gate of its own is never
      credited with having passed one.
+
+     **Grade the returned `stamp` before you quote anything the return says.** A claim whose
+     stamp is stale is **re-taken, never argued with** — and re-taking is cheap, because the
+     comparison names which field moved rather than saying only "stale":
+
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/stamp-verification.py" compare \
+         --project <gitRoot> --stamp "<the line the executor returned>"
+     ```
+
+     `current` exits 0, `stale` exits 1, and a tree git could not describe exits 3 — which is
+     **not** "unchanged", and must not be read as one: a comparison that could not be made is
+     the one answer that lets a wrong claim go on being cited. `head` moved means the branch
+     moved under the work; `scopeDigest` moved means the declared files changed; `dirtyDigest`
+     moved means some path's dirty status changed somewhere in the tree. **Nothing enforces that
+     a return carries a stamp at all.** `return_shape_drift()` in
+     `plugins/audit/scripts/_refs.py` holds only that this document asks for every field
+     `agents/audit-executor.md` declares — it cannot see whether an executor filled one in, and
+     the return is prose nothing parses. The command makes a stamp checkable once it is there;
+     asking for it, and re-asking when it is absent, is yours.
 
      **When the return and the row disagree, that is a DISCREPANCY and not a correction.**
      A return calling every gate green, against a row whose `status` is anything but

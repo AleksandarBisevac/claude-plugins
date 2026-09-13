@@ -287,6 +287,18 @@ LAYERS = (
      # parser, and a same-layer edge is not a downward edge. Its consumers are the
      # `explain-ado-drift` door and `_doctor_ado` (L3), both above it.
      "_ado_drift",
+     # `_tree_stamp` answers "which tree was this, and is it still that one" -
+     # HEAD, a digest of the declared work, a digest of which paths were dirty,
+     # and the three-word comparison over them. It is L2 rather than L1 for
+     # `_ado_drift`'s reason word for word: it reuses `_journal_io.canonical` and
+     # `_journal_io.file_hash` (L1) instead of becoming the tree's second hashing
+     # subsystem, and a same-layer edge is not a downward edge. It sits here
+     # rather than inside `run-test-gate` - which is where it was written and
+     # which still records it - because `stamp-verification` needs the SAME
+     # fingerprint for a claim the orchestrator carries in prose, and an entry
+     # point reaching another entry point is the KNOWN_LAYER_DEBT shape this
+     # table exists to keep rare. Both consumers are L7.
+     "_tree_stamp",
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
@@ -628,6 +640,16 @@ LAYERS = (
      # rewrote five files and a gate that skipped every hook were both exit 0 and
      # neither was distinguishable from a verdict.
      "run-test-gate",
+     # `stamp-verification` is the same door one question later, and for the
+     # failure the gate could not reach: a gate row carries the tree it ran on,
+     # and a claim made in PROSE - an agent's reported counts, a "gates are
+     # green" in a reply, a task marked done - carried nothing, so a claim whose
+     # tree had moved was indistinguishable from one still true. It takes the
+     # stamp and grades it, in three words rather than two, through `_tree_stamp`
+     # (L2) so the fingerprint is the gate's own and not a second one. It reads
+     # `_manifest_io` (L1) to take a task's declared files off the plan instead
+     # of off a hand-typed list, which is the held model of state it is about.
+     "stamp-verification",
      # `set-priority` is the writer behind `/audit:phase priority`: one integer on
      # the index stub, under the index lock, revalidated. A command rather than a
      # prose instruction because the rule it enforces (tier 1 is unique, and a

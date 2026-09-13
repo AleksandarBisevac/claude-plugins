@@ -120,7 +120,15 @@ a broken one leaves behind is a gate run the orchestrator's record does not acco
   never covered that path is exactly how the untouched side got left behind.
 - Treat evidence-free verification claims as unverified work: a
   "verified/tested/checked" that names no exact command and exit code (or
-  concrete observation) may be rejected on that basis alone.
+  concrete observation) may be rejected on that basis alone. **A claim whose
+  `stamp` is missing or grades `stale` is the same finding**, for the same
+  reason one step later: a command and an exit code do not say *which tree*, and
+  the tree here is shared with siblings landing work while the claim was being
+  written. Grade one with
+  `scripts/governance/stamp-verification.py compare` (0 current, 1 stale, 3 git
+  could not say — which is not "unchanged"). Nothing enforces this: you are
+  reading prose no script parses, so a stamp nobody attached is absent and never
+  filled in for you.
 - Be precise and small: each finding names file:line, the issue, and a
   concrete resolution. No style nitpicks unless the review skill demands them.
 
