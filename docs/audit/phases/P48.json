@@ -25,5 +25,184 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P48.1",
+      "title": "A question about the plan has an answer, and the answer is not the plan",
+      "status": "pending",
+      "description": "DONE MEANS: an agent can ask one question and receive one answer, and the orchestrator reference stops telling it to read the manifest. The questions are the ones that are actually asked - why was this task cancelled, what did this bug conclude, which task last touched this file - and each answer carries the pointer that lets a reader check it. Today the only surfaces are a whole-plan render built for a human and a whole-journal render, and the resume step says to read the manifest, so every lookup costs the whole plan in context and the cost grows with the project rather than with the question. The file half is a lookup rather than a search, because the file index already records who declared what. This task is the first of four that share a sentence that is not verifiable on its own, so it states its own done here and does not borrow the phase's.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/tests/test__status_facts.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: a lookup by task id, by bug id and by file path each returns one record with the pointer that proves it, and a lookup that matches nothing says so rather than returning the nearest thing"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P48.2",
+      "title": "A retry carries what the last attempt proved",
+      "status": "cancelled",
+      "description": "DONE MEANS: the brief for attempt two names what attempt one proved, and a first attempt says plainly that there is no previous one. Today a retry spawns cold: the attempt counter is raised and an agent is spawned, and nothing from the last attempt reaches the new brief - not the recorded technical outcome, not the name of the failing case. The only last-outcome in the whole procedure is the echo sent to a human. So the executor re-runs the gate to rediscover what the previous attempt already proved red, which is the most expensive way to learn something the record already holds. This is the default path and not the deliberate continuation of an agent, which is a different repair. The material exists: the evidence row carries the failing case and the task carries the outcome of the attempt that wrote it. An absent previous outcome is reported as absent, never as an empty string, because a brief that says nothing about the last attempt and a brief that says the last attempt recorded nothing are different instructions.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a second start reports the previous attempt's recorded outcome and the failing case it named, and a first start reports that there is no previous attempt rather than an empty one"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: duplicate of P42.3, which is done and landed the retry brief carrying the last attempt's outcome and failing case; created from the register's open entry without reading the plan's existing tasks"
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-13T16:59:38Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P48.3",
+      "title": "A new plan proposes the gates the last plan actually needed",
+      "status": "pending",
+      "description": "DONE MEANS: the command that generates a plan proposes gate entries from what previous runs in this repository actually ran and what those runs caught, and says which of the two it is drawing on. Today a proposal is read off the tree alone - the files present, the tooling detected - which is a reasonable first guess for a repository with no history and is a waste of the history everywhere else. The evidence ledger already records every gate command that ran, its verdict and its cost, so a repository that has audited itself once can be asked rather than guessed at. The failure mode to avoid is the confident one: a repository with no recorded run must propose from the tree and SAY that is what it did, because a proposal presented as learned when it was guessed is worse than a guess presented as a guess. Cost is not the only ranking: an entry that has never failed is a candidate for removal and an entry that catches things is a candidate for every plan, and the proposal says which of those it is claiming.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__gate_feed.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__gate_feed.py: a proposal names the entries the trail shows ran and how often each caught something, and a trail with no recorded run proposes nothing rather than proposing the tree's defaults as if they were evidence"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P48.4",
+      "title": "The doctor reports a pattern, not only a state",
+      "status": "pending",
+      "description": "DONE MEANS: the doctor answers what keeps happening here, not only what is true right now, and every pattern it names carries the rows that make it. The candidates are the ones the trail can actually support: a task that has been started more times than any other, a gate entry that has never once failed, a guard that has never fired inside a subagent, a phase whose sign-off always needs a fix run. Today the doctor reports a state - what is configured, what tier is active, what is stale - and a state cannot tell an operator that they are paying for something twice. The discipline that decides this task is the one this repository already applies to a count: a claim needs its basis, and a trail with too few rows to support a claim must say the claim could not be established rather than reporting a clean bill. One occurrence is not a pattern and must not be printed as one, because a doctor that cries pattern is a doctor people stop running.",
+      "files": [
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: a repeated shape in the trail is reported with the rows that make it, a single occurrence is not called a pattern, and a trail too short to support the claim says so instead of reporting nothing"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }

@@ -25,5 +25,139 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P49.1",
+      "title": "The checks this repository runs on itself are offered, not imposed",
+      "status": "pending",
+      "description": "DONE MEANS: the bar this repository holds itself to is available to a user as optional gate entries, and a plan that does not ask for them is unchanged in every byte. The two worth offering first are the ones this project learned the hard way and neither is about style: prove that a check can fail before trusting it, and refuse a comment that claims what the code does not do. Offering rather than imposing is the whole design: a gate entry a project did not choose is a gate entry it routes around, and the register already holds the case of a guard that fired where it was not wanted and was disabled within a day. Each offered entry ships with the sentence that says what it asks of a change and what it costs to run, because an operator choosing a gate is making a trade and a menu that hides one side of it is a menu that gets chosen wrongly once.",
+      "files": [
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/README.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test__gate_feed.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__gate_feed.py: an offered entry is absent from a plan that did not ask for it, and an accepted one carries the sentence saying what it asks of a change"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P49.2",
+      "title": "A number about what the gate caught, not only what it spent",
+      "status": "pending",
+      "description": "DONE MEANS: the control surface answers what the gates caught, beside what they cost, and neither number is presented without the other. Today every figure on that surface is a cost - tokens, minutes, dollars - so the only argument the surface can support is that the plugin is expensive. The ledger already holds the other half: a red verdict is a catch, and the row names the entry that produced it. An entry that has never caught anything is reported as never having caught anything, which is a real finding about a gate and not a zero to be averaged away, and it is the number that makes the offer to drop an entry credible. Where the ledger is too short to support either claim the surface says the question could not be answered, on the same rule every other basis here follows: a claim with no basis is not softened, it is withheld.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__usage_economics.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__usage_economics.py: a gate entry that has caught something reports what and when, one that never has reports that rather than a zero, and a ledger too short to support either says the question could not be answered"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P49.3",
+      "title": "The control surface can say whether anyone opened it",
+      "status": "pending",
+      "description": "DONE MEANS: the doctor can say whether the panel has ever been opened in this project, and the answer distinguishes never from not recently. A large part of this plugin's model rests on a control surface an operator is assumed to visit, and no part of the product can currently say whether anybody does. That is a question worth being able to answer before more is built on the assumption, and it is cheap: the server already starts, and the fact that it started is the whole record. What it records is the fact and nothing else - no identity, no address, no page - because a usage record that grows into a profile is a record a user is right to object to, and the question being asked does not need one.",
+      "files": [
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__panel_runstate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__panel_runstate.py: a panel that has been opened records that it was, one that never has is reported as never opened rather than as opened zero times, and the record carries no identity beyond the fact"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }

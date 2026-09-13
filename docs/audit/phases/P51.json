@@ -25,5 +25,407 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P51.1",
+      "title": "The committed example stops naming commits this repository does not have",
+      "status": "pending",
+      "description": "DONE MEANS: the shipped example names no commit this repository cannot resolve, and the check that grades it refuses rather than passes when the clone it runs on is too shallow to answer. The current failure is the worse of the two shapes: the step that calls the example healthy can only say so BECAUSE the clone is shallow, so the depth that hides the problem is the reason the gate is green. A check whose pass depends on not being able to look is the inverse of a check, and this repository has a word for the honest answer - the question could not be asked - which is what it must say instead.",
+      "files": [
+        "examples/acme-store/audit-plan.json",
+        "tools/check-example-ledgers.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-example-ledgers.py: a committed example naming a commit the repository cannot resolve is reported, and a clone too shallow to answer says the question could not be asked rather than passing"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.2",
+      "title": "Two descriptions of mechanisms that are not there",
+      "status": "pending",
+      "description": "DONE MEANS: two surfaces stop describing mechanisms the code does not have. One is a helper whose docstring says a guard needs it while nothing calls it, so a reader budgets for a dependency that does not exist and a future change preserves a contract nobody holds. The other is a retired edge in the import graph described as current in three places, one of which says in its own file that the edge is gone - a file contradicting itself is worse than either half, because a reader who notices it stops trusting the rest. Both were found by an eval run rather than by the suite, which is the interesting part: the checks here grade what the code does and nothing grades what the comments say it does, and that gap is the same one the comment-citation rule addresses from the other end.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/_loader.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a helper documented as required by a guard with no caller is reported, and a described loader edge that the graph does not contain is reported against the file that describes it"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.3",
+      "title": "Two guards that resolve something other than what they judge",
+      "status": "pending",
+      "description": "DONE MEANS: neither guard decides on a thing it did not establish. One resolves an unexpanded shell variable against the repository root as though it were a literal path, and then refuses the write for landing outside the tree - a refusal whose stated reason is an artefact of its own resolution, which is the guard-by-spelling class this register has recorded longer than any other. The honest answer when a destination cannot be established is to say it could not be established and decide on that footing. The other runs two write rules where the stricter one ignores the configured tier entirely while its message blames that tier, so an operator who lowers the tier sees no change and is told the tier is why. Both are high risk because both are refusals: a guard that refuses wrongly is routed around within a day, and a guard that is routed around protects nothing.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: an unexpanded variable is not resolved as a literal path, and a write whose destination cannot be established is judged on that basis rather than on a guess",
+          "plugins/audit/tests/test_guard_secrets_read.py: the stricter write rule reads the configured tier, and its message names the rule that actually refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.4",
+      "title": "A committed row carries no path from the machine that wrote it",
+      "status": "pending",
+      "description": "DONE MEANS: no committed evidence row carries a path from the machine that produced it, and the check that grades committed files can see such a path in the shape this row actually stores it. The coverage basis records the runner's own paths, and the gate that exists to stop machine paths reaching a commit misses them because the leading separator has been stripped, so the thing looks repo-relative and is not. That is the narrowest possible blind spot in a check whose whole job is this class, and it means the guard has been green on the case it was written for. The repair is on both sides: the writer stops carrying what it does not need, and the gate stops keying on the separator.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-committed-pii.py: a home directory reaching a committed row is reported whether or not it begins with a separator, and a repo-relative path that merely resembles one is left alone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.5",
+      "title": "The refusals stay right and stop costing a screen",
+      "status": "pending",
+      "description": "DONE MEANS: the refusals and warnings keep every fact they carry and stop pasting a screen into a reader's context per occurrence. Two instances, one shape. A description containing backticks is refused with the stdin route and the reasoning, correctly, at a length a terminal wraps to most of a screen - the repair is ordering rather than cutting: the line the reader retypes goes first and each reason follows in one sentence. And the validator repeats one warning per entry, most of a page of identical lines, which every structural call then carries into an agent's context through the machine-readable output. One rule collapses to one line with its count; two rules never collapse into each other, because the whole value of the line is which rule spoke.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_warning_groups.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__warning_groups.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: the refusal keeps every fact it carried and leads with the line a reader retypes",
+          "plugins/audit/tests/test__warning_groups.py: repeated warnings of one rule collapse to one line naming the count and the rule, and two different rules never collapse into each other"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.6",
+      "title": "A phase has a verb, and the warning names the cause it found",
+      "status": "pending",
+      "description": "DONE MEANS: a plan driven entirely from the command line records when a phase started, and the warning about a running task under a pending phase names what it established rather than guessing at the manifest's age. One site in the whole tree promotes a phase, and it is the control surface's heal, which runs when somebody opens the panel and saves. The command line has a verb for starting a task and none for starting a phase, so an orchestrator that never opens the panel leaves every phase pending and sees the warning on every promotion for the life of the phase - a warning that then blames a migration the manifest does not need and names a command the operator did not run. The gate is NOT weakened by this and the repair must not widen into it: a running task under a pending phase already counts as a running phase, deliberately, because a hand-started task is still a repository executing its plan. What is lost is the record, and a phase carries no start time at all.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a running task under a phase that is not running is reported with the cause the validator actually established and the command that clears it",
+          "plugins/audit/tests/test_audit_task.py: promoting a task promotes its phase in the same write and journals it, and a plan whose phase was already running is unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.7",
+      "title": "A string that cannot be a path is refused, and the not-on-disk note stops guessing",
+      "status": "pending",
+      "description": "DONE MEANS: the scope verb refuses a string that cannot be a repository-relative path, and the note about a file that is not on disk stops carrying three different causes in one sentence. Driven: reaching for an incremental rescope with the spelling every neighbouring tool uses, the plus and minus prefixes were written into the task's files as part of the filenames, the file index claimed them, a journal row recorded it as a legitimate change, and the only output was the note that exists to reassure an author who is declaring a file they will create. So the one shape that is certainly a mistake reads exactly like the one shape that is certainly fine. The verb is right to take a replacement list; it is wrong to accept an operator as a filename. And the note currently means a new file, a scope resolved against the wrong root, and now a typed operator - three causes, one sentence, and the sentence guesses the harmless one. What must not move: declaring a file before it exists stays legal and stays quiet, because the red-first workflow depends on it.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a leading plus or minus, an absolute path and a path escaping the project are each refused by name, while a path the task will create is still accepted and still quiet"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.8",
+      "title": "The wide-gate warning asks whether narrowing is possible",
+      "status": "pending",
+      "description": "DONE MEANS: the warning fires where a narrower gate is possible and is silent where it is not, and the reason a task holds the wide gate is read from what the verb recorded rather than asked of a human. Measured on this repository, which is the project the plugin dogfoods on: every gate entry here is a key into the build commands and every command those keys resolve to walks the tree or takes fixed directories, so no task can narrow anything, and the warning now names most of the plan and will never fall. The second route the message offers is worse than unavailable: writing the reason into the description changes nothing the validator reads, so an operator who follows the advice sees the same line forever. The material for the real question is on the manifest already. What must not move is the case the rule was built from - a generated plan that gave nine tasks the whole suite on a runner that DOES take paths - so the distinction is whether the project can narrow, never whether this task did.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a plan whose gate commands take no path raises nothing, a plan whose commands do take paths still raises on a task carrying the phase gate, and a task recording the derivation arm it took is read rather than asked for in prose"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P51.9",
+      "title": "The shared artifact carries the per-step cost the row already holds",
+      "status": "pending",
+      "description": "DONE MEANS: the rendered report shows what each gate step cost, so the tell that exposes a doubled run is visible in the artifact that actually gets shared. The terminal summary and the control surface both print the per-step duration; the rendered report drops it, and the rendered report is the thing a reviewer and a stakeholder are handed. So the one number that makes a duplicated suite self-evident is present exactly where the audience is technical and absent where the audience is being asked to trust the result. The row already carries the value, which makes this rendering rather than measurement. A step whose row carries no duration renders the absence, because a fabricated zero in a shared document is a claim about a measurement nobody made.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "examples/acme-store/acme-store-audit.html",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_render_report.py: a step whose row carries a duration renders it, and a step whose row carries none renders the absence rather than a zero"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }

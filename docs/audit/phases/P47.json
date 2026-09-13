@@ -25,5 +25,284 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P47.1",
+      "title": "The executor's gate is a resolved decision, not a sentence in a note",
+      "status": "cancelled",
+      "description": "Whether the executor runs the phase gate becomes a config decision the plugin resolves, instead of a sentence an operator pastes into a spawn prompt. The agent definition says to run every gate command it was given and the orchestrator reference says the executor must run the task gate through the runner; an operator suppressed that in every spawn prompt across two waves, measured the saving as the same wrapper run twice per task, and wrote the suppression into a handoff note. A note is invisible to the next session, so the largest measured saving of two waves survives only for readers of one file. The key carries a vocabulary rather than a boolean - never, the tests the executor itself wrote, the full gate - so the default can be the cheap one without removing the strict reading, and it resolves at spawn the way skills already do, from the area first and the task second. The two documents that currently say the opposite are part of the change, and so is the configuration table that has no row for it.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/config/validate-config.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_validate_config.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__config.py: the key resolves to its documented default when unset, and a spawn-time read of it is what the orchestrator document names",
+          "plugins/audit/tests/test_validate_config.py: an out-of-vocabulary value for the key is a finding that names the accepted set"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: duplicate of P42.5, which is in_progress and carries the same config key, the same two documents and the same default; created from the register's open entry without reading the plan's existing tasks"
+      },
+      "startedAt": null,
+      "completedAt": "2026-09-13T16:59:38Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P47.2",
+      "title": "A generated plan names a file in tests.add, and the plans already written are migrated",
+      "status": "pending",
+      "description": "The command that generates a plan tells its author that a test entry comes from suggested tests, which are sentences, while the schema requires a path followed by what it asserts and says a prose entry leaves the case file outside the task's files. Neither side is wrong alone. Together they put sentences where paths belong, and three symptoms follow from that one mismatch: the add and scope verbs fold the sentences into the task's files and the file index, so a repair is a hand edit under the index lock; the commit-scope invariant breaches by construction for every task that writes a new test file, discovered at sign-off after the commits; and the validator prints the same warning per entry, most of a page of them, each saying the entry names no file and that this becomes a finding at the next major. Making it a finding without a migration strands every plan generated before it, so both halves are owed together: the generator corrected at the source so no new plan is born with prose there, and a one-shot repair that turns a sentence into a path and a sentence where the path is derivable and names the rest for a human.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a prose entry whose path is derivable is reported with the rewrite it needs, and one whose path is not is reported as needing a hand",
+          "plugins/audit/tests/test_audit_doctor.py: the repair rewrites only the entries whose path is derivable, and says how many it left"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P47.3",
+      "title": "One JSON encoding, migrated once and held by a lint",
+      "status": "pending",
+      "description": "The plugin writes JSON two ways. A hand repair dumped a shard with one escaping and the diff showed a dozen unrelated bug titles changed; re-dumping with the other brought the diff back to the two lines that had actually moved. Counted across the scripts, both spellings are in use, and the editor a session uses writes the third. Mixed writers guarantee a conflict on the parallel phases that sharding exists to make possible: a title carrying one dash re-escapes on the next write by the other family and turns a two-line shard merge into a whole-file conflict. The repair is to choose once, rewrite every manifest the plugin owns in one migration, and hold the choice with a lint over the dump sites so a second family cannot come back - the same shape this repository already uses for its own house style. The migration is the part that needs care: it rewrites files a second session may hold, so it runs under the index lock and says what it changed.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/_panel_page.py",
+        "plugins/audit/scripts/governance/close-phase.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a dump site spelled with the other escaping is reported by name, and the reason is the diff it would produce",
+          "plugins/audit/tests/test__manifest_io.py: a manifest carrying a non-ASCII title round-trips through a write without the rest of the file moving"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P47.4",
+      "title": "A review finding becomes a task before any fix is spawned",
+      "status": "pending",
+      "description": "A sign-off fix run is refused on the second file it touches, because the plan gate opens a file only through a task that is running and sign-off happens when every task is done. The route out of that exists in the orchestrator reference, but its heading names the case where no task declares the file, so a reader whose file IS declared reads the route as not theirs; the paragraph below it already says a widening on a finished task records no new work, so the document knows the answer and buries it under the wrong condition. The measured cost of reading it the other way was most of a spawn's budget before the operator added a task by hand. Two repairs: the heading loses the adjective, so a finding gets a new task full stop; and the review command does the add and the start itself rather than asking the reader to. The second half of this is the finding record: the reviewer returns one shape and the orchestrator asks for another, and nothing in the schema says what a finding is, so every phase records them differently and none of them can be read back.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a recorded finding missing a required field is reported by name, and a finding whose severity is outside the vocabulary names the accepted set"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P47.5",
+      "title": "One session's trail lives in one file",
+      "status": "pending",
+      "description": "After an index commit the working tree shows two journal files modified: the session's own and a second named by a per-machine token. The append path names a file by the actor's session when the actor carries one, and the index-commit writer builds an actor with no session at all, so one session's trail is split across two files and a reader following it has to know to look in both. Nothing is lost, because both are staged at sign-off, but a trail whose location depends on which verb wrote a row is a trail nobody reconstructs by hand. The repair is one key: the writer takes the session id the scripts already receive, and falls back to the machine token only when there is no session. What remains after that is the older pair - the hook names its file from the payload's session and the CLI from the environment's, and the append records the other id on the row rather than renaming the file - and this task says whether that is the same bug or a different one rather than assuming.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: two CLI writers in one session append to one file, and a writer with no session still names its file by the machine token"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P47.6",
+      "title": "Attribution follows a continued executor to its next task",
+      "status": "pending",
+      "description": "The orchestrator reference prefers continuing an executor over spawning a fresh one, and the measurement behind that preference is large: a re-spawn reloads skills and context where a continuation does not. But attribution keys on the spawn description, so a continuation's whole spend lands on the first task the agent was spawned for, and the second task reads as free. The document's own preference and the document's own metering disagree, and the metering is what anybody arguing about cost will quote. The cheaper of the two repairs keeps the continuation: the follow-up message carries the task id on its first line, in the same convention the spawn description already uses, and the meter reads it. A continuation that names no task keeps attributing to the description, because inventing an attribution is worse than a known one being coarse.",
+      "files": [
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a continuation whose first line names a task attributes to that task, and one that names none still attributes to the spawn description"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }

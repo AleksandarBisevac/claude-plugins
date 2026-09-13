@@ -25,5 +25,269 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P50.1",
+      "title": "One command reaches the smallest plan that turns the guards on",
+      "status": "pending",
+      "description": "DONE MEANS: a user with no plan reaches a valid, minimal, honest plan in one command, and the guards that are inert without a manifest become live. The packaging split was refused on a measurement - most of the hooks are inert without a manifest, each for a correct reason, so a guards-only package would ship a mostly inert product and a machine installing both would register every hook twice. That refusal moves the onboarding cost rather than removing it, so it is paid here instead. The plan this writes is deliberately the smallest thing that is true: one phase, one task, the gate entries the repository can actually run, and no invented structure. A generated plan that looks impressive and describes work nobody agreed to is worse than three lines, because the first thing it teaches is that the manifest is decoration.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "QUICKSTART.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: the smallest plan the command writes validates, carries one phase with one task, and turns the guards that need a manifest from inert to live"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P50.2",
+      "title": "The README leads with what the baseline cannot do",
+      "status": "pending",
+      "description": "DONE MEANS: a reader who knows what a coding agent already does learns, in the first screen, what this adds that the agent cannot do alone, and the command list stops being the opening. The measurement behind the packaging decision is that most of the value is in the parts that need a manifest, and the document opens with a list of commands, which is the shape of a reference rather than an argument. The three things the baseline genuinely cannot do are a plan a tool refuses to let you leave, an evidence record that survives the session, and a guard that fires on an operation rather than on a spelling - and each is one sentence. The boundary belongs in the same screen: this is one repository, deliberately, and says so, because an undefined feature that ships is worse than a stated limit.",
+      "files": [
+        "plugins/audit/README.md",
+        "README.md",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P50.3",
+      "title": "A worked example that is not a Node project",
+      "status": "pending",
+      "description": "DONE MEANS: a reader whose project is not JavaScript sees the plugin working on a tree that looks like theirs, with gate entries their runner would actually take. The one worked example is a Node storefront, and every gate entry, every derived test path and every spelling in it is that ecosystem's. A reader in another language has to translate before they can evaluate, and the first thing they translate is the part that decides whether the product fits - how a gate entry names a path. The second example is chosen for how DIFFERENT its runner is rather than for popularity, because the question the example answers is whether the plan's vocabulary survives a runner that spells things another way. Nothing here is generated and committed without the derived-ledger check the first example already has.",
+      "files": [
+        "examples/acme-store/audit-plan.json",
+        "plugins/audit/README.md",
+        "tools/check-example-ledgers.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-example-ledgers.py: the second example's plan validates, its gate entries resolve to commands its own tree can run, and its committed ledger is re-derived rather than trusted"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P50.4",
+      "title": "The orchestrator reference loses every rule a script now enforces",
+      "status": "pending",
+      "description": "DONE MEANS: the document an orchestrator reads at the start of every run no longer restates a rule that a verb or a hook now refuses, and what remains is the part no mechanism can check. The document is the largest instruction in the product and almost none of it is checkable, which is why its claims were anchored first - that anchoring is the precondition this task spends. Several of its longest passages describe hand edits that verbs have since replaced, and a document that prescribes a hand edit the tool refuses teaches a reader to distrust the tool. The reduction is not a summarisation pass: each paragraph removed names the script that now enforces it, and the anchor is what proves the script still does. What stays is the judgement - which work to take next, when to stop, what to tell a human - and it is the part the document was always for.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: a rule the document states that a named script enforces is reported, and a rule no script enforces is left alone"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P50.5",
+      "title": "A comment states its constraint, and a lint holds the rule",
+      "status": "pending",
+      "description": "DONE MEANS: no comment or docstring in the published tree points at a record the reader cannot open, the rule is enforced by a lint rather than remembered, and the existing occurrences are rewritten to keep the constraint and drop the citation. A comment must speak to the logic or the technical fact of the block it sits on. The private register's ids have become this codebase's vocabulary instead, because the entries carry the reasoning and citing the entry felt like citing the reason - but the register is private and the code is published, so such a comment is a claim the reader cannot check, which is this project's most-repeated defect one surface over. The house skill already states the rule with nothing measuring it. One exception is written into the lint rather than assumed: a test case label may name the fault it reproduces, because the mutation harness attributes by that token, and that exception is precisely why the rule has to be written down rather than left to judgement. A comment whose whole content is a citation has no constraint to keep and is deleted.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/_deps.py",
+        "tools/prove-gates.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: a comment or docstring naming a tracker id is reported, a case label naming the fault it reproduces is exempt with the reason stated in the lint, and an id inside a string literal that is not a comment is left alone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P50.6",
+      "title": "A plan written under 2.x opens under 3.0 with no manual step",
+      "status": "pending",
+      "description": "DONE MEANS: a plan written against the previous major opens under this one, validates, renders and runs, without its owner editing a file. The compatibility document is a contract rather than a description: a version the plugin accepted keeps being accepted and a config key it read keeps being read, so this release's new refusals are the thing that has to be paid for. The one already named is the test entry that carries prose where a path belongs, which becomes a finding in this release and would strand every plan generated before it. The migration is a verb the owner runs, it says what it changed and what it could not, and anything it cannot carry forward is refused by name - a migration that silently drops a field it does not understand is how a plan loses the record of work somebody did. This is the highest-risk task in the release because it is the one that touches a file the plugin does not own.",
+      "files": [
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "COMPATIBILITY.md",
+        "plugins/audit/commands/migrate.md",
+        "plugins/audit/tests/test_migrate_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_migrate_manifest.py: a plan carrying every shape the previous major accepted opens, validates and renders without a hand edit, and a shape that genuinely cannot be carried forward is refused by name rather than dropped"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
