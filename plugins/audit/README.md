@@ -598,8 +598,12 @@ at every count including zero, and touches nothing outside `logsDir`. The panel'
 Overview tab reads it: a **Plan gate** card naming the active tier and where it came from,
 whether a bypass is armed right now, and the latest events — so what the gate has been
 deciding on your behalf is a glance, not an archaeology dig. And when the gate warns instead
-of denying, the warning opens with *"Tell the human this verbatim before continuing"* — the
-agent reading it is asked to relay it, not to weigh it silently.
+of denying, the warning opens with *"Tell the human this verbatim"* — the agent reading it is
+asked to relay it, not to weigh it silently. The explanation is said **once per session**: the
+first uncovered file gets it in full, every later one gets a single line naming the file and
+the running total of uncovered files, and the events feed still records every edit. It is not
+asked for *"before continuing"*, because a warn is delivered on the PostToolUse pass — by the
+time you read it the edit has already been made, and the tier stops nothing on purpose.
 
 | The Plan gate card (tier, source, the latest verdicts) |
 |---|

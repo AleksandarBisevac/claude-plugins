@@ -996,24 +996,32 @@ def _cases(check):
         v == "warn" and [r.get("event") for r in rows] == ["warn"], repr(rows))
     hok("i6 the warn text LEADS with the relay instruction - the cheap half "
         "of visibility, the feed is the durable half",
-        m.startswith("Tell the human this verbatim before continuing"),
+        m.startswith("Tell the human this verbatim:"),
         repr(m[:80]))
-    # F355: SAID IN FULL ONCE PER FILE PER SESSION. A field report counted the
-    # paragraph above on ~60 files and several hundred edits in one afternoon;
-    # the gate was advisory throughout and the relay was correct exactly once.
-    # The throttle is on the RELAY TEXT, never on the event - i6b keeps the
-    # feed complete - and i6d is the second-direction case that goes red if the
-    # throttle forgets to key on the file.
+    hok("i6f ...and it does NOT ask for that relay 'before continuing': this "
+        "verdict reaches a human only from main()'s PostToolUse branch, so "
+        "the write has landed by the time the sentence is read, and the "
+        "paragraph says so instead",
+        "before continuing" not in m and "already been made" in m, repr(m))
+    # SAID IN FULL ONCE PER SESSION. A field session met a long run of distinct
+    # uncovered files and read this whole paragraph for each of them; which
+    # tier this is and the two routes forward belong to the SESSION, and only
+    # the file's name and the running total change from one to the next. The
+    # throttle is on the RELAY TEXT, never on the event - i6b keeps the feed
+    # complete - and i6h is the second-direction case that goes red if a later
+    # file is silenced instead of shortened.
     v2, m2 = M.decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
                       logs_dir=ild, event="PostToolUse")
     rows = feed(ild)
     hok("i6a a SECOND edit of the same uncovered file in the same session is "
         "still a warn, but no longer carries the relay instruction or the "
-        "paragraph - it names the file and says it was said in full already",
+        "paragraph - it names the file, the running total and that the "
+        "explanation was said in full already",
         v2 == "warn"
         and not m2.startswith("Tell the human this verbatim")
-        and "src/graded/mod.ts" in m2 and "said in full once" in m2,
-        repr(m2[:100]))
+        and "src/graded/mod.ts" in m2 and "said in full once" in m2
+        and "1 uncovered file this session" in m2,
+        repr(m2[:160]))
     hok("i6b ...and the EVENT is still appended for that second edit: the "
         "throttle thins what the model relays, never what the log records",
         [r.get("event") for r in rows] == ["warn", "warn"], repr(rows))
@@ -1027,18 +1035,61 @@ def _cases(check):
                               sid="selftest-i5"),
                       cfg=cfg_graded, state_dir=sd, logs_dir=ild,
                       event="PostToolUse")
-    hok("i6d a DIFFERENT uncovered file in the same session gets the full "
-        "paragraph again - the throttle is per file, not per session",
+    hok("i6d a DIFFERENT uncovered file gets ONE LINE, not the paragraph "
+        "again - it names the file and the running total, and the total is "
+        "read from the throttle slot rather than frozen at an ordinal",
         v3 == "warn"
-        and m3.startswith("Tell the human this verbatim before continuing")
-        and "src/graded/other.ts" in m3, repr(m3[:80]))
+        and not m3.startswith("Tell the human this verbatim")
+        and "\n" not in m3
+        and "src/graded/other.ts" in m3
+        and "2 uncovered files this session" in m3, repr(m3))
+    v5, m5 = M.decide(payload("Edit", "src/graded/third.ts", new_string=big,
+                              sid="selftest-i5"),
+                      cfg=cfg_graded, state_dir=sd, logs_dir=ild,
+                      event="PostToolUse")
+    hok("i6h a THIRD distinct uncovered file is STILL a warn that names it "
+        "and counts it. The stronger proposal - stop entirely after enough "
+        "uncovered edits and say so once - would silence the tier field "
+        "reports credit with getting a phase started, so it was declined and "
+        "this case is what holds the decline",
+        v5 == "warn" and "src/graded/third.ts" in m5
+        and "3 uncovered files this session" in m5, repr(m5))
     v4, m4 = M.decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
                       logs_dir=ild, event="PreToolUse")
     hok("i6e Pre READS the throttle and does not write it: the first file is "
         "already a repeat on Pre, and Pre added nothing to the slot",
         v4 == "warn" and "said in full once" in m4
         and json.loads(warned_file.read_text(encoding="utf-8"))["files"]
-        == ["src/graded/mod.ts", "src/graded/other.ts"], repr(m4[:60]))
+        == ["src/graded/mod.ts", "src/graded/other.ts",
+            "src/graded/third.ts"], repr(m4[:60]))
+    # THE FROZEN ORDINAL. Once the session's one free small file is spent, the
+    # reason read "second distinct file in session" for every uncovered file
+    # after it, however far down the session that file was. The free slot holds
+    # the name of the file that spent it, so the reason says that - in the
+    # relayed text and in the gate-events row, which is the copy that outlives
+    # the message.
+    ild_o = tmp / "ev-ordinal"
+    sess_o = "selftest-i6o"
+    M.decide(payload("Write", "src/graded/free.ts", content="const a = 1;",
+                     sid=sess_o), cfg=cfg_graded, state_dir=sd,
+             logs_dir=ild_o, event="PostToolUse")
+    v6, m6 = M.decide(payload("Write", "src/graded/after.ts",
+                              content="const b = 2;", sid=sess_o),
+                      cfg=cfg_graded, state_dir=sd, logs_dir=ild_o,
+                      event="PostToolUse")
+    rows_o = feed(ild_o)
+    hok("i6g the reason names the file that spent this session's one free "
+        "slot instead of an ordinal nothing was counting",
+        v6 == "warn" and "second distinct file" not in m6
+        and "src/graded/free.ts" in m6 and "src/graded/after.ts" in m6,
+        repr(m6))
+    hok("i6i ...and the gate-events row carries that same reason: the row is "
+        "what a later reader has, so a frozen ordinal left there outlives "
+        "every message it was ever printed beside",
+        [r.get("event") for r in rows_o] == ["allow.trivial", "warn"]
+        and "second distinct file" not in (rows_o[-1].get("reason") or "")
+        and "src/graded/free.ts" in (rows_o[-1].get("reason") or ""),
+        repr(rows_o))
     clear_manifest()
     ild = tmp / "ev-bypass"
     sess_i = "selftest-i7"

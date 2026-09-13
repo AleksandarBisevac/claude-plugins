@@ -457,6 +457,34 @@ def _record_warned(state_dir, session_id, files):
         pass
 
 
+def _uncovered_tally(count):
+    """`N uncovered file(s)` - the running total of DISTINCT uncovered files
+    this session has been told about.
+
+    The total is the length of the warned slot, which the warn tier already
+    holds; rendering it here is what keeps the caller from printing a plural
+    noun against a count that disagrees with it, because a repeat of the very
+    first file reaches this with the smallest total there is.
+    """
+    return "%d uncovered file%s" % (count, "" if count == 1 else "s")
+
+
+def _slot_reason(files_list):
+    """Why an edit is out of policy once the session's free slot is spent, with
+    the file that spent it named.
+
+    This sentence used to be frozen at "second distinct file in session". The
+    slot holds one file, every uncovered file after it took that same wording,
+    and a long session's last uncovered file was still announced as the second
+    - in the message the model was asked to relay and in the gate-events row a
+    later reader consults. The slot always had the name; what was wrong was an
+    ordinal nothing was counting. Read by every tier, so no tier is left
+    holding the old claim.
+    """
+    return ("this session's one free file was already spent on %s"
+            % ", ".join(files_list))
+
+
 # --- which path an MCP write is decided on ------------------------------------
 def _mcp_plan_target(ti, root, cfg):
     """(the path this gate decides on, why) for an MCP call — (None, reason) when
@@ -751,7 +779,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 "first trivial code file (magnitude %d): %s" % (magnitude, rel))
 
     reason = (
-        "second distinct file in session"
+        _slot_reason(files_list)
         if len(files_list) > 0
         else "change magnitude %d (> %d)" % (magnitude, threshold)
     )
@@ -776,39 +804,67 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         return ("observe", "would have blocked (%s): %s" % (reason, rel))
 
     if mode == "warn":
-        # THE PARAGRAPH IS SAID ONCE PER FILE PER SESSION (F355). The tier is
-        # advisory, the sentence is correct, and it was being relayed VERBATIM
-        # on every Edit of an uncovered file - a field report counted it on some
-        # sixty files across several hundred edits in one afternoon, and this
-        # repository's own maintainer read it a dozen times in a day. A nudge
-        # that repeats on every edit is a nudge nobody reads, which is the
-        # argument `_owner_note` already makes for its own throttle; this is the
-        # same rule with the same state shape. What is throttled is the RELAY
-        # TEXT alone: the gate event below is still appended on every edit, so
-        # the log a later reader consults is complete, and the decision is
-        # untouched. Pre reads the throttle and Post writes it, the same
-        # transactional split every other piece of state here follows.
+        # THE PARAGRAPH IS SAID ONCE PER SESSION. The tier is advisory and the
+        # sentence is correct, but the whole explanation was being relayed for
+        # every uncovered file: a field session met a long run of distinct
+        # files and read the same three lines for each of them, and an earlier
+        # report counted the pre-throttle version across an afternoon's edits.
+        # WHICH TIER THIS IS AND THE TWO ROUTES FORWARD ARE PROPERTIES OF THE
+        # SESSION, not of the file - only the name and the running total change
+        # from one file to the next - so the first uncovered file carries the
+        # paragraph and every later one carries a line. A nudge that repeats is
+        # a nudge nobody reads, which is the argument `_owner_note` already
+        # makes for its own throttle; this is the same rule with the same state
+        # shape. What is throttled is the RELAY TEXT alone: the gate event
+        # below is still appended on every edit, so the log a later reader
+        # consults is complete, and the decision is untouched. Pre reads the
+        # throttle and Post writes it, the same transactional split every other
+        # piece of state here follows.
+        #
+        # AND THE RELAY DEMAND DROPS "before continuing". This verdict reaches
+        # a human only through main()'s PostToolUse branch - Pre prints nothing
+        # for a warn - so the edit is on disk before the sentence can be read.
+        # Asking for the relay "before continuing" named a moment that had
+        # already gone; the paragraph says what is actually true instead.
+        #
+        # IT STAYS A WARNING, AND THAT IS THE DECISION. The same report asked
+        # for the opposite ending: after enough uncovered edits with no phase
+        # running, stop entirely and say so once. That is silence with a
+        # counter in front of it. Field reports have named this tier as the
+        # thing that got a phase started, and the same reporter credits a
+        # sibling guard's notice with changing how he works - an operator
+        # learns about the next uncovered file from the line beside the edit,
+        # not from a tally nobody opens. So the repair is VOLUME, not silence.
+        # `plugins/audit/tests/test_require_plan.py` holds that as a case: a
+        # mutation letting this branch fall quiet once the session has already
+        # warned turns it red, so the choice is kept by a check rather than by
+        # this comment.
         warned = _warned_files(sd, session_id)
         repeat = rel in warned
+        tally = len(warned) if repeat else len(warned) + 1
         if commit_state:
             _config.append_gate_event(ld, {
                 "event": "warn", "file": rel, "mode": "warn",
                 "reason": reason, "sessionId": session_id})
             if not repeat:
                 _record_warned(sd, session_id, warned + [rel])
-        if repeat:
+        if warned:
             return (
                 "warn",
-                "%s is still not covered by an in_progress task (%s) - said in "
-                "full once already this session; the plan gate stays advisory."
-                % (rel, reason),
+                "%s is not covered by an in_progress task (%s) - %s this "
+                "session, said in full once already; the plan gate stays "
+                "advisory."
+                % (rel, reason, _uncovered_tally(tally)),
             )
         return (
             "warn",
-            "Tell the human this verbatim before continuing: "
-            "%s is not covered by an in_progress task (%s).\n"
+            "Tell the human this verbatim: "
+            "%s is not covered by an in_progress task (%s). The edit has "
+            "already been made - this tier does not stop anything.\n"
             "The plan gate is advisory until a phase is running: start one with "
-            "/audit:next or /audit:phase, or add a task covering this file to %s."
+            "/audit:next or /audit:phase, or add a task covering this file to %s.\n"
+            "Further uncovered files this session add one line each, naming the "
+            "file and the running total - this paragraph is said once."
             % (rel, reason, manifest_rel),
         )
 
