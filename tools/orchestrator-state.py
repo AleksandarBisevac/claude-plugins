@@ -64,6 +64,26 @@ def worktrees():
             and (r.get("branch") or "").startswith(("audit/", "p3", "p4"))]
 
 
+def _running(phase):
+    """Whether this phase is executing: its own status, OR a task under it that is.
+
+    THE SECOND ARM IS NOT A COURTESY. The plan gate resolves the same question the same
+    way and says why in its own words -- a manifest whose phase status was never written
+    is still a repo executing its plan, and refusing to notice would report an idle plan
+    while work is running. The status is the weaker signal here because nothing on the
+    command line writes it: there is a verb that promotes a task and none that promotes a
+    phase, so the field is maintained only by the control surface's heal on save. Keying
+    on it alone printed `nothing is ready` over a plan of forty-odd unblocked tasks.
+
+    Reading only the task arm would be the opposite error: a phase whose tasks are all
+    finished still reads `in_progress` until it is signed off, and its remaining pending
+    tasks -- there are none by then, but a plan mid-edit can have them -- belong to a
+    phase somebody entered deliberately."""
+    if phase.get("status") == "in_progress":
+        return True
+    return any(t.get("status") == "in_progress" for t in (phase.get("tasks") or []))
+
+
 def ready_tasks(manifest):
     """Task ids a RUNNING phase holds that nothing unfinished is waiting on.
 
@@ -83,7 +103,7 @@ def ready_tasks(manifest):
                     os.path.join(REPO, "docs/audit", entry["shard"]), encoding="utf-8"))
             except Exception:
                 continue
-        if node.get("status") != "in_progress":
+        if not _running(node):
             continue
         done = set(t["id"] for t in node.get("tasks", []) if t.get("status") == "done")
         for task in node.get("tasks", []):
@@ -144,7 +164,12 @@ def _cases(check):
             {"id": "P1.3", "status": "done", "dependsOn": []},
             {"id": "P1.4", "status": "pending", "dependsOn": ["P1.3"]}]},
         {"id": "P0", "title": "t", "status": "done", "tasks": [
-            {"id": "P0.1", "status": "pending", "dependsOn": []}]}]},
+            {"id": "P0.1", "status": "pending", "dependsOn": []}]},
+        {"id": "P2", "title": "t", "status": "pending", "tasks": [
+            {"id": "P2.1", "status": "in_progress", "dependsOn": []},
+            {"id": "P2.2", "status": "pending", "dependsOn": []}]},
+        {"id": "P3", "title": "t", "status": "pending", "tasks": [
+            {"id": "P3.1", "status": "pending", "dependsOn": []}]}]},
         io.open(os.path.join(box, "audit-plan.json"), "w"))
 
     global REPO
@@ -160,6 +185,14 @@ def _cases(check):
               "P1.4" in (got or []), got)
         check("s4 a task in a phase that is not running is never ready",
               "P0.1" not in (got or []), got)
+        check("s6 a phase reading 'pending' that HOLDS a running task is running, so its "
+              "other pending tasks are ready -- the plan gate's own rule, because no "
+              "command-line verb writes a phase's status and a reader that keys on it "
+              "alone sees an executing plan as an idle one",
+              "P2.2" in (got or []), got)
+        check("s7 ...and a pending phase holding NO running task is still not running, "
+              "which is the allow case that reddens if s6 is widened to any pending phase",
+              "P3.1" not in (got or []), got)
         REPO = os.path.join(box, "does-not-exist")
         check("s5 an unreadable manifest answers None rather than an empty list, so "
               "'nothing is ready' cannot be read off 'nothing could be read'",
