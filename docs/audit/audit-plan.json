@@ -3,7 +3,7 @@
   "meta": {
     "version": 3,
     "repo": "claude-plugins",
-    "title": "quality-gates roadmap \u2014 the repo dogfooding its own audit plugin",
+    "title": "quality-gates roadmap — the repo dogfooding its own audit plugin",
     "createdISO": "2026-07-07T00:00:00Z",
     "developmentBranch": "main",
     "branchPrefix": "audit",
@@ -1598,6 +1598,9 @@
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4"
+    ],
+    "tools/orchestrator-state.py": [
+      "P43.5"
     ]
   },
   "bugs": [
@@ -1608,7 +1611,7 @@
       "severity": "high",
       "reportedAt": "2026-07-07T00:30:00+02:00",
       "reportedBy": "claude plugin validate (v0.3.0 release gate)",
-      "description": "audit.md's frontmatter description contained ': ' unquoted, so YAML parsing failed and Claude Code loaded the command with EMPTY metadata \u2014 description, argument-hint and allowed-tools never applied, since v0.2.0. init.md's argument-hint parsed as a YAML array instead of a string.",
+      "description": "audit.md's frontmatter description contained ': ' unquoted, so YAML parsing failed and Claude Code loaded the command with EMPTY metadata — description, argument-hint and allowed-tools never applied, since v0.2.0. init.md's argument-hint parsed as a YAML array instead of a string.",
       "repro": [
         "claude plugin validate plugins/audit",
         "observe: 'YAML frontmatter failed to parse ... loads with empty metadata'"

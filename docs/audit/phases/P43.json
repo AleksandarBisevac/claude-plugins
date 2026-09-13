@@ -71,7 +71,7 @@
     {
       "id": "P43.2",
       "title": "audit-task.py done: a task is closed by a verb, not by two hand edits",
-      "status": "pending",
+      "status": "done",
       "description": "`audit-task.py done <taskId>` closes a task the way `start` opens one: status, completedAt and the commit it landed in, written once under the index lock with a journal row and a revalidation. Today there is no verb, so the orchestrator hand-edits the shard AND the index - and this session proved the cost, because a reset revealed that a phase's done-marks had been written only to the index and were gone. The same argument that justified `start` justifies this: one implementation beats a hand edit per site.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -100,21 +100,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "79edd0e",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "A task is closed by a verb, under the lock, with a journal row."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T09:18:17Z",
+      "completedAt": "2026-09-13T09:18:17Z",
+      "verifiedBy": [
+        "test_audit_task.py pd1-pd12"
+      ]
     },
     {
       "id": "P43.3",
       "title": "A worktree's work is taken against the base it actually had",
-      "status": "pending",
+      "status": "done",
       "description": "A tool takes a linked worktree's work against the base that worktree actually had, never against a branch that has moved since. This session took `git diff main` from a worktree whose `main` had advanced by three commits and silently reverted a sibling task's cases; it was caught only because a case count dropped. The base is not a guess - it is the worktree's own HEAD - and a tool that reads it removes the composition step where the mistake lives.",
       "files": [
         "tools/harvest-worktree.py",
@@ -142,16 +144,18 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e5b743c",
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "The base is the commit the worktree started at, read from its own reflog."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-13T09:41:21Z",
+      "completedAt": "2026-09-13T09:41:21Z",
+      "verifiedBy": [
+        "tools/harvest-worktree.py h1-h25"
+      ]
     },
     {
       "id": "P43.4",
@@ -205,6 +209,49 @@
       "startedAt": "2026-09-13T08:58:28Z",
       "completedAt": "2026-09-13T08:58:29Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P43.5",
+      "title": "The state an orchestrator reports from is read, not remembered",
+      "status": "done",
+      "description": "The read an orchestrator's report is written FROM. Three times in one run the orchestrator wrote a verb in the first person - \"I started it\", \"I am committing it\" - before executing the action, and the sentence became the artifact instead of the action. Each time the rule against it was already written down and already known, so a rule is not the repair. This is: one command that prints what is running, what is finished and waiting, what is uncommitted, and what is ready - and the turn ends with it, with the report saying only what it printed. It never claims an agent is alive, because this process cannot see the agent list; a clean worktree whose head has not moved is reported as the two things it may be.",
+      "files": [
+        "tools/orchestrator-state.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/orchestrator-state.py: a task waiting on an unfinished dependency is not ready; a manifest that cannot be read answers None rather than an empty list"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "256c175",
+      "outcome": {
+        "technical": null,
+        "descriptive": "The orchestrator's report is written from a read, not from memory."
+      },
+      "startedAt": "2026-09-13T09:16:11Z",
+      "completedAt": "2026-09-13T09:17:54Z",
+      "verifiedBy": [
+        "tools/orchestrator-state.py s1-s5"
+      ]
     }
   ]
 }
