@@ -176,9 +176,14 @@ and it denies once a phase is running. `enforce: true` in `.claude/audit.config.
 at every tier, and `planGate` (0.34.0) pins any single tier by hand — `"observe"`, `"warn"`,
 `"ask"` (each out-of-plan edit waits for the human's approval) or `"deny"` — winning over
 `enforce` when both are set; a `planGate` typo fails open to the graded ladder, never to
-deny. Both plan gates are graded this way — `require-plan` and the shell-write
-branch of `guard-secrets-read` — so the same file gets the same verdict whether it is edited
-through a tool or through `sed -i`.
+deny. Both plan gates are graded this way — `require-plan`, and **both** Bash-write branches of
+`guard-secrets-read`: the shell forms (`sed -i`, `tee`, `>`/`>>`) and the interpreter ones
+(`python -c`, `node -e`, and the heredoc spelling of either), which resolve their tier through
+the single function in that hook that is allowed to read one. So the same file gets the same
+verdict whether it is edited through a tool, through `sed -i` or through `python3 -c`. The
+interpreter branch was the exception for a long time — it refused a file an `in_progress` task
+declared, at every tier, while printing the plan gate's name — and the secret rules beside it
+are still graded by nothing at all, which is the distinction that branch had erased.
 
 **The plan gate speaks to two audiences, and since 2.1.1 it says different things to them.** A
 subagent's payload carries `agent_id` and the main agent's does not. A subagent is told to stop and
@@ -548,6 +553,16 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    (`python -c "open(...,'w')"`) are heuristically blocked — full Bash-write
    coverage is statically undecidable (obfuscated redirects; upstream:
    anthropics/claude-code#29709).
+
+   **Blocked means "at the tier that file would get from `Edit`",** for both forms
+   alike — see *When the plan gate actually blocks* above. A file an `in_progress`
+   task declares is not blocked by either; a file outside the repository is
+   neither form's business; and which extensions count comes from
+   `tddReminder.sourceGlobs`, which deliberately excludes `.json` so that no
+   consumer's package manifest is gated by a redirect. The interpreter form
+   answered none of those questions for a long time — it refused whatever its own
+   extension list matched, at every tier, and said the plan-first gate had done
+   it.
 
    **What that heuristic reads, stated because the residual is the point of this
    list.** A heredoc fed to an interpreter is graded exactly like `-c`/`-e`

@@ -56,12 +56,24 @@ the harness sandbox's job and always was — which is why (d) exists at all, and
 journal-writes records every unsandboxed Bash run whether or not this hook refused
 it. SECURITY.md says the same thing in the same words; keep the two in step.
 
-Plan-first backstop for Bash WRITES (this is the only hook that sees Bash):
-  - inline-eval writes to a non-exempt source path;
-  - the high-signal shell write forms into a non-exempt source file that no
-    in_progress manifest task covers: `sed -i`, `tee <file>`, and `>`/`>>`
-    redirects (which also catches `cat > file <<EOF` heredocs). The block
-    message steers to the Edit/Write tools, which the plan gate governs.
+Plan-first backstop for Bash WRITES (this is the only hook that sees Bash).
+GRADED, and the ONLY graded rule in this file: both forms below are judged on
+the plan gate's tier for the file (`_config.plan_gate_mode` — require-plan's own
+resolver), so one file gets one verdict whether it is written through `Edit`,
+through `sed -i`, or through `python3 -c`. `_plan_gate_write_verdict` is the one
+place a tier is read, and no Rule #1 or Rule #2 branch calls it.
+  - the write CALLS inside an interpreter — `python -c`, `node -e`, and the
+    heredoc spelling of either — naming a non-exempt source path;
+  - the high-signal shell write forms into a non-exempt source file: `sed -i`,
+    `tee <file>`, and `>`/`>>` redirects (which also catches
+    `cat > file <<EOF` heredocs). The block message steers to the Edit/Write
+    tools, which the plan gate governs.
+  Both arms ask `_ungoverned_write_target` the same four questions — source
+  extension, inside the repository, not exempt, not covered by an in_progress
+  task. They asked different ones for a long time, and the interpreter arm consulted
+  no plan at all while its refusal blamed the plan-first gate: a `.ts` file a
+  running task declared was denied through the interpreter and allowed through
+  `echo >`, and a consumer's own `exemptGlobs` reached only the shell half.
   - those same write forms aimed at the MANIFEST - the configured `manifestPath`,
     its lockfile, or a phase shard `_config.governing_lock` resolves - which are
     refused to a subagent and to a session that is not the live lock holder,
@@ -549,51 +561,6 @@ def _eval_reads_a_secret(clause, extras):
     return bool(targets) and _hits_extra(" ".join(targets), extras)
 
 
-_NON_EXEMPT_WRITE_TARGET = re.compile(
-    r"['\"][\w./-]+\.(?:tsx?|jsx?|mjs|cjs|json|ya?ml|swift|kt|java|rb|py|sh|gradle|"
-    r"podspec|plist)['\"]",
-    re.IGNORECASE,
-)
-_EXEMPT_WRITE_PATH = re.compile(
-    r"(?:\.claude/|docs/audit/|\.md['\"\s]"
-    # F20's own class, found by measuring this function rather than by a report:
-    # a scratch file under a temp root is not source, and refusing it is how a
-    # guard teaches people to route around it -- into the shape it cannot see at
-    # all. `/private/tmp` and `/var/folders` are what a macOS session actually
-    # gets, so listing only `/tmp` would have exempted the example and not the
-    # reality. Matched against the TARGET, never the clause: a source write that
-    # merely reads from /tmp stays a write (s43).
-    r"|^['\"]/(?:private/)?tmp/|^['\"]/var/folders/)",
-    re.IGNORECASE,
-)
-# F-A-1 (v0.37 A1): `\.test\.|\.spec\.` used to live in _EXEMPT_WRITE_PATH, so
-# ANY name containing the suffix walked through the eval-write backstop --
-# `python3 -c "open('tsconfig.test.json','w')..."` was allowed while the same
-# file through Edit is gated. Same data-format carve-out the Edit-path glob
-# lists got in v0.36 A1: a test-suffix NAME whose extension is a pure
-# data/markup format is build configuration, not a test. The authoritative
-# extension list is _config._NON_CODE_TEST_EXTS -- SHARED, not copied: this
-# hook sits in the same hooks package (_config is already its config/manifest
-# core), the leading underscore marks the name internal to that package, and a
-# public alias would be a second name for one list that the two matchers could
-# then drift apart on.
-_TEST_SUFFIX_TOKEN = re.compile(r"[\w.+~/-]*\.(?:test|spec)\.[\w.+-]*",
-                                re.IGNORECASE)
-
-
-def _exempt_eval_write(clause):
-    """True when an eval-write clause names an exempt path (used per clause).
-
-    Exempt: .claude/, docs/audit/, .md targets, and test-suffix names -- but a
-    test-suffix name in a data/markup format (.json/.yaml/.toml/...) is NOT a
-    test file and keeps no exemption.
-    """
-    if _EXEMPT_WRITE_PATH.search(clause):
-        return True
-    return any(
-        not m.group(0).lower().endswith(_config._NON_CODE_TEST_EXTS)
-        for m in _TEST_SUFFIX_TOKEN.finditer(clause))
-
 # --- shell write forms into files (plan-first backstop) --------------------------
 # `>`/`>>`, incl. `1>`/`1>>` (explicit stdout) and `>|`/`>>|` (noclobber
 # override); NOT `2>`/`&>` (stderr/both — not a source-file write we gate).
@@ -725,8 +692,9 @@ def _deny_payload(msg):
 
 def _ask_payload(msg):
     """Canonical PreToolUse ask payload — planGate:"ask" parity with
-    require-plan (v0.34 B1). Only the shell PLAN-gate branch can return ask;
-    the secret guards are never graded and never ask."""
+    require-plan (v0.34 B1). Only the PLAN-gate write arms can return ask -
+    the shell forms and the interpreter ones, through the one function that
+    reads a tier; the secret rules are never graded and never ask."""
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -1024,20 +992,47 @@ def _shell_write_targets(cmd):
 _source_exts = _config.source_exts
 
 
-def _source_write_hit(cmd, root, cfg):
-    """First non-exempt SOURCE file (not covered by an in_progress task) that
-    `cmd` writes to via sed -i / tee / a >(>) redirect — or None.
+def _ungoverned_write_target(targets, root, cfg):
+    """First path in `targets` that is a non-exempt SOURCE file inside the
+    consuming repository which no in_progress task covers — or None.
 
-    A target OUTSIDE the consuming repository is skipped, not reported. This is
-    the shell-write half of the plan gate and SECURITY.md promises the two
-    halves agree — "the same file gets the same verdict whether it is edited
-    through a tool or through `sed -i`" — so require-plan's containment check is
-    one this branch owes identically. Without it `sed -i` into a scratch file
-    under the system temp directory relpath'd to `../../../private/tmp/probe.py`,
-    matched no exempt glob, was covered by no in_progress task, and denied. A
-    `continue` rather than a `return`: a command writing one file out of scope
-    and one in it still has an in-repo finding to report."""
-    targets = _shell_write_targets(cmd)
+    ONE DEFINITION OF "A FILE THE PLAN GATE CARES ABOUT", asked by every Bash
+    write form this hook grades: the shell redirect / `tee` / `sed -i` grammar
+    below, and the write CALLS inside an interpreter body. The two arms used to
+    ask different questions — this one, and a regex over the clause pairing an
+    extension list of its own with a hardcoded exempt list — so one `.ts` file
+    was refused through `python3 -c` and allowed through `echo >`, and a
+    consumer's `exemptGlobs` reached only one of the two. The extension list is
+    `_config.source_exts`, whose docstring already claims to be that one place.
+
+    Four questions, in this order, and each of them is somebody's recorded bug:
+
+      * SOURCE, by extension, derived from `tddReminder.sourceGlobs`. It
+        deliberately excludes `.json`, which is why no consumer's package.json,
+        tsconfig.json or fixture is gated here — and why the manifest needs the
+        separate, RESOLVED target set `_manifest_write_hit` holds.
+      * INSIDE the repository. A target outside it is skipped, not reported:
+        SECURITY.md promises "the same file gets the same verdict whether it is
+        edited through a tool or through `sed -i`", so require-plan's
+        containment check is one these arms owe identically. Without it a write
+        into a scratch file under the system temp directory relpath'd to
+        `../../../private/tmp/probe.py`, matched no exempt glob, was covered by
+        no in_progress task, and was denied — a refusal nobody could act on,
+        which is the route-around class. It is also what retired the eval arm's
+        own `/tmp` / `/private/tmp` / `/var/folders` literals (F20): the
+        question those spelled was never "is this a temp directory" but "is
+        this my repository", and only one of the two can be answered correctly
+        on a machine whose repo lives under a temp root.
+      * NOT EXEMPT, against the project's own `exemptGlobs` through
+        `_config.matches_exempt` — which carries the carve-out F-A-1 put in
+        this file by hand: a test-suffix NAME in a pure data/markup format
+        (`tsconfig.test.json`) is build configuration, not a test, and keeps no
+        exemption. Shared rather than copied, so the Edit path and these two
+        cannot drift over what a test file is.
+      * NOT COVERED by an in_progress task, exactly or by directory prefix.
+
+    A `continue` rather than a `return` at each: a command writing one file out
+    of scope and one in it still has an in-repo finding to report."""
     if not targets:
         return None
     exts = _source_exts(cfg)
@@ -1061,6 +1056,93 @@ def _source_write_hit(cmd, root, cfg):
             continue
         return rel
     return None
+
+
+def _source_write_hit(cmd, root, cfg):
+    """The ungoverned source file `cmd` writes to via sed -i / tee / a >(>)
+    redirect — or None. The shell half of the plan gate's write arm."""
+    return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg)
+
+
+def _eval_write_hit(graded, root, cfg):
+    """(the ungoverned source file an interpreter clause WRITES, how that clause
+    was spelled) for the first such clause — or (None, None).
+
+    The interpreter half of the same arm, and it is the same question asked of a
+    different grammar: `_eval_write_targets` resolves what a write CALL names,
+    `_ungoverned_write_target` decides whether the plan gate has anything to say
+    about it. Per clause rather than over one flattened target list, because the
+    refusal has to name the spelling the operator actually typed (F256) and only
+    the clause knows whether it arrived as `-c` or as a heredoc body."""
+    for cl, is_eval, how in graded:
+        if not is_eval:
+            continue
+        hit = _ungoverned_write_target(_eval_write_targets(cl), root, cfg)
+        if hit:
+            return (hit, how)
+    return (None, None)
+
+
+_PLAN_WRITE_DENY = (
+    "%s bypasses the plan-first gate: %s\n%s Use the Edit/Write tools "
+    "(guard-edits + require-plan review the change), or cover the file with an "
+    "in_progress task. Exempt paths (docs, tests, .claude/**) are unaffected."
+)
+_PLAN_WRITE_ASK = (
+    "%s outside the plan: %s\n"
+    "planGate is set to \"ask\" in .claude/audit.config.json, so this write waits "
+    "for your approval - approving covers this one command. Prefer the Edit/Write "
+    "tools (guard-edits + require-plan review the change), or cover the file with "
+    "an in_progress task."
+)
+
+
+def _plan_gate_write_verdict(root, cfg, hit, surface):
+    """Grade ONE ungoverned write target against the plan gate's tier.
+
+    THE ONLY GRADED RULE IN THIS FILE, and the only function that may reach for
+    a tier. Every Rule #1 / Rule #2 branch — reading a secret file, sourcing
+    one, copying one, dumping the environment, echoing a token — is a claim
+    about the operation alone and returns its own ("block", …) without ever
+    coming here: logging an auth token is wrong whether or not a plan exists, so
+    those refuse at every tier including the one with no manifest at all. A
+    guard that needed a plan to be right about a `.env` would be off in every
+    repository that has not adopted this plugin, which is most of them.
+
+    What is graded is plan COVERAGE, which is meaningless without a plan. Both
+    Bash write forms come through here because the promise is one file, one
+    verdict: `Edit src/x.ts`, `sed -i src/x.ts` and
+    `python3 -c "open('src/x.ts','w')"` are one operation in three spellings,
+    and the tier is `_config.plan_gate_mode` — require-plan's own resolver —
+    for all three. `surface` names the spelling in the operator's words, because
+    a refusal that describes a command nobody typed reads as a guard firing at
+    random (F256)."""
+    manifest_rel = (cfg.get("manifestPath")
+                    or _config.DEFAULTS["manifestPath"])
+    state = _config.manifest_state(root, manifest_rel)
+    mode = _config.plan_gate_mode(cfg, state)
+    if mode == "deny":
+        # The refusal names its ACTUAL cause (F-F4), mirroring require-plan word
+        # for word: "a phase is in_progress" was printed here even when the
+        # denial came from enforce:true in an empty repo.
+        knob = _config.plan_gate_knob(cfg)
+        if knob == "deny":
+            cause = ("planGate is set to \"deny\" in "
+                     ".claude/audit.config.json - refused regardless "
+                     "of what is running.")
+        elif _config.enforce_always(cfg):
+            cause = ("enforce: true is set in .claude/audit.config.json "
+                     "(legacy; planGate: \"deny\" says the same) - "
+                     "refused regardless of what is running.")
+        else:
+            cause = ("Phase %s is in_progress, so edits are held to "
+                     "the plan." % (state.get("runningPhase") or "?"))
+        return ("block", _PLAN_WRITE_DENY % (surface, hit, cause))
+    if mode == "ask":
+        # planGate:"ask" parity with require-plan: the same file must be treated
+        # the same whether the agent reaches for Edit, sed -i or python3 -c.
+        return ("ask", _PLAN_WRITE_ASK % (surface, hit))
+    return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
 
 
 # --- the manifest, reached by shell instead of by Edit ---------------------------
@@ -1400,19 +1482,27 @@ def _decide_core(data, root, cfg):
                         "Listing names is fine; reading contents is not. Ask the "
                         "user to paste any value you actually need."
                         % (_EVAL_SHAPE[how],))
-        for cl, is_eval, how in graded:
-            # F-P-7: judged on the paths the write calls NAME, not on a write
-            # shape and a path that merely share a clause.
-            targets = _eval_write_targets(cl) if is_eval else []
-            if any(_NON_EXEMPT_WRITE_TARGET.search("'%s'" % t)
-                   and not _exempt_eval_write("'%s'" % t) for t in targets):
-                return ("block",
-                        "Writing source files from %s bypasses the plan-first "
-                        "gate.\n"
-                        "Use the Edit/Write tools so guard-edits and require-plan "
-                        "can review the change. This is a best-effort backstop — "
-                        "full Bash-write coverage needs a PostToolUse diff check."
-                        % (_EVAL_SHAPE[how],))
+        # EVERY SECRET RULE IS ABOVE THIS LINE AND EVERY GRADED ONE IS BELOW IT.
+        # What follows is the plan gate, not a secret guard: it asks whether a
+        # WRITE is covered by the plan, which is a question only a repository
+        # with a plan can answer, so it is graded through
+        # `_plan_gate_write_verdict` and allows on the weakest evidence. Nothing
+        # below may be used to weaken anything above it — a secret read is
+        # refused at every tier, manifest or not, and the cases that would go
+        # red if a tier ever reached one of those branches are the `pg` group in
+        # plugins/audit/tests/test_guard_secrets_read.py.
+        #
+        # F-P-7: judged on the paths the write calls NAME, not on a write shape
+        # and a path that merely share a clause. And graded on the same tier
+        # the shell arm below is graded on, which it was not — a `.ts` file
+        # an in_progress task declared was refused through `python3 -c` and
+        # allowed through `echo >`, by a message that blamed the plan-first gate
+        # while consulting no plan at all.
+        ehit, ehow = _eval_write_hit(graded, root, cfg)
+        if ehit:
+            return _plan_gate_write_verdict(
+                root, cfg, ehit,
+                "A source-file write from %s" % (_EVAL_SHAPE[ehow],))
         # BEFORE the source-write gate, and before any exempt glob is consulted,
         # because the manifest is not a source file and is not this gate's subject
         # under either heading: `.json` is no source extension and the default
@@ -1422,6 +1512,16 @@ def _decide_core(data, root, cfg):
         #
         # Falls THROUGH on None rather than returning: a command that writes the
         # manifest and a source file in one breath still owes the source verdict.
+        #
+        # ITS TARGET SET IS THE SHELL GRAMMAR ALONE, and that is a residual, not
+        # a decision this line can defend: `_manifest_write_hit` reads redirects,
+        # `tee` and `sed -i`, so a subagent writing its own phase shard through
+        # `python3 -c "open('docs/audit/phases/P1.json','w')"` reaches neither
+        # this arm nor the source arm above it - `docs/audit/**` is exempt there
+        # and `.json` is no source extension. Driven, at this line and before it:
+        # the shell spellings deny and the interpreter one allows. The two write
+        # arms agree about the PLAN GATE now; they do not yet agree about who
+        # owns the plan.
         mhit = _manifest_write_hit(runnable, root, cfg)
         if mhit:
             refusal = _manifest_write_verdict(data, root, cfg, mhit)
@@ -1432,52 +1532,12 @@ def _decide_core(data, root, cfg):
         # body stays in this view: a `sed -i` inside one is still a shell write.
         hit = _source_write_hit(runnable, root, cfg)
         if hit:
-            # This is a PLAN gate, so it is graded on the same evidence
-            # require-plan uses. Otherwise `Edit src/x.ts` would be merely observed
-            # while `sed -i src/x.ts` still denied — same file, same rule, opposite
+            # The same grading, through the same function, as the interpreter arm
+            # above. Otherwise `Edit src/x.ts` would be merely observed while
+            # `sed -i src/x.ts` still denied — same file, same rule, opposite
             # verdict, decided by which tool the agent happened to reach for.
-            #
-            # Only this branch is graded. Every secret-detection branch above stays
-            # deny-by-default: reading .env is wrong whether or not a plan exists,
-            # so those guards need no evidence to be right.
-            manifest_rel = (cfg.get("manifestPath")
-                            or _config.DEFAULTS["manifestPath"])
-            state = _config.manifest_state(root, manifest_rel)
-            mode = _config.plan_gate_mode(cfg, state)
-            if mode == "deny":
-                # The refusal names its ACTUAL cause (F-F4), mirroring
-                # require-plan word for word: "a phase is in_progress" was
-                # printed here even when the denial came from enforce:true in
-                # an empty repo.
-                knob = _config.plan_gate_knob(cfg)
-                if knob == "deny":
-                    cause = ("planGate is set to \"deny\" in "
-                             ".claude/audit.config.json - refused regardless "
-                             "of what is running.")
-                elif _config.enforce_always(cfg):
-                    cause = ("enforce: true is set in .claude/audit.config.json "
-                             "(legacy; planGate: \"deny\" says the same) - "
-                             "refused regardless of what is running.")
-                else:
-                    cause = ("Phase %s is in_progress, so edits are held to "
-                             "the plan." % (state.get("runningPhase") or "?"))
-                return ("block",
-                        "Shell write into a source file bypasses the plan-first "
-                        "gate: %s\n%s Use the Edit/Write tools (guard-edits + "
-                        "require-plan review the change), or cover the file "
-                        "with an in_progress task. Exempt paths (docs, tests, "
-                        ".claude/**) are unaffected." % (hit, cause))
-            if mode == "ask":
-                # planGate:"ask" parity with require-plan: the same file must be
-                # treated the same whether the agent reaches for Edit or sed -i.
-                return ("ask",
-                        "Shell write into a source file outside the plan: %s\n"
-                        "planGate is set to \"ask\" in .claude/audit.config.json, "
-                        "so this write waits for your approval - approving covers "
-                        "this one command. Prefer the Edit/Write tools "
-                        "(guard-edits + require-plan review the change), or cover "
-                        "the file with an in_progress task." % hit)
-            return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
+            return _plan_gate_write_verdict(
+                root, cfg, hit, "Shell write into a source file")
         return ("allow", "bash: no secret read")
 
     if tool.startswith("mcp__"):

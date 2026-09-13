@@ -127,15 +127,14 @@ def main():
 
 
 # --- selftest -------------------------------------------------------------------
-def _selftest():
+def _cases(check):
+    """The readiness rule, driven on a fixture manifest.
+
+    `check` is the house runner's, and this file hands its cases over rather than keeping
+    a tally: a hand-rolled one prints the same last line on a pass and on a failure, which
+    is exactly what `_suite.runner_problem()` reports and what it caught here."""
     import shutil
     import tempfile
-    results = []
-
-    def check(label, ok, detail=""):
-        results.append(ok)
-        print("%s %s%s" % ("PASS" if ok else "FAIL", label,
-                           ("  -- " + str(detail)[:110]) if (detail and not ok) else ""))
 
     box = tempfile.mkdtemp(prefix="orchstate-")
     json.dump({"phases": [
@@ -169,10 +168,10 @@ def _selftest():
         REPO = keep
         shutil.rmtree(box, ignore_errors=True)
 
-    n, ok = len(results), sum(1 for x in results if x)
-    print("\n%s: %d/%d cases passed"
-          % ("ALL PASS" if ok == n else "SELFTEST FAILED", ok, n))
-    return 0 if ok == n else 1
+
+def _selftest():
+    from _suite import run          # the house runner; tools/_suite.py says why here
+    return run(_cases)
 
 
 if __name__ == "__main__":

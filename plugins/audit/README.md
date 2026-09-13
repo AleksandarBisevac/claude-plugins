@@ -256,9 +256,10 @@ page behind it, read against the form rather than instead of it. All of it is
     per session, with a manifest but nothing running it warns, and it denies only while a
     phase is `in_progress` (`planGate` pins any single tier — including `ask`, which holds
     each out-of-plan edit for your approval; legacy `enforce: true` = `planGate: "deny"`).
-    The shell-write plan gate
-    in `guard-secrets-read.py` grades identically, so `sed -i` and `Edit` agree on the same
-    file; the secret checks themselves are never graded. A refusal names its true cause —
+    Every Bash WRITE form
+    in `guard-secrets-read.py` grades identically, so `sed -i`, a `>` redirect and
+    `python3 -c` all agree with `Edit` about the same file; the secret checks themselves are
+    never graded. A refusal names its true cause —
     the running phase by id, or the config key that pinned the tier — and weighs the two
     ways forward: add a task covering the file (preferred), or the **human** types the
     bypass keyword in their own prompt; an agent reading it is told to ask, not to

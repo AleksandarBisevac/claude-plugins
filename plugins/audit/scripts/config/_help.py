@@ -425,11 +425,18 @@ def _gate_topic():
             "which is a different and worse product sharing one code path. So the "
             "gate grades itself, and every tier below is read from the same "
             "function the hook calls.",
-            "The secret guards are never graded. Logging an auth token is wrong "
-            "whether or not a plan exists, and `guard-secrets-read` / `guard-edits` "
-            "refuse at every tier.",
-            "The shell-write half of the gate grades identically, so `sed -i` and "
-            "the Edit tool agree about the same file.",
+            "The secret RULES are never graded. Logging an auth token is wrong "
+            "whether or not a plan exists, so reading a secret file, sourcing or "
+            "copying one, dumping the environment and echoing a token are refused "
+            "at every tier by `guard-secrets-read` / `guard-edits` - including "
+            "the tier a repo with no manifest at all is on. What is graded is "
+            "plan COVERAGE, which is the one claim that needs a plan to mean "
+            "anything, and `guard-secrets-read` reads a tier in exactly one "
+            "function (`_plan_gate_write_verdict`) that no secret rule calls.",
+            "Every Bash WRITE form grades identically, so `sed -i`, a `>` "
+            "redirect, `python3 -c` and the Edit tool agree about the same file. "
+            "The interpreter form used to be the exception: it refused a file an "
+            "in_progress task declared, at every tier, in the plan gate's name.",
             "`planGate` pins one tier by hand - observe, warn, ask or deny - "
             "instead of grading on evidence, and it beats the legacy `enforce` "
             "flag when both are set. A typo fails open to the graded ladder, "

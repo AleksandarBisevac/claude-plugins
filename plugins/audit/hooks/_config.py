@@ -32,8 +32,9 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   manifest but nothing running, deny once a phase
                                   is in_progress. What is graded is the
                                   PLAN-COVERAGE class, wherever it is enforced —
-                                  require-plan's Edit/Write path, the shell-write
-                                  branch of guard-secrets-read and the PostToolUse
+                                  require-plan's Edit/Write path, BOTH Bash-write
+                                  branches of guard-secrets-read (the shell forms
+                                  and the interpreter ones) and the PostToolUse
                                   report in guard-bash-writes all resolve their
                                   tier through plan_gate_mode below (F52), so one
                                   file gets one verdict whichever way it is

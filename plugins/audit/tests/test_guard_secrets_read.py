@@ -241,22 +241,59 @@ def _cases(check):
     _expect("n4 find -name .env allowed", "allow", bash("find . -name '.env'"))
 
     # --- inline-eval WRITE heuristic ---
+    # PINNED AT THE DENY TIER, like s1-s5 below and for the same reason: this
+    # arm is graded now and the fixture has no manifest yet, so an
+    # unpinned case here would read `observe` and assert nothing in either
+    # direction. What these pin is WHICH FILE the arm calls an ungoverned source
+    # write; the tier is the `we` group further down.
     _expect("w1 python -c write to .ts blocked", "block",
-          bash("python3 -c \"open('src/foo/a.ts','w').write('x')\""))
+          bash("python3 -c \"open('src/foo/a.ts','w').write('x')\""),
+          use_cfg=cfg_enforced)
     _expect("w4 python -c write to .claude path allowed", "allow",
-          bash("python3 -c \"open('.claude/state/x.json','w').write('{}')\""))
+          bash("python3 -c \"open('.claude/state/x.json','w').write('{}')\""),
+          use_cfg=cfg_enforced)
     _expect("w5 node -e write to *.spec.ts allowed", "allow",
-          bash("node -e \"fs.writeFileSync('src/foo/a.spec.ts','test')\""))
-    # (w6/w7) F-A-1: the test-suffix exemption stops at data formats, exactly
-    # as the Edit-path glob lists learned in v0.36 A1. `tsconfig.test.json` is
-    # build configuration named like a test; the same file through Edit is
-    # gated, and the eval-write backstop must not be the cheaper door.
-    _expect("w6 python -c write to tsconfig.test.json blocked - a test-suffix "
-          "name in a data format is config, not a test", "block",
-          bash("python3 -c \"open('tsconfig.test.json','w').write('{}')\""))
+          bash("node -e \"fs.writeFileSync('src/foo/a.spec.ts','test')\""),
+          use_cfg=cfg_enforced)
+    # (w6/w7) F-A-1 asked whether a test-suffix NAME in a data format keeps the
+    # test exemption, and the answer is still no - `_config.matches_exempt`
+    # carries that carve-out for every gate at once, which is why this file no
+    # longer spells it. What changed since is the question asked FIRST: the
+    # arm grades the paths `tddReminder.sourceGlobs` describes, and `.json` is
+    # deliberately not among them, so no consumer's package.json, tsconfig.json
+    # or fixture is gated by EITHER Bash write form. w6 is that agreement
+    # asserted as a pair - the two spellings of one write, one verdict - because
+    # the cheaper door F-A-1 closed was the eval arm disagreeing with its
+    # neighbour, and it had been left open in the other direction ever since.
+    # The file is still gated where its extension does not matter: `Edit`.
+    check("w6 `tsconfig.test.json` gets ONE verdict from both Bash write forms, "
+          "and at the deny tier it is allow - `.json` is no source extension "
+          "for either of them, and the arm that used to refuse it was refusing "
+          "what `echo >` had always been allowed to do",
+          M.decide(bash("python3 -c \"open('tsconfig.test.json','w')"
+                        ".write('{}')\""), cfg=cfg_enforced)[0] == "allow"
+          and M.decide(bash("echo '{}' > tsconfig.test.json"),
+                       cfg=cfg_enforced)[0] == "allow",
+          repr((M.decide(bash("python3 -c \"open('tsconfig.test.json','w')"
+                              ".write('{}')\""), cfg=cfg_enforced),
+                M.decide(bash("echo '{}' > tsconfig.test.json"),
+                         cfg=cfg_enforced))))
+    check("w6b ...while the carve-out itself is untouched, asserted where it "
+          "now lives: a test-suffix name in a data format is NOT exempt, so a "
+          "project that adds .json to its sourceGlobs gets it gated rather "
+          "than waved through as a test",
+          not _config.matches_exempt("tsconfig.test.json",
+                                     _config.DEFAULTS["exemptGlobs"])
+          and _config.matches_exempt("cart.test.ts",
+                                     _config.DEFAULTS["exemptGlobs"]),
+          repr([_config.matches_exempt("tsconfig.test.json",
+                                       _config.DEFAULTS["exemptGlobs"]),
+                _config.matches_exempt("cart.test.ts",
+                                       _config.DEFAULTS["exemptGlobs"])]))
     _expect("w7 python -c write to cart.test.ts stays exempt - a code-format "
           "test file keeps the exemption", "allow",
-          bash("python3 -c \"open('cart.test.ts','w').write('x')\""))
+          bash("python3 -c \"open('cart.test.ts','w').write('x')\""),
+          use_cfg=cfg_enforced)
 
     # --- shell writes into source files (plan-first backstop) ---
     _expect("s1 echo > source file blocked", "block",
@@ -593,6 +630,26 @@ def _cases(check):
         _sh2.rmtree(str(_lock_tmp), ignore_errors=True)
     _sh2.rmtree(tmp / "docs", ignore_errors=True)
 
+    # EVERY CASE FROM HERE TO THE END OF THE WRITE ARMS IS PINNED AT THE DENY
+    # TIER, and the manifest below is how. Both Bash write arms are graded now
+    # now, so with the fixture's manifest removed just above every one of
+    # them would resolve to `observe` and allow whatever it was handed: the
+    # block cases would fail and - worse - the allow cases would pass while
+    # asserting nothing, which is the "check that cannot fail" this repository
+    # names most often. The phase is `in_progress` and covers ONE file, so what
+    # each case below still asserts is exactly what its label says: which file
+    # the arm calls an ungoverned source write. The tier itself, and the
+    # coverage that lifts it, are the `we`/`pg` groups at the end of this
+    # function.
+    _wdir = tmp / "docs" / "audit"
+    _wdir.mkdir(parents=True, exist_ok=True)
+    (_wdir / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P9", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P9.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared-by-a-task.ts"]}]}]}),
+        encoding="utf-8")
+
     # (s23+) F-B-1: the inline-eval heuristics judge each CLAUSE on its own
     # facts. A redirect in clause one plus an eval in clause two used to be read
     # as one command and denied — reproduced live with exactly s23's command
@@ -699,7 +756,27 @@ def _cases(check):
           bash('python3 -c "print(open(\'scripts/build.py\').read().splitlines()[0])"'))
     _expect("s30 the write half still denies when the WRITE ITSELF names source",
           "block",
-          bash('python3 -c "json.dump(cfg, open(\'tsconfig.json\',\'w\'))"'))
+          bash('python3 -c "json.dump(cfg, open(\'src/generated.ts\',\'w\'))"'))
+    # s30b. THIS CASE'S TARGET USED TO BE `tsconfig.json` AND ITS VERDICT USED
+    # TO BE BLOCK. Both Bash write arms now ask one question about what a source
+    # file is - `tddReminder.sourceGlobs`, through `_config.source_exts` - and
+    # `.json` is deliberately outside it, so that no consumer's package manifest,
+    # tsconfig or fixture is gated by a redirect. The eval arm had an extension
+    # list of its own and refused exactly what its neighbour allowed. The
+    # narrowing is written down here rather than left in a diff, and it is
+    # asserted as a PAIR, because what is pinned is the agreement and a case
+    # reading one spelling alone cannot see one.
+    check("s30b a `.json` write gets ONE verdict from both Bash forms at the "
+          "deny tier, and it is allow - the file is still gated where its "
+          "extension is not the question, which is `Edit`",
+          M.decide(bash('python3 -c "json.dump(c, open(\'tsconfig.json\','
+                        '\'w\'))"'), cfg=cfg_enforced)[0] == "allow"
+          and M.decide(bash("echo '{}' > tsconfig.json"),
+                       cfg=cfg_enforced)[0] == "allow",
+          repr((M.decide(bash('python3 -c "json.dump(c, open(\'tsconfig.json\','
+                              '\'w\'))"'), cfg=cfg_enforced),
+                M.decide(bash("echo '{}' > tsconfig.json"),
+                         cfg=cfg_enforced))))
     _expect("s31 ...including node, which names the target in the call", "block",
           bash('node -e "require(\'fs\').writeFileSync(\'src/gen.ts\', x)"'))
     _expect("s32 ...and a read of one file plus a write of another is a write",
@@ -1011,8 +1088,31 @@ def _cases(check):
           bash('python3 -c "import os; os.replace(\'/tmp/new\', \'src/app.ts\')"'))
     _expect("s41 shutil.copy onto source is a write", "block",
           bash('python3 -c "import shutil; shutil.copy(\'/tmp/a\', \'src/app.ts\')"'))
+    # The target here was `tools/build.mjs` while this arm carried its own
+    # extension list. `.mjs` is not in `tddReminder.sourceGlobs`, so neither
+    # Bash form gates it now and the case would have gone on asserting the
+    # write-CALL pattern through an extension that can no longer reach a
+    # verdict. s42b pins the narrowing itself, in both spellings.
     _expect("s42 fs.appendFileSync is a write - append is not a read", "block",
-          bash('node -e "require(\'fs\').appendFileSync(\'tools/build.mjs\', x)"'))
+          bash('node -e "require(\'fs\').appendFileSync(\'tools/build.js\', x)"'))
+    check("s42b ...and an extension OUTSIDE tddReminder.sourceGlobs is out of "
+          "reach of both Bash forms alike, which is the shape of the agreement: "
+          "a project that wants `.mjs` gated adds it to its own sourceGlobs, "
+          "and gets both arms at once",
+          M.decide(bash('node -e "require(\'fs\')'
+                        '.appendFileSync(\'tools/build.mjs\', x)"'),
+                   cfg=cfg_enforced)[0] == "allow"
+          and M.decide(bash("echo x >> tools/build.mjs"),
+                       cfg=cfg_enforced)[0] == "allow"
+          and M.decide(
+              bash('node -e "require(\'fs\')'
+                   '.appendFileSync(\'tools/build.mjs\', x)"'),
+              cfg=_config._deep_merge(
+                  cfg_enforced,
+                  {"tddReminder": {"sourceGlobs": ["**/*.mjs"]}}))[0] == "block",
+          repr(M.decide(bash('node -e "require(\'fs\')'
+                             '.appendFileSync(\'tools/build.mjs\', x)"'),
+                        cfg=cfg_enforced)))
     # The pair that keeps the temp exemption honest: exempting a ROOT must not
     # exempt a source path that merely shares the clause with it.
     _expect("s43 a source write is still a write when the clause also touches "
@@ -1061,6 +1161,200 @@ def _cases(check):
           and _hso.get("permissionDecision") == "ask"
           and str(_hso.get("permissionDecisionReason", "")).startswith(
               "[guard-secrets-read]"))
+
+    # (we1+) THE INTERPRETER WRITE ARM IS GRADED, and this group is
+    # s5a-s5d2 extended to it. That arm printed the plan gate's refusal over a
+    # decision that had consulted no plan: a `.ts` file an `in_progress` task
+    # DECLARED was refused through `python3 -c` and through `python3 - <<PY`,
+    # while `echo >`, `sed -i`, `tee` and `cat > f <<EOF` on the same file went
+    # through - and the message blamed "the plan-first gate" at every tier,
+    # including the ones where there was no plan to be first.
+    #
+    # EVERY CASE IS THE PAIR. What was broken is an agreement between two
+    # spellings of one operation, and a case reading one spelling alone cannot
+    # see a disagreement - it can only re-assert the half it was written for,
+    # which is how the shell arm came to have a graded group and the interpreter
+    # arm none.
+    _pdir = tmp / "docs" / "audit"
+    _pfile = _pdir / "audit-plan.json"
+    _covered = "src/gated-covered.ts"
+    _uncovered = "src/gated-uncovered.ts"
+
+    def _forms(rel):
+        """The write of ONE file in the three Bash spellings that reach here."""
+        return (
+            "python3 -c \"open('%s','w').write('x')\"" % rel,
+            "python3 - <<'PY'" + chr(10) + "open('%s','w').write('x')" % rel
+            + chr(10) + "PY",
+            "sed -i 's/a/b/' %s" % rel,
+        )
+
+    def _agree(rel, use_cfg):
+        """The verdicts the three spellings of one write get - as a SET, so the
+        assertion is 'they agree, and on this' rather than three separate ones
+        a later edit could let drift apart."""
+        return sorted(set(M.decide(bash(c), cfg=use_cfg)[0]
+                          for c in _forms(rel)))
+
+    def _plan(running, covers):
+        _pdir.mkdir(parents=True, exist_ok=True)
+        _pfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
+            {"id": "P30", "title": "p",
+             "status": "in_progress" if running else "done",
+             "tasks": [{"id": "P30.1", "title": "t",
+                        "status": "in_progress" if running else "done",
+                        "files": list(covers)}]}]}), encoding="utf-8")
+
+    _sh2.rmtree(tmp / "docs", ignore_errors=True)
+    check("we1 with NO manifest all three spellings of one source write are "
+          "observed, not blocked - the interpreter arm denied here, which is "
+          "the tier with no plan to be first about",
+          _agree(_uncovered, cfg) == ["allow"], repr(_agree(_uncovered, cfg)))
+    _plan(False, [])
+    check("we2 a manifest with nothing running warns rather than blocks, and "
+          "all three agree about that too",
+          _agree(_uncovered, cfg) == ["allow"], repr(_agree(_uncovered, cfg)))
+    _plan(True, [_covered])
+    check("we3 a running phase denies an UNCOVERED file in all three spellings",
+          _agree(_uncovered, cfg) == ["block"], repr(_agree(_uncovered, cfg)))
+    check("we4 THE FLIP: a file the in_progress task DECLARES is allowed in all "
+          "three - the interpreter arm refused it while the manifest said it "
+          "was the work in progress, which is a refusal the plan contradicts",
+          _agree(_covered, cfg) == ["allow"], repr(_agree(_covered, cfg)))
+    cfg_ask44 = _config._deep_merge(_config.DEFAULTS, {"planGate": "ask"})
+    check("we5 planGate:'ask' asks in all three spellings, and still allows the "
+          "covered file - the tier is read by one function for all of them",
+          _agree(_uncovered, cfg_ask44) == ["ask"]
+          and _agree(_covered, cfg_ask44) == ["allow"],
+          repr((_agree(_uncovered, cfg_ask44), _agree(_covered, cfg_ask44))))
+    cfg_obs44 = _config._deep_merge(_config.DEFAULTS, {"planGate": "observe"})
+    check("we6 planGate:'observe' lowers all three below the running phase, "
+          "which is the one setting that lowers the gate below its evidence",
+          _agree(_uncovered, cfg_obs44) == ["allow"],
+          repr(_agree(_uncovered, cfg_obs44)))
+    # `"off"` IS NOT A TIER, and the case says so rather than pretending it is.
+    # `_config.PLAN_GATE_TIERS` holds four names and this is not one of them, so
+    # `plan_gate_knob` reads it as UNSET and falls open to the graded ladder -
+    # which, with a phase running, is deny. A user who writes it gets the
+    # ladder, not silence, and the validator reports the typo.
+    cfg_off44 = _config._deep_merge(_config.DEFAULTS, {"planGate": "off"})
+    check("we7 planGate:'off' is a typo, not a tier: it fails OPEN to the graded "
+          "ladder in all three spellings, so with a phase running it still "
+          "denies rather than silently switching the gate off",
+          _config.plan_gate_knob(cfg_off44) is None
+          and _agree(_uncovered, cfg_off44) == ["block"]
+          and _agree(_covered, cfg_off44) == ["allow"],
+          repr((_config.plan_gate_knob(cfg_off44),
+                _agree(_uncovered, cfg_off44), _agree(_covered, cfg_off44))))
+    _sh2.rmtree(tmp / "docs", ignore_errors=True)
+    check("we8 planGate:'deny' with no manifest at all denies in all three - "
+          "pinned in both directions, because a gate honoured by one arm only "
+          "is what this group exists about",
+          _agree(_uncovered, _config._deep_merge(
+              _config.DEFAULTS, {"planGate": "deny"})) == ["block"],
+          repr(_agree(_uncovered, _config._deep_merge(
+              _config.DEFAULTS, {"planGate": "deny"}))))
+    # WHAT THE REFUSAL SAYS, which is the other half of the report. The shell
+    # arm named the path, the cause, the remedy and the exempt classes; the
+    # interpreter arm named none of them and blamed the plan-first gate anyway.
+    _plan(True, [_covered])
+    _we_msgs = [M.decide(bash(c), cfg=cfg)[1] for c in _forms(_uncovered)]
+    check("we9 all three refusals name the PATH, the actual cause (the phase "
+          "that is running), the remedy and the exempt classes - the "
+          "interpreter arm printed a sentence with none of them in it",
+          all(_uncovered in m and "Phase P30 is in_progress" in m
+              and "Use the Edit/Write tools" in m
+              and "Exempt paths (docs, tests, .claude/**)" in m
+              for m in _we_msgs), repr(_we_msgs))
+    check("we10 ...and each still names the spelling the operator typed, so the "
+          "three messages are not one message with the command guessed at",
+          "inline-eval one-liner" in _we_msgs[0]
+          and "heredoc" in _we_msgs[1]
+          and "Shell write into a source file" in _we_msgs[2]
+          and "heredoc" not in _we_msgs[0],
+          repr([m[:80] for m in _we_msgs]))
+    # THE CONSUMER'S OWN CONFIG NOW REACHES BOTH ARMS. The interpreter arm
+    # matched a hardcoded list of exempt prefixes, so a project that declared
+    # its own `exemptGlobs` got them honoured by `Edit` and by `sed -i` and not
+    # by `python3 -c`.
+    cfg_gen = _config._deep_merge(
+        _config.DEFAULTS, {"exemptGlobs": ["src/generated/**"]})
+    check("we11 a project's OWN exemptGlobs exempt all three spellings, and a "
+          "sibling it does not name is still refused in all three",
+          _agree("src/generated/api.ts", cfg_gen) == ["allow"]
+          and _agree("src/hand-written/api.ts", cfg_gen) == ["block"],
+          repr((_agree("src/generated/api.ts", cfg_gen),
+                _agree("src/hand-written/api.ts", cfg_gen))))
+    # ...and containment, which the interpreter arm approximated with a list of
+    # temp-directory literals. The question was never "is this a temp directory"
+    # but "is this my repository", and only one of those can be answered on a
+    # machine whose checkout lives under a temp root - which is where this
+    # fixture lives, so the case would go red on the literal spelling.
+    _outside = str(Path(tempfile.mkdtemp(prefix="guard-secrets-outside-"))
+                   / "probe.ts")
+    try:
+        check("we12 a target OUTSIDE the repository is none of this gate's "
+              "business in any spelling - out of scope is not the same as "
+              "unplanned, and a deny nobody can act on is the route-around "
+              "class",
+              _agree(_outside, cfg) == ["allow"], repr(_agree(_outside, cfg)))
+    finally:
+        _sh2.rmtree(str(Path(_outside).parent), ignore_errors=True)
+
+    # (pg1) THE HALF THAT MUST NOT MOVE, asserted as a matrix rather than as a
+    # case. `scripts/config/_help.py` publishes the rule these arms live under -
+    # the secret rules are never graded, because logging an auth token is wrong
+    # whether or not a plan exists - and the group above put a tier one `return`
+    # away from them. So every secret payload is driven at every tier a config
+    # can reach, including the two weakest: `planGate: "off"`, which is a typo
+    # a user can arrive at by accident, and no manifest at all, which is the
+    # weakest evidence the ladder itself has. A tier reaching ANY secret branch
+    # turns this one case red, and it is one case on purpose - the claim is
+    # about the whole set, and a per-payload case would let a later reader
+    # delete the row that had started failing.
+    _pg_cfgs = [cfg,
+                _config._deep_merge(_config.DEFAULTS, {"planGate": "observe"}),
+                _config._deep_merge(_config.DEFAULTS, {"planGate": "warn"}),
+                _config._deep_merge(_config.DEFAULTS, {"planGate": "ask"}),
+                _config._deep_merge(_config.DEFAULTS, {"planGate": "deny"}),
+                _config._deep_merge(_config.DEFAULTS, {"planGate": "off"}),
+                cfg_enforced]
+    _pg_payloads = [
+        ("Read .env", read("apps/foo/.env")),
+        ("Read credentials", read("config/credentials.json")),
+        ("Read an ssh key", read(".ssh/id_ed25519")),
+        ("Grep over a dotenv", grep(pattern="X", path="apps/foo/.env")),
+        ("cat .env", bash("cat apps/foo/.env")),
+        ("source .env", bash("source .env && npm start")),
+        ("python3 -c reading a dotenv",
+         bash("python3 -c \"print(open('.env').read())\"")),
+        ("a heredoc reading a dotenv",
+         bash("python3 - <<'PY'" + chr(10) + "print(open('.env').read())"
+              + chr(10) + "PY")),
+        ("an env dump", bash("printenv")),
+        ("echoing a token variable", bash("echo $API_TOKEN")),
+    ]
+    _pg_bad = []
+    for _label, _payload in _pg_payloads:
+        for _state in ("no manifest", "a phase running"):
+            _sh2.rmtree(tmp / "docs", ignore_errors=True)
+            if _state == "a phase running":
+                _plan(True, [_covered])
+            for _pcfg in _pg_cfgs:
+                _ok_pg, _got_pg = _harness.attempt(M.decide, _payload,
+                                                   cfg=_pcfg)
+                _v_pg = _got_pg[0] if _ok_pg else str(_got_pg)
+                if _v_pg != "block":
+                    _pg_bad.append((_label, _state,
+                                    _pcfg.get("planGate"),
+                                    _pcfg.get("enforce"), _v_pg))
+    check("pg1 every secret rule refuses at EVERY tier - each payload driven "
+          "against each planGate spelling, with and without a running phase, "
+          "and nothing that is not `block` comes back. This is the sentence "
+          "_help.py publishes about these guards, and the group above is what "
+          "could have made it false",
+          _pg_bad == [], repr(_pg_bad[:6]))
+    _plan(True, [_covered])
 
     # --- extra pattern from config ---
     cfg_extra = _config._deep_merge(

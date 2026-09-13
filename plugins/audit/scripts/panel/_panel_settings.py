@@ -149,7 +149,7 @@ FIELD_HELP = {
         "default it grades itself on evidence: observe (no manifest) -> warn (a "
         "manifest, nothing running) -> deny (a phase is in_progress). Replaces "
         "the legacy enforce flag - saving from here rewrites enforce as planGate. "
-        "The secret guards are never graded; they deny either way.",
+        "The secret rules are never graded; they deny at every tier.",
     "exemptGlobs":
         "Globs whose edits skip the plan-first, TDD and shell-write guards — docs, "
         "tests, .claude/** and the manifest. Globs, not regexes: each one is matched "
