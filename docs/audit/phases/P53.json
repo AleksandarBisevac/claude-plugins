@@ -29,7 +29,7 @@
     {
       "id": "P53.1",
       "title": "One writer map, derived from the dispatch it describes",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: which functions write for a verb is stated once, derived from the dispatch, and the hand-maintained copy is gone. The derivation exists and was the whole point of the repair that introduced it: a flag added tomorrow is inside the check by existing. A hand-kept map of the same fact survived beside it in the suite, and its own comments record the cost twice - a row that was incomplete so the check went quiet over the gap, and a row added for a verb that stayed green with the flag's read deleted. That second one is the shape that matters: a table maintained by hand is a check that asserts whatever the last editor remembered.",
       "files": [
         "plugins/audit/tests/test__refs.py",
@@ -57,21 +57,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:13:56Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P53.2",
       "title": "An anchor that could not look says so, and names what it landed on",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: an anchor that could not ask its question reports that it could not ask, and a pointer's message names the thing the pointer found. The git anchor fails open, so a bug inside the anchor and a clean tree produce the same answer - which makes the anchor useless exactly when it matters, because the case it exists for is the one where something has been tampered with. This repository already has the vocabulary for the honest third answer and uses it elsewhere; the anchor predates it. The pointer half is the same defect one step along: the message names a subject the pointer did not land on, so a reader chases the wrong file. Both are high risk because both are the checks somebody would rely on while investigating.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -100,21 +100,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:13:56Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P53.3",
       "title": "A failing case fails, and takes nothing else down with it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: no case in this suite reports a failure by raising, and the two widenings that quietly narrowed the prose scanners are bounded and stated. A gate case raises instead of failing, so one mutation takes the whole suite down and the mutation harness reads that as several checks catching the change when it was one crash. The quoted-span widening blinds the scanners considerably further than its own comment admits, and the ratio arm carries a narrowing nothing proves, attributed to a rule that is not the one doing the narrowing. Each of these makes a green build mean less than a reader thinks, and the repair is the same in all three: say what is given up, at the site, in a form a case can hold.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py",
@@ -144,14 +144,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:13:56Z",
       "completedAt": null,
       "verifiedBy": []
     },
