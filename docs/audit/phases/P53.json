@@ -177,7 +177,7 @@
     {
       "id": "P53.4",
       "title": "The documents describe the mechanism the code has",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the architecture document is not behind by a feature, the documents describing the newest lock tier agree with it, the one recorded reason that is false is corrected, and the script that writes the manifest gets the repair its own instruction document already received. That last one is the instructive case: a fix landed in the document telling the orchestrator what to do and never reached the script that does it, so the plan is generated wrongly and the instructions are right about a behaviour nothing has. A document and a script describing one mechanism is the repository's oldest defect shape, and the answer here is the same as everywhere else - the enumeration is checked, so a feature added without a section fails the build by name.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -211,19 +211,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3fd21d0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guide_enumeration reads each parser's accepted positional set and requires a code span with a dotted name disqualified; _STUB_KEYS carries status with the mirror rule stated at the writer; panel_route_violations reports an unreached row a control now names.",
+        "descriptive": "The build guide names every verb a command accepts, the index stub mirrors a running phase, and an unreached route whose reason the tree contradicts is reported."
       },
       "startedAt": "2026-09-15T17:12:12Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T18:19:22Z",
+      "verifiedBy": [
+        "e1",
+        "e6",
+        "e7",
+        "pr11",
+        "pr12",
+        "io8",
+        "io9a",
+        "io9b",
+        "h3",
+        "h4",
+        "oa1"
+      ]
     },
     {
       "id": "P53.5",
       "title": "The doctor's advice loses no branch and no warning",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the doctor's advice table reaches every branch it declares, an unrecognised warning survives to the operator, and the README stops promising something the doctor does not do. A table that swallows a branch is a branch nobody will ever see fire, and a warning dropped for being unrecognised is precisely the warning worth reading, because a recognised one is one somebody already thought about. The document half is small and of a piece: it promises the doctor names which rows are extra, and the doctor names a count. A count is not a name, and the difference is the whole value of the sentence.",
       "files": [
         "plugins/audit/scripts/status/_doctor_report.py",
@@ -255,19 +267,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3fd21d0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "journal_warning_advice separates the empty list from the unclassified one and quotes what nothing recognised; the README paragraph describes what the row does, read from both sides by a case.",
+        "descriptive": "An unrecognised journal warning reaches the operator quoted, and the empty case is its own branch rather than a condition nothing could reach."
       },
       "startedAt": "2026-09-15T17:12:12Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T18:19:22Z",
+      "verifiedBy": [
+        "dt49b",
+        "dr21",
+        "dr22",
+        "dr23",
+        "dr24"
+      ]
     },
     {
       "id": "P53.6",
       "title": "The merge's remaining doors, and the deliberate gaps written as decisions",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the escape hatch the document prescribes works on the file it is prescribed for, a linked journal file is not replaced while something writes through it, the commit subject repair leaves room for a caller, and the gaps this project has decided to live with are written as decisions rather than left as silence. The escape dead-ends today: taking one side against a target that is still conflicted refuses, and the refusal names a cause that is not the one it found - so the documented route out of a conflict ends in a message that sends the reader somewhere else. The link case is data loss of the quiet kind: the merge replaces the path while the append writes through it, so rows land in a file nothing will read again. And this repository's own plan gives most tasks a gate that takes the machine-wide capture lock, which is a decision it should make out loud rather than discover under parallelism.",
       "files": [
         "plugins/audit/scripts/governance/audit-journal.py",
@@ -300,14 +318,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3fd21d0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "conflicted_text and CONFLICT_MARKS grade the file rather than where its sides came from; write_merged resolves the real path while the lock stays on the name; _scoped_commit.fitted_header cuts only the caller's half; the machine-wide capture gate is recorded as a deferred decision with a revisit trigger.",
+        "descriptive": "The documented escape works on a still-conflicted target, a linked journal file is written through rather than replaced, and a commit subject is fitted before anything is staged."
       },
       "startedAt": "2026-09-15T17:12:12Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T18:19:22Z",
+      "verifiedBy": [
+        "mx1",
+        "mx2",
+        "ml1",
+        "ml2",
+        "sc11",
+        "sc12",
+        "sc13",
+        "cmi7e",
+        "cmi7f",
+        "cas8g"
+      ]
     },
     {
       "id": "P53.7",
