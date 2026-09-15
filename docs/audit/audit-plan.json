@@ -284,7 +284,8 @@
     {
       "id": "P49",
       "title": "The plugin offers its own bar, and measures value not only cost",
-      "shard": "phases/P49.json"
+      "shard": "phases/P49.json",
+      "status": "in_progress"
     },
     {
       "id": "P50",
