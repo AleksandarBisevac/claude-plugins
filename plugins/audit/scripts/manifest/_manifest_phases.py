@@ -586,9 +586,28 @@ def _walk_phases(phases):
                 f.append("%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS)))
             if (phase.get("status") == "pending"
                     and task.get("status") == "in_progress"):
-                w.append("%s is in_progress but its %s is still 'pending' — "
-                         "pre-0.3 manifest? /audit:resume expects the phase to "
-                         "be 'in_progress' too" % (twhere, pwhere))
+                # WHAT THIS ESTABLISHED, AND NOT A GUESS AT THE DOCUMENT'S AGE.
+                # The line used to ask whether the manifest predated a release
+                # and name a command the reader had not run -- on a plan the CLI
+                # had written minutes earlier, because until `start` promoted the
+                # phase this state was what every command-line run produced.
+                # Age was never observed here; two statuses and one stamp were.
+                #
+                # AND IT IS NOT A CLAIM ABOUT THE PLAN GATE. A running task under
+                # a pending phase already counts as a running phase, deliberately
+                # -- the reason is written where that is decided -- so nothing is
+                # inert and nothing needs unblocking. What is missing is the
+                # record, which is why the stamp is what the line reports.
+                w.append("%s is in_progress but its %s is still 'pending' — %s. "
+                         "The plan gate is unaffected: a running task counts as "
+                         "a running phase. Both writers that promote a phase "
+                         "(`/audit:task start`, the control panel's save) move "
+                         "the status and stamp `startedAt` together, so a pair "
+                         "like this is a phase whose status was set by hand"
+                         % (twhere, pwhere,
+                            ("the phase carries a `startedAt`, so only its "
+                             "status is behind" if phase.get("startedAt")
+                             else "so nothing records when the phase began")))
             tests = task.get("tests")
             if "tests" in task and tests is not None and not isinstance(tests, dict):
                 f.append("%s: tests must be an object with a 'mode', got %s"
@@ -693,19 +712,46 @@ def _walk_phases(phases):
             # no command has no wide gate for a task to have copied, and a task
             # with an empty gate is a designed state `audit-task.py` reports on
             # its own terms; neither is this rule's subject.
+            #
+            # AND A TASK THAT RECORDS WHY IT IS WIDE IS NOT ASKED AGAIN. The line
+            # used to offer two routes and only one of them existed: narrowing,
+            # or writing the reason into the task's `description` -- which is
+            # prose nothing here reads, so an operator who took the advice saw
+            # the same line for ever. Measured on the repository this plugin
+            # dogfoods on, where every gate entry resolves to a command that
+            # walks the tree or names fixed directories, the line covered most
+            # of the plan and could never be answered.
+            #
+            # `gateBasis` IS THAT ANSWER AS DATA, written by the derivation that
+            # is the only thing which ever knew it: `phase-no-spelling` says this
+            # project records no path-scoped gate entry to read a narrower
+            # spelling off, so narrowing here would be a guess; `declared` says a
+            # caller named these commands outright. Neither is the unnarrowed
+            # default the rule exists to name. A task recording NOTHING is still
+            # named -- a generated plan that gave task after task the whole suite
+            # on a runner that does take paths carries no basis at all, and that
+            # is the case this rule was built from.
             phase_gate = _gate_entries(phase.get("testGate"))
             task_gate = _gate_entries(tests.get("gate")
                                       if isinstance(tests, dict) else None)
+            gate_basis = (tests.get("gateBasis")
+                          if isinstance(tests, dict) else None)
             if phase_gate and task_gate == phase_gate \
-                    and task.get("status") not in TERMINAL:
+                    and task.get("status") not in TERMINAL \
+                    and gate_basis not in _vocab.GATE_BASIS_ANSWERED:
                 w.append("%s: tests.gate is its phase's testGate verbatim - the "
                          "wide gate, re-run on every attempt of this task "
-                         "instead of once at sign-off. Narrow it to the paths "
-                         "this task names (`/audit:task scope <id> --gate "
-                         "\"<command>\"`), or say in the task's description why "
-                         "the wide gate is the answer here - /audit:init step "
-                         "5.3 writes that reason when it cannot derive a "
-                         "narrower one" % (twhere,))
+                         "instead of once at sign-off, and %s. Narrow it to the "
+                         "paths this task names, or - where the wide gate IS the "
+                         "answer here - say so in a way this check reads: both "
+                         "go through `/audit:task scope <id> --gate "
+                         "\"<command>\"`, which records who chose the list"
+                         % (twhere,
+                            ("nothing on the task records which derivation "
+                             "produced it" if gate_basis is None
+                             else "the derivation that produced it recorded %r, "
+                                  "which is a default rather than a choice"
+                                  % (gate_basis,))))
             if "risk" in task and task.get("risk") not in RISK:
                 f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
             _check_ado(task, twhere, f)

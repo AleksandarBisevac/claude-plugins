@@ -80,6 +80,31 @@ def _cases(check):
           M.fmt_int(-1234) == "-1,234")
     check("fmt_int: None -> 0", M.fmt_int(None) == "0")
 
+    # --- human_duration ----------------------------------------------------------
+    # Moved here from the gate runner when the rendered report started printing the
+    # same field: two surfaces rendering one quantity off two tables is this
+    # module's founding defect, and the report already had the number and was
+    # dropping it. The boundary values are the ones that separate implementations
+    # rather than the ones that read nicely.
+    check("human_duration: under a second is milliseconds, whole",
+          M.human_duration(0) == "0 ms" and M.human_duration(999) == "999 ms")
+    check("human_duration: the second boundary switches unit exactly at 1000, "
+          "so an implementation using `>` instead of `>=` renders 1000 ms here",
+          M.human_duration(1000) == "1.0 s"
+          and M.human_duration(59_999) == "60.0 s")
+    check("human_duration: the minute boundary is the same test one unit up, "
+          "and the seconds are zero-padded so two runs line up in a column",
+          M.human_duration(60_000) == "1 m 00 s"
+          and M.human_duration(125_000) == "2 m 05 s")
+    check("human_duration: NOTHING RECORDED IS NOT ZERO. None in, None out, and "
+          "the caller renders the absence - a step that never reported a "
+          "duration has not told anybody it was instant, and a zero in a shared "
+          "document is a claim about a measurement nobody made: %r"
+          % ([M.human_duration(v) for v in (None, True, False, -1, 1.5, "5")],),
+          M.human_duration(None) is None and M.human_duration(-1) is None
+          and M.human_duration(True) is None and M.human_duration(False) is None
+          and M.human_duration(1.5) is None and M.human_duration("5") is None)
+
     # --- fmt_share ---------------------------------------------------------------
     # Golden values frozen from the THREE originals (audit-usage.py:356-358,
     # audit-usage.py:434-436, _report_usage.py:527-528) run verbatim before any

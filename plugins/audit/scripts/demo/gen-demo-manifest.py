@@ -533,6 +533,16 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                     "expectRedFirst": mode == "tdd",
                     "gate": ([] if ungraded
                              else _task_gate(tstatus, [rel], area_roots)),
+                    # WHICH ARM PRODUCED THAT LIST, in `/audit:task`'s own
+                    # vocabulary. Every file this generator invents sits under a
+                    # registered area root, so the derivation above narrows by
+                    # the task's own `files` every time; the one ungraded task
+                    # declares no gate at all, which is the empty gate chosen
+                    # rather than defaulted to. Both words are what the
+                    # validator reads when it asks whether a wide gate is a
+                    # default or an answer -- and a fixture that carried neither
+                    # would be a fixture the rendered surfaces never show it on.
+                    "gateBasis": "cleared" if ungraded else "files",
                 },
                 "attempts": 0,
                 "maxAttempts": 3,
@@ -632,6 +642,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         if pi % 4 == 1:
             spendy = pstatus == "done" and pi % 8 == 1
             phase["budgetUSD"] = 18.0 if spendy else 60.0   # the 18.0 ones run over
+        # WHEN THE PHASE STARTED, on the phases that have. It is stamped by
+        # whichever writer promoted the phase, so a phase still pending carries
+        # none -- which is the same three-state shape the tasks above use, and a
+        # fixture that stamped every phase would show only one of them.
+        if pstatus in ("done", "in_progress", "blocked"):
+            phase["startedAt"] = _iso(p_start)
         if pstatus == "done":
             phase["baseRef"] = _sha(rng)
             phase["branch"] = "audit/%s-%s" % (pid.lower(), area)

@@ -43,6 +43,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re as _regex
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1236,13 +1237,48 @@ def _cases(check):
             {"id": "P2", "status": "pending", "tasks": [
                 {"id": "P2.1", "status": "pending"}]},
         ]}
-        _hrows = M._heal_phase_status(_hp)
+        _HNOW = "2026-01-02T03:04:05Z"
+        _hrows = M._heal_phase_status(_hp, _HNOW)
         check("heal: a phase with TWO running tasks heals exactly once, and a "
-              "phase with none is left alone",
+              "phase with none is left alone: %r" % (_hrows,),
               _hrows == [{"target": "P1", "field": "status",
-                          "from": "pending", "to": "in_progress"}]
+                          "from": "pending", "to": "in_progress"},
+                         {"target": "P1", "field": "startedAt",
+                          "from": None, "to": _HNOW}]
               and _hp["phases"][0]["status"] == "in_progress"
               and _hp["phases"][1]["status"] == "pending")
+        check("heal: ...and the promotion STAMPS the phase from the instant it "
+              "was handed, which is the whole of what a command-line run was "
+              "losing: the only site that promoted a phase was this one, so a "
+              "plan driven from the terminal recorded the moment its work "
+              "began nowhere at all: %r" % (_hp["phases"][0].get("startedAt"),),
+              _hp["phases"][0]["startedAt"] == _HNOW
+              and "startedAt" not in _hp["phases"][1])
+        # SECOND DIRECTION. A phase whose status somebody hand-edited back to
+        # `pending` may already carry the moment it really started, and moving
+        # that stamp to the moment the heal noticed would overwrite a recorded
+        # measurement with a later one.
+        _hkeep = {"phases": [
+            {"id": "P3", "status": "pending", "startedAt": "2025-12-01T00:00:00Z",
+             "tasks": [{"id": "P3.1", "status": "in_progress"}]}]}
+        _hkrows = M._heal_phase_status(_hkeep, _HNOW)
+        check("heal: a phase that ALREADY carries a start keeps it - only the "
+              "status is behind, and one row says so rather than two: %r"
+              % (_hkrows,),
+              _hkrows == [{"target": "P3", "field": "status",
+                           "from": "pending", "to": "in_progress"}]
+              and _hkeep["phases"][0]["startedAt"] == "2025-12-01T00:00:00Z")
+        # The instant is an ARGUMENT so two writers can share one; a caller with
+        # none still gets the spelling every other writer here uses, rather than
+        # a stamp in a shape no reader parses.
+        _hdef = {"phases": [{"id": "P4", "status": "pending", "tasks": [
+            {"id": "P4.1", "status": "in_progress"}]}]}
+        M._heal_phase_status(_hdef)
+        check("heal: a caller that hands no instant still gets the ISO spelling "
+              "every writer here uses, not an unparseable stamp: %r"
+              % (_hdef["phases"][0].get("startedAt"),),
+              bool(_regex.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+                                str(_hdef["phases"][0].get("startedAt")))))
 
         # --- the write heals "task in_progress, phase pending" (v0.37 A4) ----
         # The validator's warning stays as the backstop for hand edits; at the
@@ -1273,12 +1309,18 @@ def _cases(check):
                   _hres.get("ok") is True
                   and _hdoc["phases"][0]["status"] == "in_progress")
             check("heal: the healed row is reported apart from `applied`, so "
-                  "the confirm-echo comparison keeps meaning what it says",
-                  _hres.get("healed") == [{"target": "P1", "field": "status",
-                                           "from": "pending",
-                                           "to": "in_progress"}]
+                  "the confirm-echo comparison keeps meaning what it says: %r"
+                  % (_hres.get("healed"),),
+                  [(r["target"], r["field"], r["from"])
+                   for r in _hres.get("healed") or []]
+                  == [("P1", "status", "pending"), ("P1", "startedAt", None)]
                   and all(r.get("field") != "status"
                           for r in _hres.get("applied") or []))
+            check("heal: ...and the save STAMPED the phase on disk, not only "
+                  "in the response - a start reported and not written is the "
+                  "record this repair exists to stop losing: %r"
+                  % (_hdoc["phases"][0].get("startedAt"),),
+                  bool(_hdoc["phases"][0].get("startedAt")))
             _hsum = (_JStub.rows[-1][1].get("summary")
                      if _JStub.rows else "") or ""
             check("heal: the journal row for that write says so",

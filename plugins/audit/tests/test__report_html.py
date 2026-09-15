@@ -27,6 +27,7 @@ import _ui_theme as _theme                         # noqa: E402  (as _report_htm
 import _areas                                      # noqa: E402
 import _manifest_io                                # noqa: E402
 import _manifest_vocab as _vocab                   # noqa: E402  (owns the segment fold this module binds to)
+import _fmt                                        # noqa: E402  (as _report_html imports it: the one duration spelling)
 # `_report_html` may NOT import this - the two are layer-mates and the import
 # graph refuses the edge - so the evidence-gap vocabulary is spelled in both and
 # compared HERE. A suite may import anything, which is what makes this the only
@@ -786,6 +787,49 @@ def _cases(check):
           "is what keeps a row recorded before the field rendering as it did: "
           "%r" % ((_prov_html.count(">gate<"), _bare_html.count(">gate<")),),
           _prov_html.count(">gate<") == 1 and _bare_html.count(">gate<") == 0)
+    # --- what a step COST, on the surface an audience is asked to trust -------
+    # The gate runner's terminal prints a step's duration and so does the control
+    # panel; this page rendered the run's total and dropped the per-step number -
+    # so a gate running one suite twice looked exactly like a gate running two,
+    # in the one place nobody can go and re-measure. The value was already on the
+    # row, which is what makes this rendering rather than measurement.
+    _tk_steps = M._tev_step_rows({"steps": [
+        {"name": "lint", "exit": 0, "ran": 3, "durationMs": 5120,
+         "command": "npm run lint"},
+        {"name": "test", "exit": 0, "ran": 41, "durationMs": 125000,
+         "command": "npm test"},
+        {"name": "old", "exit": 0, "ran": 1, "command": "npm run old"}]})
+    check("tk1 every step carries what it cost, in the unit two steps are "
+          "compared in rather than as a raw millisecond count: %r"
+          % (_tk_steps,),
+          "5.1 s" in _tk_steps and "2 m 05 s" in _tk_steps)
+    check("tk2 ...and a step whose row records NO duration renders the "
+          "absence. A fabricated zero in a shared document is a claim about a "
+          "measurement nobody made, and it is the one reading that makes a "
+          "step look free: %r" % (_tk_steps[-200:],),
+          "not timed" in _tk_steps and ">0 ms<" not in _tk_steps
+          and "0 ms" not in _tk_steps)
+    check("tk3 SECOND-DIRECTION CASE: the absence is rendered ONCE, for the "
+          "one step that recorded nothing - a renderer that printed it for "
+          "every step would be the same silence with more words: %r"
+          % (_tk_steps.count("not timed"),),
+          _tk_steps.count("not timed") == 1)
+    _tk_run = M._tev_detail_col(M.tev_view(
+        _ptr, dict(_row(), runId="R", ts="t", durationMs=47310), True))
+    check("tk4 ...and the RUN's own cost is spelled the same way, so the "
+          "drawer does not carry two units for one quantity while a reader is "
+          "comparing a run against the steps that make it up: %r"
+          % (_tk_run[_tk_run.find("took"):][:120],),
+          "47.3 s" in _tk_run and "47310 ms" not in _tk_run)
+    check("tk5 the spelling is `_fmt`'s, asked of that module rather than "
+          "re-derived here: the terminal and this page render one field, and a "
+          "second table is the defect that module was written to end: %r"
+          % ((_fmt.human_duration(5120), _fmt.human_duration(None)),),
+          _fmt.human_duration(5120) == "5.1 s"
+          and _fmt.human_duration(None) is None
+          and _fmt.human_duration(True) is None
+          and _fmt.human_duration(-1) is None)
+
     check("tv10 the rollup counts in vocabulary order with an unknown word "
           "last, rather than alphabetically - `cancelled` above `passed` reads "
           "as a ranking nobody chose",

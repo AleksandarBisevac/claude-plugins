@@ -293,7 +293,7 @@ L2:
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
-  _report_html -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
+  _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _output
@@ -374,7 +374,7 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output
-  run-test-gate -> _evidence_io, _manifest_io, _output, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _manifest_io, _output, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _manifest_io, _output, _tree_stamp
   validate-config -> _config_rules, _output

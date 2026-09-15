@@ -878,6 +878,13 @@
         "status": {
           "$ref": "#/$defs/status"
         },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO instant the phase entered in_progress, stamped by whichever writer promoted it — /audit:task start on the first task to run inside it, or the control panel's save. The task-level twin of the same name; a phase promoted by hand carries none, and every surface renders that absence rather than substituting the phase's first task."
+        },
         "model": {
           "$ref": "#/$defs/model"
         },
@@ -1325,6 +1332,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "gateBasis": {
+          "type": "string",
+          "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file. The validator's wide-gate warning reads it: 'declared' and 'phase-no-spelling' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
         }
       }
     },

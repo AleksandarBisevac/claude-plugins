@@ -163,6 +163,14 @@ Design decisions, each mirroring a precedent rather than inventing one:
     already holds an in_progress task. The validator warning stays as the
     backstop for hand edits.
 
+    `start` REACHES IT TOO, and that is what gave a phase a verb. The control
+    surface's save used to be the only site in the tree that promoted a phase,
+    so an orchestrator that never opened the panel left every phase pending
+    for its life -- and the promotion carries a `startedAt`, so a plan driven
+    from the terminal records when its phases began. Nothing about the plan
+    gate moves: a running task under a pending phase already counted as a
+    running phase, deliberately.
+
   * JOURNAL. A `task.add` row through audit-journal's `append`, in-process --
     see _journal_add for why the journal-writes hook cannot see this write.
 
@@ -258,6 +266,66 @@ def _split_csv(val):
     if not isinstance(val, str):
         return []
     return [part.strip() for part in val.split(",") if part.strip()]
+
+
+# --- what a `--files` entry may be -----------------------------------------------
+# A repository-relative path, and the refusal below is for the strings that are not
+# one at all. It is NOT a check that the file exists: declaring a file before it
+# exists is legal and quiet, because the red-first workflow depends on it -- a task
+# that will author its own case names that case in `files` before anything is there.
+#
+# WHAT WAS MEASURED. `--files "+a.py,-b.py"` -- the incremental spelling every
+# neighbouring tool offers -- wrote `+a.py` and `-b.py` into the task's `files` as
+# part of the filenames, claimed both in `fileIndex`, recorded a journal row saying
+# so, and printed only the advisory that exists to reassure an author declaring a
+# file they will create. The one shape that is certainly a mistake read exactly like
+# the one shape that is certainly fine. The verb is right to take a REPLACEMENT list;
+# it is wrong to take an operator as a filename.
+#
+# EACH PREFIX IS ITS OWN ENTRY because the four say different things to the caller:
+# an operator is a spelling this verb does not have, a root-anchored path and a home
+# path both resolve outside the repository the index is keyed on, and a parent
+# segment resolves to a file the plan cannot name twice the same way.
+_FILE_REFUSALS = (
+    ("+", "a leading `+` is an incremental spelling this verb does not have"),
+    ("-", "a leading `-` is an incremental spelling this verb does not have"),
+    ("/", "a leading `/` is an absolute path, and `files` is read relative to "
+          "the project root"),
+    ("~", "a leading `~` is a home path, and `files` is read relative to the "
+          "project root"),
+)
+
+
+def _files_refusal(values):
+    """The refusal for a `--files` entry that cannot be a path, or None.
+
+    ONE MESSAGE FOR EVERY BAD ENTRY IN THE CALL, not one per entry: a caller who
+    typed the delta spelling typed it on both sides, and two refusals for one
+    mistake is the shape an operator learns to skip.
+
+    THE `..` ARM IS A SEGMENT TEST AND NOT A SUBSTRING ONE, because `..` inside a
+    name (`a..b.py`) is an ordinary filename and only a whole segment climbs out
+    of the tree.
+    """
+    bad = []
+    for value in (values or []):
+        why = None
+        for prefix, reason in _FILE_REFUSALS:
+            if value.startswith(prefix):
+                why = reason
+                break
+        if why is None and ".." in value.replace("\\", "/").split("/"):
+            why = ("a `..` segment resolves outside the path the plan records, "
+                   "so the index would key one file under two names")
+        if why:
+            bad.append("%r: %s" % (value, why))
+    if not bad:
+        return None
+    return ("[audit-task] --files takes the REPLACEMENT list of "
+            "repository-relative paths, and %s. Pass the whole list the task "
+            "should end up with; a file that does not exist yet is fine and is "
+            "reported as a note, which is the reassurance this refusal used to "
+            "be mistaken for." % ("; ".join(bad),))
 
 
 def _union_paths(declared, extra):
@@ -759,11 +827,26 @@ def _not_on_disk_note(project, missing):
     THE DIRECTORY RIDES THE SENTENCE, NOT EACH PATH. An advisory that repeats a
     constant per file is the shape an operator learns to skip, which is a fault
     this plan already carries once; the paths are a list on the one line instead.
+
+    AND IT NAMES BOTH READINGS RATHER THAN GUESSING ONE. The line was `(new
+    files?)`, which is a question with an implied answer -- and it stood in for
+    three different situations at once: a file the task will author, a scope
+    resolved against a root that is not the one these paths are relative to, and
+    a string that was never a path at all. The third is a refusal now
+    (`_files_refusal`), so two are left; the harmless one is the likelier and
+    that is exactly why guessing it was wrong, since the operator who needs this
+    line is the one in the other case. Both are stated, the legal one first,
+    because a declaration ahead of the file is the workflow this note must not
+    make anybody doubt.
     """
     if not missing:
         return None
-    return ("  note: not on disk under %s (new files?): %s"
-            % (project, ", ".join(missing)))
+    return ("  note: nothing on disk answers for %s, searched under %s. Either "
+            "this task will author them -- declaring a file before it exists is "
+            "how a red-first task names its case, and nothing here refuses it -- "
+            "or that directory is not the root these paths are relative to, "
+            "which is the reading to check when you meant to name files that "
+            "already exist." % (", ".join(missing), project))
 
 
 def _readiness_lines(waiting, tid):
@@ -810,7 +893,14 @@ _WIDENABLE = ("files", "tests.add")
 # re-scopes it -- so a permission stopping at the green row would refuse exactly
 # the calls it exists for. A recorded green run is evidence about a measurement
 # that HAPPENED; it says nothing about the one that comes next.
-_FORWARD_ONLY = ("tests.gate",)
+#
+# `tests.gateBasis` RIDES THE SAME PERMISSION because it is the same event seen
+# from one side: it records that a caller NAMED these commands, and it is written
+# by the one branch that writes the gate. A row saying the gate now has an author
+# cannot re-judge a commit for the reason the paragraph above gives about the gate
+# itself, and leaving it out of this tuple would make the guard refuse exactly the
+# call the permission was written for.
+_FORWARD_ONLY = ("tests.gate", "tests.gateBasis")
 
 
 def _gate_rows(changes):
@@ -1597,8 +1687,19 @@ def _repointed(entries, build, paths):
 
 
 def _task_gate(args, phase, assembled, add_paths, files):
-    """`(gate, basis)` -- the new task's `tests.gate`, and the sentence saying
-    which of the three defaults produced it.
+    """`(gate, basis, source)` -- the new task's `tests.gate`, the sentence
+    saying which of the three defaults produced it, and the ONE WORD that says
+    the same thing to a rule.
+
+    THE WORD IS WHY THE SENTENCE IS NOT ENOUGH. The basis is printed once and
+    thrown away, so a narrow gate and a wide one read the same way in the
+    manifest afterwards -- and the validator's line about a task carrying its
+    phase's gate verbatim could not tell "this project records no path-scoped
+    spelling" from "this task named no file", which are the two arms that both
+    end in the wide gate and want opposite answers. It offered prose in the
+    task's `description` instead, which nothing reads, so an operator who
+    followed the advice saw the same line for ever. `source` is that answer as
+    data, written to `tests.gateBasis`, in `_manifest_vocab.GATE_BASIS`'s words.
 
     THE BASIS IS THE POINT AND NOT DECORATION. A narrow gate and a wide one read
     the same way once written, so an operator who is not told which default was
@@ -1625,7 +1726,7 @@ def _task_gate(args, phase, assembled, add_paths, files):
     what was missing, never with silence.
     """
     if args.gate:
-        return list(args.gate), "from --gate"
+        return list(args.gate), "from --gate", "declared"
     if args.gate_clear:
         # F201. The flag is defined globally, so argparse ACCEPTED it here and
         # nothing read it: `add --gate-clear` reported success and wrote the
@@ -1638,7 +1739,7 @@ def _task_gate(args, phase, assembled, add_paths, files):
         # asked BEFORE the derivation and not instead of a branch inside it: a
         # caller saying nothing should grade this task is answering the question
         # the three defaults below exist to answer, not choosing among them.
-        return [], "from --gate-clear"
+        return [], "from --gate-clear", "cleared"
     wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
     meta = assembled.get("meta") if isinstance(assembled, dict) else None
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
@@ -1646,16 +1747,19 @@ def _task_gate(args, phase, assembled, add_paths, files):
     if shape is None:
         return wide, ("the phase's testGate, wide -- no sibling task in %s "
                       "declares a path-scoped gate entry to read this "
-                      "project's spelling off" % (phase.get("id"),))
+                      "project's spelling off" % (phase.get("id"),)), \
+            "phase-no-spelling"
     if add_paths:
         return (_repointed(shape, build, add_paths),
                 "narrowed to this task's tests.add paths, in %s's spelling"
-                % (owner,))
+                % (owner,), "tests.add")
     if files:
         return (_repointed(shape, build, files),
-                "narrowed to this task's files, in %s's spelling" % (owner,))
+                "narrowed to this task's files, in %s's spelling" % (owner,),
+                "files")
     return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
-                  "task names no file to point a gate at" % (owner,))
+                  "task names no file to point a gate at" % (owner,)), \
+        "phase-no-paths"
 
 
 def _build_task(task_id, title, args, phase, assembled):
@@ -1684,7 +1788,8 @@ def _build_task(task_id, title, args, phase, assembled):
     # sat immediately above the parse of `--tests-add`, so the input a narrow
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
-    gate, gate_basis = _task_gate(args, phase, assembled, add_paths, files)
+    gate, gate_basis, gate_source = _task_gate(args, phase, assembled,
+                                               add_paths, files)
     task = {
         "id": task_id,
         "title": title,
@@ -1709,6 +1814,13 @@ def _build_task(task_id, title, args, phase, assembled):
             # true iff tdd -- the machine-readable disambiguation of `add`.
             "expectRedFirst": mode == "tdd",
             "gate": gate,
+            # WHICH ARM PRODUCED THAT LIST, as data rather than as the sentence
+            # the report prints and drops. Two arms end in the phase's gate
+            # verbatim and they want opposite answers from the validator -- a
+            # project with no path-scoped spelling has nothing to narrow with,
+            # and a task that named no file does -- so the derivation is the
+            # only thing that ever knew, and this is where it says so.
+            "gateBasis": gate_source,
         },
         "model": model,
         "skills": _parse_skills(args.skills),
@@ -1762,6 +1874,14 @@ def _locked_add(args, project, config, mpath, title, out):
     contradiction = _gate_contradiction(args)
     if contradiction:
         out(contradiction)
+        return E_USAGE
+    # ...and so does the one about what a `--files` entry may be. It was measured
+    # on `scope`, but this verb writes the same field into the same index off the
+    # same flag, so the refusal belongs to the FLAG rather than to the verb that
+    # met the defect.
+    refusal = _files_refusal(_split_csv(args.files))
+    if refusal:
+        out(refusal)
         return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id)
@@ -2199,7 +2319,8 @@ def _start_details(task_id, phase_id, was, task):
     return details
 
 
-def _journal_start(project, config, mpath, task_id, phase_id, was, task):
+def _journal_start(project, config, mpath, task_id, phase_id, was, task,
+                   healed=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -2213,6 +2334,12 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task):
     summary and nothing else. A retry whose row read like a first start would
     have to be told apart by opening `details`, and the retry is the row a reader
     of a task that failed is looking for.
+
+    AND SO DOES THE PHASE THIS RUN PROMOTED, in the summary for that same reason
+    and in `_journal_add`'s spelling: the write moved a phase as well as a task,
+    and a row naming only the task would leave the phase's own start recorded in
+    the manifest and nowhere in the trail. It rides the summary rather than
+    `changes`, because that block's rows are this TASK's fields.
     """
     attempt = task.get("attempts")
     if was["status"] == "in_progress":
@@ -2221,6 +2348,8 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task):
     else:
         summary = ("%s started in %s: attempt %s, was %s"
                    % (task_id, phase_id, attempt, was["status"]))
+    if healed:
+        summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
     return _journal_row(project, config, mpath, "task.start", summary,
                         _start_details(task_id, phase_id, was, task))
 
@@ -2274,11 +2403,14 @@ def _locked_start(args, project, config, mpath, tid, out):
         out("[audit-task] no task with id %r in %s" % (tid, mpath))
         return E_USAGE
     if kind != "task":
-        # A phase is promoted by the run that enters it (orchestrator step 1a),
-        # not here, and the ids look alike enough that guessing is wrong.
-        out("[audit-task] %s is a PHASE -- `start` promotes one task, and a "
-            "phase enters in_progress on the run that enters it "
-            "(/audit:phase %s)" % (tid, tid))
+        # The ids look alike enough that guessing between them guesses wrong.
+        # A phase is not this verb's SUBJECT even though this verb now promotes
+        # one: the promotion rides a task starting inside it, so a phase id
+        # names no work to start.
+        out("[audit-task] %s is a PHASE -- `start` takes one TASK id. The "
+            "phase around that task is promoted and stamped by the same "
+            "write, and a phase with no task to start is entered by the run "
+            "that enters it (/audit:phase %s)" % (tid, tid))
         return E_USAGE
     status = node.get("status")
     if status in _mio.TERMINAL:
@@ -2299,6 +2431,20 @@ def _locked_start(args, project, config, mpath, tid, out):
 
     now = _utc_now()
     was = _start_task(node, now)
+    # THE PHASE IS PROMOTED BY THE SAME WRITE, from the same instant. Until this
+    # line the control surface's save was the only site in the tree that moved a
+    # phase out of `pending`, so an orchestrator driving a plan from the command
+    # line left every phase pending for its whole life and nothing recorded when
+    # the work in it began. Reused from `_panel_write` rather than re-derived, on
+    # `_locked_add`'s reasoning: two writers of one transition is two answers
+    # about what promoting a phase means.
+    #
+    # THE PLAN GATE IS NOT WHAT THIS BUYS and must not be read as it. A running
+    # task under a pending phase already counts as a running phase, deliberately
+    # -- a hand-started task is still a repository executing its plan -- so
+    # nothing here widens or narrows what the gate resolves. What the write adds
+    # is the record: the moment the phase started, which had no field to sit in.
+    healed = _panel_write._heal_phase_status({"phases": [phase]}, now)
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
@@ -2321,7 +2467,8 @@ def _locked_start(args, project, config, mpath, tid, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    jres = _journal_start(project, config, mpath, tid, phase_id, was, node)
+    jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
+                          healed)
     # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
     # case it serves is a task whose edits are being denied -- so a blocker list
     # is something the operator has to see and `/audit:run` is where readiness
@@ -2336,6 +2483,11 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "restarted": was["status"] == "in_progress",
                   "was": was["status"],
                   "changes": _start_changes(tid, was, node),
+                  # APART FROM `changes`, which is this task's fields, for the
+                  # reason the add branch keeps the two apart: the phase moved
+                  # too, and folding its rows into a task's change list would
+                  # make a consumer join them on an id that is not the task's.
+                  "healed": healed,
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "ready": not waiting, "waitingOn": waiting}
@@ -2354,6 +2506,10 @@ def _locked_start(args, project, config, mpath, tid, out):
     out("  attempt %s, against a recorded ceiling of %s"
         % (node.get("attempts"), ceiling))
     out("  startedAt %s" % (node.get("startedAt"),))
+    for row in healed:
+        # THE PHASE'S OWN LINE, and it names the field rather than announcing a
+        # promotion, because two fields move and only one of them is a status.
+        out("  phase %s" % _panel_write._fmt_change(row))
     out("  the plan gate now resolves this task's `files` -- that is what the "
         "promotion buys, and it is per task: no other pending task in %s moved"
         % (phase_id,))
@@ -3245,6 +3401,14 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out(contradiction)
         return E_USAGE
     files = _split_csv(args.files)
+    # Asked BEFORE the no-op check below and before any mutation, in
+    # `_gate_contradiction`'s position: a string that cannot be a path must
+    # never reach `files`, `fileIndex` or a journal row, and a refusal is worth
+    # more than a rollback.
+    refusal = _files_refusal(files)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     # `is None` for the two ID-LIST flags and not truthiness, because an EMPTY
     # value of either is an instruction rather than an absence: `--depends-on ""`
     # is how the field is emptied, which is `retarget --area ""`'s spelling and
@@ -3374,6 +3538,24 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "tests.gate",
                             "from": was_gate, "to": now_gate})
         tests["gate"] = now_gate
+        # THE BASIS MOVES WITH THE GATE, and it is a change of its own rather
+        # than a field that rides the list. A caller passing `--gate` has NAMED
+        # these commands, which is a different fact from whichever arm of the
+        # derivation produced the list they replace -- and it is the fact the
+        # validator reads when it asks whether a task carrying its phase's gate
+        # verbatim is holding a default or an answer.
+        #
+        # WHICH IS WHY A CALL THAT MOVES ONLY THIS IS STILL A WRITE. Declaring
+        # the wide gate outright leaves `tests.gate` byte-identical, and that
+        # call is exactly the one an operator makes to answer the line: a verb
+        # comparing lists alone would report "already reads that way" and write
+        # nothing, leaving the only route back to prose nothing reads.
+        was_basis = prior_tests.get("gateBasis")
+        now_basis = "cleared" if args.gate_clear else "declared"
+        if was_basis != now_basis:
+            changes.append({"id": tid, "field": "tests.gateBasis",
+                            "from": was_basis, "to": now_basis})
+        tests["gateBasis"] = now_basis
     # Assigned back exactly once, and only when a branch above ran: `tests` is a
     # COPY, so the branches cannot leave a half-object on the node by accident.
     if tests_writes:

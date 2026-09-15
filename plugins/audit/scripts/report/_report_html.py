@@ -62,6 +62,8 @@ import _areas  # noqa: E402  (one home for tag derivation; stdlib-only, no cycle
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the segment fold over them)
 import _priority  # noqa: E402  (what a valid tier is - one answer, shared with the CLI)
+import _fmt  # noqa: E402  (human_duration: the same spelling the gate runner's terminal
+#                           prints a recorded durationMs in)
 
 
 # Chip and pipeline-rail colors live in the report's CSS theme tokens (see
@@ -808,13 +810,29 @@ def _tev_gate_text(row):
 
 
 def _tev_step_rows(row):
-    """One line per step: what ran, what it exited, and how much it checked.
+    """One line per step: what ran, what it exited, how much it checked, and what
+    it cost.
 
     The COMMAND is shown only where the row carries one - `_evidence_io` stores a
     command verbatim only when the manifest already publishes it, and hands back a
     digest plus a program name for anything else. Printing the digest as if it
     were the command would be a claim this file cannot make, so each is labelled
-    as what it is."""
+    as what it is.
+
+    THE DURATION IS THE FIELD THE SHARED DOCUMENT WAS DROPPING. The gate runner's
+    terminal prints it per step and so does the control panel; this page, which is
+    the surface an audience is asked to trust the result on, showed the run's
+    total and nothing per step - so a gate running one suite twice looked exactly
+    like a gate running two, precisely where nobody can go and re-measure. The
+    value is on the row already, which makes this rendering rather than
+    measurement, and the spelling is `_fmt.human_duration` so the two surfaces
+    cannot come to disagree about what a number of milliseconds reads as.
+
+    A STEP WITH NO RECORDED DURATION RENDERS THE ABSENCE. `human_duration`
+    answers None for a row that never carried one, and the words go in where the
+    number would have been: a zero in a shared document is a claim about a
+    measurement nobody made, and it is the one reading that would make a step
+    look free."""
     steps = [s for s in (row.get("steps") or []) if isinstance(s, dict)]
     if not steps:
         return ""
@@ -823,6 +841,7 @@ def _tev_step_rows(row):
         ran = st.get("ran")
         ran_txt = ("check count not knowable" if ran is None
                    else "%d check(s)" % ran)
+        took = _fmt.human_duration(st.get("durationMs"))
         what = st.get("command")
         if what:
             what = "<code>%s</code>" % e(str(what))
@@ -836,10 +855,12 @@ def _tev_step_rows(row):
         # than as an empty space after the word "exit": a blank there reads as
         # zero to anyone scanning the column.
         out.append('<div class="dt-r"><span class="dt-k">%s</span>'
-                   '<span class="dt-v">exit %s · %s%s<br>%s</span></div>'
+                   '<span class="dt-v">exit %s · %s · %s%s<br>%s</span></div>'
                    % (e(st.get("name")),
                       "?" if st.get("exit") is None else e(st["exit"]),
                       e(ran_txt),
+                      e(took) if took
+                      else '<span class="muted">not timed</span>',
                       (" · " + e(outcome)) if outcome else "", what))
     dropped = row.get("stepsDropped")
     if dropped:
@@ -901,8 +922,11 @@ def _tev_detail_col(view):
              ("scope", e(row.get("scope"))),
              ("gate", e(_tev_gate_text(row))),
              ("attempt", e(row.get("attempt")) if row.get("attempt") is not None else ""),
-             ("took", ("%d ms" % row["durationMs"])
-              if isinstance(row.get("durationMs"), int) else ""),
+             # THE RUN'S OWN COST, in the same spelling its steps are rendered
+             # in one group down. A raw millisecond count beside a step reading
+             # `41.9 s` is two units in one drawer, and the comparison a reader
+             # makes here is the run against the steps that make it up.
+             ("took", e(_fmt.human_duration(row.get("durationMs")) or "")),
              ("checks", e(_tev_checks_text(row))),
              ("tree", _tev_paths_text(
                  obs.get("treeMutated", row.get("treeMutated")),

@@ -34,6 +34,8 @@ import _output                                     # noqa: E402  (SCRIPTS_DIR, t
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
+import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
+import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
@@ -227,9 +229,12 @@ def _cases(check):
               and t.get("verifiedBy") == [] and t.get("blockedBy") == []
               and t.get("dependsOn") == [])
         check("t3 tests default: gate-only, no red-first, gate from the "
-              "phase's testGate",
+              "phase's testGate - and `gateBasis` records WHICH arm produced "
+              "that list, because the arm is the thing a rule needs and the "
+              "sentence the report prints is thrown away: %r" % (t.get("tests"),),
               t.get("tests") == {"mode": "gate-only", "add": [],
-                                 "expectRedFirst": False, "gate": ["test"]})
+                                 "expectRedFirst": False, "gate": ["test"],
+                                 "gateBasis": "phase-no-spelling"})
         check("t4 model floors at sonnet, risk defaults low",
               t.get("model") == "sonnet" and t.get("risk") == "low")
 
@@ -502,6 +507,64 @@ def _cases(check):
               fidx.get("src/new.ts") == ["P2.11"])
         check("x2 a file not on disk is noted (new-file paths stay allowed), "
               "never refused", code == 0 and "src/new.ts" in txt)
+        check("x2b ...and the note names BOTH readings of that silence instead "
+              "of guessing the harmless one. It used to end `(new files?)`, "
+              "which is the answer an operator who resolved their scope "
+              "against the wrong root least needs to be handed: %r"
+              % ([ln for ln in txt.split("\n")
+                  if "nothing on disk answers for" in ln],),
+              "will author them" in txt
+              and "not the root these paths are relative to" in txt
+              and proj in txt)
+
+        # ---- (xp) a `--files` entry that cannot be a path -------------------
+        # MEASURED: the incremental spelling every neighbouring tool offers went
+        # into `files` as part of the filenames, into `fileIndex`, into a journal
+        # row, and the only output was the note x2 is about. So the one shape
+        # that is certainly a mistake read exactly like the one shape that is
+        # certainly fine.
+        _xp_before = open(mpath, "rb").read()
+        _xp_code, _xp_txt = run(["add", "Delta spelling", "--phase", "P2",
+                                 "--project-dir", proj,
+                                 "--files", "+src/keep.ts,-src/drop.ts"])
+        check("xp1 `--files` refuses an operator as a filename, before any "
+              "write: the verb takes the REPLACEMENT list, and a string "
+              "opening with a delta prefix is not a repository-relative path "
+              "at all: %r" % (_xp_txt[:200],),
+              _xp_code == 2 and "REPLACEMENT list" in _xp_txt
+              and "'+src/keep.ts'" in _xp_txt and "'-src/drop.ts'" in _xp_txt
+              and open(mpath, "rb").read() == _xp_before)
+        check("xp2 ...and ONE message covers every bad entry in the call, "
+              "because a caller who typed the delta spelling typed it on both "
+              "sides and two refusals for one mistake is a class people learn "
+              "to skip: %r" % (_xp_txt.count("--files takes the REPLACEMENT"),),
+              _xp_txt.count("--files takes the REPLACEMENT") == 1)
+        check("xp3 the other three shapes that are not repository-relative "
+              "paths are refused by NAME, each with the reason it is not one - "
+              "an absolute path, a home path, and a segment that climbs out of "
+              "the tree: %r"
+              % ([M._files_refusal([v]) is not None
+                  for v in ("/etc/passwd", "~/notes.md", "src/../../x.ts")],),
+              all(M._files_refusal([v]) is not None
+                  for v in ("/etc/passwd", "~/notes.md", "src/../../x.ts")))
+        check("xp4 SECOND-DIRECTION CASE, and it is the one an over-wide "
+              "refusal breaks: declaring a file before it exists stays legal "
+              "and stays QUIET, because the red-first workflow depends on it - "
+              "and `..` inside a NAME is an ordinary filename, which a "
+              "substring test would have refused: %r"
+              % ([M._files_refusal([v]) for v in
+                  ("src/not-yet.ts", "tests/a..b.py", "a-b/c-d.ts",
+                   "src/x.ts")],),
+              M._files_refusal(["src/not-yet.ts", "tests/a..b.py",
+                                "a-b/c-d.ts", "src/x.ts"]) is None
+              and M._files_refusal([]) is None)
+        _xp_code2, _xp_txt2 = run(["scope", "P2.3", "--project-dir", proj,
+                                   "--files", "+src/keep.ts"])
+        check("xp5 ...and the refusal belongs to the FLAG rather than to the "
+              "verb the defect was measured on: `scope` writes the same field "
+              "into the same index off the same flag, so both doors ask: %r"
+              % (_xp_txt2[:120],),
+              _xp_code2 == 2 and "REPLACEMENT list" in _xp_txt2)
 
         # ---- (r) validator rollback ----------------------------------------
         before = open(mpath, "rb").read()
@@ -1870,7 +1933,8 @@ def _cases(check):
               "into it (F258): a case the task creates is a file it owns, and a "
               "scope that named one without the other was the shape that cost a "
               "real run 13 hand-fixes: %r" % (sorted(jf_from),),
-              sorted(jf_from) == ["files", "tests.add", "tests.gate"])
+              sorted(jf_from)
+              == ["files", "tests.add", "tests.gate", "tests.gateBasis"])
         os.makedirs(os.path.join(jf_proj, "src"), exist_ok=True)
         for _jff in ("d.ts", "e.ts"):
             with open(os.path.join(jf_proj, "src", _jff), "w") as _fh:
@@ -2713,7 +2777,8 @@ def _cases(check):
               "because `audit-journal list` prints the summary alone and one "
               "summary carries one event: %r" % (list(zip(_fg_sum, _fg_flds)),),
               code == 0 and len(_fg_rows) == 3
-              and _fg_flds == [["tests.gate"], ["files"], ["tests.gate"]]
+              and _fg_flds == [["tests.gate", "tests.gateBasis"], ["files"],
+                               ["tests.gate"]]
               and "GATE CHANGED" in _fg_sum[0] and "WIDENED" in _fg_sum[1]
               and "GATE CHANGED" in _fg_sum[2]
               and all("during attempt 2" in s for s in _fg_sum)
@@ -3746,6 +3811,86 @@ def _cases(check):
               "it in the same move: %r" % (sorted(_pr_after_map),),
               sorted(_pr_after_map) == ["src/fresh.ts"])
 
+        check("pr3b SECOND-DIRECTION CASE: a phase that is ALREADY running is "
+              "not re-promoted and not re-stamped - `healed` comes back empty, "
+              "so the report and the trail say nothing about a transition that "
+              "did not happen: %r"
+              % (("phase " in txt,
+                  [p for p in _mio.load_manifest(mppr)["phases"]
+                   if p["id"] == "P2"][0].get("startedAt")),),
+              "phase P2 status" not in txt
+              and "startedAt" not in [p for p in
+                                      _mio.load_manifest(mppr)["phases"]
+                                      if p["id"] == "P2"][0])
+
+        # THE PHASE HAS A VERB NOW. Until this, the control surface's save was
+        # the ONLY site in the tree that moved a phase out of `pending`, so an
+        # orchestrator driving a plan from the command line left every phase
+        # pending for its whole life -- and a phase carried no start time at
+        # all. The fixture puts the task in the PENDING phase, which is what the
+        # blocks above never do.
+        _pr_pend = pr_fixture()
+        _pr_pend["phases"][2]["tasks"] = [
+            {"id": "P3.1", "title": "first", "status": "pending",
+             "description": "", "files": ["src/parked.ts"],
+             "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                       "gate": []},
+             "model": "sonnet", "skills": [], "risk": "low",
+             "blockedBy": [], "dependsOn": [], "attempts": 0,
+             "maxAttempts": 3, "commit": None,
+             "outcome": {"technical": None, "descriptive": None},
+             "startedAt": None, "completedAt": None, "verifiedBy": []}]
+        _pr_pend["fileIndex"]["src/parked.ts"] = ["P3.1"]
+        projph, mpph = mk("st-phase-start", _pr_pend)
+        _pr_ph_code, _pr_ph_txt = run(["start", "P3.1",
+                                       "--project-dir", projph])
+        _pr_phase = [p for p in _mio.load_manifest(mpph)["phases"]
+                     if p["id"] == "P3"][0]
+        check("pr3c a start inside a PENDING phase promotes the phase in the "
+              "same write and STAMPS it: the record a command-line run was "
+              "losing is the moment the phase began, which had no field to sit "
+              "in and no writer to put one there: %r"
+              % ((_pr_ph_code, _pr_phase.get("status"),
+                  _pr_phase.get("startedAt")),),
+              _pr_ph_code == 0 and _pr_phase.get("status") == "in_progress"
+              and isinstance(_pr_phase.get("startedAt"), str)
+              and _pr_phase["startedAt"].endswith("Z"))
+        check("pr3d ...from the SAME instant as the task it started for, "
+              "rather than from a second clock reading: two records of one "
+              "promotion that disagree by a second are two records nobody can "
+              "line up: %r" % ((_pr_phase.get("startedAt"),
+                                (task_in(mpph, "P3.1") or {}).get(
+                                    "startedAt")),),
+              _pr_phase.get("startedAt")
+              == (task_in(mpph, "P3.1") or {}).get("startedAt"))
+        check("pr3e ...and both surfaces report it: the terminal names the "
+              "field that moved rather than announcing a promotion, since two "
+              "fields move and only one of them is a status: %r"
+              % (_pr_ph_txt[-260:],),
+              "phase P3 status: pending -> in_progress" in _pr_ph_txt
+              and "phase P3 startedAt" in _pr_ph_txt)
+        _pr_ph_json = json.loads(run(["start", "P3.1", "--project-dir", projph,
+                                      "--json"])[1])
+        check("pr3f ...and the machine surface carries the rows APART from "
+              "`changes`, which is this task's fields - folding them together "
+              "would make a consumer join a phase's row on a task id. This "
+              "call re-starts an already-running phase, so the list is empty "
+              "and the key is still there: %r" % (_pr_ph_json.get("healed"),),
+              _pr_ph_json.get("healed") == []
+              and all(r["id"] == "P3.1" for r in _pr_ph_json["changes"]))
+        _pr_ph_jm = _panel_write._journalmod()
+        _pr_ph_rows = [r for r in (_pr_ph_jm.read_all(projph) if _pr_ph_jm
+                                   else [])
+                       if r.get("action") == "task.start"]
+        check("pr3g ...and the trail's summary names the phase the write moved: "
+              "a row naming only the task would leave the phase's own start "
+              "recorded in the manifest and nowhere in the journal: %r"
+              % ([r.get("summary") for r in _pr_ph_rows],),
+              any("P3 status: pending -> in_progress"
+                  in (r.get("summary") or "") for r in _pr_ph_rows)
+              and any("P3 startedAt" in (r.get("summary") or "")
+                      for r in _pr_ph_rows))
+
         # NOT IDEMPOTENT, AND THAT IS THE DECISION. `attempts` counts SPAWNS:
         # step 4 of the orchestrator leaves a task `in_progress` when its gates
         # run red and sends it back through step 2, so a second call IS that
@@ -4617,6 +4762,65 @@ def _cases(check):
               and M._gate_entry_paths("pytest tests/.coveragerc") \
                   == ["tests/.coveragerc"])
 
+        # ---- (gb) the derivation's arm, recorded where a rule can read it -----
+        # The basis above is a SENTENCE: printed once, then gone. So a narrow
+        # gate and a wide one read the same way in the manifest afterwards, and
+        # the validator's line about a task carrying its phase's gate verbatim
+        # could not tell the two wide arms apart - a project with no path-scoped
+        # spelling, which has nothing to narrow with, from a task that named no
+        # file, which does. It asked for prose in the `description` instead,
+        # which nothing reads.
+        def tg_basis(tid):
+            return (((task_in(tg_mp, tid) or {}).get("tests") or {})
+                    .get("gateBasis"))
+
+        check("gb1 every arm writes its own word, and the two WIDE arms write "
+              "DIFFERENT words - which is the whole question, since one says "
+              "the project cannot narrow and the other says this task did not: "
+              "%r" % ([tg_basis(t) for t in
+                       ("P1.2", "P1.3", "P2.2", "P1.5", "P1.6", "P1.7")],),
+              [tg_basis(t) for t in ("P1.2", "P1.3", "P2.2", "P1.5",
+                                     "P1.6", "P1.7")]
+              == ["tests.add", "files", "phase-no-spelling", "phase-no-paths",
+                  "declared", "cleared"])
+        check("gb2 ...and every one of those words is in the vocabulary the "
+              "validator reads, asked of that module rather than of this list - "
+              "a word written here and absent there is a basis nothing can "
+              "grade: %r" % (sorted(_vocab.GATE_BASIS),),
+              set(tg_basis(t) for t in ("P1.2", "P1.3", "P2.2", "P1.5",
+                                        "P1.6", "P1.7"))
+              <= set(_vocab.GATE_BASIS)
+              and set(_vocab.GATE_BASIS_ANSWERED) <= set(_vocab.GATE_BASIS))
+        _gb_w = _rules.validate(_mio.load_manifest(tg_mp))[1]
+        _gb_wide = [x for x in _gb_w if "testGate verbatim" in x]
+        check("gb3 so the validator is SILENT on the task whose phase records "
+              "no spelling and NAMES the one whose sibling does - the same "
+              "manifest, the same wide gate, two answers, because the "
+              "distinction is whether the project can narrow: %r"
+              % (_gb_wide,),
+              not any("P2.2" in x for x in _gb_wide)
+              and any("P1.5" in x for x in _gb_wide))
+        # THE ROUTE THAT ANSWERS THE LINE, and it has to be a WRITE: declaring
+        # the wide gate outright leaves `tests.gate` byte-identical, so a verb
+        # comparing lists alone would say "already reads that way" and leave the
+        # operator with prose nothing reads.
+        _gb_code, _gb_txt = run(["scope", "P1.5", "--project-dir", tg_proj,
+                                 "--gate", "lint", "--gate", "test",
+                                 "--gate", "typecheck"])
+        _gb_w2 = _rules.validate(_mio.load_manifest(tg_mp))[1]
+        check("gb4 declaring the wide gate through `/audit:task scope --gate` "
+              "records WHO chose it and takes the line down, even though the "
+              "list itself did not move a byte: %r"
+              % ((_gb_code, tg_basis("P1.5"), tg_gate("P1.5")),),
+              _gb_code == 0 and tg_basis("P1.5") == "declared"
+              and tg_gate("P1.5") == ["lint", "test", "typecheck"]
+              and not any("P1.5" in x for x in _gb_w2
+                          if "testGate verbatim" in x))
+        check("gb5 ...and that call is reported as a gate change rather than "
+              "swallowed, so the operator sees the write they made: %r"
+              % (_gb_txt[:200],),
+              "tests.gateBasis" in _gb_txt and "scoped in" in _gb_txt)
+
         # ---- (tw) the tree you stand in vs the tree you write -----------------
         # DRIVEN, AND THE FIXTURE IS THE INCIDENT: a checkout holding the plan,
         # a linked worktree added from it on another branch, the project
@@ -4676,7 +4880,8 @@ def _cases(check):
                                              "journal"))
               and not os.path.isdir(os.path.join(tw_tree, "docs", "audit",
                                                  "journal")))
-        _tw_disk = [ln for ln in txt.split("\n") if "not on disk" in ln]
+        _tw_disk = [ln for ln in txt.split("\n")
+                    if "nothing on disk answers for" in ln]
         check("tw3 the `not on disk` note carries the directory it searched, "
               "ONCE for the whole list -- the report asked for the directory, "
               "and an advisory that repeats a constant per file is the shape "
@@ -4791,7 +4996,7 @@ def _cases(check):
               "the root, so the note does not appear at all -- a line that "
               "printed an empty list would name a directory to say nothing "
               "about it: %r" % (txt_disk[:120],),
-              code == 0 and "not on disk" not in txt_disk)
+              code == 0 and "nothing on disk answers for" not in txt_disk)
 
         _tw_parser = M.build_parser()
         _tw_rows = []

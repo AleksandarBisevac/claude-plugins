@@ -60,6 +60,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1189,7 +1190,7 @@ def _composition_changes(manifest, patch):
     return rows
 
 
-def _heal_phase_status(manifest):
+def _heal_phase_status(manifest, now=None):
     """Flip 'pending' phases that already hold an in_progress task, in place.
 
     v0.37 A4: the validator's "task in_progress but its phase is pending"
@@ -1200,7 +1201,27 @@ def _heal_phase_status(manifest):
     with the save and reported to the client apart from `applied`, whose
     contract is "the echo of what the dialog showed" -- and the dialog did
     not show this.
+
+    THE PROMOTION CARRIES A START TIME, and until it did this was the only
+    site in the tree that promoted a phase at all: a plan driven from the
+    command line left every phase pending for the life of the phase, so the
+    moment work began inside it was recorded nowhere. `startedAt` is the
+    task-level field of the same name one level up, stamped by the same write
+    that moves the status, and it gets a row of its own so the journal records
+    a value rather than an implication.
+
+    `now` IS AN ARGUMENT because the two callers already hold one: the task
+    verb stamps the task and the phase from a single instant, and a phase whose
+    start read a second later than the task it started for would be a record
+    nobody could line up. A caller with no instant gets this module's, which is
+    the ISO spelling every writer here uses.
+
+    A PHASE THAT ALREADY CARRIES A START KEEPS IT. Only the status is behind on
+    a phase somebody hand-edited back to 'pending', and overwriting the stamp
+    would move a recorded moment to the moment it was noticed.
     """
+    if now is None:
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     rows = []
     # The heal is its OWN guard against a second row for the same phase: the
     # moment the status is flipped the phase stops reading 'pending', so the rest
@@ -1213,6 +1234,10 @@ def _heal_phase_status(manifest):
         ph["status"] = "in_progress"
         rows.append({"target": ph.get("id"), "field": "status",
                      "from": "pending", "to": "in_progress"})
+        if not ph.get("startedAt"):
+            ph["startedAt"] = now
+            rows.append({"target": ph.get("id"), "field": "startedAt",
+                         "from": None, "to": now})
     return rows
 
 

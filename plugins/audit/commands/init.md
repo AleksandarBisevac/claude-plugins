@@ -295,17 +295,28 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 
      **When it cannot be derived, the wide entry IS the answer** — a runner with no path-scoped
      spelling, files under no registered project, a finding whose `coveringTests` came back
-     `[]` with no `tests.add` to stand in for them. Write the wide entry and put the reason in
-     the task's `description`, naming what was missing. Do not narrow on a resemblance: a false
+     `[]` with no `tests.add` to stand in for them. Write the wide entry, set
+     `tests.gateBasis` to the word for the arm you took, and put the reason in the task's
+     `description` too, naming what was missing. Do not narrow on a resemblance: a false
      red is noticed the same day and a false green is never noticed at all, so a guess here is
      the strictly worse trade even when it would usually be right.
+
+     **`tests.gateBasis` is the half a rule can read**, and the `description` is the half a
+     person can. `phase-no-spelling` says nothing in this plan records how the runner takes
+     paths, so there is nothing to narrow with; `phase-no-paths` says a sibling does record it
+     and this task named no file to point a gate at. The two are repaired differently, which is
+     why they are two words — and why a plan that writes neither is read as an unnarrowed
+     default. The rest of the vocabulary belongs to `/audit:task`: `declared`, `cleared`,
+     `tests.add`, `files`.
 
      **And the wide entry is the one the validator says out loud.**
      `scripts/manifest/validate-manifest.py` warns for every unfinished task whose `tests.gate`
      is its phase's `testGate` verbatim — which is what a derivation that fell through to the
      last arm writes. It is a WARNING and never a finding, because the wide gate is sometimes
-     the right answer and an existing plan must not go red on upgrade; what it asks is whether
-     the `description` records the reason, so write that reason and the line has been answered.
+     the right answer and an existing plan must not go red on upgrade. It is silent on a task
+     recording `phase-no-spelling` or `declared`, because those are answers rather than
+     defaults; it names a task recording `phase-no-paths`, a word it does not know, or nothing
+     at all.
    - `model`: `sonnet` is the floor for ALL fix work (low/med risk, mechanical included);
      escalate to your strongest tier (`opus`) for `risk: "high"`. Do NOT route audit-fix tasks to
      `haiku` — a botched cheap attempt burns retries (`maxAttempts`) plus a reviewer round, costing
@@ -346,8 +357,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    e.g. `test/src/foo.ts` when `gitRoot` is `test`).
    **A file the task must CREATE belongs in `files` too, before it exists.** `files` is what the plan
    gate matches an edit against, and the gate asks the manifest, never the disk — so a declared path
-   that is not there yet is a legitimate creation target and `/audit:task add` reports it as
-   `note: not on disk under <the project root it searched> (new files?)` rather than as a problem.
+   that is not there yet is a legitimate creation target and `/audit:task add` reports it as a
+   `note:` naming the paths, the root it searched and both readings of the silence — this one and
+   a scope resolved against the wrong root — rather than as a problem.
    Leave it out and the executor is
    refused on its **first** write with no legal way forward: a live run wrote a task whose
    description ordered three new files while `files` named only the three it read, and the run
@@ -529,7 +541,8 @@ which layout was written and why the question was not worth asking yet.
 dimensions covered`), total task count by `tests.mode` and `risk`, what was
 deferred and why, any open questions for the human, and the handoff: **next run
 `/audit:status`, then `/audit:phase P0`**. Name every task whose `tests.gate` could NOT be
-narrowed, with the reason its `description` records — a wide gate nobody was told about is
+narrowed, with the `tests.gateBasis` word it records and the reason its `description`
+spells out — a wide gate nobody was told about is
 how a default teaches the wrong lesson, and this is the last place to say it before the plan
 starts running. Name the layout that was written, and
 when it is sharded, that the index and every `phases/*.json` are new files to

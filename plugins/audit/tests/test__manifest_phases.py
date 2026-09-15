@@ -448,10 +448,12 @@ def _cases(check):
     _TG_WIDE = ["npm test"]
     _TG_NARROW = ["npm test -- src/a.test.ts"]
 
-    def _tg_walk(pgate, tgate, status="pending"):
+    def _tg_walk(pgate, tgate, status="pending", basis=None):
+        tests = {"mode": "gate-only", "add": [], "gate": tgate}
+        if basis is not None:
+            tests["gateBasis"] = basis
         ph = _phase(status="in_progress", testGate=pgate, tasks=[
-            _task("P0.1", status=status,
-                  tests={"mode": "gate-only", "add": [], "gate": tgate})])
+            _task("P0.1", status=status, tests=tests)])
         _i, _f, _w = M._walk_phases([ph])
         return _f, [x for x in _w if "testGate verbatim" in x]
 
@@ -487,6 +489,42 @@ def _cases(check):
           "are the bulk of a mature plan, which is how a class gets skipped: %r"
           % ((_tg_done, _tg_cancelled),),
           _tg_done == [] and _tg_cancelled == [])
+    # --- ...and what the task RECORDS about why it is wide ---
+    # The line used to offer two routes and only one of them existed: narrow it,
+    # or write the reason into the task's `description` - which nothing here
+    # reads, so an operator who took the advice saw the same line for ever.
+    # `tests.gateBasis` is the derivation's own answer as data, and it is what
+    # separates a project that cannot narrow from a task that did not.
+    _tg_ns = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="phase-no-spelling")[1]
+    check("tg8 a task recording that NOTHING IN THIS PROJECT declares a "
+          "path-scoped gate entry is silent: the derivation established there "
+          "was no spelling to narrow with, and asking again for a narrowing "
+          "nothing can produce is the line that cannot be answered: %r"
+          % (_tg_ns,), _tg_ns == [])
+    _tg_decl = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="declared")[1]
+    check("tg9 ...and so is a task whose gate a caller NAMED outright - that "
+          "is the deliberate wide gate the old line asked for in prose, "
+          "recorded through `/audit:task scope --gate`, which is a route this "
+          "check actually reads: %r" % (_tg_decl,), _tg_decl == [])
+    _tg_np = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="phase-no-paths")[1]
+    check("tg10 SECOND-DIRECTION CASE: the OTHER wide arm still fires, and it "
+          "is the one that matters - a sibling records the spelling and this "
+          "task named no file to point a gate at, so narrowing IS possible "
+          "here and the line says which arm it read: %r" % (_tg_np,),
+          len(_tg_np) == 1 and "phase-no-paths" in _tg_np[0])
+    _tg_unknown = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="something-newer")[1]
+    check("tg11 SECOND-DIRECTION CASE: a word this build does not know is NOT "
+          "folded into the two that silence the line - a vocabulary read as an "
+          "allow-list would go quiet on every basis a later plugin invents, "
+          "which is the direction that loses the warning: %r" % (_tg_unknown,),
+          len(_tg_unknown) == 1)
+    _tg_prose = _tg_walk(_TG_WIDE, list(_TG_WIDE))[1]
+    check("tg12 ...and the line no longer offers the route that changes "
+          "nothing it reads: a reason written into the task's `description` is "
+          "prose no rule here opens, and advice that cannot work is worse than "
+          "no advice: %r" % (_tg_prose,),
+          len(_tg_prose) == 1 and "description" not in _tg_prose[0]
+          and "scope" in _tg_prose[0])
     _tg_blank = _tg_walk(_TG_WIDE, ["npm test", "  "])[1]
     check("tg6 a blank entry beside the copy does not buy a task out of the "
           "rule: both sides normalise to the entries that will actually run, "

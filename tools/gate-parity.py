@@ -1654,6 +1654,12 @@ NOT_AN_EXEMPTION = {
     "VERDICT_HELP": "what each invariant verdict means, printed beside it",
     "_EVAL_SHAPE": "the two spellings of an inline eval, used to name the form the "
                    "operator actually typed in a refusal (F256)",
+    "_FILE_REFUSALS": "a RULE table, and the opposite of an exemption: each row is "
+                      "a prefix a `--files` entry may NOT open with, and the "
+                      "sentence beside it is the clause the refusal prints to say "
+                      "why that string is not a repository-relative path - so a row "
+                      "adds a string the verb rejects rather than excusing one from "
+                      "a check",
     "_TEV_WHY": "the report's explanation of a testEvidence state, rendered to a "
                 "reader rather than excusing anything",
     "_TEV_GAP_WHY": "the same, for the states where a pointer resolves to nothing - "

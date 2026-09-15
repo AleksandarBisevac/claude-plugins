@@ -126,6 +126,8 @@ _output.install_path()
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
+import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
+#                           the terminal and the rendered report both print it in)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -1037,20 +1039,12 @@ def additive_total(steps, shared):
     return total
 
 
-def human_duration(ms):
-    """A step's `durationMs` in the unit a reader compares two steps in.
-
-    None IN, None OUT, the rule the rest of this file follows: a step carrying no
-    duration has not told us it was instant, and the caller says so rather than
-    printing a zero it measured nowhere.
-    """
-    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 0:
-        return None
-    if ms < 1000:
-        return "%d ms" % (ms,)
-    if ms < 60000:
-        return "%.1f s" % (ms / 1000.0,)
-    return "%d m %02d s" % (ms // 60000, (ms % 60000) // 1000)
+# A THIN ALIAS, NOT A COPY. The terminal was the only surface printing a step's
+# cost; the rendered report shows the same field now, and `_fmt` is where a number
+# two surfaces render lives -- that module exists because three copies of one
+# magnitude table had already drifted. The name stays spelled here so every call
+# site below, and the cases that drive them, keep reading the same word.
+human_duration = _fmt.human_duration
 
 
 def counts_basis(steps, shared):

@@ -143,6 +143,33 @@ def segment_of(status):
     return "pending"
 
 
+# --- which derivation produced a task's `tests.gate` -----------------------------
+# `/audit:task add` picks a task's gate from one of a handful of arms, and until
+# this vocabulary existed it kept the answer as an English sentence it printed once
+# and threw away. The result is that a narrow gate and a wide one read the same way
+# in the manifest, and the validator's line about a task carrying the phase's gate
+# verbatim had to guess which arm it was looking at -- so it asked a human to write
+# the reason into the task's `description`, which is prose no rule reads.
+#
+# THE WORDS ARE THE ARMS, and the two that matter are the last pair: one says this
+# PROJECT records no path-scoped spelling to narrow with, and the other says it does
+# and this task named no file to point a gate at. That distinction is the whole
+# question, and the derivation is the only thing that ever knew the answer.
+#
+# OPEN, LIKE EVERY OTHER VOCABULARY HERE: a word a newer plugin writes is not
+# folded into one of these, because publishing a provenance nobody recorded is
+# worse than rendering a word this build does not know.
+GATE_BASIS = ("declared", "cleared", "tests.add", "files",
+              "phase-no-spelling", "phase-no-paths")
+
+# The arms under which the phase's gate verbatim is the ANSWER rather than an
+# unnarrowed default. `declared` is a caller naming the commands outright, which is
+# the deliberate wide gate the validator's line used to ask for in prose;
+# `phase-no-spelling` is the derivation reporting that nothing in this project
+# records how its runner takes paths, so narrowing would be a guess.
+GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling")
+
+
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
 # The "legacy" names below were removed from the schema in v0.3.0 but remain
@@ -281,6 +308,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # parentBranch resolves phase -> meta.developmentBranch, the same
                # chain reviewSkill uses; branchType names the {type} segment.
                "parentBranch", "branchType",
+               # When this phase entered in_progress. The task-level twin of the
+               # same name, and it exists because only one writer used to promote
+               # a phase at all: a plan driven from the command line left every
+               # phase pending, so nothing recorded when the work began.
+               "startedAt",
                # v0.16: per-phase review skill override + app/team area tag
                "reviewSkill", "area",
                # connector v2: phase-level work item link, written by /audit:sync

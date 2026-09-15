@@ -168,6 +168,31 @@ def fmt_int(n):
     return "{:,}".format(int(n or 0))
 
 
+def human_duration(ms):
+    """A recorded `durationMs` in the unit a reader compares two of them in.
+
+    None IN, None OUT, which is this module's own rule about a real value never
+    rendering as nothing, pointed the other way: a step carrying no duration has
+    not told us it was instant, so the caller says the absence out loud rather
+    than printing a zero it measured nowhere. A rejected value — a bool, a
+    negative, a non-integer — is the same answer for the same reason.
+
+    IT SITS HERE BECAUSE TWO SURFACES RENDER THE SAME FIELD. The gate runner
+    printed a step's cost in the terminal and the rendered report dropped it, so
+    the one number that makes a duplicated suite self-evident was present where
+    the audience is technical and absent where the audience is being asked to
+    trust the result. Adding it there off a second table would be this module's
+    founding defect a fourth time.
+    """
+    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 0:
+        return None
+    if ms < 1000:
+        return "%d ms" % (ms,)
+    if ms < 60000:
+        return "%.1f s" % (ms / 1000.0,)
+    return "%d m %02d s" % (ms // 60000, (ms % 60000) // 1000)
+
+
 def plural(n, one, many=None):
     """`n` and its noun, agreeing — `1 task`, `3 tasks`, `2 people`.
 

@@ -35,6 +35,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
+import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 
@@ -1123,6 +1124,11 @@ def _cases(check):
           and M.human_duration(1500) == "1.5 s"
           and M.human_duration(125000) == "2 m 05 s"
           and M.human_duration(None) is None and M.human_duration(-1) is None)
+    check("sc8b ...and the name here IS `_fmt`'s function rather than a second "
+          "one agreeing with it today: the rendered report prints the same "
+          "field now, and an identity is the only assertion a later copy "
+          "cannot pass",
+          M.human_duration is _rtg_fmt.human_duration)
 
     check("sc9 EVERY STEP'S LINE CARRIES WHAT THAT STEP COST. `durationMs` was "
           "recorded per step and for the run since this script existed and the "

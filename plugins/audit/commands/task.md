@@ -188,6 +188,22 @@ there would be a guess in the direction that never gets noticed. Read the printe
 rather than the entries: a narrow gate and a wide one look alike once written, and the
 sentence is what tells them apart without opening the shard.
 
+**And the arm is written down, not only printed.** The same derivation sets
+`tests.gateBasis` — `tests.add`, `files`, `phase-no-spelling`, `phase-no-paths`, or
+`declared`/`cleared` for the two flags. The sentence is for a person and is gone after
+one screen; the word is what `validate-manifest.py` reads when it asks whether a task
+carrying its phase's gate verbatim is holding a default or an answer. It is silent on
+`phase-no-spelling` (this project records no path-scoped spelling, so there is nothing to
+narrow with) and on `declared` (a caller named these commands), and it names everything
+else — including a task that records no basis at all, which is what a hand-written or
+generated plan carries.
+
+**`scope --gate` is how an existing task answers that line.** It rewrites `tests.gateBasis`
+to `declared`, and it does so **even when the command list does not move** — declaring the
+wide gate outright is exactly the call an operator makes here, and a verb that compared
+lists alone would report "already reads that way", write nothing, and leave the only
+remaining route a sentence in the `description` that no rule opens.
+
 ### A brief the shell has eaten is refused
 
 **`--description` carries the operator's own words and reaches the script through a
@@ -254,11 +270,24 @@ step 2 prescribes as an orchestrator `Edit`, and nothing besides:
 
 - `status: "in_progress"`, `startedAt` stamped at the moment of the call, and
   `attempts` incremented.
+- **the phase around it, when that phase is still `pending`** — `status` and a `startedAt`
+  of its own, from the same instant, in the same write. Until this, the control panel's
+  save was the only thing in the plugin that promoted a phase at all, so a plan driven
+  entirely from the command line left every phase pending and recorded nowhere when its
+  work began. The phase's rows come back under `healed`, apart from `changes`, which is
+  the task's own fields. A phase already running is left alone, and one that already
+  carries a `startedAt` keeps the moment it recorded.
 - **journal** → one `task.start` row whose `details.changes` names each field with the
   value it held, plus `details.attempt` — both keys the `_journal_io.DETAILS_KEYS`
   allow-list already carries, so nothing is written that the trail would drop in silence.
+  A phase the write promoted is named in the row's summary.
 - Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
   `add`.
+
+**The plan gate does not change, and the promotion must not be read as unblocking it.** A
+running task under a pending phase already counted as a running phase — a hand-started
+task is still a repository executing its plan — so what the phase write adds is the
+record and nothing else.
 
 **It is not idempotent, and that is deliberate.** `attempts` counts spawns, not states:
 step 4 of the orchestrator leaves a task `in_progress` when its gates run red and sends
@@ -267,8 +296,9 @@ an attempt. The report says `RE-STARTED` and names the attempt every time, so a 
 call is visible rather than silent. A verb that returned success having written nothing
 would freeze the count `blocked` is derived from.
 
-**Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
-phase enters `in_progress` on the run that enters it); a `done` or `cancelled` task, named
+**Refusals, all before any write:** an id that resolves to nothing; a **phase** id (this
+verb takes a task, and the phase around that task is promoted by the same write; a phase
+with no task to start is entered by the run that enters it); a `done` or `cancelled` task, named
 as such — terminal work is not re-opened by flipping a status, and the follow-up is a new
 task; and a start that would take `attempts` past the task's `maxAttempts`. That last one
 refuses rather than writing `blocked` itself: that transition also owes an ADO echo and a
@@ -519,8 +549,21 @@ no longer claims.
 
 Refuses, each naming the reason: a phase id (it takes a task), an id that is not in the
 manifest, a task whose work is settled, a change on a task that has started which is
-neither a widening nor a gate, and a call that would change nothing — a lock taken for no
+neither a widening nor a gate, a `--files` entry that cannot be a repository-relative path,
+and a call that would change nothing — a lock taken for no
 reason is worth saying out loud.
+
+**`--files` is the replacement list, and it is not a delta.** The incremental spelling
+neighbouring tools offer — a `+` or `-` in front of each path — is refused rather than
+written, on both this verb and `add`: measured live, those prefixes went into the task's
+`files` as part of the filenames, into `fileIndex`, into a journal row that recorded it as
+legitimate, and the only output was the not-on-disk note below. A leading `/` or `~` and a
+`..` segment are refused for the same reason — none of them is a path the plan can key an
+index on. **A file that does not exist yet is not one of these**: a task whose `tests.mode`
+is `tdd` names the case it is about to author before that file exists, so declaring one
+stays legal and stays quiet. It is reported as a note naming the paths, the root that was
+searched, and both readings of the silence — a file this task will create, or a scope
+resolved against a root these paths are not relative to.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 
