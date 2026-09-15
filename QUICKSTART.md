@@ -32,6 +32,29 @@ git root it resolved, and whether the hooks have ever fired here. If anything be
 goes wrong, this is the command that says why — so it is worth the ten seconds now
 rather than the confusion later.
 
+Two of its rows are worth reading on the first run rather than on the first surprise.
+
+**`plugin files`** answers the question this product owes you before any other: are the
+files that run on every tool call the ones that were published? It compares the installed
+copy against the checkout it came from. An installation it cannot verify is reported as
+*not established* — never as clean.
+
+**`sandbox` and `secret rules`** are about a layer this plugin does not own and leans on.
+Its secret guards match the *text* of a tool call and never the I/O, so what actually
+stops a secret being read is Claude Code's own sandbox plus a permission deny rule. Both
+are opt-in and neither is on by default:
+
+```json
+// .claude/settings.json
+{
+  "sandbox": { "enabled": true },
+  "permissions": { "deny": ["Read(.env*)", "Grep(.env*)"] }
+}
+```
+
+If you keep real secrets in this repository, set those before you set anything here —
+[SECURITY.md](SECURITY.md) says exactly what the guards do and do not guarantee.
+
 ## 3. Generate the plan
 
 In a git repository you want audited:

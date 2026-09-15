@@ -693,6 +693,112 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # ------------------------------------------------- the plugin's own files
+    # This product installs hooks that run on every tool call, so whether those
+    # files are the published ones is the first question a careful operator asks.
+    # The row half is driven through injected verdicts, because what it has to
+    # get right is that the four answers stay four answers - an installation that
+    # cannot be verified must never render as a clean one.
+    def _files_rep(state):
+        rep = base.Report()
+        M.check_plugin_files(rep, None, plugin_root="/nowhere",
+                             integrity=state)
+        return rep
+
+    _clean = {"verdict": "clean", "detail": "", "modified": [],
+              "commit": "abcdef123456"}
+    _mod = {"verdict": "modified", "detail": "", "commit": "abcdef123456",
+            "modified": ["plugins/audit/hooks/guard-edits.py"]}
+    _unk = {"verdict": "unverifiable", "commit": None, "modified": [],
+            "detail": "the installed copy is not inside a git checkout"}
+    _dev = {"verdict": "dev", "commit": None, "modified": [],
+            "detail": "the installed copy is this repository's own working tree"}
+    check("ds32 a clean install is OK and names the commit it matched - a row "
+          "that answered without a basis would be the defect this check exists "
+          "to close",
+          _levels(_files_rep(_clean), "plugin files") == ["OK"]
+          and "abcdef123456" in _detail(_files_rep(_clean), "plugin files"),
+          _detail(_files_rep(_clean), "plugin files"))
+    _rm = _files_rep(_mod)
+    check("ds33 a MODIFIED install says so and names the file, and says these "
+          "files run on every tool call",
+          "do NOT match" in _detail(_rm, "plugin files")
+          and "guard-edits.py" in _detail(_rm, "plugin files")
+          and "every tool call" in _detail(_rm, "plugin files"),
+          _detail(_rm, "plugin files"))
+    _ru = _files_rep(_unk)
+    check("ds34 ...while an installation that cannot be verified is reported as "
+          "NOT ESTABLISHED and never as clean - the same rule every other basis "
+          "in this command follows",
+          _levels(_ru, "plugin files") == ["WARNING"]
+          and "NOT ESTABLISHED" in _detail(_ru, "plugin files")
+          and "do NOT match" not in _detail(_ru, "plugin files"),
+          _detail(_ru, "plugin files"))
+    check("ds35 ...and the development case is its own answer rather than a "
+          "quiet clean: a working tree is SUPPOSED to differ, and grading an "
+          "author's own edits as tampering teaches the reader to skip the row",
+          _levels(_files_rep(_dev), "plugin files") == ["OK"]
+          and "not the question" in _detail(_files_rep(_dev), "plugin files"),
+          _detail(_files_rep(_dev), "plugin files"))
+    check("ds36 NO verdict is a FINDING - the doctor exits non-zero on one, a "
+          "patched copy and a tampered one look identical from git, and failing "
+          "a user's CI for the first is how a check gets switched off",
+          all("FINDING" not in _levels(_files_rep(s), "plugin files")
+              for s in (_clean, _mod, _unk, _dev)))
+
+    # The reading itself, against a REAL checkout: the row cases above would pass
+    # against a resolver that always answered `unverifiable`, and the two
+    # directions here are what keep that from being true.
+    if have_git:
+        pin = tempfile.mkdtemp(prefix="doctor-integrity-")
+        elsewhere = tempfile.mkdtemp(prefix="doctor-elsewhere-")
+        try:
+            def pgit(*args):
+                subprocess.run(["git", "-C", pin] + list(args),
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, check=False)
+
+            with open(os.path.join(pin, "hook.py"), "w", encoding="utf-8") as fh:
+                fh.write("x = 1\n")
+            pgit("init", "-q")
+            pgit("config", "user.email", "t@example.invalid")
+            pgit("config", "user.name", "t")
+            pgit("add", "hook.py")
+            pgit("commit", "-qm", "seed")
+            _got = M.plugin_integrity(pin, project=elsewhere)
+            check("ds37 a checkout whose tracked files match its commit reads "
+                  "clean, and the commit is carried so the answer has a basis",
+                  _got["verdict"] == "clean" and _got["commit"], repr(_got))
+            with open(os.path.join(pin, "hook.py"), "w", encoding="utf-8") as fh:
+                fh.write("x = 2\n")
+            _got = M.plugin_integrity(pin, project=elsewhere)
+            check("ds38 ...and one tracked byte later it reads MODIFIED, naming "
+                  "the file - the direction that would go silent if the status "
+                  "read were dropped",
+                  _got["verdict"] == "modified"
+                  and any("hook.py" in name for name in _got["modified"]),
+                  repr(_got))
+            _got = M.plugin_integrity(pin, project=pin)
+            check("ds39 ...while the SAME modified checkout read as the project "
+                  "being worked in is the development answer, which is the "
+                  "carve-out `guard-edits` already makes for the same case",
+                  _got["verdict"] == "dev", repr(_got))
+            nogit = tempfile.mkdtemp(prefix="doctor-nogit-")
+            try:
+                _got = M.plugin_integrity(nogit, project=pin)
+                check("ds40 ...and a copy in no checkout at all is unverifiable "
+                      "with the reason said, never clean",
+                      _got["verdict"] == "unverifiable" and _got["detail"],
+                      repr(_got))
+            finally:
+                shutil.rmtree(nogit, ignore_errors=True)
+        finally:
+            shutil.rmtree(pin, ignore_errors=True)
+            shutil.rmtree(elsewhere, ignore_errors=True)
+    else:
+        _harness.skip(check, "ds37-ds40 plugin_integrity against a real checkout",
+                      "git", "git is not on PATH")
+
 
 def _selftest():
     return _harness.run(_cases)

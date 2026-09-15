@@ -187,6 +187,23 @@ WARN_TEMPLATE = (
     "notice; the change itself was NOT reverted."
 )
 
+# The same finding with the authorship claim KEPT, and the statement that carried
+# it quoted back. It exists because the withdrawal above was being applied to
+# commands that had already answered the question in their own text: a `sed -i`
+# naming a file, beside some other explanation that happened to be available, was
+# reported as a write this guard could not attribute. The clause is the evidence,
+# so it is printed rather than summarised — a reader who is told which statement
+# wrote can fix that statement, and one who is told a background job cannot be
+# ruled out goes looking for a job.
+NAMED_TEMPLATE = (
+    "[bash-write-guard] That shell command modified source file(s) with no plan "
+    "coverage, and its own text names the write: %s. So this is not a guess and "
+    "nothing else needs ruling out. Plan-first applies to shell writes too — add "
+    "the file(s) to an in_progress task in the audit manifest, or use the "
+    "Edit/Write tools (which the plan gate reviews). This is a non-blocking "
+    "notice; the change itself was NOT reverted."
+)
+
 # The journal is append-only, and guard-edits refuses an EDIT to it. A shell write
 # is the same act through the door that cannot be locked, so it is reported the
 # moment it is seen — including the case where nothing was hidden and a script
@@ -587,6 +604,101 @@ def directory_change_basis(command, cwd, watching):
     return None
 
 
+# The redirections that name a file to WRITE. `<`, `<<`, `<&` read; `>&` duplicates
+# a descriptor; `_drop_harmless_redirects` has already removed the ones aimed at
+# /dev/null and at a descriptor, so what survives here names a path.
+_WRITE_REDIRECTS = frozenset((">", ">>", ">|"))
+
+
+def _statement_targets(toks):
+    """(how it was spelled, the path it names) for every WRITE this argv performs.
+
+    Three grammars, and they are `guard-secrets-read`'s three: a redirect, `tee`,
+    and `sed -i`. Read off TOKENS, which is what makes this a different act from
+    the raw-string inference that once called `grep -n "cost > 5"` a redirect - a
+    `>` inside a quoted pattern is one token with the pattern, never an operator.
+    """
+    out = []
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok in _WRITE_REDIRECTS and i + 1 < len(toks):
+            target = toks[i + 1]
+            if target and not target.isdigit():
+                out.append((tok, target))
+            i += 2
+            continue
+        i += 1
+    for words in _segments(toks):
+        if not words:
+            continue
+        if words[0] == "tee":
+            out.extend(("tee", w) for w in words[1:] if not w.startswith("-"))
+        elif words[0] == "sed" and any(_write_flag(w) for w in words[1:]):
+            # The script is an argument too, so the LAST non-option word is the
+            # file: `sed -i 's/a/b/' src/x.ts`. Taking every one of them would
+            # report the expression as a path.
+            files = [w for w in words[1:] if not w.startswith("-")]
+            if len(files) > 1:
+                out.append(("sed -i", files[-1]))
+    return out
+
+
+def writing_statement(command, cwd, watching, rel):
+    """How this command's own text says it wrote `rel` - or None when it does not.
+
+    -> a phrase for `NAMED_TEMPLATE`, naming the write form and the path as typed
+
+    THE SUSPECT IN HAND. Everything else in this file answers "could somebody else
+    have written this", and when one of those answers is yes the authorship claim
+    comes off - correctly, because "new since my last look" was never the same
+    claim as "written by this command". But a command that spells its own
+    destination has already answered the question, and the withdrawal was being
+    applied to it anyway: a `sed -i` naming a file, beside a background job this
+    session happened to launch, produced a notice saying this guard cannot say the
+    command wrote it. Naming an innocent explanation while the guilty statement is
+    quoted in the payload is how a guard earns a reputation for guessing.
+
+    READING A DESTINATION TO ACCUSE IS NOT WHAT THIS DOES, which is the line
+    `directory_change_basis` draws and this one stays on the right side of. The
+    finding is already being reported - the file is dirty, uncovered, and nobody
+    else has claimed it. What is read here is which STATEMENT to name, and it is
+    read from tokens, and the caller asks it only when the shell's location is
+    established. A wrong answer therefore costs a phrase, never a finding that
+    would not otherwise have been made.
+
+    `cwd` IS THE SESSION'S DIRECTORY, which is the same limit every other reader
+    of it has: a command that walks somewhere else first is refused this claim by
+    the caller, because `directory_change_basis` has already withdrawn it.
+    """
+    toks = _tokenize((command or "").strip())
+    if not toks:
+        return None
+    # BOTH SIDES RESOLVED BEFORE THEY ARE COMPARED, and the relpath is taken
+    # against the resolved root. `within_root` resolves for its own answer, but
+    # `rel_path` does not, so a tree reached through a symlink (/tmp on macOS,
+    # a checkout symlinked into place) produced a rel full of `..` that equals no
+    # `git status` line - the claim would then simply never be made, which is the
+    # failure that looks like the feature never landed.
+    try:
+        base = os.path.realpath(str(watching))
+    except Exception:
+        return None
+    for how, target in _statement_targets(_drop_harmless_redirects(toks)):
+        if not _config.resolvable_destination(target):
+            continue
+        try:
+            dest = os.path.realpath(os.path.join(str(cwd or "."), target))
+        except Exception:
+            continue
+        if not _config.within_root(base, dest):
+            continue
+        if _config.rel_path(base, dest) != rel:
+            continue
+        return "the command's own `%s %s`" % (how, target)
+    return None
+
+
 def _command_is_read_only(command):
     """Can this shell command be proven unable to write? Default: NO.
 
@@ -787,7 +899,13 @@ def _now():
 
 
 def record_background_launch(state, tool_input, now):
-    """Note a detached Bash launch this session made, if it could write. -> bool.
+    """Note a detached Bash launch this session made, if it could write.
+
+    -> the row it appended, or None
+
+    THE ROW IS RETURNED RATHER THAN A FLAG because the caller has to be able to
+    leave it out of its own verdict: a launch made by THIS call is not somebody
+    else's explanation for what this call did (see `background_basis`).
 
     THE BLIND SPOT THIS CLOSES is the mirror of the one `_other_sessions` names, and
     it is invisible to that function by construction: a background job belongs to
@@ -825,26 +943,39 @@ def record_background_launch(state, tool_input, now):
     reported with their age and never silently expired.
     """
     if not isinstance(tool_input, dict) or not tool_input.get("run_in_background"):
-        return False
+        return None
     command = tool_input.get("command") or ""
     if _command_is_read_only(command):
-        return False              # it cannot write later either
+        return None               # it cannot write later either
     toks = _tokenize(command.strip()) or []
     program = toks[0] if toks else "?"
+    row = {"program": program, "at": now}
     state["bgLaunches"] = (list(state.get("bgLaunches") or [])
-                           + [{"program": program, "at": now}])[-_BG_LAUNCH_CAP:]
-    return True
+                           + [row])[-_BG_LAUNCH_CAP:]
+    return row
 
 
-def background_basis(state, now):
+def background_basis(state, now, own=None):
     """The clause naming this session's unaccounted background jobs, or None.
 
     AGE IS IN IT BECAUSE NOTHING CAN REPORT COMPLETION. A bare count reads as "a job
     is running"; a count with an age lets the reader answer that themselves, which is
     the only version of the claim that is true. Ages are rendered whole-minute and
     the oldest is named, so a launch from an hour ago is visibly not an explanation.
+
+    `own` IS THIS CALL'S OWN LAUNCH, AND IT IS NOT AN ALIBI FOR THIS CALL. The
+    launch is recorded before the tree is diffed - it must be, because what it
+    explains is a LATER pass's dirt - and the same record was then read back into
+    this pass's verdict. A command that backgrounds a writer was therefore told
+    that a background job "cannot be ruled out", naming the job it had itself just
+    started, freshly launched, as the reason its own writes could not be attributed
+    to it. That is naming a suspect while holding the one in hand, and a guard that
+    does it teaches the reader it guesses. Excluded by identity rather than by age:
+    a clock comparison would answer by timer granularity, which this file has
+    already been bitten by once.
     """
-    launches = list(state.get("bgLaunches") or [])
+    launches = [row for row in (state.get("bgLaunches") or [])
+                if own is None or row is not own]
     if not launches:
         return None
     ages = sorted(max(0, int(now - float(row.get("at") or now))) for row in launches)
@@ -1303,7 +1434,8 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # return. A detached job that could write must be on the record even when this
     # pass goes on to say nothing — git unusable, a baseline seed, a read-only
     # command — because what it explains is a LATER pass's dirt, not this one's.
-    if record_background_launch(state, data.get("tool_input") or {}, now):
+    own_launch = record_background_launch(state, data.get("tool_input") or {}, now)
+    if own_launch is not None:
         _save_state(sd, session_id, state)
 
     reason = None
@@ -1522,13 +1654,30 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         # which it was.
         active = (others or {}).get("active") or []
         clauses = []
+        command = (data.get("tool_input") or {}).get("command")
         # THE THIRD KIND OF OTHER-AUTHOR, and the one the payload hides. The two
         # below name somebody who could have written these paths; this one says
         # the command cannot be placed in this tree at all, so nobody has been
         # named yet. It goes first because it is about the command in hand.
-        moved = directory_change_basis(
-            (data.get("tool_input") or {}).get("command"), data.get("cwd"),
-            tree["watching"])
+        moved = directory_change_basis(command, data.get("cwd"), tree["watching"])
+        # ...and BEFORE any of them, the path whose author is not in question at
+        # all: one the command's own text names as a destination. Asked only when
+        # the shell's location IS established, because a resolved destination
+        # means nothing once `moved` says the tree is unknown - and asked per
+        # path, so a command that wrote one file it names and coincided with
+        # another it does not gets the right sentence about each.
+        named = {}
+        if not moved:
+            for rel in suspicious:
+                phrase = writing_statement(command, data.get("cwd"),
+                                           tree["watching"], rel)
+                if phrase:
+                    named[rel] = phrase
+        unproven = [rel for rel in suspicious if rel not in named]
+        if named:
+            parts.append(NAMED_TEMPLATE % "; ".join(
+                "%s (%s)" % (rel, named[rel]) for rel in suspicious
+                if rel in named))
         if moved:
             clauses.append(moved)
         if active:
@@ -1542,14 +1691,14 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         peer = peer_agent_basis(state, writer, since_writer)
         if peer:
             clauses.append(peer)
-        bg = background_basis(state, now)
+        bg = background_basis(state, now, own_launch)
         if bg:
             clauses.append(bg)
-        if clauses:
-            parts.append(UNPROVEN_TEMPLATE % (", ".join(suspicious),
+        if unproven and clauses:
+            parts.append(UNPROVEN_TEMPLATE % (", ".join(unproven),
                                               "; and ".join(clauses)))
-        else:
-            parts.append(WARN_TEMPLATE % ", ".join(suspicious))
+        elif unproven:
+            parts.append(WARN_TEMPLATE % ", ".join(unproven))
 
     _save_state(sd, session_id, state)
     if parts:

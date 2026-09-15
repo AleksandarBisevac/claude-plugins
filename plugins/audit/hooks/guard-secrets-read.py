@@ -22,8 +22,12 @@ Covered read vectors:
                  `pattern` is the query, NOT a target, and is ignored.
   - Bash       → (a) shell read verbs aimed at a secret file token — including the
                      indirect ones: `git show HEAD:.env`, `git cat-file`,
-                     `source .env` / `. .env`, and copy-verbs (`cp`/`mv`/`rsync`/
-                     `install`) that would relocate a secret for later reading;
+                     `source .env` / `. .env`, an input redirection (`envsubst
+                     < .env` names no verb and hands over every byte), and
+                     copy-verbs (`cp`/`mv`/`rsync`/`install`) that would relocate
+                     a secret for later reading. The project's own
+                     `secretPatterns.extra` decides a read here too, on its own
+                     and not behind the built-in set — see `_extra_read_hit`;
                  (b) inline-eval reads (python/node/ruby/perl/… -c/-e) whose code text
                      references a secret-file token;
                  (c) env-value dumps (printenv/env/direnv dump, `process.env`) and
@@ -131,10 +135,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
 # --- secret FILE paths (used for the Read tool's file_path and Grep path/glob) --
+# ONE VOCABULARY FOR `credentials.<ext>`, READ BY THE TOOL SET AND BY THE SHELL SET.
+# It was spelled twice and the two lists had come apart: the shell token knew a
+# shorter set, so `cat config/credentials.yaml` was allowed while `Read` of the same
+# file was refused - one file, two verdicts, decided by which spelling the agent
+# reached for. That is the guard-by-spelling class, and `cat` is the everyday
+# spelling, so the half that was wrong is the half everybody uses. SECURITY.md
+# promises `credentials*` with no spelling attached, which is the promise this
+# constant makes keepable.
+_CRED_EXT = "json|plist|p8|pem|key|cer|der|txt|cfg|conf|ya?ml"
+
 SECRET_PATH = re.compile(
     r"""(
         (^|/)\.env(?!\.(?:example|sample|template|dist|defaults)\b)(?:rc)?(\.[^/]+)?$
-      | (^|/)credentials[^/]*\.(?:json|plist|p8|pem|key|cer|der|txt|cfg|conf|ya?ml)$
+      | (^|/)credentials[^/]*\.(?:""" + _CRED_EXT + r""")$
       | (^|/)credentials$
       | (^|/)id_(?:rsa|dsa|ecdsa|ed25519)$
       | \.p12$
@@ -189,7 +203,7 @@ _READ_VERB = (
 _SECRET_TOKEN = (
     r"(?:(?<!process)\.env(?!\.(?:example|sample|template|dist|defaults))"
     r"(?:rc\b|\.|\b)"
-    r"|credentials[\w.-]*\.(?:json|plist|p8|pem|key|txt)"
+    r"|credentials[\w.-]*\.(?:" + _CRED_EXT + r")\b"
     r"|(?:^|[/\s'\"])credentials(?=$|[\s'\";|&])"       # bare `~/.aws/credentials`
     r"|(?:^|[/\s'\"])id_(?:rsa|dsa|ecdsa|ed25519)\b"    # SSH private keys
     r"|\.p12\b|\.pfx\b|\.mobileprovision\b|\.keystore\b|\.jks\b|\.p8\b|\.pem\b)"
@@ -201,6 +215,36 @@ BASH_FILE_READ = re.compile(
 DOT_SOURCE_SECRET = re.compile(
     r"(?:^|[;&|(]\s*)\.\s+[^|&;\n]*?" + _SECRET_TOKEN, re.IGNORECASE
 )
+# A READ WITH NO VERB IN IT. `_READ_VERB` is a list of programs, and an input
+# redirection names none: `envsubst < .env`, `while read l; do …; done < .env` and
+# `pbcopy < .env` all hand the file's bytes to something, and every one of them
+# walked past a guard whose whole subject is that file. The redirect IS the read
+# verb here, so it is matched as one.
+#
+# The exclusions are the spellings that do not open a file for reading:
+# `<<` (a heredoc, whose body `split_heredocs` already grades), `<<<` (a here
+# string, which is the same `<<` prefix), and `<(` (process substitution, whose
+# body is a command). A descriptor in front is kept only for `0<`, which IS
+# stdin - `2<` is a descriptor nothing reads from, and the lookbehind that keeps
+# `a<b` inside a `sed` script from being a redirect keeps that out with it.
+STDIN_READ_SECRET = re.compile(
+    r"(?<![\w&<>])0?<(?![<(])[^|&;\n]*?" + _SECRET_TOKEN, re.IGNORECASE
+)
+# What makes a clause a READ at all, for the one rule whose vocabulary belongs to
+# the project rather than to this file (see `_extra_read_hit`). The three arms are
+# the three above, minus their secret token: a read verb, a dot-source, a redirect
+# into something's stdin.
+_READ_CLAUSE = re.compile(
+    r"\b" + _READ_VERB + r"\b"
+    r"|(?:^|[;&|(]\s*)\.\s+"
+    r"|(?<![\w&<>])0?<(?![<(])",
+    re.IGNORECASE,
+)
+# A shell WORD, for asking a project pattern about one argument at a time. The
+# question `secretPatterns.extra` answers is "is this path a secret of ours", and
+# a path is a word - asking it of the whole command line instead makes every
+# pattern that is not anchored match the wrong half of a pipeline.
+_SHELL_WORD = re.compile(r"[^\s'\"|&;<>()]+")
 
 _INLINE_EVAL = re.compile(
     r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php)\b"
@@ -301,7 +345,24 @@ _EVAL_BINDING = re.compile(
 
 _STRING_LITERAL = re.compile(r"['\"]([^'\"\n]*)['\"]")
 
+# One hop of binding for a SEQUENCE of literals - `argv = ['cat', '.env']`, and the
+# JavaScript and Ruby spellings of the same line. `_EVAL_BINDING` above reads a name
+# bound to a string, which is what a path arrives as; this reads a name bound to an
+# argument VECTOR, which is what a command arrives as. Only literals, and the whole
+# bracket must be literals: an element this cannot read leaves the name unresolved
+# rather than half-resolved, which is the rule `_resolve_write_expr` already states
+# for the other shape.
+_SEQUENCE_BINDING = re.compile(
+    r"(?<![\w$.])(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*=\s*"
+    r"[\[(]\s*((?:['\"][^'\"\n]*['\"]\s*,?\s*)+)[\])]")
+
 _BARE_NAME = re.compile(r"^[A-Za-z_$][\w$]*$")
+# The same vocabulary UNANCHORED, for pulling the names out of a call's argument
+# list. `_BARE_NAME` asks whether a whole operand is a name, which is the question
+# `_resolve_write_expr` needs; this asks which names occur, which is the question a
+# shell-out argument needs, and the two must not be one pattern with one anchor
+# missing.
+_NAME_IN_ARGS = re.compile(r"[A-Za-z_$][\w$]*")
 # A WHOLE operand that is one string literal, anchored at both ends. The
 # unanchored `_STRING_LITERAL` above answers "is there a literal in here", which
 # is a different question and the wrong one for an operand (see
@@ -352,6 +413,22 @@ def _eval_bindings(clause):
     out = {}
     for m in _EVAL_BINDING.finditer(clause):
         joined = "".join(_STRING_LITERAL.findall(m.group(2)))
+        if joined:
+            out.setdefault(m.group(1), joined)
+    return out
+
+
+def _eval_sequence_bindings(clause):
+    """{name: its literal elements, joined with a space} - an argv bound to a name.
+
+    The elements are joined the way a shell would spell them, because the matcher
+    that reads the result is `BASH_FILE_READ`, whose grammar is a verb followed by
+    a path. Joining is not a claim that the shell ran it: it is the only shape in
+    which the question "does this argv read a secret file" can be asked of the one
+    matcher this file trusts for that sentence."""
+    out = {}
+    for m in _SEQUENCE_BINDING.finditer(clause):
+        joined = " ".join(_STRING_LITERAL.findall(m.group(2)))
         if joined:
             out.setdefault(m.group(1), joined)
     return out
@@ -517,8 +594,45 @@ def _shell_out_arguments(clause):
     return out
 
 
+def _unestablished_read_target(clause):
+    """A read call whose target this cannot resolve but which NAMES a secret.
+
+    -> the argument expression, or None
+
+    THE READ SIDE OF THE RULE THE WRITE SIDE ALREADY LEARNT, and the two point
+    opposite ways because the fail-mode table points them there. `_resolve_write_expr`
+    returns None for an expression this cannot read, and both arms used to treat
+    None the same way: nothing to judge, carry on. On the WRITE side that is right
+    - plan coverage is a question about a file the plan could name, an unestablished
+    destination is not one, and the allow is said out loud. On the READ side the
+    same silence is a guard declining to act on the one clause that names the file
+    it exists to protect: `open(base + '/.env')` and `open(f'{d}/.env')` both spell
+    a secret inside a read call's own argument and both were allowed.
+
+    So a read call whose target cannot be established is REFUSED when the argument
+    itself names a secret. That is narrower than it sounds and deliberately so: the
+    expression has to be the ARGUMENT of a read call, which is what keeps prose, a
+    comment and a fixture table outside it, and a write-mode `open` outside it too.
+    A target built by a CALL (`os.path.join(a, b)`) matches no read call here at
+    all and is the residual this cannot reach, stated where the limit is paid."""
+    bindings = None
+    for m in _READ_CALL_EXPR.finditer(clause):
+        expr = next((g for g in m.groups() if g), None)
+        if expr is None:
+            continue
+        if bindings is None:
+            bindings = _eval_bindings(clause)
+        if _resolve_write_expr(expr, bindings):
+            continue
+        if SECRET_TOKEN_RE.search(expr):
+            return expr.strip()
+    return None
+
+
 def _eval_reads_a_secret(clause, extras):
     """Does this interpreter body READ a secret, as opposed to mentioning one?
+
+    -> the basis, in the words the refusal quotes, or None
 
     F263, and it is a narrowing of Rule #1, so what it keeps is stated first.
     THREE WAYS TO BE A READ, and only prose falls outside all three:
@@ -542,24 +656,53 @@ def _eval_reads_a_secret(clause, extras):
     was reported from a live run and reproduced twice inside one command here — the
     refusal said *Reading a secret file* about a sentence that read nothing.
 
-    The direction of the risk is stated rather than hidden: this can miss a read
-    spelled in a way none of the three sees — including, after F267, a command
-    assembled into a NAME and passed to `subprocess.run(argv)`, which arm 2 no
-    longer reaches. That miss is ONE SHAPE rather than a class, and the difference
-    was measured: the inline `-c` form is still refused by the outer shell lane,
-    which reads the command text, so only a HEREDOC body escapes both. `b8j` and
-    `b8k` assert each half, so the limit stays a decision on the record. The
-    alternative is what was measured twice — a guard that fires on prose, or on
-    data, is one people route around, and this register already carries that
-    lesson under its own entry.
+    A FOURTH, AND IT IS THE OPPOSITE KIND OF EVIDENCE: a read call whose target
+    this cannot establish, where the argument itself names a secret
+    (`_unestablished_read_target`). The three above say what a body DOES; this one
+    says the body would not answer, and a guard refuses what it cannot classify.
+
+    ARM 2 RESOLVES ONE HOP, which closed the last place this file graded a
+    spelling instead of an operation. `subprocess.run(argv)` after
+    `argv = ['cat', '.env']` is the same read as `subprocess.run(['cat', '.env'])`,
+    and it used to be refused in the inline `-c` spelling and allowed in the
+    heredoc one - the inline form being caught by the OUTER shell lane, which reads
+    the command text a heredoc body has already left. One operation, two verdicts,
+    decided by which of two identical capabilities carried it. The binding is
+    resolved here instead, so both spellings meet the same rule and neither depends
+    on a lane that happens to see the bytes.
+
+    The direction of the risk is stated rather than hidden: this can still miss a
+    read spelled in a way none of the four sees - an argv assembled element by
+    element, a command built by a call. The alternative is what was measured twice
+    - a guard that fires on prose, or on data, is one people route around, and this
+    register already carries that lesson under its own entry.
     """
     targets = _eval_read_targets(clause)
     if any(SECRET_TOKEN_RE.search(t) for t in targets):
-        return True
+        return "a read call names it"
+    seqs = None
     for argument in _shell_out_arguments(clause):
-        if BASH_FILE_READ.search(argument) or DOT_SOURCE_SECRET.search(argument):
-            return True
-    return bool(targets) and _hits_extra(" ".join(targets), extras)
+        if seqs is None:
+            seqs = _eval_sequence_bindings(clause)
+        # Every NAME in the argument list, resolved against the sequences bound in
+        # this same clause. Names rather than "the whole argument is one name"
+        # because an argv arrives beside other arguments as often as alone
+        # (`subprocess.run(argv, shell=False)`), and the closing parenthesis is
+        # part of the span this walk returns. Only a name bound HERE to literals
+        # contributes, so nothing is added that the clause did not spell.
+        text = argument
+        for name in _NAME_IN_ARGS.findall(argument):
+            if name in seqs:
+                text += " " + seqs[name]
+        if BASH_FILE_READ.search(text) or DOT_SOURCE_SECRET.search(text):
+            return "a shell read of it is handed to something that runs commands"
+    if targets and _hits_extra(" ".join(targets), extras):
+        return "a read target matches this project's own secretPatterns.extra"
+    unplaced = _unestablished_read_target(clause)
+    if unplaced:
+        return ("a read call names it in an argument this cannot resolve (%s), "
+                "and a guard refuses what it cannot classify" % (unplaced,))
+    return None
 
 
 # --- shell write forms into files (plan-first backstop) --------------------------
@@ -733,6 +876,39 @@ def _extra_patterns(cfg):
 
 def _hits_extra(text, extras):
     return any(rx.search(text) for rx in extras)
+
+
+def _extra_read_hit(text, extras):
+    """The word a READ clause names that only the PROJECT's patterns call a secret.
+
+    -> that word, or None
+
+    THE CONSUMER'S HALF OF RULE #1 REACHED EVERY MATCHER BUT THE SHELL. `Read`,
+    `Grep` and an MCP payload each ask `_hits_extra` of the path they carry; the
+    Bash lane's third arm asked it of the whole command AND then required
+    `BASH_FILE_READ` to match as well - which is the built-in vocabulary, so a
+    project pattern could never be the reason for a refusal. Appending a space to
+    the text cannot make that matcher say yes where it said no, so the arm could
+    not fire at all: a check with no case able to fail, standing where the whole
+    configurable half of the rule was supposed to be. `cat ops/vault-token` was
+    allowed while `Read ops/vault-token` was refused, for a file the project had
+    itself declared secret - and `cat` is how an agent reads a file.
+
+    Asked PER CLAUSE and PER WORD rather than of the command, because that is the
+    shape of the question: a path is a word, `_clauses` already separates the read
+    from what it is piped into, and an unanchored project pattern asked of the
+    whole line matches wherever it likes. A clause with no read in it is not asked
+    at all, so writing a file the project calls secret is still the write arms'
+    business and not a refusal here."""
+    if not extras:
+        return None
+    for clause in _clauses(text):
+        if not _READ_CLAUSE.search(clause):
+            continue
+        for word in _SHELL_WORD.findall(clause):
+            if _hits_extra(word, extras):
+                return word
+    return None
 
 
 # --- MCP tool calls: the operation, never the server it was installed under -----
@@ -1500,13 +1676,27 @@ def _decide_core(data, root, cfg):
         # arms below, where the token alone is enough, so nothing stops being
         # refused; what stops is `cat > notes.md <<EOF` being read as if the prose
         # inside the markdown file were commands.
-        if (BASH_FILE_READ.search(shell_text) or DOT_SOURCE_SECRET.search(shell_text)
-                or (extras and _hits_extra(shell_text, extras)
-                    and BASH_FILE_READ.search(shell_text + " "))):
+        if (BASH_FILE_READ.search(shell_text)
+                or DOT_SOURCE_SECRET.search(shell_text)
+                or STDIN_READ_SECRET.search(shell_text)):
             return ("block",
                     "Reading, sourcing or copying a secret file via shell is blocked "
                     "(Rule #1). Reading file names is fine; contents are not — and "
                     "copying/moving a secret only relocates the leak.")
+        # THE PROJECT'S OWN VOCABULARY, ASKED HERE AND NOT FOLDED INTO THE LINE
+        # ABOVE. It was folded in, behind an `and` on the built-in matcher, which
+        # made it a clause that could never decide anything - see
+        # `_extra_read_hit`. Its own branch, its own sentence: a refusal over a
+        # pattern the project wrote has to name the pattern's subject, or the
+        # reader goes looking for a `.env` that is not in the command.
+        extra_word = _extra_read_hit(shell_text, extras)
+        if extra_word:
+            return ("block",
+                    "Reading a file this project calls a secret is blocked "
+                    "(Rule #1): %s\nIt matches secretPatterns.extra in "
+                    ".claude/audit.config.json. Reading file names is fine; "
+                    "contents are not. Ask the user to paste any value you "
+                    "actually need." % extra_word)
         # F-B-1: the two inline-eval heuristics run PER CLAUSE. Over the whole
         # command, a redirect in clause one plus an eval in clause two used to
         # combine into a deny neither clause earns. A single-clause command is
@@ -1532,12 +1722,13 @@ def _decide_core(data, root, cfg):
         # times in one session here.
         graded += [(b, True, "heredoc") for b in _code_bodies + _shell_bodies]
         for cl, is_eval, how in graded:
-            if is_eval and _eval_reads_a_secret(cl, extras):
+            basis = _eval_reads_a_secret(cl, extras) if is_eval else None
+            if basis:
                 return ("block",
-                        "Reading a secret file from %s is blocked (Rule #1). "
+                        "Reading a secret file from %s is blocked (Rule #1) - %s. "
                         "Listing names is fine; reading contents is not. Ask the "
                         "user to paste any value you actually need."
-                        % (_EVAL_SHAPE[how],))
+                        % (_EVAL_SHAPE[how], basis))
         # EVERY SECRET RULE IS ABOVE THIS LINE AND EVERY GRADED ONE IS BELOW IT.
         # What follows is the plan gate, not a secret guard: it asks whether a
         # WRITE is covered by the plan, which is a question only a repository

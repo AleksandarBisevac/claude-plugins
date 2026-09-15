@@ -54,6 +54,35 @@ its basis is the settings files alone. **"Not declared" is reported as *not
 established*, never as *off*** — managed policy and a `--settings` flag outrank
 every file it can read.
 
+**And it is named in `QUICKSTART.md` now, which is where a first-time user meets
+this product.** A control nobody is told about is a control that exists for readers
+of this document, and the people who most need it are the ones who have not read it.
+
+## The plugin's own files
+
+This plugin installs hooks that run on **every tool call**, so whether those files
+are the ones that were published is the first question a careful operator asks. It
+had no answer until `/audit:doctor`'s `plugin files` row.
+
+What it can ask is what exists: a marketplace install of a `github` source is a git
+clone, and a clone can be asked whether its tracked files still match the commit it
+is on. The verdicts are kept apart on purpose — **modified**, **clean**, the
+development case where the installed copy IS the repository being worked in, and
+**unverifiable**. An installation this cannot verify is reported as unverifiable and
+never as clean, which is the same rule every other basis here follows.
+
+None of them is a finding, and that is the same trade the sandbox rows make: the
+doctor exits non-zero on a finding, a deliberately patched copy and a tampered one
+look identical from git, and failing a user's CI for the first is how a check gets
+switched off. The *modified* row names the files and says they run on every tool
+call; deciding what that means is the reader's, and this document's answer is that
+a copy you did not patch yourself is one to re-install before trusting.
+
+What it is not: a signature. There is no shipped digest, and one this plugin wrote
+about itself would answer nothing an attacker able to edit the files could not also
+rewrite. Untracked files inside the plugin directory are outside the comparison —
+they are not a modification of anything published.
+
 **So the ceiling here is friction plus evidence.** Friction: the obvious spellings
 cost an extra step and a refusal the human sees. Evidence: a Bash
 call carrying `dangerouslyDisableSandbox` — the documented per-call escape hatch,
@@ -220,6 +249,34 @@ direction of its risk is stated rather than hidden: a read spelled in a way none
 sees would pass. It was made because the previous rule refused prose — writing a summary that
 mentioned `.env` was reported as *"Reading a secret file"* — and a guard that fires on prose is one
 people route around, which costs more than it protects.
+
+**A read call whose target cannot be established is refused, and the write arm allows the same
+thing — opposite answers to the same word, from the table above.** `open(base + '/.env')` and
+`open(f'{d}/.env')` both name a secret inside a read call's own argument and neither resolves to a
+path, and both used to pass. A read is a *guard*, and the table says a guard fails loud: what it
+cannot classify it refuses, and the refusal quotes the argument so the operator can see what was
+unreadable. A shell write is the *plan gate*, which is graded and fails open: an unestablished
+destination is allowed **with the reason said out loud**, because plan coverage is a question about
+a file the plan could name and `$HOME/notes.py` is not one. The two rules ask about different
+things — this file's contents, versus whether some file is in the plan — and a wrong answer costs
+a leak on one side and an unactionable refusal on the other.
+
+**Both interpreter spellings of one read now meet the same rule, which they did not.**
+`subprocess.run(argv)` after `argv = ["cat", ".env"]` was refused as `python3 -c` and allowed as
+`python3 - <<PY`: the inline form was being caught by the *outer* shell lane, which reads command
+text a heredoc body has already left, so the verdict came from which of two identical capabilities
+carried it. The shell-out argument is resolved through one hop of a sequence binding now, so the
+refusal comes from the rule rather than from the lane. `python3 /dev/stdin <<PY` is the same
+repair one spelling further out — it is `python3 - <<PY` written differently, and it was being
+classified as data.
+
+**The project's own `secretPatterns.extra` reaches the shell, which it never did.** Every other
+matcher asked those patterns about the path it carried; the Bash lane asked them *and* required
+the built-in pattern to match as well, which no project pattern can influence — so `cat`ing a file
+a repository had itself declared secret was allowed while `Read` of it was refused. A read verb, a
+dot-source or an input redirect whose clause names a matching word is now refused on the project's
+pattern alone. **An input redirection is a read** for the same reason: `envsubst < .env` names no
+read verb and hands over every byte.
 
 **An MCP file tool is judged on the paths its payload names, and refused whatever it
 meant to do with one.** The guard walks every path-shaped value in the call, at any
@@ -728,6 +785,23 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    A secret in an unconventionally-named file is invisible to it. It
    deliberately over-blocks on the read side (e.g. any `.pem`, including public
    certs; `cp .env.example .env`) — a harmless retry beats an irreversible leak.
+
+   **The name set is one set now, and it was two.** The paths a tool call carries
+   and the tokens a shell command carries were matched against separately spelled
+   lists, so `credentials.yaml`, `.yml`, `.conf`, `.cfg`, `.cer` and `.der` were
+   refused through `Read` and allowed through `cat`. That is a documented door,
+   not a residual: the guard looked effective against `xxd`, `od`, `dd` and
+   `git cat-file` — spellings nobody types — while the everyday one walked past
+   it. The extension vocabulary has one home, and the cases assert the pair
+   rather than either door alone.
+
+   **What is still name-based and still missed**, said so it is a decision:
+   a read verb this list has never heard of (`cut`, `sort`, `jq`, an editor) with
+   a secret path after it, an argv assembled element by element, a path built by
+   a call (`os.path.join(a, b)`), and `find … -exec cat` — where the path is
+   spelled before the verb. Each is a shape rather than a class, and the class
+   itself is the one this document opens with: text inspection is bypassable in
+   principle.
 7. **State files are plaintext.** `.claude/state/` and `.claude/logs/` in the
    consuming repo hold session state and the bypass log (no secrets). Add them
    to your `.gitignore`. Files older than 7 days are garbage-collected

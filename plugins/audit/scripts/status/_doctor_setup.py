@@ -279,6 +279,149 @@ def check_sandbox(rep, project, home=None):
                  fix)
 
 
+# --- the plugin's own files -------------------------------------------------------
+# WHY THIS PRODUCT OWES THE CHECK MORE THAN MOST. It installs hooks that run on
+# every tool call, so "are those files the ones that were published" is the first
+# question a careful operator asks, and until this row there was no way to ask it.
+#
+# WHAT CAN ACTUALLY BE ASKED, which is what decides the shape. There is no
+# signature and no shipped digest, and inventing one here would be a manifest this
+# plugin wrote about itself - which answers nothing an attacker who could edit the
+# files could not also rewrite. What DOES exist is git: a marketplace install of a
+# `github` source is a clone, and a clone can be asked whether its tracked files
+# still match the commit it is on. Where that is not available the row says so and
+# claims nothing - an installation this cannot verify is reported as unverifiable,
+# never as clean, which is the same rule every other basis in this command follows.
+_INTEGRITY_TIMEOUT = 10
+
+
+def _git_out(argv, cwd):
+    """(stdout, None) or (None, why) - one git read, never raising."""
+    try:
+        proc = subprocess.run(argv, cwd=cwd, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              timeout=_INTEGRITY_TIMEOUT)
+    except Exception as exc:
+        return (None, exc.__class__.__name__)
+    if proc.returncode != 0:
+        return (None, (proc.stderr or b"").decode("utf-8", "replace")
+                .strip().splitlines()[:1] or ["git exited non-zero"])
+    return (proc.stdout.decode("utf-8", "replace"), None)
+
+
+def plugin_integrity(plugin_root, project=None):
+    """Do the installed plugin's own files still match what its checkout records?
+
+    -> {"verdict", "detail", "modified", "commit"} with verdict one of
+       `clean`, `modified`, `dev`, `unverifiable`
+
+    `dev` is its own answer and not a quiet `clean`. When the installed copy IS
+    the repository being worked in, "does it match what was published" is not the
+    question being asked of it - the working tree is supposed to differ, that is
+    what working on it means - and `guard-edits` already carves the same case out
+    for the same reason. Reporting an author's own edits as tampering is how a
+    check teaches its reader to skip it.
+
+    The comparison is over TRACKED files only, and that is a stated limit rather
+    than an oversight: an untracked file inside the plugin directory is not a
+    modification of anything published, and git's own answer for it depends on
+    ignore rules this check does not own. What it catches is the thing worth
+    catching - a shipped file whose bytes are not the shipped bytes.
+    """
+    out = {"verdict": "unverifiable", "detail": "", "modified": [],
+           "commit": None}
+    if not shutil.which("git"):
+        out["detail"] = ("git is not on PATH, and git is the only record of what "
+                         "this copy should contain")
+        return out
+    top, why = _git_out(["git", "-C", plugin_root, "rev-parse", "--show-toplevel"],
+                        plugin_root)
+    if top is None:
+        out["detail"] = ("the installed copy is not inside a git checkout (%s), "
+                         "so nothing on this machine records what it should "
+                         "contain" % (why if isinstance(why, str) else why[0],))
+        return out
+    root = top.strip()
+    if project:
+        # `guard-edits`' own test, borrowed rather than re-derived: the plugin
+        # living inside the consuming repository IS the development case, and the
+        # two must agree about it or one of them refuses what the other exempts.
+        try:
+            here = os.path.realpath(str(project))
+            installed = os.path.realpath(str(plugin_root))
+            if (os.path.realpath(root) == here or installed == here
+                    or installed.startswith(here + os.sep)):
+                out["verdict"] = "dev"
+                out["detail"] = ("the installed copy is this repository's own "
+                                 "working tree")
+                return out
+        except Exception:
+            pass
+    head, _why = _git_out(["git", "-C", plugin_root, "rev-parse", "HEAD"],
+                          plugin_root)
+    out["commit"] = None if head is None else head.strip()[:12] or None
+    status, why = _git_out(
+        ["git", "-C", plugin_root, "status", "--porcelain", "-uno", "--",
+         plugin_root], plugin_root)
+    if status is None:
+        out["detail"] = ("git could not report on the installed copy (%s)"
+                         % (why if isinstance(why, str) else why[0],))
+        return out
+    changed = [ln[3:].strip() for ln in status.splitlines() if ln.strip()]
+    if changed:
+        out["verdict"] = "modified"
+        out["modified"] = changed
+        return out
+    out["verdict"] = "clean"
+    return out
+
+
+def check_plugin_files(rep, project, plugin_root=None, integrity=None):
+    """Are the plugin's own installed files the ones that were published?
+
+    EVERY VERDICT IS OK OR WARNING, AND A MODIFICATION IS THE LOUDEST WARNING
+    RATHER THAN A FINDING. `check_sandbox` settled the same argument on the same
+    shape and the reasoning transfers word for word: `/audit:doctor` exits
+    non-zero on a finding, so grading this one would fail CI for anyone who has
+    deliberately patched their own copy, and for every developer of this plugin
+    whose project directory is not the checkout. What the row must do is make the
+    difference UNMISSABLE and name the file - which it does, in a sentence nobody
+    reads as routine - rather than decide an exit code on evidence that a local
+    edit and a tampered install share.
+    """
+    root = plugin_root or _output.PLUGIN_ROOT
+    state = integrity if integrity is not None else plugin_integrity(root, project)
+    if state["verdict"] == "modified":
+        rep.warn("plugin files",
+                 "the installed plugin's tracked files do NOT match the commit "
+                 "its checkout is on (%s): %s. These files run on every tool "
+                 "call, so this is worth answering before anything else in this "
+                 "report" % (state["commit"] or "unknown commit",
+                             _output.some_of(state["modified"])),
+                 "re-install the plugin (/plugin -> Installed -> update), or if "
+                 "the change is yours, commit it so the record says so")
+        return state
+    if state["verdict"] == "clean":
+        rep.ok("plugin files",
+               "the installed plugin's tracked files match the commit its "
+               "checkout is on (%s)" % (state["commit"] or "unknown commit",))
+        return state
+    if state["verdict"] == "dev":
+        rep.ok("plugin files",
+               "%s - so 'matches what was published' is not the question being "
+               "asked of it, and the review of the commit is what answers it "
+               "here" % state["detail"])
+        return state
+    rep.warn("plugin files",
+             "whether the installed plugin's files are the ones that were "
+             "published is NOT ESTABLISHED: %s. This plugin ships hooks that run "
+             "on every tool call, so that is worth knowing and this row is not "
+             "saying they are fine" % state["detail"],
+             "install it through /plugin from a marketplace source, which leaves "
+             "a checkout that records what the copy should contain")
+    return state
+
+
 def check_git(rep, project, cfg):
     """The git root the orchestrator will run git against."""
     git_root = os.path.abspath(os.path.join(project, cfg.get("gitRoot") or "."))

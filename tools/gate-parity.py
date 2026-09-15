@@ -1682,6 +1682,11 @@ NOT_AN_EXEMPTION = {
                      "verb to explain itself rather than excusing it from a "
                      "check, and a row nothing can resolve to is a red case "
                      "rather than a quiet excuse",
+    "_EMPTY_RECORDS": "the append-only records the gates leave behind, each with "
+                      "the sentence the doctor prints when one holds nothing - the "
+                      "opposite of an exemption: a row makes the command say WHICH "
+                      "of two facts an empty file is, where the row's absence "
+                      "would leave the silence reading as good news",
     "_PANEL_FILES": "the panel's own local files, with the remedy the doctor prints "
                     "when one is tracked - subjects of a check, not excuses from it",
     "_PANEL_PRIVATE_FILES": "the lines the panel writes into `.claude/.gitignore`, "

@@ -481,6 +481,67 @@ def _cases(check):
         _harness.skip(check, "dh20 check_worktrees against a real repository",
                       "git", "git is not on PATH")
 
+    # ------------------------------------------------- check_gate_feed
+    # An empty record is good news or it is no record at all, and nothing about
+    # the file separates the two. Measured in the field: both files stayed empty
+    # for a whole program and that was read as a clean run. Every case below is a
+    # PAIR against the same file contents, differing only in whether a hook has
+    # ever written state here - which is the basis, and the only thing that moves.
+    feed_tmp = _harness.fixture_root("doctor-feed-")
+    try:
+        gcfg = cfgmod._deep_merge(cfgmod.DEFAULTS, {})
+        logs = os.path.join(feed_tmp, ".claude", "logs")
+        state = os.path.join(feed_tmp, ".claude", "state")
+        os.makedirs(logs)
+
+        def _feed_rep():
+            rep = base.Report()
+            M.check_gate_feed(rep, feed_tmp, gcfg, cfgmod)
+            return rep
+
+        rep = _feed_rep()
+        check("dh28 an empty record with NO hook evidence is not established - "
+              "and it says so in this product's own word rather than reading as "
+              "a clean run",
+              _levels(rep, "gate events") == ["WARNING"]
+              and "NOT ESTABLISHED" in _detail(rep, "gate events")
+              and _levels(rep, "bypass log") == ["WARNING"],
+              _detail(rep, "gate events")[:100])
+        os.makedirs(state)
+        with open(os.path.join(state, "bash-writes-s.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{}")
+        rep = _feed_rep()
+        check("dh29 ...and the IDENTICAL empty record with hook state beside it "
+              "is good news, which is the whole distinction: one file, two "
+              "facts, told apart by evidence outside it",
+              _levels(rep, "gate events") == ["OK"]
+              and _levels(rep, "bypass log") == ["OK"]
+              and "NOT ESTABLISHED" not in _detail(rep, "gate events"),
+              _detail(rep, "gate events")[:100])
+        with open(os.path.join(logs, cfgmod.GATE_EVENTS_FILE), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"event":"deny"}\n\n{"event":"warn"}\n')
+        rep = _feed_rep()
+        check("dh30 a record with rows counts them and never asks the question - "
+              "blank lines are not rows, so a file of newlines is still empty",
+              _levels(rep, "gate events") == ["OK"]
+              and "2 row(s)" in _detail(rep, "gate events"),
+              _detail(rep, "gate events")[:100])
+        # UNAVAILABLE IS THE THIRD ANSWER. A directory where the file should be
+        # cannot be read and cannot be counted, and calling that empty would be
+        # the same defect one layer down.
+        os.remove(os.path.join(logs, cfgmod.GATE_EVENTS_FILE))
+        os.makedirs(os.path.join(logs, cfgmod.GATE_EVENTS_FILE))
+        rep = _feed_rep()
+        check("dh31 ...while a record that cannot be READ is unavailable rather "
+              "than empty, and neither answer above is given for it",
+              _levels(rep, "gate events") == ["WARNING"]
+              and "unavailable rather than empty" in _detail(rep, "gate events"),
+              _detail(rep, "gate events")[:100])
+    finally:
+        _harness.remove_tree(feed_tmp)
+
 
 def _selftest():
     return _harness.run(_cases)

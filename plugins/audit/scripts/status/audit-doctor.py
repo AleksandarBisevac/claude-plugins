@@ -129,6 +129,8 @@ RECENT_DAYS = _base.RECENT_DAYS
 
 check_interpreter = _setup.check_interpreter
 check_sandbox = _setup.check_sandbox
+plugin_integrity = _setup.plugin_integrity
+check_plugin_files = _setup.check_plugin_files
 settings_sources = _setup.settings_sources
 read_settings = _setup.read_settings
 sandbox_state = _setup.sandbox_state
@@ -163,6 +165,7 @@ _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
 check_evidence_pointers = _completions.check_evidence_pointers
 
+check_gate_feed = _hygiene.check_gate_feed
 check_locks = _hygiene.check_locks
 check_worktrees = _hygiene.check_worktrees
 check_local_artifacts = _hygiene.check_local_artifacts
@@ -178,6 +181,11 @@ def diagnose(project, deep=False):
     # asks whether the guards can run at all, and this asks whether the layer they
     # lean on is there. Neither takes the cfg/git/manifest trio, so both precede it.
     check_sandbox(rep, project)
+    # ...and the layer BELOW that one: the plugin's own files. This product ships
+    # hooks that run on every tool call, so whether those files are the published
+    # ones is the first question a careful operator asks, and it is asked before
+    # the config because a modified copy is what would be reading the config.
+    check_plugin_files(rep, project)
     cfg, cfg_mod = check_config(rep, project)
     git_root = check_git(rep, project, cfg)
     manifest_rel, manifest = check_manifest(rep, project, cfg)
@@ -220,6 +228,7 @@ def diagnose(project, deep=False):
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)
+    check_gate_feed(rep, project, cfg, cfg_mod)
     check_locks(rep, git_root, project, manifest_rel)
     check_worktrees(rep, git_root, manifest)
     check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root)

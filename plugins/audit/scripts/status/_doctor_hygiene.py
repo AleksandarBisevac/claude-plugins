@@ -28,6 +28,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/_harness.py`.
 """
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -110,6 +111,109 @@ _PANEL_FILES = (
      "git rm --cached it and commit; the panel empties the file on every start "
      "that reaches listening, but emptying a file does not empty the history"),
 )
+
+
+# --- checks: an empty record is two different facts -------------------------------
+# The files the gates leave behind, and the sentence each row needs when one of
+# them holds nothing. Both live under `logsDir`; both are APPEND-ONLY records of
+# something having happened, which is why an empty one is ambiguous in exactly the
+# same way and is worth one shared answer rather than two.
+_EMPTY_RECORDS = (
+    ("gate events", None,
+     "the plan gate has been asked and had nothing to refuse",
+     "every edit this project saw was exempt, covered by an in_progress task, or "
+     "small enough for the trivial allowance - the gate records a row on every "
+     "other outcome, at every tier including observe"),
+    ("bypass log", "plan-bypass.log",
+     "no single-use plan-first bypass has ever been armed here",
+     "arming writes a line the moment the keyword is typed, so an empty file is "
+     "the good news it looks like"),
+)
+
+
+def _hooks_have_run(project, cfg, cfg_mod):
+    """Has anything in this project's state directory been written by a hook?
+
+    The same evidence `check_hooks_fired` grades, asked again here for a different
+    question. It is the only local proof that a guard has run at all, and without
+    it an empty record says nothing about the guards - which is the whole of the
+    distinction below."""
+    try:
+        state_dir = cfg_mod.state_dir(pathlib.Path(project), cfg)
+        return any(os.path.isfile(os.path.join(state_dir, name))
+                   for name in os.listdir(state_dir))
+    except Exception:
+        return False
+
+
+def _record_rows(path):
+    """(rows, refusal) - non-blank lines in an append-only record, or why not.
+
+    A missing file is zero rows and NOT a refusal: the gates create these on
+    first write, so absence and emptiness are the same news once the question
+    below has been answered. Anything else that stops the read IS a refusal,
+    because then the record is not empty, it is unavailable."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return (len([ln for ln in fh.read().splitlines() if ln.strip()]),
+                    None)
+    except FileNotFoundError:
+        return (0, None)
+    except OSError as exc:
+        return (None, getattr(exc, "strerror", None) or exc.__class__.__name__)
+
+
+def check_gate_feed(rep, project, cfg, cfg_mod):
+    """An empty record is good news or it is no record at all, and they look alike.
+
+    MEASURED IN THE FIELD, WHERE BOTH FILES STAYED EMPTY FOR A WHOLE PROGRAM and
+    that was read as a clean run. It is indistinguishable from a gate that never
+    ran: the hooks are not installed, the plugin is disabled for this project, or
+    `logsDir` points somewhere else. Nothing about the file itself can tell those
+    apart, and a reader who assumes the happy one has assumed away the failure
+    that matters most.
+
+    So the emptiness is graded on a BASIS outside the file - whether any hook has
+    ever written state here - and the two answers are worded apart. With that
+    evidence present the record means what it looks like; without it the row says
+    NOT ESTABLISHED, which is this product's word for the difference and is not a
+    softer way of saying "clean".
+
+    GRADED AS A WARNING AND NOT A FINDING, for the reason `check_sandbox` spells
+    out at length about the same shape: a finding asserts the guards are absent,
+    absence is exactly what this cannot establish, and `/audit:doctor` exits
+    non-zero on a finding - so a fresh install that has simply not edited anything
+    yet would fail CI having asked for nothing. `check_hooks_fired` already carries
+    the row for the missing evidence itself; this one carries what that missing
+    evidence COSTS, which is the reading of these two files.
+    """
+    logs = cfg_mod.logs_dir(pathlib.Path(project), cfg)
+    attested = _hooks_have_run(project, cfg, cfg_mod)
+    for label, basename, good, why in _EMPTY_RECORDS:
+        name = basename or cfg_mod.GATE_EVENTS_FILE
+        rows, refusal = _record_rows(os.path.join(str(logs), name))
+        if refusal is not None:
+            rep.warn(label,
+                     "%s could not be read (%s), so it is unavailable rather "
+                     "than empty - nothing here can be counted either way"
+                     % (name, refusal),
+                     "check logsDir in .claude/audit.config.json and the "
+                     "permissions on that directory")
+            continue
+        if rows:
+            rep.ok(label, "%d row(s) in %s" % (rows, name))
+            continue
+        if attested:
+            rep.ok(label, "%s is empty, and hooks have run in this project - so "
+                          "%s (%s)" % (name, good, why))
+            continue
+        rep.warn(label,
+                 "%s is empty AND no hook state exists here, so whether %s is "
+                 "NOT ESTABLISHED - an empty record and a guard that never ran "
+                 "look identical from the file" % (name, good),
+                 "run /audit:doctor's hooks row first: check the plugin is "
+                 "installed AND enabled for this project (/plugin -> Installed), "
+                 "make one edit, and re-run")
 
 
 # --- checks: locks & local artifacts --------------------------------------------

@@ -179,28 +179,32 @@ def _cases(check):
           bash("python3 - <<'PY'\n"
                "EXPECTED = {'cat .env': 'block', 'echo hi': 'allow'}\n"
                "print(sorted(EXPECTED))\nPY"))
-    # THE KNOWN COST, and it is NARROWER than it first looked - which is why it is
-    # measured here rather than described. Narrowing arm 2 to the arguments of a
-    # shell-out call means a command assembled into a NAME is out of its reach; but
-    # the INLINE `-c` form is still refused, because the outer shell lane greps the
-    # command text and `['cat','.env']` carries the verb and the token in one
-    # clause. So the miss exists for the HEREDOC shape alone, where the body is
-    # handed to the eval arm and nothing else looks at it.
-    _expect("b8j the inline form of a variable-assembled read is STILL refused - "
-          "not by the arm narrowed here but by the outer shell lane, which reads "
-          "the command text. Defence in depth, and the reason this cost is one "
-          "shape rather than a class", "block",
+    # THE PAIR THAT USED TO DISAGREE, and the disagreement was a spelling. Arm 2
+    # reads the ARGUMENTS of a call that runs commands, so a command assembled into
+    # a NAME was out of its reach; the inline `-c` form was refused anyway, by the
+    # outer shell lane greping the command text, and the heredoc form was not,
+    # because that body has already left the text that lane reads. One operation,
+    # two identical capabilities, opposite verdicts. Arm 2 resolves one hop of a
+    # SEQUENCE binding now, so both spellings meet the same rule - and the second
+    # case is the one that must stay red if that resolution is removed, since the
+    # first would go on passing through a lane that never knew about it.
+    _expect("b8j a variable-assembled read through the inline form is refused",
+          "block",
           bash("python3 -c \"import subprocess; a=['cat','.env']; subprocess.run(a)\""))
-    _expect("b8k KNOWN COST, stated so it is a decision and not a discovery: in a "
-          "HEREDOC the body reaches only the eval arm, so a command assembled "
-          "into a name and passed by reference is missed. Same direction of risk "
-          "arm 1 already accepts - and the alternative was measured twice: a "
-          "guard that refuses data is one people route around, which guards "
-          "nothing at all", "allow",
+    _expect("b8k ...and through a HEREDOC, which is the same capability spelled "
+          "differently and used to be the way past it - the body reaches only "
+          "the eval arm there, so this is the arm's own verdict and not the "
+          "shell lane's", "block",
           bash("python3 - <<'PY'\n"
                "import subprocess\n"
                "argv = ['cat', '.env']\n"
                "subprocess.run(argv)\nPY"))
+    _expect("b8k2 ...while a list of example commands bound to a name and never "
+          "RUN is still data: only a name handed to something that runs commands "
+          "is resolved, which is what keeps a fixture table out of it", "allow",
+          bash("python3 - <<'PY'\n"
+               "argv = ['cat', '.env']\n"
+               "print(' '.join(argv))\nPY"))
 
     # --- Bash shell-verb reads ---
     _expect("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
@@ -235,6 +239,98 @@ def _cases(check):
     _expect("k6 Read client.pfx blocked", "block", read("certs/client.pfx"))
     _expect("k7 cat credentials.md (not a secret ext) allowed", "allow",
           bash("cat credentials.md"))
+
+    # (sr) THE READ SHAPES SECURITY.md CLAIMS AND THE SHELL LANE DID NOT COVER.
+    # Each pair is one file asked through two doors, because that is the defect:
+    # the tool set and the shell set had drifted into different vocabularies, and
+    # a guard whose verdict depends on which spelling an agent reached for is a
+    # guard with a documented door in it. `cat` is the everyday door, so the half
+    # that was wrong was the half everybody uses.
+    _expect("sr1 `cat credentials.yaml` is refused - the shell token set carried "
+          "a shorter extension list than the path set, and this is one of the "
+          "formats only the path set knew", "block",
+          bash("cat config/credentials.yaml"))
+    _expect("sr2 ...and the Read tool refuses the same file, which it always "
+          "did: the pair is what makes the vocabularies one", "block",
+          read("config/credentials.yaml"))
+    _expect("sr3 ...and the same for the remaining formats, asked of the door "
+          "that could not see them", "block", bash("head -5 app/credentials.conf"))
+    _expect("sr4 ...while a yaml file that is not credentials is untouched - "
+          "the list grew by formats, not by names", "allow",
+          bash("cat config/services.yaml"))
+
+    # An input redirection is a READ with no verb in it, and `_READ_VERB` is a
+    # list of programs. Three ordinary commands hand a secret's bytes to something
+    # this way and all three walked past a guard whose whole subject is that file.
+    _expect("sr5 `envsubst < .env` is a read - the redirect is the verb", "block",
+          bash("envsubst < .env"))
+    _expect("sr6 ...and so is a read loop fed from one", "block",
+          bash("while read l; do echo $l; done < .env"))
+    _expect("sr7 ...and the explicit stdin descriptor spells the same thing",
+          "block", bash("cmp - baseline 0< .env"))
+    _expect("sr8 ...while process substitution is not an input redirection: its "
+          "body is a command, and the exclusion is what keeps an ordinary diff "
+          "out of this rule", "allow", bash("diff <(sort a.txt) <(sort b.txt)"))
+    _expect("sr9 ...nor is a stderr redirect, which names no file to read",
+          "allow", bash("ls missing 2>/dev/null"))
+
+    # The heredoc spelling that fell through the classification entirely: a body
+    # fed to `python3 /dev/stdin` is the same program as one fed to `python3 -`,
+    # and it was landing in the DATA bucket, where it left the scanned text and
+    # met no rule at all.
+    _expect("sr10 a heredoc fed to `python3 /dev/stdin` is a program, exactly "
+          "as one fed to `python3 -` is", "block",
+          bash("python3 /dev/stdin <<'PY'\nprint(open('.env').read())\nPY"))
+    _expect("sr11 ...while a body fed to something that does not run it is "
+          "still data, which is the line that spelling must not move", "allow",
+          bash("cat > notes.md <<'EOF'\nrun `cat .env` to see the values\nEOF"))
+
+    # A read call whose TARGET this cannot resolve, where the argument itself
+    # names a secret. The write arm answers an unestablished destination with an
+    # allow that says so; a read is the other direction, because plan coverage is
+    # a question about a file the plan could name and a secret read is a question
+    # about the file in the argument.
+    _expect("sr12 a read whose target is a concatenation this cannot resolve is "
+          "refused, and the argument is what names the secret", "block",
+          bash("python3 -c \"print(open(base + '/.env').read())\""))
+    _expect("sr13 ...and the interpolated spelling of the same argument", "block",
+          bash("python3 -c \"print(open(f'{d}/.env').read())\""))
+    _expect("sr14 ...while a WRITE whose target resembles one is still the write "
+          "arm's business: this rule reads read calls only, so creating a file "
+          "is not turned into a refusal", "allow",
+          bash("python3 -c \"open('build/.env','w').write('K=1')\""),
+          use_cfg=cfg_enforced)
+    _expect("sr15 ...and prose naming a secret beside no read call resolves to "
+          "nothing, which is the narrowing this must not undo", "allow",
+          bash("python3 -c \"print('the .env loader fails at boot')\""))
+    _expect("sr21 ...and an ORDINARY file read through the same unresolvable "
+          "shape is allowed - the refusal is for a target that cannot be "
+          "established AND names a secret, and without this case a rule that "
+          "refused every unreadable read target would pass sr12 and sr13 "
+          "forever", "allow",
+          bash("python3 -c \"print(open(base + '/app.ts').read())\""))
+
+    # (sr16+) THE PROJECT'S OWN PATTERNS, WHICH REACHED EVERY MATCHER BUT THE
+    # SHELL. The arm that was supposed to carry them required the BUILT-IN matcher
+    # to fire as well, so no project pattern could ever be the reason for a
+    # refusal - a check with no case able to fail, standing where the whole
+    # configurable half of Rule #1 was documented to be.
+    cfg_extra = _config._deep_merge(
+        cfg, {"secretPatterns": {"extra": [r"vault-token", r"\.mykey$"]}})
+    _expect("sr16 `cat` of a file this project calls a secret is refused - the "
+          "everyday read verb, and the half of the rule the consumer writes",
+          "block", bash("cat ops/vault-token"), use_cfg=cfg_extra)
+    _expect("sr17 ...through the Read tool as well, which is the door that "
+          "always honoured it", "block", read("ops/vault-token"),
+          use_cfg=cfg_extra)
+    _expect("sr18 ...and an anchored pattern matches the WORD rather than the "
+          "command line, so an anchor still means what it says", "block",
+          bash("head -1 certs/signing.mykey"), use_cfg=cfg_extra)
+    _expect("sr19 ...while a clause with no read in it is never asked: writing "
+          "such a file is the write arms' question, not this one", "allow",
+          bash("echo 'k' > ops/vault-token"), use_cfg=cfg_extra)
+    _expect("sr20 ...and a project that configured no pattern is unchanged",
+          "allow", bash("cat ops/vault-token"))
 
     # --- Listing NAMES stays allowed ---
     _expect("n1 ls .env* allowed", "allow", bash("ls .env*"))
@@ -2118,6 +2214,36 @@ def _cases(check):
               and str(_rw[-1].get("reason", "")).count("apps/z/.env") == 1
               and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 0
               and _rw[-1].get("file") == "apps/z/.env", repr(_rw[-1]))
+        # (t13+) A REFUSAL NOBODY RECORDED LEAVES NOTHING TO COUNT. The read
+        # shapes the shell lane could not see reached a secret with no deny AND
+        # no row, so an operator looking afterwards saw a feed that read as a
+        # clean run. Each new lane is driven here rather than assumed to inherit
+        # the row from `decide` - that choke point is what makes the row automatic
+        # and it is exactly the sort of property a later refactor can quietly
+        # move, so the three are asserted by count.
+        _before = len(_rows())
+        _drove = [
+            M.decide({"tool_name": "Bash",
+                      "tool_input": {"command": "cat app/credentials.yaml"},
+                      "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg),
+            M.decide({"tool_name": "Bash",
+                      "tool_input": {"command": "envsubst < .env"},
+                      "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg),
+            M.decide({"tool_name": "Bash",
+                      "tool_input": {"command": "cat ops/vault-token"},
+                      "session_id": "sess-t", "cwd": str(tmp_t)},
+                     cfg=_config._deep_merge(
+                         cfg, {"secretPatterns": {"extra": ["vault-token"]}})),
+        ]
+        _rw = _rows()
+        check("t13 every read lane added here denies AND records - three drives, "
+              "three rows, each one this guard's",
+              all(v == "block" for v, _ in _drove)
+              and len(_rw) - _before == len(_drove)
+              and all(r.get("event") == "deny"
+                      and str(r.get("reason", "")).startswith(
+                          "guard-secrets-read:")
+                      for r in _rw[_before:]), repr(_rw[_before:]))
     finally:
         if _prev_t is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

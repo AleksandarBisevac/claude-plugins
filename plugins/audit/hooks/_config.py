@@ -907,9 +907,16 @@ _HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
 # capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
 # `cat <<EOF` are not, because the body is data those commands never execute.
+#
+# `/dev/stdin` IS THAT DASH WRITTEN OUT, and leaving it off made the classification
+# depend on which of two identical spellings the operator typed: `python3 - <<PY`
+# was graded as a program and `python3 /dev/stdin <<PY` fell through to the data
+# bucket, where it left the scanned text entirely and no rule saw it at all. A body
+# the guards cannot place is the one they must keep, so the spelling is named here
+# rather than left to be discovered by whoever types it.
 _STDIN_INTERP = re.compile(
     r"\b(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh)\b"
-    r"(?:\s+-[A-Za-z-]+)*\s*-?\s*$",
+    r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE,
 )
 # The SHELL subset of the line above, tested first because `_STDIN_INTERP` holds
@@ -918,7 +925,8 @@ _STDIN_INTERP = re.compile(
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
 _STDIN_SHELL = re.compile(
-    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*-?\s*$", re.IGNORECASE)
+    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
+    re.IGNORECASE)
 
 
 def split_heredocs(cmd):

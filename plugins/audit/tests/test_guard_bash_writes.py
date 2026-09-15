@@ -1100,12 +1100,12 @@ def _cases(check):
     _fg = {"bgLaunches": []}
     check("bg3 a FOREGROUND writer is not recorded",
           M.record_background_launch(_fg, {"command": "python3 tools/x.py"}, 1000.0)
-          is False and _fg["bgLaunches"] == [])
+          is None and _fg["bgLaunches"] == [])
     _ro = {"bgLaunches": []}
     check("bg4 a backgrounded READ is not recorded - it cannot write later either",
           M.record_background_launch(_ro, {"command": "grep -rn x .",
                                            "run_in_background": True}, 1000.0)
-          is False and _ro["bgLaunches"] == [])
+          is None and _ro["bgLaunches"] == [])
     check("bg5 the basis is None with nothing recorded",
           M.background_basis({"bgLaunches": []}, 1000.0) is None)
     _basis = M.background_basis(_bgs, 1000.0 + 185)
@@ -1147,6 +1147,99 @@ def _cases(check):
     check("bg10 with no background launch the plain authorship claim is made",
           _v_p == "warn" and "background job(s)" not in _d_p
           and "modified source file(s)" in _d_p)
+
+    # (bg11) A JOB THIS CALL JUST STARTED IS NOT THIS CALL'S ALIBI. The launch is
+    # recorded before the tree is diffed - it has to be, because what it explains
+    # is a LATER pass's dirt - and the same record was then read back into this
+    # pass's own verdict. So a command that backgrounds a writer was told a
+    # background job could not be ruled out, naming the job it had itself just
+    # started. The `own` argument is what excludes it, and only it.
+    _bg_own = {"bgLaunches": []}
+    _row_own = M.record_background_launch(
+        _bg_own, {"command": "python3 tools/x.py", "run_in_background": True},
+        1000.0)
+    check("bg11 the launch THIS call made is excluded from its own basis",
+          _row_own is not None
+          and M.background_basis(_bg_own, 1000.0, _row_own) is None
+          and M.background_basis(_bg_own, 1000.0) is not None)
+    _row_two = M.record_background_launch(
+        _bg_own, {"command": "node build.js", "run_in_background": True},
+        1000.0 + 60)
+    _basis_own = M.background_basis(_bg_own, 1000.0 + 60, _row_two)
+    check("bg12 ...while an EARLIER launch of the same session still counts - "
+          "the exclusion is one row, not the feature",
+          _basis_own and "python3" in _basis_own and "node" not in _basis_own,
+          repr(_basis_own))
+
+    # (bg13+) THE SUSPECT IN HAND. With any other-author clause available, the
+    # authorship claim came off every path - including one the command's own text
+    # names as its destination. The first pair drives the two verdicts against the
+    # SAME state, so nothing but the command differs.
+    s = "bw-named"
+    seed(s)
+    M.decide(payload("Bash", sid=s, command="python3 tools/prove-gates.py",
+                     background=True), cfg=cfg, state_dir=sd, dirty=[])
+    _v_n, _d_n = M.decide(payload("Bash", sid=s,
+                                  command="sed -i 's/a/b/' src/named.ts"),
+                          cfg=cfg, state_dir=sd, dirty=["src/named.ts"])
+    check("bg13 a path the command's own `sed -i` names is attributed to that "
+          "statement, background job or no background job",
+          _v_n == "warn" and "its own text names the write" in _d_n
+          and "src/named.ts" in _d_n and "sed -i" in _d_n
+          and "CANNOT say the command wrote them" not in _d_n, repr(_d_n))
+    _v_u, _d_u = M.decide(payload("Bash", sid=s, command="python3 -c 'x'"),
+                          cfg=cfg, state_dir=sd, dirty=["src/named.ts",
+                                                        "src/unnamed.ts"])
+    check("bg14 ...while a path nothing in the command names still loses the "
+          "claim and still names what could not be ruled out",
+          _v_u == "warn" and "CANNOT say the command wrote them" in _d_u
+          and "src/unnamed.ts" in _d_u and "background job(s)" in _d_u
+          and "its own text names the write" not in _d_u, repr(_d_u))
+    # Both sentences in ONE verdict: a command that names one destination while
+    # another path goes dirty beside it owes the right sentence about each, and a
+    # repair that picked one template per pass would pass bg13 and bg14 and fail
+    # here.
+    s = "bw-named2"
+    seed(s)
+    M.decide(payload("Bash", sid=s, command="python3 tools/prove-gates.py",
+                     background=True), cfg=cfg, state_dir=sd, dirty=[])
+    _v_b, _d_b = M.decide(payload("Bash", sid=s,
+                                  command="tee src/mine.ts < patch.txt"),
+                          cfg=cfg, state_dir=sd, dirty=["src/mine.ts",
+                                                        "src/theirs.ts"])
+    check("bg15 one pass says both things when both are true, each about its "
+          "own path",
+          _v_b == "warn" and "its own text names the write" in _d_b
+          and "CANNOT say the command wrote them" in _d_b
+          and "src/mine.ts (" in _d_b and "src/theirs.ts" in _d_b, repr(_d_b))
+    # THE WITHDRAWAL THAT OUTRANKS IT. A command that moved the shell somewhere
+    # this guard cannot place has no established location, so a destination
+    # resolved against the session's directory means nothing - the claim stays
+    # off, which is the property F212 bought.
+    s = "bw-named3"
+    seed(s)
+    _v_m, _d_m = M.decide(payload("Bash", sid=s,
+                                  command="cd $WT && sed -i 's/a/b/' "
+                                          "src/named.ts"),
+                          cfg=cfg, state_dir=sd, dirty=["src/named.ts"])
+    check("bg16 an unplaceable `cd` keeps the claim off even for a path the "
+          "command names - a resolved destination proves nothing once the tree "
+          "is unknown",
+          _v_m == "warn" and "CANNOT say the command wrote them" in _d_m
+          and "its own text names the write" not in _d_m, repr(_d_m))
+    # And the unit half, so the extraction is pinned apart from the verdict: the
+    # three write grammars are read, and a `>` inside a quoted pattern is not one.
+    check("bg17 the statement extractor reads tokens, not text",
+          M.writing_statement("echo x > src/a.ts", str(tmp), str(tmp),
+                              "src/a.ts")
+          and M.writing_statement("sed -i.bak 's/a/b/' src/a.ts", str(tmp),
+                                  str(tmp), "src/a.ts")
+          and M.writing_statement("grep -n 'cost > 5' src/a.ts", str(tmp),
+                                  str(tmp), "src/a.ts") is None
+          and M.writing_statement("echo x > src/other.ts", str(tmp), str(tmp),
+                                  "src/a.ts") is None,
+          repr(M.writing_statement("grep -n 'cost > 5' src/a.ts", str(tmp),
+                                   str(tmp), "src/a.ts")))
 
     # (ag) TWO AGENTS OF ONE SESSION - the third kind of other-author, and the one
     # every mechanism above is blind to BY CONSTRUCTION. The state file is named
