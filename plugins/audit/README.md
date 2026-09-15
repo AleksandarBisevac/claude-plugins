@@ -1627,8 +1627,11 @@ commands and will tell you when it finds none.
 
 <a id="sharded-layout--parallel-phases"></a>
 Mutating subcommands hold a lock in the **shared git dir**
-(`$(git rev-parse --git-common-dir)/audit-locks/`), **two-tier**: a brief **index lock**
-(structural writes + id allocation) and a per-phase **shard lock** (a phase run). Taking, judging
+(`$(git rev-parse --git-common-dir)/audit-locks/`): a brief **index lock**
+(structural writes + id allocation), a per-phase **shard lock** (a phase run), and a
+**`usage` lock** for `/audit:usage --backfill`, which rewrites the monthly ledger files.
+Every one of them is taken through the same library, so a writer that cannot see another
+writer's lock is a bug rather than a design. Taking, judging
 and releasing a lock is `scripts/governance/audit-lock.py`, not prose — a lock held by a **live** run is
 **waited for** and then refuses with the holder's info, and one whose holder is **gone** offers a
 confirmed takeover. The wait is short by design: it covers a lock taken for one structural write,
@@ -1644,7 +1647,9 @@ recorded, or a lock from another machine. `status` and `report` never lock. Beca
 never shows up in `git status` and needs no `.gitignore` entry. (No git repo → there is no lock
 scheme at all, and a mutating command says so rather than coordinating against nothing. The
 **panel** is the one caller with a documented fallback: it drops to `<manifestPath>.lock` in the
-working tree, which coordinates within a single clone only.)
+working tree, which coordinates within a single clone only. That fallback is bound to the
+no-repository case and to nothing else — a panel using it in a repository would be guarding one
+clone while every command guarded the git dir, which is two runs each holding something.)
 
 **Sharded layout — parallel phases.** Run **`/audit:layout sharded`** to split the manifest into an
 *index* (`meta` · `bugs` · `fileIndex`) plus one file per phase (`phases/<phaseId>.json`). Then a

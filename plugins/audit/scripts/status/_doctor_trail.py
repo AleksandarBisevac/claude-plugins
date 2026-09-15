@@ -574,6 +574,54 @@ def journal_warning_advice(warnings):
     return {"kinds": kinds, "fix": "; also: ".join(lines)}
 
 
+ANCHOR_CHECK = "journal anchor"
+
+
+def _anchor_row(rep, res):
+    """What pinned the chain, as its own row -- or that nothing did.
+
+    ITS OWN QUESTION, AND THEREFORE ITS OWN ROW. `journal` answers whether the
+    rows still hold together; this answers what that verdict was checked
+    AGAINST, and the two come apart in the state worth reporting: a chain over
+    files no committed copy was read for verifies perfectly and establishes
+    much less. `verify` has answered this per file since the anchor learnt to
+    say it could not ask -- and only `audit-journal.py verify` rendered it, so
+    an operator who opened the doctor instead saw exactly what they saw before.
+    Fixing a silence on one of two surfaces that read the same fact moves it.
+
+    A WARNING AND NEVER A FINDING. A finding exits this command non-zero, and
+    an unestablished basis is not evidence that anything is wrong: a repository
+    whose journal simply has not been committed yet would fail a build having
+    asked for nothing and found nothing. `check_running_plugin` grades the same
+    shape of answer the same way, at length.
+
+    BOTH DIRECTIONS ARE SAID. A row that only ever spoke up when something was
+    unanchored would be a check nobody could see pass, and "the anchor held over
+    every file" is the sentence that makes the warning mean something when it
+    does come.
+    """
+    files = res.get("files") or []
+    if not files:
+        return
+    unanchored = res.get("unanchored") or []
+    if not unanchored:
+        rep.ok(ANCHOR_CHECK,
+               "%d journal file(s) were compared against their committed copy"
+               % (len(files),))
+        return
+    rep.warn(ANCHOR_CHECK,
+             "the git anchor could not be asked about %d of %d journal file(s), "
+             "so the chain was verified over files no committed copy pins: %s"
+             % (len(unanchored), len(files),
+                _output.some_of(["%s (%s)" % (where, why)
+                                 for where, why in unanchored], sep="; ")),
+             "nothing was found here, because nothing was looked at - this is "
+             "not a claim that anything is wrong. The journal is designed to be "
+             "tracked and committed, which is what gives the anchor something "
+             "to compare; `audit-journal.py verify` prints the reason beside "
+             "each file")
+
+
 def check_journal(rep, project, cfg, cfg_mod, git_root):
     """Does the audit trail still hold together? (v0.29)
 
@@ -596,7 +644,11 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
     class gets repair text that is true OF IT rather than one sentence that was
     true of only one of them (F329), and a warning it does not recognise gets a
     pointer instead of a guessed cause. An empty journal is neither: it is what
-    every repo looks like before its first recorded write."""
+    every repo looks like before its first recorded write.
+
+    AND WHAT THE VERDICT WAS CHECKED AGAINST IS A ROW OF ITS OWN, because it is
+    a different question with a different answer: `_anchor_row` carries it, and
+    until it existed only `audit-journal.py verify` ever said which."""
     if not cfg_mod.journal_enabled(cfg):
         # Disabled is the user's own switch and never a finding. But rows on
         # disk mean the trail WAS running: saying plain OK graded "someone
@@ -663,6 +715,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
                      "history" % (n, oldest, days),
                      "stage and commit the journal directory - it is designed "
                      "to be tracked; do not add it to .gitignore")
+    _anchor_row(rep, res)
     if res.get("findings"):
         rep.finding("journal",
                     "the chain does not hold: %s" % "; ".join(res["findings"][:3]),

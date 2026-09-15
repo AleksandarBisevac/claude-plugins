@@ -105,13 +105,16 @@ Design decisions, each mirroring a precedent rather than inventing one:
     (`_panel_write.standing_elsewhere`, which states why that is a warning and
     neither silence nor a refusal); on a same-tree call it prints nothing.
 
-  * LOCK. The whole read-allocate-write runs under the INDEX lock, taken via
-    audit-lock.py's own module (`main(["acquire", "index", ...])`) -- ids are
-    allocated under the lock so two sessions can never mint the same one
-    (manifest-conventions.md -> ID allocation). A held or stale lock prints
-    the lock module's OWN output: one message shape everywhere. Outside a git
-    repo the `<manifest>.lock` working-tree file is the fallback guard,
-    exactly as in _panel_write._acquire_write_lock.
+  * LOCK. The whole read-allocate-write runs under the INDEX lock, taken by
+    calling the lock LIBRARY (`_locks.acquire`) through the one door both this
+    command and the panel use -- ids are allocated under the lock so two
+    sessions can never mint the same one (manifest-conventions.md -> ID
+    allocation). A held or stale lock prints the lock module's OWN output: one
+    message shape everywhere. Outside a git repo, and only there, the
+    `<manifest>.lock` working-tree file is the fallback guard, exactly as in
+    _panel_write._acquire_write_lock -- a project with a repository is always
+    coordinated through the shared claim, or the two surfaces would be
+    guarding different things.
 
   * ID. `<phaseId>.<n>`, n = highest existing numeric suffix + 1, computed
     over the WHOLE assembled manifest plus every still-parked proposal

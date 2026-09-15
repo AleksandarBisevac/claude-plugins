@@ -60,7 +60,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
-import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
+import _locks  # noqa: E402  (take/give back the backfill lock, at layer 1)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
@@ -709,8 +709,14 @@ def _jsonl_in(base):
         return []
 
 
+LOCK_NAME = "usage"
+LOCK_NOTE = "usage backfill"
+NO_SCHEME = ("this project has no lock scheme, so nothing here stopped a second "
+             "backfill running beside this one")
+
+
 def _lockmod():
-    """`_locks`, the lock's read side, at layer 1.
+    """`_locks`, at layer 1 -- where this lock is taken, judged and given back.
 
     A plain import rather than a `_loader.load_script("audit-lock.py")`: that was
     this file (L7) loading an L7 peer, one of the edges `_deps.KNOWN_LAYER_DEBT`
@@ -719,35 +725,87 @@ def _lockmod():
     return _locks
 
 
-def acquire_lock(ledger_dir, project):
-    """Backfill rewrites monthly files, so it locks; the hook only appends and never
-    does. Shares audit-lock.py's verdict rather than re-deriving it — a backfill
-    that crashed used to keep the next one out for the rest of the hour, and the
-    lock file said nothing about who held it. Unlike the orchestrator's locks this
-    one is held by THIS process, so os.getpid() is the pid that belongs in it."""
-    import platform
+def _quiet(*_args, **_kwargs):
+    """The lock's terminal lines are dropped: this command answers with one
+    message its caller prints, and those lines name a host."""
+
+
+def _session():
+    """This backfill's lock identity -- one PROCESS, and never a whole run.
+
+    `acquire` answers a caller that already holds the claim, and it decides that
+    on the session id it is given. A backfill lending it the RUN's id would then
+    be handed a lock a second backfill in the same session is holding, and both
+    would rewrite the same month files believing the lock was theirs -- the one
+    state this lock exists to prevent, reached through the door built for a
+    command that calls another command. A pid is the identity whose death ends
+    this hold, so it is the identity the claim is compared by; the only case it
+    makes re-entrant is two backfills inside one process, and the rewrite is a
+    leaf with nothing nested in it.
+    """
+    return "usage-backfill-%d" % os.getpid()
+
+
+def acquire_lock(project):
+    """Take the backfill lock -> `({"held", "release", "why"}, None)` or
+    `(None, refusal)`.
+
+    Backfill rewrites monthly ledger files, so it locks; the hook only appends
+    and never does.
+
+    THE SHARED CLAIM, NOT A LOCAL ONE OF THE SAME SHAPE. This wrote its own file
+    into the very directory the lock library owns, and it wrote it the way the
+    library used to: ask whether the name is there, judge the holder, then open
+    the path. Two backfills can pass that judgement between the read and the
+    write, and the second overwrites a claim that is by then live -- the window
+    `_locks._claim` was rebuilt to close, which never reached the one taker that
+    was not calling it. `acquire` decides the name by an exclusive create and
+    tells the loser it lost.
+
+    A CRASHED BACKFILL STILL DOES NOT KEEP THE NEXT ONE OUT, which was this
+    lock's own reason for being written and is why the retake is here rather
+    than left to a human. `E_STALE` is the library's answer for a holder it
+    probed and did not find, and the takeover under it removes the judged claim
+    only while it is still that claim -- so a run that took the name in between
+    is refused instead of overwritten. A LIVE holder is never taken over: that
+    is the answer this lock exists to give.
+
+    `available()` FIRST, because `acquire` says `E_ERR` both for a project with
+    no lock scheme and for a claim it could not write. There is nothing to
+    coordinate with in the first case and the backfill says so rather than
+    inventing a second mechanism; the second is a refusal.
+    """
     lock = _lockmod()
-    lock_dir = lock.lock_dir(project) or ledger_dir
-    path = os.path.join(lock_dir, "usage.lock")
-    try:
-        os.makedirs(lock_dir, exist_ok=True)
-    except Exception:
-        return None, "cannot create lock directory %s" % lock_dir
-    if os.path.exists(path):
-        live, basis = lock.judge(lock.read_lock(path), path)
-        if live:
-            return None, ("another usage backfill is running (%s) — %s"
-                          % (path, basis))
-    try:
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"hostname": platform.node(),
-                       "pid": os.getpid(),
-                       "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                  time.gmtime()),
-                       "note": "usage backfill"}, fh)
-    except Exception as exc:
-        return None, "cannot write lock: %s" % exc
-    return path, None
+    if not lock.available(project):
+        return {"held": False, "release": False, "why": NO_SCHEME}, None
+    code = lock.acquire(project, LOCK_NAME, note=LOCK_NOTE,
+                        session=_session(), out=_quiet)
+    if code == lock.E_STALE:
+        code = lock.acquire(project, LOCK_NAME, note=LOCK_NOTE,
+                            session=_session(), takeover=True, out=_quiet)
+    if not lock.held(code):
+        return None, lock.refusal(code, LOCK_NAME)
+    # `took`, not `held`: a claim this run already had is not this call's to
+    # hand back, and releasing on it would drop the lock out from under the hold
+    # still using it.
+    return {"held": True, "release": lock.took(code), "why": None}, None
+
+
+def release_lock(project, handle):
+    """Give the backfill lock back -> the sentence when the lock DECLINED, else
+    None.
+
+    A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THIS RUN GETS: the lock
+    refuses to let a run hand back a claim that is no longer its own, and a
+    backfill that finished under a claim somebody else now holds rewrote month
+    files beside another writer. So it is a value the caller carries into its
+    own message rather than a line nobody prints.
+    """
+    if not handle or not handle.get("release"):
+        return None
+    lock = _lockmod()
+    code = lock.release(project, LOCK_NAME, session=_session(), out=_quiet)
+    return None if code == 0 else lock.release_refusal(code, LOCK_NAME)
 
 
 def backfill(args, project, ledger_dir, manifest, pricing):
@@ -763,9 +821,10 @@ def backfill(args, project, ledger_dir, manifest, pricing):
                        project, os.environ.get("CLAUDE_CONFIG_DIR")
                        or os.path.join(os.path.expanduser("~"), ".claude")))
 
-    lock, err = acquire_lock(ledger_dir, project)
+    lock, err = acquire_lock(project)
     if err:
         return 2, err
+    refused = None
     try:
         fresh, sessions, cursors = [], set(), {}
         for path in transcripts:
@@ -792,17 +851,19 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         for sid, cursor in cursors.items():
             ul.save_cursor(ledger_dir, sid, cursor)
     finally:
-        if lock:
-            try:
-                os.remove(lock)
-            except OSError:
-                pass
+        refused = release_lock(project, lock)
 
     tot = ul.totals(fresh)
+    # WHAT GUARDED THIS RUN RIDES WITH ITS ANSWER. A project with no lock scheme
+    # and a release the lock declined are both facts about everything the line
+    # above reports, and a reader who is told the row counts without either of
+    # them is reading a stronger sentence than the one that is true.
+    notes = [n for n in (lock.get("why"), refused) if n]
     return 0, ("[OK] backfill: %d transcript(s), %d session(s), %s rows, "
-               "%s tokens\n     ledger %s" % (
+               "%s tokens\n     ledger %s%s" % (
                    len(transcripts), len(sessions), fmt_int(len(fresh)),
-                   fmt_tokens(tot["tokens"]), ledger_dir))
+                   fmt_tokens(tot["tokens"]), ledger_dir,
+                   "".join("\n     note: %s" % (n,) for n in notes)))
 
 
 # --- main -----------------------------------------------------------------------

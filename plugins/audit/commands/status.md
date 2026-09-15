@@ -246,7 +246,8 @@ that is gone means nothing is going to finish it, so `/audit:resume` continues i
 
 **Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write
 takes and gives back inside one command, so a reading that counted it would trip on
-`/audit:task add`.
+`/audit:task add`; the `usage` lock is the ledger backfill, which is not a run
+either. Any lock whose name is not a phase's is skipped rather than graded.
 
 **It is out of the `--gate` default, and for a reason of its own.** A lock lives in
 the shared git dir rather than in the working tree, so it is never committed and

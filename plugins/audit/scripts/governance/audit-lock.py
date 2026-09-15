@@ -19,7 +19,9 @@ This module carries no inline `--selftest` any more; its cases live in
 `plugins/audit/tests/_harness.py`. The flag is still accepted and still exits
 0, pointing there.
 
-  <name> is `index` or `phase-<phaseId>` -- the two tiers the orchestrator uses.
+  <name> is `phase-<phaseId>` or one of `_locks.FIXED_NAMES` -- `index` for a
+  structural write, `usage` for the ledger backfill. `_locks.valid_name` is what
+  decides, so a name listed there is a name this command accepts.
   --session / --pid override the identity written into the lock; they default to
   $CLAUDE_CODE_SESSION_ID and $CLAUDE_PID.
   --wait says how long a LIVE holder is waited out before the refusal is printed.
@@ -156,8 +158,11 @@ E_OURS = _locks.E_OURS
 # an argparse Namespace into a call on `_locks`, which is where every one of these
 # bodies used to live inline. They moved because `audit-task.py` needs to TAKE the
 # index lock and could only do it by building an argv and calling `main()` through
-# `_panel_write._lockmod()` — a dependency `_deps` attributed to the panel, so it
-# was never visible as `audit-task -> audit-lock` at all.
+# an accessor the panel published for READING one — a dependency `_deps` attributed
+# to the panel, so it was never visible as `audit-task -> audit-lock` at all, and
+# an accessor that answers with the library has no `main` to be reached through.
+# Every taker imports the library now, and that accessor is gone from the write
+# path it was being borrowed by.
 def cmd_acquire(args, out):
     # HANDED OFF BY CONSTRUCTION. This process exits the moment it has the lock,
     # so the holder is the run that invoked it and the claim records that run's

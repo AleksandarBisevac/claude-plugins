@@ -46,10 +46,11 @@ BOUNDARY DECISIONS -- names this module shares with the read side:
     identity is below (and its twin is in _panel_state's suite).
 
   * `read_config` / `_cores` / `_within` / `_config_path` / `_manifest_path` /
-    `_read_json` / `_viewer` / `_skills_of` and the lock readers (`_lockmod`,
-    `_lock_info`, `_audit_lock_dir`, `_audit_lock_held`) come from _panel_state
-    for the same reason: one memo, one answer, one implementation of "where is
-    the manifest" on both sides of a save.
+    `_read_json` / `_viewer` / `_skills_of` and the lock READERS (`_lock_info`,
+    `_audit_lock_dir`) come from _panel_state for the same reason: one memo, one
+    answer, one implementation of "where is the manifest" on both sides of a
+    save. Taking a lock is NOT among them: that is `_locks`, imported below, and
+    a read-side accessor is not a door to a write.
 
   * The allow-lists (`_META_KEYS` / `_PHASE_KEYS` / `_TASK_KEYS`) come from
     _panel_settings, which is where the shape of a setting is decided.
@@ -126,8 +127,6 @@ _viewer = _panel_state._viewer
 _JOURNAL = _panel_state._JOURNAL
 _journalmod = _panel_state._journalmod
 _audit_lock_dir = _panel_state._audit_lock_dir
-_audit_lock_held = _panel_state._audit_lock_held
-_lockmod = _panel_state._lockmod
 _lock_info = _panel_state._lock_info
 
 
@@ -340,6 +339,65 @@ def restore(snap):
                 os.remove(tmp)
 
 
+# --- the index lock: one answer, for both of this module's writers ---------------
+# `acquire_index_lock` serves the commands and `_acquire_write_lock` serves the
+# panel's HTTP handlers. They differ in what they hand back and in nothing else,
+# and above all not in WHEN the working-tree fallback is used: a panel writing
+# under a lockfile beside the manifest while a command holds the shared claim is
+# two runs each believing they hold the index, which is the state this lock
+# exists to make impossible.
+LOCK_NAME = "index"
+
+
+def _lock_root(project, config):
+    """Where this project's index lock is taken. One spelling, because two
+    writers here ask for the same claim and a second spelling is a second
+    claim."""
+    return os.path.join(project, (config or {}).get("gitRoot") or ".")
+
+
+def _lock_call_failed(exc):
+    """The sentence for a lock call that could not be MADE, which is not a lock
+    that refused.
+
+    A wrong module, a missing attribute, a bad argument: none of those is a
+    holder, and reporting one as contention sends its reader to wait for a run
+    that was never there. The fallback below swallowed both answers into one for
+    as long as the panel reached the lock through a command entry point the
+    library deliberately does not have.
+    """
+    return ("the %s lock could not be asked for at all (%s) -- nothing was "
+            "established about who, if anyone, holds it. That is a fault in "
+            "this build rather than another run: no claim was read and no "
+            "holder was probed" % (LOCK_NAME, exc))
+
+
+def _legacy_claim(mpath):
+    """Take `<manifestPath>.lock` -> `{"taken", "exists", "held"}`.
+
+    THE DOCUMENTED FALLBACK, AND ONLY WHERE IT IS DOCUMENTED. A project with no
+    `.git` has no shared lock dir and never had one, so this guards the single
+    clone rather than writing unguarded. It is NOT the answer to a lock that
+    refused, nor to a call that failed: in a project that HAS a lock scheme, a
+    file beside the manifest coordinates with nothing any command takes.
+
+    `_locks._claim`'s three answers, in this module's vocabulary: `taken` is the
+    handle, `exists` says somebody else has it, and neither says the file could
+    not be written at all -- which is the fail-open the panel has always taken,
+    because an advisory that cannot be written must not stop the work.
+    """
+    legacy = mpath + ".lock"
+    try:
+        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        return {"taken": True, "exists": False, "held": {"held": True,
+                                                         "legacy": legacy}}
+    except FileExistsError:
+        return {"taken": False, "exists": True, "held": None}
+    except OSError:
+        return {"taken": False, "exists": False, "held": {"held": False}}
+
+
 def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     """Take the index lock for a whole read-modify-write. Returns a lock handle
     dict, or an int exit code AFTER printing the lock module's own message --
@@ -351,8 +409,23 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     accessor, which meant a very real dependency on the lock was attributed by
     `_deps` to whichever module held the literal. A hidden edge is not a retired
     one; this one is an import.
+
+    THE FALLBACK IS ASKED FOR BEFORE THE LOCK, NOT INFERRED AFTER IT. `acquire`
+    answers `E_ERR` both for a project that never had a lock scheme and for a
+    claim it could not write, so a caller that read the code afterwards could
+    not tell "there is nothing to coordinate with" from "coordination failed" --
+    and it dropped to the working tree on both. `available()` asks the question
+    where it has one answer.
     """
-    git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
+    git_root = _lock_root(project, config)
+    if not _locks.available(git_root):
+        claim = _legacy_claim(mpath)
+        if claim["exists"]:
+            out("%s manifest is locked by a running /audit command (%s exists); "
+                "try again once it finishes"
+                % (prefix, os.path.basename(mpath + ".lock")))
+            return _locks.E_LIVE
+        return claim["held"]
     # A LOCK THIS SESSION ALREADY HOLDS IS NOT A CONFLICT. The natural flow is
     # take-lock -> several structural writes -> release, which is what the lock is
     # FOR; a script inside that window used to exit 3 saying a pid was running on
@@ -367,10 +440,13 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     # what separates proceeding from giving the lock back.
     lines = []
     try:
-        code = _locks.acquire(git_root, "index", note=note,
+        code = _locks.acquire(git_root, LOCK_NAME, note=note,
                               takeover=bool(takeover), out=lines.append)
-    except Exception:
-        code = None
+    except Exception as exc:
+        # SAID AS ITSELF. A raise here is a defect in this build, and the one
+        # thing it may not do is reach the caller wearing contention's clothes.
+        out("%s %s" % (prefix, _lock_call_failed(exc)))
+        return _locks.E_ERR
     if code == _locks.E_OURS:
         for line in lines:
             out("%s %s" % (prefix, line))
@@ -378,29 +454,15 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
                 "project": git_root}
     if code == 0:
         return {"held": True, "mod": _locks, "project": git_root}
-    if code == _locks.E_LIVE:
-        for line in lines:
-            out(line)
-        return _locks.E_LIVE
+    # EVERY OTHER CODE IS THE LOCK'S OWN ANSWER, PASSED THROUGH. The library has
+    # already written the verdict and its basis into `lines`, including the
+    # sentence that says an unwritable claim is NOT a report that the lock is
+    # held; this adds the one next step that differs per command.
+    for line in lines:
+        out(line)
     if code == _locks.E_STALE:
-        for line in lines:
-            out(line)
         out("%s once a human has confirmed, rerun with --takeover." % prefix)
-        return _locks.E_STALE
-    # Not a git repo (or the lock library refused for a reason of its own): fall
-    # through to the legacy working-tree lockfile -- guard a single clone rather
-    # than writing unguarded (`_acquire_write_lock`'s precedent).
-    legacy = mpath + ".lock"
-    try:
-        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
-        return {"held": True, "legacy": legacy}
-    except FileExistsError:
-        out("%s manifest is locked by a running /audit command (%s exists); try "
-            "again once it finishes" % (prefix, os.path.basename(legacy)))
-        return _locks.E_LIVE
-    except OSError:
-        return {"held": False}
+    return code
 
 
 def stderr_line(text):
@@ -440,11 +502,11 @@ def release_index_lock(lock, out=None):
         if lock.get("legacy"):
             os.unlink(lock["legacy"])
             return None
-        code = lock["mod"].release(lock["project"], "index",
+        code = lock["mod"].release(lock["project"], LOCK_NAME,
                                    out=lambda *_a, **_k: None)
         if code == 0:
             return None
-        said = lock["mod"].release_refusal(code, "index")
+        said = lock["mod"].release_refusal(code, LOCK_NAME)
     except Exception:
         return None
     if out is not None:
@@ -906,19 +968,17 @@ def _acquire_write_lock(project, config, touched_phases=None):
     another worktree owns its own shard, and editing a DIFFERENT phase's shard
     cannot conflict with it. Passing None (single file) means any phase lock
     contends, because there is only one file.
-    """
-    lockmod = _lockmod()
-    mpath = _manifest_path(project, config)
-    if lockmod is None:
-        # No lock library: fall back to the old check-only behaviour rather than
-        # writing unguarded or refusing everything.
-        if _audit_lock_held(project, config):
-            return {"blocked": True, "response": {
-                "ok": False, "locked": True,
-                "findings": ["manifest is locked by a running /audit command; "
-                             "try again once it finishes"]}}
-        return {"blocked": False, "held": False}
 
+    THE SAME CLAIM THE COMMAND LINE TAKES, through `acquire_index_lock`'s door
+    rather than beside it. This asked the panel's READ-side accessor for a
+    command entry point instead -- a module that has none -- so every save fell
+    through a bare handler onto the working-tree fallback, and a panel write and
+    a `/audit` write could each hold something and each believe it was the
+    index. Nothing was corrupted by that: both are real locks and each surface
+    was consistent with itself. What was lost is the only thing a shared lock
+    is for.
+    """
+    mpath = _manifest_path(project, config)
     # A phase lock on a shard this write does not touch is not our business: that
     # phase owns its own file, and editing a different one cannot collide with it.
     # An abandoned lock does not block either — that is what `live` is for.
@@ -934,50 +994,56 @@ def _acquire_write_lock(project, config, touched_phases=None):
                          "until that run finishes"
                          % (", ".join(sorted(blocking)), host or "unknown host")]}}
 
-    git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
-    out = []
+    git_root = _lock_root(project, config)
+    if not _locks.available(git_root):
+        # The documented third answer, asked where it has one: no repository
+        # means no shared lock dir and nothing for the command line to be
+        # coordinating through either, so the working-tree file guards this
+        # clone. Every other non-zero code is a refusal and lands below.
+        claim = _legacy_claim(mpath)
+        if claim["exists"]:
+            return {"blocked": True, "response": {
+                "ok": False, "locked": True,
+                "findings": ["manifest is locked by a running /audit command; "
+                             "try again once it finishes"]}}
+        return dict(claim["held"], blocked=False)
     try:
-        code = lockmod.main(["acquire", "index", "--project", git_root,
-                             "--note", "panel write", "--session", _panel_session(),
-                             "--pid", str(os.getpid())], out=out.append)
-    except Exception:
-        code = None
-    if code == getattr(lockmod, "E_OURS", _locks.E_OURS):
+        code = _locks.acquire(git_root, LOCK_NAME, note="panel write",
+                              session=_panel_session(), pid=os.getpid(),
+                              out=lambda *_a, **_k: None)
+    except Exception as exc:
+        # NOT `locked`, AND NOT THE FALLBACK. A call that could not be made
+        # established nothing about a holder, so the client must not paint this
+        # as contention and must not be told to wait for somebody; and dropping
+        # to the working-tree file here is what let the two surfaces guard
+        # different things without either noticing.
+        return {"blocked": True, "response": {
+            "ok": False, "locked": False,
+            "findings": [_lock_call_failed(exc)]}}
+    if code == _locks.E_OURS:
         # BORROWED, EXACTLY AS `acquire_index_lock` MEANS IT. The lock is already
         # this run's, so the write may go ahead - and the handle says the claim
         # was not taken here, which is what stops the release below from handing
         # back a lock the hold around it is still using.
         return {"blocked": False, "held": True, "borrowed": True,
-                "project": git_root, "mod": lockmod}
+                "project": git_root, "mod": _locks}
     if code == 0:
-        return {"blocked": False, "held": True, "project": git_root, "mod": lockmod}
-    if code == getattr(lockmod, "E_LIVE", 3):
-        return {"blocked": True, "response": {
-            "ok": False, "locked": True,
-            "findings": [" ".join(out).strip()
-                         or "the manifest is locked by a running /audit command; "
-                            "try again once it finishes"]}}
-    if code == getattr(lockmod, "E_STALE", 4):
+        return {"blocked": False, "held": True, "project": git_root,
+                "mod": _locks}
+    # THE PAYLOAD SENTENCE IS `refusal`'s, NEVER THE TERMINAL LINES. `acquire`
+    # writes a verdict plus indented detail naming the HOST the live pid runs on
+    # and, on two paths, an absolute project directory -- lines for a terminal
+    # the operator is already sitting at. This response is painted in a browser
+    # and can be copied anywhere, so it gets the sentence built for a payload.
+    answer = {"ok": False, "locked": code in (_locks.E_LIVE, _locks.E_STALE),
+              "findings": [_locks.refusal(code, LOCK_NAME)]}
+    if code == _locks.E_STALE:
         # Never taken over silently: a lock whose holder died is a decision for
         # the person who knows what that run was doing.
-        return {"blocked": True, "response": {
-            "ok": False, "locked": True, "lockStale": True,
-            "findings": [(" ".join(out).strip() + " ") if out else "" +
-                         "Release it with: audit-lock.py release index --project ."]}}
-    # Not a git repo (or the lock library refused for a reason of its own): keep
-    # the legacy working-tree lock as the guard rather than writing unguarded.
-    legacy = mpath + ".lock"
-    try:
-        fd = os.open(legacy, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
-        return {"blocked": False, "held": True, "legacy": legacy}
-    except FileExistsError:
-        return {"blocked": True, "response": {
-            "ok": False, "locked": True,
-            "findings": ["manifest is locked by a running /audit command; "
-                         "try again once it finishes"]}}
-    except OSError:
-        return {"blocked": False, "held": False}
+        answer["lockStale"] = True
+        answer["findings"].append(
+            "Release it with: audit-lock.py release %s --project ." % (LOCK_NAME,))
+    return {"blocked": True, "response": answer}
 
 
 def _release_write_lock(lock):
@@ -1003,12 +1069,12 @@ def _release_write_lock(lock):
         mod = lock.get("mod")
         if mod is None:
             return None
-        code = mod.main(["release", "index", "--project", lock.get("project") or ".",
-                         "--session", _panel_session(), "--pid", str(os.getpid())],
-                        out=lambda *_a, **_k: None)
+        code = mod.release(lock.get("project") or ".", LOCK_NAME,
+                           session=_panel_session(), pid=os.getpid(),
+                           out=lambda *_a, **_k: None)
         if code == 0:
             return None
-        return _locks.release_refusal(code, "index")
+        return _locks.release_refusal(code, LOCK_NAME)
     except Exception:
         return None
 

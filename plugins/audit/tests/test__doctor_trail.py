@@ -413,6 +413,96 @@ def _cases(check):
                   _levels(rep, "journal") == ["OK"]
                   and "chain intact" in _detail(rep, "journal"))
 
+        # ------------------------------------- what the chain was checked AGAINST
+        # THE ANCHOR'S THIRD ANSWER, WHICH THIS SURFACE COULD NOT SAY. `verify`
+        # has answered per file for a release - compared, or could not ask - and
+        # only `audit-journal.py verify` rendered the second, so an operator who
+        # opened the doctor instead read "chain intact" over files nothing pins
+        # and saw exactly what they saw before the anchor learnt to speak.
+        #
+        # TWO QUESTIONS, TWO ROWS, and that is what the pair below is for: the
+        # chain still holds in dt52 - the warning is not about the rows - while
+        # the thing that would have caught a forgery was never asked. dt53 is the
+        # over-fire direction and the one that decides whether this row survives
+        # a healthy repository: committed files must take it back to OK, or a row
+        # that fires on every project is a row somebody switches off.
+        if not have_git:
+            print("SKIP dt52 (git is not on PATH)")
+            print("SKIP dt53 (git is not on PATH)")
+        else:
+            anch = os.path.join(tmp, "unanchored-trail")
+            os.makedirs(os.path.join(anch, "docs", "audit"))
+            subprocess.run(["git", "init", "-q", anch], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for _k, _v in (("user.email", "p@example.com"), ("user.name", "P")):
+                subprocess.run(["git", "-C", anch, "config", _k, _v], check=True)
+            _journal_io.append(anch, {"action": "task.complete",
+                                      "actor": "probe",
+                                      "ts": "2026-01-01T00:00:00Z",
+                                      "details": {"taskId": "P1.1"}})
+            ares = _journal_io.verify(anch)
+            afile = os.path.basename(
+                sorted(_journal_io.journal_files(
+                    _journal_io.journal_dir(anch)))[0])
+            rep = base.Report()
+            M.check_journal(rep, anch, {}, cfgmod, anch)
+            check("dt52 a journal file git has never seen is a WARNING on its "
+                  "OWN row, naming the file and the reason - while the chain "
+                  "row still says intact, because the rows really do hold and "
+                  "what is missing is the thing they were checked against: "
+                  "%r / %r" % (_levels(rep, M.ANCHOR_CHECK),
+                               _detail(rep, M.ANCHOR_CHECK)),
+                  _levels(rep, M.ANCHOR_CHECK) == ["WARNING"]
+                  and len(ares["unanchored"]) == 1
+                  and afile in _detail(rep, M.ANCHOR_CHECK)
+                  and "no committed copy pins" in _detail(rep, M.ANCHOR_CHECK)
+                  and "does not track" in _detail(rep, M.ANCHOR_CHECK)
+                  and _levels(rep, "journal") == ["OK"]
+                  and "chain intact" in _detail(rep, "journal"))
+            check("dt52b ...and it never fails the run. A finding exits this "
+                  "command non-zero, and an unestablished basis is not evidence "
+                  "that anything is wrong - a repository whose journal is not "
+                  "committed yet would fail a build having asked nothing and "
+                  "found nothing: %r" % (rep.counts(),),
+                  rep.exit_code() == 0
+                  and "FINDING" not in _levels(rep, M.ANCHOR_CHECK)
+                  and "nothing was found here" in _fix(rep, M.ANCHOR_CHECK))
+
+            subprocess.run(["git", "-C", anch, "add", "-A"], check=True,
+                           stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", anch, "-c", "commit.gpgsign=false",
+                            "commit", "-q", "-m", "j"], check=True,
+                           stdout=subprocess.DEVNULL)
+            bres = _journal_io.verify(anch)
+            rep = base.Report()
+            M.check_journal(rep, anch, {}, cfgmod, anch)
+            check("dt53 THE OVER-FIRE CASE: committing the same file takes the "
+                  "row to OK and says what WAS compared. A row widened until it "
+                  "reports a trail every file of which the anchor really did "
+                  "ask about passes dt52 and fails here, and it is the one that "
+                  "would fire on every healthy project: %r"
+                  % (_detail(rep, M.ANCHOR_CHECK),),
+                  _levels(rep, M.ANCHOR_CHECK) == ["OK"]
+                  and bres["unanchored"] == []
+                  and "1 journal file(s) were compared" in _detail(
+                      rep, M.ANCHOR_CHECK))
+
+        # A DIRECTORY WITH NOTHING IN IT WAS NOT ASKED ABOUT AND WAS NOT
+        # UNASKED: nothing was walked, so a row either way would be a claim
+        # about files that are not there. This is the branch that separates
+        # "every file was anchored" from "there were no files".
+        bare = os.path.join(tmp, "bare-journal")
+        os.makedirs(os.path.join(bare, "docs", "audit"))
+        os.makedirs(_journal_io.journal_dir(bare))
+        rep = base.Report()
+        M.check_journal(rep, bare, {}, cfgmod, None)
+        check("dt54 a journal directory holding no files draws no anchor row at "
+              "all - an OK line there would report an anchor holding over "
+              "nothing, which reads as the strongest answer and is the emptiest: "
+              "%r" % (_levels(rep, M.ANCHOR_CHECK),),
+              _levels(rep, M.ANCHOR_CHECK) == []
+              and _levels(rep, "journal") == ["OK"])
+
         drift = os.path.join(tmp, "drifted")
         os.makedirs(os.path.join(drift, "docs", "audit"))
         dman = os.path.join(drift, mrel)

@@ -116,13 +116,42 @@ def _cases(check):
               M.judge("not a dict", path, host="h")[0] in (True, False))
 
         # --- names ------------------------------------------------------------
-        check("n1 the two tiers the orchestrator uses are the two that are legal",
-              M.valid_name("index") and M.valid_name("phase-P1"))
+        # EVERY FIXED NAME IS LEGAL, AND THE LIST IS THE SUBJECT rather than a
+        # copy of it: a name added to `FIXED_NAMES` and not to `valid_name` is a
+        # taker the library would refuse, which is how a lock comes to be taken
+        # some other way.
+        _illegal = [n for n in M.FIXED_NAMES if not M.valid_name(n)]
+        check("n1 every name this library issues under a fixed spelling is a "
+              "name it accepts, and a per-phase one is too: %r" % (_illegal,),
+              _illegal == [] and M.valid_name("phase-P1") and M.FIXED_NAMES)
         _escapes = [n for n in ("..", "a/b", "phase-../x", "phase-a/b", "",
                                 "phase-", "Index", "phase")
                     if M.valid_name(n)]
         check("n2 ...and nothing that could escape the lock directory is: %r"
               % (_escapes,), _escapes == [])
+        # THE BACKFILL'S NAME IS ONE OF THEM, and this is the case that goes red
+        # if the ledger lock is taken back out of the shared library: `acquire`
+        # refuses a name it does not know, so a taker outside this list has to
+        # write its own claim - which is a lock nothing else can be refused by.
+        check("n3 the usage backfill's lock is a name this library issues, so "
+              "the rewrite of the monthly ledger files is coordinated by the "
+              "same claim every other writer here takes: %r" % (M.FIXED_NAMES,),
+              M.valid_name("usage") and "usage" in M.FIXED_NAMES)
+        _nm_proj = tempfile.mkdtemp(prefix="audit-locks-name-")
+        try:
+            subprocess.call(["git", "init", "-q", _nm_proj])
+            _bad_out = []
+            _bad_code = M.acquire(_nm_proj, "ledger", out=_bad_out.append)
+            _bad_said = " ".join(_bad_out)
+            check("n4 ...and a name it does NOT issue is a usage error listing "
+                  "what it would have accepted, rather than a lock taken under "
+                  "a spelling nobody else asks about: %r" % (_bad_said,),
+                  _bad_code == M.E_USAGE
+                  and all(n in _bad_said for n in M.FIXED_NAMES)
+                  and not os.path.exists(os.path.join(M.lock_dir(_nm_proj),
+                                                      "ledger.lock")))
+        finally:
+            shutil.rmtree(_nm_proj, ignore_errors=True)
 
         # --- reading ----------------------------------------------------------
         check("r1 read_lock returns the dict it read", M.read_lock(path).get("pid")

@@ -27,7 +27,10 @@ genuinely notable — a phase that cost several times its peers, a cache hit rat
 model routed somewhere it shouldn't be. Otherwise say nothing.
 
 Read-only: this never takes the audit lock and never touches the manifest. The one exception is
-`--backfill`, which rewrites the monthly ledger files and takes its own `usage.lock`.
+`--backfill`, which rewrites the monthly ledger files and takes the shared `usage` lock for the
+duration — the same claim, in the same place, that `audit-lock.py status` and `/audit:doctor`
+report. A project with no git repository has no lock scheme at all; there the backfill says so in
+its own output rather than inventing a guard nothing else can see.
 
 ## Arguments
 

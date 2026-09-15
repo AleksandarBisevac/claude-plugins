@@ -90,7 +90,10 @@ differently:
 - **WARNING** — works today, will bite later. A missing manifest, no evidence the hooks have
   run, an empty ledger (told apart from a ledger nothing ever created — that one reads
   `no ledger yet` and names the path metering will write), a stale lock, journal files
-  uncommitted for over a week (the git anchor only pins committed history), an area owner
+  uncommitted for over a week (the git anchor only pins committed history), journal files
+  the anchor could not be asked about at all (the `journal anchor` row — the chain may hold
+  perfectly and still have been checked against nothing, which is a weaker sentence than it
+  reads as), an area owner
   the ledger's author column has never seen (usually an identity written differently from
   what `usage.authorMode` records). Worth reading, not worth blocking on.
   It also covers a second, different thing: a fact this read-only command **could not

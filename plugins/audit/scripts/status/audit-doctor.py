@@ -159,6 +159,7 @@ running_plugin_verdict = _trail.running_plugin_verdict
 check_running_plugin = _trail.check_running_plugin
 check_ledger = _trail.check_ledger
 _journal_never_committed = _trail._journal_never_committed
+_anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
 
 _hours_between = _completions._hours_between

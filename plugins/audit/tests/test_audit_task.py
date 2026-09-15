@@ -7,7 +7,8 @@ test file substitutes underscores; see `test_migrate_manifest.py` for both halve
 of that rule. `M` is the module under test. `_manifest_io` and `_panel_write` are
 imported here the way `audit-task.py` imports them, because the fixtures write and
 read through those modules' own objects (`_panel_write._atomic_write_json`,
-`_mio.save_sharded`, `_panel_write._lockmod`) rather than through a second copy.
+`_mio.save_sharded`, `_panel_write.acquire_index_lock`) rather than through a
+second copy.
 
 NOTHING IN THIS SUITE HAD TO CHANGE MEANING TO MOVE. The AST scan for the six
 shapes the guide forbids carrying literally came back empty: no `globals()` and no
@@ -701,13 +702,13 @@ def _cases(check):
             print("SKIP k* (git not installed)")
         else:
             projk, mpathk = mk("k-lock", base_manifest(), git=True)
-            # `audit-lock.py`, not `_panel_write._lockmod()`. This group ACQUIRES
-            # and seizes a lock - it drives `main()` and `_write_lock`, which are
-            # the command's half. `_lockmod()` is the panel's READ-side accessor
-            # and returns `_locks` (layer 1) since the read side moved down there;
-            # it never promised a `main`, and reaching a command through an
-            # accessor named for reading is what made this case break when the
-            # two were finally separated.
+            # `audit-lock.py`, and nothing that reads a lock. This group
+            # ACQUIRES and seizes one - it drives `main()` and `_write_lock`,
+            # which are the command's half. The panel used to publish a
+            # READ-side accessor that answered with the library, and the write
+            # path reached it for a command entry point the library never
+            # promised; the accessor is out of that path now, and a taker says
+            # which module it means in an import.
             lockmod = _loader.load_script("audit-lock.py", modname="audit_lock")
             check("k0 the lock library loads", lockmod is not None)
             if lockmod is not None:

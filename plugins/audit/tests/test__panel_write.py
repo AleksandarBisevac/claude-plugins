@@ -59,6 +59,49 @@ import _ui_theme as _theme                         # noqa: E402  (as _panel_writ
 import _panel_write as M                           # noqa: E402
 
 
+def _listing(path):
+    """What a directory holds, or that there is none -- and it never raises.
+
+    EVIDENCE IS BUILT EXACTLY WHEN THE SUBJECT IS MISBEHAVING. Python evaluates
+    the `%` that formats a case label BEFORE `check()` is ever called, so a
+    listing of a directory the code under test was supposed to create raises
+    inside the failure it was about to report: the case never fails by name, the
+    body dies, and every case after it is skipped while a reader sees one crash
+    where a column of verdicts should be. An expression that only works when the
+    subject is correct is not evidence.
+
+    The absent case is not noise here either - it is the loudest fact available.
+    A shared lock directory that is not there is what a panel guarding some
+    other file leaves behind.
+    """
+    try:
+        return sorted(os.listdir(path))
+    except OSError as exc:
+        return "no such directory (%s)" % (exc.__class__.__name__,)
+
+
+class _AcquireRaises(object):
+    """The lock library with ONE call replaced by a raise, everything else
+    delegated.
+
+    The seam is the call rather than a hand-built module on purpose: the failure
+    being driven is a call that cannot be made, and a stand-in that reimplemented
+    the rest of the library would let the case pass over an object the product
+    never meets. `available` and the exit codes come from the real module, so the
+    only difference between this and the library is the thing under test.
+    """
+
+    def __init__(self, real, exc):
+        self._real = real
+        self._exc = exc
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def acquire(self, *_args, **_kwargs):
+        raise self._exc
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- every POST endpoint refuses a body that is not an object --------------
@@ -1971,6 +2014,7 @@ def _cases(check):
     # mid take-lock / write / write / release - the flow the lock exists for. The
     # dangerous half of the repair is the RELEASE: proceeding is useless if the
     # write then hands somebody else's lock back.
+    import platform as _pf
     import subprocess as _sp
     _lk_proj = tempfile.mkdtemp(prefix="borrowed-lock-")
     try:
@@ -2001,7 +2045,7 @@ def _cases(check):
                   "never took drops it out from under whatever still holds it, "
                   "which is worse than the refusal this replaced",
                   os.path.isfile(os.path.join(_ld, "index.lock")),
-                  repr(os.listdir(_ld)))
+                  repr(_listing(_ld)))
         finally:
             if _prev is None:
                 os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
@@ -2010,59 +2054,177 @@ def _cases(check):
     finally:
         _shutil.rmtree(_lk_proj, ignore_errors=True)
 
-    # THE SECOND WRITER OF THE INDEX LOCK, held to the same two rules: a lock
-    # this run already holds is BORROWED, and a release the lock declines is a
-    # value somebody reads rather than a line nobody printed.
+    # THE SECOND WRITER OF THE INDEX LOCK, held to the same rules: the claim is
+    # the SHARED one, a lock this run already holds is BORROWED, a release the
+    # lock declines is a value somebody reads, and a call that could not be made
+    # is not a lock that refused.
     #
-    # DRIVEN WITH THE COMMAND MODULE IN `_lockmod`'s PLACE. This path asks its
-    # handle for `main`, and the read-side handle the panel carries is the
-    # library, which deliberately has none - so the seam is how the branches
-    # below get driven at all, and a branch no case can drive is a branch
-    # nothing proves.
+    # DRIVEN THROUGH THE REAL LIBRARY, which is the whole of wl0. This path used
+    # to ask its handle for a command entry point, and the handle it carried was
+    # the read-side accessor answering with the LIBRARY - which deliberately has
+    # no such name. So every save raised into a bare handler and landed on the
+    # working-tree fallback, and the only case that touched these branches
+    # substituted the command module to reach them: a seam that made the defect
+    # unreachable by the suite that owned it. Nothing was corrupted, because both
+    # are real locks - what was lost is that a panel write and a command-line
+    # write could each hold one and each believe it was the index.
     _wl_proj = tempfile.mkdtemp(prefix="write-lock-")
     try:
         _sp.run(["git", "init", "-q", _wl_proj], check=True,
                 stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
-        _wl_cmd = _loader.load_script("audit-lock.py", modname="audit_lock_pw")
-        _wl_prev = M._lockmod
-        M._lockmod = lambda: _wl_cmd
+        _wl_ld = M._locks.lock_dir(_wl_proj)
+        _wl_lock = os.path.join(_wl_ld, "index.lock")
+        _wl_legacy = M._manifest_path(_wl_proj, {}) + ".lock"
+        # THE WORKING-TREE LOCKFILE MUST HAVE SOMEWHERE TO LAND, or the clause
+        # below that says it is absent is being satisfied by the filesystem
+        # rather than by the code. A bare `git init` has no manifest directory,
+        # so the fallback could not write there even if this path took it - and
+        # a panel that had dropped to the fallback would then come back
+        # unguarded instead of guarded-in-the-wrong-place, which is a different
+        # defect with a different sentence. With the directory here, the two
+        # branches are told apart by which file exists rather than by whether
+        # either could.
+        os.makedirs(os.path.dirname(_wl_legacy), exist_ok=True)
+
+        _wl_free = M._acquire_write_lock(_wl_proj, {}, None)
+        check("wl0 a panel write takes the SAME claim the command line takes - "
+              "`index` in the shared git dir - and writes no working-tree "
+              "lockfile beside the manifest. Two mechanisms that cannot see "
+              "each other are two runs each holding something: %r"
+              % (_listing(_wl_ld),),
+              _wl_free.get("blocked") is False and _wl_free.get("held") is True
+              and os.path.isfile(_wl_lock)
+              and _wl_free.get("legacy") is None
+              and not os.path.exists(_wl_legacy))
+        check("wl0b ...and the claim names THIS panel process, so a crashed "
+              "panel's lock is judged dead rather than waited out: %r"
+              % (M._locks.read_lock(_wl_lock),),
+              M._locks.read_lock(_wl_lock).get("sessionId") == M._panel_session()
+              and M._locks.read_lock(_wl_lock).get("pid") == os.getpid())
+        check("wl0c ...and the release gives it back. A claim left behind by "
+              "every save is a panel that locks the command line out of its own "
+              "manifest",
+              M._release_write_lock(_wl_free) is None
+              and not os.path.exists(_wl_lock))
+
+        # AND THE FIXTURES BELOW DO NOT INHERIT THE SUBJECT'S WORK. `_write_lock`
+        # builds its sibling temp inside the lock directory, so a case that
+        # plants a claim would raise - taking every case after it down - in any
+        # run where the code above failed to create that directory. The cases
+        # here are about what `_acquire_write_lock` does with a claim that is
+        # already there, and each of them has to be able to fail on its own.
+        os.makedirs(_wl_ld, exist_ok=True)
+        M._locks._write_lock(_wl_lock, {"sessionId": M._panel_session(),
+                                        "pid": os.getppid(), "hostname": "h",
+                                        "note": "the outer hold"})
+        _wl = M._acquire_write_lock(_wl_proj, {}, None)
+        check("wl1 a lock this panel run already holds lets the write "
+              "proceed and is marked BORROWED - the endpoint may write "
+              "under it, and the claim is not this call's to hand back",
+              _wl.get("blocked") is False and _wl.get("borrowed") is True,
+              repr(_wl))
+        _wl_said = M._release_write_lock(_wl)
+        check("wl2 ...so releasing that handle says nothing and takes "
+              "nothing. Giving back a lock we never took drops it out from "
+              "under whatever still holds it, which is worse than the "
+              "refusal it replaced",
+              _wl_said is None and os.path.isfile(_wl_lock),
+              repr((_wl_said, _listing(_wl_ld))))
+        M._locks._write_lock(_wl_lock, {"sessionId": "somebody-else",
+                                        "pid": os.getppid(), "hostname": "h",
+                                        "note": "took it over"})
+        _wl_no = M._release_write_lock({"held": True, "mod": M._locks,
+                                        "project": _wl_proj})
+        check("wl3 ...while a release the lock DECLINES comes back as a "
+              "sentence instead of dying in a printer. It is the only "
+              "notice a displaced run gets that another session has been "
+              "writing beside it, and the caller puts it in `warnings`",
+              "NOT released" in (_wl_no or "")
+              and "took it over" in (_wl_no or ""), repr(_wl_no))
+
+        _wl_live = M._acquire_write_lock(_wl_proj, {}, None)
+        _wl_live_said = " ".join((_wl_live.get("response") or {})
+                                 .get("findings") or [])
+        check("wl3b a claim held by another live run blocks the write, and the "
+              "sentence is the one built for a PAYLOAD: no host, no absolute "
+              "path. The terminal lines name the machine, and this response is "
+              "painted in a browser: %r" % (_wl_live_said,),
+              _wl_live.get("blocked") is True
+              and (_wl_live["response"] or {}).get("locked") is True
+              and "is held by a live run" in _wl_live_said
+              and _pf.node() not in _wl_live_said
+              and _wl_proj not in _wl_live_said)
+        os.unlink(_wl_lock)
+
+        # THE BARE HANDLER, AND THE HALF IT USED TO SWALLOW. A call that could
+        # not be MADE established nothing about a holder: it must not be painted
+        # as contention, and it must not drop to the working-tree file, which is
+        # what let the two surfaces guard different things unnoticed.
+        _wl_real = M._locks
+        M._locks = _AcquireRaises(_wl_real, AttributeError(
+            "module '_locks' has no attribute 'main'"))
         try:
-            _wl_ld = M._locks.lock_dir(_wl_proj)
-            os.makedirs(_wl_ld, exist_ok=True)
-            _wl_lock = os.path.join(_wl_ld, "index.lock")
-            with open(_wl_lock, "w", encoding="utf-8") as _fh:
-                _fh.write(json.dumps({"sessionId": M._panel_session(),
-                                      "pid": os.getppid(), "hostname": "h",
-                                      "note": "the outer hold"}))
-            _wl = M._acquire_write_lock(_wl_proj, {}, None)
-            check("wl1 a lock this panel run already holds lets the write "
-                  "proceed and is marked BORROWED - the endpoint may write "
-                  "under it, and the claim is not this call's to hand back",
-                  _wl.get("blocked") is False and _wl.get("borrowed") is True,
-                  repr(_wl))
-            _wl_said = M._release_write_lock(_wl)
-            check("wl2 ...so releasing that handle says nothing and takes "
-                  "nothing. Giving back a lock we never took drops it out from "
-                  "under whatever still holds it, which is worse than the "
-                  "refusal it replaced",
-                  _wl_said is None and os.path.isfile(_wl_lock),
-                  repr((_wl_said, os.listdir(_wl_ld))))
-            with open(_wl_lock, "w", encoding="utf-8") as _fh:
-                _fh.write(json.dumps({"sessionId": "somebody-else",
-                                      "pid": os.getppid(), "hostname": "h",
-                                      "note": "took it over"}))
-            _wl_no = M._release_write_lock({"held": True, "mod": _wl_cmd,
-                                            "project": _wl_proj})
-            check("wl3 ...while a release the lock DECLINES comes back as a "
-                  "sentence instead of dying in a printer. It is the only "
-                  "notice a displaced run gets that another session has been "
-                  "writing beside it, and the caller puts it in `warnings`",
-                  "NOT released" in (_wl_no or "")
-                  and "took it over" in (_wl_no or ""), repr(_wl_no))
+            _wl_boom = M._acquire_write_lock(_wl_proj, {}, None)
+            _wl_boom_said = " ".join((_wl_boom.get("response") or {})
+                                     .get("findings") or [])
+            _wl_boom_cmd = []
+            _wl_boom_code = M.acquire_index_lock(_wl_proj, {}, _wl_legacy[:-5],
+                                                 False, _wl_boom_cmd.append,
+                                                 "[t]", "a write")
         finally:
-            M._lockmod = _wl_prev
+            M._locks = _wl_real
+        check("wl4 a lock call that RAISES is reported as itself and never as a "
+              "lock that could not be taken: nothing was read and nobody was "
+              "probed, so an operator sent to wait would be waiting for a run "
+              "that was never there: %r" % (_wl_boom_said,),
+              _wl_boom.get("blocked") is True
+              and (_wl_boom["response"] or {}).get("locked") is False
+              and "could not be asked for at all" in _wl_boom_said
+              and "running /audit command" not in _wl_boom_said)
+        check("wl5 ...and it does NOT fall through to the working-tree "
+              "lockfile. That fallback is the answer to a project with no lock "
+              "scheme, and using it here is how a panel came to guard one clone "
+              "while the command line guarded the git dir: %r"
+              % (os.path.exists(_wl_legacy),),
+              not os.path.exists(_wl_legacy))
+        check("wl6 ...and the command-side writer answers the same way, with "
+              "the lock's own error code rather than a handle: one rule about "
+              "when the fallback is used, or the two writers disagree about "
+              "what a panel and a command are coordinating through: %r / %r"
+              % (_wl_boom_code, _wl_boom_cmd),
+              _wl_boom_code == M._locks.E_ERR
+              and any("could not be asked for at all" in line
+                      for line in _wl_boom_cmd)
+              and not os.path.exists(_wl_legacy))
     finally:
         _shutil.rmtree(_wl_proj, ignore_errors=True)
+
+    # THE DOCUMENTED THIRD ANSWER, and the over-fire direction for wl5: the
+    # fallback is not gone, it is bound to the one case it answers. A project
+    # with no repository has no shared lock dir and the command line is not
+    # coordinating through one either, so the working-tree file guards this
+    # clone rather than the write going unguarded.
+    _ng_proj = tempfile.mkdtemp(prefix="write-lock-nogit-")
+    try:
+        _ng_legacy = M._manifest_path(_ng_proj, {}) + ".lock"
+        os.makedirs(os.path.dirname(_ng_legacy), exist_ok=True)
+        _ng = M._acquire_write_lock(_ng_proj, {}, None)
+        check("wl7 a project with no lock scheme still gets a guard - the "
+              "working-tree lockfile, which coordinates within one clone: %r"
+              % (_ng,),
+              _ng.get("blocked") is False and _ng.get("held") is True
+              and _ng.get("legacy") == _ng_legacy
+              and os.path.isfile(_ng_legacy))
+        _ng_second = M._acquire_write_lock(_ng_proj, {}, None)
+        check("wl8 ...and a second write there is refused while it is held, "
+              "then proceeds once the first gives it back: %r"
+              % (_ng_second.get("response"),),
+              _ng_second.get("blocked") is True
+              and (_ng_second["response"] or {}).get("locked") is True
+              and M._release_write_lock(_ng) is None
+              and not os.path.exists(_ng_legacy))
+    finally:
+        _shutil.rmtree(_ng_proj, ignore_errors=True)
 
     # --- the sweep's rows: one shape, three consumers (F248) ------------------
     # `POST /api/worktrees/sweep` had no case anywhere, and the defect it hid was a

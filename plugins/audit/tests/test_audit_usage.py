@@ -29,6 +29,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _areas                                      # noqa: E402  (as audit-usage imports it)
 import _cli_fmt                                    # noqa: E402
+import _locks                                      # noqa: E402  (the one library the backfill lock comes from)
 import _ui_theme as _theme                         # noqa: E402
 
 M = _loader.load_script("audit-usage.py", modname="audit_usage")
@@ -622,27 +623,110 @@ def _cases(check):
         # The backfill lock. It used to keep the next run out for a full hour
         # after a crash, and the file named nobody — so "delete it if that is
         # stale" was advice the human had no way to act on.
+        #
+        # AND IT USED TO BE A LOCK OF ITS OWN SHAPE IN THE SHARED LIBRARY'S OWN
+        # DIRECTORY: it asked whether the name was there, judged the holder, and
+        # then opened the path for writing. Two backfills can pass that
+        # judgement between the read and the write, and the repair that closed
+        # exactly that window for every other lock this product takes never
+        # reached the one taker that was not calling the library. So the fixture
+        # below is a REAL repository: the claim has to land where `audit-lock.py
+        # status` and `/audit:doctor` can see it, or it is coordinating with
+        # nothing.
         import platform as _pf
         import subprocess as _sp
-        lockdir = os.path.dirname(M.acquire_lock(ledger, tmp)[0])
-        lpath = os.path.join(lockdir, "usage.lock")
-        check("lock: acquiring records this process's pid",
-              json.load(open(lpath, encoding="utf-8")).get("pid") == os.getpid())
-        got, err = M.acquire_lock(ledger, tmp)
-        check("lock: a live backfill blocks the next one",
-              got is None and "another usage backfill is running" in (err or ""))
-        check("lock: and says on what basis", "pid %d" % os.getpid() in (err or ""))
+        _lk = os.path.join(tmp, "lock-repo")
+        os.makedirs(_lk)
+        _sp.run(["git", "init", "-q", _lk], check=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _shared = _locks.lock_dir(_lk)
+        lpath = os.path.join(_shared, "%s.lock" % (M.LOCK_NAME,))
+        got, err = M.acquire_lock(_lk)
+        check("lock: the claim is the SHARED library's, under the name it "
+              "issues - a lock nothing else can be refused by is not a lock: "
+              "%r" % (lpath,),
+              err is None and got.get("held") is True and got.get("release")
+              and os.path.isfile(lpath) and _locks.valid_name(M.LOCK_NAME))
+        # READ THROUGH THE LIBRARY'S OWN READER, which answers `{}` for a claim
+        # that is not there rather than raising. A bare `open` here fails by
+        # exception the moment the backfill stops taking the claim - which is
+        # exactly when this case is supposed to fail by NAME, and a case that
+        # reports by raising takes every case after it with it.
+        check("lock: acquiring records this process's pid: %r"
+              % (_locks.read_lock(lpath),),
+              _locks.read_lock(lpath).get("pid") == os.getpid())
+        check("lock: releasing gives the claim back", M.release_lock(_lk, got)
+              is None and not os.path.exists(lpath))
+        # A LIVE HOLDER THAT IS NOT THIS PROCESS. The claim names a pid the OS
+        # can vouch for and a session this run is not, which is the only shape
+        # that can be told from re-entry - and the sentence the caller gets is
+        # the library's own, so the refusal reads the same wherever it is met.
+        _locks._write_lock(lpath, {"hostname": _pf.node(), "pid": os.getppid(),
+                                   "sessionId": "another-backfill",
+                                   "startedAt": time.strftime(
+                                       "%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                   "note": "usage backfill"})
+        got2, err2 = M.acquire_lock(_lk)
+        check("lock: a live backfill blocks the next one, in the library's own "
+              "words rather than a second sentence about the same refusal: %r"
+              % (err2,),
+              got2 is None and "held by a live run" in (err2 or ""))
+        check("lock: and points at the door for who holds it - the terminal "
+              "lines naming a host stay in the terminal",
+              "audit-lock.py status" in (err2 or ""))
+        # THE IDENTITY IS A PROCESS AND NOT A RUN, which is the half a shared
+        # library made possible to get wrong. `acquire` hands a caller back a
+        # lock it judges to be its own, and a backfill that claimed the RUN's
+        # session id would be handed one a second backfill in the same session
+        # is holding - both rewriting the same month files, each sure it had
+        # the lock. This claim carries exactly that session id.
+        _sid_prev = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "one-claude-session"
+        try:
+            _locks._write_lock(lpath, {"hostname": _pf.node(),
+                                       "pid": os.getppid(),
+                                       "sessionId": "one-claude-session",
+                                       "startedAt": time.strftime(
+                                           "%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                       "note": "usage backfill"})
+            got_sid, err_sid = M.acquire_lock(_lk)
+            check("lock: a second backfill in the SAME Claude session is still "
+                  "refused - the run's id is not what holds this claim, and "
+                  "lending it would make the one collision this lock exists for "
+                  "read as re-entry: %r" % (err_sid,),
+                  got_sid is None and "held by a live run" in (err_sid or ""))
+        finally:
+            if _sid_prev is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = _sid_prev
         dead = _sp.Popen([sys.executable, "-c", "pass"])
         dead.wait()
-        with open(lpath, "w", encoding="utf-8") as fh:
-            json.dump({"hostname": _pf.node(), "pid": dead.pid,
-                       "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                                  time.gmtime()),
-                       "note": "usage backfill"}, fh)
-        got, err = M.acquire_lock(ledger, tmp)
-        check("lock: a crashed backfill does not block for the rest of the hour",
-              got is not None and err is None)
-        os.unlink(lpath)
+        _locks._write_lock(lpath, {"hostname": _pf.node(), "pid": dead.pid,
+                                   "startedAt": time.strftime(
+                                       "%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                   "note": "usage backfill"})
+        got3, err3 = M.acquire_lock(_lk)
+        check("lock: a crashed backfill does not block for the rest of the "
+              "hour - the retake is the library's takeover, which removes the "
+              "judged claim only while it is still that claim: %r" % (err3,),
+              got3 is not None and err3 is None and got3.get("release"))
+        M.release_lock(_lk, got3)
+        # THE THIRD ANSWER, said rather than papered over. A project with no
+        # repository has no lock scheme and never had one, so there is nothing
+        # to coordinate through - and a backfill that invented a second
+        # mechanism there would be the very shape this consolidation removes.
+        _nogit = os.path.join(tmp, "no-git-here")
+        os.makedirs(_nogit)
+        got4, err4 = M.acquire_lock(_nogit)
+        check("lock: a project with no lock scheme is told so and proceeds, "
+              "rather than being refused or quietly guarded by something the "
+              "command line cannot see: %r" % (got4,),
+              err4 is None and got4.get("held") is False
+              and got4.get("release") is False
+              and "no lock scheme" in (got4.get("why") or ""))
+        check("lock: ...and releasing that handle takes nothing, because "
+              "nothing was taken", M.release_lock(_nogit, got4) is None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

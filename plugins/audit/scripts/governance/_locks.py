@@ -2,12 +2,18 @@
 """
 Where a lock lives, what its name may be, and whether the run holding it is alive.
 
-The READ half of the /audit concurrency lock. `audit-lock.py` is the command that
-takes and releases one; everything that only ever ASKS about a lock asks here.
-That is most of the callers: `_panel_state` badges a lock in the panel,
-`audit-doctor` lists what is held, `audit-usage` decides whether a backfill would
-collide, and `hooks/_config.py` answers "is someone else writing this shard"
-on tool calls.
+EVERY LOCK THIS PRODUCT TAKES IS TAKEN HERE. `acquire` and `release` below are
+the only implementation; `audit-lock.py` wraps them for a shell, the panel's
+write path and the manifest commands call them in process, and the usage
+backfill takes the name it guards the monthly ledger files with. Everything that
+only ever ASKS about a lock asks here too -- `_panel_state` badges one in the
+panel, `audit-doctor` lists what is held, and `hooks/_config.py` answers "is
+someone else writing this shard" on tool calls.
+
+The journal's per-file append lock is the one deliberate exception, and it is a
+different resource: it serializes two writers of ONE file's tail inside the
+working tree, for as long as one append takes, and declines rather than waits.
+`_journal_io` carries why.
 
 WHY IT IS ITS OWN MODULE. Those three scripts each reached the verdict by loading
 `audit-lock.py` through `_loader`, and `_deps.layer_violations()` reads a
@@ -283,9 +289,23 @@ def lock_dir(project):
         return None
 
 
+# The resources this directory coordinates under a FIXED name, beside the
+# per-phase ones. Every taker of any of them comes through `acquire` below.
+#
+# `usage` guards the ledger backfill, and it is here for the reason `index` is:
+# the backfill rewrites monthly ledger files, so two at once lose rows -- and it
+# was taking a lock of its own shape in this same directory, asking whether the
+# file was there, judging the holder, and then opening the path for writing.
+# That is a read followed by a write, and it is exactly the window `_claim` was
+# rebuilt to close. A lock the shared library does not issue is a lock nothing
+# else can be refused by.
+FIXED_NAMES = ("index", "usage")
+
+
 def valid_name(name):
-    """`index` or `phase-<id>`; the id is restricted so it cannot escape the dir."""
-    if name == "index":
+    """A name in `FIXED_NAMES`, or `phase-<id>` with the id restricted so it
+    cannot escape the dir."""
+    if name in FIXED_NAMES:
         return True
     if not name.startswith("phase-"):
         return False
@@ -552,12 +572,24 @@ def _unattributed_claim(info, path):
 # and that is the whole reason they could move. They were `cmd_acquire(args, out)`
 # and `cmd_release(args, out)` in `audit-lock.py`, which meant the only way for
 # another module to TAKE a lock was to build an argv and call that command's
-# `main()` — which is exactly what `audit-task.py` does through
-# `_panel_write._lockmod()`. `_deps` could not see that edge (the literal sits in
-# `_panel_state`, so the graph blamed the panel) and it was real all the same: a
-# hidden dependency is not a retired one. Both are functions here, `audit-lock.py`
-# wraps them for the CLI, and every caller that needs to acquire says so in an
-# import that the layer lint can read.
+# `main()` through the panel's read-side accessor. `_deps` could not see that
+# edge (the literal sat in `_panel_state`, so the graph blamed the panel) and it
+# was real all the same: a hidden dependency is not a retired one.
+#
+# AND IT WAS WORSE THAN HIDDEN ON ONE SIDE. That accessor answers with THIS
+# module, which has no `main` and never did, so the panel's own write path asked
+# for an entry point that does not exist here and fell into a bare handler on
+# every save -- a wrong module reaching a caller wearing contention's clothes,
+# while the working-tree fallback underneath it went on guarding a clone the
+# command line was not using.
+#
+# SO THE RULE IS NOW A PROPERTY OF THE CALL AND NOT OF THE CALLER'S CARE. Both
+# are functions here, `audit-lock.py` wraps them for the CLI, and every caller
+# that needs to acquire says so in an import the layer lint can read. A missing
+# attribute cannot be reached that way, and a caller that still wraps the call
+# owes its handler the distinction the fallback used to swallow: a lock that
+# refused and a call that could not be made are different answers, and only one
+# of them is about another run.
 def held(code):
     """True when an `acquire` return value means the lock IS held.
 
@@ -685,7 +717,8 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("[audit-lock] not a git repository: %s" % project)
         return E_ERR
     if not valid_name(name):
-        out("[audit-lock] bad lock name %r -- expected `index` or `phase-<id>`" % name)
+        out("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`"
+            % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES)))
         return E_USAGE
     try:
         os.makedirs(ld, exist_ok=True)
