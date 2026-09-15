@@ -1045,7 +1045,8 @@
       "BF1.2",
       "P20.4",
       "P36.12",
-      "P53.8"
+      "P53.8",
+      "P53.9"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -1951,6 +1952,9 @@
     ],
     "plugins/audit/tests/test_audit_usage.py": [
       "P53.7"
+    ],
+    "docs/screenshots": [
+      "P53.9"
     ]
   },
   "bugs": [
