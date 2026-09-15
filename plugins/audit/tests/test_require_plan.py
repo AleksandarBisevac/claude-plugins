@@ -36,8 +36,10 @@ so no `KNOWN_LAYER_DEBT` entry could have retired here even if one had.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -1410,6 +1412,137 @@ def _cases(check):
                               {"path": _mcp_src, "content": big})
           == M._change_magnitude("Write", {"content": big}) > 0,
           repr(M._change_magnitude("mcp__fs__write_file", {"content": big})))
+    clear_manifest()
+
+    # (u) THE SENTENCES ARE PUBLISHED, AND THE PUBLICATION IS FLOORED BOTH WAYS.
+    # `GATE_REASONS` exists because the screenshot fixture paints these rows and
+    # used to derive them by walking this module's SYNTAX - a walk that lost an
+    # arm without saying so the day that arm became a call to a helper. Stopping
+    # the capture was the right end of that; a derivation whose view of its
+    # subject can shrink in silence was not. A table fixes the spelling problem
+    # and buys a different one: a table can go on looking complete while the
+    # writer moves past it. So nothing here reads the table on its own. The first
+    # pair ask the SOURCE what this hook writes rows for, because a branch no
+    # fixture reaches still writes one on somebody's machine; the third DRIVES
+    # every published wording and matches the row that really landed; the fourth
+    # is the over-fire direction, red when the table carries a sentence none of
+    # those drives could produce.
+    def event_names(node):
+        """The event names one gate-row payload can carry: a plain name, or the
+        two-armed choice that spells an ask differently before and after."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.IfExp):
+            return event_names(node.body) + event_names(node.orelse)
+        return []
+
+    def written_events(tree):
+        """Every event this hook appends a gate row for, off its own source."""
+        out = []
+        for call in ast.walk(tree):
+            if not (isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "append_gate_event" and call.args):
+                continue
+            row = call.args[-1]
+            if not isinstance(row, ast.Dict):
+                continue
+            for key, val in zip(row.keys, row.values):
+                if isinstance(key, ast.Constant) and key.value == "event":
+                    out += event_names(val)
+        return sorted(set(out))
+
+    def produced_by(template, text):
+        """Whether `template % (...)` can yield `text` - its literal segments in
+        order, with something non-empty standing at each conversion."""
+        pattern = "".join(
+            "(.+)" if part in ("%d", "%s") else re.escape(part)
+            for part in re.split(r"(%[sd])", template))
+        return re.match(r"\A" + pattern + r"\Z", text, re.S) is not None
+
+    u_tree = ast.parse(_harness.module_source(M))
+    check("u1 every published event is keyed to at least one usable template - "
+          "an empty table, or an event keyed to nothing, is exactly the gap a "
+          "fixture seeding these rows would fill with a sentence of its own",
+          bool(M.GATE_REASONS)
+          and all(isinstance(k, str) and k
+                  and isinstance(v, tuple) and v
+                  and all(isinstance(t, str) and t.strip() for t in v)
+                  for k, v in M.GATE_REASONS.items()),
+          repr(M.GATE_REASONS))
+    check("u2 the events this hook's SOURCE writes gate rows for are exactly "
+          "the events the table publishes - a branch added without a template, "
+          "and a template keyed to a branch nothing writes, fail here as the "
+          "one defect they are",
+          written_events(u_tree) == sorted(M.GATE_REASONS),
+          repr((written_events(u_tree), sorted(M.GATE_REASONS))))
+
+    uld = tmp / "ev-published"
+    usd = tmp / "st-published"
+    usd.mkdir(parents=True, exist_ok=True)
+
+    def drive(sid, use_cfg, spent=False, event="PostToolUse"):
+        """One out-of-policy edit, optionally in a session whose free file was
+        already spent - which is what chooses between the two wordings an
+        out-of-policy edit has."""
+        if spent:
+            M.decide(payload("Write", "src/pub/%s.ts" % sid,
+                             content="const a = 1;", sid=sid),
+                     cfg=use_cfg, state_dir=usd, logs_dir=uld,
+                     event="PostToolUse")
+        M.decide(offending(sid), cfg=use_cfg, state_dir=usd, logs_dir=uld,
+                 event=event)
+
+    clear_manifest()
+    drive("selftest-u-obs", cfg_graded)
+    drive("selftest-u-obs-spent", cfg_graded, spent=True)
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
+    drive("selftest-u-warn", cfg_graded)
+    drive("selftest-u-warn-spent", cfg_graded, spent=True)
+    clear_manifest()
+    drive("selftest-u-ask", cfg_ask, event="PreToolUse")
+    drive("selftest-u-ask", cfg_ask)
+    drive("selftest-u-ask-spent", cfg_ask, spent=True, event="PreToolUse")
+    drive("selftest-u-ask-spent", cfg_ask)
+    drive("selftest-u-deny", cfg_pin_deny, event="PreToolUse")
+    drive("selftest-u-deny-spent", cfg_pin_deny, spent=True,
+          event="PreToolUse")
+    u_byp_sid = "selftest-u-bypass"
+    u_byp_slot = usd / ("plan-bypass-%s.json" % u_byp_sid)
+    u_byp = payload("Write", "src/pub/bypassed.ts", content=big, sid=u_byp_sid)
+    u_byp_slot.write_text(json.dumps({"ts": M._now_iso(),
+                                      "armedAtEpoch": int(time.time())}),
+                          encoding="utf-8")
+    M.decide(u_byp, cfg=cfg_graded, state_dir=usd, logs_dir=uld,
+             event="PostToolUse")
+    u_byp_slot.write_text(
+        json.dumps({"ts": M._now_iso(),
+                    "armedAtEpoch": (int(time.time())
+                                     - _config.BYPASS_TTL_SECONDS - 120)}),
+        encoding="utf-8")
+    M.decide(u_byp, cfg=cfg_graded, state_dir=usd, logs_dir=uld,
+             event="PostToolUse")
+
+    u_rows = feed(uld)
+    u_matched = [(r.get("event"), r.get("reason"),
+                  [t for t in M.GATE_REASONS.get(r.get("event")) or ()
+                   if produced_by(t, r.get("reason") or "")])
+                 for r in u_rows]
+    check("u3 every gate row these drives really wrote is worded by exactly "
+          "one published template keyed to its own event - a row the table "
+          "cannot produce, and a row it could produce two ways, are each a "
+          "picture nobody can read back to a writer",
+          bool(u_rows) and all(len(t) == 1 for _e, _r, t in u_matched),
+          repr([m for m in u_matched if len(m[2]) != 1]))
+    u_hit = set((e, t[0]) for e, _r, t in u_matched if len(t) == 1)
+    u_published = set((e, t) for e, ts in M.GATE_REASONS.items() for t in ts)
+    check("u4 ...and every published template was produced by one of those "
+          "drives, so the table cannot be widened with a wording this hook has "
+          "no way to reach - the direction a table rots in once nothing but "
+          "the table is read",
+          u_hit == u_published, repr(sorted(u_published - u_hit)))
     clear_manifest()
 
     if _prev_project_dir is None:

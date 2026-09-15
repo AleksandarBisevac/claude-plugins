@@ -4615,72 +4615,37 @@ export function trivialLineDefault() {
 /**
  * Every `reason` template `require-plan.py` writes into the gate feed, by event.
  *
- * The program is here rather than in a `tools/*.py` for the reason
- * `armedBypassReason`'s one-liner is: the derivation and the fixture it feeds are
- * one decision, and splitting them puts a file between the sentence and the copy
- * of it. Reads `require-plan.py` as SOURCE and never imports it — the hook wants a
- * repo, a config and a session before it will say anything, and none of that is
- * needed to read what it would say.
+ * READ OUT OF THE HOOK'S OWN PUBLICATION, `GATE_REASONS` — the door
+ * `armedBypassReason` already uses one file over, for the keyword beside it.
  *
- * Three shapes are resolved, which is all `decide()` uses: a bare literal, a
- * literal under `%` (`"... %d" % magnitude`), and a NAME bound to either —
- * `reason` is a two-armed choice assigned once and then handed to four different
- * rows, so an extractor that stopped at the call site would find a variable and
- * no sentence. Both arms come back; `gateReason` is what picks between them.
+ * THIS USED TO WALK THE WRITER'S SYNTAX, and that is the shape that broke. An
+ * `ast` program read `decide()` and resolved a reason through the three spellings
+ * the writer happened to use: a bare literal, a literal under `%`, and a name
+ * bound to either. The day a refusal was given the cause it had actually found,
+ * one arm of the choice became a CALL — a spelling the walk had no case for — so
+ * the arm taking no values left this fixture's view without a word and the
+ * capture stopped. Stopping was correct; the walk having a view that could shrink
+ * was not. Of the two repairs that keep the walk, following a call is more syntax
+ * than it has and grows with every helper written after it, and seeding a
+ * sentence here is the retyped copy the whole derivation exists to refuse.
+ * Publishing costs the writer a table its own rows format from, and a table does
+ * not care how a caller is spelled.
  *
- * NO SENTENCE IS QUOTED IN THIS COMMENT, and the first draft of it quoted three.
- * A retyped copy in a comment is a retyped copy: it rots the same way, and the
- * case that hunts for one reads source text and cannot tell prose from code. It
- * found these. Describe the shape instead of spelling it.
- */
-const GATE_REASON_PROGRAM = [
-  'import ast, io, json, os, sys',
-  'src = os.path.join("plugins", "audit", "hooks", "require-plan.py")',
-  'tree = ast.parse(io.open(src, encoding="utf-8").read())',
-  'def lit(n):',
-  '    return isinstance(n, ast.Constant) and isinstance(n.value, str)',
-  'def texts(node, scope):',
-  '    if lit(node):',
-  '        return [node.value]',
-  '    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):',
-  '        return texts(node.left, scope)',
-  '    if isinstance(node, ast.IfExp):',
-  '        return texts(node.body, scope) + texts(node.orelse, scope)',
-  '    if isinstance(node, ast.Name):',
-  '        out = []',
-  '        for stmt in ast.walk(scope):',
-  '            if isinstance(stmt, ast.Assign) and any(',
-  '                    isinstance(t, ast.Name) and t.id == node.id',
-  '                    for t in stmt.targets):',
-  '                out += texts(stmt.value, scope)',
-  '        return out',
-  '    return []',
-  'found = {}',
-  'for fn in ast.walk(tree):',
-  '    if not isinstance(fn, ast.FunctionDef):',
-  '        continue',
-  '    for call in ast.walk(fn):',
-  '        if not (isinstance(call, ast.Call)',
-  '                and isinstance(call.func, ast.Attribute)',
-  '                and call.func.attr == "append_gate_event" and call.args):',
-  '            continue',
-  '        payload = call.args[-1]',
-  '        if not isinstance(payload, ast.Dict):',
-  '            continue',
-  '        cells = dict((k.value, v) for k, v',
-  '                     in zip(payload.keys, payload.values) if lit(k))',
-  '        if "event" not in cells or "reason" not in cells:',
-  '            continue',
-  '        for name in texts(cells["event"], fn):',
-  '            row = found.setdefault(name, [])',
-  '            for tpl in texts(cells["reason"], fn):',
-  '                if tpl not in row:',
-  '                    row.append(tpl)',
-  'json.dump(found, sys.stdout)',
-].join('\n');
-
-/**
- * Memoised because the seeded block asks five times and the answer is one file.
+ * WHAT CANNOT BE CHECKED FROM THIS SIDE IS CHECKED ON THAT ONE. A table that had
+ * quietly stopped covering part of what the hook writes would read as complete
+ * from here, so the floor in both directions — a sentence the hook writes that
+ * the table does not carry, and a table entry the hook cannot produce — is held
+ * by cases in `plugins/audit/tests/test_require_plan.py`, beside the writer they
+ * can see the whole of. This side keeps the half it can see: a table that is
+ * empty, or an entry with no usable template in it, is a refusal and never a
+ * shrug.
+ *
+ * NO SENTENCE IS QUOTED IN THIS COMMENT, and an early draft of its predecessor
+ * quoted three. A retyped copy in a comment is a retyped copy: it rots the same
+ * way, and the case that hunts for one reads source text and cannot tell prose
+ * from code. It found those. Describe the shape instead of spelling it.
+ *
+ * Memoised because the seeded block asks once per row and the answer is one file.
  * @type {?Object<string, Array<string>>}
  */
 let GATE_REASONS = null;
@@ -4690,15 +4655,30 @@ function gateReasonTemplates() {
   if (GATE_REASONS) return GATE_REASONS;
   let got;
   try {
-    got = JSON.parse(py(['-c', GATE_REASON_PROGRAM]));
+    got = JSON.parse(py(['-c',
+      'import importlib.util,json,os,sys;'
+      + 'sys.path.insert(0,os.path.join("plugins","audit","hooks"));'
+      + 's=importlib.util.spec_from_file_location("rp",os.path.join('
+      + '"plugins","audit","hooks","require-plan.py"));'
+      + 'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);'
+      + 'print(json.dumps(dict((k, list(v)) '
+      + 'for k, v in m.GATE_REASONS.items())))']));
   } catch (err) {
     throw new Error('the gate rows this fixture seeds could not be read out of '
-      + `hooks/require-plan.py: ${err.message}`);
+      + `hooks/require-plan.py (GATE_REASONS): ${err.message}`);
   }
-  if (!got || !Object.keys(got).length) {
-    throw new Error('hooks/require-plan.py declares no gate-event reason at all, '
-      + 'so every row below would be a sentence typed here — the shape this '
-      + 'derivation exists to refuse');
+  const events = Object.keys(got || {});
+  if (!events.length) {
+    throw new Error('hooks/require-plan.py publishes no gate-event reason at '
+      + 'all, so every row below would be a sentence typed here — the shape '
+      + 'this derivation exists to refuse');
+  }
+  const hollow = events.filter((e) => !Array.isArray(got[e]) || !got[e].length
+    || got[e].some((t) => typeof t !== 'string' || !t.trim()));
+  if (hollow.length) {
+    throw new Error('hooks/require-plan.py publishes no usable reason template '
+      + `for ${JSON.stringify(hollow)}, so a row asking for one would carry `
+      + 'whatever this fixture invented in its place');
   }
   GATE_REASONS = got;
   return got;
@@ -4706,65 +4686,83 @@ function gateReasonTemplates() {
 
 /**
  * The `reason` cell a `require-plan.py` gate row really carries, template read out
- * of the writer and this fixture's own numbers put into it.
+ * of the hook's published table and this fixture's own values put into it.
  *
- * NOT SENTENCES TYPED HERE (F169). Five of the six rows seeded below used to be
- * retyped copies of sentences `require-plan.decide` owns, and every one of them
- * AGREED with its writer on the day it was checked. That is what made them worth
+ * NOT SENTENCES TYPED HERE. Five of the six rows seeded below used to be retyped
+ * copies of sentences `require-plan.decide` owns, and every one of them AGREED
+ * with its writer on the day it was checked. That is what made them worth
  * replacing rather than what made them safe: an agreement nothing compares is not
  * correctness, it is a coincidence that has not been tested yet. The sixth row is
- * the proof — it drifted the day its writer was repaired and its copy was not
- * (F167), in this same block, one release earlier.
+ * the proof — it drifted the day its writer was repaired and its copy was not, in
+ * this same block, one release earlier.
  *
- * A TEMPLATE, NOT A SENTENCE, and that is the whole design. A magnitude line
- * carries numbers the FIXTURE chose — 96 lines over an 80 threshold is a picture
- * decision, not something the hook has an opinion about. Deriving the finished
- * sentence would mean standing up a repo and driving `decide()`; deriving the
- * template and filling it leaves the numbers here and the WORDING there, and the
- * wording is the half that can drift.
+ * A TEMPLATE, NOT A SENTENCE, and that is the whole design. The magnitude a graded
+ * line quotes, and the file a session's free slot was spent on, are PICTURE
+ * decisions this fixture makes; the hook has no opinion about either. Deriving the
+ * finished sentence would mean standing up a repo and driving `decide()`; deriving
+ * the template and filling it leaves the values here and the WORDING there, and
+ * the wording is the half that can drift.
  *
- * THE ARM IS PICKED BY ARITY. `reason` is a two-armed choice — a magnitude line
- * taking two numbers, or a flat one naming the session's second file and taking
- * none — and the count of values a caller supplies is what says which arm it
- * meant. Exactly one arm must fit, which is the refusing part: a rewording that
+ * THE ARM IS PICKED BY ARITY. An out-of-policy edit has two wordings — one grading
+ * a magnitude against the trivial-change bar, one naming the file the session's
+ * free slot went to — and how many values a caller supplies is what says which arm
+ * it meant. Exactly one arm must fit, which is the refusing part: a rewording that
  * left two arms taking the same count stops the capture instead of picking one.
+ *
+ * AND EACH VALUE IS TYPED BY ITS OWN CONVERSION, because arity stopped being
+ * enough the moment a wording named a path instead of counting lines: `%d` takes a
+ * whole number, `%s` takes text, and a caller that swapped them would seed a
+ * grammatical row reading nothing like the one the hook writes. A conversion that
+ * is neither is refused before an arm is even chosen — filling it is not something
+ * to attempt half-way.
  *
  * IT THROWS RATHER THAN FALLING BACK, for `armedBypassReason`'s reason: there is
  * no default sentence to reach for. A capture that invented one would be the
  * retyped copy again, wearing a function call.
  * @param {string} event - the gate event whose row this is, e.g. `deny`
- * @param {...number} values - the `%d` values this fixture chose, in order
- * @returns {string} the `reason` cell, worded by the hook and numbered here
+ * @param {...(number|string)} values - what this fixture puts in the template's
+ *   conversions, in order: a whole number for a `%d`, text for a `%s`
+ * @returns {string} the `reason` cell, worded by the hook and filled in here
  */
 export function gateReason(event, ...values) {
   const byEvent = gateReasonTemplates();
   const candidates = byEvent[event] || [];
   if (!candidates.length) {
-    throw new Error(`require-plan.py writes no reason for a "${event}" gate row, `
-      + 'so this fixture would seed a row nothing produces. It writes: '
+    throw new Error(`require-plan.py publishes no reason for a "${event}" gate `
+      + 'row, so this fixture would seed a row nothing produces. It publishes: '
       + `${Object.keys(byEvent).sort().join(', ')}`);
   }
-  if (!values.every((v) => Number.isInteger(v))) {
-    throw new Error(`gateReason("${event}") takes the whole numbers a %d prints; `
-      + `got ${JSON.stringify(values)}`);
+  // Ahead of the arity match, not after the fill: a conversion this cannot fill
+  // is not counted as one, so an arm carrying one could otherwise be SELECTED by
+  // a count that skipped it and seeded raw into a committed PNG.
+  const opaque = candidates.filter((t) => t.replace(/%[sd]/g, '').includes('%'));
+  if (opaque.length) {
+    throw new Error(`require-plan.py words a "${event}" row with a conversion `
+      + `this fixture cannot fill: ${JSON.stringify(opaque)}`);
   }
-  const fits = candidates.filter((t) => t.split('%d').length - 1 === values.length);
+  const convsOf = (t) => t.match(/%[sd]/g) || [];
+  const fits = candidates.filter((t) => convsOf(t).length === values.length);
   if (fits.length !== 1) {
-    throw new Error(`require-plan.py has ${fits.length} reasons for "${event}" `
-      + `taking ${values.length} number(s), and this fixture needs exactly one to `
-      + `know which sentence it is seeding: ${JSON.stringify(candidates)}`);
+    throw new Error(`require-plan.py publishes ${fits.length} reasons for `
+      + `"${event}" taking ${values.length} value(s), and this fixture needs `
+      + 'exactly one to know which sentence it is seeding: '
+      + `${JSON.stringify(candidates)}`);
+  }
+  const wrong = convsOf(fits[0]).map((conv, i) => {
+    const v = values[i];
+    const ok = conv === '%d'
+      ? Number.isInteger(v)
+      : typeof v === 'string' && v.trim().length > 0;
+    return ok ? -1 : i;
+  }).filter((i) => i >= 0);
+  if (wrong.length) {
+    throw new Error(`gateReason("${event}") cannot fill `
+      + `${JSON.stringify(fits[0])} with ${JSON.stringify(values)}: a %d takes a `
+      + `whole number and a %s takes text, and position(s) ${wrong.join(', ')} `
+      + 'carry neither');
   }
   let next = 0;
-  const filled = fits[0].replace(/%d/g, () => String(values[next++]));
-  // The half a rename breaks silently, and the same one `armedBypassReason`
-  // guards: `%` over a string with no placeholder left returns it unchanged, so a
-  // template that grew a conversion this cannot fill would otherwise seed the
-  // raw `%s` into a committed PNG.
-  if (filled.includes('%')) {
-    throw new Error(`"${fits[0]}" carries a conversion this fixture cannot fill, `
-      + `so the row would be seeded as ${JSON.stringify(filled)}`);
-  }
-  return filled;
+  return fits[0].replace(/%[sd]/g, () => String(values[next++]));
 }
 
 /* ---- the plan gate card (gt, v0.34 B3) --------------------------------------
@@ -7128,27 +7126,31 @@ async function main() {
         // `reason` is derived FROM `event`, so there is no second copy to
         // disagree with.
         //
-        // What this file still chooses is the magnitudes. Not the bar they are
-        // graded against: that is `trivialLineThreshold`'s default and has one
-        // home, which `trivialLineDefault()` reads and this comment therefore
-        // does not print. Both magnitude rows quote the same bar on purpose — one
-        // card showing two thresholds would be a picture of two projects.
+        // What this file still chooses is what goes INTO those sentences: the
+        // magnitudes, and the file a session's one free slot was spent on. Not
+        // the bar a magnitude is graded against — that is `trivialLineThreshold`'s
+        // default and has one home, which `trivialLineDefault()` reads and this
+        // comment therefore does not print. Both magnitude rows quote the same bar
+        // on purpose — one card showing two thresholds would be a picture of two
+        // projects — and the warn row names the file the `allow.trivial` row above
+        // it took, so the card reads as one session rather than as a list.
         const BAR = trivialLineDefault();
+        const FREE = 'src/web/mod06_04.ts';
         const seeded = [
           { ts: '2026-04-18T09:12:04Z', event: 'observe',
-            file: 'src/web/mod06_02.ts', mode: 'observe', nums: [96, BAR] },
+            file: 'src/web/mod06_02.ts', mode: 'observe', fills: [96, BAR] },
           { ts: '2026-04-18T09:40:31Z', event: 'allow.trivial',
-            file: 'src/web/mod06_04.ts', mode: 'allow', nums: [41] },
+            file: FREE, mode: 'allow', fills: [41] },
           { ts: '2026-04-19T10:02:47Z', event: 'warn',
-            file: 'src/mobile/mod07_01.ts', mode: 'warn', nums: [] },
+            file: 'src/mobile/mod07_01.ts', mode: 'warn', fills: [FREE] },
           { ts: '2026-04-19T14:21:09Z', event: 'deny',
-            file: 'src/mobile/mod07_03.ts', mode: 'deny', nums: [214, BAR] },
+            file: 'src/mobile/mod07_03.ts', mode: 'deny', fills: [214, BAR] },
           // The one row whose sentence comes from a different writer, so it names
-          // that writer instead of carrying numbers.
+          // that writer instead of carrying values.
           { ts: '2026-04-19T14:24:52Z', event: 'bypass.armed',
             file: null, mode: null, reason: armedBypassReason() },
           { ts: '2026-04-19T14:26:10Z', event: 'bypass.consumed',
-            file: 'src/mobile/mod07_03.ts', mode: 'allow', nums: [] },
+            file: 'src/mobile/mod07_03.ts', mode: 'allow', fills: [] },
         ];
         writeFileSync(path.join(gateLogs, 'plan-gate-events.jsonl'),
           seeded.map((r) => JSON.stringify(
@@ -7156,7 +7158,7 @@ async function main() {
               ...(r.mode ? { mode: r.mode } : {}),
               reason: r.reason !== undefined
                 ? r.reason
-                : gateReason(r.event, ...(r.nums || [])),
+                : gateReason(r.event, ...(r.fills || [])),
               sessionId: 'sess-demo' })).join('\n') + '\n');
         await page.evaluate(() => pollRunStatus());
         const landed = await page.waitForFunction((n) => {

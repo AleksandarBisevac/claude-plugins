@@ -79,6 +79,49 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
 
 
+# --- the reasons this gate publishes -------------------------------------------
+# Every `reason` a gate-events row from this hook carries, as the TEMPLATE it is
+# formatted from, keyed by the event carrying it. Published for the reason
+# `detect-plan-skip.ARMED_REASON` is published, a tier further up: these sentences
+# are PAINTED. The panel's gate card lists them and the screenshot fixture seeds a
+# feed it then photographs, so a painter left to retype them holds a copy that
+# agrees with the writer right up until the release that repairs the writer alone.
+#
+# THE WRITERS BELOW FORMAT THESE ENTRIES, which is what makes the table a
+# publication rather than a second spelling. The wording lives here; the values a
+# conversion takes live at the call site that has them; neither half can drift
+# from the other because neither is a copy.
+#
+# AN OUT-OF-POLICY EDIT IS GRADED, NOT REWORDED, so the same pair of templates is
+# keyed under every tier it can be graded into: what the gate FOUND does not
+# change with how loudly it is allowed to say it. Only this hook's own events are
+# here - `bypass.armed` is written one file over and published there.
+#
+# `plugins/audit/tests/test_require_plan.py` holds the floor in both directions,
+# as cases rather than as this paragraph: a sentence this hook writes that the
+# table does not carry, and a table entry this hook cannot produce, each turn it
+# red. A published set that quietly stops covering its subject is the defect the
+# table exists to make impossible, not a smaller version of it.
+REASON_FIRST_SMALL = "first small file (magnitude %d)"
+REASON_BYPASS_EXPIRED = "expired unused"
+REASON_BYPASS_CONSUMED = "single-use bypass consumed"
+REASON_SLOT_SPENT = "this session's one free file was already spent on %s"
+REASON_MAGNITUDE = "change magnitude %d (> %d)"
+
+_OUT_OF_POLICY = (REASON_SLOT_SPENT, REASON_MAGNITUDE)
+
+GATE_REASONS = {
+    "allow.trivial": (REASON_FIRST_SMALL,),
+    "bypass.expired": (REASON_BYPASS_EXPIRED,),
+    "bypass.consumed": (REASON_BYPASS_CONSUMED,),
+    "observe": _OUT_OF_POLICY,
+    "warn": _OUT_OF_POLICY,
+    "ask.shown": _OUT_OF_POLICY,
+    "ask.approved": _OUT_OF_POLICY,
+    "deny": _OUT_OF_POLICY,
+}
+
+
 # --- helpers (shared implementations live in _config.py) -----------------------
 _rel_path = _config.rel_path
 _matches_exempt = _config.matches_exempt
@@ -480,9 +523,11 @@ def _slot_reason(files_list):
     later reader consults. The slot always had the name; what was wrong was an
     ordinal nothing was counting. Read by every tier, so no tier is left
     holding the old claim.
+
+    The wording is `REASON_SLOT_SPENT` rather than a literal here, so the
+    surfaces that paint this row read it instead of retyping it.
     """
-    return ("this session's one free file was already spent on %s"
-            % ", ".join(files_list))
+    return REASON_SLOT_SPENT % ", ".join(files_list)
 
 
 # --- which path an MCP write is decided on ------------------------------------
@@ -722,7 +767,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                     )
                     _config.append_gate_event(ld, {
                         "event": "bypass.expired", "file": rel,
-                        "reason": "expired unused", "sessionId": session_id})
+                        "reason": REASON_BYPASS_EXPIRED,
+                        "sessionId": session_id})
                 # fall through: an expired bypass is not armed
             elif not commit_state:
                 return ("allow", "bypass armed: %s" % rel)
@@ -738,7 +784,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 )
                 _config.append_gate_event(ld, {
                     "event": "bypass.consumed", "file": rel, "mode": "allow",
-                    "reason": "single-use bypass consumed",
+                    "reason": REASON_BYPASS_CONSUMED,
                     "sessionId": session_id})
                 return ("allow", "bypass consumed: %s" % rel)
     except Exception:
@@ -770,7 +816,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 pass
             _config.append_gate_event(ld, {
                 "event": "allow.trivial", "file": rel, "mode": "allow",
-                "reason": "first small file (magnitude %d)" % magnitude,
+                "reason": REASON_FIRST_SMALL % magnitude,
                 "sessionId": session_id})
             return ("allow",
                     "recorded first trivial code file (magnitude %d): %s"
@@ -781,7 +827,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     reason = (
         _slot_reason(files_list)
         if len(files_list) > 0
-        else "change magnitude %d (> %d)" % (magnitude, threshold)
+        else REASON_MAGNITUDE % (magnitude, threshold)
     )
     keyword = cfg.get("bypassKeyword") or _config.DEFAULTS["bypassKeyword"]
 
