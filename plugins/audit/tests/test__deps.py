@@ -579,6 +579,77 @@ def _cases(check):
     finally:
         shutil.rmtree(ld_tmp, ignore_errors=True)
 
+    # ------------------------------- uncalled_helper_claims: a consumer that is not
+    # `_evidence_io.in_evidence` opened "needed for the same reason: a guard that
+    # asks ... has to be able to name the record" while nothing anywhere called it.
+    # The fixtures are synthetic on purpose - the shipped tree is clean, so a case
+    # built on it could only ever assert the absence of a defect.
+    check("uh1 the shipped tree carries no docstring claiming a consumer nothing "
+          "under scripts/, hooks/ or tools/ is: %r" % (M.uncalled_helper_claims(),),
+          M.uncalled_helper_claims() == [])
+
+    uh_tmp = tempfile.mkdtemp(prefix="audit-deps-uncalled-")
+    try:
+        def _uh(body, tools=""):
+            """Judge one module, with an optional tools/ file that may name it."""
+            for stale in os.listdir(uh_tmp):
+                stale_path = os.path.join(uh_tmp, stale)
+                if os.path.isfile(stale_path):
+                    os.remove(stale_path)
+            with open(os.path.join(uh_tmp, "_probe_claim.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(body)
+            tools_dir = os.path.join(uh_tmp, "tools")
+            if not os.path.isdir(tools_dir):
+                os.makedirs(tools_dir)
+            for stale in os.listdir(tools_dir):
+                os.remove(os.path.join(tools_dir, stale))
+            if tools:
+                with open(os.path.join(tools_dir, "caller.py"), "w",
+                          encoding="utf-8") as fh:
+                    fh.write(tools)
+            return M.uncalled_helper_claims(uh_tmp,
+                                            hooks_dir=os.path.join(uh_tmp, "none"),
+                                            tools_dir=tools_dir)
+
+        _claim = ('def in_evidence(project, path):\n'
+                  '    """True when `path` is inside the evidence dir.\n\n'
+                  '    The same shape as the journal\'s, and needed for the same\n'
+                  '    reason: a guard that asks "did a shell command write into\n'
+                  '    the record" has to be able to name the record.\n'
+                  '    """\n'
+                  '    return False\n')
+        _lonely = _uh(_claim)
+        check("uh2 THE FAULT ITSELF: a function nothing names but its own def, "
+              "whose docstring says a guard needs it, is reported with the "
+              "function and EVERY phrase it matched - a message naming one of "
+              "them sends the writer back for the rest: %r" % (_lonely,),
+              len(_lonely) == 1 and "in_evidence()" in _lonely[0][1]
+              and "'a guard that'" in _lonely[0][1]
+              and "'needed for'" in _lonely[0][1])
+        check("uh3 ...and the SAME docstring goes quiet the moment a caller "
+              "exists, which is what stops this rule being a ban on the phrase: "
+              "a claim with a consumer behind it is how most of this tree is "
+              "written",
+              _uh(_claim, tools="import x\nx.in_evidence('a', 'b')\n") == [])
+        check("uh4 ...and an uncalled helper that claims NOTHING is left alone - "
+              "a helper with no caller yet is a decision somebody may have taken, "
+              "and it is the PAIR that is the defect",
+              _uh('def spare(a):\n'
+                  '    """The membership question, answered off the path."""\n'
+                  '    return False\n') == [])
+        torn_uh = os.path.join(uh_tmp, "_probe_torn_claim.py")
+        with open(torn_uh, "w", encoding="utf-8") as fh:
+            fh.write("def (:\n")
+        _torn_hits = M.uncalled_helper_claims(
+            uh_tmp, hooks_dir=os.path.join(uh_tmp, "none"),
+            tools_dir=os.path.join(uh_tmp, "tools"))
+        check("uh5 a file that will not parse is NAMED rather than skipped, the "
+              "rule every scan here follows: %r" % (_torn_hits,),
+              any("could not be read" in why for _rel, why in _torn_hits))
+    finally:
+        shutil.rmtree(uh_tmp, ignore_errors=True)
+
     # ------------------------------------------ explorer_contract_drift (F291)
     # `/audit:init` spawns the explorer agent and parses a JSON array back; the
     # SHAPE of one element is hand-restated in `commands/init.md` for the

@@ -272,8 +272,15 @@ def main(argv):
     message = payload.get("message")
     lines = message if isinstance(message, list) else [message]
     if as_json:
+        # Grouped here too, and for the human branch's reason read one surface
+        # out: a rule that fires once per task arrives in a consumer's context as
+        # a page saying one thing many times, with the line about THIS call
+        # somewhere inside it. No manifest to hand, so the group names its items
+        # rather than their phases - and none of them is elided, since the cap
+        # below is for a reader who can rerun with `--verbose`.
         print(json.dumps({"ok": True, "message": lines,
-                          "warnings": payload.get("warnings") or []}, indent=2))
+                          "warnings": _wg.collapse_machine(
+                              payload.get("warnings") or [])}, indent=2))
     else:
         for line in lines:
             print(line)

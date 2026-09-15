@@ -226,7 +226,13 @@ python3 tools/check-committed-pii.py
 # defect rather than the one stale row. It measures every committed row against the
 # schema's published vocabulary (derived, never listed - COMPATIBILITY.md declines to
 # close that enum) and against itself, holds a cached `testEvidence` pointer to the
-# row it names, and REFUSES rather than passing when it compared nothing.
+# row it names, and REFUSES rather than passing when it compared nothing. It asks a
+# second question of the same committed files - does this repository have the commits
+# its manifests name (task commits, phase base refs, a bug's fixedIn) - and that half
+# refuses on a clone too truncated to answer, because a truncated clone answers "I
+# cannot resolve that" to a fabricated SHA and to an intact one alike. That is not a
+# hypothetical: the step that called the shipped example healthy was green BECAUSE
+# the clone was shallow, so CI's checkout for this gate now takes the whole history.
 python3 tools/check-example-ledgers.py
 
 # ...and the third question about the same committed files: the example's usage

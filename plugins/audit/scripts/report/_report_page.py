@@ -18,14 +18,16 @@ both halves read, with a comment asking the next reader to remember to call it;
 returning them together makes that one value from one place instead. The header
 above `_anchor()` states the contract, including why `parts` is a list.
 
-WHY THE GATE VERDICT IS AN ARGUMENT AND NOT A CALL. The verdict at the top of
-the report is the CI gate's own word, and the gate lives in `audit-status.py` —
-an entry point, layer 7, which `_loader` loads at runtime. Reaching it from here
-would be a helper calling UP, the one direction `_deps.layer_violations()`
-refuses (and it reads `_loader` calls, so it would see it). So `render_html`
-takes `verdict` as a callable the caller supplies; render-report.py owns
-`_verdict`/`_load_status_lib` and injects it, keeping that edge L7 -> L7 exactly
-where `_deps.KNOWN_LAYER_DEBT` already records it. With no verdict supplied the
+WHY THE GATE VERDICT IS AN ARGUMENT AND NOT A CALL. The verdict at the top of the
+report is the CI gate's own word. This reason used to be a layer one — the gate
+was reached through `_loader` as an entry point, so calling it from here would
+have been a helper reaching UP — and that has not been true since the gate's
+conditions came down to `_status_facts` at layer 2, which this module already
+imports for one predicate. What is left is the reason that was always the
+stronger half: a renderer that computed the verdict out of the same facts would
+be a SECOND opinion beside the command's, free to disagree with the word a reader
+was given on the terminal. So `render_html` takes `verdict` as a callable the
+caller supplies and render-report.py injects it. With no verdict supplied the
 hero renders the "could not be evaluated" state the product already has for a
 gate that raises — an honest unknown, never a fabricated Clear.
 
@@ -34,8 +36,8 @@ Imports go one way only: `_report_md` (the Markdown twin this page embeds),
 `is_parked_proposal`) and `_manifest_io` (layer 1, which owns reading a
 manifest's shape) are all below this file; it must never import render-report.
 `_status_facts` is imported for that ONE predicate and nothing else -- the gate
-verdict it also holds still arrives as the injected `verdict` callable, because
-retiring that edge is a separate decision from sharing a word.
+verdict it also holds still arrives as the injected `verdict` callable, for the
+reason above: who owns the word, not which way an edge points.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_page.py`, byte-identical labels and all - see

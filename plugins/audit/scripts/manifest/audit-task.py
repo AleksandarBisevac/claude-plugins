@@ -537,26 +537,33 @@ def brief_gap_refusal(flag, what, excerpt):
     It has to say WHAT WAS SEEN and WHAT TO DO, because a reader told only that
     their input was malformed retypes the same command -- and the same shell eats
     the same clause a second time.
+
+    THE COMMAND THE READER RETYPES COMES FIRST, and every reason after it in one
+    sentence. Nothing is cut: this carried the same facts in the opposite order
+    and a terminal wrapped it to most of a screen, so the three lines that are
+    the repair arrived under two paragraphs of argument the reader had to finish
+    before reaching them. A refusal is read in the order it is printed, and the
+    reader wants the way out first and the argument for it second.
     """
     return (
-        "[audit-task] %s carries %s, which is what a shell leaves "
-        "behind when it eats part of an argument: inside double quotes a "
-        "backtick span is COMMAND SUBSTITUTION, so the words between the "
-        "backticks are RUN and replaced by their output -- for prose, by "
-        "nothing. Seen at: %r\n"
-        "  Refused rather than written, because the text that would reach the "
-        "manifest is missing exactly the clause its author thought worth "
-        "quoting, and no reader downstream can tell that from ordinary prose.\n"
-        "  Pass it on stdin instead, which no shell rewrites and this "
-        "writes through unchanged:\n"
+        "[audit-task] %s carries %s. Pass it on stdin, which no shell rewrites "
+        "and this writes through unchanged:\n"
         "    ... %s - <<'BRIEF'\n"
         "    the text, backticks and all\n"
         "    BRIEF\n"
         "  QUOTE the heredoc word ('BRIEF'): an unquoted <<BRIEF expands its "
-        "body exactly as the double quotes did. Text arriving on stdin is never "
-        "REFUSED for this -- it is written as you typed it, with a note saying "
-        "what was seen -- so if the whitespace is what you meant, that route is "
-        "still the way in." % (flag, what, excerpt, flag))
+        "body exactly as the double quotes did.\n"
+        "  Seen at: %r\n"
+        "  Inside double quotes a backtick span is COMMAND SUBSTITUTION: the "
+        "words between the backticks are RUN and replaced by their output, "
+        "which for prose is nothing.\n"
+        "  Refused rather than written, because the text that would reach the "
+        "manifest is missing exactly the clause its author thought worth "
+        "quoting, and no reader downstream can tell that from ordinary prose.\n"
+        "  Text arriving on stdin is never REFUSED for this -- it is written as "
+        "you typed it, with a note saying what was seen -- so if the whitespace "
+        "is what you meant, that route is still the way in."
+        % (flag, what, flag, excerpt))
 
 
 def stdin_gap_note(flag, what, excerpt):
@@ -1802,7 +1809,14 @@ def _locked_add(args, project, config, mpath, title, out):
     if args.as_json:
         result = {"ok": True, "id": task_id, "phase": phase_id,
                   "title": title, "task": task, "written": written,
-                  "healed": healed, "warnings": warnings,
+                  "healed": healed,
+                  # GROUPED HERE TOO. One line per rule with its count and every
+                  # id named - the human branch below has grouped these since a
+                  # plan put nineteen identical advisories under every write, and
+                  # this block went on carrying one per item into whatever reads
+                  # it. Nothing is elided: the cap is for an eye that can rerun
+                  # with `--verbose`, and this reader cannot.
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "filesNotOnDisk": missing,
                   # F294, as data: WHICH `tests.add` entries the `files` union
                   # could not carry. A machine surface that reported only the
@@ -2004,7 +2018,8 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     if args.as_json:
         result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
                   "reason": reason, "at": now, "cascaded": cascaded,
-                  "written": written, "warnings": warnings}
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -2321,7 +2336,8 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "restarted": was["status"] == "in_progress",
                   "was": was["status"],
                   "changes": _start_changes(tid, was, node),
-                  "written": written, "warnings": warnings,
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -2709,7 +2725,8 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
                   "phaseStatus": phase.get("status"),
-                  "written": written, "warnings": warnings}
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -2975,7 +2992,8 @@ def _locked_phase_add(args, project, config, mpath, title, out):
     waiting = _waiting_on(assembled, phase)
     if args.as_json:
         result = {"ok": True, "id": pid, "title": title, "phase": phase,
-                  "written": written, "warnings": warnings,
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "testGateBasis": gate_basis,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
@@ -3448,8 +3466,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
         return E_INVALID
+    written_manifest = {}
     try:
-        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
     except Exception as exc:
         findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
     if findings:
@@ -3468,7 +3488,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     if args.as_json:
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
-                  "filesNotOnDisk": missing, "warnings": warnings,
+                  "filesNotOnDisk": missing,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
                   # The facts the human report spends a paragraph on, as data:
                   # WHICH call this was, and the attempt it landed under.
                   # `attempt` is null when the plan records none, never 0 -- a
@@ -3586,7 +3607,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # something this call did not look at.
         for line in _readiness_lines(waiting, tid):
             out(line)
-    for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
+    for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled"):
         out("  note: not journaled (%s)" % jres.get("journaledWhy"))
@@ -3735,8 +3756,10 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
         return E_INVALID
+    written_manifest = {}
     try:
-        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
     except Exception as exc:
         findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
     if findings:
@@ -3750,7 +3773,8 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     jres = _journal_retarget(project, config, mpath, pid, changes)
     if args.as_json:
         result = {"ok": True, "id": pid, "changes": changes,
-                  "written": written, "warnings": warnings}
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -3766,7 +3790,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         # rather than left to read silence as breakage - `_phase_gate`'s rule.
         out("  the gate is now EMPTY: sign-off for this phase is review alone, "
             "which is the designed answer when nothing here can prove it done")
-    for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
+    for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled"):
         out("  note: not journaled (%s)" % jres.get("journaledWhy"))

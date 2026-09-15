@@ -241,6 +241,60 @@ def _cases(check):
               M.resolve(f88_repo, "0" * 40, True) == "unchecked"
               and M.resolve(f88_repo, f88_shas[2], True) == "present"
               and M.resolve(f88_repo, "0" * 40, False) == "absent")
+
+        # --- can_answer(): the question a GATE has to ask first ----------------
+        # `resolve` is written for a diagnostic, which must not accuse on a
+        # truncation. A gate reading the same three words has the opposite
+        # failure available to it: every row unchecked and nothing to report is
+        # indistinguishable from a clean set, so the truncation becomes the
+        # reason the gate is green. These pin both directions of the predicate
+        # that stops that.
+        _cut_ok, _cut_why = M.can_answer(shallow)
+        check("ca1 a truncated clone CANNOT answer, and the sentence says so "
+              "with the way out in it - a gate handed this must stop rather "
+              "than report a clean set it never compared: %r" % (_cut_why,),
+              _cut_ok is False and isinstance(_cut_why, str)
+              and "SHALLOW" in _cut_why and "unshallow" in _cut_why)
+        _full_ok, _full_why = M.can_answer(f88_repo)
+        check("ca2 ...and THE SECOND DIRECTION, which is the one that fails if "
+              "the refusal is ever widened: a full clone answers yes with no "
+              "sentence, so the gate runs. A predicate that refused here would "
+              "refuse every honest checkout and be routed around within a day: "
+              "%r" % (_full_why,),
+              _full_ok is True and _full_why is None)
+        _nr_ok, _nr_why = M.can_answer(_notrepo)
+        _none_ok, _none_why = M.can_answer(None)
+        check("ca3 a directory that is not a repository, and no root at all, are "
+              "both refusals naming which question failed - the fail-safe "
+              "direction, since guessing 'complete' here is what puts the "
+              "accusation back on the machine least able to argue with it: "
+              "%r / %r" % (_nr_why, _none_why),
+              _nr_ok is False and _none_ok is False
+              and isinstance(_nr_why, str) and isinstance(_none_why, str))
+
+        # --- referenced(): every commit a manifest NAMES, not just the trail ---
+        _wide = {"phases": [{"id": "P0", "baseRef": "aaa1",
+                             "tasks": [{"id": "P0.1", "commit": "bbb2"},
+                                       {"id": "P0.2", "commit": None}]}],
+                 "bugs": [{"id": "BUG-1", "fixedIn": "ccc3"},
+                          {"id": "BUG-2", "fixedIn": None}]}
+        check("rf1 a manifest names a commit in three places and all three are "
+              "returned with the field that named them - `recorded()` answers "
+              "for the TRAIL and a reader of committed data needs the baseRef "
+              "and the bug's fixedIn too: %r" % (M.referenced(_wide),),
+              M.referenced(_wide) == [("P0", "baseRef", "aaa1"),
+                                      ("P0.1", "commit", "bbb2"),
+                                      ("BUG-1", "fixedIn", "ccc3")])
+        _shard = {"id": "P2", "baseRef": "ddd4",
+                  "tasks": [{"id": "P2.1", "commit": "eee5"}]}
+        check("rf2 ...and a SHARD - one phase with no `phases` wrapper - is read "
+              "too, because that is the layout a reader of tracked files meets "
+              "before anything assembles it, while `recorded()` deliberately "
+              "still answers nothing for it: %r / %r"
+              % (M.referenced(_shard), M.recorded(_shard)),
+              M.referenced(_shard) == [("P2", "baseRef", "ddd4"),
+                                       ("P2.1", "commit", "eee5")]
+              and M.recorded(_shard) == [])
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

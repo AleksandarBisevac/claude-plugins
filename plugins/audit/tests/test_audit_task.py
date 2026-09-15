@@ -2940,6 +2940,24 @@ def _cases(check):
               "gating on , returning" in txt
               and "--description -" in txt
               and "BRIEF" in txt)
+        # THE ORDER IS THE MESSAGE, and this is the case that holds it. Every
+        # fact above is still here; what changed is that the command the reader
+        # retypes is printed before the argument for it, because a refusal is
+        # read in the order it arrives and this one wraps to most of a screen.
+        _eb_lines = txt.splitlines()
+        _eb_at = dict((_marker, [i for i, _l in enumerate(_eb_lines)
+                                 if _marker in _l])
+                      for _marker in ("<<'BRIEF'", "Seen at:",
+                                      "COMMAND SUBSTITUTION",
+                                      "Refused rather than written"))
+        check("eb2b ...and it says it in THAT order: the heredoc the reader "
+              "retypes first, then each reason in one sentence. Before this the "
+              "same facts arrived with two paragraphs of argument in front of "
+              "the three lines that are the repair: %r" % (_eb_at,),
+              all(_hits for _hits in _eb_at.values())
+              and _eb_at["<<'BRIEF'"][0] < _eb_at["Seen at:"][0]
+              < _eb_at["COMMAND SUBSTITUTION"][0]
+              < _eb_at["Refused rather than written"][0])
         # SECOND-DIRECTION CASE, and the one that decides whether this can ship:
         # an ordinary sentence with a comma in it is most of the corpus.
         code, txt = run(["add", "Ordinary brief", "--phase", "P2",

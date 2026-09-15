@@ -243,6 +243,22 @@ def _doc_claim_payload(count):
     return "\nThe tree carries all %s of them.\n" % (count,)
 
 
+# THE THIRD PAYLOAD THAT HAS TO BE BUILT RATHER THAN WRITTEN, and it is the same
+# trap one lint over. `uncalled_helper_claims()` counts identifier occurrences
+# across `scripts/`, `hooks/` AND `tools/` - this file included - so a planted
+# helper whose name is SPELLED here is a helper something already names. Its
+# precondition then skips it, the guard stays quiet because it is right to, and
+# the row reports the mutation as survived: a gate recorded as proven while
+# proving nothing. Written out, that is exactly what it did.
+def _orphan_claim_payload():
+    """A probe helper nothing can name, whose docstring claims a consumer."""
+    name = "_probe_" + "orphan_claim"
+    return ('\n\ndef %s():\n'
+            '    """The record a guard that asks about a write has to be able '
+            'to name."""\n'
+            '    return None\n' % (name,))
+
+
 # BUILT FROM THE SLICE UP, so both rows are one sentence with one difference. The
 # body is a literal rather than a formatted string on purpose: written with `%` it
 # would be a live instance of the shape inside the prover, which is the lint's own
@@ -288,6 +304,7 @@ def substr(text):
     return ("substr", text)
 
 
+# --- the RED table: break the guarded thing, the guard must fire ---------------
 # (lint, file, kind, anchor, payload, suite, the case that must go red)#
 # kinds: "after" appends payload after anchor; "replace" swaps anchor for payload;
 # "drop" removes the first line matching the anchor regex; "suffix" appends payload
@@ -411,6 +428,12 @@ TABLE = (
  ("layer_doc_drift", S + "status/_doctor_policy.py", "replace",
   "`check_policy` is what sets this module's floor:",
   "Layer 5, and `check_policy` is what sets this module's floor:", DEP, "lyd1"),
+ # The defect is a PAIR - a function nothing names, and a docstring saying
+ # something depends on it - so the mutation has to plant both halves at once. A
+ # probe function planted in a shipped module is exactly that: nothing calls it,
+ # and its sentence is the one `in_evidence` carried for releases.
+ ("uncalled_helper_claims", S + "_fmt.py", "after", INSTALL,
+  _orphan_claim_payload(), DEP, "uh1"),
  ("tool_basename_drift", "tools/where.py", "after", "\nSOURCE_EXT = ",
   None, REF, "tb1"),
  ("sweep_glob_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
@@ -1176,6 +1199,16 @@ ALLOW = (
  ("layer_doc_drift", S + "_deps.py", "replace",
   '_SELF_LAYER_CLAIM = re.compile(r"^Layer (\\d+)\\b", re.MULTILINE)',
   '_SELF_LAYER_CLAIM = re.compile(r"[Ll]ayer (\\d+)\\b")', DEP, "lyd4"),
+ # THE PRECONDITION IS THE WHOLE NARROWING, and the phrase list is not. Only a
+ # function nothing under scripts/, hooks/ or tools/ names is read at all; the
+ # same phrases over the rest of the tree open docstrings of functions that
+ # really do have the caller they describe. Raise the threshold so nothing is
+ # ever skipped and the rule convicts every one of them - the honest-docstring
+ # direction, measured on this tree rather than imagined.
+ ("uncalled_helper_claims", S + "_deps.py", "replace",
+  "            if counts.get(node.name, 0) > 1:\n                continue\n",
+  "            if counts.get(node.name, 0) > 10 ** 6:\n                continue\n",
+  DEP, "uh3"),
  # Two markers is the floor the house rule sets, so a file carrying exactly two is
  # the legitimate minimum. Raise the bar by one and the rule convicts the shape it
  # asks for.

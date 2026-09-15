@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-09-11 19:20 UTC
+repo: acme-store · generated 2026-09-15 15:43 UTC
 
 > Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
 
@@ -11,23 +11,23 @@ _The storefront runs on the supported framework line, so the security fixes the 
 
 | id | title | status | model | risk | commit | done | tests | ADO |
 |---|---|---|---|---|---|---|---|---|
-| P0.1 | Move the app bootstrap onto the new framework entry point | done | sonnet | med | 5e1a77c | 2026-05-27 | before-recording | — |
-| P0.2 | Port the route table to the new router API | done | haiku | low | d40b91e | 2026-05-28 | before-recording | — |
+| P0.1 | Move the app bootstrap onto the new framework entry point | done | sonnet | med | — | 2026-05-27 | before-recording | — |
+| P0.2 | Port the route table to the new router API | done | haiku | low | — | 2026-05-28 | before-recording | — |
 
 ## P1 — Auth hardening (done, 2/2)
 _Credentials are stored and checked safely: modern password hashing and a rate-limited login path._
 
 | id | title | status | model | risk | commit | done | tests | ADO |
 |---|---|---|---|---|---|---|---|---|
-| P1.1 | Hash passwords with Argon2id | done | opus | high | 9a1f0c2 | 2026-06-02 | passed | #1421 |
-| P1.2 | Rate-limit the login endpoint | done | sonnet | med | b2d7e58 | 2026-06-09 | passed | — |
+| P1.1 | Hash passwords with Argon2id | done | opus | high | — | 2026-06-02 | passed | #1421 |
+| P1.2 | Rate-limit the login endpoint | done | sonnet | med | — | 2026-06-09 | passed | — |
 
 ## P2 — Input validation (in_progress, 1/4)
 _Every request payload and user-supplied string is validated or escaped before it reaches business logic or a template._
 
 | id | title | status | model | risk | commit | done | tests | ADO |
 |---|---|---|---|---|---|---|---|---|
-| P2.1 | Validate the checkout payload | done | sonnet | med | c4a11b9 | 2026-06-23 | gate-mutated | — |
+| P2.1 | Validate the checkout payload | done | sonnet | med | — | 2026-06-23 | gate-mutated | — |
 | P2.2 | Sanitize the product-search query | in_progress | opus | high | — | started 2026-07-06 | no-evidence | — |
 | P2.3 | Escape server-rendered template output | blocked | sonnet | med | — | started 2026-07-13 | failed | — |
 | P2.4 | Add zod schemas for cart mutations | pending | haiku | low | — | — | no-evidence | — |
@@ -46,7 +46,7 @@ _Reported bugs are reproduced red-first and fixed._
 | id | title | status | model | risk | commit | done | tests | ADO |
 |---|---|---|---|---|---|---|---|---|
 | BF1.1 | Fix BUG-3: cart total off-by-one with stacked discounts | in_progress | sonnet | med | — | started 2026-07-20 | no-checks | — |
-| BF1.2 | Fix BUG-4: logout leaves the session cookie | done | opus | high | a1b2c3d | 2026-07-21 | passed | — |
+| BF1.2 | Fix BUG-4: logout leaves the session cookie | done | opus | high | — | 2026-07-21 | passed | — |
 
 ## P4 — Documentation (pending, 0/1)
 _The invariants Phase 1 and Phase 2 established are written down where the next reader will look for them, so the next audit does not rediscover them._
@@ -62,7 +62,7 @@ _The invariants Phase 1 and Phase 2 established are written down where the next 
 | BUG-1 | Product images 404 intermittently on Safari | open | med | — | — |
 | BUG-2 | Checkout is slow on 3G mobile | triaged | low | — | — |
 | BUG-3 | Cart total off-by-one with stacked discounts | in_progress | med | BF1.1 | — |
-| BUG-4 | Logout does not clear the session cookie | fixed | high | BF1.2 | a1b2c3d |
+| BUG-4 | Logout does not clear the session cookie | fixed | high | BF1.2 | — |
 | BUG-5 | Dark-mode label contrast below AA | wontfix | low | — | — |
 
 ## Ready now

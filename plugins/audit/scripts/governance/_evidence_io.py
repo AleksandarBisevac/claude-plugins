@@ -112,9 +112,18 @@ def evidence_dir(project, config=None):
 def in_evidence(project, path, config=None):
     """True when `path` (absolute or project-relative) is inside the evidence dir.
 
-    The same shape as `_journal_io.in_journal`, and needed for the same reason:
-    a guard that asks "did a shell command write into the record" has to be able
-    to name the record without re-deriving where it is.
+    THE PAIR `evidence_dir` MAKES: one derivation of where the record lives, and
+    one test of whether a path is inside it, so a reader never has to re-derive
+    the location to answer the membership question.
+
+    The prefix test carries the separator on purpose - without it a sibling whose
+    name merely STARTS the same way (`<dir>-notes/x.jsonl` beside `<dir>/`) reads
+    as inside the record.
+
+    It answers for readers on THIS side of the hook boundary. `hooks/` may import
+    nothing from `scripts/`, so a guard asking the same question of the journal
+    asks `hooks/_config.in_journal`, which is its own implementation and not this
+    one.
     """
     try:
         d = os.path.realpath(evidence_dir(project, config))

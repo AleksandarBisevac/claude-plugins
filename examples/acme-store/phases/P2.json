@@ -15,7 +15,7 @@
     "test",
     "typecheck"
   ],
-  "baseRef": "b2d7e58",
+  "baseRef": null,
   "branch": "audit/p2-input-validation",
   "mergedAt": null,
   "review": {
@@ -61,7 +61,7 @@
         "technical": "Boundary validator + 2 regression tests.",
         "descriptive": "Malformed checkouts are turned away early."
       },
-      "commit": "c4a11b9",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-06-22T09:30:00Z",

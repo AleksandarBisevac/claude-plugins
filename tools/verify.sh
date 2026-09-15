@@ -329,7 +329,11 @@ run "committed artifacts carry no machine identity" python3 tools/check-committe
 # can produce. The ledger is hand-written narrative, so nothing re-derives it and
 # nothing was reading it; this measures every committed row against the schema's
 # published vocabulary and against itself.
-run "committed ledgers record a verdict the runner can make" python3 tools/check-example-ledgers.py
+# It also asks whether this repository HAS the commits its committed manifests
+# name - task commits, phase base refs, a bug's fixedIn - and refuses on a clone
+# too truncated to answer, because the check that graded the shipped example used
+# to pass for exactly that reason.
+run "committed ledgers record a verdict the runner can make, and every commit a manifest names resolves" python3 tools/check-example-ledgers.py
 # F232: THIS RAN ONLY IN CI, AND IT COST A RED RUN ON A RELEASE CANDIDATE. The
 # example's usage ledger is COMMITTED and DERIVED — `gen-demo-usage.py` builds it
 # from the manifest — so a phase added to the example silently desynchronises the

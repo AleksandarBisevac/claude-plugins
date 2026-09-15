@@ -26,6 +26,18 @@ tag" vs "area(s) core declare none") stays its own line even though the remedy
 after it is identical -- the basis is half of what the reader acts on, and a
 group that averaged two bases would be claiming something neither warning said.
 
+THE CLASS THIS DOES NOT REACH, AND WHY IT STAYS UNREACHED. A rule whose body
+QUOTES the offending text produces lines that differ after the locator - the
+unknown-key advisory is the one in this tree, and three tasks carrying three
+different stray keys stay three lines. Grouping them would mean grouping on the
+RULE rather than on the body, and no warning carries a rule id: deciding
+sameness from the string alone is what let this module arrive without a new
+field, an id, or a structured record at every emission site. Buying the last
+class would cost exactly that, at every rule, to merge lines that differ in the
+one part the reader has to read. So it is declined rather than pending, and
+`tests/test__warning_groups.py` pins the behaviour so the decision is observable
+instead of being rediscovered as a gap.
+
 WHAT IT COULD NOT DECIDE FROM THE STRING: WHICH PHASE. Nineteen task ids are not
 actionable and four phase ids are, but `P0.1` implies `P0` only by a convention
 the validator itself merely WARNS about (`_manifest_phases` flags an id that
@@ -42,6 +54,14 @@ home that prints it -- `INVALID: %d finding(s)` -- and a second, partial count i
 front of it would be the repo's own defect about numbers in prose, in output.
 `tests/test__warning_groups.py` pins the refusal, because a later tidy would
 otherwise read the generality here as an invitation.
+
+THE `--json` BLOCKS GET THE SAME GROUPING AND NOT THE CAP. `collapse_machine()`
+is that spelling: one line per rule with its count, every item named. The
+grouping loses nothing for either reader, but the cap is written for an eye
+scanning a terminal with `--verbose` available to it, and a consumer parsing
+JSON has neither. Those blocks carried one line per item until then, on the
+argument that a machine surface does not read -- and the surface reading them
+is an agent, which pays for a page of identical lines exactly as a terminal does.
 
 ORDER IS THE FIRST OCCURRENCE'S. A group renders where its first member stood
 and its ids stay in document order, so `validate()`'s "findings and warnings each
@@ -198,38 +218,47 @@ def group(lines, manifest=None):
 
 # --- rendering --------------------------------------------------------------------
 def _named(ids, limit):
-    """`'a, b, c'`, or the first `limit` and how many were left out."""
-    if len(ids) <= limit:
+    """`'a, b, c'`, or the first `limit` and how many were left out.
+
+    `limit` of None names every one of them: the eliding exists for an eye
+    scanning a terminal, and a reader that parses rather than scans has no
+    `--verbose` to run.
+    """
+    if limit is None or len(ids) <= limit:
         return ", ".join(ids)
     return "%s, +%d more" % (", ".join(ids[:limit]), len(ids) - limit)
 
 
-def render(grp, hint=None):
+def render(grp, hint=None, limit=NAMED_MAX):
     """One line for one group — the original line, unchanged, when it holds one.
 
     THE ONE-MEMBER CASE IS RETURNED VERBATIM AND NOT REBUILT. A rebuilt line
     would read `1 task (P0.1): ...` and announce a group where a reader used to
     see a plain warning, which is a change of output every manifest small enough
     to have one occurrence would pay for nothing.
+
+    `limit` of None names every item and elides nothing, which is the only
+    spelling a machine surface may carry: everything else here is a grouping,
+    and a grouping loses no fact, while the cap does.
     """
     hint = HINT if hint is None else hint
     lines = grp["lines"]
     if len(lines) < 2:
         return lines[0]
     count = _fmt.plural(len(lines), grp["kind"])
-    if len(grp["items"]) <= NAMED_MAX:
+    if limit is None or len(grp["items"]) <= limit:
         return "%s (%s): %s" % (count, ", ".join(grp["items"]), grp["body"])
     if grp["owners"] and not grp["unowned"]:
         where = "%s in %s (%s" % (count,
                                   _fmt.plural(len(grp["owners"]),
                                               OWNER_KIND[grp["kind"]]),
-                                  _named(grp["owners"], NAMED_MAX))
+                                  _named(grp["owners"], limit))
     else:
-        where = "%s (%s" % (count, _named(grp["items"], NAMED_MAX))
+        where = "%s (%s" % (count, _named(grp["items"], limit))
     return "%s; %s names each): %s" % (where, hint, grp["body"])
 
 
-def collapse(lines, manifest=None, verbose=False, hint=None):
+def collapse(lines, manifest=None, verbose=False, hint=None, limit=NAMED_MAX):
     """The warnings a human should read: one line per distinct finding.
 
     `verbose=True` returns them unchanged, which is the escape hatch every
@@ -239,7 +268,26 @@ def collapse(lines, manifest=None, verbose=False, hint=None):
     """
     if verbose:
         return list(lines)
-    return [render(grp, hint) for grp in group(lines, manifest)]
+    return [render(grp, hint, limit) for grp in group(lines, manifest)]
+
+
+def collapse_machine(lines, manifest=None):
+    """The same warnings for a `--json` block: one line per rule, every id named.
+
+    WHY A SECOND SPELLING RATHER THAN THE SAME ONE. The grouping is right for
+    both readers and loses nothing either way -- two lines that differ only in
+    the item they name are one finding, and the collapsed line carries the count.
+    The CAP is not: it exists because a human scans a list of ids and can rerun
+    with `--verbose`, and a consumer parsing JSON does neither. Eliding there
+    would make this the one spelling of these warnings with a fact missing from
+    it, which is the thing a grouping is allowed not to do.
+
+    THE `--json` BLOCKS CARRIED THE UNGROUPED LINES UNTIL THIS EXISTED, on the
+    argument that a machine surface does not read. The surface reading it is an
+    agent, and a page of identical lines costs the same context there that it
+    costs a terminal -- while burying the one line that was about the call.
+    """
+    return collapse(lines, manifest, limit=None)
 
 
 # --- cli ------------------------------------------------------------------------

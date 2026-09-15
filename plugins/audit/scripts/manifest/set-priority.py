@@ -323,7 +323,14 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
          if isinstance(p, dict)], _max_tier(config))
     if args.as_json:
         result = {"ok": True, "phase": phase_id, "from": was, "to": now,
-                  "written": written, "warnings": warnings,
+                  "written": written,
+                  # Grouped for the human branch's reason, read one surface out:
+                  # the line this caller wants is the priority one, and a
+                  # per-task advisory repeated down the block buries it in a
+                  # context window exactly as it does on a terminal. Nothing is
+                  # elided - the cap is for a reader who can rerun with
+                  # `--verbose`.
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "overMaxTier": [{"phaseId": pid, "tier": t} for pid, t in over],
                   "maxTier": _max_tier(config)}
         result.update(jres)

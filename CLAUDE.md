@@ -202,7 +202,9 @@ python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
 python3 tools/check-example-ledgers.py     # ...and that no committed evidence row
                                            # records a verdict the runner cannot
-                                           # produce (F297)
+                                           # produce (F297), and that every commit
+                                           # a committed manifest names resolves -
+                                           # refusing on a clone too shallow to ask
 python3 plugins/audit/scripts/demo/gen-demo-usage.py \
     examples/acme-store/audit-plan.json --out-dir <tmp>   # the committed ledger is
                                            # DERIVED, so it is diffed against a fresh

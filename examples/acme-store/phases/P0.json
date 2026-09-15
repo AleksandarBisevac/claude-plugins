@@ -11,7 +11,7 @@
     "lint",
     "test"
   ],
-  "baseRef": "3c7be40",
+  "baseRef": null,
   "branch": "audit/p0-framework-upgrade",
   "mergedAt": "2026-05-28T10:15:00Z",
   "review": {
@@ -50,7 +50,7 @@
         "technical": "New entry point; compatibility shim deleted; 1 regression test.",
         "descriptive": "The storefront boots on the supported framework line."
       },
-      "commit": "5e1a77c",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-05-26T09:00:00Z",
@@ -90,7 +90,7 @@
         "technical": "Route table ported; 1 regression test over the resolved route list.",
         "descriptive": "Every page still resolves to the same route it did before."
       },
-      "commit": "d40b91e",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-05-27T15:00:00Z",

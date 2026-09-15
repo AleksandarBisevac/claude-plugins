@@ -70,6 +70,54 @@ def recorded(manifest):
     return out
 
 
+def _phase_blocks(manifest):
+    """The phase dicts a document holds, whichever of the two shapes it is in.
+
+    An index carries `phases`; a shard is ONE phase written on its own, with no
+    wrapper, and a caller reading what git tracks meets both unassembled. Kept
+    apart from `recorded()` deliberately: that function answers for the trail as
+    the doctor and the repair verb read it, and widening it to shards would
+    change what those two grade.
+    """
+    phases = (manifest or {}).get("phases")
+    if isinstance(phases, list):
+        return [p for p in phases if isinstance(p, dict)]
+    if isinstance((manifest or {}).get("tasks"), list):
+        return [manifest]
+    return []
+
+
+def referenced(manifest):
+    """`[(where, field, value)]` for every commit a manifest NAMES, in order.
+
+    WIDER THAN `recorded()`, ON PURPOSE. The trail is task commits, and that is
+    what the doctor grades and what the repair verb clears. A manifest names a
+    commit in two more places and neither belongs to the trail: a phase's
+    `baseRef` says which commit its branch forked from, and a bug's `fixedIn` is
+    copied off the fixing task. Both are still claims about a repository's
+    history, so a reader asking whether COMMITTED data names anything git does
+    not have needs all three in one walk rather than in a second one that can
+    disagree with this one.
+
+    A `baseRef` may name a branch rather than a SHA, and `resolve()` answers for
+    either: the question is whether git has the object, not how the document
+    spelled the way to it.
+    """
+    out = []
+    for phase in _phase_blocks(manifest):
+        phase_id = str(phase.get("id"))
+        if phase.get("baseRef"):
+            out.append((phase_id, "baseRef", str(phase.get("baseRef"))))
+        for task in (phase.get("tasks") or []):
+            if isinstance(task, dict) and task.get("commit"):
+                out.append((str(task.get("id")), "commit",
+                            str(task.get("commit"))))
+    for bug in ((manifest or {}).get("bugs") or []):
+        if isinstance(bug, dict) and bug.get("fixedIn"):
+            out.append((str(bug.get("id")), "fixedIn", str(bug.get("fixedIn"))))
+    return out
+
+
 def _git(git_root, args, timeout=15):
     """(returncode, stdout) or (None, "") when git could not be asked."""
     try:
@@ -103,6 +151,40 @@ def is_shallow(git_root):
     # Older git answers neither word; a repository it will not describe is one
     # this function must not describe either.
     return True if val == "true" else (False if val == "false" else None)
+
+
+def can_answer(git_root):
+    """`(True, None)` when this checkout can say whether an object exists here.
+
+    `(False, why)` otherwise, and the sentence is the whole point of the
+    function. `resolve()` turns a negative into `unchecked` wherever the clone
+    cannot support an accusation, which is right for a DIAGNOSTIC: it refuses to
+    accuse on evidence it does not have. A GATE reading the same three words has
+    the opposite failure available to it -- every row `unchecked` and nothing to
+    report reads as a clean set, so the truncation that hides the problem becomes
+    the reason the gate is green. A gate therefore asks about the CLONE before it
+    asks about any object, and stops when the answer is that it cannot look.
+
+    Lifted here rather than written in the caller because `is_shallow`'s three
+    answers are already subtle, and a second reading of them would be a second
+    opinion about what a truncated clone may be asked.
+    """
+    if not (git_root and shutil.which("git")):
+        return False, ("git is not on PATH, so whether this checkout holds a "
+                       "commit could not be asked at all")
+    cut = is_shallow(git_root)
+    if cut is None:
+        return False, ("git would not say whether %s is a truncated clone, and "
+                       "a checkout that will not describe itself cannot be read "
+                       "as a complete one" % (git_root,))
+    if cut:
+        return False, ("%s is a SHALLOW clone: its object store stops at a graft "
+                       "boundary, so every commit past that boundary is one git "
+                       "answers for the same way it answers for a commit that "
+                       "never existed. Deepen it (`git fetch --unshallow`, or "
+                       "`fetch-depth: 0` on the checkout step) and ask again"
+                       % (git_root,))
+    return True, None
 
 
 def resolve(git_root, sha, cut=None):

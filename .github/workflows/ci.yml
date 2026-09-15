@@ -892,6 +892,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # THE WHOLE HISTORY, because one step in this job asks git whether the
+          # commits our committed manifests name are really here. This action's
+          # default is a truncated clone, where every such lookup fails for the
+          # same reason whether the object is missing or merely past the graft -
+          # so the check that graded the shipped example used to pass BECAUSE it
+          # could not look, and a fabricated SHA sat in the example for releases.
+          # `check-example-ledgers.py` now refuses on a clone that cannot answer,
+          # which is what makes this line load-bearing rather than a nicety: drop
+          # it and the step fails loudly instead of passing quietly.
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           # MORE THAN ONE, and the extra ones exist for the hook import budget
@@ -942,6 +953,13 @@ jobs:
           # rather than something a generator derives. This measures every committed
           # row against the schema's published vocabulary and against itself, and
           # refuses rather than passing when it compared nothing.
+          #
+          # It asks a second question of the same committed files: does this
+          # repository actually have the commits its manifests name - task
+          # commits, phase base refs, a bug's fixedIn. That needs the whole
+          # history, which is why this job's checkout takes `fetch-depth: 0`, and
+          # the check refuses on a clone that cannot answer rather than reading
+          # the silence as a clean trail.
           python tools/check-example-ledgers.py
       - name: hook import budget
         run: |

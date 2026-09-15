@@ -24,9 +24,9 @@ WHAT IS STILL HERE AFTER THE SPLITS. The document itself is
 `_report_page.render_html` and its Markdown twin is `_report_md.render_md`
 (P13.3); the fragments they glue are `_report_html` (P13.1) and `_report_usage`
 (P13.2). This file keeps `main()` — the arguments, the manifest read, the theme
-resolve, the files it writes — and `_verdict`, which cannot move: the gate is
-`audit-status.py`, an entry point, so the verdict is computed here and INJECTED
-into the page rather than reached for from a module below (see the
+resolve, the files it writes — and `_verdict`, which stays because the verdict at
+the top of the report is the CLI gate's own word: it is computed here and INJECTED
+into the page rather than composed a second time inside it (see the
 `# --- the gate verdict ---` section).
 
 It also keeps the cases, and that is the honest shape rather than a
@@ -183,12 +183,16 @@ render_md = _report_md.render_md
 
 
 # --- the gate verdict -----------------------------------------------------------
-# The gate is `audit-status.py`, an entry point, and `_loader` is how this file
-# reaches one — an L7 -> L7 edge `_deps.KNOWN_LAYER_DEBT` already records. That
-# is why the verdict is computed HERE and injected into `_report_page`
-# (layer 6) rather than fetched from inside it: a helper reaching up to an entry
-# point would be a new inversion, and `_deps.layer_violations()` reads runtime
-# `_loader` calls, so it would report one.
+# The gate's conditions and verdict are `_status_facts` (layer 2), imported
+# straight above; this used to say the gate was reached through `_loader` as an
+# edge the debt table records, which is the shape it had before that module came
+# down a layer — and the sentence beside `_load_status_lib` already said so.
+# The verdict is still computed HERE and injected into `_report_page` (layer 6)
+# rather than fetched from inside it, but the reason is no longer a layer rule:
+# what `_report_page` would be reaching for is the CLI gate's own word, and a
+# renderer that composed a second opinion out of the same facts is what the
+# injection exists to prevent. Retiring the injection is therefore a decision
+# about who owns the verdict, not one the module map forces either way.
 _GATE_WORDS = {
     "invalid": lambda n: _plural(n, "validator finding"),
     "open-high-bugs": lambda n: _plural(n, "high-severity bug") + " still open",
@@ -261,10 +265,11 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
     """The HTML report, with this file's gate verdict wired into it.
 
     The document itself is `_report_page.render_html`; the only thing added here
-    is `_verdict`, which reaches `audit-status.py` and therefore cannot live in a
-    module below the entry points (see the `# --- the gate verdict ---` note
-    above). Keeping the injection in a wrapper rather than at every call site is
-    what lets this signature stay exactly what it has always been.
+    is `_verdict`, which this file owns because the verdict is the CLI gate's own
+    word rather than something a renderer composes (see the
+    `# --- the gate verdict ---` note above). Keeping the injection in a wrapper
+    rather than at every call site is what lets this signature stay exactly what
+    it has always been.
     """
     return _report_page.render_html(manifest, summary, basename, usage,
                                     fragment=fragment, css=css,

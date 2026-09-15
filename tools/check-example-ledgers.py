@@ -55,6 +55,17 @@ cheap read gets the wrong verdict. A pointer whose `runId` resolves NOWHERE is n
 finding -- the ledger may have been archived, and the schema says an absent or
 unresolvable pointer means "no evidence recorded", never "failed".
 
+THE SECOND SUBJECT IS THE COMMIT A COMMITTED MANIFEST NAMES, and it is here
+because it is the same rule about the same bytes: a published claim this
+repository cannot back. The shipped example named task commits, phase base refs
+and a bug's `fixedIn` that resolve nowhere in this repository, and the step that
+called the example healthy could only say so because the clone it ran on was
+truncated -- every SHA came back `unchecked`, nothing was reported, and the depth
+that hid the problem was the reason the step was green. So this half asks the
+CLONE first and refuses when the answer is that it cannot look. `_commit_trail`
+owns both questions, so the doctor, the repair verb and this gate cannot reach
+three different answers.
+
 EXIT 0 only when a real set was compared. Nothing found, or a question that could
 not be asked, exits non-zero and says which -- a run that compared no ledgers is
 the exact shape of a green run that checked nothing.
@@ -72,6 +83,8 @@ sys.path.insert(0, os.path.join(REPO, "plugins", "audit", "scripts"))
 import _output  # noqa: E402  (the anchor: install_path, safe_stdio)
 
 _output.install_path()
+
+import _commit_trail  # noqa: E402  (is this clone able to answer, and does it have the object?)
 
 SCHEMA_REL = "plugins/audit/schema/audit-plan.schema.json"
 # Where the published vocabulary lives. Spelled as a PATH rather than searched for,
@@ -294,6 +307,26 @@ def pointer_findings(rel, doc, known, by_run):
     return out
 
 
+def commit_findings(rel, doc, git_root):
+    """[(rel, label, why), ...] -- commits this document names and git has not.
+
+    Called only once the clone has said it can answer, so a `rev-parse` that
+    fails here really does mean the object is not in this repository. That
+    ordering is the rule: the same failure in a truncated clone means the
+    question was never put, and reading it as an answer either accuses or clears
+    on evidence nobody has.
+    """
+    out = []
+    for where, field, value in _commit_trail.referenced(doc):
+        if _commit_trail.resolve(git_root, value, False) == "present":
+            continue
+        out.append((rel, where, (
+            "names %s %r, which this repository cannot resolve - a committed "
+            "manifest pointing at a commit nobody can check out publishes a "
+            "trail that reads as intact and is not" % (field, value))))
+    return out
+
+
 def pointer_reach(doc, by_run):
     """(pointers, resolved) -- how many cached pointers exist, and how many
     name a run some committed ledger actually holds.
@@ -359,10 +392,17 @@ def findings(repo=None):
     # printed OK. That is not hypothetical: the schema calls `runId` opaque and
     # free to change spelling, and the day it changes every `by_run` lookup misses
     # and this half of the tool silently stops asking anything.
+    # THE COMMIT HALF ASKS THE CLONE BEFORE IT ASKS ABOUT ANY OBJECT, and the
+    # order is the rule rather than an optimisation: in a truncated checkout a
+    # failed lookup means the question was never put, so a gate that reads the
+    # silence as a clean set is green FOR the truncation. Asked once here, since
+    # it is a property of the checkout and not of a row.
+    can_ask, cannot_ask = _commit_trail.can_answer(root)
     manifests = manifest_rels(rels)
     checked_manifests = 0
     pointers = 0
     resolved = 0
+    commits = 0
     for rel in manifests:
         path = os.path.join(root, rel.replace("/", os.sep))
         try:
@@ -384,6 +424,23 @@ def findings(repo=None):
         resolved += hit
         for rel_, label, why in pointer_findings(rel, doc, known, by_run):
             out.append((rel_, label, why))
+        if can_ask:
+            commits += len(_commit_trail.referenced(doc))
+            for rel_, label, why in commit_findings(rel, doc, root):
+                out.append((rel_, label, why))
+
+    if not can_ask:
+        return [], {}, (
+            "the commits these manifests name could not be checked here: %s. A "
+            "run that could not look is not a run that found nothing, and this "
+            "one would have reported a clean trail either way" % (cannot_ask,))
+
+    if manifests and not commits:
+        return [], {}, (
+            "%d committed manifest(s) were read and NOT ONE of them names a "
+            "commit, so the does-git-have-it half of this run compared nothing - "
+            "which is not the same answer as a tree naming only commits that "
+            "resolve" % (checked_manifests,))
 
     if pointers and not resolved:
         return [], {}, (
@@ -396,18 +453,20 @@ def findings(repo=None):
 
     counts = {"ledgers": len(ledgers), "rows": seen_rows,
               "manifests": checked_manifests, "vocabulary": len(known),
-              "pointers": pointers, "resolved": resolved}
+              "pointers": pointers, "resolved": resolved, "commits": commits}
     return out, counts, None
 
 
 def ok_line(counts):
     """The clean verdict, carrying what it looked at rather than just 'OK'."""
     return ("OK: %d row(s) across %d committed ledger(s) record a verdict the "
-            "schema publishes, none contradicts its own observations, and %d of "
-            "%d cached pointer(s) across %d manifest(s) resolved and agree "
+            "schema publishes, none contradicts its own observations, %d of "
+            "%d cached pointer(s) across %d manifest(s) resolved and agree, and "
+            "%d commit reference(s) all resolve in this checkout "
             "(vocabulary: %d word(s))"
             % (counts["rows"], counts["ledgers"], counts["resolved"],
-               counts["pointers"], counts["manifests"], counts["vocabulary"]))
+               counts["pointers"], counts["manifests"], counts["commits"],
+               counts["vocabulary"]))
 
 
 # --- CLI ----------------------------------------------------------------------
@@ -424,9 +483,13 @@ def main(argv=None):
             sys.stdout.write("FINDING %s%s\n        %s\n"
                              % (rel, (":%s" % (where,)) if where else "", why))
         sys.stdout.write("\nA committed ledger records a verdict the runner cannot "
-                         "produce, or a cache disagrees with it. Fix the row, then "
-                         "the pointer that copied it, then re-render every artifact "
-                         "that prints it.\n")
+                         "produce, a cache disagrees with it, or a manifest names "
+                         "a commit this repository does not have. Fix the row, "
+                         "then the pointer that copied it, then re-render every "
+                         "artifact that prints it. A commit that resolves nowhere "
+                         "is cleared and not re-anchored - `repair-commits.py "
+                         "<manifest> --apply` on a live plan, and by hand in a "
+                         "worked example, which has no trail to journal.\n")
         return 1
     sys.stdout.write(ok_line(counts) + "\n")
     return 0
@@ -455,7 +518,10 @@ def _cases(check):
           # was missing: `el1` returns [] over a run in which no pointer resolved
           # exactly as it does over a run in which every pointer agreed.
           and _counts.get("pointers", 0) >= 5
-          and _counts.get("resolved", 0) == _counts.get("pointers", 0))
+          and _counts.get("resolved", 0) == _counts.get("pointers", 0)
+          # ...and the COMMIT half reached one. Zero references would make this
+          # half silent in exactly the way a truncated clone does.
+          and _counts.get("commits", 0) >= 20)
 
     # el3. The vocabulary is DERIVED, so it must contain the word F280 added and
     # must come from the schema rather than from a list in this file.
@@ -588,6 +654,30 @@ def _cases(check):
         {"id": "P1.3", "status": "pending"}]}]}
     _all_hit = pointer_reach(_reach_doc, {"r1": "passed", "r2": "passed"})
     _none_hit = pointer_reach(_reach_doc, {})
+    # el16. The commit half, both directions, against this repository itself -
+    # the only clone that can say whether an object is here.
+    _head = subprocess.check_output(["git", "-C", REPO, "rev-parse", "HEAD"],
+                                    stderr=subprocess.DEVNULL).decode().strip()
+    _ghost = {"phases": [{"id": "P0", "baseRef": "0" * 40, "tasks": [
+        {"id": "P0.1", "commit": _head}]}]}
+    _cf = commit_findings("x/phases/P0.json", _ghost, REPO)
+    check("el16 a committed manifest naming a commit this repository does not "
+          "have is a finding that NAMES the field and the value - while the one "
+          "beside it that DOES resolve is left alone, which is what stops this "
+          "rule being satisfied by convicting every reference: %r" % (_cf,),
+          len(_cf) == 1 and _cf[0][1] == "P0" and "baseRef" in _cf[0][2]
+          and ("0" * 40) in _cf[0][2])
+
+    # el17. ...and the ordering that makes el16 mean anything. The lookup is only
+    # run once the CLONE has said it can answer, so this file's own answer to
+    # that question is what a run turns on.
+    _can, _why = _commit_trail.can_answer(REPO)
+    check("el17 the commit half asks the CLONE before it asks about an object, "
+          "and this checkout can answer - a truncated one refuses the whole run "
+          "rather than reporting the set it could not compare: %r / %r"
+          % (_can, _why),
+          _can is True and _why is None)
+
     check("el15 pointer_reach counts pointers HELD and pointers RESOLVED apart, "
           "which is what makes a run where no runId resolves distinguishable from "
           "one where every cache agreed: %r vs %r" % (_all_hit, _none_hit),

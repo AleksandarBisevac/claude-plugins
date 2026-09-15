@@ -223,7 +223,7 @@
         "src/auth/logout.ts"
       ],
       "taskId": "BF1.2",
-      "fixedIn": "a1b2c3d",
+      "fixedIn": null,
       "notes": null
     },
     {

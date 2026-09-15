@@ -9,7 +9,7 @@
     "test",
     "precommit"
   ],
-  "baseRef": "c4a11b9",
+  "baseRef": null,
   "branch": "audit/bf1-bugfix-batch-1",
   "mergedAt": null,
   "review": {
@@ -96,7 +96,7 @@
         "technical": "Cookie cleared with an expired Set-Cookie and the session revoked server-side; 1 red-first test.",
         "descriptive": "Logging out now actually ends the session."
       },
-      "commit": "a1b2c3d",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-07-21T09:40:00Z",

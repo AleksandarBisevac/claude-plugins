@@ -16,7 +16,7 @@
     "status": "passed",
     "at": "2026-06-10T11:00:00Z"
   },
-  "baseRef": "0f3a9d1",
+  "baseRef": null,
   "branch": "audit/p1-auth-hardening",
   "mergedAt": "2026-06-10T11:05:00Z",
   "review": {
@@ -62,7 +62,7 @@
         "technical": "argon2id via the platform crypto lib; migration-on-login path added; 2 new tests.",
         "descriptive": "Passwords are now stored with a modern, memory-hard hash."
       },
-      "commit": "9a1f0c2",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-06-02T09:10:00Z",
@@ -113,7 +113,7 @@
         "technical": "Sliding-window limiter keyed by IP and account; 1 regression test.",
         "descriptive": "Repeated failed logins are now throttled."
       },
-      "commit": "b2d7e58",
+      "commit": null,
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-06-08T10:00:00Z",

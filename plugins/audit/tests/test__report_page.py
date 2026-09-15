@@ -169,8 +169,8 @@ def _cases(check):
         if isinstance(_n, ast.Constant) and isinstance(_n.value, str)
         and _n.value.endswith(".py")))
     check("pg2c ...and this module can reach no entry point at all: it imports "
-          "no _loader and spells no '.py' target, so the audit-status edge "
-          "stays L7 -> L7 where KNOWN_LAYER_DEBT records it. %r"
+          "no _loader and spells no '.py' target, so nothing here loads a "
+          "command and the page stays a page. %r"
           % (_py_literals,),
           "_loader" not in _imported and _py_literals == [])
 

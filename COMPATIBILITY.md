@@ -152,7 +152,8 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   one because unknown keys are tolerated — it is not *promised* to, and the older
   release will not act on what it cannot see. The promise runs one way: forward in
   time, never backward.
-- **The text of findings and warnings.** They are for a human reading a terminal.
+- **The text of findings and warnings.** They are prose for a reader — on the terminal
+  and inside a `--json` block alike, and the block's grouping of them is prose too.
   Parse the exit code — the validator's own `--help` states which code means what —
   never the wording.
 - **The WORDING a command uses to report on a key it reads.** `/audit:sync status`

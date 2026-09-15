@@ -250,6 +250,53 @@ def _cases(check):
           M.collapse(_skills_warnings(_plan(MEASURED)), _plan(MEASURED))
           == M.collapse(_skills_warnings(_plan(MEASURED)), _plan(MEASURED)))
 
+    # --- the machine spelling ---------------------------------------------------
+    # The `--json` blocks carried one line per item until `collapse_machine`
+    # existed, on the argument that a machine surface does not read. The surface
+    # reading them is an agent. It gets the grouping - which loses nothing - and
+    # not the cap, which does.
+    _wide = _lines(_ids((("P0", 7),)))
+    _machine = M.collapse_machine(_wide, None)
+    check("wg17 the machine spelling is ONE line per rule carrying its count and "
+          "EVERY id - the grouping a human gets, without the elision a human can "
+          "undo with a rerun and a JSON consumer cannot: %r" % (_machine,),
+          len(_machine) == 1
+          and _machine[0] == ("7 tasks (P0.1, P0.2, P0.3, P0.4, P0.5, P0.6, "
+                              "P0.7): b")
+          # ...and the human line over the same input really is the elided one,
+          # or this case is comparing two spellings that never differed.
+          and "+1 more" in M.collapse(_wide, None)[0])
+    # THE DIRECTION THAT FAILS IF THE GROUPING IS EVER WIDENED, and it is the
+    # whole value of the line: which RULE spoke. Two rules over the same items
+    # must stay two lines, because a reader told "nine warnings about these
+    # tasks" has been told nothing they can act on.
+    _two_rules = M.collapse_machine(
+        _lines(["P0.1", "P0.2"], "remedy A") + _lines(["P0.1", "P0.2"],
+                                                      "remedy B"), None)
+    # THE CLASS THIS MODULE DOES NOT REACH, pinned so the decision is observable
+    # rather than rediscovered as a gap. A rule whose body quotes the offending
+    # text produces lines that differ after the locator, and merging them would
+    # need a rule id at every emission site - the field this module was built
+    # without.
+    _quoting = {"meta": {"version": 2},
+                "phases": [{"id": "P0", "title": "x", "status": "pending",
+                            "tasks": [{"id": "P0.1", "title": "t",
+                                       "status": "pending", "aaa": 1},
+                                      {"id": "P0.2", "title": "t",
+                                       "status": "pending", "bbb": 1}]}]}
+    _quoted = M.collapse_machine(_manifest_rules.validate(_quoting)[1], _quoting)
+    check("wg18a the one class this does NOT collapse: a rule whose body quotes "
+          "the offending text differs after the locator, so one rule over two "
+          "stray keys stays two lines. Declined rather than pending - the merge "
+          "needs a rule id this module deliberately does not have: %r"
+          % (_quoted,),
+          len(_quoted) == 2 and "'aaa'" in _quoted[0] and "'bbb'" in _quoted[1])
+    check("wg18 ...and two DIFFERENT rules never collapse into each other, "
+          "however many items they share - the count is only worth printing "
+          "because the line says which rule it counts: %r" % (_two_rules,),
+          _two_rules == ["2 tasks (P0.1, P0.2): remedy A",
+                         "2 tasks (P0.1, P0.2): remedy B"])
+
 
 def _locator_corpus():
     """A manifest that trips several unrelated rules at once.

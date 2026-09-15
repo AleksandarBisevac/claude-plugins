@@ -482,12 +482,13 @@ LAYERS = (
     # goes to `_usage_markdown` directly for exactly that reason - so the move is
     # free, and `_report_page` (L6) is still strictly above.
     #
-    # NOT above L6, and that is the design rather than a coincidence: the gate
-    # verdict at the top of the report comes from `audit-status` (L7), so
-    # `render_html` takes it as an INJECTED callable and render-report.py - which
-    # already carries that L7 -> L7 runtime edge, recorded below - supplies it.
-    # Reaching the gate from `_report_page` would be a helper calling up, and the
-    # runtime-load half of this lint would report it.
+    # NOT above L6, and the reason is its own edges rather than the gate. The
+    # gate verdict at the top of the report arrives as an INJECTED callable that
+    # render-report.py supplies, and that injection is no longer anything this
+    # table forces: the gate's conditions are `_status_facts` at L2, which
+    # `_report_page` already imports, so a direct call would be downward. What
+    # keeps the injection is that the verdict is the COMMAND's word and a second
+    # computation of it here could disagree with the one a reader was given.
     #
     # `_doctor_policy` runtime-loads `_panel_discovery` for this machine's
     # skills/agents/MCP inventory - the same walk the panel's rules view marks
@@ -1752,6 +1753,112 @@ def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
                                  "puts it at layer %d - delete the number or fix "
                                  "it; a stale layer is an argument the next reader "
                                  "has to disprove" % (claimed, actual)))
+    return out
+
+
+# --- uncalled_helper_claims: a docstring naming a consumer nothing is ------------
+# The lints above all grade what the code DOES against what another file says about
+# it. This one grades a sentence against the call graph, and the defect it exists
+# for is smaller and quieter: `_evidence_io.in_evidence` opened with "needed for
+# the same reason: a guard that asks ... has to be able to name the record", and
+# nothing anywhere called it. The cost is not the dead function - it is that a
+# reader budgets for a dependency that is not there, and the next change preserves
+# a contract nobody holds.
+#
+# THE PRECONDITION DOES THE NARROWING, not the phrase list, and that ordering is
+# what makes the rule safe to have. Only a function NOTHING under `scripts/`,
+# `hooks/` or `tools/` names is read at all; over the rest of the tree the same
+# phrases are ordinary and correct, which is measurable rather than asserted -
+# "a guard that", "has to be able to" and "who needs it" each open a docstring of
+# several functions that really do have the caller they describe, and every one of
+# them would be convicted by a version of this that dropped the precondition.
+# `_evidence_io.recorded_paths` is the plainest of those and is what the allow
+# case pins.
+#
+# A SUITE IS NOT A CONSUMER, which is why `tests/` is left out of the corpus. A
+# case calling a function proves it RUNS; the claim being graded is that something
+# DEPENDS on it, and every lint in this file would otherwise read as depended-upon
+# because its own suite calls it. That is the same distinction `layer_doc_drift`
+# draws between a module's claim about itself and one about a neighbour.
+#
+# WHAT IT CANNOT SEE, stated rather than left for the next reader to discover: a
+# consumer claim written in words outside the list, and a function reached only
+# through `getattr` or a string. Both are the unbounded half of this class, and a
+# green run here is evidence that none of the shapes below matched, not that a
+# docstring is honest.
+_CONSUMER_CLAIM = ("needed for", "needed by", "needs it", "who needs it",
+                   "has to be able to", "a guard that", "the guard that",
+                   "depends on it")
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+
+
+def _production_name_counts(script_dir=None, hooks_dir=None, tools_dir=None):
+    """`{identifier: times it appears}` over the code this repo SHIPS and RUNS.
+
+    Every `.py` under `scripts/`, `hooks/` and `tools/`, read as text rather than
+    as a graph: a call, a re-export, a `getattr` target spelled as a literal and a
+    mention in a comment all count, which is the direction that refuses to call
+    something dead on weak evidence.
+    """
+    counts = {}
+    paths = [path for _rel, _kind, path in _real_source_files(script_dir, hooks_dir)]
+    root = tools_dir if tools_dir is not None else _TOOLS_DIR
+    if os.path.isdir(root):
+        paths.extend(path for _rel, path in _output.lint_py_files(root))
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                src = fh.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for name in _IDENTIFIER_RE.findall(src):
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def uncalled_helper_claims(script_dir=None, hooks_dir=None, tools_dir=None):
+    """[(relname, problem), ...] -- a docstring claiming a consumer nothing is.
+
+    A module-level function whose name appears NOWHERE under `scripts/`, `hooks/`
+    or `tools/` except on its own `def` line, whose docstring says something
+    depends on it. Either half alone is fine: a helper with no caller yet is a
+    decision somebody may have taken, and a docstring naming its caller is how
+    most of this tree is written. The pair is the defect, because it is the one a
+    reader cannot check without running the search this does.
+
+    The repair is to delete the claim or to wire the caller - not to soften the
+    sentence into something unfalsifiable, which is the same silence one step
+    further on.
+    """
+    counts = _production_name_counts(script_dir, hooks_dir, tools_dir)
+    out = []
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            # Named rather than skipped: a file this could not read is not a file
+            # it found nothing wrong with.
+            out.append((rel, "could not be read to check its docstrings: %s" % exc))
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if counts.get(node.name, 0) > 1:
+                continue
+            doc = (ast.get_docstring(node) or "").lower()
+            hit = [phrase for phrase in _CONSUMER_CLAIM if phrase in doc]
+            if hit:
+                # EVERY phrase it matched, not the first: the repair is to the
+                # sentence, and a message naming one of three sends the writer
+                # back for the other two.
+                out.append((rel, "%s() is named nowhere under scripts/, hooks/ "
+                                 "or tools/ but its own def, and its docstring "
+                                 "still says %s - delete the claim or wire the "
+                                 "caller; a reader cannot tell a contract "
+                                 "somebody holds from one nobody does"
+                            % (node.name, ", ".join(repr(p) for p in hit))))
     return out
 
 

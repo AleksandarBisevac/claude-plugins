@@ -2703,9 +2703,9 @@ would conflict on every merge, the one thing the sharded layout exists to avoid.
 does not end up with the record of it somewhere else; the resolution is deliberately the same
 shape as `journal_dir()`, because two expressions of "where does this manifest keep its committed
 record" would separate the trail from the evidence the first time a repo set an unusual path.
-`in_evidence()` is the membership question a guard asks, and its prefix test carries the separator
-— a boundary its cases assert from the outside, since a prefix test without it admits every
-sibling whose name merely starts the same way.
+`in_evidence()` is the membership question that pairs with it — is this path inside the record —
+and its prefix test carries the separator, a boundary its cases assert from the outside, since a
+prefix test without it admits every sibling whose name merely starts the same way.
 
 **A row is assembled from named fields, never copied.** `row_for()` reads the keys it knows out of
 the runner's result and nothing else, which is what makes *no runner output is ever written here* a
@@ -3340,12 +3340,15 @@ The report as a whole document, moved out of `render-report.py`: the report's vo
 phase-row builder, and `render_html` itself — the function that glues `_report_html`'s
 fragments and `_report_usage`'s section into one self-contained page, or (with
 `fragment=True`) into the same page with no document wrapper, for a Claude Code Artifact
-whose host supplies its own. Layer 6, and the reason is the gate: the verdict at the top of
-the report is `audit-status.py`'s own word, and `audit-status` is an entry point at layer 7.
-So `render_html` takes `verdict` as an INJECTED callable and `render-report.py` — which
-already carries that L7 → L7 runtime edge, recorded in `_deps.KNOWN_LAYER_DEBT` — supplies
-`_verdict`. Reaching the gate from here would be a helper calling up, and `_deps`'
-layer lint reads runtime `_loader` calls, so it would report it. With no verdict supplied
+whose host supplies its own. Layer 6, which its own edges decide. The verdict at the top of
+the report is `/audit:status`'s own word, so `render_html` takes `verdict` as an INJECTED
+callable and `render-report.py` supplies `_verdict`. That injection used to be forced by the
+module map — the gate was reached through `_loader` as an entry point, so calling it from
+here would have been a helper reaching up — and it has not been since the gate's conditions
+came down to `_status_facts` at layer 2, which this module already imports for one
+predicate. What keeps it is the stronger half: a renderer computing the verdict out of the
+same facts would be a second opinion beside the command's, free to disagree with the word a
+reader was given on the terminal. With no verdict supplied
 the hero renders the "could not be evaluated" state the product already has for a gate that
 raises: an honest unknown, never a fabricated Clear.
 
