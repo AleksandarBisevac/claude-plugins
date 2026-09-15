@@ -717,25 +717,53 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
                               out=lambda *_a, **_k: None)
         if not _locks.held(code):
             return False, {"findings": [_locks.refusal(code, LOCK_NAME)]}
+    # A DECLINED RELEASE TRAVELS WITH THE ANSWER. It says this run was taken over
+    # while it was writing, which the payload has to carry: the printer here
+    # discards and nothing looked at the code, so the one notice a displaced
+    # session gets went nowhere. `took` rather than `held` decides whether there
+    # is anything to give back at all - a lock this run already had stays with
+    # the hold that took it.
+    #
+    # STILL A `finally`, with ONE call inside it. The lock has to be given back
+    # even when the write raises, and the answer has to be decorable afterwards;
+    # a body of one call is what buys both, where a body of several left every
+    # early return past the release with nothing to attach the sentence to.
+    said = None
     try:
-        if verb == "materialize":
-            manifest, message = apply_materialize(manifest, plan, now)
-        elif verb == "drop":
-            manifest, message = apply_drop(manifest, pids[0], reason, now)
-        elif verb == "revive":
-            manifest, message = apply_revive(manifest, pids[0])
-        else:
-            return False, {"findings": ["unknown verb %r" % (verb,)]}
-        if manifest is None:
-            return False, {"findings": [message]}
-        findings, warnings = _revalidate(manifest)
-        if findings:
-            return False, {"findings": ["the result would be invalid, so nothing "
-                                        "was written"] + list(findings)}
-        _save(mpath, manifest)
+        ok, payload = _apply_verb(mpath, manifest, plan, verb, pids, reason, now)
     finally:
-        if _locks.held(code):
-            _locks.release(project, LOCK_NAME, out=lambda *_a, **_k: None)
+        if _locks.took(code):
+            rcode = _locks.release(project, LOCK_NAME,
+                                   out=lambda *_a, **_k: None)
+            if rcode != 0:
+                said = _locks.release_refusal(rcode, LOCK_NAME)
+    if said:
+        payload.setdefault("findings" if not ok else "warnings", []).append(said)
+    return ok, payload
+
+
+def _apply_verb(mpath, manifest, plan, verb, pids, reason, now):
+    """The write itself, between taking the lock and giving it back.
+
+    Its own function so the release above has ONE answer to decorate. Inline, the
+    refusals below returned past the `finally` that released, so a lock that
+    declined could only be reported on the path where nothing had gone wrong.
+    """
+    if verb == "materialize":
+        manifest, message = apply_materialize(manifest, plan, now)
+    elif verb == "drop":
+        manifest, message = apply_drop(manifest, pids[0], reason, now)
+    elif verb == "revive":
+        manifest, message = apply_revive(manifest, pids[0])
+    else:
+        return False, {"findings": ["unknown verb %r" % (verb,)]}
+    if manifest is None:
+        return False, {"findings": [message]}
+    findings, warnings = _revalidate(manifest)
+    if findings:
+        return False, {"findings": ["the result would be invalid, so nothing "
+                                    "was written"] + list(findings)}
+    _save(mpath, manifest)
     return True, {"message": message, "warnings": warnings}
 
 

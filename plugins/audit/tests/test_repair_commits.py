@@ -137,6 +137,32 @@ def _cases(check):
         check("rc9 --json is available in report mode and does not change the "
               "verdict - a machine reader and a human reader get the same answer",
               code == 0)
+
+        # A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THIS COMMAND GETS,
+        # and it used to go into a printer that discards beside a code nothing
+        # read - so a repair that raced another session reported success and
+        # said nothing. The lock is made to decline rather than raced into
+        # declining: the property is that the code is READ and reaches the
+        # message, and a real race would be testing the scheduler.
+        import _locks                              # noqa: E402  (layer 1)
+        repo2, mpath2, shas2 = _repo_with_orphan(tmp, name="r2")
+        ans2 = M.report(json.load(open(mpath2)), repo2)
+        real = _locks.release
+        _locks.release = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            ok2, said2 = M.apply_repair(mpath2, json.load(open(mpath2)), ans2)
+        finally:
+            _locks.release = real
+            _locks.release(repo2, M.LOCK_NAME, out=lambda *_a, **_k: None)
+        check("rc10 a release the lock DECLINES travels with the answer. The "
+              "repair landed - that is what `ok` says - and the sentence adds "
+              "the part nothing else would ever tell this run: another session "
+              "took its lock over while the manifest was being written: %r"
+              % (said2,),
+              ok2 is True and "NOT released" in said2
+              and "took it over" in said2
+              and json.load(open(mpath2))["phases"][0]["tasks"][0]["commit"]
+              is None)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

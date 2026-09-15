@@ -10,6 +10,7 @@ script that returns an exit code.
 
 Usage:
   audit-lock.py acquire <name> [--project DIR] [--note TEXT] [--takeover]
+                               [--wait SECONDS]
   audit-lock.py release <name> [--project DIR] [--force]
   audit-lock.py status         [--project DIR] [--json]
 
@@ -21,13 +22,22 @@ This module carries no inline `--selftest` any more; its cases live in
   <name> is `index` or `phase-<phaseId>` -- the two tiers the orchestrator uses.
   --session / --pid override the identity written into the lock; they default to
   $CLAUDE_CODE_SESSION_ID and $CLAUDE_PID.
+  --wait says how long a LIVE holder is waited out before the refusal is printed.
+  It defaults to `_locks.WAIT_SECONDS`, and zero refuses the instant the name
+  exists -- which is what this command did before executors ran side by side.
 
 Exit codes:
-  0  acquired / released / status printed
+  0  acquired / released / status printed / already held by this run
   3  held by a LIVE run -- refuse and stop
   4  held by a run that is NOT alive -- rerun with --takeover to seize it
   2  usage error
   1  internal error
+
+`already held by this run` is `_locks.E_OURS` collapsed onto 0 by `shell_code`,
+at the PROCESS boundary and nowhere earlier: a shell reads this command as pass
+or fail, while an in-process caller reads `main()`'s return and has to tell a
+lock it was HANDED from one it TOOK. The line printed above the status is what
+says not to give it back -- the part a status cannot carry.
 
 WHY LIVENESS, NOT AGE
 The old rule was "a lock older than 60 minutes is a crashed run". That is a proxy
@@ -65,10 +75,13 @@ like any other run that is not there, and `_locks._interrupted_take()` is where
 that is decided. Anything present but unparseable stays LIVE -- something wrote it.
 
 A pid can be reused by an unrelated process, which reads as LIVE -- the same safe
-direction, and the reason the recorded pid must be one that outlives the acquire
-call (the orchestrator's own, via $CLAUDE_PID). This script's pid dies the
-instant it exits, so it is never what gets written; with no durable pid available
-we record none and stay on the age rule rather than inventing liveness.
+direction. WHICH pid is recorded is the holder's question rather than a constant:
+this script's pid dies the instant it exits, so what it writes is the run that
+invoked it (the orchestrator's own, via $CLAUDE_PID), and with no durable pid
+available it records none and stays on the age rule rather than inventing
+liveness. A caller that takes the lock and gives it back inside one process is
+the holder itself and records that, which is what makes a killed run's claim read
+dead the moment the run stops; `_locks._holder_pid` is where the two part.
 
 Acquire is also race-free: the claim is written into a sibling and then linked
 onto its real name, and the LINK is what refuses a name already taken. That
@@ -132,6 +145,10 @@ _write_lock = _locks._write_lock
 
 E_LIVE, E_STALE, E_USAGE, E_ERR = (_locks.E_LIVE, _locks.E_STALE,
                                    _locks.E_USAGE, _locks.E_ERR)
+# The re-entry answer, re-exported for the reason the four above are: the panel
+# takes this lock through `main()`, and telling a lock it was HANDED from one it
+# TOOK is what stands between it and giving back somebody else's hold.
+E_OURS = _locks.E_OURS
 
 
 # --- commands -----------------------------------------------------------------
@@ -142,9 +159,17 @@ E_LIVE, E_STALE, E_USAGE, E_ERR = (_locks.E_LIVE, _locks.E_STALE,
 # `_panel_write._lockmod()` — a dependency `_deps` attributed to the panel, so it
 # was never visible as `audit-task -> audit-lock` at all.
 def cmd_acquire(args, out):
+    # HANDED OFF BY CONSTRUCTION. This process exits the moment it has the lock,
+    # so the holder is the run that invoked it and the claim records that run's
+    # identity -- recording this one's would leave a lock whose holder is gone
+    # before the next command starts.
+    #
+    # THE ANSWER IS PASSED THROUGH WHOLE, including `E_OURS`. `shell_code` is
+    # where it becomes a process status, and the distance between the two is
+    # deliberate: an in-process caller reads what this returns.
     return _locks.acquire(args.project, args.name, note=args.note,
                           takeover=args.takeover, session=args.session,
-                          pid=args.pid, out=out)
+                          pid=args.pid, wait=args.wait, handed_off=True, out=out)
 
 
 def cmd_release(args, out):
@@ -168,6 +193,24 @@ def cmd_status(args, out):
     return 0
 
 
+def shell_code(code):
+    """The PROCESS status for an answer -> `E_OURS` reads as 0, everything else stands.
+
+    A SHELL READS THIS COMMAND AS PASS OR FAIL, and "you already have it" is not a
+    failure to take it: the step may proceed, which is what exit 0 means to every
+    caller of this command, and a fifth status would be read as a refusal by every
+    `if` already written against the table in the module docstring.
+
+    The collapse lives HERE rather than in `cmd_acquire` because the two callers
+    are not asking the same question. A shell asks whether it may go on; an
+    in-process caller -- the panel takes this lock through `main()` -- asks that
+    AND whether the lock is its own to give back, and an answer collapsed before
+    it arrives is how a caller comes to release a hold that is still in use. The
+    line the library printed above the status carries the rest.
+    """
+    return 0 if code == E_OURS else code
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-lock.py", add_help=True)
     p.add_argument("command", choices=["acquire", "release", "status"])
@@ -176,6 +219,7 @@ def main(argv, out=print):
     p.add_argument("--note", default=None)
     p.add_argument("--session", default=None)
     p.add_argument("--pid", default=None)
+    p.add_argument("--wait", type=float, default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--force", action="store_true")
     p.add_argument("--json", action="store_true")
@@ -205,4 +249,4 @@ if __name__ == "__main__":
         print("audit-lock.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_audit_lock.py - run that file instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(shell_code(main(sys.argv[1:])))

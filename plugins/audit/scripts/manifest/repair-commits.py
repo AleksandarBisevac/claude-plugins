@@ -178,22 +178,32 @@ def apply_repair(mpath, manifest, ans):
                               out=lambda *_a, **_k: None)
         if not _locks.held(code):
             return False, _locks.refusal(code, LOCK_NAME)
+    # `took` RATHER THAN `held`, and they are not the same question. A lock this
+    # run already holds is one this repair may write under and is NOT one it may
+    # give back: releasing it here would drop the claim out from under the hold
+    # that is still using it.
+    #
+    # A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THIS RUN EVER GETS, and
+    # it used to go into a printer that discards beside a code nothing read - so
+    # a repair that raced another session reported success and said nothing. It
+    # rides on the message, which is both what `main` prints and what `--json`
+    # carries, on the refusing path as well as the written one.
+    #
+    # STILL A `finally`, with ONE call inside it. The lock has to be given back
+    # even when the write raises, and the answer has to be decorable afterwards;
+    # a body of one call is what buys both, where a body of several left every
+    # early return past the release with nothing to attach the sentence to.
+    refused = None
     try:
-        manifest, cleared = _commit_trail.clear(manifest, lost)
-        findings, _warnings = _rules.validate(manifest)
-        if findings:
-            return False, ("the result would be invalid, so nothing was written: "
-                           + "; ".join(findings[:3]))
-        # Written back in whatever layout it arrived in - `_proposals._save`'s
-        # rule, which is the only correct one under the sharded form: a phase
-        # lives in a shard and a whole-file dump would flatten it.
-        if _mio.is_sharded(_mio.read_json(mpath)):
-            _mio.save_sharded(mpath, manifest)
-        else:
-            _mio.atomic_write_json(mpath, manifest)
+        problem, cleared = _clear_under_lock(mpath, manifest, lost)
     finally:
-        if _locks.held(code):
-            _locks.release(project, LOCK_NAME, out=lambda *_a, **_k: None)
+        if _locks.took(code):
+            rcode = _locks.release(project, LOCK_NAME,
+                                   out=lambda *_a, **_k: None)
+            if rcode != 0:
+                refused = _locks.release_refusal(rcode, LOCK_NAME)
+    if problem is not None:
+        return False, _and_the_lock(problem, refused)
 
     # The record. Fail-soft by the journal's own contract: a repair that
     # SUCCEEDED must not be reported as failed because the note about it could
@@ -219,8 +229,43 @@ def apply_repair(mpath, manifest, ans):
         "actor": {"sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
                   "via": "cli"}},
         config={"manifestPath": rel}))
-    return True, ("journaled" if ok else "NOT journaled (the journal is "
-                  "unwritable or disabled) - the manifest was still repaired")
+    return True, _and_the_lock(
+        "journaled" if ok else "NOT journaled (the journal is unwritable or "
+        "disabled) - the manifest was still repaired", refused)
+
+
+def _and_the_lock(message, refused):
+    """`message`, with the lock's own sentence after it when there is one.
+
+    One joiner rather than the same `%s -- %s` at each return, because the two
+    halves answer different questions and every path owes the reader both: what
+    the repair did, and whether the lock it did it under was still this run's at
+    the end.
+    """
+    return message if not refused else "%s -- %s" % (message, refused)
+
+
+def _clear_under_lock(mpath, manifest, lost):
+    """Clear the lost commits and write the manifest -> `(problem, cleared)`.
+
+    `problem` is None when the write landed. Its own function so the release
+    above has ONE answer to decorate: inline, the refusal below returned past the
+    `finally` that released, so a lock that declined could only be reported on
+    the path where nothing else had gone wrong.
+    """
+    manifest, cleared = _commit_trail.clear(manifest, lost)
+    findings, _warnings = _rules.validate(manifest)
+    if findings:
+        return ("the result would be invalid, so nothing was written: "
+                + "; ".join(findings[:3])), cleared
+    # Written back in whatever layout it arrived in - `_proposals._save`'s rule,
+    # which is the only correct one under the sharded form: a phase lives in a
+    # shard and a whole-file dump would flatten it.
+    if _mio.is_sharded(_mio.read_json(mpath)):
+        _mio.save_sharded(mpath, manifest)
+    else:
+        _mio.atomic_write_json(mpath, manifest)
+    return None, cleared
 
 
 def main(argv):

@@ -158,8 +158,16 @@ def _cases(check):
                   M.read_lock(os.path.join(ld, "phase-P1.lock")).get("pid")
                   == os.getpid())
 
+            # A SECOND SESSION CARRIES A SECOND IDENTITY, and these calls used to
+            # carry the holder's own pid - invisible while `acquire` never asked
+            # whose lock it had found, and now the difference between reading a
+            # refusal and reading the answer for re-entry. `os.getppid()` is a
+            # live pid that is not this run's. `--wait 0` keeps the refusal
+            # immediate: the bound is a separate case, and paying it here would
+            # buy this suite the same verdict several seconds later.
+            other = str(os.getppid())
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B",
-                             "--pid", str(os.getpid())], tmp)
+                             "--wait", "0", "--pid", other], tmp)
             check("c2 a live holder refuses (exit 3)", code == M.E_LIVE)
             check("c2b and names the holder", "sess-A" in txt)
             check("c2c and does not offer a takeover", "--takeover" not in txt)
@@ -177,20 +185,20 @@ def _cases(check):
             info["startedAt"] = old
             M._write_lock(p1, info)
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B",
-                             "--pid", str(os.getpid())], tmp)
+                             "--wait", "0", "--pid", other], tmp)
             check("c4 a 95-min-old LIVE run still refuses", code == M.E_LIVE)
 
             info["pid"] = dead_pid
             M._write_lock(p1, info)
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B",
-                             "--pid", str(os.getpid())], tmp)
+                             "--pid", other], tmp)
             check("c5 a dead holder offers takeover (exit 4)", code == M.E_STALE)
             check("c5b and says how", "--takeover" in txt)
             check("c5c but has not seized it yet",
                   M.read_lock(p1).get("sessionId") == "sess-A")
 
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B", "--takeover",
-                             "--pid", str(os.getpid())], tmp)
+                             "--pid", other], tmp)
             check("c6 --takeover seizes it", code == 0 and "took over" in txt)
             after = M.read_lock(p1)
             check("c6b now owned by B", after.get("sessionId") == "sess-B")
@@ -222,7 +230,8 @@ def _cases(check):
 
             # A lock written by the old prose (no pid) must still work.
             M._write_lock(p1, {"hostname": here, "startedAt": now, "note": "legacy"})
-            code, _ = run(["acquire", "phase-P1", "--session", "sess-C"], tmp)
+            code, _ = run(["acquire", "phase-P1", "--session", "sess-C",
+                           "--wait", "0"], tmp)
             check("c11 a legacy pid-less lock is honoured", code == M.E_LIVE)
             M._write_lock(p1, {"hostname": here, "startedAt": old, "note": "legacy"})
             code, _ = run(["acquire", "phase-P1", "--session", "sess-C"], tmp)
@@ -307,15 +316,21 @@ def _cases(check):
                     # claim in it: the fail-open is on the CREATE and must never
                     # reach the holder, or a refusal becomes a shrug.
                     os.chmod(pld, 0o700)
+                    # THE HOLDER'S PID IS NOT THE CALLER'S. It was `os.getpid()`
+                    # on both sides, which made the caller the holder the moment
+                    # `acquire` started asking whose claim it had found - so the
+                    # case would have graded the answer for re-entry as the
+                    # refusal it is named for. `os.getppid()` is live and is
+                    # somebody else.
                     M._write_lock(os.path.join(pld, "index.lock"),
-                                  {"hostname": here, "pid": os.getpid(),
+                                  {"hostname": here, "pid": os.getppid(),
                                    "sessionId": "s-HOLDER", "startedAt": now,
                                    "note": "holding"})
                     os.chmod(pld, 0o500)
                     lines = []
                     _ok, _code = _harness.attempt(
                         M.acquire, pro, "index", session="s-RO",
-                        pid=os.getpid(), out=lines.append)
+                        pid=os.getpid(), wait=0, out=lines.append)
                     check("p2 ...while a LIVE claim in that same unwritable "
                           "directory is still refused as held, and its holder "
                           "still named - a lock that cannot be taken and a lock "
@@ -332,6 +347,124 @@ def _cases(check):
     with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
         _rc = M.main(["frobnicate"], out=lambda *_: None)
     check("m1 an unknown command is a usage error", _rc == M.E_USAGE)
+
+    # THE BLOCK LABELS ARE NOT CASE IDS. `stage` prints its label on a FAIL
+    # line when a fixture raises, and one spelled like the first case inside it
+    # would let a reader take "the block never ran" for "that case went red".
+    _harness.stage(check, "sc-block", _shell_code_cases)
+    _harness.stage(check, "ho-block", _handed_off_cases)
+
+
+# --- the two readers of this command, and what each is told -------------------
+def _shell_code_cases(check):
+    """A shell asks whether it may go on; a caller in this process asks more."""
+    check("sc1 the collapse is a named function, so both readings can be shown "
+          "to differ. A shell reads this command as pass or fail and 'you "
+          "already have it' is not a failure to take it",
+          M.shell_code(M.E_OURS) == 0 and M.shell_code(0) == 0)
+    check("sc2 ...and nothing else is collapsed with it. A refusal that came "
+          "back as 0 is a caller writing under a lock somebody else holds, "
+          "which is the whole failure this command exists to prevent",
+          [M.shell_code(c) for c in (M.E_LIVE, M.E_STALE, M.E_USAGE, M.E_ERR)]
+          == [M.E_LIVE, M.E_STALE, M.E_USAGE, M.E_ERR])
+    if not shutil.which("git"):
+        _harness.skip(check, "sc3 the honest answer reaches an in-process caller",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    tmp = tempfile.mkdtemp(prefix="audit-lock-ours-")
+    try:
+        subprocess.run(["git", "init", "-q", tmp], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        quiet = lambda *_a, **_k: None                      # noqa: E731
+        M.acquire(tmp, "phase-P5", note="the outer hold", session="sess-X",
+                  pid=str(os.getppid()), out=quiet)
+        said = []
+        code = M.main(["acquire", "phase-P5", "--project", tmp,
+                       "--session", "sess-X", "--pid", str(os.getppid())],
+                      out=said.append)
+        check("sc3 `main` hands an in-process caller the answer WHOLE. The "
+              "panel takes this lock through it and has to tell a lock it was "
+              "handed from one it took - collapsed before it arrives, that "
+              "caller gives back a hold still in use",
+              code == M.E_OURS, "exit %s %r" % (code, said))
+        env = dict(os.environ)
+        env["CLAUDE_CODE_SESSION_ID"] = "sess-X"
+        env.pop("CLAUDE_PID", None)
+        ran = subprocess.run([sys.executable, M.__file__, "acquire", "phase-P5",
+                              "--project", tmp],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             env=env)
+        check("sc4 ...while the PROCESS exits 0, which is the other reader's "
+              "question. This drives the whole file rather than the function, "
+              "because a collapse nothing wires up is a collapse that never "
+              "happens",
+              ran.returncode == 0
+              and b"already yours" in (ran.stdout + ran.stderr),
+              "%s %r" % (ran.returncode, (ran.stdout + ran.stderr)[-200:]))
+        M.release(tmp, "phase-P5", session="sess-X", out=quiet)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# --- this process is never the holder, and a live one is waited out -----------
+def _handed_off_cases(check):
+    """The claim outlives this command, so it records the run that invoked it."""
+    if not shutil.which("git"):
+        _harness.skip(check, "ho1 the recorded holder is read back off disk",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    tmp = tempfile.mkdtemp(prefix="audit-lock-handed-")
+    prev = os.environ.get("CLAUDE_PID")
+    os.environ.pop("CLAUDE_PID", None)
+    try:
+        subprocess.run(["git", "init", "-q", tmp], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ld = M.lock_dir(tmp)
+        said = []
+        code = M.main(["acquire", "phase-P6", "--project", tmp,
+                       "--session", "sess-H"], out=said.append)
+        info = M.read_lock(os.path.join(ld, "phase-P6.lock"))
+        check("ho1 with no durable pid to name, this command records NONE and "
+              "says the age rule applies. Its own pid dies the instant it "
+              "exits, so writing that would make every lock taken from a shell "
+              "read dead before the next command started",
+              code == 0 and "pid" not in info
+              and any("age rule" in x for x in said),
+              "%r %r" % (info, said))
+        M.release(tmp, "phase-P6", session="sess-H", out=lambda *_a, **_k: None)
+
+        os.environ["CLAUDE_PID"] = str(os.getppid())
+        M.main(["acquire", "phase-P6", "--project", tmp, "--session", "sess-H"],
+               out=lambda *_a, **_k: None)
+        info = M.read_lock(os.path.join(ld, "phase-P6.lock"))
+        check("ho2 ...and where there IS one it is the run that invoked this "
+              "command, never this command's own process - the identity whose "
+              "death is meant to end the hold",
+              info.get("pid") == os.getppid() and info.get("pid") != os.getpid(),
+              repr(info))
+
+        started = time.monotonic()
+        code = M.main(["acquire", "phase-P6", "--project", tmp,
+                       "--session", "sess-OTHER", "--pid", str(os.getpid()),
+                       "--wait", "0"], out=lambda *_a, **_k: None)
+        instant = time.monotonic() - started
+        started = time.monotonic()
+        code2 = M.main(["acquire", "phase-P6", "--project", tmp,
+                        "--session", "sess-OTHER", "--pid", str(os.getpid()),
+                        "--wait", "0.4"], out=lambda *_a, **_k: None)
+        waited = time.monotonic() - started
+        check("ho3 ...and `--wait` reaches the bound rather than being parsed "
+              "and dropped: the same refusal arrives at once for zero and only "
+              "after the bound for a positive one",
+              code == M.E_LIVE and code2 == M.E_LIVE
+              and instant < 1.0 and waited >= 0.35,
+              "%.3fs then %.3fs" % (instant, waited))
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PID", None)
+        else:
+            os.environ["CLAUDE_PID"] = prev
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _selftest():

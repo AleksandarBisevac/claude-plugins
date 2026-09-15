@@ -390,7 +390,12 @@ def cmd_set(args, out):
     try:
         return _locked_set(args, project, config, mpath, phase_id, tier, out)
     finally:
-        _panel_write.release_index_lock(lock)
+        # A RELEASE THE LOCK DECLINES IS THE ONLY NOTICE A DISPLACED RUN GETS,
+        # so it is reported rather than dropped. Under `--json` it goes to
+        # stderr: stdout has to stay one parseable object, and a sentence
+        # appended after that object is neither the news nor the object.
+        _panel_write.release_index_lock(
+            lock, out=(_panel_write.stderr_line if args.as_json else out))
 
 
 def main(argv, out=print):

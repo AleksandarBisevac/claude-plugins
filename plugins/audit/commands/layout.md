@@ -54,7 +54,11 @@ Everything below runs for **both** directions unless a step says otherwise.
    ```
    **0** → proceed. **3** → a live run holds it: print the output verbatim and STOP. **4** → the
    holder is not alive: print the output, ask the user to confirm (AskUserQuestion), then rerun
-   with `--takeover`.
+   with `--takeover`. A live holder is waited out for a moment before **3** is printed, so a
+   command that overlaps another's structural write is delayed rather than refused; `--wait 0`
+   asks for the refusal immediately.
+   If the output says the lock is **already yours**, it was not taken here — proceed, and skip
+   the release in step 3: giving it back would drop it out from under whatever still holds it.
 4. **Refuse a mid-run or dirty-tree change.** If any phase is `in_progress`, stop and ask the user
    to finish or pause it first (the script enforces this too; `--force` overrides). Prefer a
    **clean working tree**, so the layout change lands in its own commit and is reviewable as one.
@@ -122,8 +126,9 @@ run to find out.
 ## 3. After — release, then report what changed on disk
 
 Release the index lock (`audit-lock.py release index --project <gitRoot>`), including on the
-failure paths you control. A release that exits **3** means you were taken over: stop and tell the
-user rather than `--force`-ing past it.
+failure paths you control — unless the acquire in step 1 said the lock was already yours, in which
+case it is not yours to give back. A release that exits **3** means you were taken over: stop and
+tell the user rather than `--force`-ing past it.
 
 Report the backup path in both directions, and say what it is: `.bak-<UTC>` is a **restore point
 for this command**, not an undo for the plan. Restoring it discards every manifest write made

@@ -2868,6 +2868,12 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
         out("  pointer:  %s now names it" % (ids.get("taskId") or args.phase,))
     else:
         out("  pointer:  NOT updated - %s" % (pointer["reason"],))
+    # A LOCK THAT REFUSED TO BE GIVEN BACK IS ITS OWN LINE. It does not say the
+    # pointer failed - it did not - it says another session held this phase while
+    # the write was happening, which is a fact about everything written here and
+    # not only about the pointer.
+    if pointer.get("releaseRefused"):
+        out("  lock:     %s" % (pointer["releaseRefused"],))
     # ASKED ON ITS OWN TERMS, NEVER OFF THE POINTER'S ANSWER. The two writes have
     # different subjects and different guards - a pointer refused because the plan
     # has no such task says nothing about whether this plan has ever recorded a run
@@ -2886,6 +2892,12 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
         # reader who saw one word for all three would have to open the manifest to
         # find out which.
         out("  boundary: NOT stamped - %s" % (since["reason"],))
+    # THE SAME LINE THE POINTER GETS, for the same reason and on either verdict:
+    # a lock that refused to be given back says another session held it while
+    # this stamp was being written, which is a fact about the plan rather than
+    # about whether the stamp landed.
+    for said in (since.get("releaseRefused") or []):
+        out("  lock:     %s" % (said,))
     return {"recorded": True, "pointer": bool(pointer["written"]),
             "boundary": since["at"], "boundaryWritten": bool(since["written"])}
 

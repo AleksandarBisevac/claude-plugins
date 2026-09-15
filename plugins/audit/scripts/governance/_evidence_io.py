@@ -1021,7 +1021,14 @@ def _set_pointer(body, scope, ids, pointer, sharded):
 
 def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
                   config=None):
-    """Point the plan at a recorded run. `{"written", "reason", "path"}`.
+    """Point the plan at a recorded run.
+    `{"written", "reason", "path", "releaseRefused"}`.
+
+    `releaseRefused` is set only on the written path, and only when the phase
+    lock declined to be given back -- which says another session took it over
+    while this pointer was being written. A write that succeeded is still
+    `written: True`; what the sentence adds is that something else was writing
+    beside it, and the caller prints it rather than the lock losing it.
 
     WRITES THE SHARD AND NEVER THE INDEX. A task commit that carried the index is
     what makes two parallel phases conflict on merge, and the pointer is a runtime
@@ -1050,22 +1057,33 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
     previous, problem = _set_pointer(body, scope, ids, pointer, sharded)
     if problem:
         return {"written": False, "reason": problem, "path": None}
-    taken = False
+    lock_name = "phase-%s" % (ids.get("phaseId"),)
+    code = None
     if state == "free":
-        taken = _locks.held(_locks.acquire(project, "phase-%s" % (ids.get("phaseId"),),
-                                           note="recording test evidence",
-                                           session=session_id,
-                                           out=lambda *_a: None))
-        if not taken:
+        code = _locks.acquire(project, lock_name,
+                              note="recording test evidence",
+                              session=session_id, out=lambda *_a: None)
+        if not _locks.held(code):
             return {"written": False,
                     "reason": "the phase lock could not be taken; " + RECONCILE_HINT,
                     "path": None}
+    # WHAT MAY BE GIVEN BACK IS A NARROWER QUESTION THAN WHAT MAY BE WRITTEN
+    # UNDER. `_locks.took` is the one that answers it: a lock this run already
+    # held is held, and releasing it here would take it from the run that is
+    # still using it.
+    refused = None
     try:
         _mio.atomic_write_json(path, body)
     finally:
-        if taken:
-            _locks.release(project, "phase-%s" % (ids.get("phaseId"),),
-                           session=session_id, out=lambda *_a: None)
+        if _locks.took(code):
+            rcode = _locks.release(project, lock_name, session=session_id,
+                                   out=lambda *_a: None)
+            if rcode != 0:
+                # THE REFUSAL IS A VALUE SOMEBODY READS. It says another session
+                # took this phase's lock while the pointer was being written, so
+                # the write above may have raced one of theirs -- and it used to
+                # go into a printer that discards and a code nobody looked at.
+                refused = _locks.release_refusal(rcode, lock_name)
     # ONLY NOW. This row says the PLAN moved, and it is written after the move
     # rather than beside the attempt: a refused write above returns before
     # reaching here, so the chain can never assert a transition that did not
@@ -1086,7 +1104,8 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
                       pointer.get("runId"), pointer.get("status")),
         "details": details,
     }, config=config)
-    return {"written": True, "reason": None, "path": path}
+    return {"written": True, "reason": None, "path": path,
+            "releaseRefused": refused}
 
 
 def latest_by_subject(rows):
@@ -1493,7 +1512,13 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
                          config=None):
     """Stamp `meta.evidenceSince` the first time this plan records a run.
 
-    `{"written", "reason", "at", "path"}`. Every `written: False` is a designed
+    `{"written", "reason", "at", "path"}`, plus `releaseRefused` -- the sentences
+    for any lock that declined to be given back, which says another session took
+    it over while this stamp was being written. It is present on the refusing
+    paths too, because a run that was displaced was displaced whether or not its
+    own write went in.
+
+    Every `written: False` is a designed
     outcome carrying a sentence -- an already-stamped plan, a plan with nothing to
     date the boundary from, a lock another session is holding -- and none of them
     is an error path, because the ledger row is standing in every one of them.
@@ -1531,6 +1556,11 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
         # that moment and before this one would be excused by a claim with
         # nothing behind it.
         return _refused("no recorded run to date the boundary from")
+    # `took` DECIDES WHAT GOES ON THIS LIST, not `held`. The two came apart when
+    # `acquire` learnt to answer a caller that already holds what it asked for:
+    # that answer is held, and a name added here on it would be given back at the
+    # end -- out from under the hold that is still using it. `lock_state` usually
+    # says `ours` before it gets that far, and usually is not a rule.
     taken, refusal = [], None
     for name, label in _since_locks(phase_id):
         state, detail = lock_state(project, name, label, session_id=session_id,
@@ -1539,25 +1569,29 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
             refusal = detail
             break
         if state == "free":
-            if not _locks.held(_locks.acquire(project, name,
-                                              note="stamping the evidence boundary",
-                                              session=session_id,
-                                              out=lambda *_a: None)):
+            code = _locks.acquire(project, name,
+                                  note="stamping the evidence boundary",
+                                  session=session_id, out=lambda *_a: None)
+            if not _locks.held(code):
                 refusal = "the %s lock could not be taken; %s" % (label, SINCE_HINT)
                 break
-            taken.append(name)
+            if _locks.took(code):
+                taken.append(name)
+    # ONE CALL INSIDE THE `finally`, so there is ONE answer to decorate. The
+    # release has to happen even when the write raises, and a declined release is
+    # news the caller has to see on the refusing paths too -- and those used to
+    # return from INSIDE the block, past the release, with nothing left to attach
+    # a sentence to.
     try:
-        if refusal is not None:
-            return _refused(refusal)
-        meta[SINCE_KEY] = derived
-        try:
-            _mio.atomic_write_json(manifest_path, body)
-        except Exception as exc:
-            return _refused("cannot write %s: %s"
-                            % (repo_relative_or_token(project, manifest_path), exc))
+        answer = _stamp_since(project, manifest_path, body, meta, derived, refusal)
     finally:
-        for name in taken:
-            _locks.release(project, name, session=session_id, out=lambda *_a: None)
+        # A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THIS RUN GETS, and it
+        # used to go into a printer that discards beside a code nothing read.
+        declined = _give_back(project, taken, session_id)
+    if declined:
+        answer["releaseRefused"] = declined
+    if not answer["written"]:
+        return answer
     # ONLY NOW, and for `write_pointer`'s reason one field over: this row asserts
     # that the PLAN moved, so it is written after the move and never beside the
     # attempt. A refused stamp returns above without reaching here, which is what
@@ -1578,8 +1612,44 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
         "summary": "the evidence boundary is %s: %s" % (derived["at"], SINCE_BASIS),
         "details": details,
     }, config=config)
+    return answer
+
+
+def _stamp_since(project, manifest_path, body, meta, derived, refusal):
+    """Put the boundary in the document -> the answer `write_evidence_since` gives.
+
+    Its own function so the release around it has ONE value to decorate, and so
+    the release runs whatever this does. The stamp itself is the whole body: a
+    refusal decided before the locks were taken is carried in rather than
+    recomputed, because that decision has already been made and made once.
+    """
+    if refusal is not None:
+        return _refused(refusal)
+    meta[SINCE_KEY] = derived
+    try:
+        _mio.atomic_write_json(manifest_path, body)
+    except Exception as exc:
+        return _refused("cannot write %s: %s"
+                        % (repo_relative_or_token(project, manifest_path), exc))
     return {"written": True, "reason": None, "at": derived["at"],
             "path": manifest_path}
+
+
+def _give_back(project, names, session_id):
+    """Release each of `names` -> the sentences for the ones the lock DECLINED.
+
+    A LIST BECAUSE THE STAMP TAKES MORE THAN ONE LOCK, and a run displaced on one
+    of them was displaced: collapsing two refusals into a first-one-wins string
+    would drop the half the reader has no other way to learn. Empty is the normal
+    answer and is what the caller reads as "nothing to say".
+    """
+    said = []
+    for name in names:
+        code = _locks.release(project, name, session=session_id,
+                              out=lambda *_a: None)
+        if code != 0:
+            said.append(_locks.release_refusal(code, name))
+    return said
 
 
 def new_run_id():

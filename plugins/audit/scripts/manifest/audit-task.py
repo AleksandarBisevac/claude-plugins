@@ -3038,7 +3038,12 @@ def _under_lock(args, project, out, body):
     try:
         return body(config, mpath)
     finally:
-        _release_lock(lock)
+        # A RELEASE THE LOCK DECLINES IS THE ONLY NOTICE THIS RUN GETS THAT
+        # ANOTHER ONE TOOK ITS LOCK, so it is printed rather than dropped -- and
+        # under `--json` it goes to stderr for the reason the line above states
+        # about the note: the payload stays one parseable object.
+        _release_lock(lock, out=(_panel_write.stderr_line if args.as_json
+                                 else out))
 
 
 def cmd_phase_add(args, out):

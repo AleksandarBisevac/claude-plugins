@@ -351,30 +351,29 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     one; this one is an import.
     """
     git_root = os.path.join(project, (config or {}).get("gitRoot") or ".")
-    # A LOCK THIS SESSION ALREADY HOLDS IS NOT A CONFLICT (F260). The natural flow
-    # is take-lock -> several structural writes -> release, which is what the lock
-    # is FOR; a script inside that window used to exit 3 saying a pid was running
-    # on this host, and the pid was the caller. `borrowed` is the load-bearing half
-    # of the handle: the outer holder still needs the lock after this write, so the
-    # release below must not give it away.
-    try:
-        _ld = _locks.lock_dir(git_root)
-        mine = _locks.held_by_us(_locks.read_lock(
-            os.path.join(_ld, "index.lock"))) if _ld else {"ours": False}
-    except Exception:
-        mine = {"ours": False}
-    if mine.get("ours"):
-        out("%s the index lock is already yours (%s) - continuing without "
-            "retaking it, and leaving it held for whatever took it."
-            % (prefix, mine.get("why")))
-        return {"held": True, "borrowed": True, "mod": _locks,
-                "project": git_root}
+    # A LOCK THIS SESSION ALREADY HOLDS IS NOT A CONFLICT. The natural flow is
+    # take-lock -> several structural writes -> release, which is what the lock is
+    # FOR; a script inside that window used to exit 3 saying a pid was running on
+    # this host, and the pid was the caller. `borrowed` is the load-bearing half
+    # of the handle: the outer holder still needs the lock after this write, so
+    # the release below must not give it away.
+    #
+    # ASKED BY THE LOCK, NOT HERE. This module used to read the claim and compare
+    # the identity itself, one call ahead of an `acquire` that never asked - two
+    # implementations of one rule, and only one of them was reached by anything
+    # that took a lock another way. `E_OURS` is that answer now, and `took()` is
+    # what separates proceeding from giving the lock back.
     lines = []
     try:
         code = _locks.acquire(git_root, "index", note=note,
                               takeover=bool(takeover), out=lines.append)
     except Exception:
         code = None
+    if code == _locks.E_OURS:
+        for line in lines:
+            out("%s %s" % (prefix, line))
+        return {"held": True, "borrowed": True, "mod": _locks,
+                "project": git_root}
     if code == 0:
         return {"held": True, "mod": _locks, "project": git_root}
     if code == _locks.E_LIVE:
@@ -402,24 +401,53 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
         return {"held": False}
 
 
-def release_index_lock(lock):
-    """Give the lock back. Never raises: a write that succeeded must not be
-    reported as failed because the release did."""
+def stderr_line(text):
+    """Where a line that is NOT part of the payload goes.
+
+    A command whose stdout is one JSON object has nowhere on stdout to say that
+    its lock was taken over while it worked: a sentence before the object or
+    after it leaves stdout unparseable, and dropping the sentence is how the
+    displaced run never found out. Lives here beside `release_index_lock`
+    because both writers of the index need it and one copy each is two answers
+    to one question.
+    """
+    sys.stderr.write("%s\n" % (text,))
+
+
+def release_index_lock(lock, out=None):
+    """Give the lock back -> the sentence when the lock DECLINED, else None.
+
+    Never raises: a write that succeeded must not be reported as failed because
+    the release did.
+
+    A DECLINED RELEASE IS NEWS AND USED TO BE DROPPED HERE. The lock refuses to
+    let a run hand back a claim that is no longer its own, which is the only
+    notice a displaced session ever gets that another one has been writing beside
+    it - and this function silenced the printer and threw the code away, so the
+    command finished and reported success. `out` prints it where the caller has a
+    printer; the return value is there for the one that does not.
+    """
     if not lock or not lock.get("held"):
-        return
+        return None
     if lock.get("borrowed"):
-        # We never took it, so it is not ours to give back (F260). Releasing here
-        # would drop the lock out from under whatever is still holding it, which
-        # is a worse bug than the refusal this replaced.
-        return
+        # We never took it, so it is not ours to give back. Releasing here would
+        # drop the lock out from under whatever is still holding it, which is a
+        # worse bug than the refusal this replaced.
+        return None
     try:
         if lock.get("legacy"):
             os.unlink(lock["legacy"])
-            return
-        lock["mod"].release(lock["project"], "index",
-                            out=lambda *_a, **_k: None)
+            return None
+        code = lock["mod"].release(lock["project"], "index",
+                                   out=lambda *_a, **_k: None)
+        if code == 0:
+            return None
+        said = lock["mod"].release_refusal(code, "index")
     except Exception:
-        pass
+        return None
+    if out is not None:
+        out(said)
+    return said
 
 
 def write_policy(project, body):
@@ -712,11 +740,16 @@ def sweep_worktrees(project, body):
             if failure:
                 break
     finally:
-        _release_write_lock(lock)
+        _lock_said = _release_write_lock(lock)
     result = {"ok": failure is None, "applied": done, "plan": plan,
               "dryRun": False}
     if failure:
         result["findings"] = [failure]
+    # A DECLINED RELEASE RIDES WITH THE ANSWER. It does not say the sweep failed
+    # - it did not - it says another session held the index while these worktrees
+    # were being moved, which the operator needs beside the rows.
+    if _lock_said:
+        result["warnings"] = [_lock_said]
     result.update(_journal(project, read_config(project), "worktrees.sweep",
                            _output.posix_rel(git_root, project) or ".", done))
     return result
@@ -907,6 +940,13 @@ def _acquire_write_lock(project, config, touched_phases=None):
                              "--pid", str(os.getpid())], out=out.append)
     except Exception:
         code = None
+    if code == getattr(lockmod, "E_OURS", _locks.E_OURS):
+        # BORROWED, EXACTLY AS `acquire_index_lock` MEANS IT. The lock is already
+        # this run's, so the write may go ahead - and the handle says the claim
+        # was not taken here, which is what stops the release below from handing
+        # back a lock the hold around it is still using.
+        return {"blocked": False, "held": True, "borrowed": True,
+                "project": git_root, "mod": lockmod}
     if code == 0:
         return {"blocked": False, "held": True, "project": git_root, "mod": lockmod}
     if code == getattr(lockmod, "E_LIVE", 3):
@@ -939,21 +979,36 @@ def _acquire_write_lock(project, config, touched_phases=None):
 
 
 def _release_write_lock(lock):
-    """Give the lock back. Never raises: a write that succeeded must not be
-    reported as failed because the release did."""
+    """Give the lock back -> the sentence when the lock DECLINED, else None.
+
+    Never raises: a write that succeeded must not be reported as failed because
+    the release did.
+
+    `release_index_lock`'s two rules, one endpoint over: a BORROWED handle is not
+    this call's to give back, and a refusal is a value somebody reads. The refusal
+    says another session took this project's index lock while the request was
+    writing, which is a fact about everything the response reports - so each
+    caller carries it into `warnings` rather than letting it die in a printer.
+    """
     if not lock or not lock.get("held"):
-        return
+        return None
+    if lock.get("borrowed"):
+        return None
     try:
         if lock.get("legacy"):
             os.unlink(lock["legacy"])
-            return
+            return None
         mod = lock.get("mod")
-        if mod is not None:
-            mod.main(["release", "index", "--project", lock.get("project") or ".",
-                      "--session", _panel_session(), "--pid", str(os.getpid())],
-                     out=lambda *_a, **_k: None)
+        if mod is None:
+            return None
+        code = mod.main(["release", "index", "--project", lock.get("project") or ".",
+                         "--session", _panel_session(), "--pid", str(os.getpid())],
+                        out=lambda *_a, **_k: None)
+        if code == 0:
+            return None
+        return _locks.release_refusal(code, "index")
     except Exception:
-        pass
+        return None
 
 
 # --- what a save would change, and the record of it -------------------------------
@@ -1296,7 +1351,12 @@ def write_config(project, obj):
     try:
         _atomic_write_json(path, obj)
     finally:
-        _release_write_lock(lock)
+        said = _release_write_lock(lock)
+    # The config was still written; what the sentence adds is that something else
+    # was writing beside it, which is not a reason to report a failure and is not
+    # a thing to drop either.
+    if said:
+        warnings = list(warnings) + [said]
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
            "path": _output.posix_rel(path, project)}
     # `current`, not the config just written: the actor is resolved under the mode
@@ -2005,7 +2065,11 @@ def apply_composition(project, patch):
     except ValueError as exc:
         return {"ok": False, "findings": [str(exc)]}
     finally:
-        _release_write_lock(lock)
+        said = _release_write_lock(lock)
+    # As in `write_config`: the patch landed, and the sentence says another
+    # session took the index lock while it was landing.
+    if said:
+        warnings = list(warnings) + [said]
     out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
            "healed": healed,
            "path": _output.posix_rel(mpath, project),

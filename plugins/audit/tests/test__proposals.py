@@ -485,6 +485,30 @@ def _cases(check):
               == [_locks.refusal(_locks.E_LIVE, M.LOCK_NAME)]
               and "pid " not in _locks.refusal(_locks.E_LIVE, M.LOCK_NAME)
               and os.sep not in _locks.refusal(_locks.E_LIVE, M.LOCK_NAME))
+
+        # THE OTHER END OF THE SAME VALUE, and the one that used to be thrown
+        # away: the release code went into a printer that discards, so a run
+        # displaced while it was writing finished and reported success. The lock
+        # is made to decline rather than raced into declining - the property is
+        # that the code is READ and the sentence reaches the payload.
+        _lk_write()
+        _real_rel = _locks.release
+        _locks.release = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            _ok4, _info4 = M.run(_lk_mp, "materialize", ["PROP-1"])
+        finally:
+            _locks.release = _real_rel
+            _locks.release(os.path.dirname(os.path.dirname(
+                os.path.dirname(_lk_mp))), M.LOCK_NAME,
+                out=lambda *_a, **_k: None)
+        check("lk3b ...and a release the lock DECLINES rides back with the "
+              "answer. The write landed, so this is a warning and not a "
+              "finding; what it adds is that another session took this lock "
+              "over while the manifest was being written: %r"
+              % ((_ok4, (_info4 or {}).get("warnings")),),
+              _ok4 is True
+              and any("NOT released" in w
+                      for w in ((_info4 or {}).get("warnings") or [])))
         # THE THIRD ANSWER, and leaving it out re-broke the panel. `acquire` says
         # `E_ERR` both for "not a git repository" - no lock to take, and never was
         # - and for a real failure, so refusing on every non-zero code refused

@@ -464,7 +464,12 @@ def main(argv, out=print):
         code, answer = commit_index(manifest, phase, args.manifest, project,
                                     git_root, subject=args.subject)
     finally:
-        _panel_write.release_index_lock(lock)
+        # A RELEASE THE LOCK DECLINES SAYS ANOTHER RUN TOOK THIS OVER WHILE THE
+        # COMMIT WAS BEING MADE, which a reader of this output needs more than
+        # the commit line. Under `--json` it goes to stderr, where it cannot
+        # break the one object stdout is carrying.
+        _panel_write.release_index_lock(
+            lock, out=(_panel_write.stderr_line if args.as_json else out))
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:

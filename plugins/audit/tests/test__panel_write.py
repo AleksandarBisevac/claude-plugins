@@ -1968,6 +1968,60 @@ def _cases(check):
     finally:
         _shutil.rmtree(_lk_proj, ignore_errors=True)
 
+    # THE SECOND WRITER OF THE INDEX LOCK, held to the same two rules: a lock
+    # this run already holds is BORROWED, and a release the lock declines is a
+    # value somebody reads rather than a line nobody printed.
+    #
+    # DRIVEN WITH THE COMMAND MODULE IN `_lockmod`'s PLACE. This path asks its
+    # handle for `main`, and the read-side handle the panel carries is the
+    # library, which deliberately has none - so the seam is how the branches
+    # below get driven at all, and a branch no case can drive is a branch
+    # nothing proves.
+    _wl_proj = tempfile.mkdtemp(prefix="write-lock-")
+    try:
+        _sp.run(["git", "init", "-q", _wl_proj], check=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _wl_cmd = _loader.load_script("audit-lock.py", modname="audit_lock_pw")
+        _wl_prev = M._lockmod
+        M._lockmod = lambda: _wl_cmd
+        try:
+            _wl_ld = M._locks.lock_dir(_wl_proj)
+            os.makedirs(_wl_ld, exist_ok=True)
+            _wl_lock = os.path.join(_wl_ld, "index.lock")
+            with open(_wl_lock, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps({"sessionId": M._panel_session(),
+                                      "pid": os.getppid(), "hostname": "h",
+                                      "note": "the outer hold"}))
+            _wl = M._acquire_write_lock(_wl_proj, {}, None)
+            check("wl1 a lock this panel run already holds lets the write "
+                  "proceed and is marked BORROWED - the endpoint may write "
+                  "under it, and the claim is not this call's to hand back",
+                  _wl.get("blocked") is False and _wl.get("borrowed") is True,
+                  repr(_wl))
+            _wl_said = M._release_write_lock(_wl)
+            check("wl2 ...so releasing that handle says nothing and takes "
+                  "nothing. Giving back a lock we never took drops it out from "
+                  "under whatever still holds it, which is worse than the "
+                  "refusal it replaced",
+                  _wl_said is None and os.path.isfile(_wl_lock),
+                  repr((_wl_said, os.listdir(_wl_ld))))
+            with open(_wl_lock, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps({"sessionId": "somebody-else",
+                                      "pid": os.getppid(), "hostname": "h",
+                                      "note": "took it over"}))
+            _wl_no = M._release_write_lock({"held": True, "mod": _wl_cmd,
+                                            "project": _wl_proj})
+            check("wl3 ...while a release the lock DECLINES comes back as a "
+                  "sentence instead of dying in a printer. It is the only "
+                  "notice a displaced run gets that another session has been "
+                  "writing beside it, and the caller puts it in `warnings`",
+                  "NOT released" in (_wl_no or "")
+                  and "took it over" in (_wl_no or ""), repr(_wl_no))
+        finally:
+            M._lockmod = _wl_prev
+    finally:
+        _shutil.rmtree(_wl_proj, ignore_errors=True)
+
     # --- the sweep's rows: one shape, three consumers (F248) ------------------
     # `POST /api/worktrees/sweep` had no case anywhere, and the defect it hid was a
     # list of pre-joined STRINGS where every other panel write emits change rows.

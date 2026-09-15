@@ -1040,6 +1040,34 @@ def _cases(check):
               refused["written"] is False and jr2 == [])
         _locks.release(held_proj, "phase-P1", session="other", out=lambda *_a: None)
 
+        # A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THE LOSER GETS, and
+        # it used to go into a printer that discards beside a code nothing read.
+        # The lock is made to decline rather than raced into declining: the
+        # property under test is that the code is READ and the sentence reaches
+        # the caller, and a real race would test the scheduler instead.
+        dr_proj, dr_path = _manifest_project("c4declined", git=True)
+        _dr_real = _locks.release
+        _locks.release = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            declined = M.write_pointer(dr_proj, dr_path, "task",
+                                       {"taskId": "P1.1", "phaseId": "P1"},
+                                       {"runId": "RD", "status": "passed",
+                                        "ts": "2026-08-26T13:00:00Z"},
+                                       session_id="me")
+        finally:
+            _locks.release = _dr_real
+            _locks.release(dr_proj, "phase-P1", session="me",
+                           out=lambda *_a: None)
+        check("ed11b a lock that REFUSED to be given back is carried to the "
+              "caller, and the write is still `written` - the pointer landed, "
+              "and what the sentence adds is that another session was writing "
+              "beside it. Silenced into a no-op printer, that was the one "
+              "notice a displaced run ever got: %r"
+              % (declined.get("releaseRefused"),),
+              declined["written"] is True
+              and "NOT released" in (declined.get("releaseRefused") or "")
+              and "took it over" in (declined.get("releaseRefused") or ""))
+
         # --- reconcile: the repair the refusal names ------------------------
         rproj, rpath = _manifest_project("recon")
         for rid, ts, status in (("RA", "2026-08-26T09:00:00Z", "failed"),
@@ -1358,6 +1386,59 @@ def _cases(check):
               and _idetail.endswith("HINT-SENTINEL")
               and "the phase lock is held" in _pdetail
               and _pdetail.endswith(M.RECONCILE_HINT))
+
+        # `write_pointer`'s rule, one writer over, and with the half that writer
+        # cannot show: this block takes more than one lock and can leave by a
+        # refusal, so the sentence has to survive a path that returns before the
+        # stamp. The lock is made to decline rather than raced into declining -
+        # the property is that the code is read, not that a race can be won.
+        db_proj, db_path = _manifest_project("since-declined", git=True)
+        M.append_row(db_proj, {"v": 1, "runId": "RD", "ts": "2026-06-02T15:38:00Z",
+                               "scope": "task", "taskId": "P1.1",
+                               "phaseId": "P1", "status": "passed", "steps": []})
+        _db_real = _locks.release
+        _locks.release = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            db_ok = M.write_evidence_since(db_proj, db_path, "P1",
+                                           session_id="me")
+        finally:
+            _locks.release = _db_real
+            for _n in ("index", "phase-P1"):
+                _locks.release(db_proj, _n, session="me", out=lambda *_a: None)
+        check("eb18b a lock that REFUSED to be given back reaches the caller, "
+              "and the stamp is still `written`: the boundary landed, and what "
+              "the sentence adds is that another session was writing beside it. "
+              "A sentence that went into a printer which discards is how a "
+              "displaced run finished, cleaned up and reported success: %r"
+              % (db_ok.get("releaseRefused"),),
+              db_ok["written"] is True
+              and any("NOT released" in s
+                      for s in (db_ok.get("releaseRefused") or [])))
+
+        dh_proj, dh_path = _manifest_project("since-declined-refused", git=True)
+        M.append_row(dh_proj, {"v": 1, "runId": "RE", "ts": "2026-06-02T15:38:00Z",
+                               "scope": "task", "taskId": "P1.1",
+                               "phaseId": "P1", "status": "passed", "steps": []})
+        _locks.acquire(dh_proj, "phase-P1", session="other", out=lambda *_a: None)
+        _dh_real = _locks.release
+        _locks.release = lambda *_a, **_k: _locks.E_LIVE
+        try:
+            db_no = M.write_evidence_since(dh_proj, dh_path, "P1",
+                                           session_id="me")
+        finally:
+            _locks.release = _dh_real
+            _locks.release(dh_proj, "index", session="me", out=lambda *_a: None)
+            _locks.release(dh_proj, "phase-P1", session="other",
+                           out=lambda *_a: None)
+        check("eb18c ...and on the REFUSING path too, which is the one this "
+              "block can leave by. A run displaced while it held the index was "
+              "displaced whether or not its own stamp went in, and those "
+              "returns used to go past the release with nothing left to attach "
+              "the sentence to: %r" % ((db_no["written"],
+                                        db_no.get("releaseRefused")),),
+              db_no["written"] is False
+              and any("NOT released" in s
+                      for s in (db_no.get("releaseRefused") or [])))
 
 
         # THE OVER-FIRE ARM WHERE THE VALUE ITSELF SEPARATES THE TWO WRITERS.
