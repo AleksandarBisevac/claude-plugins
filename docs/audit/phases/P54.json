@@ -29,7 +29,7 @@
     {
       "id": "P54.1",
       "title": "Every documented read shape reaches the secrets guard",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: no read shape the security document claims to cover reaches a secret file's contents without a refusal and an event. Several still do, in every copy of the guard, and two of them are the everyday way an agent reads a file - which is the worst possible distribution, because the guard looks effective against the shapes nobody uses. The interpreter heredoc is right in principle and inconsistent in practice: the same read is refused or allowed depending on the spelling that carried it, which is the guard-by-spelling class this register has recorded longer than any other. A shape the guard cannot classify is refused, because this is a guard and the table says guards fail loud. The event matters as much as the refusal: a read that is refused and not recorded leaves nothing for the doctor to count and nothing for an operator to find afterwards.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -60,19 +60,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e17ed7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_CRED_EXT is one vocabulary read by both the tool-path and shell-token sets; STDIN_READ_SECRET and _extra_read_hit are their own lanes with their own sentences; _unestablished_read_target refuses a target the process cannot resolve; the interpreter's written-out standard-input spelling joins the short form.",
+        "descriptive": "Every read shape the security document claims is refused and recorded, including the two everyday ones that were not."
       },
       "startedAt": "2026-09-15T17:12:12Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T17:53:45Z",
+      "verifiedBy": [
+        "sr1-sr21",
+        "b8j",
+        "b8k",
+        "b8k2",
+        "t13"
+      ]
     },
     {
       "id": "P54.2",
       "title": "A write is attributed to what wrote it, and the events file is not empty for the wrong reason",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the write guard names the statement that wrote, not a background job it happened to see, and an empty events file is distinguished from a guard that never ran. The attribution defect is small and corrosive: naming an innocent suspect when the guilty one is in hand teaches the reader that the guard guesses. The second half was measured in the field, where the plan-gate events file and the bypass log both stayed at zero lines for a whole program - a result that reads as a clean run and is indistinguishable from the guard never having fired at all. This repository has the word for that difference and the doctor is where it belongs: a file that is empty because nothing was configured is a finding, and a file that is empty because nothing happened is good news.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -104,19 +110,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e17ed7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "record_background_launch returns its row and background_basis excludes this pass's own launch by identity; writing_statement reads destinations off shell tokens and reports through a named template when the shell's location is established; check_gate_feed grades the events file on whether any hook has ever written state, with four answers apart.",
+        "descriptive": "A write is attributed to the statement that made it, and an empty gate record is graded on a basis outside the file."
       },
       "startedAt": "2026-09-15T17:12:13Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T17:53:46Z",
+      "verifiedBy": [
+        "bg3",
+        "bg4",
+        "bg11",
+        "bg12",
+        "bg13",
+        "bg14",
+        "bg15",
+        "bg16",
+        "bg17",
+        "dh28",
+        "dh29",
+        "dh30",
+        "dh31"
+      ]
     },
     {
       "id": "P54.3",
       "title": "The plugin verifies its own files, and says so at first contact",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: an operator can ask whether the plugin's own files are the ones that were published, the answer distinguishes modified from unverifiable, and the document a new user actually reads mentions the control. Nothing verifies the installed files today. The security document names one control as load-bearing and that control is opt-in and is not mentioned where a first-time user would meet it, which makes it a control that exists for readers of the security document alone. This matters more for this product than for most: it installs hooks that run on every tool call, so the question of whether those files are what they should be is the first one a careful user asks and currently has no way to answer.",
       "files": [
         "plugins/audit/scripts/status/audit-doctor.py",
@@ -149,14 +169,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e17ed7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_doctor_setup.plugin_integrity asks a marketplace clone whether its tracked files still match its commit, with modified, clean, the development carve-out borrowed from guard-edits, and unverifiable kept apart; QUICKSTART names that row and the two opt-in controls the security document calls load-bearing.",
+        "descriptive": "An operator can ask whether the plugin's own files are the published ones, and an installation that cannot be verified is never reported as clean."
       },
       "startedAt": "2026-09-15T17:12:13Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T17:53:46Z",
+      "verifiedBy": [
+        "ds32",
+        "ds33",
+        "ds34",
+        "ds35",
+        "ds36",
+        "ds37",
+        "ds38",
+        "ds39",
+        "ds40"
+      ]
     },
     {
       "id": "P54.4",
