@@ -289,6 +289,52 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P53.7",
+      "title": "The panel takes the same lock the command line takes",
+      "status": "pending",
+      "description": "DONE MEANS: the panel and the command line coordinate on one lock, a call that fails for a structural reason is not reported as a lock that could not be taken, and every other lock this product holds is either routed through the shared library or named as a deliberate exception. The panel resolves the lock LIBRARY and calls a command entry point on it; the library deliberately has no such entry point, so the call raises into a bare handler and the panel has silently fallen back to a working-tree lockfile on every write for as long as both halves have existed. Nothing is corrupted today, because that fallback is itself a real lock and the panel is consistent with itself - what is lost is that a panel write and a verb write can both believe they hold the index, which is the state a shared lock exists to prevent. Flipping the panel onto the real lock is user-visible: a session mid-write across the upgrade sees the two mechanisms disagree for one transition, so the change is designed rather than slipped in. The usage surface carries the same read-judge-write race the shared takeover has just had fixed, on a lock of its own, which is the argument for routing it through the library rather than repairing a second copy of one rule. Before deciding, grep for every other lock this product takes: the answer decides whether this is a repair or a consolidation.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/tests/test_audit_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_write.py: a panel write takes the shared index lock and a write that cannot take it says so, while a structural failure to reach the lock is reported as itself rather than as contention",
+          "plugins/audit/tests/test_audit_usage.py: the usage lock claims through an exclusive create, so two waiters that pass the judge together do not both proceed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ]
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
