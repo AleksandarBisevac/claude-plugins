@@ -267,7 +267,8 @@
     {
       "id": "P46",
       "title": "A gate costs what it measures, and no more",
-      "shard": "phases/P46.json"
+      "shard": "phases/P46.json",
+      "status": "in_progress"
     },
     {
       "id": "P47",
