@@ -294,7 +294,7 @@
     {
       "id": "P51.6",
       "title": "A phase has a verb, and the warning names the cause it found",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: a plan driven entirely from the command line records when a phase started, and the warning about a running task under a pending phase names what it established rather than guessing at the manifest's age. One site in the whole tree promotes a phase, and it is the control surface's heal, which runs when somebody opens the panel and saves. The command line has a verb for starting a task and none for starting a phase, so an orchestrator that never opens the panel leaves every phase pending and sees the warning on every promotion for the life of the phase - a warning that then blames a migration the manifest does not need and names a command the operator did not run. The gate is NOT weakened by this and the repair must not widen into it: a running task under a pending phase already counts as a running phase, deliberately, because a hand-started task is still a repository executing its plan. What is lost is the record, and a phase carries no start time at all.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -327,21 +327,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:21:40Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P51.7",
       "title": "A string that cannot be a path is refused, and the not-on-disk note stops guessing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the scope verb refuses a string that cannot be a repository-relative path, and the note about a file that is not on disk stops carrying three different causes in one sentence. Driven: reaching for an incremental rescope with the spelling every neighbouring tool uses, the plus and minus prefixes were written into the task's files as part of the filenames, the file index claimed them, a journal row recorded it as a legitimate change, and the only output was the note that exists to reassure an author who is declaring a file they will create. So the one shape that is certainly a mistake reads exactly like the one shape that is certainly fine. The verb is right to take a replacement list; it is wrong to accept an operator as a filename. And the note currently means a new file, a scope resolved against the wrong root, and now a typed operator - three causes, one sentence, and the sentence guesses the harmless one. What must not move: declaring a file before it exists stays legal and stays quiet, because the red-first workflow depends on it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -370,21 +370,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:21:40Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P51.8",
       "title": "The wide-gate warning asks whether narrowing is possible",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the warning fires where a narrower gate is possible and is silent where it is not, and the reason a task holds the wide gate is read from what the verb recorded rather than asked of a human. Measured on this repository, which is the project the plugin dogfoods on: every gate entry here is a key into the build commands and every command those keys resolve to walks the tree or takes fixed directories, so no task can narrow anything, and the warning now names most of the plan and will never fall. The second route the message offers is worse than unavailable: writing the reason into the description changes nothing the validator reads, so an operator who follows the advice sees the same line forever. The material for the real question is on the manifest already. What must not move is the case the rule was built from - a generated plan that gave nine tasks the whole suite on a runner that DOES take paths - so the distinction is whether the project can narrow, never whether this task did.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -414,21 +414,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:21:40Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P51.9",
       "title": "The shared artifact carries the per-step cost the row already holds",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the rendered report shows what each gate step cost, so the tell that exposes a doubled run is visible in the artifact that actually gets shared. The terminal summary and the control surface both print the per-step duration; the rendered report drops it, and the rendered report is the thing a reviewer and a stakeholder are handed. So the one number that makes a duplicated suite self-evident is present exactly where the audience is technical and absent where the audience is being asked to trust the result. The row already carries the value, which makes this rendering rather than measurement. A step whose row carries no duration renders the absence, because a fabricated zero in a shared document is a claim about a measurement nobody made.",
       "files": [
         "plugins/audit/scripts/report/_report_html.py",
@@ -460,14 +460,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T16:21:41Z",
       "completedAt": null,
       "verifiedBy": []
     }
