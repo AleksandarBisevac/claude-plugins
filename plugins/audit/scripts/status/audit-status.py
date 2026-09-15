@@ -674,6 +674,25 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     return "\n".join(lines)
 
 
+def _tasks_bar(done, total, cancelled, width):
+    """The done/total progress bar for a task tally whose TOTAL already
+    excludes cancelled work.
+
+    `_fmt.fmt_bar` reads a zero total as "nothing was measured" and draws it
+    empty, which is still right for a phase or plan that never had any tasks
+    at all (`zb1`/`zb2`/`zb3` pin that reading and it is unchanged here). What
+    is NEW is the other way a total reaches zero: every task existed and every
+    one of them was cancelled, so `cancelled` is the tell — a zero total WITH
+    cancelled work behind it means nothing that could still be open remains,
+    which reads as COMPLETE, not as unmeasured. `done` can never exceed
+    `total` by construction (a done task is never cancelled), so `total == 0`
+    also means `done == 0` either way; the printed fraction stays honest (0/0)
+    and only the BAR is what this widens, and only for the cancelled case."""
+    if total == 0 and cancelled:
+        return _fmt.fmt_bar(1, 1, width)
+    return _fmt.fmt_bar(done, total, width)
+
+
 def _header_lines(manifest, summary, width=18, pt=None):
     """Who this plan is, the whole-plan bar, and every notice that qualifies it.
 
@@ -692,13 +711,15 @@ def _header_lines(manifest, summary, width=18, pt=None):
     t_done = summary["tasks"]["byStatus"].get("done", 0)
     ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
     bugs = summary["bugs"]
-    # The same problem at the top of the page: `0/10 tasks done` over a plan
-    # whose remainder includes dropped work is a denominator nobody can reach.
-    # Read off `byStatus`, which is where the plan-wide figure already lives.
+    # `t_total` already excludes cancelled work (`_status_facts.rollup`) — a
+    # reader resolves this fraction before reaching the parenthetical after
+    # it, and a denominator that still counted dropped work as outstanding
+    # put settled work where open work goes. Read the count for the
+    # parenthetical off `byStatus`, which is where the plan-wide figure lives.
     t_cancelled = summary["tasks"]["byStatus"].get("cancelled", 0)
     out.append("  %s  %d/%d tasks done%s - %d/%d phases signed off - "
                "%d open bug(s) - %d ready now"
-               % (_fmt.fmt_bar(t_done, t_total, width), t_done, t_total,
+               % (_tasks_bar(t_done, t_total, t_cancelled, width), t_done, t_total,
                   (" (%d cancelled)" % t_cancelled) if t_cancelled else "",
                   ph_done, len(summary["phases"]), bugs["open"],
                   len(summary["ready"])))
@@ -827,14 +848,15 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
         head = "  %-4s %-26s %-11s %s %d/%d" % (
             pe.get("id") or "?", _clip(pe.get("title") or "", 26),
             _theme.label(pe.get("status")) or "?",
-            _fmt.fmt_bar(pdone, ptotal, 12), pdone, ptotal)
-        # F192. THE DENOMINATOR NEEDS ITS SENTENCE. `cancelled` is counted
-        # separately and never folded into `done` - `rollup`'s comment is right
-        # that a bar reading 5/5 for three landed tasks and two dropped ones would
-        # be a lie in the one direction that matters. But `0/5` over four runnable
-        # tasks is a total that can never be reached, and the report already prints
-        # the count while this surface withheld it: one plan, two surfaces, and
-        # only one of them told the reader which facts they needed.
+            _tasks_bar(pdone, ptotal, pe.get("cancelled", 0), 12), pdone, ptotal)
+        # `cancelled` is counted separately and never folded into `done` -
+        # `rollup`'s comment is right that a bar reading 5/5 for three landed
+        # tasks and two dropped ones would be a lie in the one direction that
+        # matters. `ptotal` itself is the OTHER direction of that same lie
+        # fixed: it no longer counts a dropped task as part of what is still
+        # outstanding, so `pdone/ptotal` is the fraction of the RUNNABLE work
+        # that landed, and the parenthetical below is what tells the reader
+        # some of the gap they might expect is not a gap at all.
         #
         # NON-ZERO ONLY, and that is the one case where silence and zero say the
         # same thing. `(0 cancelled)` on every phase is noise.
@@ -1088,7 +1110,7 @@ def _area_lines(summary, pt=None):
     w = max(len(r[0]) for r in rows)
     for tag, n_ph, done, total, owner, cancelled in rows:
         line = ("    %-*s  %2d phase(s)  %s %d/%d tasks%s"
-                % (w, tag, n_ph, _fmt.fmt_bar(done, total, 12), done, total,
+                % (w, tag, n_ph, _tasks_bar(done, total, cancelled, 12), done, total,
                    (" (%d cancelled)" % cancelled) if cancelled else ""))
         if owner:
             # The advisory owner, from the same rollup --json ships - the

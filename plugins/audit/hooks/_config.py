@@ -87,6 +87,20 @@ Config keys (all optional; defaults in DEFAULTS below):
         areas: {tag: {allow, deny}}}. The shape, the defaults and the resolution
         all live in _policy.py — see DEFAULTS below for why they are not
         restated here.
+  executor.runsGate       str   — how much of a task's gate the EXECUTOR runs
+        ITSELF before handing back to the orchestrator, which always runs the
+        gate again with `--record` — only that recorded run is evidence, so
+        the executor's own pass is a convenience it can afford to skip or
+        narrow. One of RUNS_GATE_MODES: "never" (skip it — the executor
+        develops against nothing of its own and trusts the recorded run
+        entirely), "own-tests" (run only the test(s) `task.tests.add` names —
+        the default), or "full" (every command in `task.tests.gate`, same as
+        if this key did not exist). No hook reads this; `executor_gate_policy`
+        below is read by the orchestrator at spawn time, the same moment it
+        resolves which skills to hand the subagent. An unrecognised value is
+        REFUSED (the function returns None) rather than folded into "own-tests"
+        — a typo here would otherwise make the cheap default look like a
+        deliberate choice.
 
 This module also hosts the path/manifest helpers the hooks share (rel_path,
 within_root, matches_exempt, strip_line_suffix, in_progress_*).
@@ -272,6 +286,13 @@ DEFAULTS = {
     # place the whole config's shape is stated, and a key the validator knows and
     # this file does not is how the two drifted before.
     "portability": "strict",
+    # How much of a task's gate the EXECUTOR runs itself before the orchestrator
+    # runs the same gate again with `--record` — the only run that becomes
+    # evidence. "own-tests" is the cheap default: an executor that ran the full
+    # gate on every task was paying for two full-suite runs where one recorded
+    # run already stands as proof. See RUNS_GATE_MODES and executor_gate_policy
+    # below, and the "executor.runsGate" entry above for the vocabulary.
+    "executor": {"runsGate": "own-tests"},
 }
 
 
@@ -1851,6 +1872,48 @@ def enforce_always(cfg):
     except Exception:
         pass
     return bool(DEFAULTS.get("enforce", False))
+
+
+# --- executor gate policy ------------------------------------------------------
+# Before this key existed the executor ran a task's whole gate itself and the
+# orchestrator ran the SAME gate again with `--record`, because only the recorded
+# run is evidence — two full-suite runs per task, always, with no lever anywhere
+# in this tree to say otherwise. An operator who suppressed the executor's own
+# run in every spawn prompt measured that as the largest single saving of a whole
+# wave and wrote the suppression into a handoff note — which the next session,
+# not having read that file, paid for twice over. `_config_rules.py` mirrors this
+# tuple as its own RUNS_GATE_MODES (the FINDING enum the panel's Settings select
+# reads); the two are pinned together by that validator's own selftest, the same
+# shape PLAN_GATE_TIERS/PLAN_GATE_MODES already use one section up.
+RUNS_GATE_MODES = ("never", "own-tests", "full")
+
+
+def executor_gate_policy(cfg):
+    """`executor.runsGate`: one of RUNS_GATE_MODES, the default when the key is
+    ABSENT, or None when it is SET to something outside the vocabulary.
+
+    Absent is not the same finding as invalid, on purpose — most repositories
+    write nothing here and should get the cheap reading without having to ask
+    for it, while a value outside RUNS_GATE_MODES is a typo nobody meant, and
+    folding it into the default would make a mistake look like a decision.
+    `validate_config` (scripts/config/_config_rules.py) reports that typo as a
+    FINDING at the file level; this is what a caller sees for it at the value
+    level, and neither one silently guesses which reading the operator meant.
+
+    Resolved by the ORCHESTRATOR at spawn time — the same moment it resolves
+    which skills to hand the executor — and folded into the spawn prompt as an
+    explicit word, never left for the subagent to look up on its own. No hook
+    reads this key; it lives in DEFAULTS for the reason `ui`, `priority` and
+    `portability` do — this dict is the one place the whole config's shape is
+    stated, whether or not a hook consults a given key."""
+    try:
+        block = (cfg or {}).get("executor")
+        if not isinstance(block, dict) or "runsGate" not in block:
+            return DEFAULTS["executor"]["runsGate"]
+        reading = block["runsGate"]
+    except Exception:
+        return DEFAULTS["executor"]["runsGate"]
+    return reading if reading in RUNS_GATE_MODES else None
 
 
 # --- utc stamps ---------------------------------------------------------------

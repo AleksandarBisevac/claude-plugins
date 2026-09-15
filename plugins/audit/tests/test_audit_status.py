@@ -134,11 +134,14 @@ def _cases(_record):
           and _cas["tasks"]["byStatus"].get("done", 0)
               == summarize(_fixture())["tasks"]["byStatus"].get("done", 0) - 1,
           repr(_cas["tasks"]["byStatus"]))
-    check("ca4 the phase entry carries its cancelled count beside done/total, so "
-          "a progress bar can say 'and two were dropped' instead of rounding up",
+    check("ca4 the phase entry carries its cancelled count beside done/total, "
+          "and `total` no longer counts it as outstanding: this phase's one "
+          "task IS the cancelled one, so nothing remains that could still be "
+          "open and done == total reads the phase as SETTLED rather than as "
+          "'0 of 1' still owed",
           _cas["phases"][0]["cancelled"] == 1
-          and _cas["phases"][0]["done"] + _cas["phases"][0]["cancelled"]
-              <= _cas["phases"][0]["total"], repr(_cas["phases"][0]))
+          and _cas["phases"][0]["done"] == _cas["phases"][0]["total"] == 0,
+          repr(_cas["phases"][0]))
     check("ca5 the text view has a marker of its own for it - [x] would say the "
           "work landed", M._marker("cancelled") == "[-]"
           and M._marker("cancelled") != M._marker("done"))
@@ -184,13 +187,18 @@ def _cases(_record):
           and s_dup["areas"]["backend"]["total"] == s_dup["phases"][0]["total"],
           repr(s_dup["areas"]))
 
-    # --- F192: the denominator's missing sentence -----------------------------
+    # --- the denominator's missing sentence, and then its arithmetic ---------
     # `cancelled` is counted separately and never folded into `done` - `rollup`'s
     # comment is right that a bar reading 5/5 for three landed and two dropped
-    # tasks would be a lie in the one direction that matters. But `0/5` over four
-    # runnable tasks is a total nobody can reach, and the HTML report already
-    # printed the count while this surface withheld it: one plan, two surfaces,
-    # and only one of them told the reader which facts they needed.
+    # tasks would be a lie in the one direction that matters. The count is
+    # PRINTED (xc1/xc2/xc4 below), which used to be the whole of the repair -
+    # but a reader resolves `done/total` before reaching that parenthetical, and
+    # a total that still counted the dropped task as outstanding read as a
+    # bigger gap than the one that was actually left. `total` now EXCLUDES
+    # cancelled work everywhere this rollup states it (rg1/rg2 below), so the
+    # fraction itself is the honest one and the parenthetical is what it always
+    # should have been - a note about what happened, not the only place the
+    # arithmetic was correct.
     m_ca = copy.deepcopy(_fixture())
     _ca_phase = m_ca["phases"][0]
     _ca_phase["tasks"].append({
@@ -228,6 +236,42 @@ def _cases(_record):
           "negative, since asserting only the presence would pass a renderer "
           "that printed the note unconditionally",
           "cancelled)" not in _txt_none)
+
+    # --- (rg) a settled plan reads as settled, on the rendered TEXT itself ----
+    # rg1/rg2 in test__status_facts.py pin the DATA; these pin what a human
+    # actually reads on the terminal. A plan whose only unfinished tasks are
+    # cancelled must show a done count equal to its own total, with the bar
+    # full rather than fractional - and the ALLOW CASE (rg3) is the one open
+    # task that must still cost the plan its 100%.
+    def _settled_txt(open_task):
+        tasks = [{"id": "T1", "title": "t", "status": "done"},
+                 {"id": "T2", "title": "t", "status": "cancelled"}]
+        if open_task:
+            tasks.append({"id": "T3", "title": "t", "status": "pending"})
+        plan = {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "settled", "status": "in_progress",
+             "tasks": tasks}]}
+        return M.render_status(plan, M.rollup(plan, [], []))
+
+    _rg_txt = _settled_txt(False)
+    _rg_head = [ln for ln in _rg_txt.splitlines() if "tasks done" in ln]
+    check("rg1 a plan whose only unfinished tasks are cancelled reads as "
+          "complete: the done count equals its own total, right beside the "
+          "cancelled note rather than contradicted by it: %r" % (_rg_head[:1],),
+          _rg_head and "1/1 tasks done" in _rg_head[0]
+          and "(1 cancelled)" in _rg_head[0])
+    check("rg2 ...and the bar itself reads full - a zero-gap plan drawn as a "
+          "fractional bar is the same defect one widget over",
+          bool(_rg_head) and "[" + "#" * 18 + "]" in _rg_head[0])
+    _rgo_txt = _settled_txt(True)
+    _rgo_head = [ln for ln in _rgo_txt.splitlines() if "tasks done" in ln]
+    check("rg3 THE ALLOW CASE: one genuinely open task alongside the same "
+          "cancelled one still shows in the gap, and the bar is no longer "
+          "full - rg1 must not pass because this renderer stopped drawing "
+          "ANY unfinished work: %r" % (_rgo_head[:1],),
+          _rgo_head and "1/2 tasks done" in _rgo_head[0]
+          and "(1 cancelled)" in _rgo_head[0]
+          and "[" + "#" * 18 + "]" not in _rgo_head[0])
 
     # (ut) the cross-cutting blind spot (v0.37 B3): a phase with NO area tag in
     # a project that REGISTERS areas is a phase every area default (skills,

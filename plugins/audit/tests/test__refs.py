@@ -3520,6 +3520,37 @@ def _cases(check):
         for _d in _fr_dirs:
             shutil.rmtree(_d, ignore_errors=True)
 
+    # --- executor.runsGate: two documents, one vocabulary (P42.5, `gp*`) ---------
+    # The agent brief and the orchestrator reference each got their own paragraph
+    # about this key rather than a shared one, which is exactly the shape that let
+    # `exemptGlobs` and `tddReminder.testGlobs` disagree about what a test file
+    # is before. Read fresh off hooks/_config.py's own tuple rather than typed out
+    # a third time - a word added there is what should move this case, not a copy
+    # of the words drifting on its own schedule.
+    _gp_hooks = _loader.load_hooks_config(modname="audit__refs_gate_policy_cfg")
+    _gp_words = tuple(_gp_hooks.RUNS_GATE_MODES)
+    _gp_exec = _product_doc("agents/audit-executor.md")
+    _gp_orch = _product_doc("reference/orchestrator.md")
+    check("gp1 hooks/_config.py still carries the three-word vocabulary this "
+          "case reads - a word added or renamed there is what should move this "
+          "check, not a hand-kept copy of it: %r" % (_gp_words,),
+          len(_gp_words) == 3 and "own-tests" in _gp_words)
+    check("gp2 both documents that tell the executor how much of the gate to "
+          "run name the config key itself, not only its effect",
+          "executor.runsGate" in _gp_exec and "executor.runsGate" in _gp_orch)
+    _gp_missing = dict(
+        (rel, [w for w in _gp_words if ("`" + w + "`") not in text])
+        for rel, text in (("agents/audit-executor.md", _gp_exec),
+                          ("reference/orchestrator.md", _gp_orch)))
+    check("gp3 every word of the vocabulary is named, backticked, in BOTH "
+          "documents - a word dropped from either one is a reading a subagent "
+          "or the orchestrator can no longer recognise: %r" % (_gp_missing,),
+          all(v == [] for v in _gp_missing.values()))
+    check("gp4 ...over documents that were actually read, so a rename or a "
+          "missing file cannot pass this by returning empty text for both "
+          "sides: %r" % ((len(_gp_exec), len(_gp_orch)),),
+          min(len(_gp_exec), len(_gp_orch)) > 400)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -853,7 +853,17 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         # one direction that matters.
         "cancelled": sum(1 for t in (p.get("tasks") or [])
                          if isinstance(t, dict) and t.get("status") == "cancelled"),
-        "total": sum(1 for t in (p.get("tasks") or []) if isinstance(t, dict)),
+        # THE DENOMINATOR EXCLUDES CANCELLED, and that is the repair rather
+        # than an oversight. Cancelled is TERMINAL — closed on purpose, with a
+        # reason and a journal row — so it belongs on the settled side of this
+        # fraction, not on the side a reader reads as "still to do". Counting
+        # it here made `done/total` read as a gap that was actually smaller
+        # (or gone) the moment every unfinished task turned out to be a
+        # cancelled one rather than an open one. `done` is always <= this
+        # total by construction (a done task is never cancelled), so the
+        # fraction only ever UNDER-reports how much is settled, never over.
+        "total": sum(1 for t in (p.get("tasks") or [])
+                     if isinstance(t, dict) and t.get("status") != "cancelled"),
     } for i, p in enumerate(phases)]
     # group phases by each of their `area` tags (a phase with several tags counts
     # under each; untagged phases are simply not grouped)
@@ -865,11 +875,11 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
             g["phases"] += 1
             g["done"] += e["done"]
             g["total"] += e["total"]
-            # F192, at the THIRD site. The per-phase count and the plan-wide one
-            # both explain a total that cannot be reached; this rollup carries the
-            # same `done/total` and had no count to explain it with, so closing
-            # only the two the report named would have left the third saying the
-            # same unreachable thing.
+            # The per-phase count above and the plan-wide one below both carry
+            # this SAME repair — cancelled excluded from the denominator — so
+            # the per-area rollup inherits it for free by summing the already-
+            # repaired per-phase figures, rather than needing a fourth count
+            # that could say something different from the other three.
             g["cancelled"] += e["cancelled"]
     # The advisory owner (v0.34 D3), only for areas that DECLARE the key - no
     # key means no claim, and an explicit null is carried as null ("nobody"),
@@ -885,6 +895,10 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
     # or just a phase in a free-text-tagging project (nothing to miss).
     areas_registered = bool(reg)
     props = [x for x in (manifest.get("proposals") or []) if isinstance(x, dict)]
+    # Read once, so `total` below and `byStatus` agree about what "cancelled"
+    # counted from THIS SAME PASS over `tasks` means — a second walk of the
+    # list here is a second place the two could disagree.
+    tasks_by_status = _by_status(tasks)
     out = {
         "valid": not findings,
         "findings": len(findings),
@@ -892,7 +906,12 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         "phases": phase_entries,
         "areas": areas,
         "areasRegistered": areas_registered,
-        "tasks": {"total": len(tasks), "byStatus": _by_status(tasks)},
+        # PLAN-WIDE, and the same repair as each phase entry above: the
+        # denominator excludes cancelled work, because a fraction a reader
+        # resolves before the parenthetical after it must not put settled
+        # work where open work goes.
+        "tasks": {"total": len(tasks) - tasks_by_status.get("cancelled", 0),
+                  "byStatus": tasks_by_status},
         "bugs": {"total": len(bugs), "byStatus": _by_status_values(bug_eff),
                  "open": len(open_bugs),
                  "openHighSeverity": sum(

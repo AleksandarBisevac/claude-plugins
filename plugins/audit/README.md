@@ -744,13 +744,15 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `ui.theme` | The look of the panel and the report: a shipped preset name (`slate-teal`) or a path to a theme file, absolute or relative to the project dir. Unset -> search `.claude/audit.theme.json` in the project, then `~/.claude/audit.theme.json`, then the built-in preset; every surface says which of the four it is wearing, and a path that is not a file is reported rather than silently ignored. Edited in the panel's **Appearance** tab | unset |
 | `priority.maxTier` | Highest phase-priority tier the panel's control offers and `set-priority.py` suggests. **Advisory, and nothing is clamped to it**: a phase pinned above it keeps the tier it was given and sorts after every tier at or under the maximum. Priority re-sorts work that is *already* ready - it never makes an unready task ready and never skips a dependency | `9` |
 | `portability` | Whether a skill / subagent / MCP server that would **not survive a clone** may be used here: `strict` \| `warn` \| `off`. A capability under `.claude/` travels; one in a home directory never does; one from a plugin travels only if the **committed** `.claude/settings.json` declares it in *both* `extraKnownMarketplaces` and `enabledPlugins` (see [Making it travel with the repo](#making-it-travel-with-the-repo)). `strict` offers only what travels and refuses to write anything else into the manifest; `warn` marks it and `/audit:doctor` still says so, but nothing is blocked; `off` says nothing. The verdict and its basis are computed either way — this key decides only what each surface does about it | `strict` |
+| `executor.runsGate` | How much of a task's own gate the **executor** subagent runs before the orchestrator runs the same gate again with `--record` — only that recorded run is evidence. `never` (trust the recorded run entirely) \| `own-tests` (only the test(s) `tests.add` names) \| `full` (every command in `tests.gate`, unchanged from before this key existed). Resolved at spawn time, the same moment skills are; any other value is refused rather than read as the default | `own-tests` |
 | `policy.enabled` | Enforce the capability policy below | `true` (and inert — the shipped rules allow everything) |
 | `policy.onViolation` | What a violation does: `deny` \| `ask` \| `warn` | `deny` |
 | `policy.{skills,agents,mcp}` | Per kind: `{default: "allow"\|"deny", allow: [pattern], deny: [pattern], areas: {tag: {allow, deny}}}` | `default: "allow"`, no rules |
 
 Every key above has a control in the panel, and for most of them it is a box in the **Settings**
 tab — grouped into *Paths & gate*, *Write guards*, *TDD reminder*, *Usage & pricing*,
-*Audit trail* and *Execution order*. Both directions are build failures rather than discoveries:
+*Audit trail*, *Execution order*, *Travelling with the repo* and *Executor's own gate*. Both
+directions are build failures rather than discoveries:
 the panel's own suite derives the form's controls from `_config_rules.py`'s key sets, so a key
 documented here and unreachable there fails, and `_config_rules.config_vocab_drift()` compares
 those same key sets against the schema and against the table above, so a key the plugin

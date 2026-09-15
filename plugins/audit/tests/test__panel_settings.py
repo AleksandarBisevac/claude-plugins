@@ -28,6 +28,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _loader                                     # noqa: E402
 import _panel_settings as M                        # noqa: E402
 
 
@@ -47,7 +48,8 @@ def _cases(check):
                    "bashWriteCheck": _vc.KNOWN_BASHW, "tddReminder": _vc.KNOWN_TDD,
                    "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL,
                    "evidence": _vc.KNOWN_EVIDENCE,
-                   "priority": _vc.KNOWN_PRIORITY}
+                   "priority": _vc.KNOWN_PRIORITY,
+                   "executor": _vc.KNOWN_EXECUTOR}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is
     # not a setting with a value; it is a rule set whose meaning is the verdict it
@@ -110,7 +112,7 @@ def _cases(check):
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
           == ("paths", "guards", "tdd", "usage", "journal", "priority",
-              "portability")
+              "portability", "executor")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",
@@ -143,6 +145,13 @@ def _cases(check):
     check("the planGate tiers reach the form from the validator's own tuple, "
           "in escalation order",
           M._cfg_enums()["planGate"] == list(_vc.PLAN_GATE_MODES))
+    _hcfg = _loader.load_hooks_config(modname="audit__panel_settings_hooks_cfg")
+    check("the runsGate readings reach the form from the validator's own "
+          "tuple, and that tuple is still the hooks' own vocabulary - a "
+          "mirror pinned in both directions rather than a second typed-out "
+          "copy free to drift on its own schedule",
+          M._cfg_enums()["runsGate"] == list(_vc.RUNS_GATE_MODES)
+          and tuple(_vc.RUNS_GATE_MODES) == tuple(_hcfg.RUNS_GATE_MODES))
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
 

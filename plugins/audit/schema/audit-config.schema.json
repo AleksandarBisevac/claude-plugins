@@ -434,6 +434,22 @@
         "off"
       ],
       "description": "Whether a skill, subagent or MCP server that would NOT survive a clone of this repository may be used in it. A capability under .claude/ travels; one in a home directory never does; one from a plugin travels only if the COMMITTED .claude/settings.json declares it in BOTH extraKnownMarketplaces and enabledPlugins - committing only the second is a documented trap that keeps working for whoever added it. 'strict' (the default) offers only what travels and refuses to write anything else into the manifest; 'warn' still marks and still lets /audit:doctor say so, but blocks nothing; 'off' says nothing at all. The verdict itself is always computed and always carries the basis it was reached by; this key decides only what each surface does about it."
+    },
+    "executor": {
+      "type": "object",
+      "description": "How much of a task's own gate the EXECUTOR subagent runs before the orchestrator runs the same gate again with `run-test-gate.py --record` - only that recorded run is evidence, so the executor's own pass is a convenience rather than a second source of proof. Resolved by the orchestrator at spawn time, the same moment it resolves which skills to hand the subagent, and stated explicitly in the spawn prompt rather than left for the subagent to look up.",
+      "additionalProperties": true,
+      "properties": {
+        "runsGate": {
+          "type": "string",
+          "enum": [
+            "never",
+            "own-tests",
+            "full"
+          ],
+          "description": "'never' - the executor runs nothing itself and trusts the orchestrator's recorded run entirely. 'own-tests' (the default) - only the test(s) task.tests.add names, as the executor's own quick check. 'full' - every command in task.tests.gate, the same behaviour as if this key did not exist. A value outside the enum is refused rather than read as the default - see hooks/_config.py's executor_gate_policy, which returns null for it rather than 'own-tests'."
+        }
+      }
     }
   }
 }

@@ -71,7 +71,7 @@ KNOWN_ROOT = {
     "manifestPath", "gitRoot", "exemptGlobs", "enforce", "planGate",
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
-    "journal", "evidence", "policy", "ui", "priority", "portability",
+    "journal", "evidence", "policy", "ui", "priority", "portability", "executor",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -85,6 +85,11 @@ PLAN_GATE_MODES = ("observe", "warn", "ask", "deny")
 # the grading itself, which always states a verdict and lets each surface decide
 # what to do about it.
 PORTABILITY_MODES = ("strict", "warn", "off")
+# Mirror of hooks/_config.py RUNS_GATE_MODES (that module stays the source of
+# truth for `executor_gate_policy`); the selftest below pins the two together,
+# the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
+KNOWN_EXECUTOR = {"runsGate"}
+RUNS_GATE_MODES = ("never", "own-tests", "full")
 
 
 def portability_mode(config, defaults=None):
@@ -364,6 +369,7 @@ def validate_config(obj):
 
     _check_journal(obj.get("journal"), findings, warnings)
     _check_evidence(obj.get("evidence"), findings, warnings)
+    _check_executor(obj.get("executor"), findings, warnings)
 
     # Delegated whole: the module that resolves a policy decides what a malformed
     # one is. A copy of those rules here would be free to call legal what the guard
@@ -429,6 +435,30 @@ def _check_journal(journal, findings, warnings):
                         "'ask' surfaces a confirmation prompt on manifest "
                         "state edits; there is deliberately no 'deny'"
                         % (STRICT_MANIFEST_STATE,))
+
+
+def _check_executor(executor, findings, warnings):
+    """The executor's own gate-running policy.
+
+    A FINDING rather than a warning, for `portability`'s reason: only a finding
+    refuses the panel's save, and a value outside RUNS_GATE_MODES is exactly the
+    typo `hooks/_config.executor_gate_policy` refuses to fold into the default -
+    stored anyway, it would be read back as neither the word written nor the
+    default, which is the silent-misread this validator's own contract exists
+    to catch."""
+    if executor is None:
+        return
+    if not isinstance(executor, dict):
+        findings.append("executor must be an object")
+        return
+    for k in _real_keys(executor):
+        if k not in KNOWN_EXECUTOR:
+            warnings.append("unknown executor key %r" % k)
+    if ("runsGate" in executor
+            and executor["runsGate"] not in RUNS_GATE_MODES):
+        findings.append("executor.runsGate must be one of %s - a value outside "
+                        "this vocabulary is refused rather than read as the "
+                        "default" % (RUNS_GATE_MODES,))
 
 
 def _check_bands(bands, findings, warnings):

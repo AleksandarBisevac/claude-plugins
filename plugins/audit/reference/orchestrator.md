@@ -375,6 +375,17 @@ report, because `git switch -c` is about to fail anyway.
      first** — house conventions before task specifics, because a subagent that reads the specifics
      first has already made the decisions the conventions were meant to inform. With no registered
      area this is exactly `task.skills`, unchanged.
+   - **Resolve `executor.runsGate` the same way — at spawn, by you, and stated in the prompt as a
+     word rather than left for the subagent to look up.** Read `.claude/audit.config.json` (through
+     `hooks/_config.load()` and `executor_gate_policy(cfg)`); absent config, or the key absent from
+     it, is `own-tests`, the cheap default. Tell the subagent which reading it got: `never` (run
+     nothing itself — the recorded run below is the only evidence this task gets), `own-tests` (run
+     only the test(s) `task.tests.add` names, as its own quick check — `gate-only` tasks add none, so
+     this is the same as `never` for them), or `full` (every command in `task.tests.gate`, unchanged
+     from before this key existed). **An unrecognized value is refused, not folded into the
+     default** — `executor_gate_policy` returns `None` for it; stop and ask the human rather than
+     guessing which reading a typo meant. This changes only what the SUBAGENT does before it hands
+     back — the recorded run two steps below is unconditional and is what becomes evidence either way.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -416,10 +427,12 @@ report, because `git switch -c` is about to fail anyway.
 
      Resolve `${CLAUDE_PLUGIN_ROOT}` yourself and put the finished command in the spawn prompt —
      a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted.
-   - It must run `task.tests.gate` (through `run-test-gate.py`, which applies `meta.nodePreamble`
-     itself) and return **the shape `agents/audit-executor.md` declares** — `gates` per gate
-     command, `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that become
-     `task.verifiedBy`), `redFirst` (above) and `stamp` (the tree its claims are about). The
+   - **It must run whichever reading of `executor.runsGate` you handed it** — the whole of
+     `task.tests.gate` on `full` (through `run-test-gate.py`, which applies `meta.nodePreamble`
+     itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
+     shape `agents/audit-executor.md` declares** — `gates` per gate command it actually ran (`{}`
+     on `never`), `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that
+     become `task.verifiedBy`), `redFirst` (above) and `stamp` (the tree its claims are about). The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
      `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list

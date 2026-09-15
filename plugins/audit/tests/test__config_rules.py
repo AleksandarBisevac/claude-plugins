@@ -258,6 +258,25 @@ def _cases(check):
     f, w = M.validate_config({"journal": {"enabledd": True}})
     check("a misspelled journal key -> warning only",
           not f and any("journal" in x for x in w))
+
+    # --- executor.runsGate ------------------------------------------------------
+    # `portability`'s shape: a FINDING, not a warning, because only a finding
+    # refuses the panel's save - and a value outside the vocabulary is exactly
+    # the typo hooks/_config.executor_gate_policy refuses to fold into the
+    # default rather than store and read back as neither word.
+    for _runs in M.RUNS_GATE_MODES:
+        f, w = M.validate_config({"executor": {"runsGate": _runs}})
+        check("%r validates clean" % (_runs,), not f and not w)
+    f, w = M.validate_config({"executor": {"runsGate": "sometimes"}})
+    check("a value outside the vocabulary is a FINDING, not a silent read of "
+          "the default: %r" % (f,),
+          any("executor.runsGate" in x for x in f))
+    f, w = M.validate_config({"executor": []})
+    check("non-object executor -> finding", any("executor must be" in x for x in f))
+    f, w = M.validate_config({"executor": {"runGate": "full"}})
+    check("a misspelled executor key -> warning only, and no finding hides "
+          "behind it: %r" % ((f, w),),
+          not f and any("executor" in x for x in w))
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",
           not f and not w)

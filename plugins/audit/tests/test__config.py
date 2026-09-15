@@ -1591,6 +1591,40 @@ def _cases(check):
           _ag_gone == M.UNNAMED_AGENT and _ag_gone != M.MAIN_AGENT
           and M.is_subagent({"agent_id": "///"}))
 
+    # --- executor.runsGate (P42.5) -----------------------------------------------
+    # The key that stops the executor's own gate run from being suppressed by a
+    # handoff note nobody reads twice: absent resolves to the cheap default,
+    # each declared word resolves to itself, and a value outside the three is
+    # REFUSED - returned as None, never folded into the default - so a typo does
+    # not quietly look like a decision.
+    check("eg1 absent resolves to the default reading, the cheap one",
+          M.executor_gate_policy({}) == M.DEFAULTS["executor"]["runsGate"]
+          and M.executor_gate_policy(None) == M.DEFAULTS["executor"]["runsGate"])
+    check("eg2 an executor block present but with no runsGate key is absent "
+          "the same way - a container with nothing IN it is still unconsidered",
+          M.executor_gate_policy({"executor": {}})
+          == M.DEFAULTS["executor"]["runsGate"])
+    for _mode in M.RUNS_GATE_MODES:
+        check("eg3 %r resolves to itself" % (_mode,),
+              M.executor_gate_policy({"executor": {"runsGate": _mode}}) == _mode)
+    # THE OVER-FIRE ARM. A getter that fell back to the default on anything it
+    # did not recognise would make a typo indistinguishable from the deliberate
+    # cheap choice - these are the cases that must NOT come back as "own-tests".
+    for _bad in ("sometimes", "Full", "", None, 3, True, ["full"]):
+        _got = M.executor_gate_policy({"executor": {"runsGate": _bad}})
+        check("eg4 a value outside the vocabulary is refused, not read as the "
+              "default: %r -> %r" % (_bad, _got),
+              _got is None)
+    check("eg5 a non-dict executor block is the same absence a malformed "
+          "config anywhere else in this module degrades to, not a raise",
+          M.executor_gate_policy({"executor": "own-tests"})
+          == M.DEFAULTS["executor"]["runsGate"]
+          and M.executor_gate_policy({"executor": ["own-tests"]})
+          == M.DEFAULTS["executor"]["runsGate"])
+    check("eg6 RUNS_GATE_MODES carries the default, so the default is never a "
+          "fourth, unreachable spelling of the vocabulary",
+          M.DEFAULTS["executor"]["runsGate"] in M.RUNS_GATE_MODES)
+
 
 def _selftest():
     return _harness.run(_cases)

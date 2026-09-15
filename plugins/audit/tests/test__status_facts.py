@@ -174,15 +174,52 @@ def _cases(check):
     # --- the facts ------------------------------------------------------------
     m = _fixture()
     s = M.rollup(m, [], [])
-    check("r1 rollup counts tasks by status over the whole plan",
-          s["tasks"]["total"] == 5
+    check("r1 rollup counts tasks by status over the whole plan, and the "
+          "plan-wide total EXCLUDES the one cancelled task - byStatus still "
+          "carries it (nothing about what happened is hidden), the "
+          "denominator just stops calling it outstanding",
+          s["tasks"]["total"] == 4
           and s["tasks"]["byStatus"].get("done") == 1
+          and s["tasks"]["byStatus"].get("cancelled") == 1
           and s["tasks"]["byStatus"].get("blocked") == 1, s["tasks"])
-    check("r2 a cancelled task is counted apart from done - a bar reading 2/2 "
-          "for one landed task and one dropped one is a lie in the direction "
-          "that matters",
+    check("r2 a cancelled task is counted apart from done AND out of the "
+          "denominator - a bar reading 2/2 for one landed task and one "
+          "dropped one is a lie in the direction that matters, and so is a "
+          "bar reading 1/2: the phase has exactly one task still able to be "
+          "open, and it is done",
           s["phases"][0]["done"] == 1 and s["phases"][0]["cancelled"] == 1
-          and s["phases"][0]["total"] == 2)
+          and s["phases"][0]["total"] == 1)
+
+    # --- rg: a settled plan reads as settled -----------------------------------
+    # P1 above already makes the point once (one done, one cancelled, nothing
+    # else): `done == total` there is exactly "reads as complete" restated as an
+    # equality. These two build the plan-wide claim on purpose, plus the ALLOW
+    # CASE the brief names by name — an open task must still show in the gap.
+    def _settled_plan(open_task):
+        tasks = [{"id": "T1", "title": "t", "status": "done"},
+                 {"id": "T2", "title": "t", "status": "cancelled"}]
+        if open_task:
+            tasks.append({"id": "T3", "title": "t", "status": "pending"})
+        return {"meta": {"version": 2},
+                "phases": [{"id": "P1", "title": "settled", "status": "in_progress",
+                            "tasks": tasks}]}
+
+    _rg_done = M.rollup(_settled_plan(False), [], [])
+    check("rg1 a plan whose only unfinished tasks are cancelled reads as "
+          "complete - done equals the denominator, plan-wide and per-phase, "
+          "with the cancelled count still carried rather than dropped: %r"
+          % (_rg_done["tasks"],),
+          _rg_done["tasks"]["total"] == _rg_done["tasks"]["byStatus"]["done"]
+          and _rg_done["phases"][0]["total"] == _rg_done["phases"][0]["done"]
+          and _rg_done["tasks"]["byStatus"]["cancelled"] == 1)
+    _rg_open = M.rollup(_settled_plan(True), [], [])
+    check("rg2 THE ALLOW CASE: one genuinely open task alongside the same "
+          "cancelled one still shows in the gap - rg1 must not pass because "
+          "this rollup stopped counting ANY unfinished work: %r"
+          % (_rg_open["tasks"],),
+          _rg_open["tasks"]["total"] > _rg_open["tasks"]["byStatus"]["done"]
+          and _rg_open["phases"][0]["total"] > _rg_open["phases"][0]["done"]
+          and _rg_open["tasks"]["byStatus"]["cancelled"] == 1)
     check("r3 `sev1` counts as high-severity-or-worse: severity is free text, "
           "and a merge gate that only knew the literal word 'high' would wave "
           "through critical, blocker and p0",

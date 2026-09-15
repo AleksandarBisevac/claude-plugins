@@ -270,6 +270,12 @@ FIELD_HELP = {
         "then longest matching prefix — so a dated model id resolves to its family — "
         "then the _default row. Leave a cell empty to keep the shipped rate shown in "
         "it.",
+    "executor.runsGate":
+        "How much of a task's own gate the executor subagent runs itself before the "
+        "orchestrator runs the same gate again and records it — only that recorded "
+        "run is evidence. never trusts the recorded run entirely; own-tests (the "
+        "default) runs only the test(s) the task added; full runs every command in "
+        "the task's gate, same as leaving this unset.",
 }
 
 # The manifest levers the Composition tab edits. A separate dict on purpose: these
@@ -566,6 +572,19 @@ SETTINGS_GROUPS = (
              "kind": "enum", "enum": "portability"},
         ),
     },
+    {
+        "id": "executor",
+        "title": "Executor's own gate",
+        "blurb": "The orchestrator always runs a task's gate once more, recorded, "
+                 "once the executor hands back - only that recorded run is "
+                 "evidence. This decides whether the executor also runs it (or "
+                 "just the test it wrote) on its own way there, which costs time "
+                 "rather than correctness.",
+        "fields": (
+            {"path": "executor.runsGate", "label": "What the executor runs itself",
+             "kind": "enum", "enum": "runsGate"},
+        ),
+    },
 )
 
 
@@ -600,7 +619,8 @@ def _cfg_enums():
             "authorMode": list(vc.AUTHOR_MODES),
             "strictManifestState": list(vc.STRICT_MANIFEST_STATE),
             "planGate": list(vc.PLAN_GATE_MODES),
-            "portability": list(vc.PORTABILITY_MODES)}
+            "portability": list(vc.PORTABILITY_MODES),
+            "runsGate": list(vc.RUNS_GATE_MODES)}
 
 
 # --- cli --------------------------------------------------------------------

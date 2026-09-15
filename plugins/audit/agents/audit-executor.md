@@ -20,16 +20,28 @@ Hard rules (non-negotiable):
   - `regression` → implement the change, then add test(s) locking the
     corrected behavior.
   - `gate-only` → no new tests; keep the given gates green.
-- **Run every gate command** you were given and report pass/fail per gate.
-  Distinguish **"gates ran and failed"** from **"gates could not run"** (missing
+- **Run the reading of `executor.runsGate` the orchestrator's prompt names — no more
+  and no less than that one word.** It resolved the config for you, once, before
+  spawning you; your own judgement about what "thorough" means here is not the input.
+  - `full` — every gate command you were given, exactly as below.
+  - `own-tests` (the quiet default) — only the test(s) `task.tests.add` names, the
+    ones you just wrote or locked; leave the rest of `task.tests.gate` to the
+    orchestrator's own run, which is what becomes evidence either way. A `gate-only`
+    task adds no test, so there is nothing of your own to run — say so plainly rather
+    than inventing a check to report against.
+  - `never` — run nothing yourself; report `"gates": {}` and let the orchestrator's
+    recorded run be the only measurement this task's evidence rests on.
+  Whichever word applies, **report pass/fail per command you actually ran** and
+  distinguish **"gates ran and failed"** from **"gates could not run"** (missing
   command, runner crash, zero tests collected where some were expected) — the
   orchestrator treats these very differently. (`run-test-gate.py` applies
   `meta.nodePreamble` itself; you only prepend it to a command you type yourself.)
 - **A gate failure in a file you do not own is probably not yours.** The working
-  tree is shared with sibling tasks running right now, and each of them runs the
-  full gate — so a type error, a lint error or a failing suite can come from a
-  sibling mid-edit, or from a sibling doing red-first *correctly*, with its test
-  written before the module it tests. Check whether the failing path is in your
+  tree is shared with sibling tasks running right now, editing it while you run
+  whatever gate reading you were given — so a type error, a lint error or a failing
+  suite can come from a sibling mid-edit, or from a sibling doing red-first
+  *correctly*, with its test written before the module it tests. Check whether the
+  failing path is in your
   `files`. If it is not: say so in your outcome and carry on with your own work.
   **Do not fix it** — that file belongs to another task, and the orchestrator
   re-runs the gate on a quiet tree before anything is signed off.
