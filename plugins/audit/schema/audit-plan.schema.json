@@ -237,7 +237,7 @@
         },
         "buildCommands": {
           "type": "object",
-          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...).",
+          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...). Two more are offered rather than required: `plugins/audit/scripts/status/_gate_feed.py`'s OFFERED_GATES catalog (list it with `--list-offered`) names 'provesCanFail' and 'claimsMatchCode' -- the two checks this project's own history learnt the hard way -- each with the sentence saying what it asks of a change and what it costs to run. Adding either key is this plan's own choice; leaving both out changes nothing here.",
           "additionalProperties": {
             "type": "string"
           }
@@ -1111,6 +1111,10 @@
           "$ref": "#/$defs/redFirst",
           "description": "What happened to this task's red-first proof, which `testEvidence` beside it cannot say: that block records whether the gate passed, and this records whether the assertion the gate ran was ever watched failing. A task whose proof could not be made carries 'could-not-prove' here with the refusal verbatim, and still commits — the fix and its assertion exist and the gate answered, so the missing thing is the proof and not the work."
         },
+        "intentCheck": {
+          "$ref": "#/$defs/intentCheck",
+          "description": "Whether the closed diff does what this task's `description` asked, which neither `testEvidence` nor `redFirst` can say: a gate proves the suite is green and says nothing about whether the green change is the change somebody wanted. Optional and absent by default — a manifest written before this block existed, a task closed by an older copy of the plugin, and a close whose reviewer call could not be made are one and the same state, and every surface must read absence as 'no answer', never as agreement."
+        },
         "outcome": {
           "$ref": "#/$defs/outcome"
         },
@@ -1476,6 +1480,36 @@
         "at": {
           "type": "string",
           "description": "ISO timestamp of the attempt this block records, so a reader can tell a fresh observation from one left behind by an earlier run of the same task."
+        }
+      }
+    },
+    "intentCheck": {
+      "type": "object",
+      "required": [
+        "answer",
+        "commit"
+      ],
+      "additionalProperties": true,
+      "description": "A GATE PROVES THE SUITE IS GREEN AND SAYS NOTHING ABOUT WHETHER THE GREEN CHANGE IS THE CHANGE SOMEBODY WANTED — the separate question this block answers, asked once per task rather than only at phase sign-off, because a claim can only be bound to the task that made it here. Optional and absent by default, and absent means 'no answer recorded', NEVER agreement: a manifest written before this block existed, a task closed by a copy of the plugin that predates it, and a close whose reviewer call could not be made are one and the same state, and a reader must not fold any of them into 'matches'. That is the failure mode this block exists against — an answer that is yes by default — so `answer` and `commit` are required together the way `redFirst`'s `status` and `basis` are: an answer with no commit beside it names nothing the diff it was measured against, and dropping the whole block is always safe. Written by the ORCHESTRATOR from the reviewer's returned `intent`, never inferred. additionalProperties stays permissive, this document's policy at every object level: the schema ships with the plugin, so an older copy must keep accepting a manifest a newer one wrote.",
+      "properties": {
+        "answer": {
+          "description": "'matches' means the diff does what `description` asked and the executor's claim describes the diff in front of the reviewer. 'diverges' means one of those two failed — the work missing its target, or the record missing the work — and is routed as a human action item rather than a fix run, because the wrong half may be the code, the description or the claim and only the operator can say which. 'cannot-tell' means an input the reviewer needed was not handed to it; a basis you invented is worse than a gap you reported, so this is the honest answer and not a softer 'matches'. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'matches'.",
+          "enum": [
+            "matches",
+            "diverges",
+            "cannot-tell"
+          ]
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "THE DIFF THIS ANSWER WAS GIVEN, named rather than left to inference: the same SHA `task.commit` carries, because the reviewer read the working tree the moment before this same commit was made and nothing else on the record ties the two together. A close is refused with no `task.commit` at all (see `commit` above), so this is never null in practice — it is typed to match `task.commit` rather than to invent a stricter rule of its own."
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO timestamp of the close this block was recorded at, so a reader can tell a fresh answer from one left behind by an earlier attempt of the same task."
         }
       }
     },

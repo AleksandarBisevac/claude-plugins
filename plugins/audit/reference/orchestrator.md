@@ -548,6 +548,11 @@ report, because `git switch -c` is about to fail anyway.
        before any fix run — the file being declared or not is beside the point, since sign-off
        has no task running). Do not open
        a fix loop here; the per-task call is a check, not the review.
+     - `matches` → **carried into the close below and nowhere else.** A gate proves the suite
+       is green and says nothing about whether the green change is the change somebody wanted
+       — so a `matches` answer that reached no field would read afterwards exactly like an
+       answer nobody asked for, which is the failure this whole call exists against: an answer
+       that is yes by default.
      - `diverges` → write it into `task.outcome.technical` so the commit carries it, and
        surface it as a **human action item**. Do not spawn a fix run from it: the wrong half
        may be the code, the description or the claim, and a fix run would edit code to match
@@ -565,6 +570,18 @@ report, because `git switch -c` is about to fail anyway.
        record the word and its `inheritedTestsBasis` in `task.outcome.technical`. It is what a
        gate naming no test files earns, and a gap the record shows is worth more than a clean
        sheet the record invented.
+
+     **`intent.answer` itself is carried forward to the close, whichever of the three words it
+     was.** The call happens here, against the uncommitted diff; the close happens in step 4c,
+     once the SHA exists — so pass the word straight through on the SAME `/audit:task done` call
+     that already carries `--commit`, `--descriptive`, `--technical` and `--verified-by`:
+     `--intent matches`, `--intent diverges` or `--intent cannot-tell`. That single write is what
+     makes the answer NAME the diff it was given — `task.intentCheck.commit` becomes the same SHA
+     `task.commit` carries, because both are written in the one call. **If the reviewer call
+     produced nothing usable — it died, timed out, or returned no parseable `intent` — do not
+     guess: omit `--intent` entirely.** An omitted flag and a recorded `diverges` are opposite
+     facts, and a guessed `matches` filling the gap is exactly the failure this call exists to
+     close.
 
      None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
      measurement that decides whether a task is done, and a cheap per-task reviewer that could

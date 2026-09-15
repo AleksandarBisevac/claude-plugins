@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -341,7 +341,8 @@ their commit subjects. Two places for one fact is one place and one lie.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
   --commit "$(git -C <gitRoot> rev-parse HEAD)" \
   --descriptive "<one-line impact>" --technical "<what was actually done>" \
-  --verified-by "<test names this task added>" [--json]
+  --verified-by "<test names this task added>" \
+  [--intent matches|diverges|cannot-tell] [--json]
 ```
 
 **Call it at the END of step 4c, after `git rev-parse HEAD`** — the SHA does not exist
@@ -361,6 +362,11 @@ What it writes — exactly the fields step 4 prescribes, and nothing besides:
   there, so a close that rewrote the whole object would delete that on its way to
   recording success. The report says which of them went unrecorded rather than leaving
   you to notice.
+- `intentCheck` from `--intent` — the reviewer's own per-task answer to whether the diff
+  does what `description` asked (`matches` / `diverges` / `cannot-tell`), carried into the
+  SAME commit this call already names. **Omitted means no answer was recorded, never
+  agreement** — a close that received none reads apart from one that received a negative,
+  which is the whole reason this is its own field rather than folded into `outcome`.
 - **journal** → one `task.done` row carrying the SHA in its summary and `details`.
   It is deliberately **not** `task.complete`: that action and `task.commit` are derived
   by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them

@@ -112,6 +112,7 @@ import _doctor_ado as _ado  # noqa: E402  (the ADO connector's operational half)
 import _doctor_trail as _trail  # noqa: E402  (hook state, ledger, journal chain)
 import _doctor_completions as _completions  # noqa: E402  (the task.complete receipts)
 import _doctor_hygiene as _hygiene  # noqa: E402  (locks, and local artifacts in git)
+import _panel_runstate  # noqa: E402  (has the panel ever been opened, at layer 4)
 
 # --- the re-exported surface ----------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it
@@ -172,6 +173,8 @@ check_gate_feed = _hygiene.check_gate_feed
 check_locks = _hygiene.check_locks
 check_worktrees = _hygiene.check_worktrees
 check_local_artifacts = _hygiene.check_local_artifacts
+
+check_panel_opened = _panel_runstate.check_panel_opened
 
 
 # --- diagnose / render / cli ----------------------------------------------------
@@ -242,6 +245,7 @@ def diagnose(project, deep=False):
     check_locks(rep, git_root, project, manifest_rel)
     check_worktrees(rep, git_root, manifest)
     check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root)
+    check_panel_opened(rep, project, cfg)
     return rep
 
 

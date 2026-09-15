@@ -35,6 +35,7 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
+import _evidence_io           # noqa: E402  (the ledger's own gate tally, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -106,6 +107,12 @@ def _usage_shape(**overrides):
         "counts": _ledger_counts([]),
         "rolled": False,
         "totalRows": 0,
+        # What the gates CAUGHT, beside what they cost - read off the evidence
+        # ledger, which is independent of the usage ledger this shape is
+        # otherwise built from. `[]` on every path that has not computed it
+        # yet, exactly like `facts` above; `_gate_catches_payload` is the one
+        # place that fills it.
+        "gateCatches": [],
     }
     unknown = sorted(k for k in overrides if k not in shape)
     if unknown:
@@ -275,6 +282,44 @@ def _usage_derived(ul, manifest, rows, ucfg):
             "phaseAreas": phase_areas, "areaOwners": area_owners}
 
 
+# --- what the gates caught, from a DIFFERENT ledger than the rest of this file ---
+def _gate_catches_payload(project, config):
+    """What every recorded gate CAUGHT, paired with what it cost - the other
+    half of a tab that was, until this existed, a page of cost figures with no
+    argument for the other side of the trade.
+
+    Reads the EVIDENCE ledger, which is independent of the usage ledger the
+    rest of this file is built from - so this is computed here, ahead of the
+    usage-ledger read below, and folded into `declared` rather than into the
+    populated-only branch: a project with no token spend recorded yet can
+    still have gate history, and a tab that showed this only when the usage
+    ledger also had rows would hide it on exactly the fresh-install case where
+    an operator most needs to see it.
+
+    THE TALLY IS `_evidence_io`'s, REUSED AND NOT RE-DERIVED - the same reading
+    `propose-gates.py` and `_doctor_trail.check_gate_patterns` already fold
+    this ledger into. `_usage_economics.gate_catches` cannot read the ledger
+    itself (`_evidence_io` sits at its own layer), so the counts are fetched
+    here and handed down as plain data. Fail-soft to `[]`: a card that cannot
+    answer is not the same failure as a tab that cannot load."""
+    try:
+        ul = _load("audit_usage_ledger", "usage_ledger.py")
+        manifest_path = _manifest_path(project, config)
+        eproject, econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
+        tallies = {}
+        for name in _evidence_io.gate_names_seen(rows):
+            ran, failed = _evidence_io.gate_tally(rows, name)
+            tallies[name] = {
+                "ran": ran, "failed": failed,
+                "lastFailedAt": _evidence_io.gate_last_caught(rows, name),
+                "costMs": _evidence_io.gate_cost_ms(rows, name)}
+        return ul.gate_catches(tallies, _evidence_io.MIN_HISTORY_RUNS)
+    except Exception:
+        return []
+
+
 def usage_state(project):
     """Payload for the Usage tab.
 
@@ -315,7 +360,8 @@ def usage_state(project):
                 "pricingAsOf": (as_of_raw.strip() or None)
                 if isinstance(as_of_raw, str) else None,
                 "pricingAsOfDeclared": _declared_as_of(config),
-                "bands": ucfg.get("bands") or {}}
+                "bands": ucfg.get("bands") or {},
+                "gateCatches": _gate_catches_payload(project, config)}
     try:
         ul = _load("audit_usage_ledger", "usage_ledger.py")
         rows = ul.read_ledger(ledger_dir)

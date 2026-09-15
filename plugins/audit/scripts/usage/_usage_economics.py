@@ -277,6 +277,51 @@ def retry_cost(manifest, rows):
     }
 
 
+# --- what a gate caught, beside what it cost -------------------------------------
+def gate_catches(tallies, floor):
+    """Per gate name, what it caught paired with what it cost - never one
+    without the other, because a figure about cost alone is the surface this
+    function exists to fix.
+
+    `tallies` is `{name: {"ran", "failed", "lastFailedAt", "costMs"}}`, folded
+    by the CALLER from the evidence ledger's own tally
+    (`_evidence_io.gate_tally`/`gate_names_seen`/`gate_last_caught`/
+    `gate_cost_ms`) - the same reading `propose-gates.py` and
+    `_doctor_trail.check_gate_patterns` already fold that ledger into. This
+    module does not read the ledger itself: `_evidence_io` sits at this
+    module's own layer, so a sideways read is not one this tree allows, and
+    the counts arrive as arguments rather than being derived a third time.
+    `floor` is the caller's own `_evidence_io.MIN_HISTORY_RUNS` for the same
+    reason - carried in, never re-typed here.
+
+    Sorted by name, and every entry carries all four caller-supplied fields
+    plus a `verdict`:
+
+      insufficient  `ran` is below `floor` - too short a history to support
+                    either claim, stated rather than rounded either direction
+      neverCaught   at or past `floor`, `failed` is zero - a real finding
+                    about the gate, reported as such rather than a zero
+                    averaged away
+      catches       at or past `floor`, has failed at least once
+    """
+    out = []
+    for name in sorted(tallies):
+        entry = tallies[name] if isinstance(tallies.get(name), dict) else {}
+        ran = entry.get("ran") or 0
+        failed = entry.get("failed") or 0
+        row = {"name": name, "ran": ran, "failed": failed,
+               "lastFailedAt": entry.get("lastFailedAt"),
+               "costMs": entry.get("costMs")}
+        if ran < floor:
+            row["verdict"] = "insufficient"
+        elif failed == 0:
+            row["verdict"] = "neverCaught"
+        else:
+            row["verdict"] = "catches"
+        out.append(row)
+    return out
+
+
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()

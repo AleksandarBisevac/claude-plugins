@@ -901,6 +901,31 @@ SCHEMA_EXEMPTIONS = {
         "of its own: every other timestamp this generator stamps is derived from "
         "the plan's own dates, and an attempt has no date in a fixture where no "
         "attempt happened.",
+    # `task.intentCheck` AND ITS THREE FIELDS, on `task.redFirst`'s own argument:
+    # no rendered surface reads it yet (not the report, not the panel, not
+    # /audit:status), and the fixture is what those surfaces are built from, so a
+    # block here would be a key nobody ever sees. REVISIT when a surface reads it
+    # - the report is the obvious first one, since `outcome` already renders
+    # beside it.
+    "task.intentCheck":
+        "whether the closed diff does what the task's description asked, per the "
+        "reviewer's own per-task call. No rendered surface reads it yet, the same "
+        "reason `task.redFirst` is exempt above; this fixture is what those "
+        "surfaces are built from.",
+    "intentCheck.answer":
+        "one of the three words, and unreachable for the reason the block itself "
+        "is: an answer inside an object the fixture does not carry has nowhere to "
+        "sit. Coverage for the vocabulary is the schema enum.",
+    "intentCheck.commit":
+        "the SHA the answer was recorded beside. Same reason as the block above; "
+        "and a fabricated SHA in a published fixture is a commit git was never "
+        "asked about, which `/audit:doctor` already treats as a finding when a "
+        "real manifest carries one.",
+    "intentCheck.at":
+        "when the answer was recorded. Same reason as the block above, with "
+        "`redFirst.at`'s own addition: every other timestamp here is derived "
+        "from the plan's own dates, and a close that never happened has no date "
+        "to derive one from.",
     # `task.outputs` AND THE WHOLE `decisions[]` BLOCK, on `task.redFirst`'s
     # argument rather than a trigger of their own: no rendered surface reads
     # either, and the fixture is what those surfaces are built from.

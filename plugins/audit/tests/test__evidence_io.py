@@ -1736,6 +1736,38 @@ def _cases(check):
           M.MIN_HISTORY_RUNS >= 2
           and M.gate_tally(lint_rows[:1], "lint") == (1, 0))
 
+    # --- gate_last_caught / gate_cost_ms: paired with the tally, not a third one
+    cost_rows = [
+        {"ts": "2026-02-01T00:00:00Z", "runId": "c1",
+         "steps": [{"name": "lint", "exit": 0, "durationMs": 1000}]},
+        {"ts": "2026-02-02T00:00:00Z", "runId": "c2",
+         "steps": [{"name": "lint", "exit": 1, "durationMs": 2000}]},
+        {"ts": "2026-02-03T00:00:00Z", "runId": "c3",
+         "steps": [{"name": "lint", "exit": 1, "durationMs": 1500}]},
+        # A run that came LATER and passed - it must not win `gate_last_caught`,
+        # which asks when the gate last CAUGHT something, not when it last ran.
+        {"ts": "2026-02-04T00:00:00Z", "runId": "c4",
+         "steps": [{"name": "lint", "exit": 0}]},
+    ]
+    check("ev43 gate_last_caught is the newest ts among the FAILED steps, "
+          "never the newest run overall: %r"
+          % (M.gate_last_caught(cost_rows, "lint"),),
+          M.gate_last_caught(cost_rows, "lint") == "2026-02-03T00:00:00Z")
+    check("ev44 ...and a gate with no failed step at all reports None, which "
+          "is NOT the same claim as `ran` being zero - a gate that has run "
+          "and never failed is a different fact from one nobody has run",
+          M.gate_last_caught(cost_rows[:1], "lint") is None
+          and M.gate_tally(cost_rows[:1], "lint") == (1, 0))
+    check("ev45 gate_cost_ms sums every step's OWN durationMs, and the one "
+          "step here that carries none does not zero the total: %r"
+          % (M.gate_cost_ms(cost_rows, "lint"),),
+          M.gate_cost_ms(cost_rows, "lint") == 1000 + 2000 + 1500)
+    check("ev46 ...and a gate whose every recorded step is silent about "
+          "duration reports None, never zero - unmeasured is not the same "
+          "claim as a run that cost nothing",
+          M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
+          is None)
+
 
 def _selftest():
     return _harness.run(_cases)

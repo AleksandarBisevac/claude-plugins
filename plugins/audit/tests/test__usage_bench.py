@@ -125,16 +125,19 @@ def _cases(check):
                       if not n.startswith("_") and callable(v)
                       and getattr(v, "__module__", None) == mod.__name__)
     check("bn5 every rows->dict pass DEFINED by the four analytics modules is "
-          "timed; the only one that is not is named on purpose (band_of is a "
-          "dict lookup) - so a pass added later and left unmeasured fails HERE "
-          "rather than quietly missing from the table",
-          _own_public - _timed == {"band_of"},
+          "timed; the ones that are not are named on purpose (band_of is a "
+          "dict lookup, gate_catches folds a caller-supplied tally rather than "
+          "a ledger read that scales with row count) - so a pass added later "
+          "and left unmeasured fails HERE rather than quietly missing from "
+          "the table",
+          _own_public - _timed == {"band_of", "gate_catches"},
           repr(sorted(_own_public - _timed)))
     # The filter above narrows, and a filter that narrowed to nothing would make
     # bn5 pass by describing an empty room. Counted, not assumed.
-    check("bn5b ...and it found the passes at all: 11 public passes across the "
-          "four modules, 10 of them timed",
-          len(_own_public) == 11 and len(_own_public & _timed) == 10,
+    check("bn5b ...and it found the passes at all: the four modules' public "
+          "passes, with exactly the two named exclusions left untimed",
+          len(_own_public) - len(_own_public & _timed) == 2
+          and len(_own_public & _timed) == 10,
           "%d found, %d timed" % (len(_own_public), len(_own_public & _timed)))
     # A scripted clock, not sleeps: elapsed 4.0, 1.0, 3.0 over three runs. The
     # three candidate answers are far apart on purpose - minimum 1.0, mean 2.67,

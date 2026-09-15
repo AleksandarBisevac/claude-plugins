@@ -217,8 +217,11 @@ def _bench_cases(manifest, rows):
       reports the wrong function's cost under the right function's name, and is
       believed.
 
-    `task_index` and `band_of` are absent on purpose — the first runs INSIDE four
-    of the cases below, the second is a dict lookup.
+    `task_index`, `band_of` and `gate_catches` are absent on purpose — the first
+    runs INSIDE four of the cases below, the second is a dict lookup, and the
+    third folds a caller-supplied tally rather than a ledger read that grows with
+    `_BENCH_SIZES`: nothing about its cost scales with row count, so timing it at
+    several sizes would print the same number three times and call that a shape.
     """
     return (
         ("aggregate", lambda: aggregate(rows, "day")),

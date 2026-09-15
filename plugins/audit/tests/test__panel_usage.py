@@ -95,6 +95,27 @@ def _cases(check):
           _lms_calls[0] == 1)
     check("counting the reads did not change the payload",
           _hoisted == u)
+
+    # --- gateCatches: independent of the usage ledger above, from the EVIDENCE one
+    check("usage_state carries gateCatches even before any evidence is written "
+          "- absent evidence reads as an empty list, never a missing key",
+          M.usage_state(os.path.join(tmp, "no-evidence-proj")).get("gateCatches")
+          == [])
+    evdir = os.path.join(os.path.dirname(mpath), "evidence")
+    os.makedirs(evdir, exist_ok=True)
+    with open(os.path.join(evdir, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
+        for run_id, exit_code in (("g1", 0), ("g2", 1)):
+            fh.write(json.dumps({
+                "ts": "2026-08-01T00:00:00Z", "runId": run_id,
+                "steps": [{"name": "lint", "exit": exit_code,
+                           "durationMs": 1000}]}) + "\n")
+    ug = M.usage_state(proj)
+    _gc = dict((g["name"], g) for g in ug.get("gateCatches") or [])
+    check("usage_state's gateCatches folds the EVIDENCE ledger's own tally, "
+          "not a second reading of it: %r" % (ug.get("gateCatches"),),
+          _gc.get("lint", {}).get("ran") == 2
+          and _gc.get("lint", {}).get("failed") == 1
+          and _gc.get("lint", {}).get("costMs") == 2000)
     # The other direction, and the one that looks vacuous: "read once" must mean
     # once PER REQUEST, not once per process. A manifest memoized across requests
     # would satisfy the count above and then serve a stale plan forever — the
@@ -284,7 +305,7 @@ def _cases(check):
           "hide behind a duplicate: %r"
           % (sorted(set(_up_empty) ^ set(_up_full)),),
           set(_up_empty) == set(_up_full)
-          and len(_up_empty) == len(_up_full) == 18
+          and len(_up_empty) == len(_up_full) == 19
           and _up_full["facts"] and not _up_empty["facts"])
     check("up2 ...and one level down, where `counts` was the second literal "
           "nobody was comparing either: %r"

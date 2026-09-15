@@ -27,7 +27,7 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py done <taskId> --commit <sha> [manifest]
                 [--descriptive TEXT|-] [--technical TEXT|-]
-                [--verified-by t1,t2]
+                [--verified-by t1,t2] [--intent matches|diverges|cannot-tell]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -2668,7 +2668,7 @@ def _commit_git_note(git_root, sha):
                   "askable)" % (sha[:12],))
 
 
-def _done_task(task, now, commit, descriptive, technical, verified):
+def _done_task(task, now, commit, descriptive, technical, verified, intent):
     """Close one task; returns the values it held before.
 
     THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
@@ -2690,6 +2690,15 @@ def _done_task(task, now, commit, descriptive, technical, verified):
     that nulled the half nobody mentioned would delete the record of how the work
     got here on its way to saying it arrived.
 
+    `intent` FOLLOWS THE SAME RULE, and for the reason this task exists: `None`
+    (the reviewer's call was never made, or its answer never reached this close)
+    leaves `task.intentCheck` untouched -- absent on a task that has never closed
+    before, which is what makes absence read as NO ANSWER rather than agreement.
+    A caller that passed one of the three words gets a whole new block, `commit`
+    included: the answer NAMES the diff it was given, because the reviewer read
+    the working tree the moment before this same commit and nothing else on the
+    record ties the two together.
+
     THE PRIOR VALUES ARE READ BEFORE THE WRITE, for `_locked_cancel`'s reason two
     verbs over: afterwards every one of them says `done`, and the `from` half of
     the journal row is gone from the manifest as well as from the row.
@@ -2700,7 +2709,9 @@ def _done_task(task, now, commit, descriptive, technical, verified):
            "commit": task.get("commit"),
            "descriptive": prior.get("descriptive"),
            "technical": prior.get("technical"),
-           "verifiedBy": task.get("verifiedBy")}
+           "verifiedBy": task.get("verifiedBy"),
+           "intentCheck": task.get("intentCheck")
+           if isinstance(task.get("intentCheck"), dict) else None}
     task["status"] = "done"
     task["completedAt"] = now
     task["commit"] = commit
@@ -2715,6 +2726,8 @@ def _done_task(task, now, commit, descriptive, technical, verified):
         task["outcome"] = outcome
     if verified is not None:
         task["verifiedBy"] = verified
+    if intent is not None:
+        task["intentCheck"] = {"answer": intent, "commit": commit, "at": now}
     return was
 
 
@@ -2729,9 +2742,9 @@ def _done_changes(tid, was, task):
     difference is what each row asserts. `start` writes three fields every time, so
     filtering by equality there would hide which fields the verb even touches. Here
     `status`, `completedAt` and `commit` are written every time and the outcome
-    halves and `verifiedBy` only when the caller passed them -- so a row for an
-    untouched one would claim a write that did not happen, which is the opposite
-    mistake and the worse one on a trail.
+    halves, `verifiedBy` and `intentCheck` only when the caller passed them -- so a
+    row for an untouched one would claim a write that did not happen, which is the
+    opposite mistake and the worse one on a trail.
     """
     rows = [{"id": tid, "field": "status",
              "from": was["status"], "to": task.get("status")},
@@ -2747,6 +2760,9 @@ def _done_changes(tid, was, task):
     if task.get("verifiedBy") != was["verifiedBy"]:
         rows.append({"id": tid, "field": "verifiedBy",
                      "from": was["verifiedBy"], "to": task.get("verifiedBy")})
+    if task.get("intentCheck") != was["intentCheck"]:
+        rows.append({"id": tid, "field": "intentCheck",
+                     "from": was["intentCheck"], "to": task.get("intentCheck")})
     return rows
 
 
@@ -2898,7 +2914,8 @@ def _locked_done(args, project, config, mpath, tid, out):
 
     now = _utc_now()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
-    was = _done_task(node, now, sha, args.descriptive, args.technical, verified)
+    was = _done_task(node, now, sha, args.descriptive, args.technical, verified,
+                     args.intent)
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
@@ -2934,6 +2951,10 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "outcome": {"descriptive": outcome.get("descriptive"),
                               "technical": outcome.get("technical")},
                   "verifiedBy": node.get("verifiedBy"),
+                  # ABSENT (None) is its own answer and reads apart from every
+                  # word `intentCheck.answer` can hold - a close with no such
+                  # answer must not render as one that agrees.
+                  "intentCheck": node.get("intentCheck"),
                   "changes": _done_changes(tid, was, node),
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
@@ -2965,6 +2986,18 @@ def _locked_done(args, project, config, mpath, tid, out):
     else:
         out("  verifiedBy: not recorded -- pass --verified-by with the test "
             "names this task added")
+    # NO ANSWER READS DIFFERENTLY FROM A NEGATIVE ONE, which is the whole
+    # point of this line: a reviewer call that never reached this close and
+    # an explicit `diverges` are opposite facts, and a shared "not recorded"
+    # sentence would flatten them into one. The word itself is quoted rather
+    # than paraphrased, the same rule `--descriptive`/`--technical` follow.
+    intent_check = node.get("intentCheck")
+    if isinstance(intent_check, dict) and intent_check.get("answer"):
+        out("  intentCheck: %s (commit %s)"
+            % (intent_check["answer"], intent_check.get("commit")))
+    else:
+        out("  intentCheck: NO ANSWER RECORDED -- pass --intent "
+            "matches|diverges|cannot-tell")
     if open_left:
         out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
     else:
@@ -4198,7 +4231,7 @@ VERB_FLAGS = {
     # verb worth having rather than an optional extra -- `cmd_done` refuses
     # without it, which is a different check from this one: this table says which
     # flags the verb READS, and the door says which of them it requires.
-    "done": ("commit", "descriptive", "technical", "verified_by"),
+    "done": ("commit", "descriptive", "technical", "verified_by", "intent"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "area", "outcome", "description",
@@ -4283,6 +4316,15 @@ def build_parser():
     # orchestrator.md` step 4b fills beside the outcome. A comma list of names for
     # `--blocked-by`'s reason, and `--verified-by ""` empties it for the same one.
     p.add_argument("--verified-by", dest="verified_by", default=None)
+    # `done` only. The reviewer's own per-task verdict on whether the diff
+    # does what `description` asked - `matches` / `diverges` / `cannot-tell`,
+    # never a bare flag: an ENUM argparse grades, so this needs no place on
+    # `PROSE_FLAGS` beside `--model` and `--tests-mode` for the same reason.
+    # ABSENT IS ITS OWN ANSWER and is not this flag's default word: a close
+    # that never passes `--intent` records no `intentCheck` at all, which is
+    # what tells "no answer" apart from an explicit "matches".
+    p.add_argument("--intent", choices=["matches", "diverges", "cannot-tell"],
+                   default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p

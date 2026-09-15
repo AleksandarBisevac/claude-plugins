@@ -881,7 +881,8 @@ def _matching_steps(rows, key, value):
         for step in (row.get("steps") or []):
             if isinstance(step, dict) and step.get(key) == value:
                 out.append({"ts": row.get("ts"), "runId": row.get("runId"),
-                            "exit": step.get("exit"), "outcome": step.get("outcome")})
+                            "exit": step.get("exit"), "outcome": step.get("outcome"),
+                            "durationMs": step.get("durationMs")})
     return out
 
 
@@ -906,6 +907,34 @@ def command_tally(rows, command):
     would carry, not a name a runner happened to pick for it."""
     hist = _matching_steps(rows, "command", command)
     return len(hist), sum(1 for s in hist if _step_failed(s))
+
+
+def gate_last_caught(rows, name):
+    """ISO timestamp of the most recent recorded run of `name` that did not
+    simply pass, or `None` -- which is NOT the same claim as `gate_tally`'s
+    `failed` being zero for want of any run at all. `ran` is what tells the
+    two apart; this answers only the WHEN half, for the gate that has caught
+    something at least once."""
+    hist = _matching_steps(rows, "name", name)
+    caught = sorted(h["ts"] for h in hist if h.get("ts") and _step_failed(h))
+    return caught[-1] if caught else None
+
+
+def gate_cost_ms(rows, name):
+    """Total recorded run time (ms) for the named gate across `rows`, summed
+    over every matching step that carries one. `None` when not one step did --
+    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
+    for a run's own cost rather than for the plan's declared one."""
+    total, seen = 0, False
+    for row in (rows or []):
+        for step in (row.get("steps") or []):
+            if not (isinstance(step, dict) and step.get("name") == name):
+                continue
+            duration = step.get("durationMs")
+            if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+                total += duration
+                seen = True
+    return total if seen else None
 
 
 def gate_names_seen(rows):

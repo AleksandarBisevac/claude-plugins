@@ -116,6 +116,19 @@ With Bash/Glob/Grep — never reading secrets:
    — carry it forward from the tree and say a thin history exists, never round it up into a
    verdict.
 
+   **Then OFFER, never add, this repository's own bar.** Print the catalog —
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/_gate_feed.py" --list-offered
+   ```
+
+   — and ask (AskUserQuestion, multi-select, NOTHING pre-selected) whether the plan should adopt
+   either entry as a `meta.buildCommands` key, showing both the `asks` and the `costs` sentence
+   for each: an operator choosing a gate is making a trade, and a menu that hid one side of it is
+   a menu that gets chosen wrongly once. Declining both is the default and leaves `meta.buildCommands`
+   exactly as the tree- and history-derived candidates above left it — this step adds nothing on
+   its own, and only writes the key(s) the human actually picked.
+
    **And record HOW the test command can be pointed at paths.** It is the only input a task's
    own gate can be derived from (step 5.3), and nothing later in the run can recover it. Beside
    each `test`-family command, note which one the runner offers: a **source→test** mode

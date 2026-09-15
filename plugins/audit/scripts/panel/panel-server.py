@@ -106,6 +106,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR i
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
 import _panel_settings       # noqa: E402  (settings-form schema + write allow-lists)
 import _panel_discovery      # noqa: E402  (skills/agents/MCP registry scan)
+import _panel_runstate        # noqa: E402  (records the server reaching LISTENING, nothing else)
 import _panel_state          # noqa: E402  (the read-side payloads: state/areas/policy/journal/usage)
 import _panel_write          # noqa: E402  (the write path: locks, change rows, journal, writers)
 import _panel_page           # noqa: E402  (the assembled page: UI_HTML + UI_TEMPLATE)
@@ -875,6 +876,10 @@ def serve(project, port=0, open_browser=True):
     # not fatal, so it must not survive to be reported as a cause of death by the
     # next --status (F99); an empty log IS the success sentinel.
     _clear_launch_stderr(project)
+    # The one record of a control surface an operator is assumed to visit: a
+    # count and how long ago, nothing about who or what page. Best-effort -
+    # this must never stand between an operator and an open panel.
+    _panel_runstate.record_opened(project)
     atexit.register(_rm_pidfile, project)
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))  # --stop → clean exit
     # The URL carries a live session token. Printing it put that token in terminal

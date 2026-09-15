@@ -191,6 +191,53 @@ def _cases(check):
           "definition of each",
           M._cost is _core._cost and M.task_index is _core.task_index)
 
+    # gate_catches: the ledger's tally, folded into a verdict paired with cost -
+    # never one figure without the other.
+    tallies = {
+        "lint": {"ran": 5, "failed": 2,
+                 "lastFailedAt": "2026-01-05T00:00:00Z", "costMs": 4500},
+        "typecheck": {"ran": 5, "failed": 0, "lastFailedAt": None,
+                      "costMs": 900},
+        "flaky-new": {"ran": 1, "failed": 0, "lastFailedAt": None,
+                      "costMs": None},
+    }
+    gc = M.gate_catches(tallies, 2)
+    # `.get(...)` throughout rather than `[...]`: this evidence has to fail
+    # the CHECK it names when a key goes missing under a broken build, never
+    # raise past it and take the cases after it down too - the four outcomes
+    # a mutation can produce are told apart by which line prints, and an
+    # unguarded index turns "the case failed" into "the suite never finished
+    # reading the rest of its own cases".
+    _byname = dict((g.get("name"), g) for g in gc)
+    _lint = _byname.get("lint") or {}
+    _typecheck = _byname.get("typecheck") or {}
+    _flaky = _byname.get("flaky-new") or {}
+    check("gate_catches: a gate that has caught something reports WHAT (the "
+          "failed count) and WHEN (lastFailedAt), beside what it cost: %r"
+          % (_lint,),
+          _lint.get("verdict") == "catches"
+          and _lint.get("failed") == 2
+          and _lint.get("lastFailedAt") == "2026-01-05T00:00:00Z"
+          and _lint.get("costMs") == 4500)
+    check("gate_catches: an entry that has never caught anything is reported "
+          "as such (neverCaught), not as a zero indistinguishable from one "
+          "the ledger cannot speak to yet: %r" % ((_typecheck, _flaky),),
+          _typecheck.get("verdict") == "neverCaught"
+          and _typecheck.get("failed") == 0
+          and _typecheck.get("verdict") != _flaky.get("verdict"))
+    check("gate_catches: a ledger too short to support either claim says the "
+          "question could not be answered (insufficient), never rounded up "
+          "into a clean bill: %r" % (_flaky,),
+          _flaky.get("verdict") == "insufficient"
+          and _flaky.get("ran") is not None and _flaky.get("ran") < 2)
+    check("gate_catches: every entry carries a `costMs`, even when it is None "
+          "- a catch number never travels without a cost figure beside it, "
+          "which is the whole point of pairing the two: %r" % (gc,),
+          all("costMs" in g for g in gc) and all("failed" in g for g in gc))
+    check("gate_catches: sorted by name, so a caller gets a stable order "
+          "rather than whatever order the tallies dict happened to iterate",
+          [g["name"] for g in gc] == ["flaky-new", "lint", "typecheck"])
+
 
 def _selftest():
     return _harness.run(_cases)

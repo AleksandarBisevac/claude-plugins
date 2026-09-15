@@ -331,8 +331,8 @@ L4:
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
-  _panel_runstate -> _evidence_io, _journal_io, _locks, _output, _panel_paths
-  _panel_usage -> _areas, _manifest_io, _output, _panel_paths
+  _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
+  _panel_usage -> _areas, _evidence_io, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _proposals -> _fmt, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
   _usage_detail -> _output, _ui_theme, _usage_viz
@@ -352,7 +352,7 @@ L6:
 
 L7:
   ado-connect -> _ado_connect, _output
-  audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output
+  audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
@@ -373,7 +373,7 @@ L7:
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _manifest_io, _manifest_rules, _output
-  panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
+  panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _evidence_io, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output

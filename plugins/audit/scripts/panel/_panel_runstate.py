@@ -3,14 +3,24 @@
 Who is running what, right now: the shared git-dir locks and their liveness,
 the on-disk change stamp the panel's poll watches, and the Plan gate card.
 
-Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3);
-`_locks` at 1 is its only other reach.
+AND WHETHER THE PANEL HAS EVER BEEN OPENED AT ALL. A large part of this
+plugin's model assumes an operator visits the control surface, and nothing
+else in the product could say whether one ever has. The server is the only
+witness: `panel-server.serve()` calls `record_opened()` the moment it reaches
+LISTENING, and `check_panel_opened` is what the doctor reads back. What is
+recorded is a count and how long ago - no identity, no address, no page - the
+same fact hook state files already record for a guard having run, applied
+here to the one surface that had no record at all.
+
+Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3) and
+`_doctor_report` (2); `_locks` at 1 is its only other static reach.
 
 Stdlib only, Python 3.8 compatible.
 """
 import hashlib
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -40,6 +50,7 @@ _output.install_path()
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
 import _locks                 # noqa: E402  (lock paths + the liveness verdict, at layer 1)
 import _evidence_io as _ev    # noqa: E402  (where the test-run ledger lives, at layer 2)
+import _doctor_report as _dr  # noqa: E402  (RECENT_DAYS: the one recency threshold, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -382,6 +393,96 @@ def _run_status(project, config, manifest):
     return {"index": locks["index"], "phases": phases,
             "fingerprint": data_fingerprint(project, config),
             "gate": _gate_block(project, config)}
+
+
+# --- has the panel ever been opened? ---------------------------------------------
+# THE FACT AND NOTHING ELSE. `record_opened` is called once, from
+# `panel-server.serve()`, the moment it reaches LISTENING - never from a
+# request handler, so this says the SERVER started and never which page a
+# viewer asked for or who they were. A count and how long ago is the whole
+# record, which is what keeps it from growing into the profile a user would
+# be right to object to.
+OPEN_STATE_BASENAME = "panel-openstate.json"
+
+
+def _open_state_path(project, config):
+    """Where the one fact this section records lives - inside the panel's own
+    per-project state directory, beside the pidfile and the launch log."""
+    cfg_mod = _paths.hooks_config()
+    state_dir = cfg_mod.state_dir(pathlib.Path(str(project)), config or {})
+    return os.path.join(str(state_dir), OPEN_STATE_BASENAME)
+
+
+def read_open_state(project, config=None):
+    """`{"count", "lastOpenedDays"}` - the whole record, or the record of never.
+
+    Absent or unreadable both mean NEVER: a torn write left by a crash mid-save
+    is not evidence the panel opened, and 'never' is the side of that tie that
+    claims nothing beyond what is actually known. `lastOpenedDays` reads the
+    file's own mtime rather than a stored timestamp - `record_opened` rewrites
+    the file on every open, so the mtime already IS the moment of the most
+    recent one, and a second clock stored beside it could only disagree with
+    the filesystem's own answer.
+    """
+    path = _open_state_path(project, config)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        mtime = os.path.getmtime(path)
+    except Exception:
+        return {"count": 0, "lastOpenedDays": None}
+    count = data.get("count") if isinstance(data, dict) else None
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+        return {"count": 0, "lastOpenedDays": None}
+    return {"count": count,
+            "lastOpenedDays": max(0.0, (time.time() - mtime) / 86400.0)}
+
+
+def record_opened(project, config=None):
+    """The one write this section makes: the server reached LISTENING, once
+    more. Best-effort and fail-soft on purpose - an operator's ability to open
+    the panel must never depend on this write succeeding, and no lock is taken
+    for the reason `_gate_feed` gives about its own feed: this is telemetry
+    and not the tamper-evident trail, and a lock here would be one more thing
+    a launch can block on. A race between two launches costs at most one
+    undercounted open, never a wrong answer to 'has it ever been'.
+    """
+    try:
+        path = _open_state_path(project, config)
+        prior = read_open_state(project, config)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"count": prior["count"] + 1}, fh)
+    except Exception:
+        pass
+
+
+def check_panel_opened(rep, project, config=None):
+    """Has this project's control surface ever been opened?
+
+    NEVER is worded apart from 'opened, but not recently' - those are
+    different diagnoses, and only a fresh install has not earned either yet.
+    WARNING at most, on both branches: an operator who has genuinely never
+    opened the panel has done nothing wrong, and a doctor that failed a build
+    for it would be reporting absence as though it were a fault.
+    """
+    state = read_open_state(project, config)
+    if not state["count"]:
+        rep.warn("panel",
+                 "never opened in this project - nothing here can say "
+                 "whether the panel is part of how this project is run",
+                 "run /audit:panel to open it")
+        return
+    age = state["lastOpenedDays"]
+    if age is not None and age > _dr.RECENT_DAYS:
+        rep.warn("panel",
+                 "opened %d time(s) here, last %.1f day(s) ago - not recently"
+                 % (state["count"], age),
+                 "harmless if you have not needed it lately")
+        return
+    rep.ok("panel", "opened %d time(s) here%s"
+           % (state["count"],
+              (", last %.1f day(s) ago" % age) if age is not None else ""))
 
 
 if __name__ == "__main__":

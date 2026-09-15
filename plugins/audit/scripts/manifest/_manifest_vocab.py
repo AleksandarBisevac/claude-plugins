@@ -403,6 +403,14 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # does: a set here would be anchored, drift-checked and green while
               # a wrong word stayed exactly as accepted.
               "redFirst",
+              # Whether the closed diff does what `description` asked, which
+              # neither `testEvidence` nor `redFirst` beside it can say - a
+              # gate proves the suite is green and says nothing about whether
+              # the green change is the change somebody wanted. Declared here
+              # for `testEvidence`'s reason exactly: the schema's
+              # `$defs/intentCheck` owns the shape and the `answer`
+              # vocabulary, and nothing here restates either.
+              "intentCheck",
               # The files this task PRODUCES rather than edits, as anchored
               # patterns. Apart from `files` because the two answer different
               # questions: `files` is the review scope and every entry owes a

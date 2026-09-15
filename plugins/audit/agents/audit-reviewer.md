@@ -211,3 +211,10 @@ which — so filed as a finding it becomes a fix run editing code to match a des
 nobody checked, and left out of the return it is gone. It is its own key with its own
 vocabulary, and `verdict` stays a verdict about the CODE: `clean` beside
 `intent.answer = "diverges"` is a legitimate return, and an important one.
+
+In `mode: task` this answer does not stay in the transcript: the orchestrator carries it
+into `/audit:task done --intent <answer>` on the same call that already carries `--commit`,
+which is what makes the manifest's `task.intentCheck` name the diff the answer was actually
+given. That is the reader of this key, not a hook and not a gate — so an answer this brief
+guesses rather than reports (a `matches` filling a gap `missing` should have named) is one a
+close will hold as a record, not merely a line this session printed and moved past.

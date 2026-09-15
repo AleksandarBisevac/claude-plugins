@@ -468,6 +468,50 @@ def _cases_body(check, tmp, outside):
           and bfeed.read_text(encoding="utf-8") == inside_row + "\n")
 
 
+    # gf26: a plan that never asks for either offered entry is unchanged in
+    # every byte - `accepted_gates` names nothing for a manifest with no
+    # `meta.buildCommands` at all, and nothing for one whose keys are unrelated.
+    check("gf26 an offered entry is ABSENT from a plan that did not ask for "
+          "it, over both shapes of asking-nothing: %r"
+          % ((M.accepted_gates({}), M.accepted_gates(
+              {"meta": {"buildCommands": {"lint": "ruff check"}}})),),
+          M.accepted_gates({}) == []
+          and M.accepted_gates(
+              {"meta": {"buildCommands": {"lint": "ruff check"}}}) == [])
+
+    # gf27: a plan that DOES ask gets the entry back, and it carries the
+    # sentence saying what it asks of a change - not a bare name.
+    accepted = M.accepted_gates(
+        {"meta": {"buildCommands": {"provesCanFail": "tools/prove-gates.py"}}})
+    check("gf27 an ACCEPTED entry carries the `asks` sentence, pinned against "
+          "the catalog's own copy rather than restated here: %r" % (accepted,),
+          len(accepted) == 1 and accepted[0]["key"] == "provesCanFail"
+          and accepted[0]["asks"]
+          == M._OFFERED_BY_KEY["provesCanFail"]["asks"]
+          and accepted[0]["costs"]
+          == M._OFFERED_BY_KEY["provesCanFail"]["costs"])
+
+    # gf28: both entries at once, in a stable order a caller can rely on -
+    # never the manifest's own (arbitrary) key order.
+    both = M.accepted_gates(
+        {"meta": {"buildCommands": {"claimsMatchCode": "y",
+                                    "provesCanFail": "x", "lint": "z"}}})
+    check("gf28 accepting BOTH entries returns exactly the two, in a fixed "
+          "order, with the unrelated `lint` key contributing nothing: %r"
+          % ([e["key"] for e in both],),
+          [e["key"] for e in both] == ["claimsMatchCode", "provesCanFail"])
+
+    # gf29: an unrelated key never manufactures an entry for something this
+    # catalog does not carry - the false-positive direction gf26/gf27 do not
+    # cover on their own.
+    check("gf29 a key that merely LOOKS like an offered one is not accepted: "
+          "%r" % (M.accepted_gates(
+              {"meta": {"buildCommands": {"provesCanFailSomehow": "x"}}}),),
+          M.accepted_gates(
+              {"meta": {"buildCommands": {"provesCanFailSomehow": "x"}}})
+          == [])
+
+
 def _selftest():
     return _harness.run(_cases)
 

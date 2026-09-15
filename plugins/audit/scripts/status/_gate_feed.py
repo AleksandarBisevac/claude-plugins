@@ -41,6 +41,16 @@ shape and REMOVING on the guess. `oldestKeptDays` is the answer instead - a real
 number, for the one lever that does reach them - and `audit-logs.py` renders the
 statement beside it. See `classify()` for the false positive that decided it.
 
+AND WHAT MAY BE ADDED HERE, ON PURPOSE - `OFFERED_GATES` below. The rows above
+prune what a gate already wrote into this feed; this is the other half of the
+same file's story, which is what belongs in it, not only what no longer does.
+It is a CATALOG and never a write: this project's own bar - prove a check can
+fail before it is trusted, refuse a comment that claims what the code does not
+do - offered as candidate `meta.buildCommands` keys a plan may adopt, never
+added for it. `accepted_gates()` reads which of them a plan actually asked for
+straight off the keys it wrote, so a plan that names none gets nothing back and
+is unchanged in every byte for not having asked.
+
 CONTAINMENT IS ASKED ONCE, of `hooks/_config.within_root` - the same function
 require-plan, remind-tdd and guard-secrets-read ask, so "inside this repository"
 has one answer across the plugin. Note what that does NOT cover: the file-safety
@@ -358,6 +368,61 @@ def prune(project, config=None, older_than_days=None, dry_run=False, now=None):
     return out
 
 
+# --- offered gate entries: opt-in, not imposed -----------------------------------
+# THE TWO CHECKS THIS PROJECT LEARNT THE HARD WAY, OFFERED RATHER THAN IMPOSED.
+# `meta.buildCommands` is a free-form map - any project may add a key under it -
+# so a plan that never adds one of the keys below is unchanged in every byte:
+# the schema asks nothing of it, `commands/init.md`'s recon step does not add
+# one uninvited, and this module invents no entry for a key it does not know.
+#
+# EACH ENTRY CARRIES BOTH SIDES OF THE TRADE. `asks` is what the check demands
+# of a change, phrased as a refusal so whoever reads it at review time - a
+# human, or the model doing sign-off - knows what to decline and not only what
+# to prefer; `costs` is what running it actually spends. A menu that showed one
+# side of that is a menu that gets chosen wrongly once and is routed around
+# within a day - this register already holds that case for a guard that fired
+# where it was not wanted.
+OFFERED_GATES = (
+    {"key": "provesCanFail",
+     "title": "prove a check can fail before it is trusted",
+     "asks": "Refuse to accept a new or changed check until its case has "
+             "been shown red on the code before the fix and green after, "
+             "with the mutation restored - a check only ever seen passing "
+             "may be asserting nothing.",
+     "costs": "One mutate-observe-restore cycle per case, with bytecode "
+              "purged between cycles - minutes rather than seconds, and not "
+              "a per-commit gate."},
+    {"key": "claimsMatchCode",
+     "title": "refuse a comment that claims what the code does not do",
+     "asks": "Refuse a comment, docstring or document that asserts a "
+             "behaviour unless the sentence names the file:line that makes "
+             "it true, or is rewritten to say only what the code does.",
+     "costs": "One read of the diff's added prose per change - no build, no "
+              "mutation, no tree write."},
+)
+
+_OFFERED_BY_KEY = dict((entry["key"], entry) for entry in OFFERED_GATES)
+
+
+def accepted_gates(manifest):
+    """Which of `OFFERED_GATES` this plan actually asked for, each carrying its
+    own `asks`/`costs` sentence - never a bare name, and never an entry this
+    catalog does not carry.
+
+    Read off `meta.buildCommands`' KEYS, not its values: naming the key is what
+    asking for the entry means, and the command a project points it at is that
+    project's own business, spelled however its own tooling needs it. A plan
+    that adds none of these keys gets `[]` back, which is the whole of what
+    OPTIONAL has to mean here - nothing above this reader requires the key,
+    and this reader does not manufacture an entry for one it does not
+    recognise.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    build = meta.get("buildCommands") if isinstance(meta, dict) else None
+    keys = sorted(build.keys()) if isinstance(build, dict) else []
+    return [_OFFERED_BY_KEY[key] for key in keys if key in _OFFERED_BY_KEY]
+
+
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
@@ -368,5 +433,15 @@ if __name__ == "__main__":
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_gate_feed.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test__gate_feed.py - run that file instead.")
+        raise SystemExit(0)
+    if "--list-offered" in sys.argv[1:]:
+        # THE ONE PRINTER, so nothing else retypes these sentences. `commands/
+        # init.md`'s recon step and `README.md` both point here rather than
+        # carrying their own copy - a sentence typed twice is a sentence that
+        # drifts the first time either copy is edited.
+        for entry in OFFERED_GATES:
+            print("%s: %s" % (entry["key"], entry["title"]))
+            print("  asks:  %s" % entry["asks"])
+            print("  costs: %s" % entry["costs"])
         raise SystemExit(0)
     print("This is a library module; run with --selftest to exercise it.")

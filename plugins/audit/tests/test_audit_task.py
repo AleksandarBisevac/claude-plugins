@@ -4447,7 +4447,8 @@ def _cases(check):
         _pd_hand = M._done_details(
             "P2.4", "P2", {"status": "in_progress", "completedAt": None,
                            "commit": None, "descriptive": None,
-                           "technical": None, "verifiedBy": []},
+                           "technical": None, "verifiedBy": [],
+                           "intentCheck": None},
             _pd_closed)
         check("pd9b ...and every key the WRITER hands over is on "
               "`_journal_io.DETAILS_KEYS`, asked of that module rather than of "
@@ -4552,6 +4553,95 @@ def _cases(check):
               and "already invalid -- nothing written" in txtbd2
               and "rolled back" not in txtbd2
               and open(mpbd2, "rb").read() == _pd_bd_before)
+
+        # ---- (ic) a close records the intent answer, or that it received none ---
+        # THE FAILURE MODE THIS IS WRITTEN AGAINST: an answer that is yes by
+        # default. A close with no `--intent` must not read as one that agreed,
+        # and a close that DID get an answer must name the diff (the commit) it
+        # was given rather than a bare word.
+        projic1, mpic1 = mk("dn-intent-matches", pd_fixture())
+        codeic1, txtic1 = run(["done", "P2.4", "--project-dir", projic1,
+                               "--commit", _PD_SHA, "--intent", "matches"])
+        ticm = task_in(mpic1, "P2.4")
+        check("ic1 a close given `--intent matches` records the answer beside "
+              "the SAME commit the close itself carried - the answer NAMES the "
+              "diff it was given rather than floating free of it: %r"
+              % (ticm.get("intentCheck"),),
+              codeic1 == 0
+              and ticm.get("intentCheck", {}).get("answer") == "matches"
+              and ticm.get("intentCheck", {}).get("commit") == _PD_SHA
+              and isinstance(ticm.get("intentCheck", {}).get("at"), str)
+              and "matches" in txtic1)
+
+        projic2, mpic2 = mk("dn-intent-none", pd_fixture())
+        codeic2, txtic2 = run(["done", "P2.4", "--project-dir", projic2,
+                               "--commit", _PD_SHA])
+        ticn = task_in(mpic2, "P2.4")
+        check("ic2 a close given NO --intent leaves `intentCheck` ABSENT - not a "
+              "default word, and not a `None` answer field either: %r"
+              % (ticn.get("intentCheck"),),
+              codeic2 == 0 and "intentCheck" not in ticn
+              and "NO ANSWER RECORDED" in txtic2)
+
+        projic3, mpic3 = mk("dn-intent-diverges", pd_fixture())
+        codeic3, _txtic3 = run(["done", "P2.4", "--project-dir", projic3,
+                               "--commit", _PD_SHA, "--intent", "diverges"])
+        ticd = task_in(mpic3, "P2.4")
+        check("ic3 NO ANSWER and a NEGATIVE answer are opposite facts and read "
+              "as such: absent here, a real word there - a shared 'nothing to "
+              "say' sentence would flatten them into one: %r"
+              % ((ticn.get("intentCheck"), ticd.get("intentCheck")),),
+              ticn.get("intentCheck") is None
+              and ticd.get("intentCheck", {}).get("answer") == "diverges"
+              and ticn.get("intentCheck") != ticd.get("intentCheck"))
+
+        with open(mpic1, "rb") as _fh:
+            _ic_before = _fh.read()
+        # argparse's own usage error writes to the REAL stderr (`main` swallows
+        # its SystemExit into a bare exit code and no text of its own), so this
+        # is driven with stderr suppressed rather than read back - the same
+        # pattern vf9 uses for the same reason.
+        with open(os.devnull, "w") as _ic_null, \
+                contextlib.redirect_stderr(_ic_null):
+            codeic4, _txtic4 = run(["done", "P2.1", "--project-dir", projic1,
+                                   "--commit", _PD_SHA, "--intent", "sideways"])
+        with open(mpic1, "rb") as _fh:
+            _ic_after = _fh.read()
+        check("ic4 a word this flag does not recognise is refused before "
+              "anything is written - argparse's own enum, so a typo cannot "
+              "invent a fourth answer this schema was never told about: %r"
+              % (codeic4,),
+              codeic4 == 2 and _ic_after == _ic_before)
+
+        _ic_jio = _panel_write._journalmod()
+        _ic_rows = _ic_jio.read_all(projic1) if _ic_jio else []
+        _ic_done = [r for r in _ic_rows if r.get("action") == "task.done"
+                    and r.get("details", {}).get("taskId") == "P2.4"]
+        _ic_changes = (_ic_done[0].get("details") or {}).get("changes") \
+            if _ic_done else []
+        _ic_field = [c for c in _ic_changes if c.get("field") == "intentCheck"]
+        check("ic5 the close that DID carry an answer leaves a `changes` row "
+              "naming the field, so the trail shows the write happened rather "
+              "than leaving a reader to infer it from the task alone - the "
+              "journal spells a structured value canonically, so `to` is the "
+              "block's JSON text and not the from-nothing shape: %r"
+              % (_ic_field,),
+              len(_ic_field) == 1
+              and _ic_field[0]["from"] is None
+              and "\"answer\":\"matches\"" in _ic_field[0]["to"])
+
+        # THE ORCHESTRATION DOCUMENT ITSELF NAMES THE FLAG, so the wiring above
+        # is not a capability nothing tells an operator to use.
+        with open(os.path.join(_output.PLUGIN_ROOT, "reference",
+                               "orchestrator.md"), "r", encoding="utf-8") as _ic_fh:
+            _ic_orch = _ic_fh.read()
+        check("ic6 `reference/orchestrator.md` tells the orchestrator to carry "
+              "the reviewer's answer into the SAME close that already carries "
+              "`--commit`, for every one of the three words - not only the two "
+              "that already had somewhere to go",
+              "--intent matches" in _ic_orch
+              and "--intent diverges" in _ic_orch
+              and "--intent cannot-tell" in _ic_orch)
 
         # ---- (tg) P45.1: the gate `add` DERIVES, and the basis it reports -----
         # A generated plan handed every task the phase's whole gate, so a phase of

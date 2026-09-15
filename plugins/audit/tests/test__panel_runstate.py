@@ -20,6 +20,7 @@ from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
 import _evidence_io as _evidence                   # noqa: E402  (where the run ledger lives, for the fixture)
+import _doctor_report as _base_report              # noqa: E402  (the Report collector, for check_panel_opened)
 import _panel_runstate as M         # noqa: E402
 
 
@@ -329,6 +330,72 @@ def _cases(check):
           == _jio.OUTSIDE_TOKEN
           and M._redacted_event(proj, {"file": "   "}) == {"file": "   "}
           and "_journal_io.repo_relative_or_token" in _src)
+
+    # --- has the panel ever been opened? -----------------------------------------
+    orproj = os.path.join(tmp, "openstate-proj")
+    os.makedirs(orproj, exist_ok=True)
+    check("read_open_state on a project that has never opened the panel "
+          "reports a count of zero and no age - the record of never: %r"
+          % (M.read_open_state(orproj),),
+          M.read_open_state(orproj) == {"count": 0, "lastOpenedDays": None})
+
+    rep_never = _base_report.Report()
+    M.check_panel_opened(rep_never, orproj)
+    _or_never = [r for r in rep_never.rows if r["check"] == "panel"]
+    check("check_panel_opened reports NEVER rather than 'opened 0 time(s)' - "
+          "the two are different sentences and only one of them is honest "
+          "about a project that has not tried yet: %r" % (_or_never,),
+          len(_or_never) == 1 and _or_never[0]["level"] == "WARNING"
+          and "never opened" in _or_never[0]["detail"])
+
+    M.record_opened(orproj)
+    _or_state1 = M.read_open_state(orproj)
+    check("record_opened moves the count from never to one, and ages from "
+          "the write itself rather than from a value this call invents: %r"
+          % (_or_state1,),
+          _or_state1["count"] == 1
+          and isinstance(_or_state1["lastOpenedDays"], float)
+          and _or_state1["lastOpenedDays"] >= 0.0)
+
+    M.record_opened(orproj)
+    M.record_opened(orproj)
+    _or_state3 = M.read_open_state(orproj)
+    check("record_opened accumulates - three opens read back as three, not "
+          "as a boolean collapsing every open after the first: %r"
+          % (_or_state3,),
+          _or_state3["count"] == 3)
+
+    rep_opened = _base_report.Report()
+    M.check_panel_opened(rep_opened, orproj)
+    _or_opened = [r for r in rep_opened.rows if r["check"] == "panel"]
+    check("check_panel_opened reports OK once the panel has actually opened, "
+          "naming the count - and it is worded apart from the never case "
+          "rather than sharing one ambiguous sentence: %r" % (_or_opened,),
+          len(_or_opened) == 1 and _or_opened[0]["level"] == "OK"
+          and "3 time(s)" in _or_opened[0]["detail"])
+
+    # NEVER FROM NOT RECENTLY, which needs the file to look old rather than
+    # the record to name a threshold in prose.
+    _or_stale_path = M._open_state_path(orproj, None)
+    _or_old = time.time() - (_base_report.RECENT_DAYS + 5) * 86400.0
+    os.utime(_or_stale_path, (_or_old, _or_old))
+    rep_stale = _base_report.Report()
+    M.check_panel_opened(rep_stale, orproj)
+    _or_stale = [r for r in rep_stale.rows if r["check"] == "panel"]
+    check("check_panel_opened tells 'opened, but a while ago' apart from "
+          "NEVER - the file is old rather than absent, and the two states "
+          "must not read as the same warning: %r" % (_or_stale,),
+          len(_or_stale) == 1 and _or_stale[0]["level"] == "WARNING"
+          and "not recently" in _or_stale[0]["detail"]
+          and "never opened" not in _or_stale[0]["detail"])
+
+    # NO IDENTITY BEYOND THE FACT: the whole on-disk record is a count and
+    # nothing this process did not put there itself.
+    with open(M._open_state_path(orproj, None), "r", encoding="utf-8") as _or_fh:
+        _or_disk = json.load(_or_fh)
+    check("the on-disk record carries a count and nothing else - no session "
+          "id, no host, no path, no page: %r" % (_or_disk,),
+          set(_or_disk) == {"count"})
 
     shutil.rmtree(tmp, ignore_errors=True)
 
