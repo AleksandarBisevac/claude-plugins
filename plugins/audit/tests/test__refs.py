@@ -3470,6 +3470,104 @@ def _cases(check):
           and _reason_blocks(_so_phase, "no token any document carries") == [])
 
 
+    # --- the route a sign-off finding takes (`fr*`) ---
+    # Sign-off runs when every task is `done` and the plan gate opens a file only
+    # through a task that is RUNNING, so the route out is create-and-start. The
+    # document carried it under one CASE of it, and a reader whose finding sat in
+    # a declared file read the route as somebody else's.
+    _fr_live = M.signoff_fix_route_drift()
+    check("fr1 THE LIVE CLAIM: both documents that describe phase sign-off state "
+          "the route with no condition on it, and both name both steps: %r"
+          % (_fr_live,),
+          _fr_live["missing"] == [] and _fr_live["checked"] == 2)
+
+    _fr_routes = M.route_lines(_product_doc("reference/orchestrator.md"))
+    _fr_quoted = _product_doc("reference/orchestrator.md").lower().count(
+        M.SIGNOFF_ROUTE_CONDITION)
+    check("fr5 THE ALLOW CASE, on the real document: the qualifier the route "
+          "lost is still QUOTED in the section underneath, by the paragraph "
+          "recording what reading it that way cost. So a version of this check "
+          "that read the section instead of the route line would convict the "
+          "repair - which is why it reads the line. Both halves counted, because "
+          "a document that had simply deleted the history would pass a "
+          "line-only assertion and prove nothing about the widening. And EVERY "
+          "route line is read, not the first - the document states the route "
+          "twice and a first-only check would let the second grow the condition "
+          "back unseen: %r / %r" % (_fr_quoted, _fr_routes),
+          _fr_quoted > 0 and len(_fr_routes) > 1
+          and not any(M.SIGNOFF_ROUTE_CONDITION in ln.lower()
+                      for ln in _fr_routes)
+          and _fr_live["missing"] == [])
+
+    def _fr_tree(orch, review):
+        root = tempfile.mkdtemp()
+        for rel, body in (("reference/orchestrator.md", orch),
+                          ("commands/review.md", review)):
+            full = os.path.join(root, M.PLUGIN_REL.replace("/", os.sep),
+                                rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(full))
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(body)
+        return root
+
+    _fr_ok = ("A finding gets a NEW TASK before you spawn anything.\n"
+              "    /audit:task add \"<the finding>\" --phase <id> --files a\n"
+              "    /audit:run <id>\n")
+    _fr_conditioned = _fr_ok.replace(
+        "A finding gets a NEW TASK",
+        "A finding in a file no task declares gets a NEW TASK")
+    _fr_half = ("A finding gets a NEW TASK before you spawn anything.\n"
+                "    /audit:task add \"<the finding>\" --phase <id> --files a\n")
+    _fr_silent = "Run phase sign-off. Handle findings sensibly.\n"
+
+    _fr_dirs = []
+    try:
+        _fr_c = _fr_tree(_fr_conditioned, _fr_ok)
+        _fr_dirs.append(_fr_c)
+        _fr_r = M.signoff_fix_route_drift(_fr_c)
+        check("fr2 a route line that has grown a condition is reported, and the "
+              "condition is QUOTED in the line so the reader can find it: %r"
+              % (_fr_r,),
+              [d for d, _w in _fr_r["missing"]] == ["reference/orchestrator.md"]
+              and "under a condition" in _fr_r["missing"][0][1])
+
+        _fr_s = _fr_tree(_fr_ok, _fr_silent)
+        _fr_dirs.append(_fr_s)
+        _fr_r = M.signoff_fix_route_drift(_fr_s)
+        check("fr3 a document that stops stating the route at all is reported "
+              "separately from one that states it badly - they are two different "
+              "repairs: %r" % (_fr_r["missing"],),
+              any(d == "commands/review.md" and "does not state the route" in w
+                  for d, w in _fr_r["missing"]))
+
+        _fr_h = _fr_tree(_fr_ok, _fr_half)
+        _fr_dirs.append(_fr_h)
+        _fr_r = M.signoff_fix_route_drift(_fr_h)
+        check("fr4 ...and a document naming the CREATE step without the START "
+              "step is reported by the step it is missing. Half a route fails in "
+              "the same place the whole missing one does: the task exists, "
+              "nothing is running, and the fix run is refused: %r"
+              % (_fr_r["missing"],),
+              [(d, "/audit:run" in w) for d, w in _fr_r["missing"]]
+              == [("commands/review.md", True)])
+
+        _fr_g = _fr_tree(_fr_ok, _fr_ok)
+        _fr_dirs.append(_fr_g)
+        os.remove(os.path.join(_fr_g, M.PLUGIN_REL.replace("/", os.sep),
+                               "commands", "review.md"))
+        _fr_r = M.signoff_fix_route_drift(_fr_g)
+        check("fr6 a document that cannot be read is NAMED and is not counted as "
+              "checked - 'the two agree' and 'one of them was never opened' are "
+              "different answers, and `checked` is what tells them apart: %r"
+              % (_fr_r,),
+              _fr_r["checked"] == 1
+              and [d for d, _w in _fr_r["missing"]] == ["commands/review.md"]
+              and "cannot be read" in _fr_r["missing"][0][1])
+    finally:
+        for _d in _fr_dirs:
+            shutil.rmtree(_d, ignore_errors=True)
+
+
 def _selftest():
     return _harness.run(_cases)
 

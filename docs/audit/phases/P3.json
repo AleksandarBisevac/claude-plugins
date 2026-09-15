@@ -19,7 +19,7 @@
     "status": "skipped",
     "findings": []
   },
-  "summary": "Shipped as six direct-to-main commits, tagged v0.5.0. All eight selftest suites green (163 cases); the dogfood gate and report smoke run in CI. The single open item is the manual live ADO round-trip on first team use \u2014 surfaced by P3.1's manual gate entry.",
+  "summary": "Shipped as six direct-to-main commits, tagged v0.5.0. All eight selftest suites green (163 cases); the dogfood gate and report smoke run in CI. The single open item is the manual live ADO round-trip on first team use — surfaced by P3.1's manual gate entry.",
   "tasks": [
     {
       "id": "P3.1",

@@ -4,7 +4,7 @@
   "status": "done",
   "model": "sonnet",
   "blockedBy": [],
-  "desiredOutcome": "A task at files inside a git submodule is caught up front (the parent repo cannot commit them) instead of failing mid-run \u2014 same preflight philosophy as the gitRoot fix.",
+  "desiredOutcome": "A task at files inside a git submodule is caught up front (the parent repo cannot commit them) instead of failing mid-run — same preflight philosophy as the gitRoot fix.",
   "testGate": [
     "selftests",
     "validate",

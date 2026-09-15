@@ -499,7 +499,9 @@ report, because `git switch -c` is about to fail anyway.
      disagreement between the diff, the description and the claim that only a human can
      settle. Read one as the other and one of them is lost.
      - `findings` → record them in `phase.review.findings` and handle them at sign-off the
-       ordinary way (a finding in a file no task declares gets a NEW TASK there). Do not open
+       ordinary way (every actionable finding gets a NEW TASK there, created and started
+       before any fix run — the file being declared or not is beside the point, since sign-off
+       has no task running). Do not open
        a fix loop here; the per-task call is a check, not the review.
      - `diverges` → write it into `task.outcome.technical` so the commit carries it, and
        surface it as a **human action item**. Do not spawn a fix run from it: the wrong half
@@ -751,27 +753,46 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    context). The mode is what tells it there is no single task description or executor claim to bind
    here: the intent question was already asked per task, against each task's own description and its own
    executor's `outcome`, and this diff cannot say which task produced which line. What sign-off adds is the
-   review skill over the whole phase. Record results in `phase.review.findings`; for each actionable finding spawn an
+   review skill over the whole phase. Record results in `phase.review.findings` — each one in the
+   **finding shape** (`id`, `severity` from `low|med|high`, `file`, `issue`, `resolution`); the
+   validator warns on a finding missing a field or carrying a severity outside that vocabulary,
+   because a finding nothing can read back is a finding no later run can act on. Then, for each
+   actionable finding, **create and start its task** (the two commands below) and spawn an
    `audit:audit-executor` fix run (`model = phase.review.model`) that may edit implementation AND tests; loop until
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a
    general-purpose subagent with the same rules if the agent type is unavailable. **If the resolved review skill is
    null**, skip this step — tests are the signer.
 
-   **A finding in a file NO task declares gets a NEW TASK, before you spawn anything.**
-   `/audit:task add "<the finding>" --phase <phaseId> --files <the file>` works while the phase is
-   in sign-off; it lands `pending` and prints `ready now -- /audit:run <id>`. Then run that task
-   the ordinary way. **`/audit:task scope` is not that route.** It no longer refuses a finished
+   **A finding gets a NEW TASK, and YOU create and start it before you spawn anything.**
+   Not "a finding in a file no task declares" — every actionable finding. Sign-off happens when
+   every task in the phase is `done`, and the plan gate opens a file only through a task that is
+   **running**, so a fix run has nothing open to it whatever the `fileIndex` says. Two commands,
+   run by you, in this order:
+
+   ```
+   /audit:task add "<the finding>" --phase <phaseId> --files <the files it touches>
+   /audit:run <the id that add printed>
+   ```
+
+   `add` works while the phase is in sign-off; it lands `pending` and prints
+   `ready now -- /audit:run <id>`. Run that, and the fix executor edits inside an open task.
+   **`/audit:task scope` is not that route**, and it is where the old wording sent
+   people. It no longer refuses a finished
    task. F283 narrowed that refusal to `cancelled` alone,
    and a `done` task will take a widening — one that settles the `fileIndex` and deliberately
    records no new work: the task's `outcome` still describes the run that happened, so the finding
-   would get no commit, no gate run and no evidence row of its own. The verb prints that reasoning
-   itself when it accepts one, which is the line to read if you reach for it anyway.
+   would get no commit, no gate run and no evidence row of its own — and the task stays `done`,
+   which is exactly the state the plan gate will not open a file for. The verb prints that
+   reasoning itself when it accepts one, which is the line to read if you reach for it anyway.
 
    That order matters and it was measured: a live run spawned three fix-run subagents for findings
    in undeclared files, `require-plan` refused all three before an edit landed — correctly, the
    file was in no task's scope — and they had to be re-driven after the tasks were created by hand.
    **172,417 tokens.** The plan gate was doing its job; the sequence was wrong, and this paragraph
-   is the sequence.
+   is the sequence. The heading above used to carry that run's condition — *in a file NO task
+   declares* — and a reader whose finding sat in a declared file read the whole route as somebody
+   else's, reached for `scope`, and was refused on the second file of the fix. The condition was
+   never the rule; the rule is that sign-off has no running task.
 
    And the reason it is a new task rather than a widened one: the fix is **new work**. It needs its
    own commit, its own gate run and its own evidence row. Widening a finished task would make it

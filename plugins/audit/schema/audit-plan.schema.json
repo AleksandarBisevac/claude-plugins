@@ -1457,9 +1457,11 @@
       }
     },
     "finding": {
+      "description": "One review finding. The object form is the shape: id, severity, file, issue, resolution — the same five keys the reviewer agent returns and the orchestrator records, so a finding can be read back by a later run, a report or the panel. All five are expected on a finding written today; `required` is deliberately NOT declared here so that a plan written before the shape still validates, and the rule is enforced where it can be advisory instead: `validate-manifest.py` emits a WARNING naming a finding that is missing a field, that carries a severity outside the vocabulary, or that is a plain string. A validator that refused a plan written before its own rule is a validator people stop running.",
       "oneOf": [
         {
-          "type": "string"
+          "type": "string",
+          "description": "Legacy free-text finding. It records no file, no severity and no resolution, so nothing downstream can act on it; the validator warns."
         },
         {
           "type": "object",
@@ -1469,23 +1471,27 @@
               "type": [
                 "string",
                 "integer"
-              ]
+              ],
+              "description": "Identifies the finding within its phase's review, so a fix task and a triage note can both name it."
             },
             "severity": {
               "type": [
                 "string",
                 "null"
               ],
-              "description": "Free-text in practice (low/med/high/medium/LOW/info/...). Not enum-constrained for back-compat."
+              "description": "The vocabulary is low | med | high — the three words the reviewer agent is asked for. Not enum-constrained, because a plan written before the shape carries medium/LOW/info and must keep validating; the validator warns on anything outside the three."
             },
             "file": {
-              "type": "string"
+              "type": "string",
+              "description": "Repo-relative path, optionally with a line span (path:lines) — what a fix task's `files` is built from."
             },
             "issue": {
-              "type": "string"
+              "type": "string",
+              "description": "What is wrong, stated against the diff."
             },
             "resolution": {
-              "type": "string"
+              "type": "string",
+              "description": "The concrete change that settles it — what a fix executor is handed."
             }
           }
         }

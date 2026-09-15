@@ -20,7 +20,7 @@
     "status": "skipped",
     "findings": []
   },
-  "summary": "Shipped as four direct-to-main commits, tagged v0.6.0. Ten selftest suites (183 cases) green on ubuntu+windows; plugin evals deliberately deferred while claude plugin eval is early access (schema not public) \u2014 recorded in CONTRIBUTING with priority cases.",
+  "summary": "Shipped as four direct-to-main commits, tagged v0.6.0. Ten selftest suites (183 cases) green on ubuntu+windows; plugin evals deliberately deferred while claude plugin eval is early access (schema not public) — recorded in CONTRIBUTING with priority cases.",
   "tasks": [
     {
       "id": "P4.1",

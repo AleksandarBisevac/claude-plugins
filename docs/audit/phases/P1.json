@@ -72,7 +72,7 @@
         "plugins/audit/templates/audit.config.example.json"
       ],
       "docs": [],
-      "description": "All hooks invoked python3 directly; exit 127 (no such interpreter \u2014 typical Windows) was a non-blocking error, so every guard silently failed OPEN. Launch via POSIX-sh launcher resolving python3->python->py; guards emit permissionDecision ask when nothing resolves; add explicit 10s timeouts; gate NotebookEdit.",
+      "description": "All hooks invoked python3 directly; exit 127 (no such interpreter — typical Windows) was a non-blocking error, so every guard silently failed OPEN. Launch via POSIX-sh launcher resolving python3->python->py; guards emit permissionDecision ask when nothing resolves; add explicit 10s timeouts; gate NotebookEdit.",
       "tests": {
         "mode": "regression",
         "add": [
@@ -85,7 +85,7 @@
         ]
       },
       "outcome": {
-        "technical": "Builtins-only sh launcher, exec passes stdin once; ask/open fail modes hardcoded in hooks.json (config needs python \u2014 chicken-and-egg).",
+        "technical": "Builtins-only sh launcher, exec passes stdin once; ask/open fail modes hardcoded in hooks.json (config needs python — chicken-and-egg).",
         "descriptive": "Guards now fail LOUD instead of silently vanishing on machines without python3."
       },
       "commit": "22ba287",
@@ -227,7 +227,7 @@
         "plugins/audit/README.md"
       ],
       "docs": [],
-      "description": "Resume searched for phase.status == in_progress which nothing ever wrote \u2014 write it at phase entry, add the resume subcommand with a pre-0.3 fallback. Guard run (done/blocked/in_progress). Split test failure from infrastructure failure (no attempts burned). Offer --no-ff when ff-merge fails. Unconditional high-risk confirm. Preflight for config/manifest/usage. Wire desiredOutcome end-to-end.",
+      "description": "Resume searched for phase.status == in_progress which nothing ever wrote — write it at phase entry, add the resume subcommand with a pre-0.3 fallback. Guard run (done/blocked/in_progress). Split test failure from infrastructure failure (no attempts burned). Offer --no-ff when ff-merge fails. Unconditional high-risk confirm. Preflight for config/manifest/usage. Wire desiredOutcome end-to-end.",
       "tests": {
         "mode": "gate-only",
         "add": [],
@@ -238,7 +238,7 @@
       },
       "outcome": {
         "technical": "Full audit.md revision; AskUserQuestion added to allowed-tools; init generates desiredOutcome per phase.",
-        "descriptive": "The headline promises \u2014 resumable, safe re-runs, team-repo merges \u2014 now hold."
+        "descriptive": "The headline promises — resumable, safe re-runs, team-repo merges — now hold."
       },
       "commit": "eb9bffe",
       "attempts": 1,
@@ -263,7 +263,7 @@
         "plugins/audit/commands/bug.md"
       ],
       "docs": [],
-      "description": "claude plugin validate revealed audit.md's unquoted description (contains ': ') failed YAML parsing \u2014 ALL its frontmatter, allowed-tools included, was silently dropped at runtime since v0.2.0; init.md's argument-hint parsed as a YAML array. Quote every frontmatter value.",
+      "description": "claude plugin validate revealed audit.md's unquoted description (contains ': ') failed YAML parsing — ALL its frontmatter, allowed-tools included, was silently dropped at runtime since v0.2.0; init.md's argument-hint parsed as a YAML array. Quote every frontmatter value.",
       "tests": {
         "mode": "gate-only",
         "add": [],

@@ -129,6 +129,14 @@ _unknown_keys = _vocab._unknown_keys
 TERMINAL = _mio.TERMINAL
 
 _check_claim = _phases._check_claim
+# The review record's shape and its severity words, re-exported for the reason
+# every alias here is: this module is the import a consumer already spells, and a
+# reader that wanted to render or grade a finding would otherwise have to learn
+# which of five files the rule moved to.
+FINDING_FIELDS = _phases.FINDING_FIELDS
+FINDING_SEVERITY = _phases.FINDING_SEVERITY
+REVIEW_FINDING_LISTS = _phases.REVIEW_FINDING_LISTS
+_check_review = _phases._check_review
 _check_area_tag = _phases._check_area_tag
 _check_areas = _phases._check_areas
 _walk_phases = _phases._walk_phases

@@ -135,7 +135,7 @@ def _cases(check):
           "raise - a fresh install is a state the panel renders",
           M.read_config(proj) == {})
     _mio.atomic_write_json(M._config_path(proj), {"planGate": "warn"},
-                           ensure_ascii=False, indent=2)
+                           indent=2)
     check("pp13 ...and it reads one that is there", M.read_config(proj)
           == {"planGate": "warn"})
     with open(M._config_path(proj), "w", encoding="utf-8") as fh:

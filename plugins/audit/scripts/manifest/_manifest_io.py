@@ -655,25 +655,64 @@ def split_manifest(manifest, shard_rel_dir="phases"):
 
 
 # --- atomic writing -------------------------------------------------------------
-def atomic_write_json(path, obj, ensure_ascii=True, indent=2):
+# THE ESCAPING IS CHOSEN HERE, ONCE, AND IT IS LITERAL UTF-8.
+#
+# A manifest has three writers and this plugin is only one of them. The other two
+# are the operator's editor -- a session's Edit tool, a human's -- and whatever
+# merge machinery git hands a conflict to, and both of those emit the character
+# that was typed. Escaping to ASCII puts a backslash escape sequence in its place
+# instead. So a plan whose title carries an em dash is rewritten wholesale every
+# time the two writers
+# alternate: the editor lands the character, the next plugin write escapes it
+# back, and a shard merge that should have been the lines that moved becomes the
+# lines that were re-spelled. That is the failure this direction is picked to end,
+# and this plugin is the only one of the three writers that can be changed -- so
+# it moves to what the other two already produce rather than asking them to escape.
+#
+# Nothing is bought by escaping on the other side. The stream is opened with an
+# explicit `encoding="utf-8"` here and in `read_json`, so the bytes never depend on
+# a locale; escaping to ASCII is for channels that are not eight-bit clean, and a
+# file on disk is not one of those.
+#
+# WHAT THIS IS NOT. The journal's canonical row and the hook that appends to it
+# also choose an escaping, and they are deliberately untouched by this: that string
+# is a sha256 INPUT chaining one row to the next, not a document anybody diffs, and
+# re-spelling it would break every chain already written.
+# `_deps.json_encoding_violations()` holds the rule this block states, and it is
+# scoped to this writer for exactly that reason.
+def json_document(obj, indent=2):
+    """The exact text a JSON document written by this plugin has: the chosen
+    escaping, `indent`, and a trailing newline.
+
+    THE ONE SPELLING, and it is a function rather than a line inside the writer
+    because two callers need it. `atomic_write_json` writes what this returns;
+    anything asking whether a file ALREADY has this shape compares against it
+    instead of re-deriving the bytes, and re-deriving the bytes is how the
+    second escaping arrived the first time.
+    """
+    return json.dumps(obj, indent=indent, ensure_ascii=False) + "\n"
+
+
+def atomic_write_json(path, obj, indent=2):
     """Write `obj` as JSON to `path` atomically: a unique temp file (mkstemp, in
     the SAME directory as `path` so os.replace stays on one filesystem) is
     written and fsync'd via close, then swapped into place with os.replace. The
     parent directory is created if missing. On any failure the temp file is
     removed (never left behind) and the exception propagates.
 
-    This is the ONE atomic-JSON-write implementation for the audit plugin —
-    used directly by `save_sharded` (ensure_ascii=True, this module's historic
-    byte shape) and by panel-server.py's thin delegation (ensure_ascii=False,
-    to keep its existing bytes unchanged).
+    This is the ONE atomic-JSON-write implementation for the audit plugin, and it
+    takes no encoding argument: the escaping is `json_document`'s, not the
+    caller's -- see the block above for which way and why. `indent` stays a
+    parameter because
+    it is a shape a caller may legitimately want (a machine-read sidecar has no
+    use for two spaces); every caller in this tree asks for the readable one.
     """
     d = os.path.dirname(path) or "."
     os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(obj, fh, indent=indent, ensure_ascii=ensure_ascii)
-            fh.write("\n")
+            fh.write(json_document(obj, indent))
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
@@ -681,10 +720,10 @@ def atomic_write_json(path, obj, ensure_ascii=True, indent=2):
 
 
 def _atomic_write_json(path, data):
-    """Back-compat private alias — preserves this module's historic byte shape
-    (ensure_ascii=True, indent=2) for `save_sharded` and any other in-file
-    caller."""
-    atomic_write_json(path, data, ensure_ascii=True, indent=2)
+    """Private alias for the in-file callers (`save_sharded`, `save_manifest`).
+    It carries no encoding of its own — there is one encoding and the writer
+    above holds it."""
+    atomic_write_json(path, data, indent=2)
 
 
 # --- sharded save ---------------------------------------------------------------

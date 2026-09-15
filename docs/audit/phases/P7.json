@@ -19,7 +19,7 @@
     "status": "skipped",
     "findings": []
   },
-  "summary": "Root cause of the recurring 'Unknown command: /audit': plugin commands are namespaced /<plugin>:<cmd>, so the single audit.md was only reachable as /audit:audit and bare /audit never existed \u2014 yet every doc and the recap text emitted /audit. Split into seven verb commands sharing reference/orchestrator.md; fixed all handoff text. 193 selftest cases unchanged (hooks/scripts untouched).",
+  "summary": "Root cause of the recurring 'Unknown command: /audit': plugin commands are namespaced /<plugin>:<cmd>, so the single audit.md was only reachable as /audit:audit and bare /audit never existed — yet every doc and the recap text emitted /audit. Split into seven verb commands sharing reference/orchestrator.md; fixed all handoff text. 193 selftest cases unchanged (hooks/scripts untouched).",
   "tasks": [
     {
       "id": "P7.1",
@@ -81,7 +81,7 @@
         "plugins/audit/schema/audit-plan.schema.json"
       ],
       "docs": [],
-      "description": "The actual root-cause fix: the commands' recap/handoff text and all docs said '/audit run', '/audit phase' \u2014 commands that don't exist. Rewrite every reference to the correct /audit:<verb> so the plugin never suggests a non-working command again.",
+      "description": "The actual root-cause fix: the commands' recap/handoff text and all docs said '/audit run', '/audit phase' — commands that don't exist. Rewrite every reference to the correct /audit:<verb> so the plugin never suggests a non-working command again.",
       "tests": {
         "mode": "gate-only",
         "add": [],

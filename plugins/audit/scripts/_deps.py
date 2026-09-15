@@ -674,6 +674,18 @@ LAYERS = (
      # It reaches `_manifest_io` (L1) for the loader, the phase resolver and `TERMINAL`,
      # and `_journal_io` (L1) for the row.
      "record-risk-confirmation",
+     # `migrate-json-encoding` rewrites the files of ONE manifest in the escaping
+     # `_manifest_io.json_document` chose, in a single all-or-nothing pass. An
+     # entry point for this layer's usual reason - the caller is an operator, or
+     # orchestrator prose reaching Python through Bash - and it sits beside
+     # `migrate-manifest` rather than inside it because the two answer different
+     # questions: that one changes a manifest's LAYOUT and this one changes
+     # nothing but its bytes, so folding this into its `--to` would put two axes
+     # behind one flag. It reaches `_manifest_io` (L1) for the loader and the one
+     # document spelling, `_manifest_rules` (L3) for the two validations, and
+     # `_panel_write` (L6) for the index lock, the project walk and the
+     # snapshot/rollback pair every other manifest writer already uses.
+     "migrate-json-encoding",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
@@ -1358,6 +1370,171 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
                                                                  None))):
                 violations.append((named, "runtime-loads %s from tests/ - the product "
                                           "may not depend on its own test tree" % name))
+    return violations
+
+
+# --- one JSON encoding ----------------------------------------------------------
+# The writer, by every name it is reached through. `_manifest_io` defines
+# `atomic_write_json`; `_manifest_io`, `_panel_write` and `panel-server` each bind a
+# private alias to it, and every command reaches one of those. Matching the CALLED
+# NAME rather than the module it hangs off is what makes `_mio.atomic_write_json`,
+# `_panel_write._atomic_write_json` and a bare `atomic_write_json` one subject.
+JSON_WRITER_NAMES = ("atomic_write_json", "_atomic_write_json")
+# The function that spells the escaping, and the only one allowed to.
+JSON_CHOOSING_NAME = "json_document"
+_JSON_ENCODING_KW = "ensure_ascii"
+_JSON_DUMP_NAMES = ("dump", "dumps")
+
+
+def _called_name(node):
+    """The bare name a Call names, whatever it is reached through."""
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+def _takes_parameter(fn, name):
+    """Does this FunctionDef accept `name` — positionally, by keyword, or by
+    swallowing it into `**kwargs`? The last arm is the one a signature check
+    alone would miss: `def atomic_write_json(path, obj, **kw)` reads clean and
+    goes on serving the old spelling."""
+    args = fn.args
+    declared = list(getattr(args, "posonlyargs", [])) + list(args.args) \
+        + list(args.kwonlyargs)
+    if any(a.arg == name for a in declared):
+        return True
+    return args.kwarg is not None
+
+
+def _encoding_keyword(call):
+    """The `ensure_ascii` keyword node on a Call, or None."""
+    for kw in call.keywords:
+        if kw.arg == _JSON_ENCODING_KW:
+            return kw
+    return None
+
+
+def json_encoding_violations(script_dir=None, hooks_dir=None):
+    """(file, what) for every place the plugin's JSON-on-disk escaping is decided
+    somewhere other than at the one site that owns it.
+
+    WHY A LINT AND NOT A SENTENCE. The plugin wrote manifests two ways for
+    releases — the writer took the escaping as an argument, so `save_sharded` and
+    the panel's wrapper produced different bytes for the same document. A title
+    carrying a dash was re-spelled whenever the two families alternated, which
+    turns a two-line shard merge into a whole-file conflict on exactly the
+    parallel phases sharding exists to make possible. A choice made once and
+    written down stays made only while nobody copies the old spelling out of a
+    neighbour, and copying out of a neighbour is how the second family arrived.
+
+    FOUR THINGS, each naming its own violation:
+
+      * THE CHOICE IS SPELLED, AND IN ONE PLACE. `json_document` — the function
+        that returns the exact text a JSON document written by this plugin has —
+        must carry an explicit `ensure_ascii` keyword on its `json.dumps`. Delete
+        it and nothing fails: `json` silently supplies the escaped-ASCII default,
+        which is the family this moved off, and no reader of the diff would see a
+        decision being taken.
+      * THE WRITER GOES THROUGH IT. `atomic_write_json` must not call
+        `json.dump`/`json.dumps` itself; a second call there is a second spelling
+        in the same module as the first.
+      * THE CHOICE IS NOT A PARAMETER. `atomic_write_json` must not accept
+        `ensure_ascii` — including through `**kwargs`, which a signature read by
+        eye would pass.
+      * NO CALLER RE-OPENS IT. No call of the writer, by any of its names, may
+        pass `ensure_ascii`.
+
+    WHAT IT CANNOT SEE, and the measurement behind the refusal to widen. A
+    manifest written by a `json.dump` that never reaches this writer is outside
+    the rule. The obvious widening — read every `json.dump`/`json.dumps` carrying
+    an escaping — was measured over this tree and convicts the journal's canonical
+    row and the hook that appends to it, which are sha256 INPUTS chaining one row
+    to the next rather than documents anybody diffs. Neither writes a manifest, so
+    a lint that reported them would be reporting honest code, and a lint that
+    reports honest code is one people route around. It would also still miss the
+    panel's page builder, which chooses its escaping through a dict spread rather
+    than a keyword — wider AND blinder in one step. The narrower rule is held
+    instead by routing every manifest write through the one writer; `je5` is the
+    case that goes red if somebody widens this.
+
+    SCOPED TO `scripts/` + `hooks/` — the product. A test may hand the writer a
+    bad argument on purpose (one does, to prove the refusal is real), and that is
+    a case rather than a defect.
+
+    A tree in which nothing defines the choosing function is reported as BLIND,
+    not clean: a rule about one function has nothing to say when that function is
+    gone, and an empty list would say the opposite.
+    """
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
+
+    violations = []
+    defined = 0
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not os.path.isdir(directory):
+            continue
+        for rel, path in _output.lint_py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                violations.append((named, "file does not parse; cannot be scanned "
+                                          "for JSON encoding decisions"))
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) \
+                        and node.name == JSON_CHOOSING_NAME:
+                    defined += 1
+                    spelled = [c for c in ast.walk(node)
+                               if isinstance(c, ast.Call)
+                               and _called_name(c) in _JSON_DUMP_NAMES
+                               and _encoding_keyword(c) is not None]
+                    if not spelled:
+                        violations.append(
+                            (named, "line %d: %s does not spell %s - json's own "
+                                    "default would decide it, which is the "
+                                    "escaped-ASCII family this plugin moved off, "
+                                    "and nothing would say so"
+                             % (node.lineno, JSON_CHOOSING_NAME,
+                                _JSON_ENCODING_KW)))
+                if isinstance(node, ast.FunctionDef) \
+                        and node.name == "atomic_write_json":
+                    if _takes_parameter(node, _JSON_ENCODING_KW):
+                        violations.append(
+                            (named, "line %d: atomic_write_json takes %s - the "
+                                    "escaping is %s's, not the caller's, and a "
+                                    "parameter is how two byte shapes for one "
+                                    "document come back"
+                             % (node.lineno, _JSON_ENCODING_KW,
+                                JSON_CHOOSING_NAME)))
+                    own = [c for c in ast.walk(node)
+                           if isinstance(c, ast.Call)
+                           and _called_name(c) in _JSON_DUMP_NAMES]
+                    if own:
+                        violations.append(
+                            (named, "line %d: atomic_write_json serialises on its "
+                                    "own instead of through %s - that is a second "
+                                    "spelling of the escaping, in the same module "
+                                    "as the first"
+                             % (node.lineno, JSON_CHOOSING_NAME)))
+                if not isinstance(node, ast.Call):
+                    continue
+                if _called_name(node) not in JSON_WRITER_NAMES:
+                    continue
+                if _encoding_keyword(node) is not None:
+                    violations.append(
+                        (named, "line %d: passes %s to the plugin's one JSON "
+                                "writer - the encoding is chosen in "
+                                "_manifest_io.atomic_write_json and nowhere else"
+                         % (node.lineno, _JSON_ENCODING_KW)))
+    if not defined:
+        violations.append(("<tree>", "nothing under the scanned directories "
+                                     "defines %s - this rule is blind, not clean"
+                           % (JSON_CHOOSING_NAME,)))
     return violations
 
 

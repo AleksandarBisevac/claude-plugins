@@ -243,7 +243,7 @@
         "docs/audit/audit-plan.json"
       ],
       "docs": [],
-      "description": "Write the repo's own roadmap (P1 shipped, P2 this release, P3 planned) as a manifest the plugin's validator + ajv verify in CI \u2014 a permanent integration fixture, a real-world example, and a reciprocal BUG-1<->P1.7 link exercising the new validator checks.",
+      "description": "Write the repo's own roadmap (P1 shipped, P2 this release, P3 planned) as a manifest the plugin's validator + ajv verify in CI — a permanent integration fixture, a real-world example, and a reciprocal BUG-1<->P1.7 link exercising the new validator checks.",
       "tests": {
         "mode": "gate-only",
         "add": [],

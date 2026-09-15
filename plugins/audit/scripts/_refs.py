@@ -878,6 +878,91 @@ def verbatim_rule_drift(repo_root=None):
     return {"missing": out, "checked": checked, "ruleDoc": rule_ok}
 
 
+# --- the route a sign-off finding takes -----------------------------------------
+# WHAT WENT WRONG, AND WHY A LINT RATHER THAN A CAREFUL SENTENCE. Sign-off runs when
+# every task in the phase is `done`, and the plan gate opens a file only through a
+# task that is RUNNING - so a fix run spawned off a review finding has nothing open
+# to it whatever the fileIndex says. The route out of that is to create the task and
+# start it, and the document carried that route under a heading naming one CASE of
+# it: a finding in a file no task declares. A reader whose finding sat in a declared
+# file read the whole route as somebody else's and reached for the widening verb
+# instead, which a `done` task accepts while opening nothing - and the fix run was
+# refused on its second file.
+#
+# So two things have to stay true and neither is a matter of wording taste: the
+# route's own line may carry NO condition on which findings take it, and both
+# documents that describe sign-off have to name both steps. A condition is what the
+# reader routes around; a route missing its second step is a reader who creates the
+# task and never starts it, which fails in exactly the same place.
+SIGNOFF_ROUTE_DOCS = ("reference/orchestrator.md", "commands/review.md")
+SIGNOFF_ROUTE_MARK = "gets a NEW TASK"
+# The qualifier that was there, lower-cased for the comparison. It is a SUBSTRING of
+# the route line and nothing else: the paragraph below the route quotes it while
+# explaining what it cost, and a check reading the whole section would convict the
+# repaired document for saying what it repaired.
+SIGNOFF_ROUTE_CONDITION = "task declares"
+SIGNOFF_ROUTE_STEPS = ("/audit:task add", "/audit:run")
+
+
+def route_lines(text):
+    """EVERY line that states the route, in written order.
+
+    All of them rather than the first, and that is not tidiness: this document
+    states the route twice - once where a per-task review hands its findings on,
+    and once in the sign-off section itself - and a check reading only the first
+    would let the second grow the condition back unseen, which is the whole
+    defect. Located by the mark rather than by position, because both lines move
+    when the sections around them are edited.
+    """
+    return [line for line in text.splitlines() if SIGNOFF_ROUTE_MARK in line]
+
+
+def signoff_fix_route_drift(repo_root=None):
+    """{"missing": [(doc, what), ...], "checked": n} -- the two documents that
+    describe phase sign-off, against the route a review finding has to take.
+
+    Three named ways this drifts, one per finding: a document that no longer
+    states the route at all, a route line that has grown a condition on which
+    findings take it, and a document that names the create step without the start
+    step (or the other way round). `checked` is the count, and it is part of the
+    check: a reader that silently stopped opening the files would report nothing
+    missing, which reads exactly like two documents that agree.
+
+    SCOPED TO THE ROUTE LINES, deliberately. The condition it refuses is quoted
+    directly underneath by the paragraph recording what reading it that way cost,
+    and that quotation is the document working rather than drifting - so a version
+    of this check that read the whole section would convict the repair. Every
+    route line is read, not the first: `route_lines` says why.
+    """
+    root = repo_root or REPO_ROOT
+    missing, checked = [], 0
+    for rel in SIGNOFF_ROUTE_DOCS:
+        path = os.path.join(root, PLUGIN_REL, rel.replace("/", os.sep))
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError as exc:
+            missing.append((rel, "cannot be read: %s" % (exc,)))
+            continue
+        checked += 1
+        lines = route_lines(text)
+        if not lines:
+            missing.append((rel, "does not state the route - nothing in it says a "
+                                 "review finding %s" % (SIGNOFF_ROUTE_MARK,)))
+        for line in lines:
+            if SIGNOFF_ROUTE_CONDITION in line.lower():
+                missing.append((rel, "states the route under a condition (%r) - a "
+                                     "reader whose finding does not meet it reads "
+                                     "the route as somebody else's"
+                                % (SIGNOFF_ROUTE_CONDITION,)))
+        for step in SIGNOFF_ROUTE_STEPS:
+            if step not in text:
+                missing.append((rel, "never names %s - half a route leaves the "
+                                     "reader where the whole one was needed"
+                                % (step,)))
+    return {"missing": missing, "checked": checked}
+
+
 # --- the third word, for a proof that could not be made -------------------------
 # P42. AN EXECUTOR FIXED A SECURITY DEFECT, WROTE THE ASSERTION FOR IT, AND COULD
 # NOT WATCH IT FAIL. Watching it fail meant undoing the fix for as long as one run

@@ -567,7 +567,7 @@ def stamp_merged(manifest_path, phase_id, when=None):
         if not found:
             return "", "phase %s is not in %s" % (phase_id, path)
     try:
-        _mio.atomic_write_json(path, body, ensure_ascii=False, indent=2)
+        _mio.atomic_write_json(path, body, indent=2)
     except Exception as exc:
         return "", "%s could not be written: %s" % (path, exc)
     return path, stamp

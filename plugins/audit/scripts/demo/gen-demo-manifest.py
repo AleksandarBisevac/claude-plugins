@@ -1787,10 +1787,11 @@ def write_config(out_dir):
     cfg_dir = os.path.join(out_dir, ".claude")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "audit.config.json")
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"manifestPath": "audit-plan.json", "portability": "off"},
-                  fh, indent=2)
-        fh.write("\n")
+    # Through the plugin's one JSON writer rather than a `json.dump` of its own:
+    # a fixture written with a second escaping is a fixture that re-spells itself
+    # the first time a real command touches it.
+    _load_manifest_io().atomic_write_json(
+        path, {"manifestPath": "audit-plan.json", "portability": "off"}, indent=2)
     return path
 
 
@@ -1802,9 +1803,7 @@ def write_manifest(manifest, out_dir, single_file=False):
         flat = dict(manifest)
         flat["meta"] = dict(manifest["meta"])
         flat["meta"]["version"] = 2
-        with open(index_path, "w", encoding="utf-8") as fh:
-            json.dump(flat, fh, indent=2, sort_keys=False)
-            fh.write("\n")
+        mio.atomic_write_json(index_path, flat, indent=2)
         written = [index_path]
     else:
         written = mio.save_sharded(index_path, manifest)

@@ -189,37 +189,47 @@ def _cases(check):
         check("atomic_write_json: no leftover temp files after either write",
               sorted(os.listdir(mk_dir)) == ["shared.json"])
 
-        # 9. byte stability: atomic_write_json(ensure_ascii=True) and (ensure_ascii=False)
-        #    each produce the SAME bytes as the historic hand-rolled writers they replace
-        #    (this module's old `path + ".tmp"` writer used ensure_ascii=True default;
-        #    panel-server.py's writer used ensure_ascii=False) — both indent=2 + trailing "\n".
-        ref = {"title": "café", "n": 1, "list": [1, 2, 3]}
+        # 9. ONE escaping, and the caller cannot pick another. The writer used to
+        #    take `ensure_ascii`, so the plugin wrote two byte shapes for one
+        #    document: a title carrying a dash came back re-spelled whenever the
+        #    two families alternated, and a shard merge that should have shown the
+        #    lines that moved showed the lines that were re-escaped. The direction
+        #    is literal UTF-8 because the editor and the merge tool -- the two
+        #    writers this repository cannot change -- already produce it.
+        ref = {"title": "café — priced", "n": 1, "list": [1, 2, 3]}
         bdir = os.path.join(tmp, "bytes-check")
         os.makedirs(bdir)
 
-        ascii_path = os.path.join(bdir, "ascii.json")
-        M.atomic_write_json(ascii_path, ref, ensure_ascii=True, indent=2)
-        with open(ascii_path, "r", encoding="utf-8") as fh:
-            ascii_bytes = fh.read()
-        expect_ascii = json.dumps(ref, indent=2, ensure_ascii=True) + "\n"
-        check("byte stability: ensure_ascii=True matches historic shape",
-              ascii_bytes == expect_ascii)
-        check("byte stability: ensure_ascii=True escapes non-ASCII (\\u00e9)",
-              "\\u00e9" in ascii_bytes and "café" not in ascii_bytes)
+        utf8_path = os.path.join(bdir, "utf8.json")
+        M.atomic_write_json(utf8_path, ref, indent=2)
+        with open(utf8_path, "r", encoding="utf-8") as fh:
+            utf8_bytes = fh.read()
+        expect_utf8 = json.dumps(ref, indent=2, ensure_ascii=False) + "\n"
+        check("encoding: the writer emits literal UTF-8, indent=2, trailing newline",
+              utf8_bytes == expect_utf8)
+        # Both halves, because "no escape sequence" and "the character is there"
+        # fail apart: a writer that dropped the character entirely would satisfy
+        # the first on its own.
+        check("encoding: the character is written, not escaped to ASCII",
+              "café — priced" in utf8_bytes
+              and "\\u00e9" not in utf8_bytes and "\\u2014" not in utf8_bytes)
 
-        nonascii_path = os.path.join(bdir, "nonascii.json")
-        M.atomic_write_json(nonascii_path, ref, ensure_ascii=False, indent=2)
-        with open(nonascii_path, "r", encoding="utf-8") as fh:
-            nonascii_bytes = fh.read()
-        expect_nonascii = json.dumps(ref, indent=2, ensure_ascii=False) + "\n"
-        check("byte stability: ensure_ascii=False matches panel's historic shape",
-              nonascii_bytes == expect_nonascii)
-        check("byte stability: ensure_ascii=False keeps literal UTF-8 (café)",
-              "café" in nonascii_bytes)
+        _reopened = None
+        try:
+            M.atomic_write_json(os.path.join(bdir, "nope.json"), ref,
+                                ensure_ascii=True)
+        except TypeError as exc:
+            _reopened = str(exc)
+        check("encoding: the choice is NOT a parameter - a caller passing "
+              "ensure_ascii is refused rather than served a second byte shape. "
+              "Asserted on the call and not on the signature: a version that "
+              "swallowed **kwargs would keep the old spelling working while the "
+              "signature read clean (%r)" % (_reopened,),
+              _reopened is not None and "ensure_ascii" in _reopened)
 
         # 10. read_json round-trip
         check("read_json: round-trips atomic_write_json output",
-              M.read_json(ascii_path) == ref)
+              M.read_json(utf8_path) == ref)
 
         # 11. traversal: iter_tasks / tasks_by_id / phase_of_task.
         #

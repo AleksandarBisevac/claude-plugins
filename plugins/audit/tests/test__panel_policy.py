@@ -31,7 +31,7 @@ def _cases(check):
     def _atomic_write_json(path, obj):
         """The selftest's own fixture writer -- straight through `_manifest_io`,
         the implementation panel-server's `_atomic_write_json` delegates to."""
-        _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
+        _mio.atomic_write_json(path, obj, indent=2)
 
     tmp = tempfile.mkdtemp(prefix="panel-policy-selftest-")
     proj = os.path.join(tmp, "proj")

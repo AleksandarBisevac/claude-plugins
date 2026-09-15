@@ -132,7 +132,7 @@
         "examples/acme-store/acme-store-audit.md"
       ],
       "docs": [],
-      "description": "Prune imports; keep render_html, _md/render_md, main, integration selftest (full-document renders, fragment/Artifact mode). Regenerate the shipped reports \u2014 CI requires cmp -s docs/index.html examples/acme-store/acme-store-audit.html and the demo-usage reproducibility diff to hold.",
+      "description": "Prune imports; keep render_html, _md/render_md, main, integration selftest (full-document renders, fragment/Artifact mode). Regenerate the shipped reports — CI requires cmp -s docs/index.html examples/acme-store/acme-store-audit.html and the demo-usage reproducibility diff to hold.",
       "tests": {
         "mode": "regression",
         "add": [],

@@ -121,7 +121,7 @@
         "plugins/audit/scripts/manifest/migrate-manifest.py"
       ],
       "docs": [],
-      "description": "Same mechanical migration for audit-status (x3), audit-usage (x2), render-report (x3), audit-doctor, gen-demo-manifest (x3), gen-demo-usage (x2), migrate-manifest. Each file\u2019s own selftest pins behavior.",
+      "description": "Same mechanical migration for audit-status (x3), audit-usage (x2), render-report (x3), audit-doctor, gen-demo-manifest (x3), gen-demo-usage (x2), migrate-manifest. Each file’s own selftest pins behavior.",
       "tests": {
         "mode": "regression",
         "add": [],
@@ -163,7 +163,7 @@
         "plugins/audit/scripts/panel/panel-server.py"
       ],
       "docs": [],
-      "description": "Public read_json/atomic_write_json in _manifest_io with the better semantics from panel-server:448 (unique mkstemp temp in target dir, finally-cleanup, makedirs, per-caller ensure_ascii). save_sharded and the panel delegate to it; the collision-prone path+\".tmp\" writer dies. Byte output unchanged per caller: CI\u2019s gen-demo-usage diff and the docs/index.html cmp guard this. New mutation-proven cases: temp cleaned on write failure, concurrent-suffix uniqueness, trailing newline.",
+      "description": "Public read_json/atomic_write_json in _manifest_io with the better semantics from panel-server:448 (unique mkstemp temp in target dir, finally-cleanup, makedirs, per-caller ensure_ascii). save_sharded and the panel delegate to it; the collision-prone path+\".tmp\" writer dies. Byte output unchanged per caller: CI’s gen-demo-usage diff and the docs/index.html cmp guard this. New mutation-proven cases: temp cleaned on write failure, concurrent-suffix uniqueness, trailing newline.",
       "tests": {
         "mode": "regression",
         "add": [
@@ -252,7 +252,7 @@
         "plugins/audit/scripts/status/audit-status.py"
       ],
       "docs": [],
-      "description": "New flat module: fmt_tokens(n, dp=None), fmt_cost(x), fmt_int(n) parameterized to cover both the CLI shapes (audit-usage:54-72) and the report shapes (render-report:2039-2064). audit-usage keeps thin re-export aliases so audit-status\u2019s importlib load of the fmt helpers keeps working unchanged.",
+      "description": "New flat module: fmt_tokens(n, dp=None), fmt_cost(x), fmt_int(n) parameterized to cover both the CLI shapes (audit-usage:54-72) and the report shapes (render-report:2039-2064). audit-usage keeps thin re-export aliases so audit-status’s importlib load of the fmt helpers keeps working unchanged.",
       "tests": {
         "mode": "regression",
         "add": [

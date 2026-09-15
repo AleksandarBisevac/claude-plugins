@@ -113,6 +113,81 @@ def _check_claim(phase, pwhere, findings, warnings):
                         "release its claim (stale claim)" % (pwhere, phase.get("status")))
 
 
+# --- what a review recorded -------------------------------------------------------
+# THE FINDING'S SHAPE, AND THE WORDS ITS SEVERITY MAY TAKE. Both are written down
+# here because until they were, nobody wrote them down in a place anything read: the
+# reviewer agent's return format states one shape, the orchestrator's sign-off step
+# asks for a record of it, and the schema declared five optional properties with no
+# rule attached. So every phase recorded findings in whatever shape that run's
+# reviewer happened to return -- most of them plain strings -- and a finding that
+# names no file and no resolution is one no later run, report or panel can act on.
+#
+# The vocabulary is the one the reviewer is already asked for, rather than a new one:
+# a validator that invented a fourth word would be grading returns against something
+# no agent was ever told.
+FINDING_FIELDS = ("id", "severity", "file", "issue", "resolution")
+FINDING_SEVERITY = ("low", "med", "high")
+# Both lists the review block holds findings in. The second is not read by the
+# orchestrator, but it is the SAME record shape and a reader that could parse one
+# and not the other would be two readers.
+REVIEW_FINDING_LISTS = ("findings", "preExistingNotCharged")
+
+
+def _check_review(phase, pwhere, warnings):
+    """A phase's recorded review findings, held to the shape the schema names.
+
+    WARNINGS, NEVER FINDINGS, and that is the rule rather than a soft start. Every
+    plan written before this shape carries free-text findings, and a validator that
+    refused them would be refusing documents the product itself wrote -- which is
+    how a validator stops being run at all. The manifest stays valid; the line says
+    what cannot be read back.
+
+    ONE WARNING PER PROBLEM PER PHASE, not one per finding. The bodies are then
+    byte-identical across phases, so `_warning_groups.collapse` folds a whole plan's
+    worth into one line; a per-item rule that cannot fold is exactly what buries the
+    warning standing next to it.
+    """
+    review = phase.get("review")
+    if not isinstance(review, dict):
+        return
+    for key in REVIEW_FINDING_LISTS:
+        entries = review.get(key)
+        if not isinstance(entries, list):
+            continue
+        shapeless = False
+        missing = set()
+        outside = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                shapeless = True
+                continue
+            for field in FINDING_FIELDS:
+                value = entry.get(field)
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    missing.add(field)
+            sev = entry.get("severity")
+            if isinstance(sev, str) and sev.strip() and sev not in FINDING_SEVERITY:
+                outside.add(sev)
+        if shapeless:
+            warnings.append(
+                "%s: review.%s holds an entry that is not a finding object - a "
+                "plain string records no file, no severity and no resolution, so "
+                "nothing downstream can turn it into a fix task. The shape is "
+                "{%s}" % (pwhere, key, ", ".join(FINDING_FIELDS)))
+        if missing:
+            warnings.append(
+                "%s: a review.%s finding is missing %s - the shape is {%s}, and a "
+                "finding missing one of them cannot be read back"
+                % (pwhere, key, ", ".join(sorted(missing)),
+                   ", ".join(FINDING_FIELDS)))
+        if outside:
+            warnings.append(
+                "%s: a review.%s finding carries severity %s - the vocabulary is "
+                "%s, which is what the reviewer is asked to return"
+                % (pwhere, key, ", ".join(repr(s) for s in sorted(outside)),
+                   ", ".join(FINDING_SEVERITY)))
+
+
 def _gate_entries(value):
     """A `testGate` / `tests.gate` value as the entries that will actually run.
 
@@ -457,6 +532,7 @@ def _walk_phases(phases):
         if phase.get("status") not in STATUS:
             f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
         _check_claim(phase, pwhere, f, w)
+        _check_review(phase, pwhere, w)
         _check_area_tag(phase, pwhere, f)
         # A budget of 0 or a negative one is not a budget, and a string is a typo
         # that would silently render as "no budget". Both are worth saying out loud.

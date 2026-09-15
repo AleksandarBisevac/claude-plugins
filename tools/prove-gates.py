@@ -346,6 +346,13 @@ TABLE = (
  ("tests_import_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_tests():\n    import test__output\n    return test__output\n",
   DEP, "tb7"),
+ # The one-encoding rule, crippled. It is the whole mechanism keeping a second
+ # escaping from coming back into the manifest writers, and a version reporting
+ # nothing reads exactly like a tree that decides the escaping in one place.
+ ("json_encoding_violations", S + "_deps.py", "replace",
+  "def json_encoding_violations(script_dir=None, hooks_dir=None):",
+  "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
+  DEP, "je2"),
  # TWO CONSTRAINTS, and this row lost the first one silently. The target must be
  # a file the rule APPLIES to (400+ lines) AND one carrying EXACTLY the two
  # markers it needs, because `drop` removes ONE line: a file with fourteen
@@ -476,6 +483,14 @@ TABLE = (
  ("verbatim_rule_drift", "plugins/audit/reference/manifest-conventions.md",
   "replace", "## The operator's words go in unchanged",
   "## Operator text", REF, "vb2"),
+ # The sign-off fix route, crippled. It is what keeps a condition from growing
+ # back onto the line that tells a reader to create and start the task, and a
+ # version answering "both documents agree" reads exactly like two that do.
+ ("signoff_fix_route_drift", S + "_refs.py", "replace",
+  "def signoff_fix_route_drift(repo_root=None):",
+  "def signoff_fix_route_drift(repo_root=None):\n"
+  "    return {\"missing\": [], \"checked\": 2}",
+  REF, "fr2"),
  # P42. The word for a red-first proof that could not be MADE, removed from the
  # document the CHECK reached rather than the one a person remembered: `bug.md`
  # orders a red-first repro test and owes the word for exactly that reason. The
@@ -1133,6 +1148,16 @@ ALLOW = (
   "            for name in sorted(set(_imported_sibling_names(tree, test_names, None))):",
   "            for name in sorted(set(_py_literal_basenames(tree)) & test_names):",
   DEP, "tb4"),
+ # The one-encoding rule, widened past the manifest writer to every `json.dump`
+ # that carries an escaping. The journal's canonical row and the hook that appends
+ # to it both spell one, because the string is a sha256 INPUT chaining one row to
+ # the next rather than a document anybody diffs - so the widened rule convicts
+ # honest code, and a lint that convicts honest code is one people route around.
+ ("json_encoding_violations", S + "_deps.py", "replace",
+  "                if _called_name(node) not in JSON_WRITER_NAMES:",
+  "                if _called_name(node) not in JSON_WRITER_NAMES "
+  "+ _JSON_DUMP_NAMES:",
+  DEP, "je5"),
  # A byte-for-byte comparison that stops honouring the fence's trailing newline
  # reports drift on a guide that is exactly right, which is the direction a
  # regenerate-and-commit instruction cannot fix.
@@ -1266,6 +1291,13 @@ ALLOW = (
  ("verbatim_rule_drift", S + "_refs.py", "replace",
   'VERBATIM_FLAGS = ("--reason", "justification", "--confirm-high-risk")',
   'VERBATIM_FLAGS = ("--reason",)', REF, "vb3"),
+ # The route check widened from the route LINE to the whole document. The
+ # qualifier the heading lost is quoted underneath it, by the paragraph recording
+ # what reading it that way cost - so the widened rule convicts the repaired
+ # document for describing its own repair, which is how a lint gets routed around.
+ ("signoff_fix_route_drift", S + "_refs.py", "replace",
+  "            if SIGNOFF_ROUTE_CONDITION in line.lower():",
+  "            if SIGNOFF_ROUTE_CONDITION in text.lower():", REF, "fr5"),
  # The published vocabulary, minus one key the plugin really does publish. `cv1`
  # is the live-tree assertion over three surfaces written for three readers, and
  # this is what makes it a claim rather than a habit.

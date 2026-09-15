@@ -4,7 +4,7 @@
   "status": "done",
   "model": "sonnet",
   "blockedBy": [],
-  "desiredOutcome": "The orchestrator works when the git repo lives in a subdirectory of the project dir \u2014 it routes git/gates through meta.gitRoot, and preflights (stops with guidance) instead of failing silently four ways. Found by end-to-end testing against a real Nx monorepo.",
+  "desiredOutcome": "The orchestrator works when the git repo lives in a subdirectory of the project dir — it routes git/gates through meta.gitRoot, and preflights (stops with guidance) instead of failing silently four ways. Found by end-to-end testing against a real Nx monorepo.",
   "testGate": [
     "selftests",
     "validate",

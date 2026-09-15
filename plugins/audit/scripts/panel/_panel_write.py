@@ -32,9 +32,10 @@ BOUNDARY DECISIONS -- names this module shares with the read side:
   * `_atomic_write_json`. P12.3 deliberately left it in panel-server for this
     task; it is the one WRITE the read side never makes, so it moved HERE and is
     aliased back. It stays a wrapper rather than being inlined as
-    `_mio.atomic_write_json(...)` at each of its call sites: `ensure_ascii=False,
-    indent=2` is this panel's byte shape, and spelling it at seven call sites is
-    seven places for one of them to drift.
+    `_mio.atomic_write_json(...)` at each of its call sites: `indent=2` is this
+    panel's byte shape, and spelling it at every call site is that many places for
+    one of them to drift. The ESCAPING is not a shape this module holds at all --
+    `_manifest_io` chose it once, for every writer in the plugin.
 
   * `_JOURNAL` / `_journalmod`. The module handle moved to _panel_state in P12.3
     (its `journal_state` reads the same journal this writes). It is reached here
@@ -149,9 +150,9 @@ def _not_a_json_object():
 
 def _atomic_write_json(path, obj):
     """Thin delegation to the plugin's ONE atomic-JSON-write implementation
-    (_manifest_io.atomic_write_json) — ensure_ascii=False keeps this module's
-    existing byte shape unchanged."""
-    _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
+    (_manifest_io.atomic_write_json), which owns the escaping — see the choosing
+    block above it. This wrapper carries the panel's `indent` and nothing else."""
+    _mio.atomic_write_json(path, obj, indent=2)
 
 
 # --- the CLI writers' shared machinery ------------------------------------------

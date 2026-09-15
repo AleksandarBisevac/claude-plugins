@@ -3431,6 +3431,140 @@ def _cases(check):
         shutil.rmtree(_dk_quiet, ignore_errors=True)
         shutil.rmtree(_dk_torn, ignore_errors=True)
 
+    # --- one JSON encoding ----------------------------------------------------
+    # `je*`. The plugin used to take the escaping as an argument, so two writers
+    # produced two byte shapes for one document and a title carrying a dash came
+    # back re-spelled whenever they alternated. The rule that keeps that from
+    # returning is this lint, and the cases below are what keep the lint honest.
+    _je_nohooks = lambda root: os.path.join(root, "no-hooks-here")  # noqa: E731
+
+    def _je_dumps_outside_writer():
+        """Every `json.dump`/`json.dumps` in the REAL product tree that carries an
+        escaping and is NOT inside the plugin's writer. This is the allow corpus
+        `je5` needs a floor under: without it, "the widened lint would convict
+        them" is a claim about a set that might be empty."""
+        found = []
+        for _rel, _path in list(_output.lint_py_files(_output.SCRIPTS_DIR)) \
+                + list(_output.lint_py_files(_output.HOOKS_DIR)):
+            try:
+                with open(_path, "r", encoding="utf-8") as _fh:
+                    _tree = ast.parse(_fh.read(), filename=_rel)
+            except (OSError, SyntaxError):
+                continue
+            _inside = set()
+            for _fn in ast.walk(_tree):
+                if isinstance(_fn, ast.FunctionDef) \
+                        and _fn.name in (M.JSON_CHOOSING_NAME,) + M.JSON_WRITER_NAMES:
+                    for _sub in ast.walk(_fn):
+                        _inside.add(id(_sub))
+            for _node in ast.walk(_tree):
+                if not isinstance(_node, ast.Call) or id(_node) in _inside:
+                    continue
+                if M._called_name(_node) not in ("dump", "dumps"):
+                    continue
+                if any(k.arg == "ensure_ascii" for k in _node.keywords):
+                    found.append("%s:%d" % (_rel, _node.lineno))
+        return found
+
+    _je_real = M.json_encoding_violations()
+    check("je1 the real tree decides the escaping in ONE place: %r" % (_je_real,),
+          _je_real == [])
+
+    _je_allowed = _je_dumps_outside_writer()
+    check("je5 ...and it stays quiet over the dump sites that are NOT the "
+          "manifest writer - the journal's canonical row and the hook that "
+          "appends to it. Those spell an escaping because the string is a "
+          "sha256 INPUT chaining one row to the next, not a document anybody "
+          "diffs, so a lint widened to read every `json.dump` carrying the "
+          "keyword would convict honest code and be routed around. The corpus "
+          "is counted rather than assumed - an allow case over an empty set "
+          "proves nothing: %r" % (_je_allowed,),
+          len(_je_allowed) > 1 and _je_real == [])
+
+    _je_caller = _ck_tree((
+        ("writer.py",
+         "import json\n\n\n"
+         "def json_document(obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent, ensure_ascii=False)\n\n\n"
+         "def atomic_write_json(path, obj, indent=2):\n"
+         "    return json_document(obj, indent)\n"),
+        ("caller.py",
+         "import writer\n\n\n"
+         "def save(path, obj):\n"
+         "    writer.atomic_write_json(path, obj, ensure_ascii=True)\n")))
+    _je_kwargs = _ck_tree((
+        ("writer.py",
+         "import json\n\n\n"
+         "def json_document(obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent, ensure_ascii=False)\n\n\n"
+         "def atomic_write_json(path, obj, **kw):\n"
+         "    return json_document(obj, 2)\n"),))
+    _je_unspelled = _ck_tree((
+        ("writer.py",
+         "import json\n\n\n"
+         "def json_document(obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent)\n\n\n"
+         "def atomic_write_json(path, obj, indent=2):\n"
+         "    return json_document(obj, indent)\n"),))
+    _je_second = _ck_tree((
+        ("writer.py",
+         "import json\n\n\n"
+         "def json_document(obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent, ensure_ascii=False)\n\n\n"
+         "def atomic_write_json(path, obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent, ensure_ascii=False)\n"),))
+    _je_blind = _ck_tree((("quiet.py", "def f():\n    return 1\n"),))
+    _je_torn = _ck_tree((
+        ("writer.py",
+         "import json\n\n\n"
+         "def json_document(obj, indent=2):\n"
+         "    return json.dumps(obj, indent=indent, ensure_ascii=False)\n"),
+        ("torn.py", "def f(:\n")))
+    try:
+        _je_c = M.json_encoding_violations(_je_caller, _je_nohooks(_je_caller))
+        check("je2 a caller passing the escaping to the writer is reported by "
+              "FILE AND LINE - this is the shape the second family arrived in, "
+              "copied out of a neighbour: %r" % (_je_c,),
+              len(_je_c) == 1 and _je_c[0][0] == "scripts/caller.py"
+              and "ensure_ascii" in _je_c[0][1])
+        _je_k = M.json_encoding_violations(_je_kwargs, _je_nohooks(_je_kwargs))
+        check("je3 a writer that swallows the argument into **kwargs is reported "
+              "too. A signature read by eye passes it, and the call site goes on "
+              "working - which is the version of this bug that would survive a "
+              "rename of the parameter: %r" % (_je_k,),
+              len(_je_k) == 1 and "takes ensure_ascii" in _je_k[0][1])
+        _je_u = M.json_encoding_violations(_je_unspelled,
+                                           _je_nohooks(_je_unspelled))
+        check("je4 a choosing site that stops SPELLING the escaping is reported. "
+              "Nothing fails when that keyword is deleted - json supplies the "
+              "escaped-ASCII default - so the whole migration silently reverts "
+              "and no diff shows a decision being taken: %r" % (_je_u,),
+              len(_je_u) == 1 and "does not spell" in _je_u[0][1])
+        _je_s = M.json_encoding_violations(_je_second, _je_nohooks(_je_second))
+        check("je6 ...and a writer that serialises on its own rather than "
+              "through the choosing site is reported even when it spells the "
+              "SAME escaping today: two spellings in one module is the state "
+              "this rule exists to keep the tree out of, not one wrong value: %r"
+              % (_je_s,),
+              len(_je_s) == 1 and "serialises on its own" in _je_s[0][1])
+        _je_b = M.json_encoding_violations(_je_blind, _je_nohooks(_je_blind))
+        check("je7 a tree with no choosing site at all is reported BLIND rather "
+              "than clean - a rule about one function has nothing to say when "
+              "that function is gone, and an empty list would say the opposite: "
+              "%r" % (_je_b,),
+              len(_je_b) == 1 and _je_b[0][0] == "<tree>"
+              and "blind, not clean" in _je_b[0][1])
+        _je_t = M.json_encoding_violations(_je_torn, _je_nohooks(_je_torn))
+        check("je8 ...and a file that will not parse is NAMED rather than "
+              "dropped, because a file nothing could read is not a file with no "
+              "decisions in it: %r" % (_je_t,),
+              [k for k, _p in _je_t] == ["scripts/torn.py"]
+              and "does not parse" in _je_t[0][1])
+    finally:
+        for _dir in (_je_caller, _je_kwargs, _je_unspelled, _je_second,
+                     _je_blind, _je_torn):
+            shutil.rmtree(_dir, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

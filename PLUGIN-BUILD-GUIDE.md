@@ -123,6 +123,7 @@ claude-plugins/                           # this repo (personal, public)
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task add + /audit:phase add + cancel doer: id allocation, full template init, lock+journal
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
+          migrate-json-encoding.py        # one manifest's files rewritten in the one JSON escaping, all-or-nothing under the index lock
         git/                              # the git domain: the worktree/branch half of the pipeline, as code rather than prose
           _worktrees.py                   # which worktrees exist, whose phase each is, and what may be reaped
           close-phase.py                  # sign-off 5c-5e as one step: merge into the resolved parent, stamp it, clean up
@@ -362,6 +363,7 @@ L7:
   gen-demo-usage -> _demo_cast, _loader, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
+  migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
@@ -3295,6 +3297,26 @@ restoring the index does not undo. No lock is taken in the script: the index loc
 command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
+
+### `plugins/audit/scripts/manifest/migrate-json-encoding.py`
+**One JSON escaping, and the pass that gets the tree to it.** `_manifest_io.atomic_write_json`
+used to take the escaping as an argument, so two writers produced two byte shapes for one
+document: a title carrying an em dash came back re-spelled whenever the families alternated, and
+a shard merge that should have shown the lines that moved showed the lines that were re-escaped —
+on exactly the parallel phases the sharded layout exists to make possible. `json_document` is now
+the single choosing site (literal UTF-8: the operator's editor and the merge tool already produce
+it, and they are the two writers this plugin cannot change), `atomic_write_json` writes what it
+returns and takes no encoding argument, and `_deps.json_encoding_violations()` fails the build on a
+call site that passes one, on a choosing site that stops spelling its keyword, and on a writer that
+serialises on its own. This command is how files written before that catch up: pointed at ONE
+manifest it rewrites the index and every shard that index names — nothing else, and a `shard`
+value pointing outside the index's own directory is refused by name rather than followed. The pass
+is all-or-nothing: index lock → read and judge every owned file before touching any → refuse the
+whole run on one that cannot be read or parsed → validate the assembled manifest **before** the
+save → write only the files whose bytes change, atomically → re-read from disk and validate again,
+rolling every file back byte for byte if it does not stand. It always reports all four classes,
+including the empty ones, because "there was nothing to do" and "it never looked" are different
+answers. `--dry-run` previews, `--json` emits the same four lists as the human report.
 
 ### `plugins/audit/scripts/report/render-report.py` (v0.5.0)
 Manifest → self-contained `audit-report.html` + `.md` (inline CSS, zero network fetches):

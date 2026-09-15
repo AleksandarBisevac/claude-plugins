@@ -6,7 +6,7 @@
   "blockedBy": [
     "P10"
   ],
-  "desiredOutcome": "The 5,340 embedded CSS/JS lines live as real, editor-highlightable files under scripts/ui/ (no .py ever, pinned by a selftest), read at import with explicit utf-8 and assembled byte-identically into the same UI_HTML/_CSS/_SCRIPT constants \u2014 every substring pin and both Playwright checks pass untouched, and the served page stays one self-contained HTML file.",
+  "desiredOutcome": "The 5,340 embedded CSS/JS lines live as real, editor-highlightable files under scripts/ui/ (no .py ever, pinned by a selftest), read at import with explicit utf-8 and assembled byte-identically into the same UI_HTML/_CSS/_SCRIPT constants — every substring pin and both Playwright checks pass untouched, and the served page stays one self-contained HTML file.",
   "testGate": [
     "sweep",
     "validate",
@@ -40,7 +40,7 @@
         "plugins/audit/scripts/panel/_panel_ui.py"
       ],
       "docs": [],
-      "description": "Split the UI_HTML r-string at its natural seams: CSS (keeps /*__THEME_TOKENS__*/), JS (keeps every __*__ placeholder), HTML skeleton. _panel_ui.raw_template() reads the three assets utf-8 and returns the exact pre-substitution string; panel-server sets UI_HTML = _panel_ui.raw_template() and the .replace() substitution block is untouched. A logic-free move: all ~401 pins must pass unmodified in the same commit. A failing pin means the bytes moved \u2014 fix the move, never the pin.",
+      "description": "Split the UI_HTML r-string at its natural seams: CSS (keeps /*__THEME_TOKENS__*/), JS (keeps every __*__ placeholder), HTML skeleton. _panel_ui.raw_template() reads the three assets utf-8 and returns the exact pre-substitution string; panel-server sets UI_HTML = _panel_ui.raw_template() and the .replace() substitution block is untouched. A logic-free move: all ~401 pins must pass unmodified in the same commit. A failing pin means the bytes moved — fix the move, never the pin.",
       "tests": {
         "mode": "regression",
         "add": [
@@ -137,7 +137,7 @@
         "CONTRIBUTING.md"
       ],
       "docs": [],
-      "description": "The \"scripts/ui holds no .py\" invariant gets its pinned selftest case (a .py there would silently escape the flat CI selftest glob and the entries_missing_guard listdir). PLUGIN-BUILD-GUIDE and CONTRIBUTING body text updated to describe assembly-at-import \u2014 body text only, never headings, so _help.source_drift keeps resolving every citation.",
+      "description": "The \"scripts/ui holds no .py\" invariant gets its pinned selftest case (a .py there would silently escape the flat CI selftest glob and the entries_missing_guard listdir). PLUGIN-BUILD-GUIDE and CONTRIBUTING body text updated to describe assembly-at-import — body text only, never headings, so _help.source_drift keeps resolving every citation.",
       "tests": {
         "mode": "gate-only",
         "add": [],

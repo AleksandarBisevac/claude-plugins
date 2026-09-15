@@ -661,6 +661,78 @@ def _cases(check):
           "a manifest before anything has graded it: %r" % (_tr_junk,),
           _tr_junk == [(M.REPAIR_UNNAMED, None)] * 5)
 
+    # --- what a review recorded (`rv*`) ---
+    # A finding with no shape is one no later run can act on. The rule is a
+    # WARNING throughout, and `rv2` is the case that says so out loud.
+    _rv_good = {"id": 1, "severity": "med", "file": "src/a.ts:10-12",
+                "issue": "unescaped input", "resolution": "escape it"}
+
+    def _rv(review):
+        _idx, _f, _w = M._walk_phases([_phase(review=review)])
+        return _f, _w
+
+    _f, _w = _rv({"findings": [_rv_good]})
+    check("rv1 a finding carrying the whole shape says nothing - without this "
+          "floor every case below would pass against a rule that warns about "
+          "everything: %r" % (_w,),
+          _f == [] and _w == [])
+
+    _f, _w = _rv({"findings": ["the login form does not escape its input"]})
+    check("rv2 a plain-string finding is a WARNING and the phase stays VALID. "
+          "This is the whole back-compat contract: every plan written before "
+          "the shape carries free text, and a validator that refused documents "
+          "the product itself wrote is one people stop running. Asserted on the "
+          "findings list being EMPTY, not merely on a warning being present - a "
+          "version that emitted both would pass a presence check: %r / %r"
+          % (_f, _w),
+          _f == [] and len(_w) == 1 and "not a finding object" in _w[0])
+
+    _f, _w = _rv({"findings": [{"id": 2, "severity": "med",
+                                "file": "src/a.ts"}]})
+    check("rv3 a finding missing fields NAMES them, in a stable order, so the "
+          "line is the repair: %r" % (_w,),
+          _f == [] and len(_w) == 1
+          and "missing issue, resolution" in _w[0])
+
+    _f, _w = _rv({"findings": [dict(_rv_good, severity="medium")]})
+    check("rv4 a severity outside the vocabulary is named WITH the vocabulary. "
+          "'medium' rather than a nonsense word on purpose: the near-miss is "
+          "the one a reader argues with, and the line has to answer it: %r"
+          % (_w,),
+          _f == [] and len(_w) == 1 and "'medium'" in _w[0]
+          and "low, med, high" in _w[0])
+
+    _f, _w = _rv({"preExistingNotCharged": [{"id": 3}]})
+    check("rv5 the other list the review block holds findings in is graded the "
+          "same way - one record shape, or a reader that can parse one list and "
+          "not the other is two readers: %r" % (_w,),
+          _f == [] and len(_w) == 1 and "preExistingNotCharged" in _w[0])
+
+    _idx, _f, _w = M._walk_phases([
+        _phase(id="P1", review={"findings": ["a"]}),
+        _phase(id="P2", review={"findings": ["b", "c"]})])
+    _rv_bodies = set(line.split(": ", 1)[1] for line in _w)
+    check("rv6 two phases with the same problem produce the SAME warning body, "
+          "so `_warning_groups` folds them into one line - and one finding at a "
+          "time is what buried the warning standing next to it the last time a "
+          "per-item rule met a real manifest: %r" % (sorted(_rv_bodies),),
+          _f == [] and len(_w) == 2 and len(_rv_bodies) == 1)
+
+    _f, _w = _rv({"findings": "not a list"})
+    check("rv7 a review whose findings are not a list, and a review that is not "
+          "an object, say nothing rather than raising: the validator's contract "
+          "is that it never raises on arbitrary input, and a finding-shape rule "
+          "is reached on documents nothing has graded yet: %r"
+          % (_w + _rv("nope")[1],),
+          _f == [] and _w == [] and _rv("nope") == ([], []))
+
+    check("rv8 the vocabulary and the field list are the SAME objects "
+          "`_manifest_rules` re-exports, so a consumer reaching them through "
+          "the import it already spells cannot get a second opinion",
+          _rules.FINDING_FIELDS is M.FINDING_FIELDS
+          and _rules.FINDING_SEVERITY is M.FINDING_SEVERITY
+          and _rules._check_review is M._check_review)
+
 
 def _selftest():
     return _harness.run(_cases)

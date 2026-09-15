@@ -80,7 +80,7 @@ def _cases(check):
         `_atomic_write_json`; nothing in THIS module writes JSON, so rather than
         move a writer a read module has no use for, the fixtures go straight
         through `_manifest_io` — the same implementation that one delegates to."""
-        _mio.atomic_write_json(path, obj, ensure_ascii=False, indent=2)
+        _mio.atomic_write_json(path, obj, indent=2)
 
     tmp = tempfile.mkdtemp(prefix="panel-state-selftest-")
     proj = os.path.join(tmp, "proj")
