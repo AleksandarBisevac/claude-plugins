@@ -1,7 +1,7 @@
 {
   "id": "P53",
   "title": "Checks and documents that assert less than they claim",
-  "status": "pending",
+  "status": "in_progress",
   "description": "The accumulated residue of four review rounds: a table maintained by hand beside the derivation that replaced it, an anchor whose reason is false, a case that raises instead of failing so one mutation takes its neighbours down, a git anchor that fails open so a bug inside it reads as no tampering, a document behind by a whole feature, a widening that blinds the prose scanners further than its comment admits, a repair that spends nearly all of the subject-length budget with nothing clamping a caller, and an advice table that swallows a branch and drops an unrecognised warning. None of these is a user-visible defect today. Every one of them is a check or a sentence that will be trusted the next time somebody needs it.",
   "desiredOutcome": "Every check named in this phase goes red when the thing it guards breaks, every document named describes the mechanism the code has, and each deliberate gap is a stated decision rather than an unnoticed hole.",
   "testGate": [
@@ -177,7 +177,7 @@
     {
       "id": "P53.4",
       "title": "The documents describe the mechanism the code has",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the architecture document is not behind by a feature, the documents describing the newest lock tier agree with it, the one recorded reason that is false is corrected, and the script that writes the manifest gets the repair its own instruction document already received. That last one is the instructive case: a fix landed in the document telling the orchestrator what to do and never reached the script that does it, so the plan is generated wrongly and the instructions are right about a behaviour nothing has. A document and a script describing one mechanism is the repository's oldest defect shape, and the answer here is the same as everywhere else - the enumeration is checked, so a feature added without a section fails the build by name.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -209,21 +209,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:12Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P53.5",
       "title": "The doctor's advice loses no branch and no warning",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the doctor's advice table reaches every branch it declares, an unrecognised warning survives to the operator, and the README stops promising something the doctor does not do. A table that swallows a branch is a branch nobody will ever see fire, and a warning dropped for being unrecognised is precisely the warning worth reading, because a recognised one is one somebody already thought about. The document half is small and of a piece: it promises the doctor names which rows are extra, and the doctor names a count. A count is not a name, and the difference is the whole value of the sentence.",
       "files": [
         "plugins/audit/scripts/status/_doctor_report.py",
@@ -253,21 +253,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:12Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P53.6",
       "title": "The merge's remaining doors, and the deliberate gaps written as decisions",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the escape hatch the document prescribes works on the file it is prescribed for, a linked journal file is not replaced while something writes through it, the commit subject repair leaves room for a caller, and the gaps this project has decided to live with are written as decisions rather than left as silence. The escape dead-ends today: taking one side against a target that is still conflicted refuses, and the refusal names a cause that is not the one it found - so the documented route out of a conflict ends in a message that sends the reader somewhere else. The link case is data loss of the quiet kind: the merge replaces the path while the append writes through it, so rows land in a file nothing will read again. And this repository's own plan gives most tasks a gate that takes the machine-wide capture lock, which is a decision it should make out loud rather than discover under parallelism.",
       "files": [
         "plugins/audit/scripts/governance/audit-journal.py",
@@ -298,14 +298,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:12Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -443,5 +443,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-15T17:12:12Z"
 }

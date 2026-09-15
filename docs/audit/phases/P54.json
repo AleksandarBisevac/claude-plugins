@@ -1,7 +1,7 @@
 {
   "id": "P54",
   "title": "The guards' last read shapes, and the work the plan has no place for",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Two halves that share a cause: the product knows about the work it was designed for and is silent about the rest. On the guard side, several read shapes still reach a secret file's contents with no refusal and no event, two of them the everyday way an agent reads a file; an interpreter heredoc is judged inconsistently; a write is attributed to a background job when it could be attributed with certainty; nothing verifies the plugin's own installed files, and the control the security document calls load-bearing is opt-in that nothing mentions at first contact. On the plan side, a decision has no home so approvals travel second-hand, a bug that turned out to be wrong has no status, requested work and documentation output are uncovered on every write, the successful task commit is the one git operation nothing scripts, and a push is a suite run the plugin cannot see.",
   "desiredOutcome": "No documented-secret read reaches a file's contents without a refusal and an event, and every kind of work an operator actually does has somewhere in the plan to live.",
   "testGate": [
@@ -29,7 +29,7 @@
     {
       "id": "P54.1",
       "title": "Every documented read shape reaches the secrets guard",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: no read shape the security document claims to cover reaches a secret file's contents without a refusal and an event. Several still do, in every copy of the guard, and two of them are the everyday way an agent reads a file - which is the worst possible distribution, because the guard looks effective against the shapes nobody uses. The interpreter heredoc is right in principle and inconsistent in practice: the same read is refused or allowed depending on the spelling that carried it, which is the guard-by-spelling class this register has recorded longer than any other. A shape the guard cannot classify is refused, because this is a guard and the table says guards fail loud. The event matters as much as the refusal: a read that is refused and not recorded leaves nothing for the doctor to count and nothing for an operator to find afterwards.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -58,21 +58,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:12Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P54.2",
       "title": "A write is attributed to what wrote it, and the events file is not empty for the wrong reason",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the write guard names the statement that wrote, not a background job it happened to see, and an empty events file is distinguished from a guard that never ran. The attribution defect is small and corrosive: naming an innocent suspect when the guilty one is in hand teaches the reader that the guard guesses. The second half was measured in the field, where the plan-gate events file and the bypass log both stayed at zero lines for a whole program - a result that reads as a clean run and is indistinguishable from the guard never having fired at all. This repository has the word for that difference and the doctor is where it belongs: a file that is empty because nothing was configured is a finding, and a file that is empty because nothing happened is good news.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -102,21 +102,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:13Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P54.3",
       "title": "The plugin verifies its own files, and says so at first contact",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: an operator can ask whether the plugin's own files are the ones that were published, the answer distinguishes modified from unverifiable, and the document a new user actually reads mentions the control. Nothing verifies the installed files today. The security document names one control as load-bearing and that control is opt-in and is not mentioned where a first-time user would meet it, which makes it a control that exists for readers of the security document alone. This matters more for this product than for most: it installs hooks that run on every tool call, so the question of whether those files are what they should be is the first one a careful user asks and currently has no way to answer.",
       "files": [
         "plugins/audit/scripts/status/audit-doctor.py",
@@ -147,14 +147,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:12:13Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -339,5 +339,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-15T17:12:12Z"
 }
