@@ -471,6 +471,50 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P53.10",
+      "title": "The doctor reads the anchor's third answer",
+      "status": "pending",
+      "description": "DONE MEANS: the surface an operator opens reports that the anchor could not ask its question, not only the two comfortable answers. The repair that made the anchor always answer wired its third word into the verifier's own output and the doctor's journal check never reads the field, so a person running the doctor sees exactly what they saw before. Fixing a silence on one of two surfaces that read the same fact moves the silence rather than removing it, and the class is this project's oldest. The field is already on the result; what needs deciding is the grade, and the precedent is settled: an unestablished basis is a warning and not a finding, because the doctor exits non-zero on a finding and a repository with no history would fail a build having asked for nothing.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: a trail carrying files the anchor could not ask about is reported with that word and with the files, and a trail where every file was asked reports nothing new"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-15T17:12:12Z"
