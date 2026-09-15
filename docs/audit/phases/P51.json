@@ -117,7 +117,7 @@
     {
       "id": "P51.3",
       "title": "Two guards that resolve something other than what they judge",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: neither guard decides on a thing it did not establish. One resolves an unexpanded shell variable against the repository root as though it were a literal path, and then refuses the write for landing outside the tree - a refusal whose stated reason is an artefact of its own resolution, which is the guard-by-spelling class this register has recorded longer than any other. The honest answer when a destination cannot be established is to say it could not be established and decide on that footing. The other runs two write rules where the stricter one ignores the configured tier entirely while its message blames that tier, so an operator who lowers the tier sees no change and is told the tier is why. Both are high risk because both are refusals: a guard that refuses wrongly is routed around within a day, and a guard that is routed around protects nothing.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -150,19 +150,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6e99863",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.UNRESOLVED_MARKS and resolvable_destination are the one answer both hooks ask; the secrets guard's three write arms and the manifest arm skip and record an unestablished destination; _PATHY_TOKEN carries the expansion characters so an in-place edit's target arrives whole.",
+        "descriptive": "A write whose destination this process cannot establish is allowed with that said, instead of being refused on the guard's own resolution."
       },
       "startedAt": "2026-09-15T14:39:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T15:25:16Z",
+      "verifiedBy": [
+        "ur1",
+        "ur2",
+        "ur3",
+        "ud1",
+        "ud2",
+        "ud3",
+        "ud4",
+        "ud5",
+        "ud6",
+        "we6",
+        "xs3",
+        "xs4"
+      ]
     },
     {
       "id": "P51.4",
       "title": "A committed row carries no path from the machine that wrote it",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: no committed evidence row carries a path from the machine that produced it, and the check that grades committed files can see such a path in the shape this row actually stores it. The coverage basis records the runner's own paths, and the gate that exists to stop machine paths reaching a commit misses them because the leading separator has been stripped, so the thing looks repo-relative and is not. That is the narrowest possible blind spot in a check whose whole job is this class, and it means the guard has been green on the case it was written for. The repair is on both sides: the writer stops carrying what it does not need, and the gate stops keying on the separator.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -192,14 +205,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6e99863",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "files_named strips only a leading marker rather than a character class; _journal_io.redacted_paths is split out so a path is bounded without being clipped to a value's length and _evidence_io writes coverageBasis through it; the committed-file detectors take the leading separator as optional with a word boundary.",
+        "descriptive": "No committed evidence row carries a path from the machine that produced it, and the check that grades committed files can see one in the shape the row stores."
       },
       "startedAt": "2026-09-15T14:39:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T15:25:16Z",
+      "verifiedBy": [
+        "cv6a",
+        "cv6b",
+        "rt5",
+        "rt6",
+        "ef4",
+        "ef5",
+        "ef6",
+        "ef7",
+        "q2a",
+        "q2b"
+      ]
     },
     {
       "id": "P51.5",
