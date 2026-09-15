@@ -771,6 +771,34 @@ def _cases(check):
           and _rules.FINDING_SEVERITY is M.FINDING_SEVERITY
           and _rules._check_review is M._check_review)
 
+    # --- `outputs`: the only key on a task that can WIDEN the plan gate -------
+    # A FINDING AND NOT A WARNING, which is the decision rather than an
+    # oversight: a warning leaves the entry in the file, and the gate would then
+    # be deciding for itself which half of the plan to believe.
+    _i, f, _w = M._walk_phases([_phase(tasks=[
+        _task("P0.1", outputs=["docs/audit/evidence/**", "docs/reports/*.md"])])])
+    check("mo1 an anchored pattern is clean - which is the case that fails if "
+          "the rule ever refuses everything and makes the key useless",
+          f == [], f)
+    _i, f, _w = M._walk_phases([_phase(tasks=[_task("P0.1", outputs=["**"])])])
+    check("mo2 ...and a pattern reaching the whole tree is a FINDING naming the "
+          "entry: a task that covers the whole tree turns the plan gate off "
+          "through the door built to keep it on, and a warning would leave it "
+          "in the file: %r" % (f,),
+          len(f) == 1 and "'**'" in f[0] and "outputs" in f[0])
+    _i, f, _w = M._walk_phases([_phase(tasks=[
+        _task("P0.1", outputs="docs/**")])])
+    check("mo3 a non-array `outputs` is the SHAPE finding this level owes, "
+          "which is why the rule module declines to give it - two sentences "
+          "about one mistake in front of the reader: %r" % (f,),
+          any("must be an array" in x for x in f))
+    check("mo4 the rule this walk asks is `_task_outputs`' own function and "
+          "not a second reading of 'too wide' - the writer, this walk and the "
+          "plan gate are three readers of ONE expression, and the half that is "
+          "easiest to relax is a copy in the validator",
+          M._touts.output_problems is not None
+          and M._touts.output_problems(["**"])[0][0] == "**")
+
 
 def _selftest():
     return _harness.run(_cases)

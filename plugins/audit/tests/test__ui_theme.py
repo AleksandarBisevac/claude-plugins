@@ -29,6 +29,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as M                              # noqa: E402
+import _manifest_vocab as _vocab                   # noqa: E402  (the words a label owes)
 
 
 # --- cases --------------------------------------------------------------------
@@ -529,6 +530,17 @@ def _cases(check):
         not any("_" in v for v in M.LABELS.values()))
     check("in_progress reads as English", M.label("in_progress") == "In progress")
     check("wontfix keeps its apostrophe", M.label("wontfix").startswith("Won"))
+    check("not_a_bug renders APART from wontfix rather than sharing its words - "
+          "a reader scanning a bug table is asking which reports were real, and "
+          "the two close the row for opposite reasons: %r / %r"
+          % (M.label("not_a_bug"), M.label("wontfix")),
+          M.label("not_a_bug") == "Not a bug"
+          and M.label("not_a_bug") != M.label("wontfix"))
+    check("...and every word the manifest vocabulary calls a bug status has a "
+          "label, driven over the tuple so a word added there without one here "
+          "is caught rather than rendering as its machine spelling: %r"
+          % (sorted(set(_vocab.BUG_STATUS) - set(M.BUG_STATUS)),),
+          set(_vocab.BUG_STATUS) <= set(M.BUG_STATUS))
     check("an unknown status degrades to something readable, never to blank",
           M.label("awaiting_review") == "Awaiting review")
     check("a missing value is empty, not the string None",

@@ -125,8 +125,13 @@ TASK_STATE_DEFAULTS = {"pending": "New", "in_progress": "Active",
                        "blocked": "Active", "done": "Closed",
                        "cancelled": "Removed"}
 
+# `not_a_bug` maps to the same board state `wontfix` does and says something
+# different on the way there: both close the card, and the manifest keeps which
+# answer was given. A row left out here would leave the card in whatever state it
+# was last pushed to, which is the one outcome worse than the wrong column.
 BUG_STATE_DEFAULTS = {"open": "New", "triaged": "Active", "in_progress": "Active",
-                      "fixed": "Resolved", "wontfix": "Closed"}
+                      "fixed": "Resolved", "wontfix": "Closed",
+                      "not_a_bug": "Closed"}
 
 # A phase's defaults ARE the task defaults, spelled by reference rather than
 # copied: written out twice they would be two tables that agree until one of them

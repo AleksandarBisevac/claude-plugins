@@ -116,8 +116,9 @@ gates on in-progress work and on nothing else. `--help` prints the names with th
 meanings, rendered from the same tuple the gate evaluates:
 
 - `invalid` — the structural validator reports findings
-- `open-high-bugs` — a bug of high-or-worse severity is not yet `fixed`/`wontfix`
-- `open-bugs` — **any** bug is not yet `fixed`/`wontfix`
+- `open-high-bugs` — a bug of high-or-worse severity is not yet closed
+- `open-bugs` — **any** bug is not yet closed (`fixed`, `wontfix` or `not_a_bug`; the
+  first is derived from the fix task, the other two are human verdicts)
 - `blocked-tasks` — any task has status `blocked`
 - `in-progress` — any phase or task is `in_progress` (release-freeze gates)
 - `over-budget` — a phase is at or past 100% of its `budgetUSD`

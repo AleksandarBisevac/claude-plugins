@@ -1,6 +1,6 @@
 ---
 description: 'Track bugs in the audit manifest — report (add), list, materialize a TDD fix task (fix), or close. Execution of the fix stays in /audit; the repro test must fail red-first, proving the bug.'
-argument-hint: 'add "<title>" | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix]'
+argument-hint: 'add "<title>" | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix|not_a_bug|fixed]'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -9,7 +9,13 @@ allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 Bugs live in the manifest's top-level `bugs[]`, OUTSIDE phases — a reported bug is not
 yet a plan. `fix` materializes a bug into a **tdd task** (red-first repro test) that
 `/audit:run` executes; the orchestrator flips the bug to `fixed` when that task commits.
-Bug lifecycle: `open → triaged → in_progress (materialized) → fixed | wontfix`.
+Bug lifecycle: `open → triaged → in_progress (materialized) → fixed | wontfix | not_a_bug`.
+
+**Three words close a bug and they are three different answers.** `fixed` says the
+behaviour changed; `wontfix` says the report is real and the fix will not be made;
+`not_a_bug` says somebody investigated and the reported behaviour turned out to be
+correct. The last one exists because a verified negative had no word at all, so an
+investigation that found nothing left no row and the next reader ran it again.
 
 **`$ARGUMENTS`**: first token is the subcommand. Unknown/empty → print usage and stop.
 
@@ -36,12 +42,12 @@ Concurrency lock) around their writes; `list` is read-only and never locks.
 ## Subcommand: `list [all|<status>]`
 
 Read-only. Print a table `id | severity | status | title | taskId | reportedAt`.
-Default filter: everything NOT `fixed`/`wontfix`. `list all` shows everything;
+Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows everything;
 `list <status>` filters to that status. Empty result → say so and point to `add`.
 
 ## Subcommand: `fix <bugId> [--phase <id>]`
 
-1. **Refuse when**: the bug doesn't exist; its status is `fixed`/`wontfix`; or its
+1. **Refuse when**: the bug doesn't exist; its status is `fixed`/`wontfix`/`not_a_bug`; or its
    `taskId` is already set and that task is not `done` → point to `/audit:run <taskId>`
    instead (one bug = one live task; no second execution engine).
 2. **Target phase**: `--phase <id>` if given (must not be `done`); else the latest
@@ -73,12 +79,20 @@ Default filter: everything NOT `fixed`/`wontfix`. `list all` shows everything;
    and costs the task no retry; it is there so a closed bug cannot quietly rest on a repro
    nobody ever saw fail.
 
-## Subcommand: `close <bugId> [wontfix]`
+## Subcommand: `close <bugId> [wontfix|not_a_bug|fixed]`
 
 1. Refuse if the bug's materialized task is `in_progress` (finish or unblock it via
    `/audit:run` / `/audit:phase` first).
-2. Set `status` to `wontfix` (default) — or `fixed` only if the human explicitly says
-   it was fixed outside the pipeline — and record a one-line `notes` justification.
+2. Set `status` to the word the caller passed, `wontfix` when they passed none.
+   **Ask rather than guess between the two closed-without-a-change answers** — a
+   report that was real and will not be fixed, and a report somebody checked and
+   found correct, are different facts about the codebase and only the human knows
+   which happened. `fixed` only if the human explicitly says it was fixed outside
+   the pipeline. Record a one-line `notes` justification either way.
+
+   **A `not_a_bug` row is the whole point of the word**, so do not delete the bug
+   instead: a verified negative with no row is an investigation the next reader
+   repeats.
 
    **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
 3. Revalidate and report.

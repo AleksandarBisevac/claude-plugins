@@ -9,7 +9,8 @@
 [data-status="pending"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
 /* ca (F-P-4): the two "settled, not achieved" states share an ink. A cancelled
    phase beside a done one must not read as a second success — see the token. */
-[data-status="cancelled"],[data-status="wontfix"]{--st:var(--st-cancelled);
+[data-status="cancelled"],[data-status="wontfix"],
+[data-status="not_a_bug"]{--st:var(--st-cancelled);
   --st-ink:var(--st-cancelled-ink)}
 .area-tag{display:inline-block;font-size:var(--t-label);font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:.25rem .5em;border-radius:var(--pill);background:var(--surface-2);color:var(--muted);

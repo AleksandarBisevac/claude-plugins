@@ -4550,6 +4550,74 @@ def _interrupt_cases(check):
           and (shard_sig.get("testEvidence") or {}).get("runId")
           == sig_row.get("runId"))
 
+    # --- (dc) the coverage answer that needs nothing from the run -------------
+    # THE COST WAS ENTIRELY ORDERING. A task declaring no files can be related to
+    # no run at all, and that is knowable from the plan - yet the sentence saying
+    # so was produced inside `coverage`, which runs after every gate command has
+    # finished. So an operator paid for a whole suite to be told this run could
+    # tell them nothing.
+    _settled = M.declared_coverage_answer([])
+    check("dc1 an empty declaration settles the coverage question before "
+          "anything runs, and the answer is a PAIR shaped exactly as `coverage` "
+          "returns one: %r" % (_settled,),
+          _settled is not None and _settled[0] is None
+          and "declares no files" in _settled[1])
+    for empty in (None, [], ["", "   "], [None, 7]):
+        check("dc2 ...and %r is the same empty declaration - a list of blanks "
+              "and a list of non-strings name no files either, and the filter "
+              "is read ONCE so the answer before the run and the answer after "
+              "it are drawn from the same set" % (empty,),
+              M.declared_coverage_answer(empty) is not None,
+              repr(M.declared_coverage_answer(empty)))
+    check("dc3 SECOND-DIRECTION CASE: a task that DOES declare files is not "
+          "settled early - None means the run is required, not that coverage is "
+          "fine. Every other way the question ends needs the run's own output, "
+          "and answering early would be inventing one",
+          M.declared_coverage_answer(["src/a.ts"]) is None)
+    check("dc4 ...and `coverage` gives the IDENTICAL sentence, because it asks "
+          "this first: a second wording for the early answer would be one claim "
+          "in two voices, and the day one moved the reader would have two "
+          "different reasons for one fact: %r"
+          % (M.coverage([], set(["src/a.ts"])),),
+          M.coverage([], set(["src/a.ts"])) == _settled)
+    check("dc5 ...and the run-required path is untouched: with files declared "
+          "and a runner that printed nothing, the answer is still the "
+          "not-knowable one the run produces",
+          M.coverage(["src/a.ts"], None)[0] is None
+          and "not knowable from its output" in M.coverage(["src/a.ts"], None)[1])
+
+    # --- (rc) what the gate set never measures --------------------------------
+    # THE BOUNDARY IS REASONABLE AND WAS UNSTATED, which is the whole of this: a
+    # reader meeting a green gate with no such sentence beside it reads broader
+    # coverage than was taken.
+    _claim = M.runtime_claim({"meta": {}})
+    check("rt1 a plan with no runtime boot is told, in the gate's own output, "
+          "that nothing here opens a browser or starts a server - so a green "
+          "verdict is evidence about the commands and about nothing that only "
+          "happens at runtime: %r" % (_claim,),
+          "opens no browser" in _claim and "starts no server" in _claim
+          and "runtimeBoot" in _claim)
+    _claim_boot = M.runtime_claim({"meta": {"runtimeBoot": {"appRootPath": "app"}}})
+    check("rt2 ...and a plan that DOES declare one is told which step runs it, "
+          "rather than being told the same sentence: the two plans are in "
+          "different states and a line that could not tell them apart would be "
+          "a line nobody reads: %r" % (_claim_boot,),
+          "phase sign-off" in _claim_boot and "opens no browser" not in _claim_boot)
+    check("rt3 an EMPTY `runtimeBoot` block is the no-boot answer, not the "
+          "declared one - a key present and empty is a plan that declared "
+          "nothing, and reading it as a declaration would credit the plan with "
+          "a check nobody wrote",
+          M.runtime_claim({"meta": {"runtimeBoot": {}}}) == _claim
+          and M.runtime_claim({"meta": {"runtimeBoot": None}}) == _claim
+          and M.runtime_claim({}) == _claim and M.runtime_claim(None) == _claim)
+    check("rt4 the claim is DERIVED FROM THE PLAN and never from the command "
+          "strings: a gate entry spelled `playwright` does not change it. "
+          "Guessing from a command's spelling is the class this plugin keeps "
+          "being repaired for, and it would be wrong in both directions on the "
+          "first project that wrapped its own runner",
+          M.runtime_claim({"meta": {"buildCommands":
+                                    {"test": "npx playwright test"}}}) == _claim)
+
 
 def _selftest():
     return _harness.run(_cases)

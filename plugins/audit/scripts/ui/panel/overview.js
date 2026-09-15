@@ -157,7 +157,7 @@ const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,
 /** @type {string[]} task statuses, most-in-need-of-a-human first */
 const OVORDER=['in_progress','blocked','pending','done'];
 /** @type {string[]} bug statuses, on the same principle */
-const OVBUGORDER=['open','triaged','in_progress','fixed','wontfix'];
+const OVBUGORDER=['open','triaged','in_progress','fixed','wontfix','not_a_bug'];
 /**
  * Where a status sits in one of those orders.
  * @param {string[]} o - OVORDER or OVBUGORDER

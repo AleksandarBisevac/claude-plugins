@@ -51,6 +51,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__evidence_io.py` -- see `plugins/audit/tests/_harness.py`.
 """
 import binascii
+import calendar
 import os
 import sys
 import time
@@ -223,6 +224,40 @@ ACTION_RECORDED = "test.evidence.recorded"
 # that does not write it.
 VERDICT_SOURCE = "verdictSource"
 REUSED = "reused"
+
+# WHO RAN THE SUITE, WHICH IS NOT THE SAME QUESTION AS `via`. `via` names the
+# interface the recorder was reached through and answers "cli" on every row ever
+# written; this names whether the wrapper MADE the run it is recording.
+#
+# It exists because a suite can run where this plugin cannot see it. A push runs
+# one on a server; a developer runs one in a second terminal; a hook runs one on
+# commit. Those runs move the same working tree, take the same ports and write the
+# same scratch directories as a gate run, and until there was a word for them a
+# red that a concurrent outside suite had caused was recorded, rendered and read
+# as the gate's own verdict on the work. Recording the outside run does not make
+# the red go away -- nothing here can -- but it is the difference between a
+# verdict and a verdict with a rival in the same window.
+#
+# ABSENT MEANS THE GATE, and no back-fill is owed: every row written before this
+# field existed was made by the wrapper, so a missing key is the true answer for
+# all of them. `runner_of` is the one reader of that rule.
+RUNNER_KEY = "runner"
+RUNNER_GATE = "gate"
+RUNNER_OUTSIDE = "outside"
+RUNNER_WORDS = (RUNNER_GATE, RUNNER_OUTSIDE)
+
+# WHEN THE RUN BEGAN, recorded rather than inferred. `ts` is the moment the row
+# was BUILT -- after the run finished -- and `durationMs` is a monotonic elapsed
+# reading that cannot be turned back into an instant, so until this key existed
+# the ledger could say how long a run took and never when it was happening. A
+# window is what an overlap question needs, and two rows cannot be compared
+# without one.
+#
+# THE DERIVED WINDOW IS STILL AVAILABLE and is labelled as derived: `window_of`
+# falls back to `ts` minus `durationMs` for a row written before this key, and
+# says so in its basis. A derivation presented as a record is how a cheap read
+# comes to be trusted like a measurement.
+STARTED_KEY = "startedAt"
 # The identity that has to match for one run to stand in for another. It is
 # recorded on the row rather than re-derived, because it is a statement about the
 # tree AT THAT MOMENT and the moment is gone.
@@ -536,6 +571,17 @@ def row_for(project, result, scope, ids, identity, published=None):
     for key in ("attempt", "via", "sessionId"):
         if identity.get(key) is not None:
             row[key] = identity[key]
+    # WHO RAN IT AND WHEN IT BEGAN, both off `identity` and both written only when
+    # the caller supplied one. A `runner` defaulted to "gate" on every row would
+    # make a row the wrapper measured indistinguishable from a row nobody labelled,
+    # which is the distinction the key exists to draw; `RUNNER_KEY`'s note says why
+    # ABSENT is already the right answer for the gate. An unknown word is written
+    # through unchanged rather than corrected: this file records what it was told,
+    # and `runner_of` is where a word outside the vocabulary is reported.
+    if identity.get(RUNNER_KEY) is not None:
+        row[RUNNER_KEY] = str(identity[RUNNER_KEY])
+    if identity.get(STARTED_KEY) is not None:
+        row[STARTED_KEY] = str(identity[STARTED_KEY])
     # PRESENT ONLY WHEN SOMETHING WENT. A count that appears solely when non-zero
     # cannot be told from a count nobody computed, so its ABSENCE has to mean
     # "nothing was cut" and never "nobody looked".
@@ -1128,6 +1174,177 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
     }, config=config)
     return {"written": True, "reason": None, "path": path,
             "releaseRefused": refused}
+
+
+# --- who ran it, when, and who else was running --------------------------------
+def _epoch(text):
+    """`%Y-%m-%dT%H:%M:%SZ` as epoch seconds, or None when it is not that shape.
+
+    None rather than a substitute: a stamp this cannot read is a row that cannot
+    take part in an overlap question, and a zero would put it at the start of the
+    epoch where it would overlap nothing and look like an answer.
+    """
+    try:
+        return calendar.timegm(time.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def runner_of(row):
+    """Which runner made this row: `RUNNER_GATE`, `RUNNER_OUTSIDE`, or the word
+    the row carries when it is neither.
+
+    ABSENT IS THE GATE, which is a fact about the corpus and not a default
+    covering a gap: every row written before `RUNNER_KEY` existed was made by the
+    wrapper, because the wrapper was the only writer there was. An unrecognised
+    word is returned unchanged rather than folded into either answer -- a reader
+    asking "was this the gate's own run" gets `False` for it, which is the safe
+    reading, and the word itself so the surface can say what it found.
+    """
+    if not isinstance(row, dict):
+        return RUNNER_GATE
+    value = row.get(RUNNER_KEY)
+    if value is None:
+        return RUNNER_GATE
+    return str(value)
+
+
+def window_of(row):
+    """`(start, end, basis)` in epoch seconds — when this run was happening.
+
+    `(None, None, why)` when the row cannot say, and that is a THIRD answer
+    rather than a failure: an overlap computed against a window nobody knows is
+    the shape in which a guess gets recorded as a finding.
+
+    TWO WAYS TO A START, AND THE BASIS NAMES WHICH. `startedAt` is the recorded
+    one. A row written before that key existed carries `ts` (the moment the row
+    was BUILT, after the run) and `durationMs` (a monotonic elapsed reading), and
+    subtracting one from the other lands within the recording overhead of the
+    real instant -- close enough to ask an overlap question with, and not the
+    same kind of fact, so it is labelled.
+    """
+    if not isinstance(row, dict):
+        return (None, None, "not a row")
+    end = _epoch(row.get("ts"))
+    if end is None:
+        return (None, None, "the row carries no readable `ts`, so nothing "
+                            "places it in time")
+    started = _epoch(row.get(STARTED_KEY))
+    if started is not None:
+        return (started, end, "recorded: `%s` and `ts`" % (STARTED_KEY,))
+    duration = row.get("durationMs")
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+        return (None, None, "the row records no `%s` and no `durationMs`, so "
+                            "its start is not knowable" % (STARTED_KEY,))
+    return (end - int(duration // 1000), end,
+            "derived: `ts` less `durationMs`, because this row predates `%s`"
+            % (STARTED_KEY,))
+
+
+def _overlaps(one, other):
+    """Whether two `(start, end)` pairs share any moment. Inclusive at the
+    endpoints, because two runs that met for one second met."""
+    return one[0] <= other[1] and other[0] <= one[1]
+
+
+def overlapping_runs(rows, row, runner):
+    """`(overlapping, basis)` — the OTHER runs made by `runner` whose window
+    overlaps `row`'s.
+
+    `overlapping is None` means the question could not be asked, which is not the
+    same answer as an empty list and must never be rendered like one: one says
+    nothing else was running, the other says nobody could look.
+
+    THE ROW ITSELF IS EXCLUDED BY `runId`, and that exclusion is the whole
+    difference between this and a rule that fires on every run ever made. The
+    rows a caller passes have been read back off disk, so identity cannot do it;
+    without the id test a run alone on the machine finds ITSELF in the window it
+    just occupied and is reported as contested, which is a rule that refuses
+    every run there is and gets switched off within a day.
+
+    THE RUNNER IS AN ARGUMENT because the two questions have different remedies
+    and must not be folded into one list. An OUTSIDE run in the window means a
+    suite this plugin cannot see was moving the same tree, and the answer is to
+    re-run once it is finished; another GATE run in the window means two
+    executors were invited onto one machine, and the answer belongs to whoever
+    invited them.
+    """
+    start, end, basis = window_of(row)
+    if start is None:
+        return (None, basis)
+    mine = str((row or {}).get("runId") or "")
+    found = []
+    for other in (rows or []):
+        if not isinstance(other, dict):
+            continue
+        if mine and str(other.get("runId") or "") == mine:
+            continue
+        if runner_of(other) != runner:
+            continue
+        o_start, o_end, _why = window_of(other)
+        if o_start is None:
+            continue
+        if _overlaps((start, end), (o_start, o_end)):
+            found.append(other)
+    return (found, basis)
+
+
+def contested_by(rows, row):
+    """`(contesting, basis)` — the runs from OUTSIDE this gate whose window
+    overlaps `row`'s. `overlapping_runs` with the runner decided, so no caller
+    can ask the outside question and get the machine one."""
+    return overlapping_runs(rows, row, RUNNER_OUTSIDE)
+
+
+def shared_the_machine(rows, row):
+    """`(others, basis)` — the other GATE runs whose window overlaps `row`'s.
+
+    THE RULE THE PARALLEL-SAFETY RULE DID NOT HAVE. That rule is about the file
+    system -- disjoint `files`, satisfied `dependsOn` -- and says nothing about
+    the machine, which is the largest source of false failures on record here: a
+    full suite takes the cores, the ports and the scratch directories, and two of
+    them on one host produce reds neither change caused.
+
+    IT REPORTS AND NEVER REFUSES, which is this file's standing division between
+    a verdict and an observation beside it. A run that was alone on the machine
+    gets an empty list and must be told it was alone -- a rule that refused a
+    solo run would be refusing the ordinary case, which is how a rule gets routed
+    around instead of read.
+    """
+    return overlapping_runs(rows, row, RUNNER_GATE)
+
+
+def attribution_of(row, rows):
+    """`{"attributed", "contested", "basis"}` — whether this row's verdict is
+    this gate's to claim.
+
+    `attributed` is THREE-VALUED. `True` says nothing else was running in this
+    run's window, so the verdict is the gate's; `False` says a suite the plugin
+    does not control was running at the same time, so the verdict is contested
+    and the red may be either run's; `None` says the question could not be asked,
+    and `basis` says which piece was missing.
+
+    IT DOES NOT MOVE THE VERDICT, and that is deliberate. `status` is what the
+    commands answered and stays what they answered -- the same division
+    `run-test-gate` already draws between a verdict and an observation beside it.
+    What a contested red buys a reader is the one thing that was missing when a
+    push's suite overlapped a recorded gate and the plugin reported the red as
+    its own: a named rival, with its own row, instead of a conclusion about the
+    work.
+    """
+    contesting, basis = contested_by(rows, row)
+    if contesting is None:
+        return {"attributed": None, "contested": [], "basis": basis}
+    if not contesting:
+        return {"attributed": True, "contested": [],
+                "basis": "%s; no run from outside this gate shares that window"
+                         % (basis,)}
+    return {"attributed": False,
+            "contested": [str(o.get("runId") or "?") for o in contesting],
+            "basis": "%s; and %s ran outside this gate in the same window, so "
+                     "this verdict is not this run's alone to claim"
+                     % (basis, ", ".join(str(o.get("runId") or "?")
+                                         for o in contesting))}
 
 
 def latest_by_subject(rows):

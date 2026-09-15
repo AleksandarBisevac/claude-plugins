@@ -277,7 +277,8 @@
     {
       "id": "P48",
       "title": "The plugin reads its own trail back",
-      "shard": "phases/P48.json"
+      "shard": "phases/P48.json",
+      "status": "in_progress"
     },
     {
       "id": "P49",

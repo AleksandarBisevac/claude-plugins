@@ -115,6 +115,7 @@ claude-plugins/                           # this repo (personal, public)
           _commit_trail.py                # is a recorded task.commit still reachable from any ref?
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
+          _task_outputs.py                # what a task's `outputs` pattern may be, and what an honoured one reaches
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
           _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
@@ -140,8 +141,10 @@ claude-plugins/                           # this repo (personal, public)
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
           commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
+          commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
+          record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
@@ -277,6 +280,7 @@ L1:
   _policy -> _output
   _priority -> _output
   _refs -> _output
+  _task_outputs -> _output
   _ui_theme -> _output
   _usage_core -> _output
   _worktrees -> _output
@@ -290,14 +294,14 @@ L2:
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
-  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output
+  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _output
-  _usage_coverage -> _output, _usage_core
+  _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
   _usage_spend -> _output, _usage_core
@@ -351,12 +355,13 @@ L7:
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _commit_trail, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _status_facts, _warning_groups
+  audit-task -> _areas, _commit_trail, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
+  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -367,6 +372,7 @@ L7:
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
+  record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
@@ -1752,6 +1758,38 @@ nothing), a `KNOWN_*` set nothing anchors, and a stale or reasonless exemption. 
 express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that argument and for
 why the comparison had to live with the walk, a layer up.
 
+### `plugins/audit/scripts/manifest/_task_outputs.py`
+What a task's **`outputs`** pattern may be, and what an honoured one reaches (layer 1).
+`files` names what a task *edits* and is enumerated, so every entry can owe a `fileIndex`
+row; `outputs` names what a run *produces* — the documents it writes, the evidence rows it
+appends — which cannot be enumerated before the run makes them. So it is patterns, and a
+pattern is the only thing on a task that can **widen** what the plan gate allows.
+
+**The bound is the whole feature.** `output_pattern_problem` refuses, by name, any entry
+whose **first segment is not a literal directory name**: `**`, `.`, `*/x`, an absolute path,
+a `~` path and anything carrying a `..` segment. Everything *under* the anchored name may be
+a pattern — that is the point of the key — but the head is the segment that decides how much
+of the repository the entry reaches, and an entry reaching all of it is the plan gate
+switched off by a plan. `output_covers` is the matcher, segment-aware so `docs/*` is the
+directory's own entries and `docs/**` is everything under it (`fnmatch` over the whole string
+would let one star cross a separator and hand a reader a wider scope than they declared);
+`output_problems` grades a list for a writer, and `honoured` is the **only** way to a list a
+reader may act on.
+
+**Three readers in two trees that cannot import each other**: `audit-task.py` before a write,
+`_manifest_phases._walk_phases` over an entry already written, and the plan gate under
+`hooks/`, which loads this file by path. Both halves live here together — two modules holding
+one half each is how a pattern comes to be refused by the writer and matched by the reader.
+When the hook cannot load it, it honours **no** pattern at all: an unreadable rule must make
+the gate louder, never wider.
+
+**It is not in `_manifest_vocab.py`, and that is a cost decision.** It started there. That
+module's `SCHEMA_ANCHORS` comment declines to derive its enums from the schema partly because
+nothing on the per-tool-call hook path loads it — a premise `mv37` walks the real import graph
+to hold — and a rule the plan gate must ask spent that premise for an unrelated reason. It
+sits at layer 1 for `_locks`' argument word for word: the smaller the module a hook resolves
+by path on every tool call, the better.
+
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
 The **one walk** over every phase and every task (layer 2), and the three checks it makes on
 the way. `_walk_phases` visits each object once and returns a five-key **index**
@@ -2962,6 +3000,42 @@ only handle anything has on such a commit, and it is what `_invariants.index_sco
 these commits and grade them. `<phaseId>` throughout is **attribution and not scope**: the index is
 shared, and the phase id says which run made the structural change.
 
+### `plugins/audit/scripts/governance/commit-task-work.py`
+`commit-task-work.py <manifest> <taskId>` — **commit one task's work, staging what that task
+declares and refusing the rest.**
+
+**Why it exists.** The successful task commit was the one git operation this plugin described in
+prose and did not script. `reference/orchestrator.md` step 4c spells the staging list, the
+pathspec, the message shape and the exclusions in a paragraph the model reads at the end of every
+task, under time pressure, after the work is already done — and what a paragraph gets in that
+position is generalisation. Four scope breaches on one program came from widening two words of it:
+a file "obviously" part of the change, a sibling the editor had also touched, the shared index
+because the phase file was allowed. Prose cannot refuse; this can.
+
+**What it stages.** Exactly the four things step 4c allows, each named in the output: the task's
+own `files` (a `:line-range` suffix stripped, because git has never heard of one), the phase's
+manifest file, the journal directory and the evidence directory. Nothing else, and the manifest
+**index** explicitly not — a task commit carrying the index is what makes two parallel phases
+conflict on merge. `_invariants.commit_scope()` re-derives that same list from git afterwards, so
+these commits are graded by something that did not make them.
+
+**How the exclusion is enforced rather than intended.** Paths are staged explicitly
+(`git add -- <path>…`, never `git add -A`), the git index is read *before* staging so work somebody
+else had already staged cannot ride along, it is read *back* afterwards against the same
+allow-list, and the commit itself carries an explicit pathspec. A path outside the list is **named**
+in the refusal, and a staged index gets a sentence of its own — reporting the expensive mistake in
+the same words as a stray README is what makes a reader skim past it.
+
+**It does not write `task.commit`.** The SHA is only knowable after the commit this makes, and the
+shard is inside that commit, so writing it here would need a second commit or an amend — which
+step 4c forbids. The SHA is printed and `/audit:task done <taskId> --commit <sha>` records it,
+riding along with the next commit exactly as step 4c already says. It anchors itself in the trail
+with an `audit.task.committed` row in the meantime, which is redundant the moment that verb runs.
+
+**It takes no lock**, and that is the asymmetry with `commit-manifest-index.py` rather than an
+omission: this commit touches the phase's own shard, which only that phase's run writes, and the
+task's own files, which the plan gate has already bound to one task.
+
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
 Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).
 
@@ -3115,6 +3189,36 @@ files, so a digest read afterwards would answer a different question than the on
 stated and pinned: `dirtyDigest` records *which* paths were dirty, not their contents, so editing an
 already-dirty file outside the declared scope moves neither digest. It discriminates retries; it is
 not a reproducible snapshot of the repository.
+
+### `plugins/audit/scripts/governance/record-outside-run.py`
+`record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
+[--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
+
+**Why it exists.** `run-test-gate.py` records the runs it *makes*, and for a long time those were
+the only runs the ledger knew about. A suite can run elsewhere on the same machine in the same
+minutes — a pre-push hook fires one on `git push`, a developer starts one in a second terminal, a
+commit hook runs one — taking the same cores, the same ports and the same scratch directories. A
+red that a concurrent outside suite had caused was recorded, rendered and read as the gate's own
+verdict on the work. Writing this row does not make the red go away; it gives
+`_evidence_io.attribution_of` a **named rival with its own row**, so the verdict comes back
+`CONTESTED` instead of being claimed alone.
+
+**It is declared, never sniffed.** Guessing an outside suite from the spelling of a Bash command
+— does it say `playwright`, does it say `push` — is the read-the-command's-spelling class this
+product keeps being repaired for, and it would be wrong in both directions on the first project
+that wraps its own runner. So the row is written by whoever knows: the operator, or the hook they
+wire it into.
+
+**The row has no subject, and that is the bound.** A gate row carries a `scope` and a task or
+phase id, and those are what `latest_by_subject` and `reusable_run` key on. This row's scope is
+its own word (`outside`) and it carries no ids, so it can never be pointed at a task, never stand
+in for a measurement the plugin owes, and never be repeated instead of a gate. It is a fact about
+the **machine in a window**. `--status` is optional and written through as given: absent means
+nobody said what the outside suite answered, which is true and better than a word invented to
+fill the field. The window is the whole value of the row, so a `--started` that will not parse is
+a refusal rather than a guess — and the stamp is read by `_evidence_io`'s own reader, because a
+writer parsing instants its own way would disagree with the module that decides whether two of
+them overlap, by a time zone.
 
 ### `plugins/audit/scripts/governance/record-risk-confirmation.py`
 `record-risk-confirmation.py <manifest> <phaseId> --confirm-high-risk "<their words>"` —

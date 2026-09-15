@@ -1266,9 +1266,15 @@ def _unfinished_lines(summary, pt=None):
 # with nothing going red. `ap8`/`ap10` are what make that impossible now.
 CONDITION_HELP = {
     "invalid": "the structural validator reports findings",
-    "open-high-bugs": "high-or-worse severity bugs not yet fixed/wontfix "
+    # CLOSED IS A WORD RATHER THAN A LIST, and that is the repair the second
+    # closing verdict forced rather than a vaguer sentence: three words spelled
+    # here is a fourth copy of the vocabulary, and the day one is added this line
+    # goes on describing the old one while `CLOSED_BUG` decides. What closes a bug
+    # is the schema's enum and `/audit:bug close`; what this line owes the reader
+    # is which bugs the condition counts.
+    "open-high-bugs": "high-or-worse severity bugs not yet closed "
                       "(high/critical/blocker/severe/fatal/urgent/sev0-1/s0-1/p0-1)",
-    "open-bugs": "ANY bug not yet fixed/wontfix",
+    "open-bugs": "ANY bug not yet closed",
     "blocked-tasks": 'any task with status "blocked"',
     "in-progress": 'any phase or task "in_progress" (for release-freeze gates)',
     "over-budget": "a phase at or past 100% of its `budgetUSD`",

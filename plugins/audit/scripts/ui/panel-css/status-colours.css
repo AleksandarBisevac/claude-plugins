@@ -10,8 +10,12 @@
 /* `dropped` joins them for the reason the line above already gives: settled,
    not achieved. Reusing the bucket rather than minting a fourth colour is what
    keeps three proposal states distinguishable without a new vocabulary. */
+/* `not_a_bug` joins them too: the report was looked at and there was nothing to
+   fix, which is settled and is not a success. It shares the bucket with
+   `wontfix` because the colour answers "is this still open", and the label
+   beside it is what says which of the two closed it. */
 [data-status="cancelled"],[data-status="wontfix"],
-[data-status="dropped"]{--st:var(--st-cancelled)}
+[data-status="not_a_bug"],[data-status="dropped"]{--st:var(--st-cancelled)}
 .st{display:inline-block;font-size:.66rem;font-weight:600;padding:var(--sp-0) .5em;border-radius:var(--pill);
  background:color-mix(in srgb,var(--st,var(--muted)) 15%,transparent);color:var(--st,var(--muted));
  border:1px solid color-mix(in srgb,var(--st,var(--muted)) 32%,transparent);white-space:nowrap}

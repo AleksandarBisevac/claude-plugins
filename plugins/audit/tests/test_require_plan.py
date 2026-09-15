@@ -823,6 +823,113 @@ def _cases(check):
                _config.declaring_tasks(str(tmp), MAN, SAN)] == ["P2.5"],
           repr(_config.declaring_tasks(str(tmp), MAN, SAN)))
 
+    # (op) `outputs`: a PLACE in the plan for what a run PRODUCES, and never a
+    # hole in the gate. Documentation and evidence writes were uncovered on every
+    # save, which is how an operator learns to read this gate's warnings as noise
+    # - and a gate whose warnings are noise is a gate that is off. The bound is
+    # the part that needs the cases: a pattern covering the whole tree would turn
+    # the gate off through the door built to keep it on.
+    #
+    # THE FIXTURE DELIBERATELY AVOIDS THE EXEMPT SET. `exemptGlobs` already
+    # carries `docs/audit/**` and `**/*.md`, so a plan whose documents are
+    # markdown under the audit directory never reaches this clause at all - and a
+    # case written there would be green on a gate that had never grown the
+    # feature. What was measured uncovered in the field is the rest: a rendered
+    # report, an evidence directory a project put somewhere else, and any project
+    # that replaced the default list with its own.
+    DOC = "reports/q3.html"
+    EVID = "var/evidence/2026-09.host.jsonl"
+    check("op0 the paths these cases use are NOT already exempt, or every "
+          "allow below would be the exemption answering and the clause could "
+          "be deleted with the suite still green",
+          not _config.matches_exempt(DOC, cfg["exemptGlobs"])
+          and not _config.matches_exempt(EVID, cfg["exemptGlobs"]),
+          repr(cfg["exemptGlobs"]))
+
+    def plan_with_outputs(outputs, status="in_progress"):
+        return {"meta": {"version": 2},
+                "phases": [{"id": "P2", "title": "search",
+                            "status": "in_progress",
+                            "tasks": [{"id": "P2.5", "title": "sanitize",
+                                       "status": status, "files": [SAN],
+                                       "outputs": outputs}]}],
+                "fileIndex": {SAN: ["P2.5"]}}
+
+    write_manifest(plan_with_outputs(["reports/**"]))
+    v_op, m_op = refuse("selftest-op1", file_path=DOC)
+    check("op1 a write matching an in_progress task's declared `outputs` is "
+          "ALLOWED - the documents a run produces cannot be enumerated in "
+          "`files` before the run makes them, and every such write was reported "
+          "as uncovered: %r" % (m_op,),
+          v_op == "allow" and "P2.5" in str(m_op))
+    _outs = _config.in_progress_outputs(str(tmp), MAN)
+    check("op2 ...and the pattern is carried with the task that declared it, so "
+          "the allow can NAME who sanctioned the write rather than saying a "
+          "pattern somewhere matched: %r" % (_outs,),
+          _outs == [("reports/**", "P2.5")])
+    v_op, _m = refuse("selftest-op2", file_path="src/other/thing.ts")
+    check("op3 SECOND-DIRECTION CASE: a file the pattern does NOT cover is "
+          "still refused. A clause that allowed once any pattern existed would "
+          "pass op1 and be the gate switched off: %r" % (v_op,),
+          v_op == "block")
+    write_manifest(plan_with_outputs(["reports/**"], status="pending"))
+    v_op, _m = refuse("selftest-op3", file_path=DOC)
+    check("op4 ...and the task has to be IN PROGRESS, exactly as the `files` "
+          "clause requires: a pattern on a task nobody started sanctions "
+          "nothing",
+          v_op == "block")
+    check("op5 ...which is the map itself being empty, not a later test "
+          "declining: the two are different bugs and only this tells them apart",
+          _config.in_progress_outputs(str(tmp), MAN) == [],
+          repr(_config.in_progress_outputs(str(tmp), MAN)))
+
+    for wide in (["**"], ["**/*.md"], ["."], ["*/reports/**"], ["/etc/**"],
+                 ["../outside/**"]):
+        write_manifest(plan_with_outputs(wide))
+        v_w, _m = refuse("selftest-opw", file_path=DOC)
+        check("op6 %r is honoured by NOTHING - a plan that may declare an "
+              "output pattern may also declare one covering the whole tree, and "
+              "that is the gate turned off through the door built to keep it "
+              "on" % (wide,),
+              v_w == "block"
+              and _config.in_progress_outputs(str(tmp), MAN) == [],
+              repr(_config.in_progress_outputs(str(tmp), MAN)))
+    write_manifest(plan_with_outputs(["**", "reports/**"]))
+    check("op7 ...and a refused entry does not take its legal neighbours with "
+          "it: the grading is per entry, so one bad pattern is one dropped "
+          "pattern rather than a task whose whole declaration is void",
+          _config.in_progress_outputs(str(tmp), MAN)
+          == [("reports/**", "P2.5")],
+          repr(_config.in_progress_outputs(str(tmp), MAN)))
+
+    write_manifest(plan_with_outputs(["var/evidence/**"]))
+    v_e, _m = refuse("selftest-op4", file_path=EVID)
+    check("op8 the evidence directory is the other half of what was uncovered "
+          "on every write, and it is covered the same way - by a place in the "
+          "plan", v_e == "allow")
+    check("op9 `covering_output` takes the GRADED list and not the manifest, "
+          "which is what keeps the decision honest: there is no path on which "
+          "an ungraded pattern can cover anything",
+          _config.covering_output(_config.in_progress_outputs(str(tmp), MAN),
+                                  EVID)[1] == "P2.5"
+          and _config.covering_output([], EVID) is None)
+    check("op10 ...and it answers None for a file no honoured pattern reaches, "
+          "rather than the first pattern in the list",
+          _config.covering_output(_config.in_progress_outputs(str(tmp), MAN),
+                                  "src/x.ts") is None)
+
+    # AND THE REFUSAL STILL ASKS THE RIGHT QUESTION. The gate's question is "is
+    # this file in the plan" and a home for documentation output is a place in
+    # the plan, never a hole in the gate - so the message an uncovered write
+    # earns has to name `outputs` as one of the places that were looked at.
+    write_manifest(plan_with("in_progress"))
+    _v_n, m_n = refuse("selftest-op5", file_path="reports/nobody.html",
+                       agent=True)
+    check("op11 an uncovered write names all three places the gate looked - "
+          "`files`, `outputs` and `fileIndex` - because a refusal that lists two "
+          "of three sends the reader to fix the wrong one: %r" % (m_n,),
+          "`files`" in m_n and "`outputs`" in m_n and "`fileIndex`" in m_n)
+
     # (t) ONE DEFINITION OF "TRIVIAL", AND IT IS THIS GATE'S. `audit-executor.md`
     # told the executor to stay in its `files` scope "unless a trivial adjacent
     # fix is unavoidable"; this hook defines trivial by MAGNITUDE and a

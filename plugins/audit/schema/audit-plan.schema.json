@@ -41,6 +41,13 @@
         "$ref": "#/$defs/proposal"
       }
     },
+    "decisions": {
+      "type": "array",
+      "description": "Optional decision record. A decision is the fourth kind of thing this plan holds, alongside phases, tasks and bugs, and it shares their ONE id namespace: a task or a phase may name a decision in `blockedBy`, and the same resolver answers it. It exists so an approval is recorded where the work is planned instead of travelling in a conversation, a note or a commit message - a refusal with nowhere to read a prior answer from has to stop and ask a human every time it is reached. Its `status` is the SAME vocabulary phases and tasks carry, which is what makes a decision clearable: 'done' means the question is answered and 'cancelled' means it will not be answered, and readiness treats both as settled.",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    },
     "bugs": {
       "type": "array",
       "description": "Optional bug tracker. Bugs live outside phases (a reported bug is not yet a plan); /audit:bug fix materializes a bug into a tdd task in a bugfix phase, linked via bug.taskId <-> task.bugId.",
@@ -51,7 +58,7 @@
   },
   "$defs": {
     "status": {
-      "description": "Lifecycle state for a phase or task. Two of the five are TERMINAL: 'done' (the work landed) and 'cancelled' (the work will not be done - the feature was dropped, the approach was abandoned, the phase closes with whatever landed). Cancelled is the phase/task twin of a bug's 'wontfix', and the state the trackers call Canceled (Linear), Won't Do (Jira), closed-as-not-planned (GitHub) and Removed (Azure DevOps). Nothing is deleted to express it: a cancelled item keeps its history, its commits and its outcome, and the report files it under the archive beside the done ones. Readiness treats a cancelled blocker as settled - a plan must not deadlock on work nobody will do - so a task waiting on a cancelled one becomes ready and is worth a look before it runs.",
+      "description": "Lifecycle state for a phase, a task or a decision. Two of the five are TERMINAL: 'done' (the work landed) and 'cancelled' (the work will not be done - the feature was dropped, the approach was abandoned, the phase closes with whatever landed). Cancelled is the phase/task twin of a bug's 'wontfix', and the state the trackers call Canceled (Linear), Won't Do (Jira), closed-as-not-planned (GitHub) and Removed (Azure DevOps). Nothing is deleted to express it: a cancelled item keeps its history, its commits and its outcome, and the report files it under the archive beside the done ones. Readiness treats a cancelled blocker as settled - a plan must not deadlock on work nobody will do - so a task waiting on a cancelled one becomes ready and is worth a look before it runs.",
       "enum": [
         "pending",
         "in_progress",
@@ -480,6 +487,12 @@
                       ]
                     },
                     "wontfix": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "not_a_bug": {
                       "type": [
                         "string",
                         "null"
@@ -1071,6 +1084,13 @@
             "type": "string"
           }
         },
+        "outputs": {
+          "type": "array",
+          "description": "Repo-relative patterns for files this task PRODUCES rather than edits - the documents a run writes, an evidence directory, a generated report. Apart from `files` because the two answer different questions: `files` is the review scope and every entry owes a `fileIndex` row, and an artefact that does not exist yet cannot be enumerated. The plan gate treats a write matching one of these as covered by this task while the task is in_progress, which is why the BOUND is enforced rather than advised: the FIRST path segment must be a literal directory name, so `docs/audit/evidence/**` is accepted and `**`, `.`, `*/x` and anything climbing out of the tree are refused BY NAME as findings. A pattern covering the whole tree would turn the plan gate off through the door built to keep it on.",
+          "items": {
+            "type": "string"
+          }
+        },
         "docs": {
           "type": "array",
           "items": {
@@ -1176,13 +1196,14 @@
       }
     },
     "bugStatus": {
-      "description": "Bug lifecycle. in_progress = materialized into a task; fixed = that task committed.",
+      "description": "Bug lifecycle. in_progress = materialized into a task; fixed = that task committed. 'wontfix' and 'not_a_bug' are both closed and they are not the same answer: wontfix means the report is real and the fix will not be made, not_a_bug means somebody investigated and the reported behaviour turned out to be correct. Without the second word a verified negative has no row at all, so an investigation that found nothing leaves no trace and the next reader repeats it. Both are HUMAN verdicts and both beat the 'fixed' derivation a linked task would otherwise produce.",
       "enum": [
         "open",
         "triaged",
         "in_progress",
         "fixed",
-        "wontfix"
+        "wontfix",
+        "not_a_bug"
       ]
     },
     "claim": {
@@ -1297,6 +1318,65 @@
         },
         "ado": {
           "$ref": "#/$defs/adoLink"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "status"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^DEC-\\d+$",
+          "description": "DEC-<n>, allocated repo-wide out of the same id space as phases, tasks and bugs - a duplicate across any of the four is reported."
+        },
+        "title": {
+          "type": "string",
+          "description": "The question, phrased so a reader knows what was being asked before they read the answer."
+        },
+        "status": {
+          "$ref": "#/$defs/status",
+          "description": "The SAME five words phases and tasks carry, so one resolver answers every kind of blocker. 'pending' = asked and unanswered, 'done' = answered (and `answer` says what the answer was), 'cancelled' = it will not be answered, so nothing should go on waiting for it. A decision cannot be its own vocabulary without becoming a blocker that never clears."
+        },
+        "question": {
+          "type": "string",
+          "description": "What is actually being decided, at more length than the title. Optional."
+        },
+        "answer": {
+          "type": "string",
+          "description": "The answer, in the words of whoever gave it. REQUIRED once status is 'done': an approval with no words is the second-hand approval this record exists to replace, and a reader cannot hold a claim against a blank field."
+        },
+        "decidedBy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Who answered. REQUIRED once status is 'done' - a recorded approval nobody is named for cannot be checked against the person it is attributed to."
+        },
+        "decidedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO instant the answer was given. Optional; absent means the moment was not recorded, never that the decision is fresh."
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "description": "Repo-relative files the decision is about (optional :line-range suffix). Informational: a decision opens no file, and the plan gate reads task `files` and `outputs` alone.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

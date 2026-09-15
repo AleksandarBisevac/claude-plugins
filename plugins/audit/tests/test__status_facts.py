@@ -25,6 +25,7 @@ import _output                                     # noqa: E402  (PLUGIN_ROOT, f
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _status_facts as M                          # noqa: E402
+import _manifest_vocab as _vocab_sf                # noqa: E402  (the whole bug vocabulary)
 # The comparator itself, and the OTHER surface that reads it. Both are here so
 # the `porder` cases can measure the stamped rank against something derived a
 # different way: `_priority.sort_key` is the rule, `_report_html.phase_ranks` is
@@ -102,6 +103,30 @@ def _cases(check):
     check("b2 ...and every one is actually present on audit-status.py, so b1 "
           "cannot pass over a list that quietly got shorter: %r" % (_missing,),
           _missing == [])
+
+    # --- what "closed" is, and where each half of it comes from ---------------
+    # `fixed` is this module's own word - it is what the derivation PRODUCES -
+    # and the rest are the verdicts a person wrote, which `_manifest_io` owns
+    # beside the derivation they beat. Spelling the human half here as literals
+    # is how a bug closed with a word this tuple had not learned went on reading
+    # as open: a permanent open row in the plan, and `--fail-on open-bugs`
+    # holding a merge on a report somebody had already settled.
+    import _manifest_io as _mio_sf                  # noqa: E402
+    check("cb1 CLOSED_BUG is DERIVED - `fixed` plus `_manifest_io`'s human "
+          "verdicts - rather than a second list of the same words: %r"
+          % (M.CLOSED_BUG,),
+          set(M.CLOSED_BUG) == {"fixed"} | set(_mio_sf.HUMAN_BUG_VERDICT)
+          and len(M.CLOSED_BUG) == 1 + len(_mio_sf.HUMAN_BUG_VERDICT))
+    check("cb2 ...so every human verdict closes a bug here, driven over the "
+          "tuple: a word added there and not here is a bug that reads open for "
+          "ever",
+          all(w in M.CLOSED_BUG for w in _mio_sf.HUMAN_BUG_VERDICT))
+    check("cb3 SECOND-DIRECTION CASE: the open words are still open. A "
+          "CLOSED_BUG widened to the whole vocabulary would pass both cases "
+          "above and make `open-bugs` a condition that never fires: %r"
+          % (sorted(set(_vocab_sf.BUG_STATUS) - set(M.CLOSED_BUG)),),
+          bool(set(_vocab_sf.BUG_STATUS) - set(M.CLOSED_BUG))
+          and "open" not in M.CLOSED_BUG)
 
     # THE PROPERTY THE SPLIT WAS FOR, read out of the AST rather than asserted in
     # prose. Three modules share these facts precisely because computing one

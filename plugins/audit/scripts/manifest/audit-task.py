@@ -13,6 +13,7 @@ gathers answers; this writes them, the same way every time, exactly once.
 Usage:
   audit-task.py add "<title>" [manifest] [--phase P2]
                 [--skills a,b | --skills null] [--model m] [--files f1,f2]
+                [--outputs pat,pat]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
@@ -242,6 +243,9 @@ import _panel_write           # noqa: E402  (one answer to "where is the manifes
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
 #                                            not reimplemented)
+import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be -- the
+#                                            one rule this verb, the validator and the
+#                                            plan gate all read)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
@@ -329,6 +333,34 @@ def _files_refusal(values):
             "should end up with; a file that does not exist yet is fine and is "
             "reported as a note, which is the reassurance this refusal used to "
             "be mistaken for." % ("; ".join(bad),))
+
+
+def _outputs_refusal(values):
+    """The refusal for an `--outputs` entry the plan gate may not honour, or
+    None.
+
+    THE RULE IS NOT RESTATED HERE. `_task_outputs.output_pattern_problem` is
+    the one expression of what an output pattern may be, and it has three
+    readers: this verb before a write, the validator over a manifest already
+    written, and the plan gate before it opens a file. A second reading of
+    "too wide" in the writer would be the half that is easiest to relax, and
+    relaxing it is how a plan comes to cover the whole tree.
+
+    REFUSED BEFORE THE WRITE AS WELL AS AFTER IT, and the two are not redundant.
+    The validator's finding would roll the write back, which is correct and
+    arrives after the operator has been told the task was created; refusing here
+    means the answer names the pattern while they are still looking at the
+    command they typed. `_files_refusal` above draws the same line for the same
+    flag-shaped mistake.
+    """
+    bad = ["%s" % (why,) for _entry, why in _touts.output_problems(values)]
+    if not bad:
+        return None
+    return ("[audit-task] --outputs takes patterns for the files this task "
+            "PRODUCES, each anchored at a literal directory name, and %s. "
+            "`outputs` is what lets the plan gate sanction a write the task's "
+            "`files` could not enumerate - a pattern reaching the whole tree "
+            "would turn the gate off instead." % ("; ".join(bad),))
 
 
 def _union_paths(declared, extra):
@@ -1847,6 +1879,15 @@ def _build_task(task_id, title, args, phase, assembled):
         "completedAt": None,
         "verifiedBy": [],
     }
+    # WRITTEN ONLY WHEN ASKED FOR, which is why `outputs` is not in
+    # `_TEMPLATE_KEYS`. `area` and `reviewSkill` are absent from the phase
+    # template for the same reason one level up: most tasks produce no declared
+    # artefact, and an empty list on every task would be a considered answer
+    # nobody gave. Absent and `[]` mean the same thing to every reader, so the
+    # quieter of the two is the one to write.
+    patterns = _split_csv(args.outputs)
+    if patterns:
+        task["outputs"] = patterns
     return task, unnamed, gate_basis
 
 
@@ -1892,6 +1933,10 @@ def _locked_add(args, project, config, mpath, title, out):
     # same flag, so the refusal belongs to the FLAG rather than to the verb that
     # met the defect.
     refusal = _files_refusal(_split_csv(args.files))
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    refusal = _outputs_refusal(_split_csv(args.outputs))
     if refusal:
         out(refusal)
         return E_USAGE
@@ -4128,9 +4173,16 @@ UNIVERSAL_FLAGS = ("project_dir", "takeover", "as_json")
 # call graph from `main`'s `doors` map -- a hand-written table nothing compares to
 # the code is the same defect one level up.
 VERB_FLAGS = {
-    "add": ("phase", "skills", "model", "files", "risk", "blocked_by",
-            "depends_on", "description", "tests_mode", "tests_add", "gate",
-            "gate_clear"),
+    # `outputs` is on `add` and on no other verb, and that is a bound rather
+    # than an oversight: `scope`'s whole apparatus -- the widening permission,
+    # the narrowing refusal, the fileIndex re-derivation -- is written about
+    # `files`, and a second scope-shaped list moving through it would inherit
+    # none of those rules while looking as though it had. Declaring the
+    # artefacts at `add` is the shape the plan is written in; changing them
+    # afterwards is its own verb and its own refusals.
+    "add": ("phase", "skills", "model", "files", "outputs", "risk",
+            "blocked_by", "depends_on", "description", "tests_mode",
+            "tests_add", "gate", "gate_clear"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear"),
     "cancel": ("reason",),
@@ -4176,6 +4228,11 @@ def build_parser():
     p.add_argument("--skills", default=None)
     p.add_argument("--model", default=None)
     p.add_argument("--files", default=None)
+    # `add` only. The patterns for what this task PRODUCES, beside the list of
+    # what it edits: a comma list like `--files`, and anchored at a literal
+    # directory name so a plan cannot declare the whole tree and switch the plan
+    # gate off through the door built to keep it on.
+    p.add_argument("--outputs", default=None)
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
     p.add_argument("--blocked-by", dest="blocked_by", default=None)
     p.add_argument("--depends-on", dest="depends_on", default=None)

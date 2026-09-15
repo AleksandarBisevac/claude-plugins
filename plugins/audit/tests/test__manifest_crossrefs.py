@@ -214,15 +214,132 @@ def _cases(check):
           "same way `materializedAs` is — the pair is written together",
           any("droppedAt is set but status" in x for x in f), f)
 
+    # --- decisions: the fourth kind ------------------------------------------
+    idx = M._index_decisions({"decisions": [{"id": "DEC-1"}, "junk",
+                                            {"no": "id"}]})
+    check("mc30 `_index_decisions` indexes only the entries that ARE objects "
+          "with an id, and reports nothing - an index is not a check, and the "
+          "ids are needed BEFORE the rules run because the duplicate sweep and "
+          "the proposals' reserved-id rule both read them",
+          idx["decision_ids"] == ["DEC-1"]
+          and list(idx["decision_by_id"]) == ["DEC-1"]
+          and len(idx["decision_list"]) == 3, idx)
+    idx = M._index_decisions({"decisions": "nope"})
+    check("mc31 ...and a non-list `decisions` yields an empty index rather "
+          "than raising: the wrong-type diagnostic is _check_decisions' to give",
+          idx["decision_list"] == [] and idx["decision_ids"] == [], idx)
+
+    check("mc32 `_live_ids` spends decision ids out of the SAME namespace as "
+          "phases, tasks and bugs, in document order and after them",
+          M._live_ids(_index(phase_ids=["P0"], task_ids=["P0.1"],
+                             bug_ids=["BUG-1"], decision_ids=["DEC-1"]))
+          == ["P0", "P0.1", "BUG-1", "DEC-1"])
+    check("mc33 ...and an index built WITHOUT the decisions key is still a "
+          "legal argument: cases hand-build an index holding only what the "
+          "check under test needs, and a KeyError here would be an unrelated "
+          "check crashing",
+          M._live_ids(_index(phase_ids=["P0"])) == ["P0"])
+    f, w = M._check_unique_ids(_index(task_ids=["DEC-1"], decision_ids=["DEC-1"]))
+    check("mc34 a decision and a task wearing one id is a finding, for the "
+          "reason a phase and a task are: `blockedBy` resolves against all "
+          "three together",
+          len(f) == 1 and "duplicate id: DEC-1" in f[0], (f, w))
+
+    _ph = [{"id": "P0", "title": "p", "status": "pending",
+            "tasks": [{"id": "P0.1", "title": "t", "status": "pending",
+                       "blockedBy": ["DEC-1"]}]}]
+    f, w = M._check_refs_and_cycles(
+        _ph, _index(phase_ids=["P0"], task_ids=["P0.1"],
+                    decision_ids=["DEC-1"]))
+    check("mc35 a task may WAIT on a decision: the rule for admitting a kind "
+          "to the blocker universe is not that it has an id, it is that "
+          "`status_index` can say whether it is settled",
+          f == [], (f, w))
+    bug_idx = _index(phase_ids=["P0"], task_ids=["P0.1"], bug_ids=["BUG-1"])
+    f, w = M._check_refs_and_cycles(
+        [{"id": "P0", "title": "p", "status": "pending",
+          "tasks": [{"id": "P0.1", "title": "t", "status": "pending",
+                     "blockedBy": ["BUG-1"]}]}], bug_idx)
+    check("mc36 ...and a BUG may not, which is the asymmetry that keeps the "
+          "new kind from weakening the rule: a bug id is reserved in the "
+          "namespace and is in NO status map, so a wait on one would resolve "
+          "and then never settle - a row that lies about what the plan is "
+          "waiting for: %r" % (f,),
+          any("BUG-1" in x for x in f))
+    f, w = M._check_refs_and_cycles(
+        [{"id": "P0", "title": "p", "status": "pending",
+          "tasks": [{"id": "P0.1", "title": "t", "status": "pending",
+                     "blockedBy": ["session:other-worktree"]}]}],
+        _index(phase_ids=["P0"], task_ids=["P0.1"]))
+    check("mc37 ...and a dependency on another SESSION - the fifth kind - has "
+          "no row in this file at all, so it stays a finding rather than "
+          "resolving to nothing. Deliberate and not an omission: it has no "
+          "status anything here could settle: %r" % (f,),
+          any("session:other-worktree" in x for x in f))
+
+    _dec = {"id": "DEC-1", "title": "Ship over the open bug?",
+            "status": "pending"}
+    f, w = M._check_decisions({"decisions": [_dec]},
+                              _index(decision_list=[_dec]))
+    check("mc38 an UNANSWERED decision is clean - being unanswered is its "
+          "whole purpose, and holding it to the settled-decision fields would "
+          "make the row unwritable until the moment it stopped being needed",
+          f == [], (f, w))
+    _done = {"id": "DEC-1", "title": "Ship?", "status": "done"}
+    f, w = M._check_decisions({"decisions": [_done]},
+                              _index(decision_list=[_done]))
+    check("mc39 ...but a `done` decision with no `answer` and nobody named is "
+          "TWO findings: a refusal reads this row INSTEAD of stopping to ask a "
+          "human, so a settled decision with a blank answer would discharge a "
+          "gate on nothing and leave the reader nothing to hold it to: %r"
+          % (f,),
+          sum(1 for x in f if "answer" in x) == 1
+          and sum(1 for x in f if "decidedBy" in x) == 1)
+    _full = {"id": "DEC-1", "title": "Ship?", "status": "done",
+             "answer": "Yes, with the bug documented.", "decidedBy": "the lead"}
+    f, w = M._check_decisions({"decisions": [_full]},
+                              _index(decision_list=[_full]))
+    check("mc40 ...and with both filled it is clean, which is the case that "
+          "fails if either test is inverted", f == [], (f, w))
+    _blank = {"id": "DEC-1", "title": "Ship?", "status": "done",
+              "answer": "   ", "decidedBy": ""}
+    f, w = M._check_decisions({"decisions": [_blank]},
+                              _index(decision_list=[_blank]))
+    check("mc41 ...and whitespace is not an answer: a field filled to get past "
+          "a check is the second-hand approval this row replaces, wearing a "
+          "space: %r" % (f,), len(f) == 2)
+    _bad = {"id": "DECISION-1", "title": "x", "status": "maybe"}
+    f, w = M._check_decisions({"decisions": [_bad]},
+                              _index(decision_list=[_bad]))
+    check("mc42 an id that is not DEC-<number> and a status outside the "
+          "PHASE/TASK vocabulary are both findings - the vocabulary is shared "
+          "on purpose, because a private one would be a blocker nothing could "
+          "clear: %r" % (f,),
+          any("DEC-<number>" in x for x in f)
+          and any("status" in x for x in f))
+    f, w = M._check_decisions({"decisions": "nope"}, _index())
+    check("mc43 ...and a non-array `decisions` is SAID - a note sitting where a "
+          "record belongs records nothing - but as a WARNING, because "
+          "COMPATIBILITY.md promises validation stays additive and a root key "
+          "this plugin did not know was tolerated before it meant anything: %r"
+          % ((f, w),),
+          f == [] and any("not an array" in x for x in w))
+    check("mc44 the status vocabulary a decision carries IS `_manifest_vocab`'s "
+          "own object and not a copy - a second tuple here is the shape in "
+          "which a kind grows a private vocabulary nobody notices",
+          M.STATUS is _vocab.STATUS)
+
     # --- the aliases ---
-    _names = ("_cycle_findings", "_index_bugs", "_live_ids",
+    _names = ("_cycle_findings", "_index_bugs", "_index_decisions", "_live_ids",
               "_check_unique_ids", "_ref_findings", "_check_refs_and_cycles",
-              "_check_file_index", "_check_bugs", "_check_proposals")
+              "_check_file_index", "_check_bugs", "_check_decisions",
+              "_check_proposals")
     _forked = [n for n in _names if getattr(_rules, n) is not getattr(M, n)]
     check("mc24 every name `_manifest_rules` re-exports from here IS this "
           "module's function: %r" % (_forked,), _forked == [])
     _shared = ("_unknown_keys", "_safe_list", "_require_fields", "_check_ado",
                "_strip_line_suffix", "BUG_ID_RE", "BUG_STATUS", "KNOWN_BUG",
+               "DEC_ID_RE", "KNOWN_DECISION", "STATUS",
                "KNOWN_PROPOSAL", "PROPOSAL_STATUS", "PROP_ID_RE")
     _drift = [n for n in _shared if getattr(M, n) is not getattr(_vocab, n)]
     check("mc25 ...and every word and shape check it reads is "

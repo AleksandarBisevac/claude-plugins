@@ -381,6 +381,20 @@ def status_index(manifest):
         for t in (ph.get("tasks") or []):
             if isinstance(t, dict) and t.get("id"):
                 status[t["id"]] = t.get("status")
+    # DECISIONS ARE THE FOURTH KIND IN THIS MAP, and they are here rather than in
+    # a resolver of their own because a second resolver would be a second answer
+    # to "is this blocker settled". They carry the SAME status vocabulary phases
+    # and tasks carry, so `TERMINAL` below reads them with no translation — which
+    # is the property that makes a decision safe to name in `blockedBy` at all. A
+    # kind with a private vocabulary would resolve and never clear, and a
+    # dependency that cannot be cleared is a row that lies about what the plan is
+    # waiting for. They are filled AFTER the phases for the same reason the tasks
+    # are: document order decides a collision, and the validator reports the
+    # duplicate id across all four kinds.
+    decisions = manifest.get("decisions")
+    for d in (decisions if isinstance(decisions, list) else []):
+        if isinstance(d, dict) and d.get("id"):
+            status[d["id"]] = d.get("status")
     return status
 
 
@@ -471,6 +485,17 @@ def unsatisfied(refs, status_by_id):
 
 
 # --- derived bug status ---------------------------------------------------------
+# The statuses a PERSON wrote that no derivation may overwrite. `wontfix` says the
+# report is real and the fix will not be made; `not_a_bug` says somebody
+# investigated and the reported behaviour is correct. Both close the bug and
+# neither means `fixed`, so a linked task going done must not relabel either of
+# them — the tuple is what stops that from being a chain of `==` comparisons that
+# learns the next word one call site at a time. It lives HERE rather than beside
+# `_manifest_vocab.BUG_STATUS` because what it expresses is a property of the
+# derivation below, and the derivation is this module's.
+HUMAN_BUG_VERDICT = ("wontfix", "not_a_bug")
+
+
 def effective_bug_status(bug, task_by_id):
     """A bug's status, DERIVING 'fixed' from its linked task.
 
@@ -483,16 +508,18 @@ def effective_bug_status(bug, task_by_id):
     The rule itself: the orchestrator never writes `bugs[]` during a run (that
     leaves the shared index untouched, so parallel phase branches merge clean), so
     a bug materialized into a task (`bug.taskId` <-> `task.bugId`) reads 'fixed'
-    once that task is done. A human-set 'wontfix' always wins; an un-materialized
-    bug keeps its reported status (open / triaged / in_progress).
+    once that task is done. A human verdict always wins — `HUMAN_BUG_VERDICT`
+    above is the pair, and reading the tuple rather than testing one word is what
+    keeps the second one from being learned here and nowhere else; an
+    un-materialized bug keeps its reported status (open / triaged / in_progress).
 
     `task_by_id` is a parameter rather than something derived here so one caller
     builds the index once for a whole `bugs[]` sweep; `tasks_by_id(manifest)` is
     the index to pass.
     """
     stored = bug.get("status")
-    if stored == "wontfix":
-        return "wontfix"
+    if stored in HUMAN_BUG_VERDICT:
+        return stored
     tid = bug.get("taskId")
     # The `if tid` guard is load-bearing, not defensive noise. An index built
     # WITHOUT the truthy-id filter (audit-status.py's ready-list index is one such)

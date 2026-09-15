@@ -82,8 +82,20 @@ _output.install_path()
 STATUS = ("pending", "in_progress", "blocked", "done", "cancelled")
 TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
-BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix")
+# Two of these close a bug and they are not the same answer. `wontfix` says the
+# report is real and the fix will not be made; `not_a_bug` says somebody looked and
+# the reported behaviour is correct. A verified negative had no word at all, so an
+# investigation that found nothing left no row and the next reader ran it again.
+# Both are HUMAN verdicts — `_manifest_io.HUMAN_BUG_VERDICT` is the tuple that says
+# so, and it lives there because that is where the derivation they beat lives.
+BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix", "not_a_bug")
 BUG_ID_RE = re.compile(r"^BUG-\d+$")
+# A decision is the FOURTH kind of thing the plan holds and it wears no status
+# vocabulary of its own: `STATUS` above is what it carries, so `_manifest_io`'s one
+# resolver answers a `blockedBy` naming a decision exactly as it answers one naming
+# a phase or a task. A private enum here would have been a blocker nothing could
+# settle — a row that says a task is waiting and can never stop saying it.
+DEC_ID_RE = re.compile(r"^DEC-\d+$")
 # v0.33 proposals lifecycle (/audit:init park + /audit:propose). The vocabulary
 # is enforced only on payload-bearing proposals — legacy free-form entries
 # (pre-0.33 wrote whatever it liked here) stay warnings-at-most.
@@ -175,7 +187,11 @@ GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling")
 # The "legacy" names below were removed from the schema in v0.3.0 but remain
 # silently accepted in pre-0.3 manifests.
 KNOWN_ROOT = {"$schema", "meta", "phases", "fileIndex", "bugs", "deferred",
-              "proposals"}
+              "proposals",
+              # The record of what was DECIDED about this plan, so an approval is
+              # held where the work is planned instead of in a conversation
+              # nothing can read back:
+              "decisions"}
 KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "developmentBranch", "branchPrefix", "gitRoot", "reviewSkill",
               # v0.44: branch-naming convention. Supersedes branchPrefix, which
@@ -387,11 +403,23 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # does: a set here would be anchored, drift-checked and green while
               # a wrong word stayed exactly as accepted.
               "redFirst",
+              # The files this task PRODUCES rather than edits, as anchored
+              # patterns. Apart from `files` because the two answer different
+              # questions: `files` is the review scope and every entry owes a
+              # `fileIndex` row, and a document a run writes cannot be enumerated
+              # before the run makes it. What such a pattern may be is
+              # `_task_outputs.output_pattern_problem` and is deliberately NOT
+              # here: the plan gate has to ask that rule on the per-tool-call
+              # path, and the premise at `SCHEMA_ANCHORS` below is that nothing
+              # on that path loads this module.
+              "outputs",
               # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",
              "description", "repro", "expected", "actual", "files", "taskId",
              "fixedIn", "notes", "ado"}
+KNOWN_DECISION = {"id", "title", "status", "question", "answer", "decidedBy",
+                  "decidedAt", "notes", "files"}
 KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
                   "technicalNote", "openQuestions", "createdISO", "payload",
                   "materializedAs", "materializedAt",
@@ -506,6 +534,7 @@ SCHEMA_ANCHORS = (
     ("KNOWN_PHASE", "phases[]"),
     ("KNOWN_TASK", "phases[].tasks[]"),
     ("KNOWN_BUG", "bugs[]"),
+    ("KNOWN_DECISION", "decisions[]"),
     ("KNOWN_PROPOSAL", "proposals[]"),
 )
 

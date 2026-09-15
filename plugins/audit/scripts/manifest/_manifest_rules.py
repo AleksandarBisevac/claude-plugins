@@ -173,12 +173,14 @@ _check_skill_typos = _typos._check_skill_typos
 
 _cycle_findings = _crossrefs._cycle_findings
 _index_bugs = _crossrefs._index_bugs
+_index_decisions = _crossrefs._index_decisions
 _live_ids = _crossrefs._live_ids
 _check_unique_ids = _crossrefs._check_unique_ids
 _ref_findings = _crossrefs._ref_findings
 _check_refs_and_cycles = _crossrefs._check_refs_and_cycles
 _check_file_index = _crossrefs._check_file_index
 _check_bugs = _crossrefs._check_bugs
+_check_decisions = _crossrefs._check_decisions
 _check_proposals = _crossrefs._check_proposals
 _check_priority = _crossrefs._check_priority
 _check_ado_parents = _crossrefs._check_ado_parents
@@ -341,6 +343,10 @@ def validate(manifest):
     f.extend(walk_f)
     w.extend(walk_w)
     index.update(_index_bugs(manifest))
+    # BEFORE the uniqueness sweep, because a decision spends an id out of the
+    # same namespace: added afterwards, a decision colliding with a task would be
+    # reported by nothing and every reference to it would be ambiguous.
+    index.update(_index_decisions(manifest))
 
     add(_check_unique_ids(index))
     add(_check_refs_and_cycles(phases, index))
@@ -349,6 +355,7 @@ def validate(manifest):
     add(_check_skill_typos(manifest))
     add(_check_file_index(manifest, index))
     add(_check_bugs(manifest, index))
+    add(_check_decisions(manifest, index))
     add(_check_proposals(manifest, index))
     add(_check_priority(manifest, phases))
     add(_check_ado_parents(manifest, phases))

@@ -209,6 +209,36 @@ it was.
 **Parallel safety:** tasks whose `files` sets are disjoint AND whose `dependsOn` lists are mutually satisfied may
 run in parallel (spawn multiple Agents in one message). Tasks sharing a file or linked via `dependsOn` run sequentially.
 
+**That rule is about the FILE SYSTEM and says nothing about the machine, which is the larger
+source of false failures.** Disjoint `files` keeps two executors from writing over each other;
+it does nothing about the cores, the ports and the scratch directories they share. A full suite
+takes all three, and two of them on one host produce reds that neither change caused — a port
+already bound, a worker starved by another measurement, a fixture directory two runs both chose.
+So **the gates are the part that must not overlap**: let executors edit in parallel, and run each
+task's gate where no other full suite is running. `run-test-gate.py` prints a `machine:` line on
+every recorded run saying whether it had the host to itself and naming the other recorded gate
+runs that shared its window; on a red it also prints `claimed:`, which says whether the verdict
+is this run's to claim at all. **Neither line moves an exit code** — they are observations beside
+a verdict, because a rule that refused a run for having company would refuse the ordinary case
+and be switched off within a day.
+
+**A suite this plugin did not start is invisible to that line until somebody records it.** A
+pre-push hook runs one on `git push`, a developer runs one in a second terminal, a commit hook
+runs one — and one of those overlapping a recorded gate is where a red got attributed to the
+plugin's own run. When you know such a suite ran, record it:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/record-outside-run.py" \
+    <manifestPath> --project <projectDir> --label "<what ran>" \
+    --started <ISO> [--ended <ISO> | --duration-ms N] [--status passed|failed]
+```
+
+It writes a row with no task and no phase on it, so it can never be pointed at work or stand in
+for a gate — it exists so the overlap question has something to find. **Do not try to infer one
+from the spelling of a command**: reading a Bash line for the word `test` or `push` is the
+guess-from-the-spelling mistake this product keeps being repaired for, and it is wrong in both
+directions on the first project that wraps its own runner.
+
 ## Concurrency lock
 
 Locks live in the **shared git directory**, not the working tree — so they coordinate across git
@@ -608,45 +638,65 @@ report, because `git switch -c` is about to fail anyway.
         confirmation was NOT recorded — go back to asking per task.
      b. Set `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and `task.verifiedBy`.
         (The **orchestrator**, not the subagent, writes `outcome`.)
-     c. **Commit the task's work** on the phase branch (all git via `git -C <gitRoot>`):
-        - Stage the task's `files` (each stripped of the `<gitRoot>/` prefix). Stage the phase's
-          manifest file too — the shard `phases/<phaseId>.json` when sharded, else the single manifest —
-          **only if it lives inside `<gitRoot>`**; if it is outside (e.g. at the project dir while the
-          git repo is a subdir), it cannot be committed — proceed without it (the preflight already
-          warned that status history isn't versioned in that layout). **Do NOT stage the index** — a
-          task commit changes only its own phase's shard, because two phases committing the index in
-          parallel conflict on the same lines.
-        - **That means a widened scope cannot pair with `fileIndex` at this commit, and that is
+     c. **Commit the task's work — through the script, not by hand:**
+        ```
+        python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" \
+            <manifestPath> <taskId> --project <projectDir> --subject "<short subject>"
+        ```
+        It stages the task's own `files`, the phase's manifest file, the journal and the evidence,
+        commits them with an explicit pathspec, and **names any staged path outside that list
+        instead of sweeping it in**. Read the exit code: **0** it committed (the SHA is printed) or
+        there was nothing to commit and it said which; **1** git refused, or the index already held
+        paths this commit may not carry, each one named — unstage them, or declare them with
+        `/audit:task scope`; **2** the manifest will not load, or there is no such task.
+
+        **Do not compose these git commands yourself.** This was the one git operation this
+        document described in prose and nothing scripted, and prose cannot refuse: four scope
+        breaches on one program came from widening two words of the paragraph that used to sit
+        here — a file "obviously" part of the change, a sibling the editor had also touched, the
+        shared index because the phase file was allowed. Every one of them is a commit nobody
+        reviewed, made against the record everything else is graded by.
+
+        What the script does for you, so you know what you are no longer responsible for: the
+        `<gitRoot>/` prefix and any `:line-range` suffix are stripped; a declared path outside the
+        git root, or one that is neither in the working tree nor tracked (the red-first case a
+        task names before writing it), is **reported and passed over** rather than failing the
+        commit; the manifest **index** is refused with a sentence of its own; and the staged list
+        is read back after staging as well as before it. `verify-invariants.py`'s `commit-scope`
+        re-derives the same allow-list from git afterwards, so these commits are graded by
+        something that did not make them.
+
+        The rest of this step is still yours:
+        - **A widened scope cannot pair with `fileIndex` at this commit, and that is
           expected.** `task.files` lives in the shard you just staged; `fileIndex` lives in the index
           you may not. So a task whose scope you corrected mid-run commits a state where the two
           disagree — measured on live runs at 39 and 93 occurrences — and `manifest-revalidated`
           records those as **deferred** rather than as breaches. It then asks the pairing of the
           manifest **as it stands**, so the debt is real and is settled once: land the index change
           in its own commit before sign-off. `/audit:task scope` re-derives `fileIndex` for you.
-        - **Stage the journal directory too** (`journal.dir`, default `<manifest dir>/journal`) if it
-          exists inside `<gitRoot>`: the audit trail records the manifest writes this commit is
-          carrying, and a record committed a week later cannot be checked against the change it
-          describes. One file per writer per month, so parallel phases never conflict on it —
-          one writer on two BRANCHES still can, and `audit-journal.py merge` is what resolves
-          that without recomputing anything a row says. If `journal.enabled` is false there is
-          nothing there and nothing to stage.
-        - **Stage the evidence directory too** (`evidence.dir`, default `<manifest dir>/evidence`) if it
-          exists inside `<gitRoot>`, and for the journal's reason one record over: the rows this
+        - **The journal and the evidence travel in this commit, and the script stages both** —
+          `journal.dir` (default `<manifest dir>/journal`) and `evidence.dir` (default
+          `<manifest dir>/evidence`), each only if it exists inside `<gitRoot>`, and each reported
+          as skipped when it does not. The reason is worth knowing even though you no longer type
+          it: the audit trail records the manifest writes this commit is carrying, and a record
+          committed a week later cannot be checked against the change it describes; the rows this
           commit's `testEvidence` pointers name have to travel with the pointers, or a clone
           receives a plan referring to runs it does not have. `verify-invariants.py`'s
           `evidence-committed` is what says so afterwards. One file per writer per month, so
-          parallel phases never conflict on it either. If the directory is outside `<gitRoot>` it
-          cannot be committed — proceed without it, exactly as for the journal.
+          parallel phases never conflict on either — one writer on two BRANCHES still can, and
+          `audit-journal.py merge` is what resolves that without recomputing anything a row says.
+        - **The explicit pathspec is the script's, and it is what makes the gate's
+          `TREE CHANGED OUTSIDE THIS WORK` line affordable.** **The index does not arrive empty**:
+          a previous task's `git mv` leaves paths staged, and a bare `git commit` sweeps every one
+          of them into this task's commit — which is where two `commit-scope` breaches on one
+          commit came from, and by the time `verify-invariants.py` reports them the only remedy
+          is a rebase this document forbids. The script commits with `-- <the paths it staged>`
+          and refuses outright when the index already holds something else, so neither half of
+          that is yours to remember any more.
         - **Completion rows are hook-emitted.** The `journal-writes` hook derives `task.complete`,
           `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
           a shell command inside a `Bash` call included — NEVER append those actions by hand (two
           writers means duplicate rows and a doctor that cannot trust the count).
-        - **Commit with an explicit pathspec** — `git commit -- <the paths you just staged>` — and not
-          a bare `git commit`. **The index does not arrive empty.** A previous task's `git mv` leaves
-          paths staged, and a bare commit sweeps every one of them into this task's commit. That is
-          not hypothetical: it is where two `commit-scope` breaches on one commit came from, and by
-          the time `verify-invariants.py` reports them the only remedy is a rebase this document
-          forbids. The pathspec is the whole fix, and it costs nothing when the index was clean.
         - **And re-`git add` anything `git mv` moved.** `git mv` stages the file at its **pre-edit**
           content, so a task that moves a file and then edits it commits the OLD bytes unless the new
           path is added again. **No gate can catch this**, and that is why it is called out here
@@ -654,8 +704,9 @@ report, because `git switch -c` is about to fail anyway.
           lives in the INDEX — the tests pass on the files you have while the commit carries files
           nobody ran. A live run came within one commit of shipping a shared module importing a
           feature while the manifest recorded the opposite.
-        - Commit with `<meta.commit.type>(<taskId>): audit - <short subject>` (use a more specific conventional
-          type when it fits — `fix`, `perf`, `test`, `docs`). Append `meta.commit.coauthor` if set.
+        - The message is `<meta.commit.type>(<taskId>): audit - <your --subject>`, and
+          `meta.commit.coauthor` is appended as its own paragraph when set — the script composes
+          both. What is yours is the **subject**: say what the task did, in a few words.
         - **Write the subject to fit a commit linter's header cap, and hard-wrap the body** —
           this applies to every commit this run writes, the sign-off commit below included. The
           prefix plus `audit - ` already spends part of that budget before your words start, so
@@ -667,12 +718,17 @@ report, because `git switch -c` is about to fail anyway.
           config for one, and cannot know whether the repository runs `commitlint` or anything
           else; what it ships is the template, which is why the guidance sits here. If the
           project's own rules are stricter than a short subject and a wrapped body, they win.
-        - Capture the SHA (`git rev-parse HEAD`) and write it into `task.commit` (Edit the phase's manifest file again).
+        - Take the SHA the script printed and write it into `task.commit` (`/audit:task done
+          <taskId> --commit <sha>`, which writes it with the rest of the close in one write). The
+          script deliberately does not: the SHA is only knowable after the commit it makes and the
+          shard is inside that commit, so writing it there would need a second commit or the amend
+          this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
+          so the gap between the commit and this write is not a commit nothing points at.
           **Do NOT write `bugs[]`.** A bug materialized into this task (`bug.taskId` ↔ `task.bugId`)
           reads as **fixed** automatically once the task is `done` — the rollup derives it (with
           `fixedIn` = this `task.commit`) — so the shared index stays untouched and parallel phases
-          merge clean. (`/audit:bug close` still records a human `wontfix`/`fixed` on the index, under
-          the index lock — a structural decision, not part of a run.)
+          merge clean. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
+          on the index, under the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition (section below;
         an `onComplete` comment carries this `task.commit`).
@@ -934,6 +990,19 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    not edit `meta.buildCommands` on your own account, because which of two entries a project
    wants kept is not a question this run answers. **Every step's line now carries what that step
    cost**, so a doubled run is visible on a green gate without anyone deciding to measure it.
+
+   **Three lines arrive around the verdict rather than in it, and each answers something an exit
+   code cannot.** `covers:` prints before the table and says **what this gate never measures**:
+   it runs commands, it opens no browser and starts no server, so a green verdict is evidence
+   about those commands and about nothing that only happens at runtime. That boundary is
+   reasonable and was unstated, and a green gate set read without it reads as broader coverage
+   than was taken — when `meta.runtimeBoot` is set the line says so, and sign-off step 4 is what
+   runs it. `machine:` and `claimed:` come after the run and are covered under **Parallel
+   safety** above. And the **coverage answer that needs nothing from the run arrives before it**:
+   a task declaring no files can be related to no run at all, which is knowable from the plan, so
+   it is said before the first command instead of after a whole suite has been paid for. Nothing
+   the gate does can change that answer; every other way the coverage question ends needs the
+   run's own output and is still reported at the end.
 3. **`invariantsChecked`** — run, from the project directory and **before** step 5c, because
    `close-phase.py` deletes the branch by default and that takes with it the reflog this reads.
    The ordering is not advice: it is why this step is numbered ahead of the landing step rather

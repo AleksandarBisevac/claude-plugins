@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -85,6 +85,21 @@ per add is the class of error the script exists to delete.
      started.
    - `--files a,b` — repo-relative paths this task touches (Glob/Grep to verify they
      exist; the script notes misses but allows new-file paths).
+   - `--outputs docs/audit/evidence/**,docs/reports/*.md` — patterns for what this
+     task **produces** rather than edits: the documents a run writes, an evidence
+     directory, a generated report. Use it whenever the work's own output is a file
+     the task cannot name in `--files` because it does not exist yet and its name is
+     not known in advance. While the task is `in_progress` the plan gate treats a
+     write matching one of these as covered, which is what stops a documentation
+     write being reported as uncovered on every save — and a gate whose warnings are
+     noise is a gate that is off.
+     **Each pattern starts with a literal directory name.** `docs/**` is accepted;
+     `**`, `**/*.md`, `.`, `*/x`, an absolute path and anything with a `..` segment
+     are refused, naming the pattern — a task that covers the whole tree would turn
+     the plan gate off through the door built to keep it on. `**` spans directories,
+     `*` stays inside one, and a trailing `/` means the same as `/**`.
+     `add` is the only verb that takes it; declaring artefacts is part of writing the
+     task down.
    - `--tests-mode` (`tdd` for incorrect current behavior / `regression` for
      behavior-preserving / `gate-only` for mechanical — the script sets
      `expectRedFirst` true iff tdd), `--tests-add "<desc>"` (repeatable, one test

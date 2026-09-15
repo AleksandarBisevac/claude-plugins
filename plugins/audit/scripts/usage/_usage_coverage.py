@@ -49,6 +49,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _manifest_io as _mio  # noqa: E402  (the verdicts a person wrote, and what beats what)
 import _usage_core as _core  # noqa: E402  (the arithmetic under every pass here)
 from _usage_core import parse_ts, task_index  # noqa: E402  (one ISO parse, one plan index)
 
@@ -129,7 +130,8 @@ def monthly_activity(manifest, rows, months=12):
             by `phase.mergedAt`. bugsFixed is DERIVED the way
             audit-status.effective_bug_status derives 'fixed': a bug whose
             linked task (`bug.taskId`) is done, bucketed by THAT task's
-            completedAt — and a wontfix bug never counts.
+            completedAt — and a bug a person has closed never counts,
+            whichever of those verdicts they used.
 
     `months[]` is zero-filled between the first and last month seen on either
     side, then trimmed to the LAST `months` entries (None/0 = no cap). Both
@@ -170,7 +172,7 @@ def monthly_activity(manifest, rows, months=12):
         if not isinstance(b, dict):
             continue
         bump(_event_month(b.get("reportedAt")), "bugsReported")
-        if b.get("status") == "wontfix":
+        if b.get("status") in _mio.HUMAN_BUG_VERDICT:
             continue
         t = tasks.get(b.get("taskId")) if b.get("taskId") else None
         if isinstance(t, dict) and t.get("status") == "done":

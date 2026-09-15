@@ -283,6 +283,11 @@ BUG_STATUS = {
     "in_progress": "In progress",
     "fixed": "Fixed",
     "wontfix": "Won\u2019t fix",
+    # The other closed answer, and the reason it is worth a word of its own: the
+    # report was looked at and the behaviour turned out to be correct. Rendered
+    # apart from "Won't fix" because a reader scanning a bug table is asking
+    # which reports were real.
+    "not_a_bug": "Not a bug",
 }
 TESTS_MODE = {
     "tdd": "TDD (red first)",

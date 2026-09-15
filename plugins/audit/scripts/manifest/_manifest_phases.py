@@ -68,6 +68,9 @@ _output.install_path()
 import _manifest_io as _mio  # noqa: E402  (TERMINAL: what 'finished' means everywhere)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
+import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be -- the one
+#                                              rule the writer, this walk and the plan gate
+#                                              all read)
 import _ado_parent as _parent  # noqa: E402  (what an `adoParent` declaration may say)
 import _ado_tracked as _tracked  # noqa: E402  (and what an `adoTracked` one may say)
 
@@ -582,6 +585,20 @@ def _walk_phases(phases):
                 files = task.get("files")
                 if isinstance(files, list) and files:
                     task_files[tid] = files
+            # `outputs` is the only key on a task that can WIDEN what the plan
+            # gate allows, so a pattern it may not honour is a FINDING and not a
+            # warning: a warning leaves the entry in the file, and the gate would
+            # then be deciding for itself which half of the plan to believe. The
+            # rule is `_manifest_vocab.output_pattern_problem` and is asked here,
+            # by `audit-task.py` before a write, and by the gate before it opens
+            # a file - one rule, three readers, so none of them can be generous
+            # on its own.
+            outputs = task.get("outputs")
+            if outputs is not None and not isinstance(outputs, list):
+                f.append("%s: outputs must be an array, got %s"
+                         % (twhere, type(outputs).__name__))
+            for _entry, why in _touts.output_problems(outputs):
+                f.append("%s: outputs %s" % (twhere, why))
             if task.get("status") not in STATUS:
                 f.append("%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS)))
             if (phase.get("status") == "pending"

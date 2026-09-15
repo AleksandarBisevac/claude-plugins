@@ -186,6 +186,15 @@ LAYERS = (
      # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
      # holding it would put this module at L2 and its consumers at L3.
      "_manifest_vocab",
+     # `_task_outputs` is what a task's `outputs` pattern may be and what an
+     # honoured one reaches. It is at L1 for `_locks`' reason word for word:
+     # `hooks/_config.py` resolves it by path on the per-tool-call plan-gate
+     # path, so the smaller the module it loads there the better. It began
+     # inside `_manifest_vocab` and was moved out for the same argument from
+     # the other side - that module carries a premise, held by a case, that
+     # nothing on the hook path reaches it, and a path rule is not vocabulary.
+     # It reaches nothing but `_output` and `fnmatch`.
+     "_task_outputs",
      # `_ado_conventions` is what a work item must look like to BELONG on a
      # board - required fields, description skeleton, tag vocabulary, parent. It
      # reaches nothing but `_output`, and it is at the floor for the same reason
@@ -624,6 +633,15 @@ LAYERS = (
      # `_scoped_commit` (L5) for the staging discipline it shares with its
      # sibling.
      "commit-manifest-index",
+     # `commit-task-work` is the third of the scoped commits, over the path the
+     # other two refuse: the task's own declared files. It is the one git
+     # operation this plugin described in prose and did not script, and prose
+     # cannot refuse -- four scope breaches on one program came from an agent
+     # generalising two words of step 4c at the end of a task. Same layer and
+     # same shape as its siblings: it derives its OWN allow-list (a shared
+     # builder taking a flag would be one function holding three safety
+     # properties) and shares only `_scoped_commit`'s staging discipline.
+     "commit-task-work",
      # `close-phase` is the same shape one step LATER, and for the sharpest version
      # of the same reason: sign-off steps 5c-5e were git commands in prose, and
      # prose cannot be trusted with a sequence whose steps git enforces the order
@@ -675,6 +693,16 @@ LAYERS = (
      # It reaches `_manifest_io` (L1) for the loader, the phase resolver and `TERMINAL`,
      # and `_journal_io` (L1) for the row.
      "record-risk-confirmation",
+     # `record-outside-run` is the writer that makes the gate's own
+     # contested-verdict question answerable at all: a suite can run where this
+     # plugin cannot see it - a pre-push hook, a second terminal - taking the same
+     # cores, ports and scratch directories, and until a row said so a red that
+     # such a run had caused was recorded and read as the gate's verdict on the
+     # work. An entry point for this layer's usual reason, and DECLARED rather
+     # than sniffed: guessing an outside suite from the spelling of a command is
+     # the class this product keeps being repaired for. It reaches `_evidence_io`
+     # (L3) for the row and the ledger and `_manifest_io` (L1) for the loader.
+     "record-outside-run",
      # `migrate-json-encoding` rewrites the files of ONE manifest in the escaping
      # `_manifest_io.json_document` chose, in a single all-or-nothing pass. An
      # entry point for this layer's usual reason - the caller is an operator, or

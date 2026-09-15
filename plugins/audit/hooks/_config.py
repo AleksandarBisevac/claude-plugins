@@ -1572,6 +1572,82 @@ def covering_key(file_map, rel):
     return None
 
 
+def in_progress_outputs(root, manifest_rel):
+    """`[(pattern, taskId), ...]` — the output patterns of `in_progress` tasks
+    that the plan gate may honour, in document order. Empty list on any error.
+
+    THE SECOND HALF OF COVERAGE, AND THE ONE THAT NEEDED A BOUND. `files` names
+    what a task edits and is enumerated; `outputs` names what a run PRODUCES —
+    the documents, the evidence rows — which cannot be enumerated before the run
+    makes them, so it is patterns. Uncovered documentation writes were the
+    commonest warning this gate produced and the plan had nowhere to put the
+    thing it was warning about; a gate whose warnings are noise is a gate that is
+    off, and the repair is a place in the plan rather than a hole in the gate.
+
+    EVERY PATTERN IS GRADED BEFORE IT IS HONOURED, by the rule the writer and the
+    validator use — `_task_outputs.honoured`, loaded by path because a hook may
+    not import `scripts/`. A pattern the rule refuses is dropped here, so a plan
+    that somehow carries one covers nothing extra.
+
+    IT IS THAT MODULE AND NOT `_manifest_vocab`, which is a cost decision rather
+    than a filing one. This runs on the per-tool-call path, so the SMALLER the
+    module resolved by path here the better — the same argument that puts
+    `_locks` and `_journal_io` at the floor layer — and the vocabulary module
+    carries a premise that nothing on this path loads it.
+
+    AND WHEN THE RULE CANNOT BE LOADED, NOTHING IS HONOURED. That is the only
+    safe direction: an unreadable rule makes this gate louder (writes go on being
+    reported as uncovered), never wider. Every other fail-open in this file
+    switches a FEATURE off; switching this one off the other way would switch the
+    GATE off, which is the door this whole key had to be built not to open.
+    """
+    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    if rule is None:
+        return []
+    out = []
+    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+    if not isinstance(manifest, dict):
+        return out
+    try:
+        for phase in manifest.get("phases", []) or []:
+            for task in phase.get("tasks", []) or []:
+                if task.get("status") != "in_progress":
+                    continue
+                tid = task.get("id")
+                for pattern in rule.honoured(task.get("outputs")):
+                    out.append((pattern, tid))
+    except Exception:
+        return []
+    return out
+
+
+def covering_output(outputs, rel):
+    """`(pattern, taskId)` for the first honoured output pattern covering `rel`,
+    or None.
+
+    The matcher is `_task_outputs.output_covers`, for the reason
+    `in_progress_outputs` gives: the half that says which patterns are legal and
+    the half that says what they reach have to be one module, or a pattern ends
+    up refused by the writer and matched by the reader.
+
+    TAKES THE GRADED LIST rather than the manifest, which is what keeps the
+    decision honest: the only way to reach this function is to have gone through
+    `in_progress_outputs`, so there is no path on which an ungraded pattern can
+    cover anything. `covering_key` is shaped the same way and for the same
+    reason.
+    """
+    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    if rule is None:
+        return None
+    try:
+        for pattern, tid in (outputs or []):
+            if rule.output_covers(pattern, rel):
+                return (pattern, tid)
+    except Exception:
+        return None
+    return None
+
+
 def declaring_tasks(root, manifest_rel, rel):
     """[{"taskId", "status"}] for every task declaring `rel` WHATEVER its status
     — its own `files` or a `fileIndex` row keyed to it. Empty list when none

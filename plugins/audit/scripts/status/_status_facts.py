@@ -102,7 +102,14 @@ DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
 BUDGET_WARN_PCT = 80.0
-CLOSED_BUG = ("fixed", "wontfix")
+# DERIVED, not listed. `fixed` is this file's own word — it is what the
+# derivation below PRODUCES — and the rest are the verdicts a person wrote, which
+# `_manifest_io` owns beside the derivation they beat. Spelling the human half
+# here as literals is how a bug closed with a word this tuple had not learned went
+# on reading as open: the plan would have shown a permanent open row and
+# `--fail-on open-bugs` would have held a merge on a report somebody had already
+# settled.
+CLOSED_BUG = ("fixed",) + _mio.HUMAN_BUG_VERDICT
 
 # How many ready tasks /audit:status lists before folding. A wide-open plan can
 # have hundreds; the count is always stated so the fold is never mistaken for the

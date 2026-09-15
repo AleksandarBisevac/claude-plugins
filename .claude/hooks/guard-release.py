@@ -44,7 +44,13 @@ import time
 
 STATE_REL = os.path.join(".claude", "state")
 MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
-CLOSED = ("fixed", "wontfix")
+# The words that mean a bug will not hold a release. `fixed` is what the plugin's
+# derivation produces; the rest are the verdicts a person wrote, and a bug closed
+# with one this tuple has not learned would hold every release until somebody
+# rewrote its status to a word that is less true. A hook may not import the
+# plugin, so this restates rather than reads — and `gr` cases below drive the
+# plugin's own vocabulary against it so the two cannot come apart in silence.
+CLOSED = ("fixed", "wontfix", "not_a_bug")
 KEYWORD = "#release-with-bugs"
 
 # What publishes. Each is anchored at a command boundary (start of line, `&&`,
@@ -328,6 +334,79 @@ def _selftest():
         check("gr13 ordinary work is allowed even with bugs open - only the "
               "publishing commands are judged",
               decide("git push origin main", tmp, "s1") is None)
+
+        # --- the vocabulary this file RESTATES, driven against its owner -------
+        # A hook may not import the plugin, so `CLOSED` above is a copy - and a
+        # copy nothing compares is a copy that goes stale silently. The failure
+        # is one-directional and expensive: the plugin learns a word that closes
+        # a bug, this file does not, and every release afterwards is held by a
+        # bug the tracker considers settled. So the source is READ rather than
+        # imported, and a file that cannot be read is a FAILURE here rather than
+        # a case that quietly passes.
+        import ast
+
+        # `<repo>/.claude/hooks/<this file>` - three levels, resolved off
+        # `__file__` rather than off the cwd, because the selftest sweep runs
+        # every child in a scratch directory it must leave alone.
+        repo = os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))
+
+        def literal(rel, name):
+            """The value assigned to `name` at the top level of `rel`, or None."""
+            try:
+                with open(os.path.join(repo, rel), "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read())
+            except Exception:
+                return None
+            for node in tree.body:
+                if not isinstance(node, ast.Assign):
+                    continue
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == name:
+                        try:
+                            return ast.literal_eval(node.value)
+                        except Exception:
+                            return None
+            return None
+
+        vocab = literal(os.path.join("plugins", "audit", "scripts", "manifest",
+                                     "_manifest_vocab.py"), "BUG_STATUS")
+        human = literal(os.path.join("plugins", "audit", "scripts", "manifest",
+                                     "_manifest_io.py"), "HUMAN_BUG_VERDICT")
+        check("gr13b the plugin's own bug vocabulary was READ, so the two cases "
+              "below are comparisons rather than two Nones agreeing: %r / %r"
+              % (vocab, human),
+              bool(vocab) and bool(human))
+        check("gr13c every word this file treats as closed is a word the plugin "
+              "defines - a status invented here would silently stop holding "
+              "releases for a bug nothing can be in: %r"
+              % (sorted(set(CLOSED) - set(vocab or ())),),
+              bool(vocab) and set(CLOSED) <= set(vocab))
+        check("gr13d ...and the set is EXACTLY the plugin's own: `fixed`, which "
+              "its derivation produces, plus every human verdict it names. An "
+              "inclusion alone would pass on a copy that had missed a word, "
+              "which is the direction that costs a release: %r vs %r"
+              % (sorted(CLOSED), sorted({"fixed"} | set(human or ()))),
+              bool(human) and set(CLOSED) == ({"fixed"} | set(human)))
+        # AND THE OTHER DIRECTION, so the tuple cannot be widened until it closes
+        # everything: at least one word of the vocabulary must still hold a
+        # release, or this guard has been turned off by a rewrite of one line.
+        check("gr13e SECOND-DIRECTION CASE: some bug status is still OPEN as far "
+              "as this guard is concerned - a `CLOSED` widened to the whole "
+              "vocabulary would pass every case above and refuse nothing ever "
+              "again: %r" % (sorted(set(vocab or ()) - set(CLOSED)),),
+              bool(vocab) and bool(set(vocab) - set(CLOSED)))
+        # ...and driven end to end on the word that was added, rather than
+        # asserted about the tuple alone: a set comparison cannot see a `decide`
+        # that reads a different constant.
+        write_bugs([{"id": "BUG-7", "status": "not_a_bug", "severity": "high",
+                     "title": "investigated; the behaviour is correct"}])
+        check("gr13f a bug closed as a verified negative does not hold a "
+              "release, driven through `decide` rather than inferred from the "
+              "tuple",
+              decide("git push origin v2.0.2", tmp, "s1") is None)
+        write_bugs([{"id": "BUG-2", "status": "open", "severity": "med",
+                     "title": "a real one"}])
 
         # --- the bypass, both directions -------------------------------------
         slot = os.path.join(tmp, STATE_REL, "release-bypass-s1.json")

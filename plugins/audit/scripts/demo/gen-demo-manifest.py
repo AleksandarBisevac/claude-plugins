@@ -901,6 +901,58 @@ SCHEMA_EXEMPTIONS = {
         "of its own: every other timestamp this generator stamps is derived from "
         "the plan's own dates, and an attempt has no date in a fixture where no "
         "attempt happened.",
+    # `task.outputs` AND THE WHOLE `decisions[]` BLOCK, on `task.redFirst`'s
+    # argument rather than a trigger of their own: no rendered surface reads
+    # either, and the fixture is what those surfaces are built from.
+    "task.outputs":
+        "the patterns for what a task PRODUCES, which exist so the plan gate can "
+        "sanction a write the task's `files` could not enumerate. Nothing renders "
+        "them - not the report, not the panel, not /audit:status - and no gate "
+        "runs against a generated fixture, so an entry here would be a key nobody "
+        "ever sees doing a job nothing in the demo performs. Coverage is "
+        "tests/test__task_outputs.py (the rule and the matcher), "
+        "tests/test__manifest_phases.py (the finding) and tests/test__config.py "
+        "plus tests/test_require_plan.py (the gate that honours one).",
+    "<root>.decisions":
+        "the record of what was DECIDED about a plan, so an approval is held "
+        "where the work is planned instead of in a conversation. A decision is "
+        "reached through the BLOCKER machinery - a task or a phase names it in "
+        "`blockedBy` and the same resolver settles it - and no surface renders "
+        "the block itself. So a fixture carrying one has two ways to go and both "
+        "are worse than absence: a decision nothing references is a block nobody "
+        "reads, and a task blocked by `DEC-1` renders `blocked by DEC-1` in a "
+        "report that has no decisions section for a reader to resolve it "
+        "against. Coverage is tests/test__manifest_crossrefs.py (the shape, the "
+        "vocabulary and the two fields a settled decision owes) and "
+        "tests/test__manifest_io.py (the resolver that clears one).",
+    "decision.id":
+        "a field of decisions[], which this fixture does not take.",
+    "decision.title":
+        "a field of decisions[], which this fixture does not take: the question, "
+        "and an invented one is a decision nobody made.",
+    "decision.status":
+        "a field of decisions[], which this fixture does not take. It is the "
+        "same five words a phase and a task carry, and the vocabulary's coverage "
+        "is the schema enum plus the crossrefs cases.",
+    "decision.question":
+        "a field of decisions[], which this fixture does not take.",
+    "decision.answer":
+        "a field of decisions[], which this fixture does not take - and the one "
+        "that may least be invented: it carries the decider's own words, so a "
+        "fabricated answer in a published demo is a quoted sentence nobody said.",
+    "decision.decidedBy":
+        "a field of decisions[], which this fixture does not take. It names a "
+        "PERSON, and the three fictional identities this generator may use are "
+        "_demo_cast's, for authorship rather than for attributing an approval.",
+    "decision.decidedAt":
+        "a field of decisions[], which this fixture does not take: an instant "
+        "for an answer nobody gave.",
+    "decision.notes":
+        "a field of decisions[], which this fixture does not take.",
+    "decision.files":
+        "a field of decisions[], which this fixture does not take. It is "
+        "informational even on a real plan - a decision opens no file, and the "
+        "plan gate reads task `files` and `outputs` alone.",
     "phase.parentBranch":
         "which branch THIS phase forks from and merges into. Absent means "
         "`meta.developmentBranch`, which is the answer for every phase in this "
@@ -1365,6 +1417,21 @@ def _bugs(phases):
          "status": "wontfix", "severity": "low", "reportedBy": "design",
          "reportedAt": _iso(BASE + datetime.timedelta(days=11)),
          "notes": "Superseded by the design-token refresh; tracked there instead."},
+        # The OTHER closed answer, and the one a report has to be able to show:
+        # somebody investigated and the reported behaviour turned out to be
+        # correct. It sits beside `wontfix` here because the two render in the
+        # same colour and are told apart only by their label, so a fixture
+        # carrying one of them proves nothing about the other.
+        {"id": "BUG-6", "title": "Coupon stacking order looks wrong in the log",
+         "status": "not_a_bug", "severity": "low", "reportedBy": "support",
+         "reportedAt": _iso(BASE + datetime.timedelta(days=13)),
+         "description": "The pricing log shows discounts applied in the reverse "
+                        "of the order the customer entered them.",
+         "repro": "Apply two coupons and read the pricing log.",
+         "expected": "Entry order.", "actual": "Reverse entry order.",
+         "notes": "Investigated: the log prints the evaluation order and the "
+                  "total is correct either way. Closed as not a bug.",
+         "files": ["src/backend/pricing.ts"]},
     ]
     if running is not None:
         bugs.insert(2, {

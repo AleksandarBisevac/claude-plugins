@@ -1575,6 +1575,117 @@ def _cases(check):
               and (flat_task.get("testEvidence") or {}).get("runId") == "RF"
               and flat_phase.get("title") == "one")
 
+        # --- who ran it, when, and who else was running --------------------
+        # THE QUESTION THE LEDGER COULD NOT ASK. `ts` is stamped when a row is
+        # BUILT and `durationMs` is a monotonic elapsed reading, so until a start
+        # was recorded the ledger could say how long a run took and never when it
+        # was happening - and an overlap question needs a window, not a duration.
+        check("wr1 an ABSENT `runner` means the gate, which is a fact about the "
+              "corpus rather than a default covering a gap: every row written "
+              "before the key existed was the wrapper's, because the wrapper was "
+              "the only writer there was",
+              M.runner_of({"runId": "x"}) == M.RUNNER_GATE
+              and M.runner_of({}) == M.RUNNER_GATE
+              and M.runner_of(None) == M.RUNNER_GATE)
+        check("wr2 ...and a word outside the vocabulary comes back UNCHANGED "
+              "rather than folded into either answer - a reader asking 'was "
+              "this the gate's own run' gets False, which is the safe reading, "
+              "and the surface can still say what it found",
+              M.runner_of({M.RUNNER_KEY: "jenkins"}) == "jenkins"
+              and M.runner_of({M.RUNNER_KEY: M.RUNNER_OUTSIDE})
+              == M.RUNNER_OUTSIDE)
+        check("wr3 ...and the two words this plugin knows are distinct, so the "
+              "vocabulary cannot collapse into one answer",
+              M.RUNNER_GATE != M.RUNNER_OUTSIDE
+              and set(M.RUNNER_WORDS) == {M.RUNNER_GATE, M.RUNNER_OUTSIDE})
+
+        _rec = {"runId": "R1", "ts": "2026-09-01T10:10:00Z",
+                M.STARTED_KEY: "2026-09-01T10:00:00Z"}
+        start, end, basis = M.window_of(_rec)
+        check("wr4 a RECORDED start gives the window, and the basis says it was "
+              "recorded: %r" % (basis,),
+              end - start == 600 and "recorded" in basis)
+        _old = {"runId": "R2", "ts": "2026-09-01T10:10:00Z", "durationMs": 600000}
+        start, end, basis = M.window_of(_old)
+        check("wr5 ...and a row PREDATING the key still has a window, derived "
+              "from `ts` less `durationMs` and LABELLED as derived - a "
+              "derivation presented as a record is how a cheap read comes to be "
+              "trusted like a measurement: %r" % (basis,),
+              end - start == 600 and "derived" in basis)
+        for blind, why in (({"runId": "R3"}, "no `ts`"),
+                           ({"runId": "R4", "ts": "not-a-time"}, "unreadable `ts`"),
+                           ({"runId": "R5", "ts": "2026-09-01T10:10:00Z"},
+                            "neither a start nor a duration"),
+                           ({"runId": "R6", "ts": "2026-09-01T10:10:00Z",
+                             "durationMs": True}, "a bool is not a duration")):
+            start, _e, basis = M.window_of(blind)
+            check("wr6 a row with %s places itself in no window, and says so - "
+                  "a THIRD answer rather than a failure, because an overlap "
+                  "computed against a window nobody knows is the shape in which "
+                  "a guess gets recorded as a finding" % (why,),
+                  start is None and bool(basis), repr(basis))
+
+        _mine = {"runId": "MINE", "ts": "2026-09-01T10:10:00Z",
+                 M.STARTED_KEY: "2026-09-01T10:00:00Z"}
+        _same = {"runId": "MINE", "ts": "2026-09-01T10:10:00Z",
+                 M.STARTED_KEY: "2026-09-01T10:00:00Z"}
+        found, _basis = M.overlapping_runs([_same], _mine, M.RUNNER_GATE)
+        check("wr7 a run ALONE on the machine does not find ITSELF in the "
+              "window it just occupied - the rows a caller passes were read back "
+              "off disk, so identity cannot do it and the `runId` test is the "
+              "whole difference between this and a rule that refuses every run "
+              "there is: %r" % (found,),
+              found == [])
+        _other = {"runId": "OTHER", "ts": "2026-09-01T10:05:00Z",
+                  M.STARTED_KEY: "2026-09-01T10:02:00Z"}
+        found, _basis = M.overlapping_runs([_same, _other], _mine, M.RUNNER_GATE)
+        check("wr8 ...and a DIFFERENT gate run inside the window is found, which "
+              "is the case wr7 would pass without: %r"
+              % ([r.get("runId") for r in found],),
+              [r.get("runId") for r in found] == ["OTHER"])
+        _outside = dict(_other, runId="OUT")
+        _outside[M.RUNNER_KEY] = M.RUNNER_OUTSIDE
+        gate_side, _b = M.shared_the_machine([_outside], _mine)
+        out_side, _b = M.contested_by([_outside], _mine)
+        check("wr9 the runner is an ARGUMENT because the two questions have "
+              "different remedies: an outside run in the window means re-run "
+              "once it has finished, another gate run means two executors were "
+              "invited onto one machine and that answer belongs to whoever "
+              "invited them. Folding them into one list would give one remedy "
+              "for two causes: %r / %r"
+              % (gate_side, [r.get("runId") for r in out_side]),
+              gate_side == [] and [r.get("runId") for r in out_side] == ["OUT"])
+        check("wr10 an inclusive endpoint counts: two runs that met for one "
+              "second met",
+              M._overlaps((10, 20), (20, 30)) and M._overlaps((20, 30), (10, 20))
+              and not M._overlaps((10, 20), (21, 30)))
+
+        verdict = M.attribution_of(_mine, [_outside])
+        check("wr11 a red with an outside suite in its window is CONTESTED, and "
+              "the basis NAMES the rival: the one thing missing when a push's "
+              "suite overlapped a recorded gate and the plugin reported the red "
+              "as its own was a named rival with its own row: %r" % (verdict,),
+              verdict["attributed"] is False
+              and verdict["contested"] == ["OUT"]
+              and "OUT" in verdict["basis"])
+        verdict = M.attribution_of(_mine, [_other])
+        check("wr12 SECOND-DIRECTION CASE: with nothing from outside in the "
+              "window the verdict IS this run's - another GATE run does not "
+              "contest it, because that is the other question: %r" % (verdict,),
+              verdict["attributed"] is True and verdict["contested"] == [])
+        verdict = M.attribution_of({"runId": "NOWHEN"}, [_outside])
+        check("wr13 ...and a row that places itself in no window answers None, "
+              "which is neither of the above: 'nothing else was running' and "
+              "'nobody could look' are different answers and must never render "
+              "alike: %r" % (verdict,),
+              verdict["attributed"] is None and verdict["contested"] == [])
+        check("wr14 attribution moves NO verdict - `status` is what the commands "
+              "answered and stays what they answered. This function returns an "
+              "observation beside a verdict, and the row it was handed is "
+              "untouched",
+              "status" not in M.attribution_of(_mine, [_outside])
+              and _mine.get("status") is None)
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

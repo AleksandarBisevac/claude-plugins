@@ -304,7 +304,8 @@ def _cases(check):
     check("v2 ...the document root is the empty anchor, and `<name>` is a SHAPE "
           "rather than a key anybody writes, so it is dropped",
           M._direct_children(man, "") == {"$schema", "meta", "phases", "bugs",
-                                          "deferred", "fileIndex", "proposals"}
+                                          "decisions", "deferred", "fileIndex",
+                                          "proposals"}
           and "<name>" not in M._direct_children(man, "fileIndex"),
           repr(sorted(M._direct_children(man, ""))))
     # Nine fixtures, one per thing the lint can say. Fixtures rather than the real
@@ -372,7 +373,7 @@ def _cases(check):
                                        ("KNOWN_ROOT", "KNOWN_META", "KNOWN_ADO",
                                         "KNOWN_BRANCH", "KNOWN_MERGE",
                                         "KNOWN_PHASE", "KNOWN_TASK", "KNOWN_BUG",
-                                        "KNOWN_PROPOSAL")),
+                                        "KNOWN_DECISION", "KNOWN_PROPOSAL")),
           repr(sorted(M.vocab_sets(_vocab))))
 
     # --- the RECOMMENDED subsets, which are checked the other way round -----------

@@ -407,6 +407,44 @@ def _cases(check):
         check("un10 TERMINAL is exactly the two settled states: %r" % (M.TERMINAL,),
               M.TERMINAL == ("done", "cancelled"))
 
+        # 11c. status_index — the ONE map every blocker resolves through, and the
+        # fourth kind that joined it. A decision carries the same status words a
+        # phase and a task do, which is the property that makes it safe to name in
+        # `blockedBy` at all; a kind with a private vocabulary would resolve here
+        # and then never clear, and a dependency that cannot be cleared is a row
+        # that lies about what the plan is waiting for.
+        _dm = {"phases": [{"id": "P1", "status": "in_progress",
+                           "tasks": [{"id": "P1.1", "status": "pending"}]}],
+               "decisions": [{"id": "DEC-1", "status": "pending"},
+                             {"id": "DEC-2", "status": "done"},
+                             {"id": "DEC-3", "status": "cancelled"},
+                             "junk", {"no": "id"}],
+               "bugs": [{"id": "BUG-1", "status": "open"}]}
+        _dst = M.status_index(_dm)
+        check("si-d1 a decision is in the status map beside its phase and its "
+              "task, so ONE resolver answers every kind of blocker rather than "
+              "a second one growing beside it: %r" % (sorted(_dst),),
+              _dst.get("DEC-1") == "pending" and _dst.get("DEC-2") == "done"
+              and _dst.get("P1") == "in_progress")
+        check("si-d2 ...and a BUG is not, which is the asymmetry that keeps the "
+              "new kind from weakening the rule: bug ids are reserved in the id "
+              "namespace and settle nothing, so a `blockedBy` naming one stays a "
+              "validator finding instead of a wait nothing can clear",
+              "BUG-1" not in _dst, repr(sorted(_dst)))
+        check("si-d3 ...and junk in `decisions` is skipped rather than raising - "
+              "these surfaces resolve manifests the validator has already faulted",
+              len(_dst) == 5, repr(sorted(_dst)))
+        check("si-d4 a decision reaches the SAME two terminal words, so both "
+              "`done` and `cancelled` clear a wait: an unanswerable question "
+              "must not deadlock the plan",
+              M.unsatisfied(["DEC-2", "DEC-3"], _dst) == []
+              and M.unsatisfied(["DEC-1"], _dst) == ["DEC-1"])
+        check("si-d5 SECOND-DIRECTION CASE: a manifest with no `decisions` key "
+              "at all produces the same map it always did - the arm is added, "
+              "not made unconditional",
+              M.status_index({"phases": _dm["phases"]}) == {"P1": "in_progress",
+                                                            "P1.1": "pending"})
+
         # 12. effective_bug_status - the rule that had two homes.
         check("effective_bug_status: a bug whose linked task is done reads 'fixed'",
               M.effective_bug_status({"id": "B1", "status": "open", "taskId": "P1.2"},
@@ -453,6 +491,30 @@ def _cases(check):
         check("effective_bug_status: an EMPTY taskId never matches an '' key either",
               M.effective_bug_status({"id": "B9", "status": "in_progress",
                                       "taskId": ""}, unfiltered_idx) == "in_progress")
+        # THE SECOND HUMAN VERDICT, and the reason it is read off a tuple rather
+        # than tested word by word: `wontfix` says the report is real and the fix
+        # will not be made, `not_a_bug` says somebody looked and the behaviour is
+        # correct. Both close it and neither means `fixed`, so a chain of `==`
+        # comparisons learns the next word at one call site and goes on relabelling
+        # a settled report everywhere else.
+        check("effective_bug_status: 'not_a_bug' wins over a done task too - a "
+              "verified negative relabelled `fixed` would claim a change nobody "
+              "made",
+              M.effective_bug_status({"id": "B10", "status": "not_a_bug",
+                                      "taskId": "P1.2"}, trav_idx) == "not_a_bug")
+        check("effective_bug_status: ...and BOTH of them come off "
+              "`HUMAN_BUG_VERDICT`, driven over the whole tuple so a word added "
+              "to it without a case here is still covered: %r"
+              % (M.HUMAN_BUG_VERDICT,),
+              bool(M.HUMAN_BUG_VERDICT)
+              and all(M.effective_bug_status({"id": "Bx", "status": word,
+                                              "taskId": "P1.2"}, trav_idx) == word
+                      for word in M.HUMAN_BUG_VERDICT))
+        check("effective_bug_status: SECOND-DIRECTION CASE - `fixed` is NOT a "
+              "human verdict in that tuple. It is what the derivation PRODUCES, "
+              "so putting it there would make the tuple a list of everything and "
+              "the two cases above vacuous: %r" % (M.HUMAN_BUG_VERDICT,),
+              "fixed" not in M.HUMAN_BUG_VERDICT)
 
         # --- index-only fields ------------------------------------------------
         # `claim` falls BACK from the stub; an index-only field is stricter than

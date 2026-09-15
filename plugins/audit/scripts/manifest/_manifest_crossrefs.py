@@ -4,11 +4,13 @@ Everything that asks how one part of the manifest REFERS to another.
 
 Split out of `_manifest_rules.py`, and this is the seam the file's own
 `# --- validate: one walk, then one question per piece ---` marker drew: the
-phase walk builds an index, and then five checks read it and nothing else. Each
+phase walk builds an index, and the checks below read it and nothing else. Each
 of them is a question about a reference - does this id name one thing, does this
 `blockedBy` resolve, can this wait ever be satisfied, does the fileIndex agree
 with the tasks in both directions, is the task <-> bug link reciprocal, does a
-parked proposal reserve an id the live plan already spends.
+recorded decision say what was decided and by whom, does a parked proposal
+reserve an id the live plan already spends. `validate()` in `_manifest_rules.py`
+is the list of them; a count written here would be a second one.
 
 THE INDEX IS THE ARGUMENT, WHICH IS WHY THIS COULD BE CUT OUT AT ALL. Every
 function here takes the dict `_manifest_phases._walk_phases` returns (plus, for
@@ -60,7 +62,10 @@ import _ado_parent as _parent  # noqa: E402  (where each item hangs, and whether
 # while there is still exactly one definition of each. A case pins the identity.
 BUG_ID_RE = _vocab.BUG_ID_RE
 BUG_STATUS = _vocab.BUG_STATUS
+DEC_ID_RE = _vocab.DEC_ID_RE
 KNOWN_BUG = _vocab.KNOWN_BUG
+KNOWN_DECISION = _vocab.KNOWN_DECISION
+STATUS = _vocab.STATUS
 KNOWN_PROPOSAL = _vocab.KNOWN_PROPOSAL
 PROPOSAL_STATUS = _vocab.PROPOSAL_STATUS
 PROP_ID_RE = _vocab.PROP_ID_RE
@@ -90,11 +95,37 @@ def _index_bugs(manifest):
                           if isinstance(b, dict) and b.get("id")}}
 
 
+# --- the decisions half of the index ---------------------------------------------
+def _index_decisions(manifest):
+    """The decisions[] half of the index — `decision_list`, `decision_ids`,
+    `decision_by_id`.
+
+    Shaped exactly like `_index_bugs` and separate from `_check_decisions` for
+    the same reason: the duplicate-id sweep and the proposals' reserved-id rule
+    both need the ids BEFORE the decision rules run. An index is not a check; it
+    reports nothing and cannot fail.
+    """
+    decisions = manifest.get("decisions")
+    dec_list = decisions if isinstance(decisions, list) else []
+    return {"decision_list": dec_list,
+            "decision_ids": [d.get("id") for d in dec_list
+                             if isinstance(d, dict) and d.get("id")],
+            "decision_by_id": {d["id"]: d for d in dec_list
+                               if isinstance(d, dict) and d.get("id")}}
+
+
 def _live_ids(index):
-    """Every id the live plan spends: phases, then tasks, then bugs, in
-    document order and WITH duplicates — `_check_unique_ids` is the thing that
-    finds those, so this must not quietly dedupe them away."""
-    return index["phase_ids"] + index["task_ids"] + index["bug_ids"]
+    """Every id the live plan spends: phases, then tasks, then bugs, then
+    decisions, in document order and WITH duplicates — `_check_unique_ids` is the
+    thing that finds those, so this must not quietly dedupe them away.
+
+    A CALLER MAY NOT HAVE THE DECISIONS. `_index_decisions` is a separate
+    contribution to the index, and cases hand-build an index with the keys the
+    check under test needs; reading the key through `.get` keeps a decision-free
+    index a legal argument rather than a `KeyError` in an unrelated check.
+    """
+    return (index["phase_ids"] + index["task_ids"] + index["bug_ids"]
+            + list(index.get("decision_ids") or []))
 
 
 # --- ids, references and cycles --------------------------------------------------
@@ -102,10 +133,19 @@ def _check_unique_ids(index):
     """One id names one thing. Returns (findings, warnings); warnings is always
     empty.
 
-    Phases, tasks and bugs share ONE namespace because `blockedBy` resolves
-    against phase and task ids together — a phase and a task wearing the same
-    id make every reference to it ambiguous, and the orchestrator would follow
-    whichever the lookup happened to reach.
+    Phases, tasks, bugs and decisions share ONE namespace because `blockedBy`
+    resolves against phase, task and decision ids together — a phase and a task
+    wearing the same id make every reference to it ambiguous, and the
+    orchestrator would follow whichever the lookup happened to reach.
+
+    A BUG IS IN THE NAMESPACE AND NOT IN THE BLOCKER UNIVERSE, which is the one
+    asymmetry here and is deliberate. `_manifest_io.status_index` holds phases,
+    tasks and decisions, so each of those can reach a TERMINAL status and clear a
+    wait; nothing puts a bug id in that map, so a `blockedBy` naming one would
+    resolve and then never settle. A dependency that cannot be cleared is a row
+    that lies about what the plan is waiting for, so the reference stays a
+    finding — the id is reserved here so nothing else may take it, and
+    `_check_refs_and_cycles` is where the universe is drawn.
     """
     f = []
     seen = set()
@@ -146,11 +186,21 @@ def _check_refs_and_cycles(phases, index):
     The two halves are one piece because they are one question asked twice: a
     reference that names nothing can never be satisfied, and a reference that
     names something in a cycle can never be satisfied either. The universes
-    differ on purpose — `blockedBy` may name a phase OR a task, `dependsOn` may
-    name only a task.
+    differ on purpose — `blockedBy` may name a phase, a task OR a decision,
+    `dependsOn` may name only a task.
+
+    A DECISION JOINED THE `blockedBy` UNIVERSE AND NOTHING ELSE DID. The rule for
+    admitting a kind is not that it has an id: it is that
+    `_manifest_io.status_index` can say whether it is settled, because a
+    reference the resolver cannot clear is a wait the plan can never leave. A
+    decision carries the same status vocabulary a task does, so it qualifies; a
+    bug carries its own and does not, and a dependency on another session has no
+    row in this file at all, so both stay findings and are named as such rather
+    than resolving to nothing.
     """
     f = []
-    known = set(index["phase_ids"]) | set(index["task_ids"])
+    known = (set(index["phase_ids"]) | set(index["task_ids"])
+             | set(index.get("decision_ids") or []))
     task_ids = index["task_ids"]
 
     for pi, phase in enumerate(phases):
@@ -158,13 +208,13 @@ def _check_refs_and_cycles(phases, index):
             continue
         pwhere = "phase %s" % (phase.get("id") or ("phases[%d]" % pi))
         f.extend(_ref_findings(phase.get("blockedBy"), pwhere, "blockedBy",
-                               known, "any task/phase"))
+                               known, "any task/phase/decision"))
         for ti, task in enumerate(_safe_list(phase.get("tasks"))):
             if not isinstance(task, dict):
                 continue
             twhere = "task %s" % (task.get("id") or ("%s.tasks[%d]" % (pwhere, ti)))
             f.extend(_ref_findings(task.get("blockedBy"), twhere, "blockedBy",
-                                   known, "any task/phase"))
+                                   known, "any task/phase/decision"))
             f.extend(_ref_findings(task.get("dependsOn"), twhere, "dependsOn",
                                    task_ids, "a task"))
 
@@ -545,6 +595,64 @@ def _check_bugs(manifest, index):
                 f.append("%s: bugId '%s' but that bug's taskId is %r — "
                          "link must be reciprocal"
                          % (twhere, bug_ref, linked.get("taskId")))
+    return (f, w)
+
+
+def _check_decisions(manifest, index):
+    """decisions[] shape and vocabulary, and the two fields a SETTLED decision
+    owes a reader. Returns (findings, warnings).
+
+    WHY A DECISION IS HELD TO MORE THAN A BUG IS. A bug row is a report and may
+    be thin; a decision row is the thing a refusal reads INSTEAD of stopping to
+    ask a human, so a `done` decision with no `answer` and nobody named would
+    discharge a gate on a blank. That is worse than having no record at all,
+    because the gate goes quiet and the reader has nothing to hold it to. So the
+    two fields are findings at `done` and are asked of nothing else: an
+    unanswered decision is allowed to be unanswered, which is its whole purpose.
+
+    THE STATUS VOCABULARY IS NOT RESTATED HERE. It is `STATUS` — the same words
+    a phase and a task carry — because `_manifest_io.status_index` is what
+    settles a `blockedBy` naming this row, and a private enum would be a blocker
+    nothing could clear.
+
+    A NON-ARRAY `decisions` IS A WARNING AND NOT A FINDING, which is the
+    proposals rule one key over and is owed to `COMPATIBILITY.md` rather than
+    chosen. That document promises validation stays ADDITIVE: a manifest that
+    validated against a release keeps validating against every later one in the
+    major line. Root keys this plugin does not know are tolerated, so somebody
+    could have left a free-form `decisions` note in a manifest before the key
+    meant anything — and a finding would make it invalid on upgrade, which is
+    the promise broken by a feature. It is still SAID, because a note sitting
+    where a record belongs records nothing and the writer should hear so.
+    """
+    f, w = [], []
+    decisions = manifest.get("decisions")
+    if decisions is not None and not isinstance(decisions, list):
+        w.append("decisions: not an array, so nothing here is read as a "
+                 "decision record - `decisions` is a list of DEC- entries")
+    for di, dec in enumerate(index.get("decision_list") or []):
+        if not isinstance(dec, dict):
+            f.append("decisions[%d]: not an object" % di)
+            continue
+        did = dec.get("id")
+        dwhere = "decision %s" % (did or ("decisions[%d]" % di))
+        _require_fields(dec, dwhere, f)
+        _unknown_keys(dec, KNOWN_DECISION, dwhere, w)
+        if did and not DEC_ID_RE.match(str(did)):
+            f.append("%s: id must match DEC-<number>" % dwhere)
+        status = dec.get("status")
+        if status not in STATUS:
+            f.append("%s: status %r not in %s"
+                     % (dwhere, status, list(STATUS)))
+        if status == "done":
+            for field, why in (("answer", "an approval with no words is the "
+                                          "second-hand approval this record "
+                                          "replaces"),
+                               ("decidedBy", "an approval nobody is named for "
+                                             "cannot be held to anyone")):
+                if not str(dec.get(field) or "").strip():
+                    f.append("%s: status is \"done\" but %s is empty - %s"
+                             % (dwhere, field, why))
     return (f, w)
 
 

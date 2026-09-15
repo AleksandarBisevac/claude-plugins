@@ -33,6 +33,10 @@ ASK = permissionDecision "ask" when planGate pins that tier):
      ALLOW. On the PostToolUse pass a covered edit may additionally carry the
      ownership advisory (_owner_note): additionalContext, once per
      session+area, never a verdict.
+  3b. Target matches an `outputs` pattern of such a task → ALLOW. The files a
+     run PRODUCES have a place in the plan instead of being reported as
+     uncovered forever; the pattern is graded by the same rule that refuses to
+     write one, and a pattern reaching the whole tree is honoured by nothing.
   4. A single-use bypass is armed for this session (and not older than
      BYPASS_TTL_SECONDS via its armedAtEpoch; a legacy slot without the field
      has no TTL) → ALLOW.
@@ -433,8 +437,9 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
                 if manifest_exists else [])
     if not declared:
         return {
-            "stated": ("No task in %s declares %s - it is in no task's `files` "
-                       "and in no `fileIndex` row." % (manifest_rel, rel)
+            "stated": ("No task in %s declares %s - it is in no task's `files`, "
+                       "in no task's `outputs` and in no `fileIndex` row."
+                       % (manifest_rel, rel)
                        if manifest_exists else None),
             "subagent": ("report to the orchestrator that %s is outside your "
                          "task's `files` and why you need it, naming the "
@@ -729,6 +734,24 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             if note:
                 return ("warn", note)
         return ("allow", "covered by in_progress task: %s" % rel)
+
+    # 3b. covered by an in_progress task's declared OUTPUT PATTERN. The documents
+    #     a run produces cannot be enumerated in `files` before the run makes
+    #     them, so every such write was reported as uncovered - which is how an
+    #     operator learns to read this gate's warnings as noise, and a gate whose
+    #     warnings are noise is a gate that is off. The repair is a PLACE in the
+    #     plan and never an exception: the pattern is declared on the task, it is
+    #     graded by the same rule the writer and the validator use, and one that
+    #     would cover the whole tree is refused rather than honoured.
+    #
+    #     AFTER the `files` clause and never instead of it. `files` is the
+    #     enumerated scope a review reads; a pattern is the looser statement, so
+    #     the exact answer is asked first and this one only runs when it missed.
+    outputs = _config.in_progress_outputs(root, manifest_rel)
+    produced = _config.covering_output(outputs, rel)
+    if produced is not None:
+        return ("allow", "declared output of in_progress task %s (%s): %s"
+                % (produced[1] or "?", produced[0], rel))
 
     # 4. single-use bypass — observed at Pre, consumed at Post. An armed slot
     #    expires unused after BYPASS_TTL_SECONDS (via `armedAtEpoch`, written by

@@ -76,6 +76,11 @@ bugs live in the index in both layouts).
 - **Bug**: `BUG-<n>` where `n` = highest existing bug number + 1, repo-wide (`BUG-3` → next is `BUG-4`).
 - **Bugfix phase**: `BF<n>` where `n` = highest existing `BF` number + 1 (`BF1`, `BF2`, …).
 - **Proposal**: `PROP-<n>` where `n` = highest existing proposal number + 1, repo-wide.
+- **Decision**: `DEC-<n>` where `n` = highest existing decision number + 1, repo-wide.
+
+Phases, tasks, bugs and decisions share **one** id namespace — `blockedBy` resolves
+against phase, task and decision ids together, so two of them wearing one id make every
+reference to it ambiguous. The validator reports a duplicate across all four.
 
 The "highest existing" is computed over the **whole** manifest — every phase shard plus
 the index — which the `/audit:*` commands already load assembled (so a task suffix sees
@@ -91,7 +96,9 @@ is free to re-mint).
 ## Status enums
 
 - Phase/task: `pending | in_progress | blocked | done`
-- Bug: `open | triaged | in_progress | fixed | wontfix`
+- Bug: `open | triaged | in_progress | fixed | wontfix | not_a_bug` — the last three
+  all close it and say different things: the fix landed, the report is real and will
+  not be fixed, somebody investigated and the behaviour is correct
 - Proposal: `proposed | materialized | dropped` (enforced on payload-bearing
   proposals; legacy free-form entries are tolerated as-is)
 - `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high`
@@ -227,6 +234,60 @@ Rules:
 - Legacy free-form entries (no payload) are tolerated: the validator warns at
   most, `/audit:propose list` renders them with `-` columns, nothing can
   materialize them.
+
+## Decisions (`decisions[]`)
+
+`decisions[]` is where a decision ABOUT the plan is recorded, so an approval is held
+where the work is planned instead of in a conversation, a note or a commit message. A
+refusal that has nowhere to read a prior answer from has to stop and ask a human every
+time it is reached; with a row, it reads the record.
+
+```json
+{"id": "DEC-1", "title": "<the question, so a reader knows what was asked>",
+ "status": "pending", "question": "<longer form, optional>",
+ "answer": null, "decidedBy": null, "decidedAt": null, "notes": null}
+```
+
+Rules:
+- **`status` is the phase/task vocabulary**, not one of its own: `pending` = asked and
+  unanswered, `done` = answered, `cancelled` = it will not be answered. That is what
+  makes a decision safe to name in `blockedBy` — one resolver settles every kind, and a
+  private vocabulary would be a blocker nothing could clear.
+- **`answer` and `decidedBy` are REQUIRED once `status` is `"done"`** and the validator
+  says so by name. An approval with no words is the second-hand approval the row
+  replaces, and one nobody is named for cannot be held to anyone. An *unanswered*
+  decision is allowed to be unanswered — that is its whole purpose.
+- A task or a phase waits on one by naming it in `blockedBy`; readiness treats `done`
+  and `cancelled` alike, so nothing deadlocks on a question that will not be answered.
+- `files` on a decision is **informational**. A decision opens no file, and the plan gate
+  reads task `files` and `outputs` alone.
+- **A dependency on another session is NOT a decision and gets no row.** It has no status
+  anything here can settle, so naming one in `blockedBy` stays a validator finding rather
+  than resolving to something that never clears — a dependency that cannot be cleared is
+  a row that lies about what the plan is waiting for. Say it in the task's `description`
+  and let a human move the task.
+
+## Task outputs (`task.outputs`)
+
+`files` is what a task **edits** and every entry owes a `fileIndex` row. `outputs` is what
+a run **produces** — the documents it writes, an evidence directory, a generated report —
+which cannot be enumerated before the run makes them, so it is patterns:
+
+```json
+"outputs": ["docs/audit/evidence/**", "docs/reports/*.md"]
+```
+
+While the task is `in_progress` the plan gate treats a write matching one of these as
+covered by it, which is what stops a documentation write being reported as uncovered on
+every save — and a gate whose warnings are noise is a gate that is off.
+
+**Every pattern's first segment is a literal directory name.** `docs/**` is accepted;
+`**`, `**/*.md`, `.`, `*/x`, an absolute path, a `~` path and anything with a `..` segment
+are refused by name, at the writer and at the validator alike, because a task covering the
+whole tree would turn the plan gate off through the door built to keep it on. `**` spans
+directories, `*` stays inside one, and a trailing `/` means the same as `/**`.
+`/audit:task add --outputs a,b` is the door; there is no widening verb, deliberately —
+`scope`'s apparatus is written about `files`.
 
 ## fileIndex maintenance
 

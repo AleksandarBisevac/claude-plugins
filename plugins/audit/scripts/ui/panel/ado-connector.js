@@ -278,7 +278,7 @@ function renderAdoCard(c){
    task:{pending:'New',in_progress:'Active',
      blocked:'Active + tag blocked',done:'Closed'},
    bug:{open:'New',triaged:'Active',in_progress:'Active',fixed:'Resolved',
-     wontfix:'Closed'}};
+     wontfix:'Closed',not_a_bug:'Closed'}};
  const smTbl=kind=>{
   const tb=el('tbody');
   Object.keys(SMDEF[kind]).forEach(stt=>{

@@ -1585,6 +1585,43 @@ def evidence_paths(owned, named):
     return sorted(keep)
 
 
+def _declared_files(task_files):
+    """The non-blank strings in a declared `files` list. One reading, because the
+    answer before the run and the answer after it must be drawn from the same
+    set -- a filter spelled twice is two sets the day one of them learns
+    something."""
+    return [f for f in (task_files or []) if isinstance(f, str) and f.strip()]
+
+
+def declared_coverage_answer(task_files):
+    """`(overlap, basis)` when the coverage question is already settled by the
+    DECLARATION alone, else None.
+
+    THE COST WAS ENTIRELY ORDERING. A task that declares no files has nothing for
+    a run to be related to, and that is knowable from the plan -- yet the sentence
+    saying so was produced inside `coverage`, which runs after every gate command
+    has finished. So an operator learned that this run could tell them nothing
+    about coverage at the end of a long suite, having paid for the suite to find
+    out. Both sides of the comparison were in hand before the first command
+    started.
+
+    ASKED IN TWO PLACES AND ANSWERED IN ONE. `coverage` below asks it first so
+    the row and the printed line carry the identical sentence, and `main` asks it
+    before the expensive step so the reader gets it then. A second wording for
+    the early answer would be the same claim in two voices, and the day one moved
+    the reader would have two different reasons for one fact.
+
+    None MEANS THE RUN IS REQUIRED, not that coverage is fine: every other way the
+    question ends -- a runner that printed no paths, paths that could not have
+    named this work, a real overlap -- needs the run's own output, and saying so
+    early would be inventing an answer the declaration cannot give.
+    """
+    if not _declared_files(task_files):
+        return None, ("the work under test declares no files, so there is "
+                      "nothing to relate a run to")
+    return None
+
+
 def coverage(task_files, named):
     """`(overlap, basis)` -- which of the task's files the run actually named.
 
@@ -1601,10 +1638,10 @@ def coverage(task_files, named):
     and is not - so the first report's tasks report coverage they really had, and
     the second report's `NO OVERLAP` still fires exactly where it did.
     """
-    owned = [f for f in (task_files or []) if isinstance(f, str) and f.strip()]
-    if not owned:
-        return None, ("the work under test declares no files, so there is "
-                      "nothing to relate a run to")
+    settled = declared_coverage_answer(task_files)
+    if settled is not None:
+        return settled
+    owned = _declared_files(task_files)
     if named is None:
         return None, ("this runner printed no file paths, so coverage is not "
                       "knowable from its output")
@@ -2339,6 +2376,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     # judge. Both digests are spent from `before`, above the first command.
     state = _tree_stamp.tested_state(project, owns, before)
     started = time.monotonic()
+    # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
+    # questions. `started` measures how long this run took and is immune to a
+    # clock that moves under it; `started_at` says WHEN it was happening, which
+    # is the only thing an overlap question can be asked with -- a monotonic
+    # reading cannot be compared against another process's.
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     steps, texts = [], []
     # STRICTLY PARALLEL TO `steps`, which `texts` is not: it is appended the
     # moment the runner returns, so a stop signal arriving while a step's row is
@@ -2477,6 +2520,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             # which is a measurement rather than a missing one.
             "sharedCounts": shared,
             "durationMs": _elapsed_ms(started),
+            "startedAt": started_at,
             # THE PATHS AND THE SENTENCE TRAVEL TOGETHER OR NOT AT ALL. Both are
             # None on the ordinary run, which is this file's shape for a claim
             # nobody is making: a basis with no claim under it is noise, and a
@@ -2833,6 +2877,85 @@ def _disarm_interrupt(previous):
         signal.signal(sig, signal.SIG_DFL if handler is None else handler)
 
 
+def runtime_claim(manifest):
+    """What this plan's gates never observe, stated rather than left to be
+    assumed.
+
+    THE BOUNDARY IS REASONABLE AND WAS UNSTATED, which is the whole of this.
+    `run_gate` runs commands and reads a working tree; it opens no browser and
+    starts no server, and nothing in the gate set does. That is a defensible
+    place to stop -- those things are slow, flaky and need a machine that has
+    them -- but a reader meeting a green gate with no such sentence beside it
+    reads broader coverage than was measured, and a plan signed off on that
+    reading is signed off on a coverage claim nobody made.
+
+    DERIVED FROM THE PLAN AND NEVER FROM THE COMMAND STRINGS. `meta.runtimeBoot`
+    is the plan's own statement about whether anything boots the app, so it is a
+    fact this can read. Guessing from what a gate entry is SPELLED like -- does
+    it say `playwright`, does it say `serve` -- is the read-the-spelling class
+    this plugin keeps being repaired for, and it would be wrong in both
+    directions on the first project that wrapped its own runner.
+    """
+    block = ((manifest or {}).get("meta") or {}).get("runtimeBoot")
+    if isinstance(block, dict) and block:
+        return ("this plan declares a runtime boot check (`meta.runtimeBoot`), "
+                "and phase sign-off is what runs it - not this gate. What runs "
+                "here is commands.")
+    return ("nothing in this plan boots the app: `meta.runtimeBoot` is not set, "
+            "and this gate runs commands - it opens no browser and starts no "
+            "server. A green verdict here is evidence about those commands and "
+            "about nothing that only happens at runtime.")
+
+
+def _say_who_else_was_running(project, res, row, out=print):
+    """Print who else was moving this machine while the run happened.
+
+    TWO QUESTIONS WITH TWO REMEDIES, kept apart on purpose. A suite running
+    OUTSIDE this gate in the same window means the verdict is contested and the
+    answer is to re-run once it is finished; another GATE run in the window means
+    two executors were invited onto one machine, and that answer belongs to
+    whoever invited them. One line for each, and each says what it found.
+
+    THE MACHINE LINE PRINTS ON EVERY RECORDED RUN, including the ordinary one
+    that was alone: "this run had the machine to itself" is the sentence the
+    parallel-safety rule never had, and a line that appeared only when something
+    was wrong could not be told from a build that does not print it.
+
+    THE ATTRIBUTION LINE IS FOR A RED, because that is the claim that was wrong:
+    a passing run has nothing to attribute to anybody. It moves no exit code -
+    `status` is what the commands answered and stays what they answered - which
+    is the same division between a verdict and an observation beside it that the
+    rest of this file draws.
+    """
+    try:
+        rows = _ev.read_rows(project)["rows"]
+    except Exception as exc:
+        out("  machine:  who else was running could not be read (%s)" % (exc,))
+        return
+    others, basis = _ev.shared_the_machine(rows, row)
+    if others is None:
+        out("  machine:  not knowable - %s" % (basis,))
+    elif others:
+        out("  machine:  %d other gate run(s) shared this window (%s). A full "
+            "suite takes the cores, the ports and the scratch directories, so a "
+            "red here may be the crowd rather than the work"
+            % (len(others), ", ".join(str(o.get("runId") or "?")
+                                      for o in others)))
+    else:
+        out("  machine:  this run had the machine to itself")
+    if res.get("status") == "passed":
+        return
+    verdict = _ev.attribution_of(row, rows)
+    if verdict["attributed"] is None:
+        out("  claimed:  not knowable - %s" % (verdict["basis"],))
+    elif verdict["attributed"]:
+        out("  claimed:  this run's own verdict - %s" % (verdict["basis"],))
+    else:
+        out("  claimed:  CONTESTED - %s. Record says the red is not this gate's "
+            "to attribute; re-run once that suite has finished"
+            % (verdict["basis"],))
+
+
 def _record_run(project, args, res, source, commands, manifest, out=print):
     """Record the run, point the plan at it, and date the plan's first recording.
 
@@ -2854,7 +2977,15 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
     # wrote. `sessionId` is spelled the same way one line up, for the same reason.
     identity = {"runId": _ev.new_run_id(), "via": "cli",
                 "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
-                "attempt": attempt_of(manifest, args.task)}
+                "attempt": attempt_of(manifest, args.task),
+                # WHEN IT BEGAN, recorded rather than left to be derived. `ts` is
+                # stamped when the row is BUILT and `durationMs` is monotonic, so
+                # without this the ledger could say how long a run took and never
+                # when it was happening - and an overlap question needs a window,
+                # not a duration. `runner` is deliberately NOT set: absent means
+                # the gate, which is what this run is, and `RUNNER_KEY`'s note
+                # says why writing it on every row would cost the distinction.
+                _ev.STARTED_KEY: res.get("startedAt")}
     # FROM `gate_of`, NEVER FROM THE STEPS. `published` is what decides whether a
     # command is stored verbatim or as a digest, and the steps carry the very
     # commands being judged - deriving it from them would make every command its
@@ -2869,6 +3000,7 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
         return {"recorded": False, "pointer": False, "boundary": None,
                 "boundaryWritten": False}
     out("  evidence: recorded %s" % (identity["runId"],))
+    _say_who_else_was_running(project, res, recorded["row"], out=out)
     pointer = _ev.write_pointer(project, args.manifest, source, ids,
                                 recorded["row"],
                                 session_id=identity["sessionId"])
@@ -2983,6 +3115,18 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
+    # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
+    # here rather than at the end of one. Both sides of it - the files the work
+    # declares, and the fact that an empty declaration can be related to nothing -
+    # are in hand before the first command starts, so paying for a whole suite to
+    # be told this is a cost entirely of ordering. `render` still prints the same
+    # sentence off the row afterwards; this is the reader getting it in time to
+    # act on it.
+    settled = declared_coverage_answer(owns)
+    if settled is not None:
+        out("[run-test-gate] coverage, before anything runs: %s. Nothing this "
+            "gate does can change that answer, so it is said now rather than "
+            "after the wait." % (settled[1],))
     # ASKED BEFORE THE GATE AND WHATEVER THE ANSWER IS. The identity is what the
     # row this run writes has to carry, so a `--no-reuse` run computes one too -
     # a forced measurement that recorded no identity would leave the next run
@@ -3063,6 +3207,12 @@ def main(argv, out=print):
     # reader who assumed otherwise would credit the wrong declaration.
     out("[run-test-gate] %s: %d command(s), %s gate"
         % (subject, len(commands), source))
+    # WHAT THE GATE SET NEVER MEASURES, beside what it did. A reader meeting a
+    # green verdict with no such sentence reads broader coverage than was taken,
+    # and this is the one place the sentence can be both true and cheap: the plan
+    # is open, so it is derived rather than guessed. Printed before the table so
+    # it is read with the verdict rather than after the reader has left.
+    out("  covers:   %s" % (runtime_claim(manifest),))
     if identity["key"] is None:
         # THE MISSING BASIS IS THE THING TO SAY. Every other run records an
         # identity and this one cannot, so no verdict taken here will ever be
