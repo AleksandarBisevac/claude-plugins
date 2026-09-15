@@ -262,7 +262,7 @@
     {
       "id": "P46.6",
       "title": "A settled plan reads as settled",
-      "status": "in_progress",
+      "status": "done",
       "description": "The headline fraction stops counting cancelled work in its denominator. A reader resolves a fraction before reading the note after it: a done-count over a total says some number of things are outstanding, and only the parenthetical says that some of them are settled. Cancelled is TERMINAL - closed deliberately, with a reason and a journal row - so counting it against done puts settled work where unstarted work goes, which is the one distinction the headline exists to make. Cancelled must stay visible; the repair is where the number sits, never dropping it. Every surface that renders this arithmetic moves together, because two surfaces disagreeing about what a fraction means is worse than the confusion it replaces.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -294,14 +294,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8def4d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts excludes cancelled from the per-phase and plan-wide totals and the area rollup inherits it; _tasks_bar draws full for an empty total with cancelled work and empty for a genuinely empty plan; the phase-level tally was checked first and was already right.",
+        "descriptive": "The done fraction stops counting cancelled work in its denominator, so a settled plan reads as settled, and the cancelled count stays visible."
       },
       "startedAt": "2026-09-15T20:06:37Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T21:07:21Z",
+      "verifiedBy": [
+        "r1",
+        "r2",
+        "rg1",
+        "rg2",
+        "ca4",
+        "rg3"
+      ]
     }
   ],
   "startedAt": "2026-09-15T20:06:37Z"

@@ -216,7 +216,7 @@
     {
       "id": "P42.5",
       "title": "executor.runsGate: the saving stops living in a handoff note",
-      "status": "in_progress",
+      "status": "done",
       "description": "The executor runs the phase gate and the orchestrator runs it again with --record, because only the recorded run is evidence - two full-suite runs per task by default. An operator suppressed the executor's run in every spawn prompt and measured that as the largest single waste of the previous wave, but a sentence in a handoff note is not a mechanism: the next session that does not read it pays double. A config key resolved into the spawn prompt the way skills already are, defaulting to the executor running only the tests it wrote.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -251,14 +251,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8def4d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.executor_gate_policy resolves the three-word vocabulary and refuses anything outside it; the key reaches the schema, the validator's known set, the README table and the panel form because the existing drift gate fails a key missing from any one; the orchestration reference and the agent definition now branch on the word and say the recorded run is unconditional.",
+        "descriptive": "Whether the executor runs the phase gate is a configured word resolved at spawn, with the cheap default and the strict reading both reachable."
       },
       "startedAt": "2026-09-13T00:00:00Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T21:07:20Z",
+      "verifiedBy": [
+        "eg1",
+        "eg2",
+        "eg3",
+        "eg4",
+        "eg5",
+        "eg6",
+        "gp1",
+        "gp2",
+        "gp3",
+        "gp4"
+      ]
     },
     {
       "id": "P42.6",
