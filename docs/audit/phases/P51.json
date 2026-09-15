@@ -29,7 +29,7 @@
     {
       "id": "P51.1",
       "title": "The committed example stops naming commits this repository does not have",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the shipped example names no commit this repository cannot resolve, and the check that grades it refuses rather than passes when the clone it runs on is too shallow to answer. The current failure is the worse of the two shapes: the step that calls the example healthy can only say so BECAUSE the clone is shallow, so the depth that hides the problem is the reason the gate is green. A check whose pass depends on not being able to look is the inverse of a check, and this repository has a word for the honest answer - the question could not be asked - which is what it must say instead.",
       "files": [
         "examples/acme-store/audit-plan.json",
@@ -58,21 +58,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T15:27:05Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P51.2",
       "title": "Two descriptions of mechanisms that are not there",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: two surfaces stop describing mechanisms the code does not have. One is a helper whose docstring says a guard needs it while nothing calls it, so a reader budgets for a dependency that does not exist and a future change preserves a contract nobody holds. The other is a retired edge in the import graph described as current in three places, one of which says in its own file that the edge is gone - a file contradicting itself is worse than either half, because a reader who notices it stops trusting the rest. Both were found by an eval run rather than by the suite, which is the interesting part: the checks here grade what the code does and nothing grades what the comments say it does, and that gap is the same one the comment-citation rule addresses from the other end.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -103,14 +103,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T15:27:05Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -228,7 +228,7 @@
     {
       "id": "P51.5",
       "title": "The refusals stay right and stop costing a screen",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the refusals and warnings keep every fact they carry and stop pasting a screen into a reader's context per occurrence. Two instances, one shape. A description containing backticks is refused with the stdin route and the reasoning, correctly, at a length a terminal wraps to most of a screen - the repair is ordering rather than cutting: the line the reader retypes goes first and each reason follows in one sentence. And the validator repeats one warning per entry, most of a page of identical lines, which every structural call then carries into an agent's context through the machine-readable output. One rule collapses to one line with its count; two rules never collapse into each other, because the whole value of the line is which rule spoke.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -260,14 +260,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T15:27:06Z",
       "completedAt": null,
       "verifiedBy": []
     },
