@@ -878,7 +878,8 @@
       "P21.2",
       "P22.11",
       "P51.6",
-      "P47.3"
+      "P47.3",
+      "P53.7"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -943,7 +944,8 @@
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
       "P10.6",
-      "P14.2"
+      "P14.2",
+      "P53.7"
     ],
     "plugins/audit/scripts/demo/gen-demo-manifest.py": [
       "P10.3",
@@ -978,7 +980,8 @@
       "P12.5",
       "P14.1",
       "P18.7",
-      "P49.3"
+      "P49.3",
+      "P53.7"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -1215,7 +1218,8 @@
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
       "P21.2",
-      "P22.11"
+      "P22.11",
+      "P53.7"
     ],
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7"
@@ -1941,6 +1945,9 @@
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
+    ],
+    "plugins/audit/tests/test_audit_usage.py": [
+      "P53.7"
     ]
   },
   "bugs": [
