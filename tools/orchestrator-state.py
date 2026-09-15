@@ -140,6 +140,25 @@ def main():
     if len(dirty) > 12:
         print("  ... and %d more" % (len(dirty) - 12))
 
+    # WHAT THE NEXT COMMIT WOULD TAKE, which is not what you last named. Staging
+    # by path is this checkout's rule because a second session shares the tree,
+    # and that rule silently assumes the index was empty to begin with. A
+    # three-way patch application stages everything it merges and says nothing,
+    # so the next commit-by-path took a body of unrelated work under a
+    # bookkeeping message. `git commit` takes the INDEX, never the paths just
+    # added, and this line is the only place that difference is visible before
+    # the commit rather than after it.
+    staged = [l for l in _git(["diff", "--cached", "--name-only"]).splitlines()
+              if l.strip()]
+    print("\nSTAGED HERE: %s" % (
+        "nothing - the next commit would take only what you add"
+        if not staged else
+        "%d path(s) ALREADY IN THE INDEX - `git commit` takes these too" % len(staged)))
+    for line in staged[:12]:
+        print("  " + line)
+    if len(staged) > 12:
+        print("  ... and %d more" % (len(staged) - 12))
+
     ready = ready_tasks("docs/audit/audit-plan.json")
     print("\nREADY NOW: %s" % ("the manifest could not be read" if ready is None
                                else (", ".join(ready) if ready else "nothing")))
