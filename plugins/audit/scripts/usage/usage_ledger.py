@@ -25,6 +25,11 @@ Attribution, highest precision first (nothing is ever dropped):
   1. task          - the subagent's `.meta.json` description starts with a task id.
                      Exact even when a phase runs several tasks in parallel, because
                      each subagent owns a separate transcript file.
+                     An agent that is CONTINUED rather than replaced keeps that
+                     description for ever, so a message handed to a running agent
+                     may name the next task on its first line and everything it
+                     spends afterwards lands there instead. A message naming no
+                     task changes nothing: the description still answers.
   2. phase         - main-session (orchestrator) spend, matched on
                      `phase.claim.sessionId` against ANY name this session answers
                      to (see `_session_ids`): the claim is written from Bash under
@@ -189,6 +194,71 @@ def agent_id_of(jsonl_path):
 # --- attribution ----------------------------------------------------------------
 _TASK_ID_RE = re.compile(r"([A-Za-z]{1,4}\d+\.\d+)")
 
+# A MESSAGE HANDED TO AN AGENT THAT IS ALREADY RUNNING, which is what an
+# orchestrator sends instead of spawning a replacement. `origin.kind` is the only
+# field that tells such an entry from the spawn prompt, from a tool result and
+# from a skill the harness injected -- all of which are `type: "user"` too, and
+# the first of which is also the only other `user` entry carrying no
+# `toolUseResult`. Read out of live transcripts rather than assumed: every entry
+# of these kinds carried a plain-string `message.content` opening with the lead
+# line below, and the spawn prompt carried no `origin` at all.
+CONTINUATION_ORIGINS = ("coordinator", "human")
+
+# What the harness writes ahead of the sender's own text. The sender's first line
+# is therefore the second line of the entry, and stripping this is what makes the
+# convention writable by a human: "put the task id first" has to mean first in
+# the message, not first after an envelope nobody typed. An envelope this does
+# not recognise is left in place on purpose -- the first line is then the
+# envelope, it names no task, and attribution stays where the spawn description
+# put it, which is the direction that invents nothing.
+CONTINUATION_LEADS = (
+    "The coordinator sent a message while you were working:",
+    "The user sent a new message while you were working:")
+
+
+def message_text(entry):
+    """The text of a transcript entry's message, as one string.
+
+    Both content shapes, because the transcript uses both: a plain string for the
+    messages this module reads, and a list of typed blocks elsewhere. A shape
+    this does not know yields the empty string rather than a repr -- a repr would
+    make a dict's key order part of what a task id is matched against.
+    """
+    message = (entry or {}).get("message") if isinstance(entry, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(block.get("text") or "" for block in content
+                       if isinstance(block, dict) and block.get("type") == "text")
+    return ""
+
+
+def continuation_line(entry):
+    """The first line the SENDER wrote in a message handed to a running agent,
+    or None when `entry` is not one of those.
+
+    None for every other entry, and that is the whole discrimination: a spawn
+    prompt, a tool result and an injected skill are all `type: "user"`, and
+    reading any of them as a hand-off would move a task's spend onto whatever id
+    happened to appear in a tool's output.
+    """
+    if not isinstance(entry, dict) or entry.get("type") != "user":
+        return None
+    origin = entry.get("origin")
+    kind = origin.get("kind") if isinstance(origin, dict) else None
+    if kind not in CONTINUATION_ORIGINS:
+        return None
+    text = message_text(entry)
+    for lead in CONTINUATION_LEADS:
+        if text.startswith(lead):
+            text = text[len(lead):]
+            break
+    for line in text.split("\n"):
+        if line.strip():
+            return line.strip()
+    return None
+
 
 def _session_ids(session_id, aliases=None):
     """Normalise "who am I" to a set, because a session has more than one name.
@@ -261,8 +331,31 @@ class Attributor(object):
                 return candidate
         return None
 
-    def attribute(self, agent_meta, ts_epoch):
-        """-> (phaseId, taskId, attribution). Never raises, never returns None."""
+    def task_from_handoff(self, entry):
+        """The task a message sent to a RUNNING agent names on its first line,
+        when it names one this manifest knows.
+
+        THE SAME CONVENTION AS THE SPAWN DESCRIPTION, deliberately read by the
+        same function: an agent given a second task keeps the transcript and the
+        `.meta.json` of the first, so the description is the only label it has
+        and every token it spends afterwards reads as the first task's. The
+        follow-up message is the one place the second task can be named, and a
+        convention that differed from the spawn description's would be a second
+        thing for an orchestrator to remember and a second thing to get wrong.
+        """
+        return self.task_from_description(continuation_line(entry))
+
+    def attribute(self, agent_meta, ts_epoch, handoff=None):
+        """-> (phaseId, taskId, attribution). Never raises, never returns None.
+
+        `handoff` is the task the last message to this agent named, and it comes
+        FIRST because it is the more recent fact: the description says what the
+        agent was spawned for, the hand-off says what it was asked for since. A
+        hand-off naming nothing changes nothing -- the description still answers,
+        which keeps a coarse attribution rather than inventing a precise one.
+        """
+        if handoff and handoff in self.phase_of_task:
+            return self.phase_of_task.get(handoff), handoff, "task"
         if agent_meta:
             tid = self.task_from_description(agent_meta.get("description"))
             if tid:
@@ -330,13 +423,18 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     groups = {}
     prev = file_cursor if isinstance(file_cursor, dict) else {}
     recent = list(prev.get("recent") or [])
+    # The task the last message to this agent named, carried between scans for the
+    # reason the ring is: a scan reads only the new bytes, so the message that
+    # moved attribution is usually in a chunk already consumed. Forgetting it
+    # would put the rest of the second task's spend back on the first.
+    handoff = prev.get("handoff") or None
     try:
         size = os.path.getsize(path)
     except OSError:
         return groups, prev
     offset = int(prev.get("offset") or 0)
     if size < int(prev.get("size") or 0):
-        offset, recent = 0, []          # truncated or rotated -> start over
+        offset, recent, handoff = 0, [], None   # truncated or rotated -> start over
     if offset == 0 and not prev:
         # First sight. Historic backfill is bounded so the 10s hook timeout is safe;
         # the unbounded pass is `audit-usage.py --backfill`, which has no timeout.
@@ -344,7 +442,8 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
                 "maxScanBytes", 33554432):
             offset = size
     if offset >= size:
-        return groups, {"offset": size, "size": size, "recent": recent}
+        return groups, {"offset": size, "size": size, "recent": recent,
+                        "handoff": handoff}
 
     try:
         with open(path, "rb") as fh:
@@ -354,7 +453,8 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         return groups, prev
     cut = chunk.rfind(b"\n")
     if cut < 0:
-        return groups, {"offset": offset, "size": size, "recent": recent}
+        return groups, {"offset": offset, "size": size, "recent": recent,
+                        "handoff": handoff}
     consumed = cut + 1
     seen = set(recent)
 
@@ -365,7 +465,18 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             entry = json.loads(raw.decode("utf-8", "replace"))
         except Exception:
             continue                     # a malformed line must never abort a scan
-        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+        if not isinstance(entry, dict):
+            continue
+        # Only on a SUBAGENT's transcript, which is what `agent_meta` being
+        # present means. The main transcript's attribution comes from the phase
+        # claim and the task windows, and a message in it is addressed to the
+        # orchestrator rather than handing an executor a second task.
+        if agent_meta and entry.get("type") == "user":
+            named = attributor.task_from_handoff(entry)
+            if named:
+                handoff = named
+            continue
+        if entry.get("type") != "assistant":
             continue
         message = entry.get("message")
         if not isinstance(message, dict):
@@ -383,7 +494,8 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         bucket = hour_bucket(ts)
         if bucket is None:
             continue
-        phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts))
+        phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts),
+                                                       handoff=handoff)
         key = (bucket, agent_meta.get("_agentId"), agent_meta.get("agentType"),
                phase_id, task_id, attr, model, entry.get("gitBranch"))
         slot = groups.get(key)
@@ -396,7 +508,8 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
 
     if len(recent) > RECENT_IDS_CAP:
         recent = recent[-RECENT_IDS_CAP:]
-    return groups, {"offset": offset + consumed, "size": size, "recent": recent}
+    return groups, {"offset": offset + consumed, "size": size, "recent": recent,
+                    "handoff": handoff}
 
 
 def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):

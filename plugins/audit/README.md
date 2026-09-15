@@ -992,7 +992,7 @@ over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selft
 
 | Level | How | Precision |
 |---|---|---|
-| task | each subagent has its own transcript, labelled with the task id | exact, even for parallel tasks |
+| task | each subagent has its own transcript, labelled with the task id — or, for an agent that was continued rather than replaced, the task named on the first line of the message that handed it the next one | exact, even for parallel tasks |
 | phase | the session that claimed the phase (`phase.claim.sessionId`) | orchestrator spend |
 | window | exactly one task's `startedAt`/`completedAt` window contains the message | best-effort |
 | unattributed | everything else — ad-hoc edits, `#no-plan`, pre-install sessions (shown as **Uncategorized**) | still counted |

@@ -250,11 +250,28 @@ def record_row(project, phase_id, sha, index_abs, config=None):
     `append_from_cli`, NOT `append` (F287): this command is run from Bash, and an
     append no writer claims is reported by `guard-bash-writes` as a shell write
     into the append-only trail on the next Bash command.
+
+    AND THE ACTOR CARRIES THE SESSION, because the append names the FILE after
+    it. A row written with no session lands in the file named for the checkout's
+    writer token, while every other command-line verb in the same session -- the
+    task verbs, the priority verb -- lands in the file named for the session. One
+    session's trail then sits in a file named for it and a file named for the
+    machine, and a reader following the run by hand has to know to open both.
+    Nothing is lost either way (sign-off stages the whole directory), and the
+    file name is the chain's genesis seed, so this is a thing to get right at the
+    append and never afterwards.
+
+    THROUGH `env_session_id`, which is this module's own reader of the variable:
+    it sanitises and bounds the value before it becomes a path segment and a
+    committed field, and it answers None -- not a substitute -- when the
+    environment names no session, which is what leaves the writer-token fallback
+    reachable for a verb run outside a session at all.
     """
     config = _journal_io.load_config(project) if config is None else config
     return _journal_io.append_from_cli(project, {
         "action": _invariants.ACTION_INDEX_COMMITTED,
-        "actor": {"via": "commit-manifest-index"},
+        "actor": {"sessionId": _journal_io.env_session_id(),
+                  "via": "commit-manifest-index"},
         "target": _journal_io.repo_relative_or_token(project, index_abs),
         "summary": "the manifest index was committed as %s for %s - the shared "
                    "file, with no phase's work beside it" % (sha[:12], phase_id),

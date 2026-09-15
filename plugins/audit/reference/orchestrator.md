@@ -530,6 +530,14 @@ report, because `git switch -c` is about to fail anyway.
      re-spawn throws away everything it has read and re-reads it: measured on a live run, five
      refusals out of twelve tasks were resolved by re-spawning at 60–150k tokens each, about a
      third of that phase's whole cost. The gate was right every time; the re-spawn was the waste.
+   - **A message that hands a running executor a DIFFERENT task starts with that task's id** —
+     the same convention as the `description` in step 3, one message later. A continued agent
+     keeps the spawn record it was created with, so without the id every token it spends on the
+     next task is billed to the one it was spawned for and the next task reads as free:
+     `meter-usage.py` reads the id off the first line you wrote and moves the attribution from
+     there on. Carrying on with the SAME task needs nothing — a message naming no task leaves
+     attribution where the spawn description put it, which is coarse rather than wrong. It costs
+     nothing and nothing breaks without it, so never let it hold up a hand-off.
    - **A retry is not a fresh start: when `task.attempts > 1`, the prompt carries what the
      last attempt already proved.** Nothing of one attempt reaches the next on its own, so an
      executor re-runs the gate to rediscover a red you have already recorded and then walks

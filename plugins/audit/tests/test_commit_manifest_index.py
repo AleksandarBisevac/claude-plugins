@@ -161,6 +161,53 @@ def _index_rows(fx):
             if r.get("action") == _invariants.ACTION_INDEX_COMMITTED]
 
 
+def _set_session(value):
+    """Name the session the command-line writers read, or take the name away.
+
+    Returns what was there, which is what the restore takes back — the suite runs
+    inside a real session on a developer's machine and inherits its id, so a case
+    that only SET the variable would leave every case after it writing under a
+    fixture's session id.
+    """
+    held = os.environ.get(_journal_io.ENV_SESSION_VAR)
+    if value is None:
+        os.environ.pop(_journal_io.ENV_SESSION_VAR, None)
+    else:
+        os.environ[_journal_io.ENV_SESSION_VAR] = value
+    return held
+
+
+def _writers(fx, config):
+    """The writer id each journal file's NAME carries, sorted and deduplicated.
+
+    THE FILE NAME IS THE CLAIM. Reading the rows would say what was written and
+    never where it landed, and where it landed is the whole of what splits a
+    session's trail.
+    """
+    directory = _journal_io.journal_dir(fx["root"], config)
+    return sorted(set(_journal_io.writer_of(os.path.basename(path))
+                      for path in _journal_io.journal_files(directory)))
+
+
+def _task_verb_row(fx, config):
+    """One row in the shape `/audit:task` appends, from the same session.
+
+    THE OTHER COMMAND-LINE WRITER, spelled here rather than driven, because what
+    is being compared is the ACTOR a Bash-run verb files under — and that shape
+    is a literal in each of those verbs, not a function this suite could call.
+    """
+    return _journal_io.append_from_cli(fx["root"], {
+        "action": "task.add",
+        "actor": {"author": None,
+                  "sessionId": os.environ.get(_journal_io.ENV_SESSION_VAR),
+                  "via": "cli"},
+        "target": _journal_io.repo_relative_or_token(fx["root"], fx["manifest"]),
+        "summary": "a structural edit by the other command-line writer of this "
+                   "same session",
+        "details": {"phaseId": PHASE},
+    }, config=config)
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     repos = Repos()
@@ -410,6 +457,68 @@ def _cases(check):
               "path here would write somebody's home directory into a file that "
               "goes to a client: %r" % (row_target,),
               row_target == INDEX_REL and not os.path.isabs(str(row_target)))
+
+        # --- where the row LANDS ----------------------------------------------
+        # The append names the file after the writer's session, so a verb filing
+        # no session puts its rows in a file of its own beside the one every
+        # other command-line verb of that session writes. Driven end to end
+        # against a real append in the task verb's shape: the split is only
+        # visible where writers of one session are compared, and a case reading
+        # this command's row alone would pass either way.
+        joined = repos.make()
+        _widen(joined)
+        sid = "5cf0d3a2-1111-4c2b-9a77-9f0c1b2d3e4f"
+        held = _set_session(sid)
+        try:
+            joined_code, _joined_text = _run(joined)
+            joined_cfg = _journal_io.load_config(joined["root"])
+            _task_verb_row(joined, joined_cfg)
+            joined_writers = _writers(joined, joined_cfg)
+            joined_rows = _journal_io.read_all(joined["root"])
+        finally:
+            _set_session(held)
+        joined_actions = sorted(r.get("action") for r in joined_rows)
+        joined_files = sorted(set(r.get("_file") for r in joined_rows))
+        check("cmi19 an index commit and a structural edit made by the same "
+              "session land in the SAME journal file, named for that session - "
+              "a trail whose location depends on which verb wrote the row is one "
+              "nobody reconstructs by hand: %r / %r / %r"
+              % (joined_writers, joined_files, joined_actions),
+              joined_code == 0
+              and joined_writers == [_journal_io.writer_id({"sessionId": sid})]
+              and len(joined_files) == 1
+              and joined_actions == sorted([_invariants.ACTION_INDEX_COMMITTED,
+                                            "task.add"]))
+
+        check("cmi19b ...and the row itself records the session, which is what "
+              "the file name is derived FROM - `session_index` is the only "
+              "reader that can group a session's files, and it reads the rows: "
+              "%r" % ([r.get("actor", {}).get("sessionId") for r in joined_rows],),
+              [r.get("actor", {}).get("sessionId") for r in joined_rows]
+              == [sid, sid])
+
+        # A WRITER WITH NO SESSION IS THE PAIR, and it is the half a widened key
+        # breaks: this verb runs from Bash and Bash is not always a session, so
+        # the token that names the CHECKOUT has to stay reachable. Inventing a
+        # session id here would put a machine's rows in a file that reads as
+        # somebody's session for ever - the name is the chain's genesis seed and
+        # cannot be corrected afterwards.
+        lone = repos.make()
+        _widen(lone)
+        held = _set_session(None)
+        try:
+            lone_code, _lone_text = _run(lone)
+            lone_cfg = _journal_io.load_config(lone["root"])
+            lone_writers = _writers(lone, lone_cfg)
+            lone_token = _journal_io.writer_token(lone["root"], lone_cfg)
+        finally:
+            _set_session(held)
+        check("cmi20 ...and with no session named at all the row lands in the "
+              "file named for the CHECKOUT's writer token, which is the fallback "
+              "the session path may never displace: %r / %r"
+              % (lone_writers, lone_token),
+              lone_code == 0 and bool(lone_token)
+              and lone_writers == [lone_token])
     finally:
         repos.close()
 

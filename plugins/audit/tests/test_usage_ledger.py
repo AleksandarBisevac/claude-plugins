@@ -258,6 +258,137 @@ def _cases(check):
         check("scan: subagent model priced separately from the orchestrator",
               M.aggregate(rows4, "model").get("claude-haiku-4-5", {}).get("msgs") == 2)
 
+        # --- a continued agent's next task --------------------------------
+        # THE MEASUREMENT THE ORCHESTRATOR'S OWN PREFERENCE RESTS ON. It is told
+        # to continue a running executor rather than spawn a replacement, and a
+        # continued agent keeps the `.meta.json` it was spawned with - so without
+        # a second label its whole second task reads as free and the first task
+        # reads as having cost both. The label is the first line of the message
+        # that hands it the next task, which is the spawn description's own
+        # convention one message later.
+        #
+        # THE ENVELOPE IS THE HARNESS'S, not the sender's: a message handed to a
+        # running agent arrives with a lead line ahead of the text somebody
+        # typed, so "first line" has to mean the sender's first line or the
+        # convention is unwritable. The literals here are the ones live
+        # transcripts carry, which is why they are fixtures and not paraphrases.
+        def handoff(text, kind="coordinator",
+                    lead=M.CONTINUATION_LEADS[0]):
+            return json.dumps({
+                "type": "user", "origin": {"kind": kind},
+                "timestamp": "2026-08-06T09:00:00Z", "isSidechain": True,
+                "message": {"role": "user", "content": lead + "\n" + text}})
+
+        def tool_result(text):
+            """A `user` entry that is a TOOL RESULT - no `origin`, like the spawn
+            prompt and an injected skill. All three are `type: "user"`, and a
+            reader that took any of them for a hand-off would move a task's spend
+            onto whatever id appeared in a tool's output."""
+            return json.dumps({
+                "type": "user", "timestamp": "2026-08-06T09:00:00Z",
+                "toolUseResult": {"stdout": text},
+                "message": {"role": "user", "content": text}})
+
+        def continued(aid, lines):
+            """One subagent transcript spawned for P3.1, written in order."""
+            with open(os.path.join(cont_sub, "agent-%s.jsonl" % aid), "w",
+                      encoding="utf-8") as fh:
+                for line in lines:
+                    fh.write(line + "\n")
+            with open(os.path.join(cont_sub, "agent-%s.meta.json" % aid), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"agentType": "audit-executor",
+                           "description": "P3.1 the task it was spawned for",
+                           "toolUseId": "toolu_c", "spawnDepth": 1}, fh)
+
+        cont_main = os.path.join(proj, "sess-cont.jsonl")
+        with open(cont_main, "w", encoding="utf-8") as fh:
+            fh.write("")
+        cont_sub = os.path.join(proj, "sess-cont", "subagents")
+        os.makedirs(cont_sub)
+        continued("c1", [entry("m-c1a", "2026-08-06T09:00:00Z", 100),
+                         handoff("P3.2 carry on - the scope is widened"),
+                         entry("m-c1b", "2026-08-06T09:10:00Z", 400)])
+        # AN UNCLAIMED SESSION, so nothing here can be attributed by a window and
+        # the only two answers available are the description and the hand-off.
+        cont_rows, cont_cur = M.scan_transcripts(cont_main, "sess-cont", {},
+                                                 manifest, opts)
+        by_task = M.aggregate(cont_rows, "task")
+        check("ho1 a continued agent's spend after a message naming the next "
+              "task lands on THAT task, and what it spent before it stays on the "
+              "task it was spawned for - the pair, because either half alone "
+              "also passes for a reader that moved everything: %r"
+              % ({k: v.get("out") for k, v in by_task.items()},),
+              by_task.get("P3.1", {}).get("out") == 100
+              and by_task.get("P3.2", {}).get("out") == 400)
+        check("ho2 ...and the moved spend is `task` attribution with the phase "
+              "that owns the named task, not a phase average: %r"
+              % ([(r.get("taskId"), r.get("phaseId"), r.get("attr"))
+                  for r in cont_rows],),
+              sorted((r.get("taskId"), r.get("phaseId"), r.get("attr"))
+                     for r in cont_rows)
+              == [("P3.1", "P3", "task"), ("P3.2", "P3", "task")])
+
+        # THE CURSOR CARRIES IT, because a scan reads only the new bytes: the
+        # message that moved attribution is in a chunk already consumed by the
+        # time the rest of the second task's spend is written.
+        with open(os.path.join(cont_sub, "agent-c1.jsonl"), "a",
+                  encoding="utf-8") as fh:
+            fh.write(entry("m-c1c", "2026-08-06T10:00:00Z", 7) + "\n")
+        cont_rows2, _ = M.scan_transcripts(cont_main, "sess-cont", cont_cur,
+                                           manifest, opts)
+        check("ho3 ...and a LATER scan, which never sees that message again, "
+              "still attributes to the task it named - a hand-off forgotten "
+              "between scans puts the rest of the second task back on the "
+              "first: %r" % ([(r.get("taskId"), r.get("out")) for r in cont_rows2],),
+              [(r.get("taskId"), r.get("out")) for r in cont_rows2]
+              == [("P3.2", 7)])
+
+        # --- what must NOT move it ----------------------------------------
+        quiet_main = os.path.join(proj, "sess-quiet.jsonl")
+        with open(quiet_main, "w", encoding="utf-8") as fh:
+            fh.write("")
+        cont_sub = os.path.join(proj, "sess-quiet", "subagents")
+        os.makedirs(cont_sub)
+        continued("c2", [handoff("carry on, the gate is green"),
+                         entry("m-c2a", "2026-08-06T09:00:00Z", 50)])
+        continued("c3", [handoff("keep going with what you have\n\nthe review "
+                                 "for P3.2 is somebody else's job"),
+                         entry("m-c3a", "2026-08-06T09:00:00Z", 60)])
+        continued("c4", [tool_result("P3.2 appears in this tool's output"),
+                         entry("m-c4a", "2026-08-06T09:00:00Z", 70)])
+        quiet_rows, _ = M.scan_transcripts(quiet_main, "sess-quiet", {},
+                                           manifest, opts)
+        quiet_tasks = M.aggregate(quiet_rows, "task")
+        check("ho4 a message naming no task changes nothing - the spawn "
+              "description still answers, because a known attribution being "
+              "coarse is better than an invented one being precise: %r"
+              % ({k: v.get("out") for k, v in quiet_tasks.items()},),
+              quiet_tasks.get("P3.1", {}).get("out") == 50 + 60 + 70
+              and "P3.2" not in quiet_tasks)
+        check("ho5 ...and that holds when a task id appears further down the "
+              "message and when one appears in a TOOL RESULT: the convention "
+              "names the first line the sender wrote, so an id mentioned in "
+              "passing cannot re-bill an agent's work: %r"
+              % (sorted(set(r.get("taskId") for r in quiet_rows)),),
+              sorted(set(r.get("taskId") for r in quiet_rows)) == ["P3.1"])
+
+        # THE MAIN TRANSCRIPT IS NOT A CONTINUED AGENT. A message there is
+        # addressed to the orchestrator, which hands nobody a second task, and
+        # its spend is answered by the phase claim and the task windows.
+        orch_main = os.path.join(proj, "sess-orch.jsonl")
+        with open(orch_main, "w", encoding="utf-8") as fh:
+            fh.write(handoff("P3.2 please", kind="human") + "\n")
+            fh.write(entry("m-o1", "2026-08-06T06:00:00Z", 9) + "\n")
+        orch_rows, _ = M.scan_transcripts(orch_main, "sess-1", {}, manifest, opts)
+        check("ho6 ...and a message in the MAIN transcript moves nothing: the "
+              "orchestrator's own spend is answered by the claim and the "
+              "windows, and there is no spawn description there to correct: %r"
+              % ([(r.get("phaseId"), r.get("taskId"), r.get("attr"))
+                  for r in orch_rows],),
+              [(r.get("phaseId"), r.get("taskId"), r.get("attr"))
+               for r in orch_rows] == [("P3", None, "phase")])
+
         # --- backfill sizing guard ----------------------------------------
         rows5, _ = M.scan_transcripts(
             main, "sess-1", {}, manifest,
