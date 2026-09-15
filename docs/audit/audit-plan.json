@@ -291,7 +291,8 @@
     {
       "id": "P50",
       "title": "First contact, the orchestrator's weight, and the 2.x migration",
-      "shard": "phases/P50.json"
+      "shard": "phases/P50.json",
+      "status": "in_progress"
     },
     {
       "id": "P51",
