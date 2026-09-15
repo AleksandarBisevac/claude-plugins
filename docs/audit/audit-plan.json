@@ -309,7 +309,8 @@
     {
       "id": "P54",
       "title": "The guards' last read shapes, and the work the plan has no place for",
-      "shard": "phases/P54.json"
+      "shard": "phases/P54.json",
+      "status": "in_progress"
     }
   ],
   "fileIndex": {
