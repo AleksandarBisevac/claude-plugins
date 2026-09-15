@@ -2230,6 +2230,67 @@ def _cases(check):
                   and "merge commit" not in _aw_same
                   and _aw_same_nums == [] and name in _aw_same)
 
+            # --- an: the answer for a question that could not be put ---------
+            # THE ANCHOR USED TO ANSWER `None` TWICE OVER: once for a file whose
+            # committed past it had read and found intact, and once for every
+            # inability to read one at all - no git, an untracked file, itself
+            # raising. So the state this check exists for was reported with the
+            # same byte as the state where it never looked, and a reader could
+            # not tell a clean tree from a broken anchor. These grade the third
+            # answer: `status` says whether the question was PUT, `why` says
+            # which inability stopped it, and neither is ever a finding.
+            _an_reads = set(
+                n.id for n in ast.walk(_jio_funcs["_git_anchor_finding"])
+                if isinstance(n, ast.Name))
+            check("an0 the third answer and the pointer are both BUILT rather "
+                  "than spelled at each return: `_git_anchor_finding` names "
+                  "`_anchor_unasked` and `_anchor_pointer`, so a return that "
+                  "went back to a bare None - or an invocation re-inlined at "
+                  "one branch and not the other - fails here rather than "
+                  "leaving the cases below grading helpers nothing calls: %r"
+                  % (sorted(n for n in _an_reads if n.startswith("_anchor")),),
+                  "_anchor_unasked" in _an_reads
+                  and "_anchor_pointer" in _an_reads
+                  and "_anchor_asked" in _an_reads)
+            check("an1 the pointer names the OBJECT the anchor landed on, "
+                  "directory and all: git resolves a bare `HEAD:<name>` from "
+                  "the repository ROOT while the anchor reads it beside the "
+                  "file, and under the archive seam the committed copy is one "
+                  "level up - so a reader handed the bare name chases a path "
+                  "git holds nothing at: %r"
+                  % ((M._anchor_pointer("/j", "m.jsonl"),
+                      M._anchor_pointer("/j/archive", "m.jsonl", up=True)),),
+                  M._anchor_pointer("/j", "m.jsonl")
+                  == "git -C /j show HEAD:./m.jsonl"
+                  and M._anchor_pointer("/j/archive", "m.jsonl", up=True)
+                  == "git -C /j/archive show HEAD:../m.jsonl")
+            check("an2 ...and both messages carry that invocation verbatim, "
+                  "which is the half a reader acts on - the warning for a file "
+                  "whose links moved and the one for a file whose bytes were "
+                  "rewritten with no row diverging",
+                  M._anchor_pointer("/j", name)
+                  in M._anchor_warning(name, _av4, M._anchor_pointer("/j", name))
+                  and M._anchor_pointer("/j", name)
+                  in M._anchor_warning(name, _av7,
+                                       M._anchor_pointer("/j", name)))
+            _an_dir = tempfile.mkdtemp(prefix="journal-anchor-")
+            try:
+                _an_file = os.path.join(_an_dir, "m.jsonl")
+                with open(_an_file, "w", encoding="utf-8") as _fh:
+                    _fh.write("{}\n")
+                _an_none = M._git_anchor_finding(_an_file)
+                check("an3 a file no committed copy can be read for answers "
+                      "`could-not-ask` WITH THE REASON, and carries neither a "
+                      "finding nor a warning - the answer a clean file used to "
+                      "be indistinguishable from: %r" % (_an_none,),
+                      _an_none["status"] == M.ANCHOR_CANNOT
+                      and isinstance(_an_none["why"], str)
+                      and _an_none["why"] != ""
+                      and _an_none["finding"] is None
+                      and _an_none["warning"] is None)
+            finally:
+                shutil.rmtree(_an_dir, ignore_errors=True)
+
             # --- sa: the session a writer id cannot name ---------------------
             _sa_actor = {"sessionId": "payload-id-aaaa", "via": "hook"}
             _sa1 = with_env("env-id-bbbb", lambda: M._normalise(

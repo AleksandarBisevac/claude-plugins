@@ -543,6 +543,87 @@ def check_journal_anchor_fires(fx):
                    _output.some_of(findings, render=repr)))
 
 
+def check_journal_anchor_answers(fx):
+    """A tree the anchor CAN read is reported as read - nothing left unanchored.
+
+    THE SECOND DIRECTION FOR THE THIRD ANSWER, and the one that decides whether
+    it can ship. `could-not-ask` exists so a bug inside the anchor cannot look
+    like a clean file; the cost of getting it wrong is the opposite claim - a run
+    announcing it could not look at a repository it read perfectly well - and a
+    report that says that about a healthy tree is a report people stop reading.
+    Every journal file here is tracked and committed by the check before it, so
+    every one of them has to come back as a question that was PUT.
+
+    Unreachable outside a real repository: with no `.git` every file is honestly
+    unanchored, which is the state this check cannot tell a bug from.
+    """
+    code, out = script(fx, "audit-journal.py", "verify", "--project", ".",
+                       "--json")
+    try:
+        rep = (json.loads(out) or {}).get("journal") or {}
+    except ValueError:
+        return False, "verify --json did not parse: %s" % (out.strip()[:200],)
+    files = rep.get("files") or []
+    states = sorted(set(f.get("anchor") for f in files))
+    unanchored = rep.get("unanchored")
+    ok = (code == 0 and files != [] and (unanchored or []) == []
+          and states == ["asked"])
+    return ok, ("exit %r, %d file(s), states %r, unanchored %r"
+                % (code, len(files), states, unanchored))
+
+
+def check_journal_anchor_pointer(fx):
+    """The command the anchor's finding prints really produces what it compared.
+
+    THE DEFECT WAS A SUBJECT THE POINTER NEVER LANDED ON. The finding said
+    `git show HEAD:<name>`, which git resolves from the REPOSITORY ROOT, while
+    the anchor read the copy beside the file - a different object for every
+    journal that is not at the root, which is every journal - and under the
+    archive seam the copy it compared sits one directory further up still. A
+    reader following the printed command got an error or somebody else's file.
+
+    Nothing that reads the string can catch that, so this RUNS it: the invocation
+    the finding carries must exit 0 and hand back exactly the bytes git holds for
+    that path, and the bare spelling it replaced must fail. Restores the file
+    whatever happens - every check after this one reads the same tree.
+    """
+    paths = journal_files(fx)[:1]
+    if not paths:
+        return False, "the fixture has no journal file to tamper with"
+    rel = _output.posix_rel(paths[0], fx["root"])
+    lines = io.open(paths[0], encoding="utf-8").read().splitlines()
+    if len(lines) < 2:
+        return False, "the journal has too few rows to truncate one meaningfully"
+    try:
+        with io.open(paths[0], "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines[:-1]) + "\n")
+        _code, out = script(fx, "audit-journal.py", "verify", "--project", ".")
+    finally:
+        with io.open(paths[0], "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    said = [ln for ln in out.splitlines() if "committed past changed" in ln]
+    if not said:
+        return False, "no anchor finding to read a pointer out of: %s" % (
+            out.strip()[:200],)
+    opened = said[0].rfind("(git -C ")
+    closed = said[0].find(")", opened) if opened >= 0 else -1
+    if opened < 0 or closed < 0:
+        return False, "the finding carries no runnable pointer: %r" % (said[0],)
+    pointer = said[0][opened + 1:closed]
+    # Split on the one separator the builder puts there, never on spaces: a
+    # fixture directory with a space in it would otherwise turn this check into
+    # a check about the machine it ran on.
+    where, _sep, spec = pointer[len("git -C "):].rpartition(" show ")
+    shown = run([fx["git"], "-C", where, "show", spec], fx["root"], fx["env"])
+    wanted = git(fx, "show", "HEAD:%s" % (rel,))
+    bare = git(fx, "show", "HEAD:%s" % (os.path.basename(rel),))
+    ok = (shown[0] == 0 and wanted[0] == 0 and shown[1] == wanted[1]
+          and shown[1] != "" and bare[0] != 0)
+    return ok, ("pointer %r -> exit %r, same bytes as HEAD:%s %r, bare "
+                "spelling exit %r"
+                % (pointer, shown[0], rel, shown[1] == wanted[1], bare[0]))
+
+
 def check_journal_file_deleted(fx):
     """Deleting a COMMITTED journal file is a finding that names the file.
 
@@ -1163,6 +1244,11 @@ CHECKS = (
      check_journal_anchor_holds),
     ("g10 removing a committed row fires the git anchor, and only it",
      check_journal_anchor_fires),
+    ("g10c ALLOW: a repository the anchor CAN read leaves nothing unanchored - "
+     "the third answer must not fire on a tree it read",
+     check_journal_anchor_answers),
+    ("g10d the pointer the anchor's finding prints, RUN, produces what the "
+     "anchor compared against", check_journal_anchor_pointer),
     ("g10b deleting a committed journal file is a finding that names it - the "
      "act the chain and the anchor both walk past", check_journal_file_deleted),
     ("g11 meter-usage is WIRED: a ledger row, authored by git's identity",

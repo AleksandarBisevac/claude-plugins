@@ -403,7 +403,14 @@ def _cases(check):
     over = M.some_of(long_ids)
     head, _sep, tail = over.rpartition(" and ")
     shown = [x for x in head.split(", ") if x]
-    hidden = int(tail.split()[0]) if tail.split()[0].isdigit() else -1
+    # A SLICE AND NEVER AN INDEX, because the input this reads is the thing under
+    # test: a renderer that stopped emitting a tail - or emitted an empty string -
+    # has to be THIS case going red, with the rendering quoted back. Indexing the
+    # first token raises instead, and a raise here takes every case after it down
+    # while naming none of them, which a mutation harness reads as a whole column
+    # of checks catching one change when it was one crash.
+    _te_tail = tail.split()[:1]
+    hidden = int(_te_tail[0]) if _te_tail and _te_tail[0].isdigit() else -1
     check("te2 ...and one that does NOT fit says how many it left out, exactly. "
           "Read back off the rendering rather than compared with a number spelled "
           "here: shown plus hidden has to be the whole set, which is the property "
@@ -1155,7 +1162,18 @@ def _cases(check):
         # `panel/` carried exactly this while the lint returned nothing for them.
         # The tail is SLICED off `PATH_PREAMBLE` rather than typed out - a fixture
         # spelling it again is a second copy of the bytes the rule is about.
-        _tail = M.PATH_PREAMBLE[M.PATH_PREAMBLE.index("\nimport _output"):]
+        # `.find` and never `.index`, for the reason te2 slices rather than
+        # indexes: a pinned preamble that no longer carries this statement is
+        # pp14 going red, not a ValueError that takes pp7-pp13 and every case
+        # after them down without naming one of them.
+        _tail_at = M.PATH_PREAMBLE.find("\nimport _output")
+        check("pp14 the statement the partial fixture is SLICED at is still in "
+              "the pinned preamble - the fixture repeats the preamble's own tail "
+              "rather than spelling those bytes a second time, so an anchor that "
+              "moved would leave pp11 and pp12 grading a file nobody meant to "
+              "write: %r" % (M.PATH_PREAMBLE[-60:],),
+              _tail_at >= 0)
+        _tail = M.PATH_PREAMBLE[_tail_at:] if _tail_at >= 0 else M.PATH_PREAMBLE
         with open(os.path.join(pre, "partial.py"), "w", encoding="utf-8") as fh:
             fh.write("import os\nimport sys\n\n" + M.PATH_PREAMBLE + _tail
                      + "\nimport _sibling  # noqa: E402\n")
@@ -1935,6 +1953,47 @@ def _cases(check):
           and M._prose_number_claim("today it anchors 13 of 14 sections")
               == "13 of 14 sections"
           and "measured" in M._PAST and "saw" in M._PAST)
+    # THE EXTENT OF THE UNPARTNERED-DELIMITER SPAN, both ends of it. pn33 pins
+    # that the span exists and is read by columns; this pins how far it reaches,
+    # because a blind spot whose size nothing holds is free to grow into the
+    # families it was never adopted for. The claim is the same claim in every
+    # fixture, so what separates them is only where the delimiter sits.
+    _pn_before = "today it anchors 13 of 14 sections and `x"
+    _pn_afterTick = "and `x is open while today it anchors 13 of 14 sections"
+    _pn_afterQuote = 'a "quotation opens while today it anchors 13 of 14 sections'
+    _pn_evenTick = 'a `b` and "c today it anchors 13 of 14 sections'
+    _pn_closed = "a `3 of 4 x` and today it anchors 13 of 14 sections"
+    check("pn35 the blind span OPENS at the unpartnered delimiter and CLOSES at "
+          "the end of its line: a claim in front of one is still read, a claim "
+          "after a partnered pair is still read, the next line is read normally, "
+          "and the two delimiters are counted apart - so balanced backticks do "
+          "not rescue a line whose double quotes are odd: %r"
+          % ((M._prose_number_claim(_pn_before),
+              M._prose_number_claim(_pn_afterTick)),),
+          M._prose_number_claim(_pn_before) == "13 of 14 sections"
+          and M._prose_number_claim(_pn_closed) == "13 of 14 sections"
+          and M._prose_number_claim("today it anchors 13 of 14 sections",
+                                    None, _pn_afterTick) == "13 of 14 sections"
+          and M._prose_number_claim(_pn_afterTick) is None
+          and M._prose_number_claim(_pn_afterQuote) is None
+          and M._prose_number_claim(_pn_evenTick) is None)
+    # THE FOURTH NARROWING, ISOLATED. Every other fixture for it is refused twice
+    # over - a grouped `22,363 of 49,393` fails the verbatim rule as well, so
+    # removing this one leaves the line quiet and proves nothing about it. A
+    # numeral standing in the NOUN slot is the shape only this narrowing sees,
+    # and the pair below is the specification: the same sentence with a word
+    # there is a finding, and with a numeral there it is not.
+    check("pn36 a ratio whose noun position holds another NUMERAL is not read - "
+          "the narrowing that stops a thousands-grouped tally, which tokenizes "
+          "into two numbers with the second one standing where the noun would. "
+          "What it gives up is a tally whose noun really is a numeral, which is "
+          "an under-count and is the direction these shapes are documented as "
+          "being wrong in",
+          M._prose_number_claim("today it anchors 13 of 14 2026") is None
+          and M._prose_number_claim("today it anchors 13 of 14 sections")
+              == "13 of 14 sections"
+          and M._prose_number_claim("45% of this tree (22,363 of 49,393 lines) "
+                                    "moved") is None)
 
     # --- us: which files a surface's pictures are OF (F85) --------------------
     # `_refs.screenshot_capture_drift()` and `tools/capture-screenshots.mjs` both
@@ -1950,14 +2009,21 @@ def _cases(check):
           and sorted(_us_live["digests"]) == sorted(M.UI_SURFACES)
           and len(set(_us_live["digests"].values())) == len(M.UI_SURFACES))
     _us_src = M.ui_surface_sources()
+    # READ WITH `.get`, AND THE EMPTY TERM FIRST. A surface that stopped being
+    # filed at all is what this case exists to catch, and both the label's index
+    # and `min()` over an empty walk raise on exactly that input - which would
+    # report the finding as a traceback with no case id on it.
+    _us_sources = _us_src.get("sources") or {}
     check("us2 ...over a real set of parts rather than an empty one, and the two "
           "surfaces are not the same set - a walk that reached nothing would "
           "return the same clean shape us1 accepts: %r"
-          % ({"panel": len(_us_src["sources"]["panel"]),
-              "report": len(_us_src["sources"]["report"])},),
-          min(len(v) for v in _us_src["sources"].values()) > 5
-          and set(_us_src["sources"]["panel"]) != set(_us_src["sources"]["report"])
-          and "panel.html" in _us_src["sources"]["panel"])
+          % ({"panel": len(_us_sources.get("panel") or ()),
+              "report": len(_us_sources.get("report") or ())},),
+          _us_sources != {}
+          and min(len(v) for v in _us_sources.values()) > 5
+          and (set(_us_sources.get("panel") or ())
+               != set(_us_sources.get("report") or ()))
+          and "panel.html" in (_us_sources.get("panel") or ()))
     check("us3 the FILING CONVENTION is what answers, so a part added under an "
           "existing directory is covered without anyone declaring it - and an "
           "unfamiliar directory returns no surface rather than a guess",
@@ -2216,7 +2282,15 @@ def _cases(check):
     _allowed = {"_output.py": 1}
     _raw = {}
     for _rel in _publishers:
-        _src = io.open(os.path.join(_here, _rel), encoding="utf-8").read()
+        # A FILE THIS TABLE NAMES AND CANNOT OPEN IS A FINDING, not a traceback.
+        # The list is hand-kept, so a rename is the way it goes wrong, and the
+        # sentinel has to be a value px2 reads rather than an exception that
+        # takes every case after it down while naming none of them.
+        try:
+            _src = io.open(os.path.join(_here, _rel), encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            _raw[_rel.rsplit("/", 1)[-1]] = -1
+            continue
         # The docstring in `_output` NAMES the function it replaces, and a
         # sentence is not a call: only lines that are not comment or prose count.
         _calls = 0
@@ -2253,7 +2327,14 @@ def _cases(check):
     _lk_here = os.path.dirname(os.path.abspath(__file__))
     _lk_bad = {}
     for _rel in _lk_callers:
-        _src = io.open(os.path.join(_lk_here, _rel), encoding="utf-8").read()
+        # The same sentinel px2 uses, and for the same reason: this list is
+        # hand-kept, "the file moved" is how it rots, and that has to be a row in
+        # `_lk_bad` rather than an exception nothing attributes to this case.
+        try:
+            _src = io.open(os.path.join(_lk_here, _rel), encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            _lk_bad[_rel] = "cannot be read - this list names a file that moved"
+            continue
         if "_locks.acquire(" not in _src:
             _lk_bad[_rel] = "no longer calls _locks.acquire - this list is stale"
             continue

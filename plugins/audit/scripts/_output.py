@@ -1915,6 +1915,26 @@ def _quoted_spans(line):
     two lines and the closing delimiter is on neither of them; reading an
     unpartnered delimiter as a non-event put the first half of every such tally
     back into the finding set.
+
+    AND WHAT THAT BUYS IS PAID FOR WITH THE REST OF THE LINE, which is wider than
+    the tally it was adopted for and is stated here because a widening nobody
+    states is a widening nobody checks. From an unpartnered delimiter to the end
+    of its line, this scan reads NOTHING - not the tally, and not any of the
+    other shapes `_prose_number_claim()` knows. The two delimiters are counted
+    apart, so balanced backticks do not rescue a line whose double quotes are
+    odd, and the opener need not be a quotation at all: a code span opened before
+    a wrap, an apostrophe-free `"` inside a sentence, a format string that spells
+    one, each blind everything after it. A large minority of the lines this scan
+    reads carry an odd count of one delimiter or the other, so the blind tail is
+    ordinary rather than exceptional.
+
+    WHAT IT HIDES TODAY IS NOT, and that measurement is the argument for keeping
+    it: swept over this whole tree with the span bounded to partnered pairs
+    alone, what comes back is a rendered rollup quoted inside a command's help -
+    the bytes a formatter prints, whose basis is the command beside them - and no
+    author's claim at all. The blind spot stays deliberate; its EXTENT is what
+    was never written down. `pn33` and `pn35` hold both ends of it, so it cannot
+    grow past the line it is bounded to without a case going red.
     """
     out = []
     for delim in _QUOTE_DELIMS:
@@ -2192,11 +2212,22 @@ def _completeness_claim(w):
 # turns `pn32` red - proven by running both, separately and together - and a
 # reader who removes one and sees green has not found a dead rule.
 #
-# The three narrowings under it were each bought by a class of real line:
+# The narrowings under it were each bought by a class of real line - and which one
+# stops a given line is a fact about the CODE PATH, so the attributions below were
+# taken by removing them one at a time and re-reading the fixtures, not off the
+# sentence that introduced them:
+#   * the token after the whole must not itself be a numeral. A number a document
+#     GROUPS (`22,363 of 49,393 lines`) arrives as two tokens, and the second of
+#     them stands where the noun would - so this is what stops a grouped ratio,
+#     and it stops it before the verbatim rule below is ever reached. That rule
+#     refuses the same line again, so neither mutation alone opens it and a reader
+#     who removes one and sees green has not found a dead rule; `pn36` is the
+#     fixture that isolates this narrowing on its own. WHAT IT GIVES UP is a tally
+#     whose noun really is a numeral (`13 of 14 2026`), which is an UNDER-count -
+#     the one direction these shapes are already documented as being wrong in;
 #   * the run must appear in the TEXT exactly as it tokenized, one space between
-#     each part - which is what tells `13 of 14 sections` from `phases"][1]["claim`,
-#     from `5-of-0`, from `22,363 of 49,393` and from a numeral the backticks
-#     around it were never beside;
+#     each part - which is what tells `13 of 14 sections` from `5-of-0` and from a
+#     numeral the backticks around it were never beside;
 #   * the noun must be a noun. A closed table of function words is the only half of
 #     that a word scanner can make honestly, the same admission
 #     `_completeness_claim()` makes about auxiliaries: `8 of 40 can be coloured`
@@ -2204,6 +2235,12 @@ def _completeness_claim(w):
 #     and a tally that names nothing is one no reader could check anyway;
 #   * neither the run nor its noun may sit in a quoted span, because there the
 #     tally is a byte and its basis is the code beside it.
+#
+# AND ONE LINE HERE IS FILED UNDER NO NARROWING AT ALL, said because it used to be
+# filed under the verbatim rule and is not refused by it: `index["phases"][1]["claim"]`
+# never reaches a run, since this arm needs a bare `of` between the two numerals
+# and that line has none. It stays in the suite as a line this family must be
+# silent about - which it is, one level up from any narrowing below.
 _RATIO_NON_NOUN = (
     "a", "an", "the", "and", "or", "but", "as", "than", "that", "which",
     "of", "in", "on", "at", "to", "for", "with", "from", "by", "into",

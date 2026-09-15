@@ -242,6 +242,13 @@ def cmd_verify(args, out):
             out("WARNING: " + line)
         for line in rep["findings"]:
             out("FINDING: " + line)
+        # NOT A WARNING AND NOT SILENCE. A file no committed copy could be read
+        # for is not an accusation - nothing was found, because nothing was
+        # looked at - but printing the verdict without it tells the reader the
+        # chain was checked against git when it was not. Its own line, its own
+        # word, and the reason beside each file.
+        for where, why in (rep.get("unanchored") or []):
+            out("NOT ANCHORED: %s -- %s" % (where, why))
         if rep["findings"]:
             out("BROKEN (%s): %d finding(s) across %d row(s) in %s"
                 % (label, len(rep["findings"]), rep["rows"], rep["dir"]))

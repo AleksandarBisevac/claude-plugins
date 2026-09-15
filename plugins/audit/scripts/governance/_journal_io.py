@@ -2211,9 +2211,12 @@ def anchor_verdict(committed_text, working_text):
     return out
 
 
-def _anchor_warning(name, verdict, committed_at):
+def _anchor_warning(name, verdict, pointer):
     """The warning text for a file whose committed rows all survived but whose
-    BYTES moved. `verdict` is `anchor_verdict`'s answer, with `held` true.
+    BYTES moved. `verdict` is `anchor_verdict`'s answer, with `held` true, and
+    `pointer` is `_anchor_pointer()`'s command - the invocation that produces
+    the copy this verdict was taken against, not a name the reader has to guess
+    a directory for.
 
     A FUNCTION RATHER THAN A FORMAT STRING AT THE RETURN, because this is the
     highest-stakes prose the module emits and nothing could reach it: it is
@@ -2245,8 +2248,8 @@ def _anchor_warning(name, verdict, committed_at):
             "diverged: every committed row is still here, in order, with its "
             "content intact, and nothing arrived alongside them. Something "
             "rewrote the bytes without changing a single row -- a writer that "
-            "does not spell canonical JSON is the ordinary cause (git show "
-            "HEAD:%s)" % (name, committed_at))
+            "does not spell canonical JSON is the ordinary cause (%s)"
+            % (name, pointer))
     return (
         "%s is no longer byte-identical to its committed copy from row %d on, "
         "and no row's content changed: all %d committed row(s) are still here, "
@@ -2257,13 +2260,56 @@ def _anchor_warning(name, verdict, committed_at):
         "rows that arrived and find what put them there: a resolution leaves "
         "both sides in git as the parents of a merge commit and a `%s` row "
         "saying what it did, and rows that arrived with neither are rows "
-        "nothing has accounted for (git show HEAD:%s)"
+        "nothing has accounted for (%s)"
         % (name, verdict["divergesAt"], verdict["committedRows"],
-           max(verdict["extra"], 0), MERGE_ACTION, committed_at))
+           max(verdict["extra"], 0), MERGE_ACTION, pointer))
+
+
+# The word for a question that was never put, beside the answers to one that was.
+# `run-test-gate.py` spells this class `could-not-run` and `_refs.py` spells it
+# `could-not-prove`; this is the same sentence about the git anchor rather than a
+# second convention, and it is never rendered as a finding - a check that could
+# not look has found nothing.
+#
+# WHAT IT REPLACED IS SILENCE, and silence is why it is here. This anchor used to
+# answer `None` for a clean file and `None` for a bug inside itself, so the one
+# state it exists for - somebody has been at the committed past - was
+# indistinguishable from the state where it could not look at all. A guard that
+# cannot say "I did not get to ask" is a guard that is useless exactly when it
+# matters.
+ANCHOR_ASKED = "asked"
+ANCHOR_CANNOT = "could-not-ask"
+
+
+def _anchor_pointer(directory, name, up=False):
+    """The command that produces the committed copy the anchor compared against.
+
+    THE POINTER MUST NAME WHAT THE ANCHOR LANDED ON. `git show HEAD:<name>`
+    resolves from the REPOSITORY ROOT, and this anchor reads `HEAD:./<name>`
+    with git running inside the journal directory - two different objects
+    whenever the journal is not at the root, which it never is. Under the
+    archive seam it is worse: there the committed copy sits one level UP, and a
+    reader handed the bare name went looking for a path git holds nothing at.
+    So the message carries the invocation, directory and all, rather than a
+    fragment a reader has to reassemble.
+    """
+    return "git -C %s show HEAD:%s/%s" % (directory, ".." if up else ".", name)
+
+
+def _anchor_unasked(why):
+    """The anchor's THIRD answer: the question was not put, and this is why."""
+    return {"finding": None, "warning": None, "status": ANCHOR_CANNOT,
+            "why": why}
+
+
+def _anchor_asked(finding=None, warning=None):
+    """The anchor's answer when it really compared a committed copy."""
+    return {"finding": finding, "warning": warning, "status": ANCHOR_ASKED,
+            "why": None}
 
 
 def _git_anchor_finding(path):
-    """The git anchor's VERDICT on one file: {"finding", "warning"}, or None.
+    """The git anchor's VERDICT on one file: {"finding", "warning", "status", "why"}.
 
     Once a journal file is committed, every row its committed copy holds must
     still be in the working copy, unchanged and in order -- append-only ACROSS
@@ -2275,34 +2321,42 @@ def _git_anchor_finding(path):
     THE NAME SAYS `finding` AND THE RETURN CARRIES A WARNING TOO, deliberately:
     two files this module may not edit name it in their own prose
     (`tools/check-git-pipeline.py`, `run-test-gate.py`), and a rename that left
-    that prose pointing at nothing would cost more than the imprecision. Both
-    keys are always present when anything is returned; None means the question
-    could not be asked.
+    that prose pointing at nothing would cost more than the imprecision.
 
-    Fail-open silently on every inability to check: no git binary, not a
-    repository, an untracked file, `git show` erroring (tracked but not yet in
-    HEAD) -- with one deliberate retry: a file in archive/ whose committed copy
-    is not at its new path yet is anchored against the PRE-archive path one
-    level up (see the comment at the seam). Line endings are normalised before
-    the compare -- on Windows the working file is CRLF while an autocrlf
-    checkout commits LF, and a false accusation is the one failure mode this
-    check must never have."""
+    ALWAYS A DICT, AND `status` IS THE HALF A CALLER MUST READ. `asked` means a
+    committed copy was fetched and compared, whatever the comparison then said;
+    `could-not-ask` means it was not, with `why` naming which inability - no git
+    binary, a file git does not track, a tracked file HEAD holds nothing at, or
+    the anchor itself raising. Those used to be the same `None` the clean path
+    returned, so a bug in here and a spotless tree read identically.
+
+    Still fail-open in the sense that matters: `could-not-ask` is never a
+    finding and never an accusation. One deliberate retry survives - a file in
+    archive/ whose committed copy is not at its new path yet is anchored against
+    the PRE-archive path one level up (see the comment at the seam). Line
+    endings are normalised before the compare -- on Windows the working file is
+    CRLF while an autocrlf checkout commits LF, and a false accusation is the
+    one failure mode this check must never have."""
     try:
         import shutil
         import subprocess
         if not shutil.which("git"):
-            return None
+            return _anchor_unasked("there is no git on PATH, so no committed "
+                                   "copy of this file could be read")
         d = os.path.dirname(os.path.abspath(path))
         name = os.path.basename(path)
         probe = subprocess.run(
             ["git", "-C", d, "ls-files", "--error-unmatch", name],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
         if probe.returncode != 0:
-            return None
+            return _anchor_unasked(
+                "git does not track %s here, or this directory is not in a "
+                "repository -- either way there is no committed past to anchor "
+                "to" % (name,))
         shown = subprocess.run(["git", "-C", d, "show", "HEAD:./%s" % name],
                                stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, timeout=10)
-        committed_at = name
+        pointer = _anchor_pointer(d, name)
         if shown.returncode != 0 or not shown.stdout:
             # The archive seam (v0.37 D): a file `git mv`ed into archive/
             # whose move is staged but NOT yet committed has no committed copy
@@ -2312,15 +2366,20 @@ def _git_anchor_finding(path):
             # closes the window in which a whole-file rewrite would otherwise
             # slip between the mv and its commit. Only for a directory
             # literally named archive/ -- the one subdirectory this module
-            # itself creates; everything else keeps the plain fail-open.
+            # itself creates; everything else says it could not ask.
             if os.path.basename(d) != ARCHIVE_DIRNAME:
-                return None
+                return _anchor_unasked(
+                    "git tracks %s and HEAD holds nothing at that path -- "
+                    "staged and never committed, so nothing pins its past yet"
+                    % (name,))
             shown = subprocess.run(["git", "-C", d, "show", "HEAD:../%s" % name],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, timeout=10)
             if shown.returncode != 0 or not shown.stdout:
-                return None
-            committed_at = "%s (its pre-archive path)" % name
+                return _anchor_unasked(
+                    "git tracks %s and HEAD holds nothing at that path nor at "
+                    "the pre-archive path above it" % (name,))
+            pointer = _anchor_pointer(d, name, up=True)
         committed = shown.stdout.replace(b"\r\n", b"\n")
         with open(path, "rb") as fh:
             working = fh.read().replace(b"\r\n", b"\n")
@@ -2328,27 +2387,26 @@ def _git_anchor_finding(path):
             # The fast path, and still the one almost every file takes: a byte
             # prefix implies presence, content and order all three, in one
             # comparison and with nothing parsed.
-            return None
+            return _anchor_asked()
         verdict = anchor_verdict(committed.decode("utf-8", "replace"),
                                  working.decode("utf-8", "replace"))
         if not verdict["held"]:
-            return {"finding": (
+            return _anchor_asked(finding=(
                 "%s: the journal's committed past changed -- committed row %d "
                 "(%s) is no longer in the working copy with its content "
                 "intact. A row's CONTENT is what nothing may change; resolving "
-                "a divergence recomputes only `prev` and `hash` (git show "
-                "HEAD:%s)" % (name, verdict["row"], verdict["action"],
-                              committed_at)), "warning": None}
-        return {"finding": None,
-                "warning": _anchor_warning(name, verdict, committed_at)}
-    except Exception:
-        return None
+                "a divergence recomputes only `prev` and `hash` (%s)"
+                % (name, verdict["row"], verdict["action"], pointer)))
+        return _anchor_asked(warning=_anchor_warning(name, verdict, pointer))
+    except Exception as exc:
+        return _anchor_unasked("the anchor failed while asking: %s" % (exc,))
 
 
 def verify(project, config=None):
     """Does the chain hold, and does the world still match its last row?
 
-    Returns {"ok", "dir", "exists", "rows", "files": [...], "findings", "warnings"}.
+    Returns {"ok", "dir", "exists", "rows", "files": [...], "findings",
+    "warnings", "unanchored"}.
     FINDINGS are breaks -- an edited row, a deleted or reordered one, a file that
     is not the file its genesis names, a committed row that is no longer in the
     working copy with its content intact, and a file git tracks that is not in the
@@ -2365,6 +2423,15 @@ def verify(project, config=None):
     stopped being able to forbid, and why. The byte prefix is still tried first
     and still settles almost every file.
 
+    AND IT SAYS WHEN IT COULD NOT ASK. `unanchored` names every file no
+    committed copy was read for, with the reason: no git, a file git does not
+    track, a tracked file HEAD holds nothing at, or the anchor raising. It is
+    NOT a finding and never makes `ok` false - a check that could not look has
+    found nothing - but it is the difference between a chain that verified over
+    anchored files and one that verified over files nothing pins, and a reader
+    who cannot tell those apart is reading a weaker sentence than they think.
+    Each file's own answer is on its entry, as `anchor` and `anchorWhy`.
+
     AND THE FILES THAT ARE NOT HERE ARE ASKED ABOUT FIRST. Every pass below walks
     what is on disk, so a tracked file that was deleted is in none of them; the
     chain over the files that remain then verifies clean and this said `ok`.
@@ -2377,7 +2444,7 @@ def verify(project, config=None):
     directory = journal_dir(project, config)
     out = {"ok": True, "dir": directory, "exists": os.path.isdir(directory),
            "rows": 0, "files": [], "findings": [], "warnings": [],
-           "enabled": enabled(config)}
+           "unanchored": [], "enabled": enabled(config)}
     out["findings"].extend(gone_findings(project, directory))
     if not out["exists"]:
         out["ok"] = not out["findings"]
@@ -2434,17 +2501,29 @@ def verify(project, config=None):
             entry["warnings"].append(
                 "%s ends with a partial line -- a writer was interrupted. The rows "
                 "before it are intact; nothing was hidden by it." % where)
-        if status_sets is None:
+        # EVERY FILE GETS AN ANSWER, including the ones the batch settled. The
+        # three branches below are three different states and used to be one
+        # `None`: the primitive looked, the batch already proved byte-identity,
+        # or nothing could be asked at all. `entry["anchor"]` is what tells a
+        # reader which, and `out["unanchored"]` is the list of files no anchor
+        # is holding - a clean chain over unanchored files is a weaker statement
+        # than a clean chain over anchored ones, and only this says which it is.
+        if status_sets is None or where in status_sets[0]:
             anchor = _git_anchor_finding(path)
-        elif where in status_sets[0]:
-            anchor = _git_anchor_finding(path)
+        elif where in status_sets[1]:
+            anchor = _anchor_unasked(
+                "git does not track %s, so there is no committed past to "
+                "anchor to" % (where,))
         else:
-            anchor = None
-        if anchor:
-            if anchor.get("finding"):
-                entry["findings"].append(anchor["finding"])
-            if anchor.get("warning"):
-                entry["warnings"].append(anchor["warning"])
+            anchor = _anchor_asked()
+        entry["anchor"] = anchor["status"]
+        entry["anchorWhy"] = anchor["why"]
+        if anchor["status"] == ANCHOR_CANNOT:
+            out["unanchored"].append([where, anchor["why"]])
+        if anchor["finding"]:
+            entry["findings"].append(anchor["finding"])
+        if anchor["warning"]:
+            entry["warnings"].append(anchor["warning"])
         out["rows"] += entry["rows"]
         out["findings"].extend(entry["findings"])
         out["warnings"].extend(entry["warnings"])
