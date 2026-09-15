@@ -191,7 +191,7 @@
     {
       "id": "P54.4",
       "title": "A decision is something the plan can hold, and a wrong bug has a status",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: an approval is recorded where the work is planned instead of travelling second-hand, and a bug that turned out not to be a bug has a status that says so. Every decision this product makes about itself currently lives in a conversation, a note or a commit message, so the refusal that protects against unrecorded approval has to be expensive - it stops and asks a human, because there is nowhere for a prior answer to live. Give a decision a home and the refusal becomes cheap: it reads the record. The bug half is the same shape from the other end - a verified negative has no row, so investigating something and finding nothing leaves no trace and the next person investigates it again. The blocker resolver already spans phases, tasks and bugs; a decision is a fourth kind of the same thing and a dependency on another session is a fifth, so they share one design pass rather than three schemas.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -222,21 +222,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:55:06Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P54.5",
       "title": "Requested work and documentation output have a home in the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: a sanity pass, an operator-requested fix wave, a product plan and the documents a run produces all have somewhere in the plan to live, so the plan gate stops warning about writes it has no way to sanction. Measured in the field: documentation and evidence directories were treated as uncovered on every write, which trains the operator to read the gate's warnings as noise - and a gate whose warnings are noise is a gate that is off. The warning is right and the plan has no place to put the thing it is warning about, so the repair is a place rather than an exception. The bound is the part that needs care: a pattern that covers the whole tree turns the gate off through the door built to keep it on, and must be refused by name.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -267,21 +267,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:55:06Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P54.6",
       "title": "The task commit is a verb, and a push is a run the plugin can see",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the successful task commit is scripted rather than prescribed in prose, and a suite that ran outside the plugin is recorded as such rather than colliding with a run the plugin did. The commit is the one git operation the plugin does not script, and four scope breaches came from an agent generalising two words of the instruction - which is what prose gets for a step performed under time pressure at the end of every task. The push half is the same class at the other end: a push runs a suite the plugin cannot see, and one that overlapped a recorded gate produced a red the plugin attributed to its own run. Both are high risk because both touch the record that everything else is graded against.",
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py",
@@ -314,21 +314,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:55:06Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P54.7",
       "title": "The gates schedule themselves for one machine, and say what they never measure",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the procedure that invites several executors at once also says what happens when each of them runs a full suite on one machine, a comparison whose two sides are both in hand is answered before the expensive step rather than after it, and the gate set is honest about the class it never measures. The parallel-safety rule was written for the file system and says nothing about the machine, which is the largest source of false failures on record here. The overlap answer arrives after a five-minute run for a comparison that needed nothing from that run, so the cost is entirely ordering. And the gates measure what is easy to measure - they never open a browser and never start a server - which is a reasonable boundary and an unstated one, so a green gate set reads as broader coverage than it is.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -358,14 +358,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T17:55:06Z",
       "completedAt": null,
       "verifiedBy": []
     }
