@@ -235,7 +235,7 @@
     {
       "id": "P47.5",
       "title": "One session's trail lives in one file",
-      "status": "in_progress",
+      "status": "done",
       "description": "After an index commit the working tree shows two journal files modified: the session's own and a second named by a per-machine token. The append path names a file by the actor's session when the actor carries one, and the index-commit writer builds an actor with no session at all, so one session's trail is split across two files and a reader following it has to know to look in both. Nothing is lost, because both are staged at sign-off, but a trail whose location depends on which verb wrote a row is a trail nobody reconstructs by hand. The repair is one key: the writer takes the session id the scripts already receive, and falls back to the machine token only when there is no session. What remains after that is the older pair - the hook names its file from the payload's session and the CLI from the environment's, and the append records the other id on the row rather than renaming the file - and this task says whether that is the same bug or a different one rather than assuming.",
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py",
@@ -266,19 +266,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7facd19",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "commit-manifest-index.record_row now files the session id through _journal_io.env_session_id(), whose None answer keeps the per-checkout writer-token fallback reachable.",
+        "descriptive": "An index commit files its row under the session that made it, so one session's trail lives in one file."
       },
       "startedAt": "2026-09-13T18:28:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T13:56:51Z",
+      "verifiedBy": [
+        "cmi19",
+        "cmi19b",
+        "cmi20"
+      ]
     },
     {
       "id": "P47.6",
       "title": "Attribution follows a continued executor to its next task",
-      "status": "in_progress",
+      "status": "done",
       "description": "The orchestrator reference prefers continuing an executor over spawning a fresh one, and the measurement behind that preference is large: a re-spawn reloads skills and context where a continuation does not. But attribution keys on the spawn description, so a continuation's whole spend lands on the first task the agent was spawned for, and the second task reads as free. The document's own preference and the document's own metering disagree, and the metering is what anybody arguing about cost will quote. The cheaper of the two repairs keeps the continuation: the follow-up message carries the task id on its first line, in the same convention the spawn description already uses, and the meter reads it. A continuation that names no task keeps attributing to the description, because inventing an attribution is worse than a known one being coarse.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
@@ -310,14 +314,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7facd19",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage_ledger gains continuation_line(), which reads the sender's first line of a message handed to a running agent past a known harness envelope; Attributor.task_from_handoff runs it through the existing description parser and attribute() answers the hand-off first, with the hand-off carried in the per-file cursor so an incremental scan still attributes.",
+        "descriptive": "A continued agent's spend on a second task is attributed to that task, so the metering stops contradicting the document's preference for continuing."
       },
       "startedAt": "2026-09-13T18:28:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T13:56:51Z",
+      "verifiedBy": [
+        "ho1",
+        "ho2",
+        "ho3",
+        "ho4",
+        "ho5",
+        "ho6"
+      ]
     }
   ]
 }
