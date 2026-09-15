@@ -95,6 +95,27 @@ With Bash/Glob/Grep — never reading secrets:
    told about is a surprise the first time a phase signs off, and this is the cheaper place to
    say it.
 
+   **Once candidates are drafted from the tree, ask whether this repository has already run any
+   of them.** A tree read is a reasonable first guess for a repository with no history and a
+   waste of it everywhere else — the evidence ledger already records every gate command that
+   ran here, its verdict and how many times:
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/propose-gates.py" <manifestPath> \
+       --command "<candidate 1>" --command "<candidate 2>" ... --json
+   ```
+
+   **THE FAILURE MODE TO DESIGN AGAINST IS THE CONFIDENT ONE.** A repository with no recorded
+   run must propose from the tree and SAY that is what it did — the tool's own `historyAvailable`
+   flag and each entry's `basis` (`"tree"` or `"history"`) are that sentence, and the proposal
+   presented to the human must carry it rather than silently reading as learned. Where history
+   exists, its own `claim` says more than pass/fail: `never-failed` (a real run, past the tool's
+   floor, that has never once failed) is a candidate to drop rather than draft again, and
+   `catches-things` (has failed before) is a candidate to keep in every plan regardless of what
+   the tree alone would have suggested. `insufficient` (some history, below the floor) is neither
+   — carry it forward from the tree and say a thin history exists, never round it up into a
+   verdict.
+
    **And record HOW the test command can be pointed at paths.** It is the only input a task's
    own gate can be derived from (step 5.3), and nothing later in the run can recover it. Beside
    each `test`-family command, note which one the runner offers: a **source→test** mode

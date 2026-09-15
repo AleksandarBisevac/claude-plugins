@@ -534,6 +534,16 @@ LAYERS = (
      # `audit-doctor` beside it because the doctor is read-only by construction
      # and a prune is a write - see this file's own docstring for the shape.
      "audit-logs",
+     # `audit-lookup` answers one question about a task, a bug or a file with
+     # a pointer, instead of the whole-manifest render `audit-status` and the
+     # whole-journal render `audit-journal show` both are. An entry point for
+     # the reason `check-ado-item` is one - it is meant to be reached from
+     # orchestrator PROSE through Bash - and it reaches `_manifest_io` (L1)
+     # and `_journal_io` (L1) for the two records, plus `_evidence_io` (L2)
+     # for the project/config resolution `boundary_for` already shares with
+     # every other reader of a manifest handed to it by path rather than by
+     # this project's own config.
+     "audit-lookup",
      # `check-ado-item` is the gate `/audit:sync push` runs an item through
      # before creating it. A command rather than a helper because the caller is
      # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a
@@ -666,6 +676,15 @@ LAYERS = (
      # rewrote five files and a gate that skipped every hook were both exit 0 and
      # neither was distinguishable from a verdict.
      "run-test-gate",
+     # `propose-gates` folds the evidence ledger into a plan proposal instead
+     # of leaving `/audit:init`'s recon read the tree alone: a candidate gate
+     # command that has run before is classified by what it actually caught,
+     # and one that has not is labelled a guess from the tree rather than
+     # left indistinguishable from a learned one. An entry point for the
+     # usual reason - the caller is orchestrator PROSE reaching Python
+     # through Bash - and it reaches `_evidence_io` (L2) for the tally and
+     # nothing else, so it is read-only and takes no lock.
+     "propose-gates",
      # `stamp-verification` is the same door one question later, and for the
      # failure the gate could not reach: a gate row carries the tree it ran on,
      # and a claim made in PROSE - an agent's reported counts, a "gates are

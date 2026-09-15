@@ -161,6 +161,8 @@ check_ledger = _trail.check_ledger
 _journal_never_committed = _trail._journal_never_committed
 _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
+check_task_restarts = _trail.check_task_restarts
+check_gate_patterns = _trail.check_gate_patterns
 
 _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
@@ -226,6 +228,13 @@ def diagnose(project, deep=False):
     check_running_plugin(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     check_journal(rep, project, cfg, cfg_mod, git_root)
+    # Directly after: `check_journal` asks whether the trail still HOLDS, and
+    # these two ask what it has been SAYING all along. Both fold the whole
+    # trail into a claim about a repeated fact rather than a single moment,
+    # which is why they come after the checks a snapshot could answer and
+    # never before them.
+    check_task_restarts(rep, project, cfg)
+    check_gate_patterns(rep, project, manifest_rel, cfg)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)

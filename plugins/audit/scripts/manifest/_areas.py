@@ -711,6 +711,11 @@ CLAIM_ANCHORS = (
     ("ado-tag-default", "ADO echo", "value",
      os.path.join("scripts", "manifest", "_manifest_ado.py"),
      r'DEFAULT_ADO_TAG\s*=\s*"([^"]+)"', "", "absent = %s"),
+    # VALUE: the lookup's own exit-code constant for "nothing matched", so a
+    # caller who renumbers it moves the value this section must go on stating.
+    ("lookup-nomatch-exit", "Answering one question about the trail", "value",
+     os.path.join("scripts", "status", "audit-lookup.py"),
+     r'E_NOMATCH\s*=\s*(\d+)', "A match that finds nothing", "(exit %s)"),
     # POSITIONAL again: the SECOND member of the status vocabulary, so renaming
     # `in_progress` moves the value this section must state.
     ("resume-status", "Resume after interruption", "value",

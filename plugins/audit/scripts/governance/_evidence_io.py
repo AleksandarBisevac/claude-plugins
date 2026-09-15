@@ -840,6 +840,84 @@ def read_rows(project, config=None):
     return {"rows": rows, "files": files, "unreadable": unreadable}
 
 
+# --- folding history into a tally, never into a verdict ------------------------
+# A CALLER FOLDS THIS INTO A CLAIM; IT NEVER IS ONE. `propose-gates.py` (a plan
+# proposal reading what history actually caught) and `_doctor_trail.py` (a
+# standing diagnostic over the same ledger) both need "how many times has this
+# run, and how many of those runs did not simply pass" - and neither is allowed
+# to invent its own count, or the two would answer one question two ways the
+# first time somebody added a step key. So the tally lives here, once, beside
+# the row shape it reads.
+#
+# THE FLOOR IS A COUNT OF RUNS, NOT A JUDGEMENT. A single recorded run passing
+# is one data point, and "never failed" said about one data point is the same
+# overclaim a lone start would be for a restart pattern - a caller that folds a
+# tally below this floor into a claim is doing the widening this module refuses
+# to do for it.
+MIN_HISTORY_RUNS = 2
+
+
+def _step_failed(step):
+    """True when a recorded step's own fields say it did not simply pass.
+
+    `outcome` is the three-valued field a runner sets for what `exit` alone
+    cannot say (a timeout, a signal, a step that could not run at all); an
+    `exit` other than zero is the ordinary failure a runner reports without
+    ever reaching for that field."""
+    if step.get("outcome"):
+        return True
+    exitcode = step.get("exit")
+    return exitcode is not None and exitcode != 0
+
+
+def _matching_steps(rows, key, value):
+    """Every step across `rows` whose `key` equals `value`, in row order.
+
+    `rows` is whatever `read_rows(...)["rows"]` returned - unordered by this
+    function's own contract, since a tally needs a count and not a sequence.
+    A caller that wants oldest-first sorts by `ts` before calling this."""
+    out = []
+    for row in (rows or []):
+        for step in (row.get("steps") or []):
+            if isinstance(step, dict) and step.get(key) == value:
+                out.append({"ts": row.get("ts"), "runId": row.get("runId"),
+                            "exit": step.get("exit"), "outcome": step.get("outcome")})
+    return out
+
+
+def gate_tally(rows, name):
+    """`(ran, failed)` for the named gate (`steps[].name`, e.g. "lint") across
+    `rows` - the basis a caller folds into a claim, never a claim on its own.
+
+    Matches the SHORT identity a runner assigns a step (`meta.buildCommands`'
+    key), which survives a command being reworded between runs - the reason
+    `command_tally` exists beside this rather than in place of it."""
+    hist = _matching_steps(rows, "name", name)
+    return len(hist), sum(1 for s in hist if _step_failed(s))
+
+
+def command_tally(rows, command):
+    """`(ran, failed)` for the literal `command` (`steps[].command`) across
+    `rows`.
+
+    Matches the VERBATIM string a manifest publishes - `_step()`'s own rule
+    for when a command is stored whole rather than as a digest - so a caller
+    proposing a candidate command matches the same spelling the manifest
+    would carry, not a name a runner happened to pick for it."""
+    hist = _matching_steps(rows, "command", command)
+    return len(hist), sum(1 for s in hist if _step_failed(s))
+
+
+def gate_names_seen(rows):
+    """Every distinct `steps[].name` recorded across `rows`, sorted."""
+    names = set()
+    for row in (rows or []):
+        for step in (row.get("steps") or []):
+            if isinstance(step, dict) and step.get("name"):
+                names.add(step["name"])
+    return sorted(names)
+
+
 def verify(project, config=None):
     """Does every recorded run still hash to what it said, in the order it said it?
 

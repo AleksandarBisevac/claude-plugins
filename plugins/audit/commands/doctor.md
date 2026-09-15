@@ -158,6 +158,24 @@ This command is **read-only**: it takes no lock, writes nothing, and never execu
 `meta.buildCommands` entry (it resolves the program each one names and reports whether that
 program exists). It is safe to run mid-phase, and safe to run in CI.
 
+## The `task restarts` and `gate patterns` lines — what keeps happening, not only what is true now
+
+Every row above answers a question about this moment. These two fold the whole trail into a
+claim about a REPEATED fact instead: whether any task has been started more times than the
+rest (the journal's `task.start` rows, grouped by task), and whether any gate has run
+repeatedly and never once failed (the same tally a plan proposal draws on in
+`propose-gates.py`). Neither is visible from a snapshot — a manifest only ever shows a task's
+*current* status, never how many times it got there.
+
+**ONE OCCURRENCE IS NOT A PATTERN**, so both hold the same floor before naming one: a trail
+thinner than that floor is **WARNING, NOT ESTABLISHED** — never a clean OK and never a
+finding it cannot support, the same taxonomy the `running plugin`/`sandbox` rows already use
+above. Once the floor is cleared, `task restarts` is a WARNING naming the task with the most
+recorded starts, and `gate patterns` is a WARNING naming any gate that has run past the floor
+and never failed — a candidate a human may want to stop paying for. Neither is ever a
+FINDING: a repeated restart or a gate that keeps passing is advice, not proof that anything
+is broken, and a run that exits 0 today still exits 0 with these rows present.
+
 **That is why cleaning up is a different command.** `/audit:logs prune` removes rows from
 `<logsDir>/plan-gate-events.jsonl` — the feed the plan gate writes and the panel's Plan gate
 card shows — and it writes, so it is not a flag here. If a user asks to clean that file,

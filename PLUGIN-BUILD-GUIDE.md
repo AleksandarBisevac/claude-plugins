@@ -143,6 +143,7 @@ claude-plugins/                           # this repo (personal, public)
           commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
           commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
+          propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
@@ -180,6 +181,7 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
+          audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -324,7 +326,7 @@ L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _output, _worktrees
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _journal_io, _output
+  _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
@@ -354,6 +356,7 @@ L7:
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
+  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _commit_trail, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups
   audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
@@ -371,6 +374,7 @@ L7:
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_settings, _panel_state, _panel_write, _ui_theme
+  propose-gates -> _evidence_io, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _journal_io, _manifest_io, _output
@@ -2581,6 +2585,16 @@ folds them into three outcomes: they agree, they differ, or it was NOT ESTABLISH
 third is not the first, so it warns rather than reading as clean. Every branch is OK or
 WARNING; a stale plugin is a thing to tell somebody, not a thing to fail a run on.
 
+**`check_task_restarts`/`check_gate_patterns` answer what KEEPS HAPPENING, not only what is
+true now** — a task started more times than any other (`task.start` rows grouped by
+`details.taskId`), and a gate that has run repeatedly and never once failed (the same
+`_evidence_io.gate_tally` a plan proposal folds into a claim in `propose-gates.py`). Both hold
+the same floor: ONE OCCURRENCE IS NOT A PATTERN, so a trail thinner than
+`RESTART_FLOOR`/`_evidence_io.MIN_HISTORY_RUNS` prints NOT ESTABLISHED rather than a clean OK
+or a finding it cannot support, and both grade a real pattern a WARNING, never a FINDING — a
+state cannot tell an operator they are paying for a gate that keeps earning nothing; only the
+trail can, and doing so is advice rather than a build failure.
+
 ### `plugins/audit/scripts/status/_doctor_completions.py`
 The one check that CORRELATES two records rather than inspecting one: the journal's
 hook-emitted `task.complete` rows against the manifest's done tasks, the commit SHAs those
@@ -2657,6 +2671,25 @@ feed that exists with rows left in it. "Nothing to remove" is otherwise a true s
 the rule and a misleading one about the file. The verb is `prune`, and it is mandatory: a bare
 invocation must not prune, which is why the positional takes one choice rather than defaulting
 to it. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
+
+### `plugins/audit/scripts/status/audit-lookup.py`
+One question, one answer, with the pointer that lets a reader check it — instead of the
+whole-plan render `audit-status.py` and the whole-journal render `audit-journal.py show`
+both are, which an agent asking "why was this cancelled" had no cheaper way to reach.
+`cancel <id>` reads a task's `outcome.descriptive` or a phase's `summary` (wherever the
+cancel verb in `audit-task.py` actually writes the reason) and cross-checks the newest
+matching `task.cancel`/`phase.cancel` journal row, matched by `details.taskId`/`phaseId`
+rather than the row's shard `target`, which several tasks in one phase share. `bug <id>`
+reads the bug's own `status`/`notes`/`fixedIn` — there is no separate resolution field in
+this schema, so that is the honest answer rather than an invented one. `file <path>` is a
+LOOKUP over `fileIndex`, never a search: an exact key match only, and the last entry in
+`fileIndex[path]` is the answer by the index's own append-only convention (never remove
+another task's id). All three return a plain "no match" — never a nearest id or a similar
+path — when the manifest does not carry an answer; an id that exists but does not apply to
+the question (a task that was never cancelled) is a different, legitimate answer and not a
+miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error. Layer 7 (an entry point
+reaching `_manifest_io`/`_journal_io` at layer 1 and `_evidence_io` at layer 2, for the
+project/config resolution `boundary_for` already shares). `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
@@ -3219,6 +3252,21 @@ fill the field. The window is the whole value of the row, so a `--started` that 
 a refusal rather than a guess — and the stamp is read by `_evidence_io`'s own reader, because a
 writer parsing instants its own way would disagree with the module that decides whether two of
 them overlap, by a time zone.
+
+### `plugins/audit/scripts/governance/propose-gates.py`
+A plan proposal that reads what previous runs in THIS repository actually ran and what they
+caught, instead of the tree alone — the waste `/audit:init`'s recon step pays everywhere except
+a repository with no history, where reading the tree is the right first guess. Folds
+`_evidence_io.command_tally` (the same tally `_doctor_trail.check_gate_patterns` reads) into one
+of four claims per candidate command: `tree` (nothing has ever run under that exact spelling —
+the confident failure mode this exists against: a repo with no recorded run must say so, not
+propose in silence), `insufficient` (some history, thinner than `_evidence_io.MIN_HISTORY_RUNS`
+supports a verdict from), `never-failed` (past the floor, no failure — a candidate for removal)
+or `catches-things` (past the floor, has failed — a candidate for every plan). `historyAvailable`
+is the repo-wide flag stated once rather than left for a reader to re-derive from every entry,
+but the basis is still per-command: a candidate this repo has never run under any spelling reads
+`tree` even in a project full of history for other commands. Read-only, exit 0/2. Layer 7 (reaches
+`_evidence_io` at layer 2 and nothing else). `--selftest`.
 
 ### `plugins/audit/scripts/governance/record-risk-confirmation.py`
 `record-risk-confirmation.py <manifest> <phaseId> --confirm-high-risk "<their words>"` —

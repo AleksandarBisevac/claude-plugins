@@ -1147,6 +1147,30 @@ edit the transition already makes** — never a separate lock cycle, never the i
 `ADO echo: N updated, M skipped (unlinked — /audit:sync push to link), K failed`.
 Omit the line entirely when the echo never applied (no `meta.ado`, or disabled).
 
+## Answering one question about the trail
+
+Three questions come up repeatedly and each has exactly one answer, carried by a pointer a
+reader can check: why a task or phase was cancelled, what a bug concluded, which task last
+touched a file. None of them needs the whole plan or the whole journal read to answer — that
+cost grows with the project instead of with the question, and the file question in particular is
+a **lookup**, not a search: `fileIndex` already records who declared what.
+
+```
+scripts/status/audit-lookup.py <manifest> cancel <taskOrPhaseId>
+scripts/status/audit-lookup.py <manifest> bug <bugId>
+scripts/status/audit-lookup.py <manifest> file <path>
+```
+
+Run it and relay its answer — do not re-derive the same fact by grepping the manifest or the
+journal by hand once this exists to answer it. **A match that finds nothing says so** (exit 1)
+and never returns the nearest id or a similar path as if it had answered; an id that exists but
+does not apply to the question (a task that was never cancelled) is a different, legitimate
+answer and not a miss.
+
+This is a narrower tool than the **Resume after interruption** procedure below, which asks a
+different question — *which phase is resumable* — and still needs the manifest read in full for
+that.
+
 ## Resume after interruption
 
 1. Read the manifest. Find the phase with `status == "in_progress"` and a non-null `branch`.

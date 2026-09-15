@@ -1689,6 +1689,53 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- gate_tally / command_tally / gate_names_seen: pure, no fixture root ---
+    # These fold ROWS a caller already has (from read_rows) into a count; no
+    # disk is read here, which is the point - a tally a caller can test without
+    # a temp directory is a tally that stays testable everywhere it is used.
+    lint_rows = [
+        {"ts": "2026-01-01T00:00:00Z", "runId": "r1",
+         "steps": [{"name": "lint", "command": "ruff check .", "exit": 0}]},
+        {"ts": "2026-01-02T00:00:00Z", "runId": "r2",
+         "steps": [{"name": "lint", "command": "ruff check .", "exit": 1}]},
+        # A DIFFERENT gate, same run - proves gate_tally narrows by name and
+        # does not fold every step in a row into the count it is asked for.
+        {"ts": "2026-01-03T00:00:00Z", "runId": "r3",
+         "steps": [{"name": "test", "command": "pytest", "exit": 0},
+                   {"name": "lint", "command": "ruff check .", "exit": 0}]},
+        # An `outcome` failure with a CLEAN exit code - the shape `_step_failed`
+        # exists for, and the fixture the exit-only reading would get wrong.
+        {"ts": "2026-01-04T00:00:00Z", "runId": "r4",
+         "steps": [{"name": "lint", "command": "ruff check .", "exit": 0,
+                    "outcome": "timed-out"}]},
+    ]
+    check("ev37 gate_tally counts every step named `lint` across the rows and "
+          "tells an exit failure from a pass: %r" % (M.gate_tally(lint_rows, "lint"),),
+          M.gate_tally(lint_rows, "lint") == (4, 2))
+    check("ev38 ...and an `outcome` failure counts even where `exit` reads "
+          "clean, which is the pair `_step_failed` was written to tell apart "
+          "from an ordinary pass",
+          M.gate_tally([lint_rows[3]], "lint") == (1, 1))
+    check("ev39 gate_tally never counts a DIFFERENT name's step, so the `test` "
+          "row above changes nothing about `lint`'s tally",
+          M.gate_tally(lint_rows, "test") == (1, 0))
+    check("ev40 command_tally matches the VERBATIM command instead of the "
+          "short name - a candidate spelled differently from the recorded "
+          "command matches nothing, which is the lookup's own discipline "
+          "applied to history instead of to a manifest",
+          M.command_tally(lint_rows, "ruff check .") == (4, 2)
+          and M.command_tally(lint_rows, "ruff check --fix .") == (0, 0))
+    check("ev41 gate_names_seen is every distinct name across the rows, "
+          "sorted, and never a step with no name at all",
+          M.gate_names_seen(lint_rows) == ["lint", "test"]
+          and M.gate_names_seen([{"steps": [{"exit": 0}]}]) == [])
+    check("ev42 MIN_HISTORY_RUNS is a floor a caller compares a tally against, "
+          "not a judgement this module makes itself - gate_tally reports the "
+          "raw count for a gate run fewer times than the floor exactly as it "
+          "would for one run well past it",
+          M.MIN_HISTORY_RUNS >= 2
+          and M.gate_tally(lint_rows[:1], "lint") == (1, 0))
+
 
 def _selftest():
     return _harness.run(_cases)

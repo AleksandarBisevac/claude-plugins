@@ -22,10 +22,21 @@ the verdict - the rule `check_locks` follows too, and for the same reason: a
 diagnostic with its own opinion about whether a chain is intact is a second
 implementation that can disagree with the one that matters.
 
+AND WHAT KEEPS HAPPENING, NOT ONLY WHAT IS TRUE NOW. Every check above answers a
+question about a single moment; `check_task_restarts` and `check_gate_patterns`
+fold the WHOLE trail into a claim about a repeated fact instead - a task started
+more times than any other, a gate that has run repeatedly and never once failed.
+Both carry the same discipline: a trail too short to support the claim says so,
+graded a WARNING and never a FINDING, because a fresh install that has asked for
+nothing must not fail a build for having no history yet - and one occurrence is
+never printed as a pattern.
+
 Layer 4, and the ledger is what sets the floor: `check_ledger` runtime-loads
-`usage_ledger` (layer 3), so this cannot sit below 4. `_journal_io` (layer 1) is
-imported rather than loaded - the trail's library half came out from under
-`audit-journal.py` for exactly that reason.
+`usage_ledger` (layer 3), so this cannot sit below 4. `_journal_io` (layer 1) and
+`_evidence_io` (layer 2) are imported rather than loaded - the trail's library
+half came out from under `audit-journal.py` for exactly that reason, and the
+gate-pattern check reads the same evidence tally `propose-gates.py` folds into a
+plan proposal rather than re-deriving it a second time.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
@@ -62,6 +73,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
+import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -732,6 +744,154 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         return
     rep.ok("journal", "%d row(s) in %d file(s) under %s, chain intact"
            % (res.get("rows", 0), len(res.get("files") or []), where))
+
+
+# --- checks: patterns, not only state -------------------------------------------
+# EVERYTHING ABOVE THIS MARKER ANSWERS "IS IT TRUE NOW." A single journal row or
+# a single ledger row is a fact about one moment, and folding many of them into
+# "this keeps happening" is a different claim that needs its own floor: ONE
+# OCCURRENCE IS NOT A PATTERN, so a check below must say a claim could not be
+# established rather than rounding a thin trail up into one. That is a WARNING,
+# never a FINDING - a fresh install that has asked for nothing must not fail a
+# build for having no history yet, the same rule `check_running_plugin` and
+# `_anchor_row` already grade by above.
+RESTART_FLOOR = 2  # fewer `task.start` rows for one id is a single run, not a restart pattern
+
+
+def task_start_counts(rows):
+    """`{taskId: count}` of `task.start` journal rows, keyed by `details.taskId`.
+
+    `target` is the shard path a start landed in, and several tasks in one
+    phase share it - `details.taskId` is the identity this question is about,
+    the same reason `_journal_cancel` (audit-task.py) puts a task id in
+    `details` instead of leaving a reader to re-derive it from the row's
+    target."""
+    counts = {}
+    for row in (rows or []):
+        if row.get("action") != "task.start":
+            continue
+        tid = (row.get("details") or {}).get("taskId")
+        if not tid:
+            continue
+        counts[tid] = counts.get(tid, 0) + 1
+    return counts
+
+
+def check_task_restarts(rep, project, config=None):
+    """Has any task needed to be started more times than the rest?
+
+    A STATE can only say a task IS `in_progress`; this is the question that
+    needs the whole trail, because a snapshot cannot count how many times
+    something happened. `attempts` on the manifest already carries the same
+    number for one task at a time - this is what the JOURNAL can say about
+    every task at once, which is what makes it a pattern rather than a fact
+    about whichever task a reader happened to open.
+
+    ONE OCCURRENCE IS NOT A PATTERN: a task started exactly once, which is the
+    ordinary path for nearly all of them, prints no restart claim at all
+    beyond the OK line below the floor. A trail with no `task.start` rows at
+    all is NOT ESTABLISHED rather than clean - a manifest that has never
+    started a task has not earned an OK about restarts, it has earned a
+    warning saying the question cannot be answered yet."""
+    try:
+        rows = _journal_io.read_all(project, config)
+    except Exception as exc:
+        rep.warn("task restarts", "could not read the journal: %s" % (exc,))
+        return
+    counts = task_start_counts(rows)
+    if not counts:
+        rep.warn("task restarts",
+                 "no `task.start` rows recorded yet, so a restart pattern "
+                 "cannot be established",
+                 "the row is written on every task start; start one and "
+                 "re-check")
+        return
+    repeated = sorted(
+        ((tid, n) for tid, n in counts.items() if n >= RESTART_FLOOR),
+        key=lambda kv: (-kv[1], kv[0]))
+    if not repeated:
+        rep.ok("task restarts",
+               "%d task(s) have a recorded start; none reaches the floor a "
+               "restart pattern needs" % (len(counts),))
+        return
+    worst_id, worst_n = repeated[0]
+    others = ", ".join("%s (%d)" % (tid, n) for tid, n in repeated[1:])
+    detail = ("%s has the most recorded starts of any task (%d) - the "
+             "pattern this trail can actually support" % (worst_id, worst_n))
+    if others:
+        detail += "; also past the floor: %s" % (others,)
+    rep.warn("task restarts", detail,
+             "each start is its own `task.start` row - `audit-journal.py "
+             "show` reads them back, or open the task and read `attempts`")
+
+
+def check_gate_patterns(rep, project, manifest_rel, config=None):
+    """Has any gate run enough times to say it has never once failed?
+
+    Reuses `_evidence_io.gate_tally`/`gate_names_seen` - the same tally
+    `propose-gates.py` folds into a plan proposal - because "this gate has
+    never failed" is one fact whether it is read at proposal time or at
+    doctor time, and a second reading of one ledger is free to disagree with
+    the first the day a step key changes shape.
+
+    A STATE cannot tell an operator they are paying for a gate that never
+    catches anything; only the trail can. ONE OCCURRENCE IS NOT A PATTERN
+    here either - a gate that has run fewer times than the floor a verdict
+    needs is NOT ESTABLISHED, named as such, and never folded into either the
+    clean OK or the never-failed warning."""
+    manifest_path = os.path.join(project, manifest_rel or
+                                 "docs/audit/audit-plan.json")
+    try:
+        eproject, econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
+    except Exception as exc:
+        rep.warn("gate patterns", "could not read the evidence ledger: %s"
+                 % (exc,))
+        return
+    names = _evidence_io.gate_names_seen(rows)
+    if not names:
+        rep.warn("gate patterns",
+                 "no evidence rows recorded yet, so a gate's pass/fail "
+                 "pattern cannot be established",
+                 "run a phase gate to start recording; a pattern needs "
+                 "repeated runs past the floor")
+        return
+    never_failed, thin = [], []
+    for name in names:
+        ran, failed = _evidence_io.gate_tally(rows, name)
+        if ran < _evidence_io.MIN_HISTORY_RUNS:
+            thin.append(name)
+        elif failed == 0:
+            never_failed.append("%s (ran %d)" % (name, ran))
+    if never_failed:
+        rep.warn("gate patterns",
+                 "past the floor and never failed once, which is a "
+                 "candidate to drop rather than keep paying for: %s"
+                 % ("; ".join(never_failed),),
+                 "the rows are in the evidence ledger at %s"
+                 % (_evidence_io.evidence_dir(eproject, econfig),))
+        return
+    checked = len(names) - len(thin)
+    if thin and checked:
+        rep.warn("gate patterns",
+                 "%d gate(s) checked past the floor with no never-failed "
+                 "pattern; still below the floor: %s"
+                 % (checked, ", ".join(thin)),
+                 "the pattern becomes checkable once each has run past the "
+                 "floor")
+        return
+    if thin:
+        rep.warn("gate patterns",
+                 "recorded but below the floor a verdict needs, so no "
+                 "never-failed pattern can be established yet: %s"
+                 % (", ".join(thin),),
+                 "the pattern becomes checkable once each has run past the "
+                 "floor")
+        return
+    rep.ok("gate patterns",
+           "%d gate(s) checked past the floor; none goes without a failure"
+           % (checked,))
 
 
 # --- cli ------------------------------------------------------------------------

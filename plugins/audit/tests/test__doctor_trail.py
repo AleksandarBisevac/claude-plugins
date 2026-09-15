@@ -28,6 +28,7 @@ from _output import safe_stdio                     # noqa: E402
 import _doctor_trail as M                          # noqa: E402
 import _doctor_report as base                      # noqa: E402  (the collector)
 import _journal_io                                 # noqa: E402
+import _evidence_io                                # noqa: E402
 import _loader                                     # noqa: E402
 import _output                                     # noqa: E402  (the anchor: PLUGIN_ROOT, plugin_version)
 
@@ -859,6 +860,95 @@ def _cases(check):
               rep.counts()["FINDING"] == 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- check_task_restarts / check_gate_patterns: their own fresh project, --
+    # --- so none of the sixty-odd cases above can leave a row behind that   --
+    # --- this pattern count would silently absorb.                          --
+    patt = _harness.fixture_root("doctor-trail-patterns-")
+    try:
+        os.makedirs(os.path.join(patt, "docs", "audit"))
+
+        rep = base.Report()
+        M.check_task_restarts(rep, patt)
+        check("dtp1 no `task.start` rows anywhere reads NOT ESTABLISHED, never "
+              "a clean OK - a fresh manifest has not earned a claim about "
+              "restarts it has no rows to support: %r"
+              % (_levels(rep, "task restarts"),),
+              _levels(rep, "task restarts") == ["WARNING"]
+              and "cannot be established" in _detail(rep, "task restarts"))
+
+        _journal_io.append(patt, {"action": "task.start", "actor": "probe",
+                                  "ts": "2026-01-01T00:00:00Z",
+                                  "details": {"taskId": "P1.1"}})
+        _journal_io.append(patt, {"action": "task.start", "actor": "probe",
+                                  "ts": "2026-01-02T00:00:00Z",
+                                  "details": {"taskId": "P1.2"}})
+        rep = base.Report()
+        M.check_task_restarts(rep, patt)
+        check("dtp2 ONE OCCURRENCE IS NOT A PATTERN: every task here started "
+              "exactly once, so this is a clean OK and not a warning about "
+              "restarts nobody had: %r" % (_levels(rep, "task restarts"),),
+              _levels(rep, "task restarts") == ["OK"])
+
+        _journal_io.append(patt, {"action": "task.start", "actor": "probe",
+                                  "ts": "2026-01-03T00:00:00Z",
+                                  "details": {"taskId": "P1.1"}})
+        rep = base.Report()
+        M.check_task_restarts(rep, patt)
+        check("dtp3 a task started past the floor is the pattern this trail "
+              "supports, and it names the task: %r" % (_detail(rep,
+                                                              "task restarts"),),
+              _levels(rep, "task restarts") == ["WARNING"]
+              and "P1.1" in _detail(rep, "task restarts"))
+
+        # -------------------------------------------------- check_gate_patterns
+        rep = base.Report()
+        M.check_gate_patterns(rep, patt, "docs/audit/audit-plan.json")
+        check("dtp4 no evidence rows at all reads NOT ESTABLISHED for gate "
+              "patterns too, the same taxonomy as the restart check above: %r"
+              % (_levels(rep, "gate patterns"),),
+              _levels(rep, "gate patterns") == ["WARNING"]
+              and "cannot be established" in _detail(rep, "gate patterns"))
+
+        _evidence_io.append_row(patt, {"v": 1, "runId": "g1",
+            "ts": "2026-01-01T00:00:00Z", "scope": "task", "status": "passed",
+            "steps": [{"name": "lint", "command": "ruff check .", "exit": 0}],
+            "failed": []})
+        rep = base.Report()
+        M.check_gate_patterns(rep, patt, "docs/audit/audit-plan.json")
+        check("dtp5 a gate recorded below the floor is neither OK nor a "
+              "never-failed finding - it is not established, named as such: "
+              "%r" % (_detail(rep, "gate patterns"),),
+              _levels(rep, "gate patterns") == ["WARNING"]
+              and "below the floor" in _detail(rep, "gate patterns"))
+
+        _evidence_io.append_row(patt, {"v": 1, "runId": "g2",
+            "ts": "2026-01-02T00:00:00Z", "scope": "task", "status": "passed",
+            "steps": [{"name": "lint", "command": "ruff check .", "exit": 0}],
+            "failed": []})
+        rep = base.Report()
+        M.check_gate_patterns(rep, patt, "docs/audit/audit-plan.json")
+        check("dtp6 a gate run past the floor that has never failed is the "
+              "pattern a doctor can name that a state never could - a "
+              "candidate to stop paying for: %r"
+              % (_detail(rep, "gate patterns"),),
+              _levels(rep, "gate patterns") == ["WARNING"]
+              and "candidate to drop" in _detail(rep, "gate patterns"))
+
+        _evidence_io.append_row(patt, {"v": 1, "runId": "g3",
+            "ts": "2026-01-03T00:00:00Z", "scope": "task", "status": "failed",
+            "steps": [{"name": "lint", "command": "ruff check .", "exit": 1}],
+            "failed": ["lint"]})
+        rep = base.Report()
+        M.check_gate_patterns(rep, patt, "docs/audit/audit-plan.json")
+        check("dtp7 SECOND DIRECTION: the moment that same gate has failed "
+              "once, the never-failed claim must stop being made about it - "
+              "a check that kept warning here would be the widened, "
+              "over-firing half of this pattern: %r"
+              % (_levels(rep, "gate patterns"),),
+              _levels(rep, "gate patterns") == ["OK"])
+    finally:
+        shutil.rmtree(patt, ignore_errors=True)
 
 
 def _selftest():
