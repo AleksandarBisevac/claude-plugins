@@ -80,8 +80,8 @@ _output.install_path()
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
 import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
-from _journal_io import (command_facts, redacted_text,  # noqa: E402
-                         repo_relative_or_token)
+from _journal_io import (command_facts, redacted_paths,  # noqa: E402
+                         redacted_text, repo_relative_or_token)
 
 DEFAULT_DIRNAME = "evidence"
 
@@ -429,7 +429,20 @@ def row_for(project, result, scope, ids, identity, published=None):
             "treeMutated": None if result.get("treeMutated") is None else mutated,
             "treeBasis": result.get("treeBasis"),
             "coverage": None if result.get("overlap") is None else coverage,
-            "coverageBasis": result.get("coverageBasis"),
+            # THE ONE BASIS SENTENCE A RUNNER'S OUTPUT REACHES, and therefore
+            # the one that needs the journal's redactor. `treeBasis`,
+            # `countsBasis` and the rest are composed here out of counts this
+            # plugin took; this one ends in a sample of the paths the runner
+            # PRINTED, so on a project whose suite reports absolute paths the
+            # row was carrying somebody's home directory into a committed,
+            # hash-chained file. `_paths` beside it has answered that question
+            # for the path LIST since it existed; the sentence went unredacted
+            # because it is a sentence. `redacted_paths` and not
+            # `redacted_text`: the bound belongs to a journal value, and every
+            # other basis on this row is stored whole.
+            "coverageBasis": (
+                None if result.get("coverageBasis") is None
+                else redacted_paths(project, result.get("coverageBasis"))),
         },
     }
     # THE BASIS FOR THE ONE STATUS WORD THAT HAS NO OTHER. `failed` is read back

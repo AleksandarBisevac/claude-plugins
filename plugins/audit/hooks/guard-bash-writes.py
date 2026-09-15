@@ -357,12 +357,13 @@ _EXEC_END = frozenset((";", "+"))
 # (F212). One name, two questions, and the answers point opposite ways: `cd` makes
 # a command safer to ignore and its LOCATION harder to establish.
 _DIR_CHANGE_CMDS = frozenset(("cd", "pushd", "popd"))
-# Marks that stop a `cd` argument being read as a literal directory. Every one of
-# them is something the SHELL resolves and the payload does not carry: parameter
-# and command substitution, a glob, a home reference. `-` (the previous directory)
-# needs no entry - it is filtered out with the other option-looking words, which
-# leaves no target at all, which is the same answer.
-_UNRESOLVED_MARKS = ("$", "`", "*", "?", "~")
+# Marks that stop a `cd` argument being read as a literal directory, BORROWED
+# rather than spelled: `_config` owns the set because the secrets guard asks the
+# same question of a write target, and a guard that resolved `${WT}` here while
+# the other resolved it there would be two answers to one question. `-` (the
+# previous directory) needs no entry - it is filtered out with the other
+# option-looking words, which leaves no target at all, which is the same answer.
+_UNRESOLVED_MARKS = _config.UNRESOLVED_MARKS
 
 
 def _tokenize(text):
@@ -573,7 +574,7 @@ def directory_change_basis(command, cwd, watching):
         if not words or words[0] not in _DIR_CHANGE_CMDS:
             continue
         args = [w for w in words[1:] if not w.startswith("-")]
-        if len(args) != 1 or any(m in args[0] for m in _UNRESOLVED_MARKS):
+        if len(args) != 1 or not _config.resolvable_destination(args[0]):
             return ("the command moved the shell with `%s` and this guard cannot "
                     "tell where to, so it cannot place the command in a working "
                     "tree at all; what is dirty in the tree it watches belongs to "

@@ -1301,6 +1301,101 @@ def _cases(check):
     finally:
         _sh2.rmtree(str(Path(_outside).parent), ignore_errors=True)
 
+    # (ud) A DESTINATION ONLY THE SHELL CAN RESOLVE IS NOT A PATH IN THIS TREE.
+    # Every write grammar here used to hand its target to `within_root`, which
+    # joins a relative-looking word onto the repository root - so
+    # `echo x > "$HOME/notes.py"` was inside the tree, matched no exempt glob,
+    # was covered by no in_progress task, and was REFUSED under a name no
+    # `task.files` entry can ever hold. The stated reason came out of the
+    # resolution that produced it, which is the guard-by-spelling class, and a
+    # refusal nobody can act on is the one people route around.
+    #
+    # THE SED SPELLING WAS WORSE THAN THE OTHERS AND ITS CASE IS SEPARATE. That
+    # branch extracts with `_PATHY_TOKEN`, whose class carried no `$`, so the
+    # target arrived as `HOME/notes.py` - a path that appears nowhere in the
+    # command at all - and by then the mark that says "unresolved" was gone.
+    _plan(True, [_covered])
+    _ud_forms = ('echo x > "%s"', 'cat a | tee "%s"', "sed -i 's/a/b/' %s",
+                 'python3 -c "open(\'%s\',\'w\').write(1)"')
+    _ud_marked = ("$HOME/notes.py", "${OUT}/app.ts", "~/app.ts")
+    _ud_said = [(shape, dest,
+                 M.decide(bash(shape % dest), cfg=cfg_enforced))
+                for shape in _ud_forms for dest in _ud_marked]
+    _ud_said += [(shape, dest, M.decide(bash(shape % dest), cfg=cfg_enforced))
+                 for shape in _ud_forms[:2]
+                 for dest in ("$(pwd)/app.ts", "`pwd`/app.ts")]
+    check("ud1 at the STRICTEST tier, a write whose destination only the shell "
+          "can resolve is allowed in every grammar this hook reads, and the "
+          "reason says the destination could not be established rather than "
+          "'no secret read' - a silence and a withdrawal are different "
+          "sentences: %r" % ([r for r in _ud_said if r[2][0] != "allow"][:3],),
+          all(v == "allow" and "destination not established" in m
+              for _s, _d, (v, m) in _ud_said))
+    # THE OVER-FIRE CASE, and the only one that fails when the predicate widens:
+    # a guard that called every target unresolvable would pass ud1 forever while
+    # retiring the whole write arm. A destination the payload DOES carry is
+    # still graded, in both directions - refused when the plan covers nothing,
+    # allowed when the running task declares it.
+    check("ud2 ...while a destination the payload really does carry is graded "
+          "exactly as before: the uncovered file is refused in all three "
+          "spellings and the file the running task DECLARES is allowed",
+          _agree(_uncovered, cfg) == ["block"]
+          and _agree(_covered, cfg) == ["allow"],
+          repr((_agree(_uncovered, cfg), _agree(_covered, cfg))))
+    check("ud3 the sed branch carries the expansion WHOLE - the precondition "
+          "ud1 reads for that grammar, and the case that goes red if the token "
+          "class loses a mark again and the target comes back as a name the "
+          "operator never typed: %r"
+          % (M._shell_write_targets("sed -i 's/a/b/' \"$HOME/notes.py\""),),
+          M._shell_write_targets("sed -i 's/a/b/' \"$HOME/notes.py\"")
+          == ["$HOME/notes.py"])
+    # THE MANIFEST ARM ASKS THE SAME QUESTION, because `rel_path` normalises: a
+    # word only the shell can resolve, followed by enough `..`, walks onto the
+    # literal this arm compares against and the refusal is again about a
+    # spelling. Both directions, because this is the strictest rule in the file
+    # and a skip here must not become a way past it.
+    check("ud4 a manifest path reached THROUGH an expansion is not the "
+          "manifest, while the literal path still is - the strict rule keeps "
+          "its subject and stops inheriting one from `..` arithmetic",
+          M._manifest_write_hit('echo x > "$X/../docs/audit/audit-plan.json"',
+                                str(tmp), cfg) is None
+          and M._manifest_write_hit("echo x > docs/audit/audit-plan.json",
+                                    str(tmp), cfg)
+          == "docs/audit/audit-plan.json")
+    # WHAT THIS DELIBERATELY DOES NOT DO, said as a case so it is a decision
+    # rather than a gap somebody finds later. A word the shell resolves is
+    # unestablished wherever it sits in the path, so a leaf expansion under a
+    # directory the plan could name is allowed too. The write is not invisible:
+    # `guard-bash-writes` reads `git status` afterwards and reports it by the
+    # path git prints, which is the residual SECURITY.md already assigns it.
+    check("ud5 an expansion in the LEAF is unestablished as well, and the "
+          "allow is the honest answer rather than a refusal naming a file that "
+          "does not exist - the after-the-fact reporter is what covers it",
+          M.decide(bash('echo x > "src/$F.ts"'), cfg=cfg_enforced)[0] == "allow"
+          and M.decide(bash("echo x > src/plain.ts"),
+                       cfg=cfg_enforced)[0] == "block")
+    # WHERE THIS STOPS, MEASURED RATHER THAN CLAIMED. A redirect and a `tee`
+    # take their target as one word, so a command substitution reaches the
+    # predicate whole. The `sed -i` branch harvests with `_PATHY_TOKEN` and the
+    # interpreter branch reads a string literal, and neither grammar spans the
+    # brackets - so that spelling comes back as a fragment beginning at the
+    # separator, or as nothing. The fragment is absolute and lands outside the
+    # repository, which is the one thing that keeps it out of a refusal; the
+    # limit is recorded here because a limit nothing names reads as coverage.
+    check("ud6 the substitution spelling is carried by the word-shaped "
+          "grammars and not by the two that parse inside a command - and what "
+          "the parsing ones come back with can produce no refusal, which is "
+          "why the gap costs a sentence rather than a verdict: %r"
+          % ((M._shell_write_targets("sed -i 's/a/b/' $(pwd)/app.ts"),
+              M._eval_write_targets(
+                  "python3 -c \"open('$(pwd)/app.ts','w')\"")),),
+          M._shell_write_targets("sed -i 's/a/b/' $(pwd)/app.ts")
+          == ["/app.ts"]
+          and M._eval_write_targets(
+              "python3 -c \"open('$(pwd)/app.ts','w')\"") == []
+          and M.decide(bash("sed -i 's/a/b/' $(pwd)/app.ts"),
+                       cfg=cfg_enforced)[0] == "allow")
+
     # (pg1) THE HALF THAT MUST NOT MOVE, asserted as a matrix rather than as a
     # case. `scripts/config/_help.py` publishes the rule these arms live under -
     # the secret rules are never graded, because logging an auth token is wrong
@@ -1629,14 +1724,14 @@ def _cases(check):
               "the in-repo path and declines to name the out-of-repo one, "
               "which is what xs1/xs2 read downstream",
               M._source_write_hit("sed -i 's/a/b/' %s" % _out_x, str(tmp),
-                                  cfg_enforced) is None
+                                  cfg_enforced)["hit"] is None
               and M._source_write_hit("sed -i 's/a/b/' src/app.ts", str(tmp),
-                                      cfg_enforced) == "src/app.ts")
+                                      cfg_enforced)["hit"] == "src/app.ts")
         check("xs4 a command writing BOTH keeps the in-repo finding - declining "
               "the out-of-scope target must skip that target, never abandon "
               "the scan",
               M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_x,
-                                  str(tmp), cfg_enforced) == "src/app.ts")
+                                  str(tmp), cfg_enforced)["hit"] == "src/app.ts")
         # xs5/xs6 REPRODUCE THE WINDOWS SPELLINGS ON EVERY PLATFORM, because what
         # broke was the TOKENISER and a tokeniser has no platform. Only the
         # extraction is asserted - `within_root` is os.path.realpath's caller and

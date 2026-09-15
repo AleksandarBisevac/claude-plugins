@@ -633,7 +633,9 @@ one-liners (`python -c`, `node -e`, …); also blocks `printenv`/`env` dumps and
 token-like vars. Plan-first backstop for Bash writes: inline-eval writes AND the high-signal
 shell write forms (`sed -i`, `tee`, `>`/`>>`/`1>`/`>|` redirects — heredoc redirects included) into
 non-exempt source files not covered by an `in_progress` task (source extensions derive from
-`tddReminder.sourceGlobs`). Both arms ask one function, `_ungoverned_write_target`, and both are
+`tddReminder.sourceGlobs`). Both arms ask one function, `_ungoverned_write_target`, which declines to grade a
+destination only the shell can resolve rather than reading that spelling as a path in the
+tree, and both are
 **graded on the plan gate's tier** through one more, `_plan_gate_write_verdict` — the only place
 in this hook that may read a tier, and one no secret rule calls. That is the separation: plan
 COVERAGE needs a plan to mean anything, a secret does not. Listing NAMES stays allowed. `secretPatterns.extra` (config) adds

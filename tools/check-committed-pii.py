@@ -197,13 +197,28 @@ def tracked_paths(repo=None):
 # (`-Users-someone-Desktop-...`), a URL percent-escaped, and a Windows path
 # backslashed -- three renderings of one leak, and a substitution table that tried
 # to cover all three is what the redaction deliberately does not do.
+#
+# THE LEADING SEPARATOR IS NOT WHAT MAKES A PATH SOMEBODY'S MACHINE, and keying
+# on it left the narrowest possible hole in the rule this file exists for. A
+# producer that trims leading dots and separators hands the next reader
+# `Users/someone/proj/x.js`, which looks repo-relative, resolves as
+# repo-relative, and carries a home directory - so the detector whose whole
+# subject is that leak went green on it. The separator is therefore OPTIONAL and
+# a token BOUNDARY is what is required instead: the match must begin where a
+# word begins, which is what keeps `docs/home/alice.md` and `src/users/x.ts` -
+# repo-relative paths that merely resemble one - out of the set. The producer
+# side is fixed too (`run-test-gate.files_named` keeps the separator now); a
+# detector that could only see the tidy spelling is the half of that pair which
+# has to stand on its own, because it is the one reading bytes somebody already
+# committed.
+_TOKEN_START = r"(?<![A-Za-z0-9._~$+/\\-])"
 DETECTORS = (
-    ("posix-home", re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")),
+    ("posix-home", re.compile(_TOKEN_START + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
     ("windows-user-path", re.compile(r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
     ("session-slug", re.compile(r"-(?:Users|home)-[A-Za-z0-9._]+|-private-tmp-")),
     ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
-    ("tempdir-session", re.compile(r"/(?:private/)?tmp/claude-\d+"
-                                   r"|/var/folders/[A-Za-z0-9_+]{2,}"
+    ("tempdir-session", re.compile(_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
+                                   r"|" + _TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
                                    r"|\\Temp\\claude-", re.I)),
     ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
 )
@@ -732,6 +747,44 @@ def _cases(check):
                                "docs/audit/audit-plan.json\n", "report")
     check("q2 an ordinary rendered line trips NOTHING - a check that flagged every "
           "file would be muted within a day: %r" % (_clean,), _clean == [])
+
+    # THE SPELLING WITH THE LEADING SEPARATOR ALREADY GONE. A producer that
+    # trimmed leading dots and separators is how a home directory reached a
+    # committed row looking repo-relative, and this file was the thing that was
+    # supposed to see it. Driven inside a quoted JSON value because that is the
+    # shape the row actually stores - a bare line would let a start-anchored
+    # pattern pass for a boundary test.
+    _stripped = (
+        ("posix-home", '{"coverageBasis":"among them: Users/%s/p/x.js"}' % _user),
+        ("posix-home", '{"coverageBasis":"among them: home/%s/p/x.js"}' % _user),
+        ("tempdir-session", '{"b":"tmp/claude-501/probe, private/tmp/claude-7/x"}'),
+        ("tempdir-session", '{"b":"var/folders/zz/T/probe"}'),
+    )
+    _blind = [(want, line, sorted(set(h[2] for h in scan_text("f.jsonl", line,
+                                                              "evidence"))))
+              for want, line in _stripped
+              if want not in set(h[2] for h in scan_text("f.jsonl", line,
+                                                         "evidence"))]
+    check("q2a a machine path whose LEADING SEPARATOR was stripped is still "
+          "found - the narrowest hole there is in a check whose whole subject "
+          "is this class, and the one that was open: %r" % (_blind,),
+          _blind == [])
+    # THE ALLOW CASE FOR q2a, AND IT IS THE ONE TO DRIVE HARDEST. Dropping the
+    # separator requirement without putting a boundary in its place convicts
+    # every repo-relative path with `home` or `users` as a directory inside it -
+    # honest paths, in a file the plugin writes, reported as somebody's machine.
+    # That is the shape that gets a check switched off rather than fixed.
+    _honest = ("docs/home/alice.md", "src/users/profile.ts",
+               "app/home/settings.ts", "myhome/index.ts",
+               "a/var/folders/index.ts", "build/tmp/claude-notes.md")
+    _wrong = [(p, sorted(set(h[2] for h in scan_text("f.jsonl",
+                                                     '{"coverage":["%s"]}' % p,
+                                                     "evidence"))))
+              for p in _honest
+              if scan_text("f.jsonl", '{"coverage":["%s"]}' % p, "evidence")]
+    check("q2b ...and a repo-relative path that merely RESEMBLES one is left "
+          "alone: the separator became optional, not absent, and a match has "
+          "to start where a word starts: %r" % (_wrong,), _wrong == [])
 
     # The rule this whole file would otherwise break one layer out. Counted over
     # the rendered line rather than asserted absent, because a report that

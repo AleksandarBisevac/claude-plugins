@@ -1426,12 +1426,26 @@ def files_named(text):
     runner that prints no paths has told us nothing about coverage, and rendering
     that as "none of them names a file this task owns" would be the false claim
     this whole file exists to prevent.
+
+    ONLY A LEADING `./` COMES OFF, AND STRIPPING MORE DISGUISED THE PATH. The
+    cut used to be a character-class strip, which takes every leading dot and
+    separator - so `/Users/someone/proj/node_modules/x.js` arrived as
+    `Users/someone/...`, a string that reads as repo-relative and is not, and
+    `.claude/audit.config.json` lost the dot that names it. These paths reach a
+    COMMITTED row through the coverage basis, where every reader downstream -
+    the journal's redactor, the check that grades committed bytes - decides by
+    asking whether the path is absolute. A separator this function removes is a
+    separator none of them can ask about, which is how somebody's home directory
+    became invisible to the check whose whole subject it is. Matching is
+    unaffected: the comparison already relates a path to a suffix of itself.
     """
     found = set()
     for raw in _PATHISH.findall(text or ""):
         tok = raw.strip().strip(":,;\"'()[]").replace("\\", "/")
-        if tok and not tok.endswith("/"):
-            found.add(tok.lstrip("./"))
+        while tok.startswith("./"):
+            tok = tok[2:]
+        if tok and tok != "." and not tok.endswith("/"):
+            found.add(tok)
     return found or None
 
 

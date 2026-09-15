@@ -969,6 +969,40 @@ def _cases(check):
           "two go red for a reason no reader can see and one goes GREEN: %r"
           % (_cd_literals,), _cd_literal_ok, _detail_wt)
 
+    # (ud) WHETHER A WORD NAMES A PLACE THIS PROCESS CAN FIND is one question,
+    # and it now has one answer. `guard-secrets-read` asks it of a WRITE target
+    # before grading plan coverage, this hook asks it of a `cd` target before
+    # placing a command in a tree, and the secrets guard used to answer it by
+    # resolving the word against the repository root - which put `$HOME/notes.py`
+    # inside the tree and refused a file of that name. The set lives in `_config`
+    # so the two cannot answer differently; these cases are what fails if a
+    # future edit gives this file a private copy again.
+    check("ur1 the marks come from `_config` and are not a second copy here - "
+          "the identity, not an equal-looking tuple, because a copy that starts "
+          "equal is exactly what drifts: %r"
+          % (M._UNRESOLVED_MARKS,),
+          M._UNRESOLVED_MARKS is _config.UNRESOLVED_MARKS)
+    _ur_marked = ['cd "$PHASE_WT"', "cd ${PHASE_WT}", "cd $(cat where)",
+                  "cd `cat where`", "cd ~/work", "cd /x/{a,b}", "cd /x/w*"]
+    _ur_said = [cmd for cmd in _ur_marked
+                if "cannot tell where to" not in (M.directory_change_basis(
+                    cmd + " && python3 tools/gen.py", "/x", "/x") or "")]
+    check("ur2 every spelling the SHELL resolves and the payload does not carry "
+          "withdraws the claim rather than naming a tree - the brace and glob "
+          "forms are the ones the old private set could not see: %r"
+          % (_ur_said,), _ur_said == [])
+    # THE OTHER DIRECTION, and it is the one a widening breaks: a predicate that
+    # called every argument unresolvable would pass ud2 forever while retiring
+    # wt7, wt9 and wt10 - the claim would be withdrawn from every command that
+    # carries a `cd` at all, which is most of an agent's.
+    check("ur3 ...while a literal target is still resolved and still placed: a "
+          "`cd` OUT of the watched tree names where it went, and a `cd` INTO it "
+          "withdraws nothing",
+          "not the tree this guard watches" in (M.directory_change_basis(
+              "cd /elsewhere && python3 tools/gen.py", "/x", "/x") or "")
+          and M.directory_change_basis(
+              "cd deeper && python3 tools/gen.py", "/x", "/x") is None)
+
     # (dn) `2>/dev/null` is the most ordinary read idiom there is, and the
     # blanket "any `>` is hostile" check read it as a write - which put
     # `cat x 2>/dev/null` back on the watched side and handed it the blame for a

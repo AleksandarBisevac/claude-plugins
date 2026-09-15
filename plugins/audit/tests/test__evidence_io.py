@@ -325,6 +325,60 @@ def _cases(check):
               and _ro["steps"][0]["failing"][-1]
               == "case %d" % (M.MAX_FAILING - 1,))
 
+        # ef4-ef6: THE SECOND DOOR RUNNER OUTPUT COMES THROUGH, and it stood
+        # open. The coverage basis ends in a sample of the paths the RUN printed
+        # - a jest or pytest run naming absolute paths puts the operator's home
+        # directory in it - and the row stored that sentence verbatim while the
+        # path LIST beside it had been redacted since it existed. The sentence
+        # went unnoticed because it is a sentence.
+        _cb_abs = "/Users/%s/work/shop/node_modules/x.js" % (_leak_user,)
+        _with_cb = dict(RESULT)
+        _with_cb["coverageBasis"] = (
+            "the runner named 2 path(s); the work under test declares 1 "
+            "file(s); among them: %s, src/a.py" % (_cb_abs,))
+        _rc = M.row_for(plain, _with_cb, "task", {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"])
+        check("ef4 the coverage basis is redacted on the way in, by the same "
+              "redactor the failing lines use: the home directory occurs "
+              "nowhere in the row, and the sentence still says what it said: %r"
+              % (_rc["observations"]["coverageBasis"],),
+              _journal_io.canonical(_rc).count(_leak_user) == 0
+              and _journal_io.canonical(_rc).count("/Users/") == 0
+              and _journal_io.OUTSIDE_TOKEN
+              in _rc["observations"]["coverageBasis"])
+        # THE OTHER DIRECTION, and it is what a redactor is usually broken BY: a
+        # rule that tokenised everything would make the sample useless and the
+        # counts unreadable, after which the field is noise and the next reader
+        # deletes it.
+        check("ef5 ...and what the basis is FOR survives it - the counts, the "
+              "sentence, and the repo-relative path in the same sample, which "
+              "is the half a redactor that tokenised every path would lose",
+              "the runner named 2 path(s)"
+              in _rc["observations"]["coverageBasis"]
+              and "src/a.py" in _rc["observations"]["coverageBasis"])
+        # ...and NOT to a journal value's budget. Every other basis on this row
+        # is stored whole, so borrowing the bounded wrapper would have cut this
+        # one for a reason belonging to a different field.
+        _long = dict(RESULT)
+        _long["coverageBasis"] = ("among them: " + ", ".join(
+            "src/mod%d/file.py" % (n,) for n in range(40)))
+        _rl = M.row_for(plain, _long, "task", {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"])
+        check("ef6 ...and it is not clipped to a journal VALUE's budget: the "
+              "basis sentences on this row carry no such bound, and a cut "
+              "borrowed from another field would end the sample mid-path: %r"
+              % (len(_rl["observations"]["coverageBasis"]),),
+              _rl["observations"]["coverageBasis"] == _long["coverageBasis"]
+              and len(_rl["observations"]["coverageBasis"])
+              > _journal_io.MAX_VALUE_CHARS)
+        check("ef7 a run that measured no coverage keeps its None rather than "
+              "gaining an empty sentence - a basis with no claim under it is "
+              "the shape this file refuses everywhere else",
+              M.row_for(plain, dict(RESULT, coverageBasis=None), "task",
+                        {"taskId": "P1.2"}, IDENT,
+                        published=["pytest -q"]
+                        )["observations"]["coverageBasis"] is None)
+
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
         # `no-checks` off `ranTotal` -- but a run a stop signal cut short keeps

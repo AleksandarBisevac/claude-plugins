@@ -1934,6 +1934,30 @@ def _cases(check):
           % (sorted(M.files_named("Passed\n  src/a.ts:12 ok\n2 files\n") or []),),
           M.files_named("Passed 9 tests ok") is None
           and "src/a.ts" in (M.files_named("  src/a.ts:12 ok") or set()))
+    # THE SEPARATOR SURVIVES, and what it costs to lose it is not a lost match.
+    # These paths travel into the coverage basis and from there into a COMMITTED
+    # row, where every reader downstream decides by asking whether the path is
+    # absolute - so a leading `/` this function removed was a home directory
+    # that nothing below could see, in the one file whose subject that is. The
+    # dotfile is here for the same cut: `.claude/x.json` came back as
+    # `claude/x.json`, a path no repository has.
+    _cv6_abs = "/Users/someone/proj/node_modules/x.js"
+    check("cv6a an absolute path keeps its separator and a dotfile keeps its "
+          "dot - only a leading `./` comes off, because the strip that took "
+          "more handed the next reader a machine path wearing a "
+          "repo-relative spelling: %r"
+          % (sorted(M.files_named("%s\n.claude/x.json\n./src/a.ts\n"
+                                  % _cv6_abs) or []),),
+          M.files_named("%s\n.claude/x.json\n./src/a.ts\n" % _cv6_abs)
+          == set([_cv6_abs, ".claude/x.json", "src/a.ts"]))
+    # ...and the match the strip was there for is unaffected, which is the case
+    # that fails if the repair is taken as licence to stop normalising at all.
+    check("cv6b a runner's absolute spelling of a declared file still counts as "
+          "coverage - the comparison relates a path to a suffix of itself, so "
+          "keeping the separator costs no overlap",
+          M.coverage(["src/a.ts"],
+                     M.files_named("PASS /Users/someone/proj/src/a.ts\n"))[0]
+          == ["src/a.ts"])
 
     # --- F270: NO OVERLAP has to be diagnosable when it fires -------------
     # Reported firing on every gate run of one session, including tasks whose own

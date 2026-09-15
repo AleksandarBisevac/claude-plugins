@@ -559,6 +559,31 @@ def _cases(check):
               and M.redacted_text(proj, None) == ""
               and M.redacted_text(proj, 12) == "12")
 
+        # ONE GRAMMAR, TWO BUDGETS. The evidence ledger's basis sentences carry
+        # no value-sized bound and never did, so the second reader of this rule
+        # could either clip a field it does not own or copy the substitution
+        # into a table of its own. Neither is a choice worth offering, so the
+        # rule and the bound are separate functions and this is what says the
+        # bounded one is still the unbounded one wearing a cut.
+        _rt5 = M.redacted_paths(proj, _far)
+        check("rt5 `redacted_paths` answers every token the bounded form does "
+              "and stops there: the same substitution, no cut, and the bounded "
+              "form is that result clipped rather than a second pass over the "
+              "text: %r" % (len(_rt5),),
+              _rt5 == _rt3 and _rt5.count(_user) == 0
+              and M.redacted_paths(proj, _frame) == M.redacted_text(proj,
+                                                                    _frame))
+        _rt6 = M.redacted_paths(proj, "x " + ("d" * (M.MAX_VALUE_CHARS * 2)))
+        check("rt6 ...and a sentence longer than a journal value's budget comes "
+              "back whole from it while the bounded form announces its cut - "
+              "the case that fails if the two are collapsed back together: %r"
+              % (len(_rt6),),
+              len(_rt6) > M.MAX_VALUE_CHARS
+              and not _rt6.endswith(M.VALUE_TRUNCATED)
+              and M.redacted_text(
+                  proj, "x " + ("d" * (M.MAX_VALUE_CHARS * 2))
+              ).endswith(M.VALUE_TRUNCATED))
+
         # The environment is pinned ABSENT so this asserts the actor's key set
         # exactly, on a machine inside a session and on one that is not. `sa2`
         # next door is the other direction, with it set.

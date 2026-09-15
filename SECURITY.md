@@ -246,6 +246,20 @@ now ask first, and the verdict is an **allow that names the scope**. Out of scop
 same verdict with the reason thrown away. Symlinks are resolved on both sides, because a
 repo reached through one is the same repo; an unresolvable path answers *inside*, so an
 error in the test can only leave a gate where it already was, never switch one off.
+**And a destination that cannot be established at all is a third answer, not a quiet version
+of either.** A shell write whose target carries an expansion, a substitution, a glob or a home
+reference names a place only the shell knows: resolving that spelling against the repository
+root put `$HOME/notes.py` inside the tree and refused it for plan coverage under a name no
+`task.files` entry can ever hold — a refusal whose whole content came from the resolution that
+produced it, and one nobody can act on. `_config.resolvable_destination` is the question both
+guards now ask first — `guard-secrets-read` of a write target, `guard-bash-writes` of a `cd`
+target — and an unestablished destination is **allowed with the reason said**, because plan
+coverage is a question about a file the plan could name and this is not one. The write is not
+thereby invisible: it is the residual `guard-bash-writes` reports afterwards from `git status`,
+by the path git prints. The manifest rule asks the same question for the same reason, since
+`rel_path` normalises and enough `..` walks an unresolvable word onto the literal it compares
+against.
+
 `remind-tdd` asks the same question for a reason worth stating separately: its nudge is a
 CLAIM about a file rather than a decision about one, and it was also spending the session's
 throttle on a tree it does not govern, which silenced the next reminder that was deserved.

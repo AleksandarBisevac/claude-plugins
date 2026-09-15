@@ -68,8 +68,9 @@ place a tier is read, and no Rule #1 or Rule #2 branch calls it.
     `tee <file>`, and `>`/`>>` redirects (which also catches
     `cat > file <<EOF` heredocs). The block message steers to the Edit/Write
     tools, which the plan gate governs.
-  Both arms ask `_ungoverned_write_target` the same four questions — source
-  extension, inside the repository, not exempt, not covered by an in_progress
+  Both arms ask `_ungoverned_write_target` the same questions — can the
+  destination be established at all, source extension, inside the repository,
+  not exempt, not covered by an in_progress
   task. They asked different ones for a long time, and the interpreter arm consulted
   no plan at all while its refusal blamed the plan-first gate: a `.ts` file a
   running task declared was denied through the interpreter and allowed through
@@ -591,9 +592,19 @@ _SED_INPLACE_CLAUSE = re.compile(
 # out of the drive branch, so a URL inside a sed script tokenises exactly as it
 # did. Checked against both spellings and the POSIX corpus: nothing but a
 # drive-absolute path changes.
+#
+# AN EXPANSION IS PART OF THE TOKEN, and leaving it out is how this branch came
+# to name a file the operator never typed. The class held no `$`, `{` or `}`, so
+# `sed -i "" "$HOME/notes.py"` arrived here as `HOME/notes.py` - a bare relative
+# path, unconditionally inside the repository, refused for plan coverage under a
+# name that appears nowhere in the command. Carrying the marks means the target
+# reaches `_config.resolvable_destination` still wearing them, which is the only
+# state in which that question can be answered at all. The widening cannot invent
+# a refusal: every span it newly matches carries one of the marks, and a marked
+# target is skipped rather than graded.
 _PATHY_TOKEN = re.compile(
     r"(?<!\w)[A-Za-z]:[\\/][\w@~/\\.+-]*\.[A-Za-z][A-Za-z0-9]{0,9}"
-    r"|[\w@~./+-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
+    r"|[\w@~./+${}-]+\.[A-Za-z][A-Za-z0-9]{0,9}")
 
 # --- Rule #2: the environment itself -------------------------------------------
 # P0-S: `printenv` USED TO BE ANCHORED to the start of a clause, so any wrapper in
@@ -993,8 +1004,15 @@ _source_exts = _config.source_exts
 
 
 def _ungoverned_write_target(targets, root, cfg):
-    """First path in `targets` that is a non-exempt SOURCE file inside the
-    consuming repository which no in_progress task covers — or None.
+    """What the plan gate has to say about `targets`.
+
+    -> {"hit", "unresolved"}
+       hit         the first path that is a non-exempt SOURCE file inside the
+                   consuming repository which no in_progress task covers, else
+                   None
+       unresolved  the targets whose destination this process cannot establish,
+                   in the spelling the command used - a withdrawal, never a
+                   finding
 
     ONE DEFINITION OF "A FILE THE PLAN GATE CARES ABOUT", asked by every Bash
     write form this hook grades: the shell redirect / `tee` / `sed -i` grammar
@@ -1005,8 +1023,20 @@ def _ungoverned_write_target(targets, root, cfg):
     consumer's `exemptGlobs` reached only one of the two. The extension list is
     `_config.source_exts`, whose docstring already claims to be that one place.
 
-    Four questions, in this order, and each of them is somebody's recorded bug:
+    The questions, in this order, and each of them is somebody's recorded bug:
 
+      * ESTABLISHED AT ALL. A target carrying an expansion, a substitution, a
+        glob or a home reference names a place only the shell knows, and
+        resolving it here against the repository root makes it look like a file
+        in the tree: `echo x > "$HOME/notes.py"` was refused for plan coverage
+        under the name `$HOME/notes.py`, a path nobody can add to a task's
+        `files` because no such file exists. The refusal's whole content came
+        from the resolution that produced it, which is the guard-by-spelling
+        class. So the destination is reported as unestablished and the coverage
+        question is not asked of it - the question is about a file the plan
+        could name, and this is not one. The write is not thereby invisible:
+        `guard-bash-writes` reads the tree afterwards and reports by the path
+        git prints, which is the residual SECURITY.md already assigns it.
       * SOURCE, by extension, derived from `tddReminder.sourceGlobs`. It
         deliberately excludes `.json`, which is why no consumer's package.json,
         tsconfig.json or fixture is gated here — and why the manifest needs the
@@ -1033,13 +1063,18 @@ def _ungoverned_write_target(targets, root, cfg):
 
     A `continue` rather than a `return` at each: a command writing one file out
     of scope and one in it still has an in-repo finding to report."""
+    graded = {"hit": None, "unresolved": []}
     if not targets:
-        return None
+        return graded
     exts = _source_exts(cfg)
     exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
     in_prog = None
     for t in targets:
+        if not _config.resolvable_destination(t):
+            if t not in graded["unresolved"]:
+                graded["unresolved"].append(t)
+            continue
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
             continue
@@ -1054,33 +1089,45 @@ def _ungoverned_write_target(targets, root, cfg):
             rel.startswith(f) for f in in_prog if f.endswith("/")
         ):
             continue
-        return rel
-    return None
+        if graded["hit"] is None:
+            graded["hit"] = rel
+    return graded
 
 
 def _source_write_hit(cmd, root, cfg):
-    """The ungoverned source file `cmd` writes to via sed -i / tee / a >(>)
-    redirect — or None. The shell half of the plan gate's write arm."""
+    """What the plan gate says about the files `cmd` writes via sed -i / tee /
+    a >(>) redirect - `_ungoverned_write_target`'s pair. The shell half of the
+    plan gate's write arm."""
     return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg)
 
 
 def _eval_write_hit(graded, root, cfg):
     """(the ungoverned source file an interpreter clause WRITES, how that clause
-    was spelled) for the first such clause — or (None, None).
+    was spelled, the destinations none of them could establish).
 
     The interpreter half of the same arm, and it is the same question asked of a
     different grammar: `_eval_write_targets` resolves what a write CALL names,
     `_ungoverned_write_target` decides whether the plan gate has anything to say
     about it. Per clause rather than over one flattened target list, because the
     refusal has to name the spelling the operator actually typed (F256) and only
-    the clause knows whether it arrived as `-c` or as a heredoc body."""
+    the clause knows whether it arrived as `-c` or as a heredoc body.
+
+    The unestablished destinations accumulate across ALL clauses rather than
+    stopping at the first hit: they are what the caller says instead of a
+    verdict, so one lost to an early return is a silence with nothing behind
+    it."""
+    unresolved = []
+    first = (None, None)
     for cl, is_eval, how in graded:
         if not is_eval:
             continue
-        hit = _ungoverned_write_target(_eval_write_targets(cl), root, cfg)
-        if hit:
-            return (hit, how)
-    return (None, None)
+        seen = _ungoverned_write_target(_eval_write_targets(cl), root, cfg)
+        for spelling in seen["unresolved"]:
+            if spelling not in unresolved:
+                unresolved.append(spelling)
+        if seen["hit"] and first[0] is None:
+            first = (seen["hit"], how)
+    return (first[0], first[1], unresolved)
 
 
 _PLAN_WRITE_DENY = (
@@ -1206,10 +1253,19 @@ def _manifest_write_hit(cmd, root, cfg):
     `_config.within_root`'s own docstring says its callers do not need it for. A
     `within_root` call here was written first and left no case able to fail:
     deleted, allowed and denied the same commands, which is a check that cannot
-    fail rather than a guard."""
+    fail rather than a guard.
+
+    A CONTAINMENT FILTER IS STILL NOT WHAT THIS SKIPS ON. `rel_path` normalises,
+    so a target the shell alone can resolve can be walked onto the literal:
+    `> "$X/../docs/audit/audit-plan.json"` came back as the manifest path, and
+    the refusal that followed was about a spelling rather than about a file.
+    `resolvable_destination` is the same question the source arm asks one
+    function up, so the two arms cannot disagree about what `${X}` names."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
     for t in _shell_write_targets(cmd):
+        if not _config.resolvable_destination(t):
+            continue
         rel = _config.rel_path(root, t)
         if (rel == manifest_rel or rel == manifest_rel + ".lock"
                 or _config.governing_lock(manifest_rel, rel)):
@@ -1498,7 +1554,7 @@ def _decide_core(data, root, cfg):
         # an in_progress task declared was refused through `python3 -c` and
         # allowed through `echo >`, by a message that blamed the plan-first gate
         # while consulting no plan at all.
-        ehit, ehow = _eval_write_hit(graded, root, cfg)
+        ehit, ehow, eunplaced = _eval_write_hit(graded, root, cfg)
         if ehit:
             return _plan_gate_write_verdict(
                 root, cfg, ehit,
@@ -1530,14 +1586,32 @@ def _decide_core(data, root, cfg):
         # F116: over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
-        hit = _source_write_hit(runnable, root, cfg)
-        if hit:
+        shell_write = _source_write_hit(runnable, root, cfg)
+        if shell_write["hit"]:
             # The same grading, through the same function, as the interpreter arm
             # above. Otherwise `Edit src/x.ts` would be merely observed while
             # `sed -i src/x.ts` still denied — same file, same rule, opposite
             # verdict, decided by which tool the agent happened to reach for.
             return _plan_gate_write_verdict(
-                root, cfg, hit, "Shell write into a source file")
+                root, cfg, shell_write["hit"], "Shell write into a source file")
+        # WHAT COULD NOT BE ESTABLISHED IS SAID, and it is said as an allow
+        # rather than swallowed into the line below. A destination only the
+        # shell can resolve is not a file the plan could have named, so there is
+        # no coverage question to ask and no refusal an operator could act on -
+        # but "nothing to see" and "this guard could not see" are two different
+        # sentences, and printing the first for the second is how a silence gets
+        # mistaken for a clean bill. Both write arms contribute, because a
+        # command can spell one destination each way.
+        unplaced = list(eunplaced)
+        for spelling in shell_write["unresolved"]:
+            if spelling not in unplaced:
+                unplaced.append(spelling)
+        if unplaced:
+            return ("allow",
+                    "bash: write destination not established (%s): the shell "
+                    "resolves it and the payload does not carry the result, so "
+                    "the plan cannot be asked about it"
+                    % ", ".join(unplaced))
         return ("allow", "bash: no secret read")
 
     if tool.startswith("mcp__"):

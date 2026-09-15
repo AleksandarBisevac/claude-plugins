@@ -1030,6 +1030,28 @@ _TEXT_PATH = re.compile(r"[~A-Za-z0-9_.@$:+-]+[/\\][~A-Za-z0-9_.@$:+\\/-]*"
 _NOT_RELATIVE = re.compile(r"^(?:~|[A-Za-z]:[/\\]|[/\\]{2})")
 
 
+def redacted_paths(project, text):
+    """Every path token in one piece of program output, redacted. NOT bounded.
+
+    THE RULE WITHOUT THE BOUND, because the bound is the caller's and the rule
+    is not. `redacted_text` below holds a journal value to a value's budget; the
+    evidence ledger's basis sentences carry no such budget and never did, so
+    clipping one to make it redactable would have been this function's cut
+    imposed on a field it does not own. Splitting the two is what stopped the
+    second reader copying the substitution instead - one grammar, one token
+    table, two budgets.
+    """
+    body = text if isinstance(text, str) else str(text or "")
+
+    def _token(match):
+        raw = match.group(0)
+        if _NOT_RELATIVE.match(raw):
+            return OUTSIDE_TOKEN
+        return repo_relative_or_token(project, raw)
+
+    return _TEXT_PATH.sub(_token, body)
+
+
 def redacted_text(project, text):
     """One line of program output, every path token in it redacted, then bounded.
 
@@ -1064,16 +1086,14 @@ def redacted_text(project, text):
     path-shaped to the grammar above and survives. `tools/check-committed-pii.py`
     is the backstop that reads the committed bytes for exactly that vocabulary,
     and a limit nothing names is indistinguishable from coverage.
+
+    A TOKEN WHOSE LEADING SEPARATOR IS ALREADY GONE IS ANOTHER SUCH LIMIT, and
+    it is one this function cannot close: `Users/someone/x` is a path a caller
+    mangled and it resolves as repo-relative, which is the right answer for the
+    string it was handed. The place to keep the separator is the producer, and
+    `run-test-gate.files_named` is the one that was removing it.
     """
-    body = text if isinstance(text, str) else str(text or "")
-
-    def _token(match):
-        raw = match.group(0)
-        if _NOT_RELATIVE.match(raw):
-            return OUTSIDE_TOKEN
-        return repo_relative_or_token(project, raw)
-
-    return _clip_marked(_TEXT_PATH.sub(_token, body),
+    return _clip_marked(redacted_paths(project, text),
                         MAX_VALUE_CHARS, VALUE_TRUNCATED)
 
 

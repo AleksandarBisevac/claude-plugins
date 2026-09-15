@@ -1178,6 +1178,38 @@ def source_exts(cfg):
 # --- path / manifest helpers --------------------------------------------------
 # Shared across hooks/ - which ones, without a list here to rot:
 #   grep -rn '_config.rel_path\|_config.within_root' plugins/audit/hooks
+#
+# Marks that stop a word in a command line being read as a path. Every one of
+# them is something the SHELL resolves and a hook payload does not carry:
+# parameter and command substitution, a glob, a home reference, brace expansion.
+# A word wearing one names a place only the shell knows, so any answer this
+# process gives about WHERE it lands is an answer about the spelling instead.
+UNRESOLVED_MARKS = ("$", "`", "*", "?", "~", "{", "}")
+
+
+def resolvable_destination(text):
+    """Can this process establish where `text` points? Default: NO.
+
+    ONE ANSWER FOR TWO GUARDS. `guard-bash-writes` asks it of a `cd` target
+    before deciding which working tree a command ran in; `guard-secrets-read`
+    asks it of a write target before deciding whether the plan covers the file.
+    Both used to resolve the word against the repository root as though it were
+    a literal path, which places `$HOME/notes.py` inside the tree and then
+    reports a finding about a file of that name - a claim whose whole content
+    came from the resolution that produced it. Two copies of the question would
+    be two opinions about `${OUT}` waiting to disagree.
+
+    The caller decides what to DO with an unestablished destination, and the two
+    differ: one withdraws an authorship claim, the other declines to grade a
+    coverage question it cannot ask. What neither may do is guess.
+
+    An empty word is unresolvable for the same reason a marked one is: there is
+    nothing to place.
+    """
+    word = str(text or "")
+    return bool(word) and not any(mark in word for mark in UNRESOLVED_MARKS)
+
+
 def rel_path(root, file_path):
     """Path of file_path RELATIVE to repo root, posix-style. Falls back gracefully."""
     fp = str(file_path).replace("\\", "/")
