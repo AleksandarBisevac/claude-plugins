@@ -723,7 +723,8 @@
       "P42.4",
       "P44.2",
       "P54.2",
-      "P54.5"
+      "P54.5",
+      "P53.8"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1043,7 +1044,8 @@
     "tools/capture-screenshots.mjs": [
       "BF1.2",
       "P20.4",
-      "P36.12"
+      "P36.12",
+      "P53.8"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -1347,7 +1349,8 @@
       "P41.5",
       "P42.4",
       "P44.2",
-      "P54.5"
+      "P54.5",
+      "P53.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
