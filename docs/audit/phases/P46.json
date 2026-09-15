@@ -1,7 +1,7 @@
 {
   "id": "P46",
   "title": "A gate costs what it measures, and no more",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Field report 11 and 12's remaining gate costs: a gate cannot be corrected once a task starts, a run is repeated on a tree already measured, a signal-killed run is handed back with no retry, a push is a suite the plugin cannot see, and a refusal is right and a screen long.",
   "desiredOutcome": "A started task's gate can be corrected and the change is journaled; a run whose tree and command are already recorded reuses that verdict rather than re-measuring; a signal death is retried once at reduced parallelism and says so on the row; the doctor names a pre-push hook that runs the suite; and the backtick refusal keeps every fact in two lines.",
   "testGate": [
@@ -262,7 +262,7 @@
     {
       "id": "P46.6",
       "title": "A settled plan reads as settled",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The headline fraction stops counting cancelled work in its denominator. A reader resolves a fraction before reading the note after it: a done-count over a total says some number of things are outstanding, and only the parenthetical says that some of them are settled. Cancelled is TERMINAL - closed deliberately, with a reason and a journal row - so counting it against done puts settled work where unstarted work goes, which is the one distinction the headline exists to make. Cancelled must stay visible; the repair is where the number sits, never dropping it. Every surface that renders this arithmetic moves together, because two surfaces disagreeing about what a fraction means is worse than the confusion it replaces.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -292,16 +292,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T20:06:37Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-15T20:06:37Z"
 }
