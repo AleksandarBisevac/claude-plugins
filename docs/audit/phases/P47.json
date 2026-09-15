@@ -141,7 +141,7 @@
     {
       "id": "P47.3",
       "title": "One JSON encoding, migrated once and held by a lint",
-      "status": "in_progress",
+      "status": "done",
       "description": "The plugin writes JSON two ways. A hand repair dumped a shard with one escaping and the diff showed a dozen unrelated bug titles changed; re-dumping with the other brought the diff back to the two lines that had actually moved. Counted across the scripts, both spellings are in use, and the editor a session uses writes the third. Mixed writers guarantee a conflict on the parallel phases that sharding exists to make possible: a title carrying one dash re-escapes on the next write by the other family and turns a two-line shard merge into a whole-file conflict. The repair is to choose once, rewrite every manifest the plugin owns in one migration, and hold the choice with a lint over the dump sites so a second family cannot come back - the same shape this repository already uses for its own house style. The migration is the part that needs care: it rewrites files a second session may hold, so it runs under the index lock and says what it changed.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -177,19 +177,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0010580",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "json_document is the single choosing site and carries the argument for literal UTF-8; atomic_write_json no longer takes the encoding as a parameter; _deps.json_encoding_violations enforces four rules over the dump sites; migrate-json-encoding.py judges every owned file before touching any, validates before and after the save, and rolls back on failure.",
+        "descriptive": "The plugin writes JSON one way, every manifest it owns was migrated in one pass, and a lint holds the choice."
       },
       "startedAt": "2026-09-15T14:00:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T14:53:09Z",
+      "verifiedBy": [
+        "je1",
+        "je2",
+        "je3",
+        "je4",
+        "je5",
+        "je6",
+        "je7",
+        "je8",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "m5",
+        "n1",
+        "r1",
+        "r2",
+        "r3",
+        "r4",
+        "r5",
+        "b1",
+        "b2",
+        "d1",
+        "d2",
+        "d3",
+        "d4"
+      ]
     },
     {
       "id": "P47.4",
       "title": "A review finding becomes a task before any fix is spawned",
-      "status": "in_progress",
+      "status": "done",
       "description": "A sign-off fix run is refused on the second file it touches, because the plan gate opens a file only through a task that is running and sign-off happens when every task is done. The route out of that exists in the orchestrator reference, but its heading names the case where no task declares the file, so a reader whose file IS declared reads the route as not theirs; the paragraph below it already says a widening on a finished task records no new work, so the document knows the answer and buries it under the wrong condition. The measured cost of reading it the other way was most of a spawn's budget before the operator added a task by hand. Two repairs: the heading loses the adjective, so a finding gets a new task full stop; and the review command does the add and the start itself rather than asking the reader to. The second half of this is the finding record: the reviewer returns one shape and the orchestrator asks for another, and nothing in the schema says what a finding is, so every phase records them differently and none of them can be read back.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -223,14 +249,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0010580",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "the route heading in both sign-off documents lost the condition and _refs.signoff_fix_route_drift compares them; commands/review.md does the add and the start; the schema states the finding fields and severity vocabulary and says why it declares no required set; _manifest_phases._check_review warns, never finds.",
+        "descriptive": "A review finding gets a new task the procedure creates and starts, and a recorded finding has a shape the validator reads."
       },
       "startedAt": "2026-09-15T14:00:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T14:53:09Z",
+      "verifiedBy": [
+        "rv1",
+        "rv2",
+        "rv3",
+        "rv4",
+        "rv5",
+        "rv6",
+        "rv7",
+        "rv8",
+        "fr1",
+        "fr2",
+        "fr3",
+        "fr4",
+        "fr5",
+        "fr6"
+      ]
     },
     {
       "id": "P47.5",
