@@ -1,7 +1,7 @@
 {
   "id": "P49",
   "title": "The plugin offers its own bar, and measures value not only cost",
-  "status": "pending",
+  "status": "in_progress",
   "description": "The operator's answer to Part 6's fifth question, and P4/P5/P8: the checks this repo runs on itself are offered as optional gate entries; a number in the panel is about what the gate caught rather than what it spent; and the control surface the model rests on can say whether anyone opened it.",
   "desiredOutcome": "The bar is available as opt-in gate entries that change nothing for a plan that does not ask for them, and their instruction carries the refusal path a host classifier can trigger; one derived row says what a red gate caught before a commit; and the doctor can say whether the panel was ever opened, saying never rather than staying silent.",
   "testGate": [
@@ -29,7 +29,7 @@
     {
       "id": "P49.1",
       "title": "The checks this repository runs on itself are offered, not imposed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the bar this repository holds itself to is available to a user as optional gate entries, and a plan that does not ask for them is unchanged in every byte. The two worth offering first are the ones this project learned the hard way and neither is about style: prove that a check can fail before trusting it, and refuse a comment that claims what the code does not do. Offering rather than imposing is the whole design: a gate entry a project did not choose is a gate entry it routes around, and the register already holds the case of a guard that fired where it was not wanted and was disabled within a day. Each offered entry ships with the sentence that says what it asks of a change and what it costs to run, because an operator choosing a gate is making a trade and a menu that hides one side of it is a menu that gets chosen wrongly once.",
       "files": [
         "plugins/audit/scripts/status/_gate_feed.py",
@@ -60,21 +60,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T20:47:04Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P49.2",
       "title": "A number about what the gate caught, not only what it spent",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the control surface answers what the gates caught, beside what they cost, and neither number is presented without the other. Today every figure on that surface is a cost - tokens, minutes, dollars - so the only argument the surface can support is that the plugin is expensive. The ledger already holds the other half: a red verdict is a catch, and the row names the entry that produced it. An entry that has never caught anything is reported as never having caught anything, which is a real finding about a gate and not a zero to be averaged away, and it is the number that makes the offer to drop an entry credible. Where the ledger is too short to support either claim the surface says the question could not be answered, on the same rule every other basis here follows: a claim with no basis is not softened, it is withheld.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -104,21 +104,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T20:47:04Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P49.3",
       "title": "The control surface can say whether anyone opened it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the doctor can say whether the panel has ever been opened in this project, and the answer distinguishes never from not recently. A large part of this plugin's model rests on a control surface an operator is assumed to visit, and no part of the product can currently say whether anybody does. That is a question worth being able to answer before more is built on the assumption, and it is cheap: the server already starts, and the fact that it started is the whole record. What it records is the fact and nothing else - no identity, no address, no page - because a usage record that grows into a profile is a record a user is right to object to, and the question being asked does not need one.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
@@ -148,21 +148,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T20:47:05Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P49.4",
       "title": "A task's done asks whether the change is what was asked for",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: closing a task records an answer to one question - does this change do what the task asked for - and the answer is on the record beside the gate verdict. The operator chose this at that cost, per task, rather than at sign-off alone, and the reasoning is that the claim is made per task: a gate proves the suite is green and proves nothing about whether the green change is the change somebody wanted. It is one cheap call handed the task description, the diff and the executor's claim. The failure mode to design against is the one every cheap reviewer has: an answer that is yes by default. A close that received no answer must read differently from a close that received a negative, because those are opposite facts and a missing field renders as neither. This also closes the gap where the plugin holds itself to a bar it does not offer the user, which the neighbouring task in this phase offers from the other side.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -193,16 +193,17 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T20:47:05Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-15T20:47:04Z"
 }
