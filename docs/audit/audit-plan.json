@@ -245,7 +245,8 @@
     {
       "id": "P42",
       "title": "The loop the agents run in closes",
-      "shard": "phases/P42.json"
+      "shard": "phases/P42.json",
+      "status": "in_progress"
     },
     {
       "id": "P43",
