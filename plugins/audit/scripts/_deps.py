@@ -2296,11 +2296,87 @@ def doc_prose_numbers(doc_paths=None):
     return out
 
 
+def _guide_file_blocks(section2):
+    """{heading line: block text} for every `### ` block of the guide's
+    file-by-file section. `{}` when there is no such section."""
+    if section2 is None:
+        return {}
+    out = {}
+    for block in re.split(r"(?m)^(?=### )", section2):
+        if block.startswith("### "):
+            out[block.split("\n", 1)[0]] = block
+    return out
+
+
+def _accepted_verbs(path):
+    """Every verb a command accepts as a POSITIONAL choice, as a sorted list.
+
+    READ OFF THE PARSER'S OWN SOURCE, so a verb added to a command is inside
+    this question by existing rather than by being remembered. Only a positional
+    whose `choices` is a literal sequence of strings is read: that is the shape
+    every multi-verb entry point here uses, and one built by a call is a
+    question the AST cannot answer - reported by nothing rather than guessed at,
+    because a guess would fail an honest document.
+
+    An unreadable or unparseable file yields nothing. It is not this check's
+    business to report one: `layer_violations` and the house-style lints already
+    read every file here and fail on a file that will not parse.
+    """
+    try:
+        with io.open(path, "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        return []
+    verbs = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument" and node.args):
+            continue
+        first = node.args[0]
+        if not (isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+                and not first.value.startswith("-")):
+            continue
+        for kw in node.keywords:
+            if kw.arg != "choices" or not isinstance(kw.value, (ast.List, ast.Tuple)):
+                continue
+            for element in kw.value.elts:
+                if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                    verbs.add(element.value)
+    return sorted(verbs)
+
+
+def _verb_documented(block, verb):
+    """True when `verb` appears inside a code span of `block`.
+
+    INSIDE BACKTICKS AND NOT ANYWHERE, because the words these verbs are spelled
+    with -- `add`, `start`, `done`, `show` -- are also ordinary English, and a
+    rule satisfied by prose would be satisfied by a sentence that happens to use
+    the word while saying nothing about the verb. A code span is how this guide
+    names a thing a reader can type, so it is also the evidence that the verb was
+    described rather than mentioned. The span may carry the verb's arguments
+    (`start <taskId>`), which is why the verb is matched as a word inside it
+    rather than as the whole of it.
+
+    A DOT AHEAD OF IT DISQUALIFIES THE SPAN, and that is the difference between
+    a verb and a field named after one. `task.done` is the journal row a close
+    writes; a section naming only that has described the ROW and not the verb,
+    and the first draft of this rule accepted it -- so the mutation that deletes
+    the verb's own paragraph left the check green, which is the kind of pass
+    that makes a lint worth nothing.
+    """
+    if not block:
+        return False
+    pattern = r"`[^`\n]*(?<![\w.\-])%s(?![\w-])[^`\n]*`" % (re.escape(verb),)
+    return re.search(pattern, block) is not None
+
+
 def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
     """[(filename, problem), ...] - every scripts/hooks .py file the guide's
     enumeration sections have gone out of step with.
 
-    Two things are checked, and each names its own violation:
+    Three things are checked, and each names its own violation:
 
       * TREE COVERAGE. Every real `hooks/*.py` and `scripts/*.py` basename must
         appear as a literal substring somewhere in the fenced code block under
@@ -2318,8 +2394,19 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
         "the filename appears in SOME ### heading" is the rule this function
         enforces, stated here because that is the only place it needs to be.
 
-    A missing heading OR missing tree entry is reported once per file, in
-    `_real_source_files()` order (scripts before hooks, each alphabetical).
+      * VERB COVERAGE. Every verb a command accepts as a positional choice must
+        appear in a code span of the section that describes it. A FILE is the
+        granularity the two checks above work at, and a file is not what grows:
+        a whole verb lands INSIDE an entry point that has had its heading and its
+        tree line for releases, so the enumeration went on passing over a
+        document describing a command that had learnt to do something else. Read
+        off the parser's own `choices` (`_accepted_verbs`), so the guide is
+        graded against what the command takes rather than against a list
+        somebody maintained beside it.
+
+    A missing heading, a missing tree entry OR an undocumented verb is reported
+    once, in `_real_source_files()` order (scripts before hooks, each
+    alphabetical).
 
     SCOPED TO `scripts/` + `hooks/`, AND `tests/` IS DELIBERATELY OUT. Section 2 is
     "File-by-file logic" because each of those files answers a question a reader of the
@@ -2350,14 +2437,29 @@ def guide_enumeration(guide_path=None, script_dir=None, hooks_dir=None):
     section2 = _section_text(text, _SECTION2_HEADING)
     headings = re.findall(r"^### .*$", section2, re.M) if section2 is not None else []
 
+    blocks = _guide_file_blocks(section2)
+
     violations = []
-    for rel, _kind, _path in _real_source_files(script_dir, hooks_dir):
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
         base = os.path.basename(rel)
         if tree_block is None or base not in tree_block:
             violations.append((rel, "missing from the '%s' tree" % _TREE_HEADING))
-        if not any(base in h for h in headings):
+        mine = [h for h in headings if base in h]
+        if not mine:
             violations.append((rel, "no '### ' heading in '%s' mentions it"
                                 % _SECTION2_HEADING))
+            continue
+        # ASKED OF EVERY SECTION THAT NAMES THE FILE, which is the same "some
+        # heading" rule as above: several files legitimately share one section
+        # and one file may be described across more than one, so a verb named
+        # under any of them is named.
+        mine_blocks = [blocks.get(h) for h in mine]
+        for verb in _accepted_verbs(path):
+            if not any(_verb_documented(b, verb) for b in mine_blocks):
+                violations.append(
+                    (rel, "accepts the `%s` verb and no code span under %s "
+                          "names it"
+                     % (verb, " / ".join("'%s'" % h.strip() for h in mine))))
     return violations
 
 
@@ -3203,10 +3305,6 @@ PANEL_ROUTE_READERS = (
 # what counts as a caller until the tree goes quiet. It can only shrink - a NEW
 # route with no control fails the build by name, which is the whole point.
 PANEL_ROUTE_UNREACHED = (
-    ("GET /api/version",
-     "the build serving the page is substituted into it at assembly, so no "
-     "control has ever needed to ask; the route answers a comparison nothing "
-     "out of process performs either. Either a control reads it or it goes."),
     ("POST /api/validate",
      "it re-runs `build_state` and returns two of the fields `GET /api/state` "
      "already carries, so there is nothing a control could show that the page "
@@ -3383,9 +3481,26 @@ def panel_route_violations(server_path=None, js_dir=None, readers=None,
             violations.append((route, "its declared reader %s no longer names it"
                                % (who,)))
     for route, why in unreached_rows:
+        where = route.split(" ", 1)[1]
         if route not in routes:
             violations.append((route, "recorded as unreached, but the panel "
                                       "serves no such route any more"))
+        elif where in callers:
+            # THE ROW'S OWN REASON, ASKED OF THE CODE IT EXPLAINS. Every other
+            # row in this lint is verified against the tree and this table was
+            # not: a row saying no control has ever needed to ask went on saying
+            # it after a control was written, assembled into the page and pinned
+            # by a case. Nothing could catch it, because the only questions asked
+            # of an unreached row were whether the route still exists and whether
+            # the sentence is long enough - both of which a repaired defect
+            # passes. The table can only shrink, and this is what makes it shrink
+            # when the defect is fixed rather than when somebody remembers.
+            violations.append(
+                (route, "recorded as reached by nothing, and %s names it: the "
+                        "reason is contradicted by the code it explains, so the "
+                        "defect this row records has been repaired and the row "
+                        "is all that still says otherwise"
+                 % (", ".join(sorted(callers[where])),)))
         elif len(why) < _MIN_ROUTE_REASON:
             violations.append((route, "its unreached row carries %d characters "
                                       "of reason; a row shorter than %d is a "

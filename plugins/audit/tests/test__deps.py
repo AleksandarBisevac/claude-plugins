@@ -1283,6 +1283,59 @@ def _cases(check):
         check("e5 mutation proof: the real, unweakened guide_enumeration() still "
               "catches it - nothing was left mutated behind",
               any(f == "no_tree.py" for f, _ in real_hits_again))
+
+        # ---- the verb a file grows after its heading was written ---------------
+        # A FILE IS NOT WHAT GROWS. Both checks above are satisfied for ever by a
+        # tree line and a heading written once, while a whole verb lands INSIDE
+        # an entry point that has had both for releases - which is how the guide
+        # came to describe a command that had learnt to close a task, correct a
+        # phase and scope one, and said none of it.
+        src_c = os.path.join(enum_tmp, "scripts_c")
+        os.makedirs(src_c)
+        with open(os.path.join(src_c, "verbs.py"), "w", encoding="utf-8") as fh:
+            fh.write("import argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "p.add_argument('command', choices=['told', 'untold'])\n"
+                     "p.add_argument('--flag', choices=['ignored'])\n")
+        verb_guide = os.path.join(enum_tmp, "verbs.md")
+        with open(verb_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + M._TREE_HEADING + "\n\n```\n"
+                "  verbs.py    # a command\n"
+                "```\n\n" + M._SECTION2_HEADING + "\n\n"
+                "### `verbs.py`\n`told <thing>` does a thing. The word untold "
+                "appears here in prose, and prose is not a spelling a reader "
+                "can type.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        verb_hits = M.guide_enumeration(verb_guide, script_dir=src_c,
+                                        hooks_dir=hk_dir)
+        check("e6 a verb the parser accepts and the file's own section never "
+              "names in a code span is reported BY THE VERB, while the one it "
+              "documents is not - and a mention in prose does not count, which "
+              "is the direction a looser match would fail in: %r" % (verb_hits,),
+              [problem.split("`")[1] for _f, problem in verb_hits] == ["untold"]
+              and all(f == "verbs.py" for f, _p in verb_hits))
+        # SECOND DIRECTION: the same fixture with the verb documented reports
+        # nothing, so e6 is about the verb and not about the file. The code span
+        # goes in a SECOND heading naming the same file, which is also the pin
+        # for the "any section that names it" rule - a version reading only the
+        # first heading passes e6 and fails here.
+        with open(verb_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + M._TREE_HEADING + "\n\n```\n"
+                "  verbs.py    # a command\n"
+                "```\n\n" + M._SECTION2_HEADING + "\n\n"
+                "### `verbs.py`\n`told <thing>` does a thing.\n\n"
+                "### `verbs.py`, continued\n`untold --now` closes it.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        check("e7 ...and once a code span names it the file is clean, so what "
+              "e6 caught was the missing description and not the fixture: %r"
+              % (M.guide_enumeration(verb_guide, script_dir=src_c,
+                                     hooks_dir=hk_dir),),
+              not M.guide_enumeration(verb_guide, script_dir=src_c,
+                                      hooks_dir=hk_dir))
     finally:
         shutil.rmtree(enum_tmp, ignore_errors=True)
 
@@ -2628,6 +2681,36 @@ def _cases(check):
               "table cannot become a column of labels: %r" % (_pr_says,),
               any(r == "POST /api/act" and "is a label" in p
                   for r, p in _pr_says))
+
+        # THE UNREACHED TABLE'S OWN REASON, ASKED OF THE CODE IT EXPLAINS. Every
+        # other row in this lint is verified against the tree; this one was
+        # asked only whether the route still exists and whether the sentence is
+        # long enough - both of which a REPAIRED defect passes. So a row saying
+        # no control has ever needed to ask went on saying it after a control
+        # was written, assembled into the page and pinned by a case, and the
+        # table that "can only shrink" had no way to shrink.
+        _pr_fixed = M.panel_route_violations(_pr_clean, _pr_js, (), (
+            ("GET /api/thing",
+             "a row recording that nothing calls this route, over a fixture "
+             "whose controls call it - which is what a row becomes on the day "
+             "the defect it records is repaired by somebody writing the "
+             "control."),))
+        check("pr11 an unreached row whose route a control DOES name is "
+              "reported, naming the control: the row's reason is contradicted "
+              "by the code it explains, and nothing else in this lint was "
+              "asking that question: %r" % (_pr_fixed,),
+              [r for r, _p in _pr_fixed] == ["GET /api/thing"]
+              and "core.js" in _pr_fixed[0][1]
+              and "contradicted" in _pr_fixed[0][1])
+        _pr_still = M.panel_route_violations(_pr_orphan, _pr_js, (), (
+            ("GET /api/orphan",
+             "a row recording a route that really is called by nothing here, "
+             "which is what this table is for - an open defect stated out loud "
+             "rather than a gap left for a reader to find."),))
+        check("pr12 SECOND DIRECTION: a row over a route the controls still do "
+              "not name reports NOTHING, so pr11 is about the contradiction and "
+              "not about the table having rows at all: %r" % (_pr_still,),
+              _pr_still == [])
     finally:
         shutil.rmtree(_pr_tmp, ignore_errors=True)
 

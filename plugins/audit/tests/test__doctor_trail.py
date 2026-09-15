@@ -527,6 +527,29 @@ def _cases(check):
               and "more" in shown
               and len(badv["fix"].split("; also: ")) == 2)
 
+        # ...AND BEING REPRESENTED IS NOT BEING READABLE, which is what dt49
+        # leaves open and this closes. The fix said "no repair text for that
+        # warning" and named none, over a detail line that elides on the same
+        # fixture - so on any run where the budget reached it, the row told the
+        # operator that something they could not see had no explanation. The
+        # warning nothing recognised is the one worth the room: a recognised
+        # class is one somebody has already thought about.
+        #
+        # THE UNRECOGNISED SET IS DERIVED FROM THE TABLE rather than named here,
+        # so a class added to it moves this case with it instead of leaving it
+        # asserting about a warning that now has advice.
+        unrec = [w for w in bres["warnings"]
+                 if not any(frag in w for _k, frags, _a
+                            in M._JOURNAL_WARNING_CLASSES for frag in frags)]
+        check("dt49b ...and every warning the table does not recognise is "
+              "QUOTED beside its pointer, so the one thing this check cannot "
+              "explain still reaches the operator. A pointer about a warning "
+              "printed nowhere is a row saying something is wrong and refusing "
+              "to say what: %r" % (unrec,),
+              len(unrec) == 1
+              and all(w in _fix(rep, "journal") for w in unrec)
+              and "no repair text" in _fix(rep, "journal"))
+
         # ------------------------------------------- check_running_plugin (F228)
         # THREE OUTCOMES, and the third is the one this file exists to keep
         # honest: they agree, they differ, or the running copy could not be

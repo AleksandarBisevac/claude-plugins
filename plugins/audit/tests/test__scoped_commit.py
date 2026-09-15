@@ -179,6 +179,41 @@ def _cases(check):
           and done_said[1] == "    docs/audit/audit-plan.json"
           and "journal row could NOT be written" in done_said[2])
 
+    # --- the header a commitlint repository will take -------------------------
+    # BOTH WRITERS OPEN WITH TEXT THEY OWN AND CLOSE WITH TEXT A CALLER GAVE
+    # THEM, and every repair to the opening spent some of the one commitlint rule
+    # nothing was measuring from inside the code. The caller's half had no bound
+    # at all, so a long `--subject` produced a header a husky+commitlint repo
+    # refuses AFTER the files are staged, leaving somebody to finish the commit
+    # by hand - which is the failure the fixed opening exists to prevent,
+    # reached from the other end.
+    fixed = "chore(audit-index): phase P1 - "
+    short = M.fitted_header(fixed, "carried alone")
+    long_subject = "x" * (M.HEADER_MAX_CHARS * 2)
+    cut = M.fitted_header(fixed, long_subject)
+    check("sc11 a header with room to spare is returned untouched, so the "
+          "overwhelming majority of commits read exactly as they did before "
+          "anything was bounded: %r" % (short,),
+          short == fixed + "carried alone"
+          and M.SUBJECT_TRUNCATED not in short)
+    check("sc12 ...and one that would overrun is cut IN THE SUBJECT: the "
+          "opening the command owns survives whole, the header fits the bound, "
+          "and the cut says so rather than leaving a short subject and a "
+          "shortened one identical in `git log`: %r" % (cut,),
+          cut.startswith(fixed) and len(cut) <= M.HEADER_MAX_CHARS
+          and cut.endswith(M.SUBJECT_TRUNCATED)
+          and len(cut) > len(fixed) + len(M.SUBJECT_TRUNCATED))
+    # SECOND DIRECTION, and the one a clamp gets wrong by cutting the wrong end:
+    # a command whose own opening has outgrown the bound has a defect this
+    # function cannot repair, and writing the marker into a header that is still
+    # too long would hide it behind a line that looks bounded.
+    outgrown = "z" * (M.HEADER_MAX_CHARS + 10) + ": "
+    check("sc13 ...and an opening with no room left for any of the subject "
+          "comes back ALONE, marker included, because a cut that cannot be made "
+          "in the caller's half is not a cut to make in the command's: %r"
+          % (M.fitted_header(outgrown, "a subject nobody will read"),),
+          M.fitted_header(outgrown, "a subject nobody will read") == outgrown)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -18,6 +18,7 @@ pre-mutation code back and be indistinguishable from a real regression.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import os
 import sys
 
@@ -32,8 +33,16 @@ import _doctor_ado as _ado                         # noqa: E402
 import _doctor_trail as _trail                     # noqa: E402
 import _doctor_completions as _completions         # noqa: E402
 import _doctor_hygiene as _hygiene                 # noqa: E402
+import _journal_io                                 # noqa: E402  (the module the advice table quotes)
 
 _DOCTOR = _loader.load_script("audit-doctor.py", modname="audit_doctor_x")
+
+
+def _read(path):
+    """One file's text. A helper because the cases below read two of them and a
+    repeated `open` block is two places to get the encoding wrong."""
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
 
 
 # --- cases --------------------------------------------------------------------
@@ -179,6 +188,60 @@ def _cases(check):
           "`is`. A re-export that forked into a copy passes dr19 and fails only "
           "here, which is why presence is not enough: %r" % (diverged,),
           diverged == [])
+
+    # ------------------------------------------- the advice table's branches
+    # A CLASS IS A BRANCH, AND A BRANCH NOTHING CAN REACH IS NOT A CHECK. The
+    # journal advice table keys on fragments of the sentences `_journal_io`
+    # writes, which is a coupling to another module's prose accepted on purpose
+    # and paid for by cases -- but every case there builds ONE class's fixture,
+    # so a class whose sentence was reworded out of existence loses its advice
+    # and nothing says which class went. This asks the emitting module's own
+    # source instead, so the table is graded against every sentence that module
+    # can write rather than against the ones somebody remembered to fixture.
+    emitted = [node.value for node in
+               ast.walk(ast.parse(_read(_journal_io.__file__)))
+               if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+    unreachable = [(kind, frag)
+                   for kind, frags, _advice in _trail._JOURNAL_WARNING_CLASSES
+                   for frag in frags
+                   if not any(frag in text for text in emitted)]
+    check("dr21 every class the journal advice table declares keys on text "
+          "`_journal_io` really writes, so a branch nobody could ever see fire "
+          "is reported by the class and the fragment that went stale rather "
+          "than by an operator meeting a warning with no cause: %r"
+          % (unreachable,), unreachable == [])
+
+    empty = _trail.journal_warning_advice([])
+    unknown = _trail.journal_warning_advice(["a class this table never heard of"])
+    check("dr22 ...and the branch for a list with nothing in it is reached on "
+          "its own evidence. It used to be the second half of `unclassed or not "
+          "lines`, where the first half had already decided every non-empty "
+          "list - an operand standing in for a branch nothing could reach: %r"
+          % (empty,),
+          empty["kinds"] == [] and "audit-journal.py verify" in empty["fix"])
+    check("dr23 ...and a warning in no class is QUOTED by the pointer that "
+          "cannot explain it. The detail line beside the fix is budgeted and "
+          "elides its tail, so a pointer naming nothing left the one warning "
+          "nobody has thought about with no text anywhere on the row: %r"
+          % (unknown["fix"],),
+          "a class this table never heard of" in unknown["fix"]
+          and unknown["kinds"] == [])
+
+    # THE DOCUMENT SIDE, READ RATHER THAN RESTATED. The paragraph that describes
+    # this row promises where the whole list lives, and the pointer the doctor
+    # prints promises the same thing - so the two are pinned to name ONE command
+    # instead of drifting into two answers a reader has to choose between.
+    quoted = [part for i, part in enumerate(_trail._NO_CLASS_FIX.split("`"))
+              if i % 2]
+    readme = _read(os.path.join(_output.PLUGIN_ROOT, "README.md"))
+    blocks = [b for b in readme.split("\n\n")
+              if "reports how many rows arrived" in b]
+    absent = [cmd for cmd in quoted
+              if not any(cmd in block for block in blocks)]
+    check("dr24 the command the doctor's pointer sends an operator to is the "
+          "one the README's own paragraph about that row names, found in both "
+          "rather than transcribed here: %r / %r"
+          % (quoted, absent), len(blocks) == 1 and quoted and absent == [])
 
 
 def _selftest():

@@ -213,9 +213,17 @@ def commit_message(phase_id, subject, coauthor):
     `commit-audit-state.commit_message` states at length: that block holds a
     default type and a trailer and records nothing about which commitlint rules a
     repository configures.
+
+    AND THE CALLER'S HALF IS BOUNDED, by the same rule set and for the same
+    reason the type is: a header past `HEADER_MAX_CHARS` is refused by a
+    commitlint repository AFTER this script has staged the file. Everything ahead
+    of the caller's text is this command's and grew with each repair to it, so
+    the bound is applied where the two meet rather than left as a hope about how
+    long a `--subject` will be.
     """
-    paragraphs = ["%s(%s): %s %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD,
-                                          phase_id, subject or DEFAULT_SUBJECT)]
+    paragraphs = [_scoped_commit.fitted_header(
+        "%s(%s): %s %s - " % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD, phase_id),
+        subject or DEFAULT_SUBJECT)]
     if coauthor:
         paragraphs.append(str(coauthor))
     return paragraphs

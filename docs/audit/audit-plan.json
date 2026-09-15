@@ -2108,6 +2108,11 @@
         "title": "PostToolUse Bash diff-check (full shell-write coverage)",
         "reason": "the complete control for the statically-undecidable write vectors documented in SECURITY.md; costed, waiting for field demand.",
         "target": "on demand"
+      },
+      {
+        "title": "a per-worktree browser capture, so the shots gate stops serialising parallel task runs",
+        "reason": "the 'shots' entry (node tools/capture-screenshots.mjs --check) claims a FIXED per-user scratch tree under a lockfile and refuses outright while another capture holds it -- claimScratch(), which --check reaches too -- so every task gate carrying that entry is machine-wide exclusive: tasks run in parallel worktrees queue or fail there rather than in their own trees, and the failure names another run's pid. It stays on the task gate rather than only at sign-off because it is the one check that proves the report and the panel still paint, and a page found broken at sign-off is found after the work that broke it was committed. So the cost is paid deliberately: run browser gates from the orchestrator, not from inside parallel agents. Revisit when the capture can claim a tree per worktree (its byte-comparability argument pins the path, so that is the work), or when a measured parallel run loses more wall clock to the lock than the re-work it prevents.",
+        "target": "on demand"
       }
     ]
   },

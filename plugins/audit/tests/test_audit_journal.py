@@ -1219,6 +1219,12 @@ def _cases(check):
             gmconflict = gmgit("merge", "side")
             with open(gmfile, "r", encoding="utf-8") as fh:
                 gmmarkers = fh.read()
+            # THE TWO SIDES AS AN OPERATOR EXTRACTS THEM, taken here because
+            # this is the only moment they exist: the merge below resolves the
+            # conflict and the stages go with it. `mx` uses them over a target
+            # that is still conflicted, which is the escape mg10 prescribes.
+            gmside = [(gmgit("show", ":%d:./%s" % (stage, gmrel)).stdout or b"")
+                      for stage in (2, 3)]
             check("mg1 the fixture is a REAL conflict: git could not merge the "
                   "journal file, and what it left behind is not a chain at all "
                   "-- which is why `verify` alone cannot tell an operator "
@@ -1463,6 +1469,85 @@ def _cases(check):
                   "would overwrite the file with one branch's tail",
                   code == 1 and "REFUSED" in txt
                   and "not a divergence" in txt, txt)
+
+            # --- mx: the escape this command prescribes, on a conflicted file -
+            # mg10 tells an operator whose index stages are gone to extract the
+            # two sides and pass them, and an operator who wants a side of their
+            # own choosing reaches for the same flags while the conflict is
+            # still OPEN. That was refused, and by causes that were not the ones
+            # in front of it: every marker line is an unparseable row, so the
+            # target read as corrupt, and the order-aware target check reported
+            # the sides as a STALE EXTRACT and advised passing neither -- which
+            # is the index path they had just left. The grade now follows the
+            # FILE: a conflicted target gets the conflicted target's questions
+            # however the sides arrived.
+            #
+            # THE FIXTURE IS THE REAL CONFLICT git left above, bytes and stages
+            # both, in a project of its own so the gm cases keep the file they
+            # assert about.
+            mx = os.path.join(tmp, "escape")
+            os.makedirs(os.path.join(mx, ".claude"))
+            with open(os.path.join(mx, ".claude", "audit.config.json"), "w",
+                      encoding="utf-8") as fh:
+                fh.write('{"journal": {"dir": "j"}}')
+            os.makedirs(os.path.join(mx, "j"))
+            mxfile = os.path.join(mx, "j", gmname)
+            with open(mxfile, "w", encoding="utf-8") as fh:
+                fh.write(gmmarkers)
+            mxsides = []
+            for label, blob in (("ours", gmside[0]), ("theirs", gmside[1])):
+                where = os.path.join(tmp, "escape-%s.jsonl" % (label,))
+                with open(where, "wb") as fh:
+                    fh.write(blob)
+                mxsides.append(where)
+            code, txt = run(["merge", "--file", "j/" + gmname,
+                             "--ours", mxsides[0],
+                             "--theirs", mxsides[1]], mx)
+            mxrows = M.read_file(mxfile)[0]
+            check("mx1 the sides an operator extracted themselves resolve a "
+                  "target that is STILL CONFLICTED: that is the escape mg10 "
+                  "sends them to, and it used to dead-end in a refusal about "
+                  "invalid JSON and a stale extract -- neither of which is what "
+                  "a file full of conflict markers is: %r"
+                  % ([r.get("summary") for r in mxrows],),
+                  code == 0 and "REFUSED" not in txt
+                  and [r.get("summary") for r in mxrows][:4]
+                  == ["base-1", "ours-1", "theirs-1", "ours-2"]
+                  and mxrows[-1]["action"] == M.MERGE_ACTION
+                  and M.verify(mx, {"journal": {"dir": "j"}})["ok"], txt)
+            # SECOND DIRECTION, and the one that says the refusal names what it
+            # found: the presence question is still asked, and its sentence is
+            # about the sides the CALLER passed rather than about index stages
+            # they never used.
+            mxtyped = os.path.join(tmp, "escape-typed")
+            os.makedirs(os.path.join(mxtyped, ".claude"))
+            with open(os.path.join(mxtyped, ".claude", "audit.config.json"),
+                      "w", encoding="utf-8") as fh:
+                fh.write('{"journal": {"dir": "j"}}')
+            os.makedirs(os.path.join(mxtyped, "j"))
+            mxtfile = os.path.join(mxtyped, "j", gmname)
+            with open(mxtfile, "w", encoding="utf-8") as fh:
+                fh.write(gmmarkers + json.dumps(
+                    {"ts": "2026-08-09T00:00:00Z", "action": "task.note",
+                     "target": "P1.9", "summary": "typed while resolving",
+                     "prev": None, "hash": "0" * 12}) + "\n")
+            with open(mxtfile, "rb") as fh:
+                mxtbefore = fh.read()
+            code, txt = run(["merge", "--file", "j/" + gmname,
+                             "--ours", mxsides[0],
+                             "--theirs", mxsides[1]], mxtyped)
+            with open(mxtfile, "rb") as fh:
+                mxtafter = fh.read()
+            check("mx2 ...and a row typed into that conflicted file is still "
+                  "refused, naming the row and the sides the CALLER passed -- "
+                  "not the index, whose stages are not what this merge read, "
+                  "and not a stale extract, which is a different fault with "
+                  "different advice",
+                  code == 1 and "REFUSED" in txt and "(task.note)" in txt
+                  and "NEITHER side you passed" in txt
+                  and "STALE EXTRACT" not in txt
+                  and "let the merge take the two sides from the index" not in
+                  txt and mxtafter == mxtbefore, txt)
 
         # --- mh: the same verb over two files a caller extracted itself -------
         # No git here on purpose: the index is the DEFAULT source and not the
@@ -1781,6 +1866,71 @@ def _cases(check):
               code == 1 and "STALE EXTRACT" in txt and "task.commit" in txt
               and "already been resolved by this command" not in txt
               and mpthird == mpfirst, txt)
+
+        # --- ml: a journal file reached through a symbolic link ---------------
+        # THE WRITER AND THE MERGE WERE LOOKING AT TWO DIFFERENT FILES. An
+        # append opens the name and `open(name, "a")` FOLLOWS a link, so the
+        # trail grows in the file at the far end of one; a rename onto that name
+        # does NOT follow it, so the merge replaced the LINK and left the file
+        # every row had been appended to sitting where nothing that reads the
+        # trail resolves to it any more. Quiet, because every surface agreed
+        # afterwards: the name held a chain, `verify` read it, and the rows
+        # behind the old link were in nobody's list.
+        #
+        # THE LINK POINTS INSIDE THE JOURNAL DIRECTORY, because that is the only
+        # shape the command accepts at all -- `in_journal` asks its question of
+        # `os.path.realpath`, so a link out of the trail is already refused, and
+        # the resolved path it cleared is exactly the one the write must land on.
+        mlprobe = os.path.join(tmp, "symlink-probe")
+        mlmade, _mlwhy = _harness.attempt(os.symlink, tmp, mlprobe)
+        if not mlmade:
+            for label in ("ml1 a linked journal file is not replaced out from "
+                          "under the writer appending through it",
+                          "ml2 ...and the merge and the next append still land "
+                          "in one file"):
+                _harness.skip(check, label,
+                              "this platform would not create a symbolic link "
+                              "in the fixture tree (%s)" % (_mlwhy,),
+                              not mlmade)
+        else:
+            ml, mlfile, mlname, mlours, mltheirs = diverged("linked")
+            mlstore = os.path.join(os.path.dirname(mlfile), "store")
+            os.makedirs(mlstore)
+            mlreal = os.path.join(mlstore, mlname)
+            shutil.move(mlfile, mlreal)
+            os.symlink(os.path.join("store", mlname), mlfile)
+            mlrows = len(M.read_file(mlreal)[0])
+            mhput(ml, "written-through-the-link", "2026-08-04T00:00:00Z",
+                  action="task.note")
+            mlthrough = len(M.read_file(mlreal)[0]) > mlrows
+            # The side is re-taken THROUGH the link, so the sides hold every row
+            # the target holds and the only question left is which file the
+            # result lands in.
+            mlside = os.path.join(tmp, "linked-ours.jsonl")
+            shutil.copyfile(mlfile, mlside)
+            code, txt = run(["merge", "--file", "j/" + mlname,
+                             "--ours", mlside, "--theirs", mltheirs], ml)
+            mlsummaries = [r.get("summary") for r in M.read_file(mlreal)[0]]
+            check("ml1 an append writes THROUGH a symbolic link, and the merge "
+                  "replaces the file it wrote into rather than the name: the "
+                  "link is still a link and the result is in the file behind "
+                  "it. Replacing the name orphaned every row that had been "
+                  "appended there, with nothing left pointing at them: %r"
+                  % (mlsummaries,),
+                  code == 0 and mlthrough and os.path.islink(mlfile)
+                  and "yours" in mlsummaries
+                  and "written-through-the-link" in mlsummaries, txt)
+            mhput(ml, "after-the-merge", "2026-08-05T00:00:00Z",
+                  action="task.note")
+            mlafter = [r.get("summary") for r in M.read_file(mlreal)[0]]
+            check("ml2 ...and the next append lands in that same file, so the "
+                  "trail is one chain and not two -- the merge's result in one "
+                  "file and everything written afterwards in another is the "
+                  "split that made this silent: %r" % (mlafter,),
+                  "after-the-merge" in mlafter
+                  and "written-through-the-link" in mlafter
+                  and M.verify(ml, mhcfg)["ok"],
+                  repr(M.verify(ml, mhcfg)["findings"]))
 
         # --- mj: `merge --json` renders the operation, it does not change it ---
         # F331. `--json` returned BEFORE the write, so it printed `"ok": true`

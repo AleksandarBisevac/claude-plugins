@@ -155,6 +155,7 @@ merge_text = _journal_io.merge_text
 write_merged = _journal_io.write_merged
 anchor_verdict = _journal_io.anchor_verdict
 rows_unaccounted = _journal_io.rows_unaccounted
+conflicted_text = _journal_io.conflicted_text
 deleted_from_worktree = _journal_io.deleted_from_worktree
 tracked_but_gone = _journal_io.tracked_but_gone
 gone_finding = _journal_io.gone_finding
@@ -327,12 +328,16 @@ def _target_torn_faults(base, text):
     `verify` clean. A corrupted line mid-file -- which `verify` grades a FINDING
     -- went the same way.
 
-    NOT ASKED ON THE `from_index` PATH, and that is a property of what the
-    target IS there rather than a preference: a conflicted working copy is two
-    stages with conflict markers between them, every marker line is an
+    NOT ASKED OF A TARGET THAT IS STILL CONFLICTED, and that is a property of
+    what the file IS rather than a preference: a conflicted working copy is the
+    two sides with git's markers between them, every marker line is an
     unparseable row, and the last of them makes the file torn by this same
     reading. Asking there would refuse every genuine conflict resolution, which
-    is the measured premise `mg3c` holds and `mg3`/`mg2` would fail on."""
+    is the measured premise `mg3c` holds and `mg3`/`mg2` would fail on. The
+    evidence for that is `conflicted_text` over the bytes, NOT which source the
+    sides came from: an operator who extracts the sides by hand while the
+    conflict is open is doing what this command tells them to do once the index
+    stages are gone, and reading the flag refused them here for being torn."""
     rows, torn = rows_from_text(text)
     out = []
     if torn:
@@ -436,7 +441,7 @@ def _target_loss(base, verdict):
                verdict["committedRows"], verdict["workingRows"]))
 
 
-def _conflict_loss(base, text, merged):
+def _conflict_loss(base, text, merged, from_index):
     """The refusal for a CONFLICTED target the merge result would lose a row of.
 
     The `from_index` half of F328, and it is a narrower question than
@@ -461,20 +466,35 @@ def _conflict_loss(base, text, merged):
     the wall-clock second, because the marker's timestamp moves and the first
     unaccounted row is whichever sits earlier in the file. `_prior_merge_faults`
     has that half, on evidence that does not move; this keeps the half it was
-    always about."""
+    always about.
+
+    IT NAMES THE SIDES THE CALLER ACTUALLY GAVE IT, which is the other half of
+    naming the cause found. The sentence spoke of the index and of stages
+    unconditionally, and the same refusal now reaches a caller who extracted the
+    sides by hand over a conflict that is still open -- for whom "no union of
+    the two stages can hold it" describes files they never passed, and whose
+    repair is not to go and extract the sides they are already passing."""
     verdict = rows_unaccounted(text, merged)
     typed = [pair for pair in verdict["unaccounted"]
              if pair[1] != MERGE_ACTION]
     if not typed:
         return []
-    return ["row %d (%s) of %s is in the file and in NEITHER side the index "
-            "holds, so the merge result does not carry it and the result is "
+    if from_index:
+        where = ("NEITHER side the index holds, so the merge result does not "
+                 "carry it")
+        fix = ("Append it again after the merge, or extract both sides "
+               "yourself and pass --ours/--theirs so the row is in one of "
+               "them.")
+    else:
+        where = ("NEITHER side you passed, so the merge result does not carry "
+                 "it")
+        fix = ("Append it again after the merge, or re-extract the sides you "
+               "pass so that one of them holds it.")
+    return ["row %d (%s) of %s is in the file and in %s and the result is "
             "what would replace that file. A row typed into a conflicted "
-            "journal while resolving it is in no stage, so no union of the two "
-            "stages can hold it: %s has %d such row(s). Append it again after "
-            "the merge, or extract both sides yourself and pass --ours/--theirs "
-            "so the row is in one of them."
-            % (typed[0][0], typed[0][1], base, base, len(typed))]
+            "journal while resolving it is in neither side of the divergence, "
+            "so no union of them can hold it: %s has %d such row(s). %s"
+            % (typed[0][0], typed[0][1], base, where, base, len(typed), fix)]
 
 
 def _target_faults(base, text, unreadable, merged, side_rows, from_index):
@@ -490,20 +510,32 @@ def _target_faults(base, text, unreadable, merged, side_rows, from_index):
     sides are fixed by git and cannot be the caller's mistake, so a row the
     working copy holds and neither stage does is always something the operator
     did to that file -- typed it, or already ran this command -- and those are
-    two separate acts that each need naming. On the TARGET path the caller
-    CHOOSES the two sides and the commonest fault is that they are stale: a
+    two separate acts that each need naming. Over a target that has been
+    RESOLVED the caller chooses the two sides and the commonest fault is that
+    they are stale: a
     marker row they do not hold is then one more symptom of that, not a second
     act, and its advice (restore the conflict) points at a conflict that is not
     open. So there the row actually at risk wins, and the marker question is
     asked only when no other row is being lost -- which is also the only reading
     under which it is not the wall clock deciding, because the order-aware
     verdict holds or fails on the marker according to which SECOND the two runs
-    landed in while `_prior_merge_faults` asks about the sides."""
+    landed in while `_prior_merge_faults` asks about the sides.
+
+    WHICH GRADE A TARGET GETS IS DECIDED BY THE TARGET, and that is the repair
+    that made the documented escape reach the file it is prescribed for. The
+    branch used to be taken on where the SIDES came from, so a caller extracting
+    them by hand -- what this command tells an operator to do once the index
+    stages are gone, and what an operator who wants a side of their own choosing
+    does while the conflict is still open -- was graded as though the markers in
+    their working copy were corruption and their sides were stale. Both refusals
+    named causes that were not the one in front of them, and one of them sent the
+    reader back to the index path they had deliberately left. A conflicted file
+    gets the conflicted file's questions however the sides arrived."""
     if unreadable is not None:
         return [_unreadable_refusal(base, unreadable)]
-    if from_index:
+    if from_index or conflicted_text(text):
         return (_prior_merge_faults(base, text, side_rows)
-                + _conflict_loss(base, text, merged))
+                + _conflict_loss(base, text, merged, from_index))
     out = _target_torn_faults(base, text)
     verdict = anchor_verdict(text, merged)
     if not verdict["held"] and verdict["action"] != MERGE_ACTION:
@@ -645,9 +677,10 @@ def cmd_merge(args, out):
     # holds no row cannot lose one. Not a branch, so there is no branch to get
     # wrong.
     #
-    # AND THE `from_index` PATH ASKS A DIFFERENT ONE. There the two sides ARE
-    # stages 2 and 3 of this very file -- git built the working copy out of
-    # them, so no row that came from a stage can be missing from their union.
+    # AND A TARGET THAT IS STILL CONFLICTED ASKS A DIFFERENT ONE, which the
+    # index path always is. There the sides ARE stages of this very file -- git
+    # built the working copy out of them, so no row that came from a stage can
+    # be missing from their union.
     # An order-aware test would refuse every genuine conflict resolution: that
     # working copy's parseable rows are the two stages concatenated with markers
     # between them, an order no chain ever had. The premise is measured rather

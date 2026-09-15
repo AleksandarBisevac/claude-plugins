@@ -1641,9 +1641,12 @@ def manifest_state(root, manifest_rel):
     things: the first is a repo that never opted in, the second is a repo mid-plan.
 
     `phaseRunning` reads the ASSEMBLED manifest, which is load-bearing. Under the
-    sharded layout the index carries `{id, title, shard}` stubs with no `status` at
-    all (`_manifest_io._STUB_KEYS`), so a raw index read reports every phase as
-    None and a live phase would be missed.
+    sharded layout the index carries STUBS, and while a stub mirrors the phase's
+    own status (`_manifest_io._STUB_KEYS`) it is a copy refreshed when that value
+    moves rather than the source of truth, and it says nothing at all about the
+    tasks inside the phase -- which the paragraph below makes load-bearing here.
+    A raw index read would therefore answer from a mirror that may lag and would
+    miss a running task outright.
 
     A task `in_progress` under a phase that is not counts too. The runtime writes
     `phase.status` on entry, but a manifest hand-edited to start one task is still a

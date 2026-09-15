@@ -278,9 +278,16 @@ def commit_message(phase_id, subject, coauthor):
     machines nobody tests on. Reading a field to decide whether to be correct is
     also what F268 spent its reversal removing: the separating literal is fixed
     precisely so a manifest cannot move this commit's spelling.
+
+    THE CALLER'S HALF IS BOUNDED BY THE SAME RULE SET, through the bound its
+    sibling command shares with this one. The header this builds has to survive
+    commitlint for the reason the type and the lead already do - a repository that
+    refuses it does so AFTER the files are staged - and the length is the one of
+    those rules whose remaining budget a caller, not this command, spends.
     """
-    lines = ["%s(%s): %s %s - %s" % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD,
-                                     phase_id, subject or DEFAULT_SUBJECT)]
+    lines = [_scoped_commit.fitted_header(
+        "%s(%s): %s %s - " % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD, phase_id),
+        subject or DEFAULT_SUBJECT)]
     if coauthor:
         lines.append(str(coauthor))
     return lines

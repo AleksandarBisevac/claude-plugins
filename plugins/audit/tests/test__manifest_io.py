@@ -490,10 +490,31 @@ def _cases(check):
         check("io7 ...while leaving the caller's own phase dict untouched - "
               "split must not mutate the manifest it was handed",
               _src["phases"][0].get("priority") == 1)
-        check("io8 ...and a phase with no such field keeps the stub it always "
-              "had, so an existing manifest splits to the same bytes",
-              set(_idx["phases"][1]) == {"id", "title", "shard"},
+        check("io8 ...and a phase with no such field carries the MIRROR and the "
+              "pointer and nothing else, so a body field cannot arrive in the "
+              "index by being copied along with the rest: %r"
+              % (_idx["phases"][1],),
+              set(_idx["phases"][1])
+              == set(k for k in M._STUB_KEYS if k in _src["phases"][1]) | {"shard"},
               repr(_idx["phases"][1]))
+        # THE MIRROR THE LAYOUT RESTS ON. `INDEX_ONLY_FIELDS` is justified beside
+        # `priority` by execution order being computable without opening a shard,
+        # and `reference/orchestrator.md` names the write that keeps it true --
+        # both of which were claims about a key the writer did not put there.
+        # Derived from the source phase rather than spelled, so a phase whose
+        # status changes moves the case with it.
+        check("io9a the stub carries the phase's STATUS, which is what lets a "
+              "reader order a run without opening a single shard - the property "
+              "the index-only rule above rests on and the write "
+              "`reference/orchestrator.md` calls the status mirror: %r"
+              % (_idx["phases"][1],),
+              "status" in M._STUB_KEYS
+              and _idx["phases"][1].get("status")
+              == _src["phases"][1].get("status"))
+        check("io9b ...and the SHARD still holds it too, because the body is the "
+              "source of truth and the stub is a copy: a mirror that emptied the "
+              "field it mirrors would make a stale index the only answer",
+              _shards["P2"].get("status") == _src["phases"][1].get("status"))
         _iodir = os.path.join(tmp, "io-index-only")
         os.makedirs(_iodir)
         _iop = os.path.join(_iodir, "audit-plan.json")

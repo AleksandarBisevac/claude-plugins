@@ -506,11 +506,21 @@ def effective_bug_status(bug, task_by_id):
 
 # --- writer (split a manifest into index + per-phase shards) ---------------------
 # The index keeps the shared, rarely-churned data; each phase's full body becomes a
-# shard. The phase STUB in the index is intentionally minimal — {id, title, shard} —
-# with NO status/claim mirror, so a phase run writes ONLY its shard and never touches
-# the index. That is what makes two parallel phase branches merge without a manifest
-# conflict. Status and any run `claim` live in the shard body (the source of truth).
-_STUB_KEYS = ("id", "title")
+# shard. The phase STUB is minimal on purpose, and `status` is on it for the reason
+# this module's own docstring and `reference/orchestrator.md` both give: execution
+# order has to be computable WITHOUT opening a shard, which is the entire reason the
+# sharded layout exists. The stub is a MIRROR and never the source of truth --
+# `_merge_phase` lets the body win outright -- so a stub that has fallen behind
+# costs a reader of the index alone a stale answer and costs the assembled manifest
+# nothing.
+#
+# WHAT THIS IS NOT is a phase run writing the index on every task. The mirror is
+# refreshed only when the value it copies actually MOVES (`audit-task._write_add`
+# compares before it dirties the index), so it is written on a phase's own
+# transitions rather than on the work inside them, and two phase branches still
+# touch one stub each. A run `claim` stays out of the index entirely: it is
+# per-run coordination with no reader that may not open the shard.
+_STUB_KEYS = ("id", "title", "status")
 
 
 def _shard_name(pid):

@@ -160,6 +160,48 @@ def uncommitted(git_root, allowed):
     return [_evidence_io._path_of(ln) for ln in lines(out)], ""
 
 
+# --- the header a commitlint repository will take -----------------------------
+# The bound `@commitlint/config-conventional` puts on a header, transcribed where
+# the header is BUILT rather than only where it is graded. Both commands here open
+# their subject with a fixed word and a phase id, and each repair that lengthened
+# that opening spent some of this without anything downstream noticing -- while the
+# part a caller supplies had no bound at all, so `--subject` could carry the header
+# past the limit and a repository with husky+commitlint would refuse the commit
+# AFTER the script had staged the files, leaving the caller to finish by hand. That
+# is the failure the fixed opening exists to avoid, reached from the other end.
+HEADER_MAX_CHARS = 100
+# A CUT SAYS SO, in the trail's own words: a short subject and a shortened one read
+# identically otherwise, and a reader of `git log` has no second field to check.
+# Spent OUT OF the bound, so the bound stays a fact about the header.
+SUBJECT_TRUNCATED = " [truncated]"
+
+
+def fitted_header(fixed, subject, limit=HEADER_MAX_CHARS):
+    """`fixed` + `subject` as one header line, cut IN THE SUBJECT to fit `limit`.
+
+    WHICH END IS CUT IS THE WHOLE OF IT. `fixed` is what the command owns and
+    what makes the line acceptable to a commitlint repository at all -- the
+    conventional type and scope, the lowercase word no caller may displace, and
+    the phase id `git log` finds the commit by. Cutting there to make room for a
+    caller's prose would trade a refused commit for an unattributable one, so the
+    caller's half is the half that gives.
+
+    Returns `fixed` alone when there is no room left in it for any of the
+    subject: a command whose own opening has outgrown the bound has a defect this
+    function cannot repair, and pretending otherwise would put the marker in a
+    header that is still too long. Each caller's cases pin that its opening
+    leaves a caller room, which is the half that has to be measured rather than
+    arranged here.
+    """
+    header = "%s%s" % (fixed, subject)
+    if len(header) <= limit:
+        return header
+    room = limit - len(fixed) - len(SUBJECT_TRUNCATED)
+    if room <= 0:
+        return fixed
+    return "%s%s%s" % (fixed, subject[:room], SUBJECT_TRUNCATED)
+
+
 # --- what happened ------------------------------------------------------------
 def answer(skipped, committed=False, commit=None, staged=None, refused="",
            foreign=None, journalled=False, quiet=""):

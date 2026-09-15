@@ -504,6 +504,18 @@ _JOURNAL_WARNING_CLASSES = (
 _NO_CLASS_FIX = ("this check has no repair text for that warning; run "
                  "`audit-journal.py verify` for the full list")
 
+# ...AND THE WARNING ITSELF, WHICH IS THE HALF THAT WAS MISSING. The detail line
+# beside this fix spends a fixed budget on the warning list and elides the tail
+# (`_output.some_of`), so a warning with no repair text here that is also elided
+# there reached the operator NOWHERE: a pointer saying "that warning" names
+# nothing they can go and look at. An unrecognised warning is precisely the one
+# worth reading - a recognised class is one somebody has already thought about,
+# while this one is a sentence `verify` learned to write that nothing here has
+# caught up with. The budget is deliberately not widened for it: `some_of` is
+# shared, it says how many it left out, and quoting the unclassed warnings beside
+# their own pointer is the narrower repair.
+_UNRECOGNISED_LEAD = "the warning(s) nothing here recognised"
+
 
 def journal_warning_advice(warnings):
     """{"kinds", "fix"} — what to say about a `verify` warning list.
@@ -525,13 +537,24 @@ def journal_warning_advice(warnings):
     a recognised one was dropped without a word — and `verify` emits classes
     that have no row here, the same basename living and archived at once among
     them, so that is the ordinary company an unrecognised warning keeps rather
-    than a corner. It costs the whole warning: the detail line beside this fix
-    spends a fixed budget on the list and elides the tail (`_output.some_of`),
-    so a class that says nothing here says nothing in the row at all.
+    than a corner.
 
-    An EMPTY list also draws the pointer. Nothing asks that of it today —
-    `check_journal` calls this only over a non-empty list — and a caller that
-    does is better handed a place to look than an empty string."""
+    AND THE POINTER NOW CARRIES THE WARNING IT IS ABOUT, which is the rest of
+    that repair. A pointer saying "that warning" named nothing, while the detail
+    line beside it spends a fixed budget on the list and elides the tail — so the
+    unrecognised warning was in neither place and the operator was told only that
+    something they could not see had no repair text. `_UNRECOGNISED_LEAD` carries
+    why that is the warning worth the room.
+
+    EVERY BRANCH HERE IS ONE SOMETHING CAN REACH, which is the other repair. The
+    pointer used to be appended on `unclassed or not lines`, and the second
+    operand could not decide anything: a non-empty list with no class matched
+    leaves every warning unclassed, so the first operand had already fired, and
+    the only input the second answers for is the empty list — which
+    `check_journal` never passes. One operand standing in for a branch nobody
+    could see fire is the shape this file's own cases exist to refuse, so the
+    empty list is its own branch and its own case. A caller with nothing to
+    explain is still handed a place to look rather than an empty string."""
     kinds, lines, classed = [], [], set()
     for kind, fragments, advice in _JOURNAL_WARNING_CLASSES:
         hits = [i for i, text in enumerate(warnings)
@@ -541,7 +564,12 @@ def journal_warning_advice(warnings):
         kinds.append(kind)
         lines.append(advice)
         classed.update(hits)
-    if len(classed) < len(warnings) or not lines:
+    unclassed = [text for i, text in enumerate(warnings) if i not in classed]
+    if unclassed:
+        lines.append("%s. %s: %s"
+                     % (_NO_CLASS_FIX, _UNRECOGNISED_LEAD,
+                        _output.some_of(unclassed, sep="; ")))
+    elif not warnings:
         lines.append(_NO_CLASS_FIX)
     return {"kinds": kinds, "fix": "; also: ".join(lines)}
 

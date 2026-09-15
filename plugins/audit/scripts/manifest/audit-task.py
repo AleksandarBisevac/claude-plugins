@@ -1326,17 +1326,26 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
         new_stub, body = _new_stub_and_body(body, _shard_rel_dir(raw_index))
         stub = new_stub
         index_dirty = True
-    # F288. THE STUB IS A COPY OF TWO FIELDS, AND A COPY NOTHING REFRESHES GOES
-    # STALE. `_mio._STUB_KEYS` is `("id", "title")`, and until `retarget --rename`
-    # existed no verb could change either one after the split -- so nothing here
-    # ever had to look. Measured on a sharded fixture the moment one could: the
-    # shard carried the new title while the index went on naming the phase by the
-    # one it was created with, which is the whole point of a stub answered wrongly.
+    # F288. THE STUB IS A COPY, AND A COPY NOTHING REFRESHES GOES STALE. Until
+    # `retarget --rename` existed no verb could change a mirrored key after the
+    # split, so nothing here ever had to look. Measured on a sharded fixture the
+    # moment one could: the shard carried the new title while the index went on
+    # naming the phase by the one it was created with, which is the whole point
+    # of a stub answered wrongly.
     #
-    # COMPARED, NOT REWRITTEN. The stub is deliberately minimal so a phase RUN
-    # touches only its shard and two phase branches merge without a manifest
-    # conflict; rewriting the index on every task write would put that conflict
-    # back. So the index is dirtied only when a stub key actually moved.
+    # THE PHASE'S STATUS IS ONE OF THOSE KEYS, which is the write
+    # `reference/orchestrator.md` calls the status mirror and lists among the
+    # index-lock writes. It was documented there, and in
+    # `reference/manifest-conventions.md` as the thing `priority`'s index-only
+    # rule rests on, while the writer copied identity alone -- so every reader of
+    # the index was answered `None` about a phase that was running, and the
+    # ordering argument for the layout rested on a key nothing wrote.
+    #
+    # COMPARED, NOT REWRITTEN, which is what keeps that from costing the layout
+    # its point. The list is `_mio._STUB_KEYS` rather than a set spelled here,
+    # and the index is dirtied only when a mirrored key actually MOVED -- so a
+    # phase's own transition writes the index and the work inside it does not,
+    # and two phase branches still touch one stub each.
     if "shard" in stub:
         for key in _mio._STUB_KEYS:
             if key in body and stub.get(key) != body.get(key):

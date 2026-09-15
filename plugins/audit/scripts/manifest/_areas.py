@@ -665,6 +665,13 @@ CLAIM_ANCHORS = (
      os.path.join("scripts", "governance", "_locks.py"),
      r"E_LIVE,\s*E_STALE,\s*E_USAGE,\s*E_ERR\s*=\s*\d+,\s*(\d+)", "",
      "| %s | holder is not alive |"),
+    # The answer a caller that already holds the lock gets. It is the newest of
+    # the codes and the one the document went without: an orchestrator reading
+    # the table saw a refusal it had no row for, and the release rule beside it
+    # was unconditional over an answer that must not be released on.
+    ("lock-exit-ours", "Concurrency lock", "value",
+     os.path.join("scripts", "governance", "_locks.py"),
+     r"E_OURS\s*=\s*(\d+)", "", "| %s | already yours |"),
     ("parent-branch-rule", "Branch-per-phase", "value",
      os.path.join("scripts", "manifest", "_branch.py"),
      r'DEFAULT_PARENT\s*=\s*"([^"]+)"', "",

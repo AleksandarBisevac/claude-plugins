@@ -634,6 +634,42 @@ def _cases(check):
         check("h2 ...and the heal is reported",
               "pending -> in_progress" in txt)
 
+        # THE SAME HEAL IN THE SHARDED LAYOUT, WHERE THE PHASE HAS TWO HOMES.
+        # `reference/orchestrator.md` lists the phase status-mirror write among
+        # the index-lock writes and `reference/manifest-conventions.md` rests
+        # `priority`'s index-only rule on the stub carrying `status` -- while the
+        # writer copied identity alone, so every reader of the index alone was
+        # told a running phase was pending, and the ordering argument the layout
+        # is built on rested on a key nothing wrote.
+        healsh = base_manifest()
+        healsh["phases"][2]["tasks"] = [{"id": "P3.1", "title": "hand-flipped",
+                                         "status": "in_progress"}]
+        projhs, mpathhs = mk("h-heal-sharded", healsh, sharded=True)
+        codehs, _txths = run(["add", "Heal me", "--phase", "P3",
+                              "--project-dir", projhs])
+        hs_idx = _mio.read_json(mpathhs)
+        hs_stub = [s for s in hs_idx["phases"]
+                   if isinstance(s, dict) and s.get("id") == "P3"][0]
+        hs_body = [p for p in _mio.load_manifest(mpathhs)["phases"]
+                   if p.get("id") == "P3"][0]
+        check("h3 ...and in the SHARDED layout the index stub is moved with the "
+              "shard, so a reader of the index alone is not told a running "
+              "phase is pending: %r" % (hs_stub,),
+              codehs == 0 and _mio.is_sharded(hs_idx)
+              and hs_stub.get("status") == "in_progress"
+              and hs_body.get("status") == "in_progress")
+        # SECOND DIRECTION, and the one a mirror gets wrong by being written
+        # unconditionally: the index is dirtied only when a mirrored key MOVED,
+        # which is what keeps a phase's WORK out of the shared file.
+        hs_before = open(mpathhs, "rb").read()
+        codehs2, _txths2 = run(["add", "Second task", "--phase", "P3",
+                                "--project-dir", projhs])
+        check("h4 ...and a second write that moves no mirrored key leaves the "
+              "index byte-identical - the mirror is refreshed on a phase's own "
+              "transition, never on the work inside it, or two phase branches "
+              "would collide on the index they no longer have to touch",
+              codehs2 == 0 and open(mpathhs, "rb").read() == hs_before)
+
         # ---- (j) --json + the journal ---------------------------------------
         projj, _mj = mk("j-json", base_manifest())
         code, txt = run(["add", "Json add", "--phase", "P2",

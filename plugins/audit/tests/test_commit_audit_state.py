@@ -414,6 +414,24 @@ def _cases(check):
               % (len(subject), HEADER_MAX_LENGTH),
               len(subject) <= HEADER_MAX_LENGTH)
 
+        # ...AND THE HALF THIS COMMAND DOES NOT CHOOSE. cas8f measures the
+        # default subject; `--subject` is the caller's, it had no bound, and the
+        # rule it can cross is the one that refuses a commit AFTER this script
+        # has staged the files. Both writers compose through one bound now, and
+        # each asserts it on its own opening, because the openings differ and
+        # only the composed line says whether a caller has room left.
+        spent = M.commit_message(PHASE, "y" * (HEADER_MAX_LENGTH * 2), None)[0]
+        check("cas8g ...and a `--subject` longer than the whole budget is CUT "
+              "rather than carried past it: the header fits, opens with this "
+              "command's own words, names the phase, offends no case rule, and "
+              "says it was cut: %r" % (spent,),
+              len(spent) <= HEADER_MAX_LENGTH and header_offences(spent) == []
+              and PHASE in spent
+              and spent.startswith("%s(%s): %s %s - "
+                                   % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                      M.SUBJECT_LEAD, PHASE))
+              and spent.endswith(_scoped_commit.SUBJECT_TRUNCATED))
+
         # --- called again ------------------------------------------------------
         code, text = _run(fx)
         check("cas9 called again it makes NO commit and says which do-nothing "

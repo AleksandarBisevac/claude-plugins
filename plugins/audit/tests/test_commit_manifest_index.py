@@ -37,6 +37,7 @@ import _invariants                                 # noqa: E402
 import _journal_io                                 # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
+import _scoped_commit as _scoped                   # noqa: E402  (the shared header bound)
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
 # commitlint's default `subject-case`, transcribed ONCE and imported (F305). The
 # rule is commitlint's and belongs to neither writer, so a second transcription
@@ -324,6 +325,31 @@ def _cases(check):
               "watching, and the fixed word spent some of it: %d against a limit "
               "of %d" % (len(subject), HEADER_MAX_LENGTH),
               len(subject) <= HEADER_MAX_LENGTH)
+
+        # ...AND A CALLER CANNOT SPEND WHAT IS LEFT OF IT. cmi7d measures the
+        # DEFAULT subject, which this command chooses; `--subject` is the half it
+        # does not, and nothing bounded it - so the rule that refuses a commit
+        # AFTER the files are staged was reachable from the one direction the
+        # fixed opening does not cover. The bound lives with the composer and the
+        # transcription of commitlint's own rule stays here, so the two are
+        # compared rather than one being read off the other.
+        spent = M.commit_message(PHASE, "y" * (HEADER_MAX_LENGTH * 2), None)[0]
+        check("cmi7e ...and a `--subject` longer than the whole budget is CUT "
+              "rather than carried past it: the header still fits, still opens "
+              "with this command's own words, still names the phase, and still "
+              "offends none of the case rules - and the cut says so: %r"
+              % (spent,),
+              len(spent) <= HEADER_MAX_LENGTH and header_offences(spent) == []
+              and PHASE in spent
+              and spent.startswith("%s(%s): %s %s - "
+                                   % (M.COMMIT_TYPE, M.COMMIT_SCOPE,
+                                      M.SUBJECT_LEAD, PHASE))
+              and spent.endswith(_scoped.SUBJECT_TRUNCATED))
+        check("cmi7f ...and the budget the composer holds IS commitlint's, "
+              "compared against this suite's own transcription of the rule "
+              "rather than read out of the module it is grading: %d / %d"
+              % (_scoped.HEADER_MAX_CHARS, HEADER_MAX_LENGTH),
+              _scoped.HEADER_MAX_CHARS == HEADER_MAX_LENGTH)
 
         # --- called again ------------------------------------------------------
         code, text = _run(fx)

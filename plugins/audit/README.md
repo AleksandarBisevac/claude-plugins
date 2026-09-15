@@ -1236,7 +1236,11 @@ distinguishes them**, and that is a property of the check rather than a gap wait
 fix: neither a merge commit nor a `journal.merge` row is required for the warning to be
 the harmless one, so `/audit:doctor` reports how many rows arrived rather than which ones,
 says it cannot tell a merge from a splice, and sends you to `audit-journal.py show` to read
-them and judge for yourself. Deleting the file is the same class of act; this paragraph used
+them and judge for yourself. **That row is budgeted and says so**: it spends a fixed width on
+the warnings themselves and then says how many it left out, its repair line carries one cause
+per class it recognised and **quotes any warning it has no cause for** — an unrecognised
+warning is the one worth reading, because a recognised one is a class somebody has already
+thought about — and `audit-journal.py verify` is the whole list either way. Deleting the file is the same class of act; this paragraph used
 to call it *"loud rather than silent"* and that was not true of the code — the walks read what
 was on disk, so a deleted file was not a file with missing rows but a file in nobody's list,
 and `verify` came back clean. It is loud now because `verify` compares what git **tracks**
@@ -1625,21 +1629,33 @@ commands and will tell you when it finds none.
 Mutating subcommands hold a lock in the **shared git dir**
 (`$(git rev-parse --git-common-dir)/audit-locks/`), **two-tier**: a brief **index lock**
 (structural writes + id allocation) and a per-phase **shard lock** (a phase run). Taking, judging
-and releasing a lock is `scripts/governance/audit-lock.py`, not prose — a lock held by a **live** run refuses
-a second session with the holder's info, and one whose holder is **gone** offers a confirmed
-takeover. It decides which by probing the holder's pid on this host rather than by the lock's age:
+and releasing a lock is `scripts/governance/audit-lock.py`, not prose — a lock held by a **live** run is
+**waited for** and then refuses with the holder's info, and one whose holder is **gone** offers a
+confirmed takeover. The wait is short by design: it covers a lock taken for one structural write,
+which is the case that clears on its own, and buys nothing against a phase lock that is held for a
+whole run. `--wait 0` reads the refusal at once. **A lock this run already holds is its own
+answer** — *already yours*, the work may proceed, and the release belongs to the hold that took it,
+because releasing on that answer would drop the lock out from under the step still using it; a
+shell reads that answer as success, since "you already have it" is not a failure to take it.
+It decides live-versus-abandoned by probing the holder's pid on this host rather than by the lock's age:
 a healthy 90-minute phase run is not a crashed one, and a run that died after ten minutes should
 not hold its lock for another fifty. Age remains the fallback when liveness is unknowable — no pid
 recorded, or a lock from another machine. `status` and `report` never lock. Because the lock lives inside `.git/`, it
-never shows up in `git status` and needs no `.gitignore` entry. (No git repo → it falls back to
-`<manifestPath>.lock` in the working tree, which coordinates within a single clone only.)
+never shows up in `git status` and needs no `.gitignore` entry. (No git repo → there is no lock
+scheme at all, and a mutating command says so rather than coordinating against nothing. The
+**panel** is the one caller with a documented fallback: it drops to `<manifestPath>.lock` in the
+working tree, which coordinates within a single clone only.)
 
 **Sharded layout — parallel phases.** Run **`/audit:layout sharded`** to split the manifest into an
 *index* (`meta` · `bugs` · `fileIndex`) plus one file per phase (`phases/<phaseId>.json`). Then a
 phase command loads **only its own phase** (fewer tokens at scale), and because two phase branches
-edit different shard files — and a run never writes the shared index (bug status is **derived** from
-the linked task) — **two phases run in parallel from separate git worktrees and merge back with no
-manifest conflict.** Ids are allocated under the index lock, so they never collide.
+edit different shard files — the work inside a phase never touches the shared index, and bug status
+is **derived** from the linked task — **two phases run in parallel from separate git worktrees and
+merge back with no manifest conflict.** Ids are allocated under the index lock, so they never
+collide. What the index does carry per phase is a **mirror** of that phase's own `status`, so
+execution order is readable without opening every shard; the shard body stays the source of truth
+and the mirror is refreshed only when the phase itself moves, so each branch touches one stub of
+its own.
 
 **It is a choice, and it goes both ways.** `/audit:layout single-file` assembles the shards back
 into one file under the same index lock, the same `.bak-<UTC>` and the same re-validate-or-restore.

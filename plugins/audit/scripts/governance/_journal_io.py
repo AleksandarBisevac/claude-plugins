@@ -1421,6 +1421,11 @@ def append_from_cli(project, entry, config=None):
 # nobody reads again.
 MERGE_ACTION = "journal.merge"
 MERGE_VIA = "merge"
+# What git writes into a working copy it could not merge, in every conflict style
+# it offers: the opening run, the base run the diff3 styles add, the separator and
+# the closing run. `conflicted_text` reads them, and reads them as PREFIXES because
+# git puts the branch name after the opening and closing ones.
+CONFLICT_MARKS = ("<<<<<<<", "|||||||", "=======", ">>>>>>>")
 
 
 def row_content(row):
@@ -1817,10 +1822,24 @@ def write_merged(path, text, grade=None, dry_run=False):
     told it was fine would go on to commit a conflicted file. A refusal is not
     that: nothing was attempted, and the reason is text a person has to read.
 
+    IT REPLACES THE FILE AN APPEND WRITES THROUGH, NOT THE NAME IT WAS HANDED.
+    `open(name, "a")` follows a symbolic link, so where a journal file is reached
+    through one the trail grows in the file at the far end of it -- and a rename
+    onto the link does not follow it. Replacing the link therefore left the file
+    every row had been appended to sitting where no reader of the trail resolves
+    to any more, with the merge's own result under a new name beside it: the
+    chain split in two, nothing said so, and `verify` read only the half it could
+    still reach. The resolved path is also the one the caller was cleared to
+    write -- `in_journal` asks its question of `os.path.realpath` -- so following
+    the link here widens nothing. The LOCK stays on the name, because the name is
+    what an append locks, and a hold on a different path would serialise the two
+    writers against nothing.
+
     Through a temporary file in the same directory, so an interrupted merge
     leaves either the old file or the new one and never half of each."""
     lock = _acquire(path)
-    tmp = path + ".merged"
+    dest = os.path.realpath(path)
+    tmp = dest + ".merged"
     try:
         refusals = []
         if grade is not None:
@@ -1831,7 +1850,7 @@ def write_merged(path, text, grade=None, dry_run=False):
         try:
             with open(tmp, "w", encoding="utf-8") as fh:
                 fh.write(text)
-            os.replace(tmp, path)
+            os.replace(tmp, dest)
         except Exception:
             # The half-written temporary goes, and the exception does not:
             # `journal_files` matches `.jsonl` so it would never be READ, but it
@@ -2077,6 +2096,31 @@ def gone_findings(project, directory):
     nothing to act on either way."""
     return [gone_finding(where)
             for where in (tracked_but_gone(project, directory) or [])]
+
+
+def conflicted_text(text):
+    """True when `text` is what git leaves in a working copy mid-conflict.
+
+    THE EVIDENCE IS THE FILE'S OWN BYTES, AND THAT IS THE POINT OF ASKING IT
+    HERE. A merge grades the file it is about to replace, and which question it
+    may ask of that file depends on what the file IS: a conflicted working copy
+    is the sides concatenated with markers between them, an order no chain ever
+    had, so an order-aware grade refuses every genuine resolution of one. Where
+    the SIDES came from is a different fact entirely -- a caller may hand over
+    extracts while the conflict is still open, which is the way out this command
+    prescribes once the index stages are gone -- so grading by the flag instead
+    of by the file is what made that route dead-end in a refusal naming a cause
+    nobody had hit.
+
+    A MARKER LINE IS NOT A ROW AND CANNOT BE MISTAKEN FOR ONE. Every line the
+    trail holds is a JSON object, so none of them opens with one of these runs
+    of punctuation; a line that does was written by git or by hand, and either
+    way the file is not a chain.
+    """
+    for line in text.splitlines():
+        if line.startswith(CONFLICT_MARKS):
+            return True
+    return False
 
 
 def rows_unaccounted(have_text, result_text):

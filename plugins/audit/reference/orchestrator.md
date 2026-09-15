@@ -237,9 +237,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire <name> 
 | Exit | Meaning | What you do |
 |---|---|---|
 | **0** | acquired | proceed |
-| **3** | held by a **live** run | **STOP.** Print the script's output verbatim and end the command. Do not take it over. |
+| **5** | **already yours** | this run already holds it, so proceed — and **do not release it**: the claim belongs to the hold that took it, and releasing here drops the lock out from under the step still using it. A shell reads this as 0, because "you already have it" is not a failure to take it. |
+| **3** | held by a **live** run | **STOP.** Print the script's output verbatim and end the command. Do not take it over. The script has already waited for it — a window sized for a lock taken for one structural write, while a phase lock is held for a whole run, so waiting longer buys the same refusal later. `--wait 0` reads the refusal at once. |
 | **4** | holder is **not alive** | Print the output, ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`. |
-| **1** | not a git repo / cannot write | Stop and report. Fall back to `<manifestPath>.lock` only if you have no git repo at all — that path coordinates within a single clone only. |
+| **1** | not a git repo / cannot write | Stop and report. With no git repo there is no lock scheme at all, so there is nothing to fall back to and nothing to coordinate against: say so rather than writing as though a lock had been taken. |
 
 **Exit 3 is enforced, not just advised (0.27.0).** `require-plan.py` refuses a write to the
 manifest or a phase shard while another LIVE session holds the governing lock, so ignoring a
@@ -254,7 +255,8 @@ and it made you wait fifty minutes on a run that died after ten. Age is still th
 liveness is unknowable: no pid recorded, or a lock from another host. **Never second-guess an
 exit 3 by looking at `startedAt` yourself** — that is the rule the script exists to replace.
 
-**Release** at the END of the command, including failure paths you control:
+**Release** at the END of the command, including failure paths you control — **unless the acquire
+in that step answered that the lock was already yours**, in which case it is not yours to give back:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>

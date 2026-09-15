@@ -57,7 +57,7 @@ claude-plugins/                           # this repo (personal, public)
         layout.md                         # /audit:layout — pick the manifest layout, either direction
         migrate.md                        # /audit:migrate — legacy spelling of `/audit:layout sharded`
         init.md                           # /audit:init — multi-agent manifest generation
-        task.md                           # /audit:task — add/scope/move/cancel a task, answers as flags
+        task.md                           # /audit:task — add/scope/start/done/move/cancel a task, answers as flags
         bug.md                            # /audit:bug — bug tracking (add|list|fix|close)
         sync.md                           # /audit:sync — Azure DevOps work-item sync
       agents/
@@ -121,7 +121,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
-          audit-task.py                   # /audit:task add + /audit:phase add + cancel doer: id allocation, full template init, lock+journal
+          audit-task.py                   # /audit:task + /audit:phase doer: add/scope/start/done/cancel and add-phase/retarget, under the index lock
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
           migrate-json-encoding.py        # one manifest's files rewritten in the one JSON escaping, all-or-nothing under the index lock
         git/                              # the git domain: the worktree/branch half of the pipeline, as code rather than prose
@@ -2616,8 +2616,9 @@ to explain that it was removed writes it back into the transcript the prune was 
 It also renders the limit the rule cannot decide — an `oldest` line plus the standing note
 about rows an older release wrote — and only where there is history for it to be about, on a
 feed that exists with rows left in it. "Nothing to remove" is otherwise a true statement about
-the rule and a misleading one about the file. The verb is mandatory: a bare invocation must
-not prune. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
+the rule and a misleading one about the file. The verb is `prune`, and it is mandatory: a bare
+invocation must not prune, which is why the positional takes one choice rather than defaulting
+to it. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
@@ -2635,9 +2636,18 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the two tiers the
 orchestrator uses (`index`, `phase-<id>`), turning the library's answers into exit codes —
-a live holder is refused (exit 3); one that is not alive can be seized with `--takeover`
-(exit 4), because the old "older than 60 minutes = crashed" rule was wrong in both
-directions. `--session`/`--pid` override the identity written into the lock for testing.
+a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
+not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
+crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the
+old read-the-refusal-at-once behaviour, which is what a caller wants against a phase lock:
+the window is sized for a lock taken for one structural write, and a lock held for a whole
+run does not clear inside any window worth waiting. **A caller that already holds the lock
+gets its own answer** rather than a refusal or a fresh acquisition — the work may proceed and
+the release stays with the hold that took it, since releasing on that answer would drop the
+lock out from under the step still using it. `shell_code()` is where that answer collapses to
+0 for a shell, and only for a shell: a process status says whether the step may go on, while
+a caller that must know whether this call took the lock is the one reader that cannot be told
+the two apart. `--session`/`--pid` override the identity written into the lock for testing.
 
 ### `plugins/audit/scripts/governance/_invariants.py`
 The post-hoc reader of `reference/orchestrator.md` (layer 4). Both READMEs split the
@@ -3268,6 +3278,44 @@ prescribes — and it refuses a terminal task, a phase id, and a start that woul
 `maxAttempts` (the `blocked` transition owes an ADO echo and a human, so it stays the
 orchestrator's).
 
+**`done <taskId> --commit <sha>` is `start`'s twin at the other end**, and it exists for the
+same reason: the conventions prescribed the close as a pair of hand `Edit`s, which is how one
+task's completion went into the phase shard **and** the index, lost the index to a
+`git reset --hard`, and turned out never to have been in the shard at all. It writes `status`,
+`completedAt`, `commit`, both halves of `outcome` and `verifiedBy` in ONE write with a
+`task.done` row. The SHA is required and must be an object id git can be asked about — a
+branch name or `HEAD` is refused, a SHA git HAS been asked about and does not know is refused,
+and one git could not be asked about at all (no git, a shallow clone) is written and reported
+as unverified rather than accused, which is this tree's rule about a claim whose basis is
+missing. A task that was never started is refused, because a terminal state laid over a hole
+records an attempt nobody made. Closing the last open task does **not** close the phase:
+`phase.status` is sign-off's to write, beside the review verdict and the merge stamp.
+
+**`scope <taskId>` gives a task the fields creation could not know**, through the same lock,
+revalidate-from-disk and rollback: `files`, `--tests-mode`, `--tests-add`, `--gate` /
+`--gate-clear`, `--description`, `--risk`, `--blocked-by`, `--depends-on`. It RE-DERIVES
+`fileIndex` rather than appending to it, so a path the task no longer claims is released
+rather than left pointing at it. It exists because `/audit:sync pull sprint` imports tasks
+with no `files` and told the reader to scope them while no verb could — and `fileIndex` is
+what the plan gate matches an edit against, so an unscoped phase ran with its central guard
+inert. On a task that has already STARTED what is graded is the SHAPE of the change and not
+the call: `files` and `tests.add` may gain entries and nothing may lose one, which is the one
+change that cannot re-judge what already happened — `_invariants.commit_scope` reads
+`task.files` live, so growing the list can only turn a breach into a pass, and the plan gate
+reads it forward, so growing it only ever allows an edit it was refusing. That is the recovery
+`reference/orchestrator.md` prescribes for a plan-gate refusal, and until the shape rule
+replaced a pair of independent signal checks the task the remedy names failed the gate by
+construction.
+
+**`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
+description or title, corrected after `/audit:init` or an ADO pull chose them. The title is
+`--rename` rather than `--title` because the positional slot is already called `title` and
+carries the phase id, and a rename is refused once the phase is on a branch: `_branch.slugify`
+turns the title into the branch's slug, and the readers of that name part company afterwards —
+`close-phase.py` and `manage-worktrees.py` prefer the recorded `phase.branch` while
+`resolve-branch.py` composes from the title, so a renamed phase in flight has two names and no
+reader agreeing on which.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model
@@ -3281,8 +3329,13 @@ The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-f
 `load_manifest` reads BOTH the single-file form and the v3 index+shards form into the same assembled
 dict (so every script + hook stays format-agnostic — it's wired into all five scripts' `main()` and
 `hooks/_config.in_progress_task_map`); `split_manifest`/`save_sharded` write the sharded form (index of
-`{id,title,shard}` stubs + `phases/<id>.json` bodies) atomically. The index stub carries NO runtime
-mirror, so a phase run writes only its shard → parallel phase branches merge with no manifest conflict.
+`{id,title,status,shard}` stubs + `phases/<id>.json` bodies) atomically. The stub's `status` is a
+MIRROR — the body is the source of truth and `_merge_phase` lets it win — kept because execution
+order has to be computable without opening a shard, which is what the layout is for; it is refreshed
+only when the value it copies moves, so a phase's own transition writes the index while the work
+inside it writes only that phase's shard, and parallel phase branches still touch one stub each. A
+run `claim` is not mirrored at all: it is per-run coordination with no reader that may not open the
+shard.
 `join_manifest`/`save_single_file` are the counterparts that write the assembled dict back out as one
 file, and the one thing they own beyond the write is putting `meta.version` back down — `LAYOUT_VERSION`
 is where both writers take that number from, because the layout has TWO independent readings

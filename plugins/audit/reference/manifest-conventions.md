@@ -42,17 +42,20 @@ directory, `bugs[]`, `proposals[]`, `fileIndex`, id counters). Before your
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire index \
            --project <gitRoot> --note "<command>"
    ```
-   **0** → proceed. **3** → another `/audit:*` session is mutating this manifest:
-   print the output and STOP. **4** → the holder is not alive: ask the human
+   **0** → proceed. **5** → you already hold it: proceed, and release nothing —
+   the claim belongs to the hold that took it. **3** → another `/audit:*` session
+   is mutating this manifest and the script has already waited for it: print the
+   output and STOP. **4** → the holder is not alive: ask the human
    (AskUserQuestion) to confirm, then rerun with `--takeover`.
-2. **Release** at the END of the command, including failure paths you control:
+2. **Release** at the END of the command, including failure paths you control —
+   unless the acquire answered **5**:
    `audit-lock.py release index --project <gitRoot>`. AskUserQuestion pauses keep
    the lock (still your run). A release that exits **3** means you were taken
    over — stop and tell the human rather than `--force`-ing past it.
 3. **Read-only subcommands never lock** (`/audit:bug list`, `/audit:sync status`
    perform no write). The lock dir is inside the git dir → never committed; no
-   `.gitignore` needed. (No git repo? fall back to `<manifestPath>.lock` — that
-   coordinates within a single clone only.)
+   `.gitignore` needed. (No git repo? there is no lock scheme at all — say so
+   rather than writing as though one had been taken.)
 
 `/audit:init` **regenerate/append** is the most destructive write — it rewrites
 the whole manifest. It MUST hold the **index lock**, refuse while another
