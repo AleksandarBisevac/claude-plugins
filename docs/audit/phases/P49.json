@@ -29,7 +29,7 @@
     {
       "id": "P49.1",
       "title": "The checks this repository runs on itself are offered, not imposed",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the bar this repository holds itself to is available to a user as optional gate entries, and a plan that does not ask for them is unchanged in every byte. The two worth offering first are the ones this project learned the hard way and neither is about style: prove that a check can fail before trusting it, and refuse a comment that claims what the code does not do. Offering rather than imposing is the whole design: a gate entry a project did not choose is a gate entry it routes around, and the register already holds the case of a guard that fired where it was not wanted and was disabled within a day. Each offered entry ships with the sentence that says what it asks of a change and what it costs to run, because an operator choosing a gate is making a trade and a menu that hides one side of it is a menu that gets chosen wrongly once.",
       "files": [
         "plugins/audit/scripts/status/_gate_feed.py",
@@ -62,19 +62,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fba4ee8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_gate_feed.OFFERED_GATES carries each entry with what it asks and what it costs; accepted_gates reads which keys a plan actually named and returns nothing for a plan that named none; --list-offered is the one printer both documents point at.",
+        "descriptive": "This repository's own two checks are a catalogue a plan can accept, and a plan that did not ask is unchanged in every byte."
       },
       "startedAt": "2026-09-15T20:47:04Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T22:56:00Z",
+      "verifiedBy": [
+        "gf26",
+        "gf27",
+        "gf28",
+        "gf29"
+      ]
     },
     {
       "id": "P49.2",
       "title": "A number about what the gate caught, not only what it spent",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the control surface answers what the gates caught, beside what they cost, and neither number is presented without the other. Today every figure on that surface is a cost - tokens, minutes, dollars - so the only argument the surface can support is that the plugin is expensive. The ledger already holds the other half: a red verdict is a catch, and the row names the entry that produced it. An entry that has never caught anything is reported as never having caught anything, which is a real finding about a gate and not a zero to be averaged away, and it is the number that makes the offer to drop an entry credible. Where the ledger is too short to support either claim the surface says the question could not be answered, on the same rule every other basis here follows: a claim with no basis is not softened, it is withheld.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -106,19 +111,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fba4ee8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.gate_last_caught and gate_cost_ms reuse the existing per-step reader; _usage_economics.gate_catches folds caller-supplied tallies into insufficient, neverCaught or catches; the panel's usage state carries the payload on every branch.",
+        "descriptive": "Each gate reports what it caught and when, beside what it cost, and an entry that never caught anything is named as such."
       },
       "startedAt": "2026-09-15T20:47:04Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T22:56:00Z",
+      "verifiedBy": [
+        "ev43",
+        "ev44",
+        "ev45",
+        "ev46",
+        "up1"
+      ]
     },
     {
       "id": "P49.3",
       "title": "The control surface can say whether anyone opened it",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the doctor can say whether the panel has ever been opened in this project, and the answer distinguishes never from not recently. A large part of this plugin's model rests on a control surface an operator is assumed to visit, and no part of the product can currently say whether anybody does. That is a question worth being able to answer before more is built on the assumption, and it is cheap: the server already starts, and the fact that it started is the whole record. What it records is the fact and nothing else - no identity, no address, no page - because a usage record that grows into a profile is a record a user is right to object to, and the question being asked does not need one.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
@@ -150,19 +161,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fba4ee8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_runstate.record_opened keeps a count and nothing else, written when the server reaches listening; check_panel_opened reports at most a warning and lives beside its data because the layer graph forbids the edge from the file the task named.",
+        "descriptive": "The doctor can say whether the panel has ever been opened, and never is worded apart from not recently."
       },
       "startedAt": "2026-09-15T20:47:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T22:56:00Z",
+      "verifiedBy": [
+        "the panel-runstate open-record cases"
+      ]
     },
     {
       "id": "P49.4",
       "title": "A task's done asks whether the change is what was asked for",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: closing a task records an answer to one question - does this change do what the task asked for - and the answer is on the record beside the gate verdict. The operator chose this at that cost, per task, rather than at sign-off alone, and the reasoning is that the claim is made per task: a gate proves the suite is green and proves nothing about whether the green change is the change somebody wanted. It is one cheap call handed the task description, the diff and the executor's claim. The failure mode to design against is the one every cheap reviewer has: an answer that is yes by default. A close that received no answer must read differently from a close that received a negative, because those are opposite facts and a missing field renders as neither. This also closes the gap where the plugin holds itself to a bar it does not offer the user, which the neighbouring task in this phase offers from the other side.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -195,14 +208,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fba4ee8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "task.intentCheck in the schema and the known-key set; audit-task done takes --intent from a three-word vocabulary and writes answer, commit and time only when given; the orchestration document routes the agreeing answer into the same call that carries the commit.",
+        "descriptive": "Closing a task records whether the change is what the task asked for, and a close that received no answer leaves the field absent and says so."
       },
       "startedAt": "2026-09-15T20:47:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-15T22:56:00Z",
+      "verifiedBy": [
+        "ic1",
+        "ic2",
+        "ic3",
+        "ic4",
+        "ic5",
+        "ic6"
+      ]
     }
   ],
   "startedAt": "2026-09-15T20:47:04Z"
