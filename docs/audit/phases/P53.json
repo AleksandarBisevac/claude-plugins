@@ -339,7 +339,7 @@
     {
       "id": "P53.8",
       "title": "The gate's sentences are published, not walked out of the writer",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the screenshot capture can run again, and the sentence it seeds comes from the hook as DATA rather than from a walk of the hook's source. RELEASE BLOCKER: the capture refuses today and the screenshots are in the release set, so no bump completes while it stands. The fixture refuses to type the gate's sentences itself, and it is right to - five of its rows were once retyped copies that all agreed with the hook the day they were written, and one drifted the day its writer was repaired. So it walks the hook for the reason each event carries and picks the arm by how many numbers it takes. One arm of that choice moved into a helper when the refusal was given the cause it actually found, so the walker returns nothing for it, the zero-number arm vanished from view, and the fixture stops rather than inventing. Both sides are defensible, which is why this is a decision: publishing the templates as data is the shape this repository already uses for the armed-bypass sentence and the only one that survives the next move; teaching the walker to follow a call is more syntax than it has and grows with every helper; and seeding a sentence of the fixture's own is the retyped copy the derivation exists to refuse and is rejected out loud here rather than by omission. What must not move is the refusal: a capture that fell back to a default would paint words no hook produces into a committed image.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -368,14 +368,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-15T14:55:08Z",
       "completedAt": null,
       "verifiedBy": []
     }
