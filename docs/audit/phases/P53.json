@@ -451,7 +451,7 @@
     {
       "id": "P53.9",
       "title": "The committed screenshots are re-captured after the gate's wording moved",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the committed images show the sentences the plugin produces today. The gate card in the committed panel image still paints a wording that a repair replaced, and nothing in the gate set goes red on it: the capture check proves preconditions rather than pixels, which is the right boundary and leaves this to a deliberate run. A re-capture takes the machine-wide browser lock, so it cannot run beside another browser gate, and it passes through the committed-identity check before anything lands - which is the reason it is a task rather than a step inside the fix that made it necessary.",
       "files": [
         "docs/screenshots",
@@ -477,16 +477,18 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "49bacaa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "re-captured alongside the change that moved what they show; the capture gate's preconditions hold and the committed-identity gate is green over the images.",
+        "descriptive": "The committed screenshots show the sentences the plugin produces today."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-15T20:05:27Z",
+      "completedAt": "2026-09-15T20:05:28Z",
+      "verifiedBy": [
+        "the capture check and the committed-identity gate"
+      ]
     },
     {
       "id": "P53.10",
