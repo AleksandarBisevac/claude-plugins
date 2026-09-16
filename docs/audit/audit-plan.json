@@ -1737,7 +1737,8 @@
       "P55.6",
       "P50.5",
       "P55.8",
-      "P55.10"
+      "P55.10",
+      "P55.12"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2093,6 +2094,9 @@
     ],
     "plugins/audit/tests/test__doctor_ado.py": [
       "P57.5"
+    ],
+    "plugins/audit/scripts/manifest/repair-tests-add.py": [
+      "P55.12"
     ]
   },
   "bugs": [

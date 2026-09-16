@@ -423,7 +423,7 @@
     {
       "id": "P55.9",
       "title": "A case that says it pins the window plants its decoy where the window cannot reach",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: widening _areas._CLAIM_WINDOW past the section reddens a case. It does not today - the constant was raised past any document in the tree and the whole sweep stayed green, so the one site that reads it is defended by nothing. oa12 carries a comment asserting the window is load-bearing and that oa12 is what says so, and that comment is the reason nobody looked: it plants its decoy BEFORE the anchor's bullet, while the slice runs forward from the anchor, so no forward widening can ever reach it. What oa12 pins is the slice's left endpoint, which the slice does for free. Add a second laundered document with the decoy planted after the anchor and outside the shipped window, a finding at the shipped value and a non-finding only once the window is widened past it. oa12 stays as it is - a decoy behind the anchor is worth a case, it just is not this one - and the comment above it stops claiming what the new case is the one to claim.",
       "files": [
         "plugins/audit/tests/test__areas.py"
@@ -451,21 +451,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7119ee1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "oa33 launders the document with the decoy planted past the shipped window from the anchor, so it is a finding at the shipped width and stops being one once the constant is widened; oa12 is unchanged and its comment now says it pins the slice's left endpoint.",
+        "descriptive": "The window's width is pinned by a case that reddens when it grows, and the case that could not pin it says what it does pin."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-16T23:57:49Z",
+      "completedAt": "2026-09-16T23:57:49Z",
+      "verifiedBy": [
+        "widen-claim-window"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7119ee1",
+        "at": "2026-09-16T23:57:49Z"
+      }
     },
     {
       "id": "P55.10",
       "title": "A persisted path goes through the one helper, and the table that says so names it",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: scripts/manifest/repair-commits.py builds the relative path it persists through _output.posix_rel rather than by hand, and px2's publisher table names the file. The value it writes today is right, because the hand-rolled spelling happens to be what the helper does - so nothing is broken and nothing will be until the next copy leaves the separator replacement off, which is the defect the helper was written after. The table that would have caught it does not name this file. THE TABLE STAYS HAND-KEPT ON THE RECORD: whether a value is published is a judgement about what happens to it downstream, not a fact the tree states, and one file in this tree holds both a containment check that must NOT go through the helper and a published path that must, so a file-level derivation would be unsound in both directions.",
       "files": [
         "plugins/audit/scripts/manifest/repair-commits.py",
@@ -492,21 +499,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7119ee1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "repair-commits.py builds the persisted relative path with _output.posix_rel, and px2's publisher tuple names the file with a comment giving the concrete reason the table is not derived.",
+        "descriptive": "A path written into the trail goes through the one helper, and the table that enforces that names the writer."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-16T23:57:49Z",
+      "completedAt": "2026-09-16T23:57:50Z",
+      "verifiedBy": [
+        "unhelper-repair-commits-path"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7119ee1",
+        "at": "2026-09-16T23:57:50Z"
+      }
     },
     {
       "id": "P55.11",
       "title": "Two rows in the mutation table credit what they did not prove",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the full red-first sweep exits clean, and neither of the two rows that do not prove their gate is repaired by renaming a file or a case. THE NAVIGABILITY ROW drops one section marker from a named file, which reports something only when that file satisfies two constraints at once - the rule applies to it, AND it carries exactly the minimum number of markers, because a file with more still has enough after one is dropped. The target drifted in the second constraint and the gate reports STAYED GREEN; the comment above the row narrates the same failure happening in the FIRST constraint the previous time, which is why another file name is not the repair. Derive the target: a file the rule applies to that carries exactly the minimum, refusing loudly when the tree holds none, because a sweep that cannot find a subject has to say so rather than report a colour. THE DICT-KEY ROW deletes the producer's key from the gate runner, which trips the floor case - that case names that exact producer and key and asserts membership - before the rule under test has anything to report, so the sweep credits a case it did not observe. Relabelling makes the sweep honest and leaves the rule unproven; the mutation has to break the READER side instead, a read of a key nothing writes, which is the shape the credited case is the only one to catch.",
       "files": [
         "tools/prove-gates.py"
@@ -530,6 +544,55 @@
       "model": "sonnet",
       "skills": [],
       "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "7119ee1",
+      "outcome": {
+        "technical": "The navigability row derives its target by walking for a file the rule applies to that carries exactly the minimum markers, simulating the drop before accepting it and raising when none qualifies; the dict-key row mutates a resolved reader's lookup instead of the producer's key.",
+        "descriptive": "Both rows now redden the case they credit, and the one that named a file by hand asks the tree instead."
+      },
+      "startedAt": "2026-09-16T23:57:49Z",
+      "completedAt": "2026-09-16T23:57:50Z",
+      "verifiedBy": [
+        "prove-gates --only navigability_violations",
+        "prove-gates --only dict_key_violations"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7119ee1",
+        "at": "2026-09-16T23:57:50Z"
+      }
+    },
+    {
+      "id": "P55.12",
+      "title": "The sibling writer's persisted path goes through the same helper",
+      "status": "pending",
+      "description": "DONE MEANS: scripts/manifest/repair-tests-add.py builds the relative path it records into the trail through _output.posix_rel rather than by hand, and px2's publisher table names it. It is the second instance of the same defect: the value is right today because the hand-rolled spelling happens to be what the helper does, and nothing breaks until a copy leaves the separator fix off. The behavioural suite cannot see it on this platform, because the two spellings produce the same string there - the source-level rule is the only thing that can, which is why the table has to name the file.",
+      "files": [
+        "plugins/audit/scripts/manifest/repair-tests-add.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
