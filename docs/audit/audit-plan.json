@@ -454,7 +454,8 @@
       "P23.3",
       "P27.1",
       "P32.10",
-      "P51.9"
+      "P51.9",
+      "P55.7"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1992,6 +1993,12 @@
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4"
+    ],
+    "tools/check-report-interactive.mjs": [
+      "P55.7"
+    ],
+    "plugins/audit/scripts/ui/report": [
+      "P55.7"
     ]
   },
   "bugs": [

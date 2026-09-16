@@ -29,7 +29,7 @@
     {
       "id": "P50.1",
       "title": "One command reaches the smallest plan that turns the guards on",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a user with no plan reaches a valid, minimal, honest plan in one command, and the guards that are inert without a manifest become live. The packaging split was refused on a measurement - most of the hooks are inert without a manifest, each for a correct reason, so a guards-only package would ship a mostly inert product and a machine installing both would register every hook twice. That refusal moves the onboarding cost rather than removing it, so it is paid here instead. The plan this writes is deliberately the smallest thing that is true: one phase, one task, the gate entries the repository can actually run, and no invented structure. A generated plan that looks impressive and describes work nobody agreed to is worse than three lines, because the first thing it teaches is that the manifest is decoration.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -62,14 +62,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eb8cf82",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task seed writes a single-file manifest through save_single_file, with buildCommands empty and the gate basis saying so; the shared lock door takes the existence direction as a parameter, so seed refuses when a manifest is already there while the seven other verbs still refuse when one is missing.",
+        "descriptive": "One command writes the smallest plan that is true - one phase, one task, no guessed commands - and turns the guards that need a manifest from inert to live."
       },
       "startedAt": "2026-09-15T23:01:16Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T04:55:54Z",
+      "verifiedBy": [
+        "sd1",
+        "sd2",
+        "sd3",
+        "sd4",
+        "sd5",
+        "sd6"
+      ]
     },
     {
       "id": "P50.2",
@@ -115,7 +122,7 @@
     {
       "id": "P50.3",
       "title": "A worked example that is not a Node project",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a reader whose project is not JavaScript sees the plugin working on a tree that looks like theirs, with gate entries their runner would actually take. The one worked example is a Node storefront, and every gate entry, every derived test path and every spelling in it is that ecosystem's. A reader in another language has to translate before they can evaluate, and the first thing they translate is the part that decides whether the product fits - how a gate entry names a path. The second example is chosen for how DIFFERENT its runner is rather than for popularity, because the question the example answers is whether the plan's vocabulary survives a runner that spells things another way. Nothing here is generated and committed without the derived-ledger check the first example already has.",
       "files": [
         "examples/acme-store/audit-plan.json",
@@ -146,14 +153,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eb8cf82",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "a new phase and shard with its own build command; check-example-ledgers gained gate_findings, scoped to the worked examples because this plugin's own plan uses a fixed gate vocabulary that is a different contract; the derived usage ledger was re-generated after the seeded stream shifted.",
+        "descriptive": "A worked example carries a phase whose runner spells things differently, and the example check now asks whether a gate entry names a build command that exists."
       },
       "startedAt": "2026-09-15T23:01:17Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T04:55:54Z",
+      "verifiedBy": [
+        "el18",
+        "el19",
+        "el20",
+        "el21",
+        "el22"
+      ]
     },
     {
       "id": "P50.4",

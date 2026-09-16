@@ -290,6 +290,50 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P55.7",
+      "title": "The report's copy interaction is observed, or the gate says which it could not observe",
+      "status": "pending",
+      "description": "DONE MEANS: the interactive gate is green, and whichever of the two causes it was is stated. RELEASE BLOCKER: the gate is red on two clipboard interactions and red identically on the committed bytes, so it is not a recent change. The message is the finding rather than the failure - it says two assertion sites never RAN, so the report was graded on work that did not happen, which is the class this release repaired twice inside the suites, and the gate already refuses to call that a pass. Two questions come before any code, in this order: does the copy still work for a person, and does the automation hold the clipboard permission a headless context needs. A copy that works for a human and cannot be observed is a harness repair; a copy that has stopped working is a product defect and a much larger one. The gate cannot tell those apart today and saying which is part of the fix. What must not move is the refusal to grade a report on assertions that never ran: widening it to pass on an unreachable site turns the one instrument that can see this into one that cannot.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/scripts/ui/report",
+        "examples/acme-store/acme-store-audit.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-report-interactive.mjs: an assertion site that cannot be reached is reported as unreached with the reason, apart from one that ran and disagreed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
